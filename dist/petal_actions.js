@@ -385,6 +385,16 @@ function despawnAllPlayerPets(playerId, io) {
 // See the cap check in spawnPet. Counts entities (centipede segments included),
 // not eggs: a full loadout of ordinary eggs stays far below this.
 const MAX_PET_ENTITIES_PER_PLAYER = 50;
+/**
+ * Per-mob stat multipliers applied when a mob is summoned as a pet, on top of
+ * its normal rarity scaling. The digger's wild stat line (1000 hp / 25 damage
+ * at common, hostile, fast) is tuned for a mob that only crawls out of a dying
+ * ant hole; handed to a player as a permanent escort it outclasses every other
+ * egg at the same rarity, so a digger egg summons a half-strength one.
+ */
+const PET_STAT_MULTIPLIERS = {
+    digger: { health: 0.5, damage: 0.5 },
+};
 // Spawn a pet mob that belongs to a player
 function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false, count = 1) {
     // Petals that summon a squad (stick -> two sandstorms). The duplicate check
@@ -467,6 +477,16 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
         ownerId, // Set the owner
         petImage: mobStats.petImage, // Use pet image if available
     }); // mobStats validated above
+    // Pet-only stat nerfs (see PET_STAT_MULTIPLIERS). maxHealth is what the
+    // client's health bar divides by, and encodeEnemyDelta only puts maxHealth
+    // on the wire when it differs from the mob config's, so this reaches the
+    // client on its own.
+    const statMods = PET_STAT_MULTIPLIERS[mobType];
+    if (statMods) {
+        pet.maxHealth = mobStats.health * statMods.health;
+        pet.health = pet.maxHealth;
+        pet.damage = mobStats.damage * statMods.damage;
+    }
     // Add to enemies array
     constants_1.enemies.push(pet);
     // Notify all clients

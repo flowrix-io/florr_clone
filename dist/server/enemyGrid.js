@@ -61,7 +61,11 @@ function rebuildEnemyGrid(enemies) {
         // Cache derived stats once per spawn lifetime.
         if (e._radius === undefined) {
             const mobStats = (0, mobs_1.getMobStats)(e.type, e.tier);
-            e._radius = mobStats ? (mobStats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
+            // Pets never reach here (skipped above), but the two lazy `_radius`
+            // initialisers — this one and the collision pass in physics.ts —
+            // must stay the same formula, since whichever runs first wins.
+            e._radius = (mobStats ? (mobStats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2)
+                * (0, mobs_1.getEnemySizeScale)(!!e.ownerId, e.tier);
             e._mobStats = mobStats;
         }
         let r = e._radius;

@@ -1,4 +1,4 @@
-import { Graphics, Player, Enemy, WorldItem, PLAYER_SIZE, getMobStats, getPetalStats } from './core';
+import { Graphics, Player, Enemy, WorldItem, PLAYER_SIZE, getMobStats, getEnemySizeScale, getPetalStats } from './core';
 import { DEATH_ANIMATION_DURATION } from './enemy-drawing';
 
 declare module './core' {
@@ -30,9 +30,11 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
     // a canvas pipeline flush per mob on the GPU path.
     this.ctx.imageSmoothingEnabled = true;
     for (const enemy of enemies.values()) {
-        // Calculate actual enemy size for accurate culling
+        // Calculate actual enemy size for accurate culling. Must match drawEnemy's
+        // own size math (pet scale included) — this value is also what the
+        // health-bar pass below sizes bars against.
         const mobStats = getMobStats(enemy.type, enemy.tier);
-        const baseSize = mobStats ? mobStats.size * 40 : 40;
+        const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(enemy.isPet, enemy.tier);
         const visualScale = mobStats?.visual_scale ?? 1.0;
         const enemySize = baseSize * visualScale;
 

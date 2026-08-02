@@ -484,6 +484,13 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Target dummies now spawn less often at garden spawn',
             'Pets and target dummies no longer have bossbars'
         ]
+    },
+    {
+        date: 'August 2, 2026',
+        changes: [
+            'Pets shrink as their rarity rises: a common pet is still the size of a common mob, a unique pet is a third of a unique mob',
+            'Digger eggs now hatch with half health and half damage'
+        ]
     }
 ];
 

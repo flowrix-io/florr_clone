@@ -1,5 +1,5 @@
 import { Enemy } from '../server_utils';
-import { getMobStats } from '../mobs';
+import { getMobStats, getEnemySizeScale } from '../mobs';
 import { ENEMY_SIZE, MAX_SANE_WORLD_COORD } from '../constants';
 
 // Cell size chosen so a typical query (a petal or player radius, tens of px) touches
@@ -62,7 +62,11 @@ export function rebuildEnemyGrid(enemies: Enemy[]): void {
         // Cache derived stats once per spawn lifetime.
         if (e._radius === undefined) {
             const mobStats = getMobStats(e.type, e.tier);
-            e._radius = mobStats ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2;
+            // Pets never reach here (skipped above), but the two lazy `_radius`
+            // initialisers — this one and the collision pass in physics.ts —
+            // must stay the same formula, since whichever runs first wins.
+            e._radius = (mobStats ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2)
+                * getEnemySizeScale(!!e.ownerId, e.tier);
             e._mobStats = mobStats;
         }
         let r = e._radius as number;

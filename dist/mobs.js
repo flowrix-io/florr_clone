@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MOB_CONFIG = exports.SIZE_SCALING = exports.RARITY_LEVELS = exports.calculateMobDrops = exports.MOB_DROP_TABLES = exports.BASE_MOB_CONFIGS = void 0;
+exports.MOB_CONFIG = exports.PET_SIZE_SCALING = exports.SIZE_SCALING = exports.RARITY_LEVELS = exports.calculateMobDrops = exports.MOB_DROP_TABLES = exports.BASE_MOB_CONFIGS = void 0;
+exports.getEnemySizeScale = getEnemySizeScale;
 exports.getMobStats = getMobStats;
 exports.getAllMobTypes = getAllMobTypes;
 exports.getMobRarities = getMobRarities;
@@ -60,6 +61,36 @@ exports.SIZE_SCALING = {
     unique: 26.8435456,
     apex: 42.9496730
 };
+/** What a unique pet's size is, as a fraction of a wild unique mob's. */
+const PET_SIZE_SCALE_AT_UNIQUE = 1 / 3;
+/**
+ * Extra size multiplier applied to a mob spawned as a pet, on top of
+ * SIZE_SCALING. Straight SIZE_SCALING makes a high-rarity pet dwarf the player
+ * that owns it (a unique mob is 26.8x base), so the pet ramp is pulled down to
+ * a third of the wild mob by unique, while a common pet stays exactly the size
+ * of a common mob.
+ *
+ * The ramp is linear over the rarity ladder rather than geometric: SIZE_SCALING
+ * only grows 1.1x from common to uncommon, so a geometric pull-down would make
+ * an uncommon pet *smaller* than a common one. Linear keeps effective pet size
+ * increasing at every step (1.5 -> 1.51 -> 1.63 -> ... -> 8.95 at unique).
+ */
+exports.PET_SIZE_SCALING = (() => {
+    const table = {};
+    const uniqueIndex = exports.RARITY_LEVELS.indexOf('unique');
+    for (let i = 0; i < exports.RARITY_LEVELS.length; i++) {
+        table[exports.RARITY_LEVELS[i]] = 1 - (1 - PET_SIZE_SCALE_AT_UNIQUE) * (i / uniqueIndex);
+    }
+    return table;
+})();
+/**
+ * Size multiplier for a single live enemy. Every place that turns
+ * `mobStats.size` into world pixels multiplies by this, so a pet's sprite, its
+ * hitbox, its wall collisions and its melee reach all agree on one size.
+ */
+function getEnemySizeScale(isPet, tier) {
+    return isPet ? (exports.PET_SIZE_SCALING[tier] ?? 1) : 1;
+}
 // Separate XP tables for each mob type (maintaining original values)
 const MOB_XP_TABLES = {
     bee: {

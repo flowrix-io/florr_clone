@@ -977,7 +977,7 @@ function updatePeriodicSpawns() {
         if (alive >= spawnCfg.maxAlive)
             continue;
         // Behind the summoner, like gardn's queen ant.
-        const radius = (stats.size * 40) / 2;
+        const radius = (stats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
         const behindX = enemy.x - Math.cos(enemy.angle) * radius;
         const behindY = enemy.y - Math.sin(enemy.angle) * radius;
         const child = (0, buildEnemy_1.buildEnemy)(spawnCfg.mobType, enemy.tier, behindX, behindY, {
@@ -1096,7 +1096,7 @@ function spawnWaveMobs() {
         // just `continue` (out-of-range waveIndex): a tight, flat-heap 100% CPU hang.
         const startWave = Math.min(numWaves, Math.floor((prev / maxHp) * numWaves));
         const endWave = Math.max(0, Math.ceil((enemy.health / maxHp) * numWaves));
-        const parentRadius = (parentStats.size * 40) / 2;
+        const parentRadius = (parentStats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
         for (let i = startWave; i >= endWave; i--) {
             const waveIndex = numWaves - i;
             if (waveIndex < 0 || waveIndex >= waves.length)

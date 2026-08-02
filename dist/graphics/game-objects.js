@@ -24,9 +24,11 @@ core_1.Graphics.prototype.drawGameObjects = function (players, enemies, items, m
     // a canvas pipeline flush per mob on the GPU path.
     this.ctx.imageSmoothingEnabled = true;
     for (const enemy of enemies.values()) {
-        // Calculate actual enemy size for accurate culling
+        // Calculate actual enemy size for accurate culling. Must match drawEnemy's
+        // own size math (pet scale included) — this value is also what the
+        // health-bar pass below sizes bars against.
         const mobStats = (0, core_1.getMobStats)(enemy.type, enemy.tier);
-        const baseSize = mobStats ? mobStats.size * 40 : 40;
+        const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(enemy.isPet, enemy.tier);
         const visualScale = mobStats?.visual_scale ?? 1.0;
         const enemySize = baseSize * visualScale;
         // Add a buffer margin to ensure mobs are completely out before culling

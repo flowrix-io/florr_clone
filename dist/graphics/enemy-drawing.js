@@ -103,10 +103,12 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
             deathProgress = Math.min(1.0, elapsed / exports.DEATH_ANIMATION_DURATION); // 0 to 1, clamped
         }
     }
-    // Get enemy size from mob stats
+    // Get enemy size from mob stats. A pet is drawn smaller than the wild mob of
+    // its rarity (getEnemySizeScale) — the same factor the server applies to its
+    // hitbox, so the sprite and what it collides with stay the same circle.
     const mobStats = (0, core_1.getMobStats)(enemy.type, enemy.tier);
     // Use visual_scale for rendering (affects visual only, not hitbox)
-    const baseSize = mobStats ? mobStats.size * 40 : 40;
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(enemy.isPet, enemy.tier);
     const visualScale = mobStats?.visual_scale ?? 1.0;
     let enemySize = baseSize * visualScale;
     // Apply death animation effects: scale up, fade out, red tint
@@ -329,7 +331,7 @@ core_1.Graphics.prototype.getEligiblePetalTypes = function () {
 core_1.Graphics.prototype.drawGarbagePile = function (enemy, enemySize) {
     // Get base size for hitbox calculation
     const mobStats = (0, core_1.getMobStats)(enemy.type, enemy.tier);
-    const baseSize = mobStats ? mobStats.size * 40 : 40;
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(enemy.isPet, enemy.tier);
     // Use enemy position as seed for deterministic random petal selection
     const seed = Math.floor(enemy.x * 1000 + enemy.y * 1000);
     const eligiblePetalTypes = this.getEligiblePetalTypes();

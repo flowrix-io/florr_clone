@@ -27,7 +27,7 @@ import {
 import { WALL_GRID } from '../map_data';
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
 import { ServerPlayer } from '../player';
-import { getMobStats, SIZE_SCALING } from '../mobs';
+import { getMobStats, SIZE_SCALING, getEnemySizeScale } from '../mobs';
 import { getPetalStats, getRarityIndex } from '../petals';
 import { MobProjectile } from '../enemy';
 import { hasLineOfSight, checkEnemyWallCollisions, applyEnemyKnockback } from './physics';
@@ -134,7 +134,8 @@ function wanderSizeFactor(enemy: Enemy): number {
     let radius = enemy._radius;
     if (radius === undefined) {
         const stats = enemy._mobStats ?? getMobStats(enemy.type, enemy.tier);
-        radius = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
+        radius = (stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2)
+            * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
     }
     return radius / WANDER_REF_RADIUS;
 }
@@ -439,7 +440,8 @@ export function propagateCentipedeChains(ctx: EnemyTickContext): void {
             const leader = segment.leaderId ? ctx.enemyById.get(segment.leaderId) : undefined;
             if (!leader) continue;
             const segStats = getMobStats(segment.type, segment.tier);
-            const segmentSize = segStats ? segStats.size * 40 : 40;
+            const segmentSize = (segStats ? segStats.size * 40 : 40)
+                * getEnemySizeScale(!!segment.ownerId, segment.tier);
             const spacing = segmentSize * 0.9;
             const dx = segment.x - leader.x;
             const dy = segment.y - leader.y;

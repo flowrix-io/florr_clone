@@ -1,4 +1,4 @@
-import { Graphics, Enemy, FaceFlags, getPetalStats, getAllPetalTypes, getMobStats, isUndroppableEggPetalType } from './core';
+import { Graphics, Enemy, FaceFlags, getPetalStats, getAllPetalTypes, getMobStats, getEnemySizeScale, isUndroppableEggPetalType } from './core';
 
 declare module './core' {
     interface Graphics {
@@ -132,10 +132,12 @@ Graphics.prototype.drawEnemy = function(this: Graphics, enemy: Enemy) {
         }
     }
 
-    // Get enemy size from mob stats
+    // Get enemy size from mob stats. A pet is drawn smaller than the wild mob of
+    // its rarity (getEnemySizeScale) — the same factor the server applies to its
+    // hitbox, so the sprite and what it collides with stay the same circle.
     const mobStats = getMobStats(enemy.type, enemy.tier);
     // Use visual_scale for rendering (affects visual only, not hitbox)
-    const baseSize = mobStats ? mobStats.size * 40 : 40;
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(enemy.isPet, enemy.tier);
     const visualScale = mobStats?.visual_scale ?? 1.0;
     let enemySize = baseSize * visualScale;
 
@@ -395,7 +397,7 @@ Graphics.prototype.getEligiblePetalTypes = function(this: Graphics): string[] {
 Graphics.prototype.drawGarbagePile = function(this: Graphics, enemy: Enemy, enemySize: number) {
     // Get base size for hitbox calculation
     const mobStats = getMobStats(enemy.type, enemy.tier);
-    const baseSize = mobStats ? mobStats.size * 40 : 40;
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(enemy.isPet, enemy.tier);
 
     // Use enemy position as seed for deterministic random petal selection
     const seed = Math.floor(enemy.x * 1000 + enemy.y * 1000);

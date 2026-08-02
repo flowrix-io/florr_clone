@@ -45,7 +45,7 @@ import { WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType } from './server_utils';
 import { WorldItem } from './item';
 import { getPetalStats } from './petals';
-import { getMobStats, getAllMobTypes } from './mobs';
+import { getMobStats, getAllMobTypes, getEnemySizeScale } from './mobs';
 
 // Import from refactored modules
 import {
@@ -1165,7 +1165,7 @@ function updatePeriodicSpawns() {
         if (alive >= spawnCfg.maxAlive) continue;
 
         // Behind the summoner, like gardn's queen ant.
-        const radius = (stats!.size * 40) / 2;
+        const radius = (stats!.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
         const behindX = enemy.x - Math.cos(enemy.angle) * radius;
         const behindY = enemy.y - Math.sin(enemy.angle) * radius;
         const child = buildEnemy(spawnCfg.mobType, enemy.tier, behindX, behindY, {
@@ -1302,7 +1302,7 @@ function spawnWaveMobs() {
         // just `continue` (out-of-range waveIndex): a tight, flat-heap 100% CPU hang.
         const startWave = Math.min(numWaves, Math.floor((prev / maxHp) * numWaves));
         const endWave = Math.max(0, Math.ceil((enemy.health / maxHp) * numWaves));
-        const parentRadius = (parentStats.size * 40) / 2;
+        const parentRadius = (parentStats.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
 
         for (let i = startWave; i >= endWave; i--) {
             const waveIndex = numWaves - i;

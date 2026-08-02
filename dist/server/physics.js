@@ -73,7 +73,8 @@ function checkPlayerWallCollisions(playerX, playerY, playerSize = constants_1.PL
  */
 function checkEnemyWallCollisions(enemy) {
     const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-    const enemySize = mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE;
+    const enemySize = (mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE)
+        * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
     const resolved = (0, constants_1.resolveEntityWallCollisions)(enemy.x, enemy.y, enemySize / 2);
     // gardn Motion.cc: zero the velocity component along whatever axis the wall
     // pushed, so the mob actually stops at the wall instead of re-entering every
@@ -115,7 +116,8 @@ function applyEnemyKnockback(enemy) {
     if (distance === 0)
         return;
     const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-    const halfSize = Math.max(1, (mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE) / 2);
+    const halfSize = Math.max(1, (mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE)
+        * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier) / 2);
     // A displacement within one substep can't skip a tile: take it in one
     // jump (the pre-substep behavior) and let the end-of-tick wall pass
     // resolve any contact.
@@ -223,7 +225,11 @@ function checkEnemyEnemyCollisions(enemies, io) {
         const e = enemies[i];
         if (e._radius === undefined) {
             const stats = (0, mobs_1.getMobStats)(e.type, e.tier);
-            e._radius = stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
+            // Unlike rebuildEnemyGrid, this pass does include pets — it is the
+            // one that resolves pet/wild-mob contact — so the pet size scale is
+            // applied here.
+            e._radius = (stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2)
+                * (0, mobs_1.getEnemySizeScale)(!!e.ownerId, e.tier);
             e._mobStats = stats;
         }
         if (e._radius > maxHalfSize)
@@ -388,7 +394,8 @@ function checkEnemyEnemyCollisions(enemies, io) {
  */
 function checkPlayerEnemyCollision(playerX, playerY, playerSize, enemy) {
     const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-    const enemySize = mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE;
+    const enemySize = (mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE)
+        * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
     const enemyRadius = enemySize / 2;
     const playerRadius = playerSize / 2;
     // Use circular hitbox collision

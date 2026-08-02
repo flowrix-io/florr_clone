@@ -29,7 +29,7 @@ import {
 } from '../constants';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { isInMazeRegion } from '../maze';
-import { getMobStats, getAllMobTypes } from '../mobs';
+import { getMobStats, getAllMobTypes, getEnemySizeScale } from '../mobs';
 import { recordBossEvent } from './apiKeyApi';
 import { calculatePlayerModifiers } from './playerManager';
 import {
@@ -953,7 +953,9 @@ export function spawnCentipedeBodySegments(head: Enemy): void {
     if (!bodyStats) return;
 
     const segmentCount = 9; // head + 9 body = 10 total
-    const segmentSize = bodyStats.size * 40;
+    // Segments inherit the head's ownership, so a pet chain lays out at the
+    // pet size scale — same spacing formula the follow pass uses each tick.
+    const segmentSize = bodyStats.size * 40 * getEnemySizeScale(!!head.ownerId, head.tier);
     const spacing = segmentSize * 0.9;
     const dirX = -Math.cos(head.angle);
     const dirY = -Math.sin(head.angle);

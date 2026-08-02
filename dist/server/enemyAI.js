@@ -114,7 +114,8 @@ function wanderSizeFactor(enemy) {
     let radius = enemy._radius;
     if (radius === undefined) {
         const stats = enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-        radius = stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
+        radius = (stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2)
+            * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
     }
     return radius / WANDER_REF_RADIUS;
 }
@@ -392,7 +393,8 @@ function propagateCentipedeChains(ctx) {
             if (!leader)
                 continue;
             const segStats = (0, mobs_1.getMobStats)(segment.type, segment.tier);
-            const segmentSize = segStats ? segStats.size * 40 : 40;
+            const segmentSize = (segStats ? segStats.size * 40 : 40)
+                * (0, mobs_1.getEnemySizeScale)(!!segment.ownerId, segment.tier);
             const spacing = segmentSize * 0.9;
             const dx = segment.x - leader.x;
             const dy = segment.y - leader.y;

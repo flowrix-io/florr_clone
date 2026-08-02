@@ -12,7 +12,7 @@ import {
     MAX_SANE_WORLD_COORD
 } from '../constants';
 import { WALL_GRID } from '../map_data';
-import { getMobStats } from '../mobs';
+import { getMobStats, getEnemySizeScale } from '../mobs';
 import { markEnemyDamaged } from './utils';
 import { markDeadAndEmit } from './shared/killHandler';
 import { isInMazeRegion, mazeBlocksLine } from '../maze';
@@ -84,7 +84,8 @@ export function checkPlayerWallCollisions(
  */
 export function checkEnemyWallCollisions(enemy: Enemy): void {
     const mobStats = getMobStats(enemy.type, enemy.tier);
-    const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
+    const enemySize = (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
     const resolved = resolveEntityWallCollisions(enemy.x, enemy.y, enemySize / 2);
     // gardn Motion.cc: zero the velocity component along whatever axis the wall
     // pushed, so the mob actually stops at the wall instead of re-entering every
@@ -128,7 +129,8 @@ export function applyEnemyKnockback(enemy: Enemy): void {
     if (distance === 0) return;
 
     const mobStats = getMobStats(enemy.type, enemy.tier);
-    const halfSize = Math.max(1, (mobStats ? mobStats.size * 40 : ENEMY_SIZE) / 2);
+    const halfSize = Math.max(1, (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier) / 2);
 
     // A displacement within one substep can't skip a tile: take it in one
     // jump (the pre-substep behavior) and let the end-of-tick wall pass
@@ -246,7 +248,11 @@ export function checkEnemyEnemyCollisions(enemies: Enemy[], io?: any): void {
         const e = enemies[i] as any;
         if (e._radius === undefined) {
             const stats = getMobStats(e.type, e.tier);
-            e._radius = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
+            // Unlike rebuildEnemyGrid, this pass does include pets — it is the
+            // one that resolves pet/wild-mob contact — so the pet size scale is
+            // applied here.
+            e._radius = (stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2)
+                * getEnemySizeScale(!!e.ownerId, e.tier);
             e._mobStats = stats;
         }
         if (e._radius > maxHalfSize) maxHalfSize = e._radius;
@@ -426,7 +432,8 @@ export function checkPlayerEnemyCollision(
     enemy: Enemy
 ): { collided: boolean; distance: number; dx: number; dy: number } {
     const mobStats = getMobStats(enemy.type, enemy.tier);
-    const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
+    const enemySize = (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
     const enemyRadius = enemySize / 2;
     const playerRadius = playerSize / 2;
 

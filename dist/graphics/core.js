@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
+exports.Graphics = exports.getSVGRenderer = exports.MOB_CONFIG = exports.getEnemySizeScale = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
 const constants_1 = require("../constants");
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
@@ -34,6 +34,7 @@ var mobs_1 = require("../mobs");
 Object.defineProperty(exports, "getMobStats", { enumerable: true, get: function () { return mobs_1.getMobStats; } });
 Object.defineProperty(exports, "getAllMobTypes", { enumerable: true, get: function () { return mobs_1.getAllMobTypes; } });
 Object.defineProperty(exports, "getMobTypesBySection", { enumerable: true, get: function () { return mobs_1.getMobTypesBySection; } });
+Object.defineProperty(exports, "getEnemySizeScale", { enumerable: true, get: function () { return mobs_1.getEnemySizeScale; } });
 Object.defineProperty(exports, "MOB_CONFIG", { enumerable: true, get: function () { return mobs_1.MOB_CONFIG; } });
 var svg_renderer_2 = require("../svg_renderer");
 Object.defineProperty(exports, "getSVGRenderer", { enumerable: true, get: function () { return svg_renderer_2.getSVGRenderer; } });

@@ -48,7 +48,7 @@ import {
     createInitialInventory,
     inventoryToDict
 } from '../inventoryCodec';
-import { getMobStats } from '../mobs';
+import { getMobStats, getEnemySizeScale } from '../mobs';
 
 // Re-export inventory functions so existing imports keep working
 export { addItem, removeItem, hasItem, createInitialInventory };
@@ -519,7 +519,8 @@ function isOverlappingMob(x: number, y: number, playerSize: number = PLAYER_SIZE
 
     for (const enemy of enemies) {
         const mobStats = getMobStats(enemy.type, enemy.tier);
-        const mobRadius = mobStats ? (mobStats.size * 40) / 2 : 20;
+        const mobRadius = (mobStats ? (mobStats.size * 40) / 2 : 20)
+            * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
         const dx = enemy.x - x;
         const dy = enemy.y - y;
         const distSq = dx * dx + dy * dy;
