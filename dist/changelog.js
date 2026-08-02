@@ -462,6 +462,13 @@ exports.CHANGELOG = [
             'Added stalling mechanics to the game',
             'Honey slows, not a lure petal'
         ]
+    },
+    {
+        date: 'August 1, 2026',
+        changes: [
+            'Target dummies now spawn less often at garden spawn',
+            'Pets and target dummies no longer have bossbars'
+        ]
     }
 ];
 class ChangelogManager {
