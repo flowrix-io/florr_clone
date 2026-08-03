@@ -1,4 +1,5 @@
 import { Graphics, Player } from './core';
+import { getSquadMemberIds } from '../squad_state';
 import {
     getActiveMaze,
     MAZE_ORIGIN_X,
@@ -238,7 +239,7 @@ Graphics.prototype.drawMazeMinimap = function (this: Graphics, players: Map<stri
 
     // Player dots (same rules as the regular minimap: self always, squadmates
     // always, others only while ALT is held).
-    const squadMemberIds: string[] = (window as any).squadMemberIds || [];
+    const squadMemberIds: string[] = getSquadMemberIds();
     const squadMemberSet = new Set<string>(squadMemberIds);
     const worldToMapX = (wx: number) => minimapX + ((wx - MAZE_ORIGIN_X) / maze.worldSize) * this.MINIMAP_WIDTH;
     const worldToMapY = (wy: number) => minimapY + ((wy - MAZE_ORIGIN_Y) / maze.worldSize) * this.MINIMAP_HEIGHT;

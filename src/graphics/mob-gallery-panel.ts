@@ -14,6 +14,7 @@
 
 import { getAllMobTypes, getMobStats, getMobRarities, MobStats, MOB_DROP_TABLES, Rarity } from '../mobs';
 import { ITEM_RARITY_COLORS, RARITY_LEVELS } from '../petals';
+import { getPreloadedAssets } from '../preloader';
 
 // Rarity progression for drop-rarity calculations. Mirrors the order used
 // server-side (server/itemManager.ts) and in the legacy DOM tooltip.
@@ -724,7 +725,7 @@ export class CanvasMobGalleryPanel {
         const iconSize = cardSize - 8;
         const iconX = cardX + (cardSize - iconSize) / 2;
         const iconY = cardY + (cardSize - iconSize) / 2;
-        const assets = (window as any).preloadedAssets;
+        const assets = getPreloadedAssets() as any;
         if (d.type === 'petal' && assets?.petalImages) {
             const entry = assets.petalImages[`${d.itemType}_${d.rarity}`];
             const petalCanvas = Array.isArray(entry)

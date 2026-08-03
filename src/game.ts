@@ -19,6 +19,9 @@ import { debugMenuPanel, isDebugMenuEnabled } from './debug_menu';
 import { AssetLoader } from './asset_loader';
 import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT } from './graphics/loadout-bar';
 import { MobileControls, resolveMobileControlsEnabled } from './graphics/mobile-controls';
+import { getCurrentGame, setCurrentGame, getTitleScreen } from './app_refs';
+import { reuseSocketForTitleScreen } from './net/preconnect';
+import { clearSession, getSocketAuth } from './auth_session';
 
 export class Game {
     public canvas: HTMLCanvasElement;
@@ -196,7 +199,7 @@ export class Game {
 
         // Register as the active game instance before starting the loop
         // (so any previous game loop will detect it's no longer active and stop)
-        window.currentGame = this;
+        setCurrentGame(this);
 
         // Initialize sprites. Nothing here starts a render loop — the shell's
         // loop is already running and calls frame() once this Game is the
@@ -541,8 +544,6 @@ export class Game {
         this.assetLoader.loadBiomeTextures(WORLD_MAP, this.graphics);
         this.assetLoader.loadSectionTextures(this.graphics);
         this.updateTitleScreenBiomes(WORLD_MAP);
-        // preconnectedMapData is legacy — clear it if the title screen ever set it.
-        if (window.preconnectedMapData) window.preconnectedMapData = null;
 
         this.socket.on('debugStats', (stats: any) => {
             debugMenuPanel.recordServerStats(stats);
@@ -635,22 +636,28 @@ export class Game {
             console.log('[Game] Socket not connected yet, waiting for connection...');
             this.socket.once('connect', () => {
                 console.log('[Game] Socket connected, now authenticating...');
-                this.performAuthentication();
+                void this.performAuthentication();
             });
             return;
         }
 
         console.log('[Game] Socket already connected, authenticating immediately...');
-        this.performAuthentication();
+        void this.performAuthentication();
     }
 
-    private performAuthentication() {
-        const credentials = {
-            username: localStorage.getItem('username') || 'player1',
-            password: localStorage.getItem('password') || 'password123',
-            playerName: this.nameInput?.value || localStorage.getItem('playerName') || 'Unnamed',
-            spawnBiome: localStorage.getItem('spawnBiome') || 'default'
-        };
+    private async performAuthentication() {
+        const playerName = this.nameInput?.value || localStorage.getItem('playerName') || 'Unnamed';
+        const spawnBiome = localStorage.getItem('spawnBiome') || 'default';
+        const credentials = await getSocketAuth(playerName, spawnBiome);
+
+        if (!credentials) {
+            // No usable session — reload back to the title screen's login form
+            // rather than sitting on an empty world.
+            console.error('[Game] No stored session; returning to login');
+            clearSession();
+            window.location.reload();
+            return;
+        }
 
         console.log('[Game] Sending authentication request with username:', credentials.username);
         this.socket.emit('authenticate', credentials);
@@ -944,7 +951,7 @@ export class Game {
         // Settings are now canvas-based and write directly to localStorage.
         // Poll localStorage periodically to pick up changes made from the settings panel.
         const pollSettings = () => {
-            if (window.currentGame !== this) return;
+            if (getCurrentGame() !== this) return;
             const hitboxes = localStorage.getItem('showHitboxes') === 'true';
             if (this.showHitboxes !== hitboxes) {
                 this.showHitboxes = hitboxes;
@@ -1240,15 +1247,16 @@ export class Game {
             this.renderStatsOverlay();
         }
         // Render canvas-based settings overlay if open
-        if (window.titleScreen && window.titleScreen.isSettingsOpen()) {
-            window.titleScreen.renderSettingsOverlay(this.graphics.ctx);
+        const titleScreen = getTitleScreen();
+        if (titleScreen && titleScreen.isSettingsOpen()) {
+            titleScreen.renderSettingsOverlay(this.graphics.ctx);
         }
         // Debug menu: sample frame time every frame (graphs accumulate even
         // while the panel is closed), keep the top-row button's visibility in
         // sync with the settings checkbox, and draw the panel if open.
         debugMenuPanel.recordClientFrame();
-        if (window.titleScreen) {
-            window.titleScreen.getCanvasButtons().setDebugVisible(isDebugMenuEnabled());
+        if (titleScreen) {
+            titleScreen.getCanvasButtons().setDebugVisible(isDebugMenuEnabled());
         }
         debugMenuPanel.render(this.graphics.ctx);
         if (this.showStats) {
@@ -1857,7 +1865,7 @@ export class Game {
         }
         
         // Settings menu is now canvas-based - check via titleScreen
-        if ((window as any).titleScreen && (window as any).titleScreen.isSettingsOpen()) {
+        if (getTitleScreen()?.isSettingsOpen()) {
             return true;
         }
         
@@ -1970,11 +1978,10 @@ export class Game {
         // game's listeners, and hand the still-connected socket back to the title
         // screen so it is reused on the next play.
         if (this.socket) {
-            const reuseSocket = (window as any).reuseSocketForTitleScreen;
-            if (this.socket.connected && typeof reuseSocket === 'function') {
+            if (this.socket.connected) {
                 this.socket.emit('leaveGame');
                 this.socket.removeAllListeners();
-                reuseSocket(this.socket);
+                reuseSocketForTitleScreen(this.socket);
             } else {
                 // Not connected (or no title-screen handler available): fall back to
                 // a hard teardown.
@@ -2048,8 +2055,9 @@ export class Game {
      * Updates the title screen with available biomes from map data
      */
     private updateTitleScreenBiomes(mapData: MapElement[]): void {
-        if (window.titleScreen && typeof window.titleScreen.updateBiomesFromMapData === 'function') {
-            window.titleScreen.updateBiomesFromMapData(mapData);
+        const titleScreen = getTitleScreen();
+        if (titleScreen && typeof titleScreen.updateBiomesFromMapData === 'function') {
+            titleScreen.updateBiomesFromMapData(mapData);
         }
     }
 

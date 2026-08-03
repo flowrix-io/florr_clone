@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const player_drawing_1 = require("./player-drawing");
+const squad_state_1 = require("../squad_state");
 core_1.Graphics.prototype.sampleColorAtPosition = function (worldX, worldY) {
     // Get the current transform state to properly convert coordinates
     // Note: getImageData uses canvas pixel coordinates, not transformed coordinates
@@ -153,7 +154,7 @@ core_1.Graphics.prototype.drawUI = function (players, socket) {
         this.ctx.restore();
         // Draw smaller HUDs for other squad members, stacked beneath the main HUD.
         // Uniformly scaled to 80% of the main HUD and mirrors its layout (flower + health + xp).
-        const squadMemberIds = window.squadMemberIds || [];
+        const squadMemberIds = (0, squad_state_1.getSquadMemberIds)();
         if (squadMemberIds.length > 0) {
             const scale = 0.8;
             const smBarWidth = healthBarWidth * scale;

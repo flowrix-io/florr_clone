@@ -5,12 +5,15 @@ const game_1 = require("./game");
 const skinStudio_1 = require("./skinStudio");
 const title_screen_1 = require("./title_screen");
 const preloader_1 = require("./preloader");
-const petals_1 = require("./petals");
 const ws_client_1 = require("./ws_client");
 const inventoryCodec_1 = require("./inventoryCodec");
 const map_data_1 = require("./map_data");
 const maze_1 = require("./maze");
 const app_shell_1 = require("./app_shell");
+const app_refs_1 = require("./app_refs");
+const preconnect_1 = require("./net/preconnect");
+const dev_expose_1 = require("./dev_expose");
+const auth_session_1 = require("./auth_session");
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
 // overrides this if the days ever disagree, but the local fallback guarantees
@@ -18,13 +21,12 @@ const app_shell_1 = require("./app_shell");
 // listener is attached — otherwise maze walls would render (and predict) as
 // empty space.
 (0, maze_1.setActiveMazeDay)((0, maze_1.getCurrentMazeDay)());
-let currentGame = null;
-let preconnectedSocket = null; // Store preconnected socket
 let isConnecting = false; // Flag to prevent multiple connection attempts
-window.currentGame = currentGame;
+// The client's singletons (Game, TitleScreen, the preconnected socket, the
+// preloaded assets) live in module scope — app_refs.ts, net/preconnect.ts and
+// preloader.ts — deliberately not on `window`. Development builds re-expose
+// read-only getters for them; see dev_expose.ts.
 let titleScreen = null;
-window.titleScreen = titleScreen;
-let preloadedAssets = null;
 // Update loading screen progress
 function updateLoadingProgress(progress) {
     // const progressBar = document.getElementById('progressBar');
@@ -49,6 +51,11 @@ function removeLoadingScreen() {
 }
 const bootstrap = async () => {
     console.log('[Index] Starting application initialization...');
+    // Before anything else touches storage: wipe the plaintext credentials
+    // older builds saved, trading the stored password for a session token.
+    // Fire-and-forget — nothing below depends on it, and the socket falls back
+    // to the legacy pair for this one page load if the trade is still in flight.
+    void (0, auth_session_1.migrateLegacyCredentials)();
     try {
         // Create preloader
         const preloader = new preloader_1.Preloader((progress) => {
@@ -56,15 +63,12 @@ const bootstrap = async () => {
         });
         // Load all assets
         console.log('[Index] Loading assets...');
-        preloadedAssets = await preloader.loadAssets();
+        const preloadedAssets = await preloader.loadAssets();
         console.log('[Index] Assets loaded successfully');
-        window.preloadedAssets = preloadedAssets;
-        //debug
-        Object.defineProperty(window, 'petalConfig', {
-            value: petals_1.PETAL_CONFIG,
-            writable: false,
-            configurable: false
-        });
+        (0, preloader_1.setPreloadedAssets)(preloadedAssets);
+        // Debug handles on window (currentGame, titleScreen, petalConfig, …).
+        // No-op — and removed by the minifier — in a production build.
+        (0, dev_expose_1.exposeDevGlobals)();
         // Small delay to show 100% completion
         await new Promise(resolve => setTimeout(resolve, 300));
         // Remove loading screen
@@ -73,7 +77,7 @@ const bootstrap = async () => {
         console.log('[Index] Initializing title screen...');
         (0, title_screen_1.injectTitleScreenStyles)();
         titleScreen = new title_screen_1.TitleScreen();
-        window.titleScreen = titleScreen;
+        (0, app_refs_1.setTitleScreen)(titleScreen);
         await titleScreen.appendToBody();
         // Seed biome list from the bundled map so the selector is populated
         // before any server connection.
@@ -81,7 +85,7 @@ const bootstrap = async () => {
         // Preconnect if user is already logged in (showing "logging in")
         // Use setTimeout to ensure titleScreen is fully initialized
         setTimeout(() => {
-            if (localStorage.getItem('username')) {
+            if ((0, auth_session_1.isLoggedIn)()) {
                 console.log('[Index] User is logged in, preconnecting to server...');
                 preconnectToServer();
             }
@@ -125,16 +129,16 @@ else {
 }
 // Preconnect to server without authenticating/spawning
 function preconnectToServer() {
-    if (preconnectedSocket) {
+    if ((0, preconnect_1.getPreconnectedSocket)()) {
         console.log('[Index] Socket already preconnected');
         return;
     }
     const serverIp = titleScreen?.getServerIP() || window.location.origin;
     const serverUrl = serverIp || window.location.origin;
     console.log(`[Index] Preconnecting to server: ${serverUrl}`);
-    preconnectedSocket = (0, ws_client_1.io)(serverUrl);
-    attachTitleScreenSocketListeners(preconnectedSocket);
-    window.preconnectedSocket = preconnectedSocket;
+    const sock = (0, ws_client_1.io)(serverUrl);
+    (0, preconnect_1.setPreconnectedSocket)(sock);
+    attachTitleScreenSocketListeners(sock);
 }
 // Attaches the title-screen socket listeners. Shared between a freshly
 // preconnected socket and a live in-game socket handed back when the player
@@ -208,23 +212,26 @@ function attachTitleScreenSocketListeners(sock) {
     });
     sock.on('disconnect', (reason) => {
         console.log(`[Index] Preconnected socket disconnected: ${reason}`);
-        preconnectedSocket = null;
-        window.preconnectedSocket = null;
-        window.preconnectedMapData = null;
+        (0, preconnect_1.setPreconnectedSocket)(null);
     });
 }
-// Expose preconnectToServer so the title screen can trigger it after first login
-window.preconnectToServer = preconnectToServer;
-// Reuse a still-connected in-game socket for the title screen instead of
-// disconnecting it. Keeps the same socket id, so the player is not counted as
-// disconnected and their ground loot (eligibility keyed by socket id) survives.
-window.reuseSocketForTitleScreen = (sock) => {
-    if (!sock)
-        return;
-    preconnectedSocket = sock;
-    window.preconnectedSocket = sock;
-    attachTitleScreenSocketListeners(sock);
-};
+// The title screen (after first login) and the Game (on exit) both need to
+// reach back into this module. Registering the two entry points here — rather
+// than importing index.ts from either — keeps the entry module free of inbound
+// imports, which is what the window function-handles used to buy.
+(0, preconnect_1.setPreconnectHooks)({
+    preconnect: preconnectToServer,
+    // Reuse a still-connected in-game socket for the title screen instead of
+    // disconnecting it. Keeps the same socket id, so the player is not counted
+    // as disconnected and their ground loot (eligibility keyed by socket id)
+    // survives.
+    reuseSocketForTitleScreen: (sock) => {
+        if (!sock)
+            return;
+        (0, preconnect_1.setPreconnectedSocket)(sock);
+        attachTitleScreenSocketListeners(sock);
+    },
+});
 function setupGameEventListeners() {
     if (!titleScreen)
         return;
@@ -233,7 +240,7 @@ function setupGameEventListeners() {
     if (multiPlayerButton) {
         multiPlayerButton.addEventListener('click', () => {
             // Prevent multiple clicks
-            if (isConnecting || currentGame) {
+            if (isConnecting || (0, app_refs_1.getCurrentGame)()) {
                 return;
             }
             isConnecting = true;
@@ -274,16 +281,17 @@ function setupGameEventListeners() {
             // held fully covered until the game reports readyToReveal().
             app_shell_1.appShell.switchTo('game', {
                 prepare: () => {
-                    currentGame = new game_1.Game(showHitboxes, serverIp, preloadedAssets, showStats, dynamicSkybox);
-                    // A plain reference for other modules to reach the running
-                    // game. It is NOT what decides who renders — the shell's
-                    // mode is.
-                    window.currentGame = currentGame;
+                    const game = new game_1.Game(showHitboxes, serverIp, (0, preloader_1.getPreloadedAssets)(), showStats, dynamicSkybox);
+                    // A plain module-scoped reference for other modules to
+                    // reach the running game (the Game constructor already
+                    // registers it; this is just explicit). It is NOT what
+                    // decides who renders — the shell's mode is.
+                    (0, app_refs_1.setCurrentGame)(game);
                     // Hand the shared panel managers to Graphics so they get
                     // drawn in the game's render pass.
-                    if (!titleScreen || !currentGame.graphics)
+                    if (!titleScreen || !game.graphics)
                         return;
-                    const g = currentGame.graphics;
+                    const g = game.graphics;
                     const ts = titleScreen;
                     if (ts.changelogManager)
                         g.setChangelogManager(ts.changelogManager);
@@ -293,8 +301,8 @@ function setupGameEventListeners() {
                         g.setLeaderboardManager(ts.leaderboardManager);
                     if (ts.guildMenuManager) {
                         g.setGuildMenuManager(ts.guildMenuManager);
-                        currentGame.guildMenu = ts.guildMenuManager;
-                        currentGame.connectGuildMenu?.(ts.guildMenuManager);
+                        game.guildMenu = ts.guildMenuManager;
+                        game.connectGuildMenu?.(ts.guildMenuManager);
                     }
                     g.setSkinStudio?.((0, skinStudio_1.getSkinStudio)());
                     // The icon-button strip is the title screen's widget; the
@@ -319,7 +327,7 @@ function setupGameEventListeners() {
     const exitButton = titleScreen.getExitButtonContainer().querySelector('#exitButton');
     if (exitButton) {
         exitButton.addEventListener('click', () => {
-            if (!currentGame || app_shell_1.appShell.isTransitioning())
+            if (!(0, app_refs_1.getCurrentGame)() || app_shell_1.appShell.isTransitioning())
                 return;
             titleScreen?.hideExitButton();
             app_shell_1.appShell.switchTo('title');
@@ -334,17 +342,16 @@ function setupGameEventListeners() {
  */
 function registerGameScene() {
     app_shell_1.appShell.registerScene('game', {
-        frame: () => currentGame?.frame(),
-        readyToReveal: () => currentGame?.readyToReveal() ?? true,
-        onFrameError: (error) => currentGame?.onFrameError(error),
+        frame: () => (0, app_refs_1.getCurrentGame)()?.frame(),
+        readyToReveal: () => (0, app_refs_1.getCurrentGame)()?.readyToReveal() ?? true,
+        onFrameError: (error) => (0, app_refs_1.getCurrentGame)()?.onFrameError(error),
         onEnter: () => {
             titleScreen?.hideTitleScreen();
             titleScreen?.showExitButton();
         },
         onExit: () => {
-            currentGame?.cleanup();
-            currentGame = null;
-            window.currentGame = null;
+            (0, app_refs_1.getCurrentGame)()?.cleanup();
+            (0, app_refs_1.setCurrentGame)(null);
             isConnecting = false;
             // cleanup() hands the still-connected socket back to the title
             // screen via reuseSocketForTitleScreen (no disconnect), so
@@ -353,12 +360,11 @@ function registerGameScene() {
             // reconnect path below is only a fallback for when the connection
             // was actually lost (e.g. the socket dropped on its own).
             const reauth = () => titleScreen?.titleScreenInventoryManager?.reauthenticate();
-            if (!preconnectedSocket || !preconnectedSocket.connected) {
-                preconnectedSocket = null;
-                window.preconnectedSocket = null;
+            if (!(0, preconnect_1.getLivePreconnectedSocket)()) {
+                (0, preconnect_1.setPreconnectedSocket)(null);
                 preconnectToServer();
                 const waitForConnect = () => {
-                    if (preconnectedSocket && preconnectedSocket.connected)
+                    if ((0, preconnect_1.getLivePreconnectedSocket)())
                         reauth();
                     else
                         setTimeout(waitForConnect, 100);

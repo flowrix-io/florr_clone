@@ -1,4 +1,5 @@
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats } from '../petals';
+import { getPreloadedAssets } from '../preloader';
 
 export interface FloatingPetal {
     x: number;
@@ -58,7 +59,7 @@ export class FloatingPetalManager {
     }
 
     private getPetalCanvas(petalType: string, rarity: string): HTMLCanvasElement | null {
-        const assets = (window as any).preloadedAssets;
+        const assets = getPreloadedAssets() as any;
         if (!assets || !assets.petalImages) return null;
         const entry = assets.petalImages[`${petalType}_${rarity}`];
         if (!entry) return null;

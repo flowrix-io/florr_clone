@@ -16,6 +16,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanvasMobGalleryPanel = void 0;
 const mobs_1 = require("../mobs");
 const petals_1 = require("../petals");
+const preloader_1 = require("../preloader");
 // Rarity progression for drop-rarity calculations. Mirrors the order used
 // server-side (server/itemManager.ts) and in the legacy DOM tooltip.
 const DROP_RARITY_ORDER = [
@@ -711,7 +712,7 @@ class CanvasMobGalleryPanel {
         const iconSize = cardSize - 8;
         const iconX = cardX + (cardSize - iconSize) / 2;
         const iconY = cardY + (cardSize - iconSize) / 2;
-        const assets = window.preloadedAssets;
+        const assets = (0, preloader_1.getPreloadedAssets)();
         if (d.type === 'petal' && assets?.petalImages) {
             const entry = assets.petalImages[`${d.itemType}_${d.rarity}`];
             const petalCanvas = Array.isArray(entry)

@@ -224,7 +224,7 @@ app.use((req, res, next) => {
     const origin = req.headers.origin || 'https://localhost:8080';
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     res.header('Access-Control-Allow-Credentials', 'true');
 
     if (req.method === 'OPTIONS') {
@@ -234,7 +234,19 @@ app.use((req, res, next) => {
     }
 });
 
-// Authentication endpoints
+// Authentication endpoints.
+//
+// Login and register hand back an opaque session token; that token — never the
+// password — is what the client keeps and what every later request presents.
+// Bearer header only, never a query parameter, so tokens stay out of access
+// logs and Referer headers.
+const bearerToken = (req: { header(name: string): string | undefined }): string | undefined => {
+    const header = req.header('Authorization');
+    if (!header) return undefined;
+    const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+    return match ? match[1] : undefined;
+};
+
 app.post('/auth/register', (req, res) => {
     const { username, password } = req.body;
 
@@ -244,7 +256,9 @@ app.post('/auth/register', (req, res) => {
 
     const user = database.createUser(username, password);
     if (user) {
-        res.status(201).json({ message: 'User created successfully' });
+        // No session here — /auth/login is the only place a token is minted, so
+        // there is exactly one path to audit. The guest flow logs in right after.
+        res.status(201).json({ message: 'User created successfully', username: user.username });
     } else {
         res.status(400).json({ message: 'Username already exists' });
     }
@@ -259,30 +273,37 @@ app.post('/auth/login', (req, res) => {
 
     const user = database.getUser(username, password);
     if (user) {
-        // You might want to set up a session here
-        res.json({ message: 'Login successful', userId: user.id });
+        res.json({
+            message: 'Login successful',
+            userId: user.id,
+            username: user.username,
+            token: database.createSession(user)
+        });
     } else {
         res.status(401).json({ message: 'Invalid credentials' });
     }
 });
 
 app.post('/auth/verify', (req, res) => {
-    const { username, password } = req.body;
+    const token = bearerToken(req) || req.body?.token;
 
-    if (!username || !password) {
-        return res.status(400).json({ message: 'Username and password are required' });
+    if (!token) {
+        return res.status(400).json({ message: 'Session token is required' });
     }
 
-    const user = database.getUser(username, password);
+    const user = database.getUserBySession(token);
     if (user) {
-        res.json({ valid: true });
+        res.json({ valid: true, username: user.username });
     } else {
         res.status(401).json({ valid: false });
     }
 });
 
 app.post('/auth/logout', (req, res) => {
-    // Handle any cleanup needed
+    // Revoking here is the point: a logged-out browser's leftover token must
+    // stop working even if someone later reads it out of localStorage.
+    const token = bearerToken(req) || req.body?.token;
+    if (token) database.destroySession(token);
     res.json({ message: 'Logged out successfully' });
 });
 
@@ -354,12 +375,14 @@ app.get('/api/leaderboard', (req, res) => {
     const limit = parseInt(req.query.limit as string) || 50;
     const includeAdmins = req.query.includeAdmins === 'true';
     const { entries, totalAccounts, dailyActiveUsers } = database.getLeaderboard(limit, includeAdmins);
-    const authUsername = typeof req.query.username === 'string' ? req.query.username : undefined;
-    const authPassword = typeof req.query.password === 'string' ? req.query.password : undefined;
+    // Admin-only fields are gated on a session token in the Authorization
+    // header. This used to take ?username=&password= — which wrote every
+    // player's password into the access log of every request.
+    const token = bearerToken(req);
     let isAdmin = false;
-    if (authUsername && authPassword) {
-        const user = database.getUser(authUsername, authPassword);
-        isAdmin = !!user && database.isUserAdmin(authUsername);
+    if (token) {
+        const user = database.getUserBySession(token);
+        isAdmin = !!user && database.isUserAdmin(user.username);
     }
     const payload: { leaderboard: typeof entries; totalAccounts: number; dailyActiveUsers?: number } = {
         leaderboard: entries,

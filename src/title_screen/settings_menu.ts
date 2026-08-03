@@ -2,6 +2,9 @@ import { invalidateSettingsCache } from '../constants';
 import { drawRoundedRect, hsvAdjust, drawGardnButton } from './render_utils';
 import { applyZoomCompensation } from '../zoom-compensation';
 import { resolveMobileControlsEnabled } from '../graphics/mobile-controls';
+import { getCurrentGame } from '../app_refs';
+import { isMainCanvasCtxCommitted } from '../graphics/canvas_ctx_state';
+import { clearSession, getAuthToken, getServerUrl } from '../auth_session';
 
 /**
  * Push the persisted renderScale + antialiasing settings to the live game's
@@ -9,7 +12,7 @@ import { resolveMobileControlsEnabled } from '../graphics/mobile-controls';
  * checkbox toggle.
  */
 function applyRenderScaleToActiveGame(): void {
-    const game = window.currentGame;
+    const game = getCurrentGame();
     if (!game || !game.canvas) return;
     const renderScale = parseFloat(localStorage.getItem('renderScale') || '1');
     const antialiasing = localStorage.getItem('antialiasing') !== 'false';
@@ -778,17 +781,23 @@ export class SettingsMenu {
      */
     private performLogout(): void {
         this.close();
-        const serverUrl = localStorage.getItem('serverUrl') || window.location.origin;
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('username');
-        localStorage.removeItem('password');
-        sessionStorage.removeItem('currentUser');
-        sessionStorage.removeItem('offlineCredentials');
-        sessionStorage.removeItem('isOffline');
-        if (!sessionStorage.getItem('isOffline')) {
-            fetch(`${serverUrl}/auth/logout`, { method: 'POST', credentials: 'include', keepalive: true })
-                .catch(() => {});
+        const serverUrl = getServerUrl();
+        const token = getAuthToken();
+        const wasOffline = !!sessionStorage.getItem('isOffline');
+
+        // Revoke server-side first — clearSession() drops the token, and a
+        // token that outlives the logout is exactly the leftover this is
+        // meant to prevent.
+        if (!wasOffline && token) {
+            fetch(`${serverUrl}/auth/logout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({}),
+                keepalive: true
+            }).catch(() => {});
         }
+
+        clearSession();
         window.location.reload();
     }
 
@@ -883,9 +892,8 @@ export class SettingsMenu {
         } else if (this.sliderDragging === 'interpolation') {
             this.interpolation = Math.round((0.05 + ratio * 0.45) * 100) / 100;
             localStorage.setItem('interpolationAmount', this.interpolation.toString());
-            if (window.currentGame) {
-                window.currentGame.interpolationAmount = this.interpolation;
-            }
+            const game = getCurrentGame();
+            if (game) game.interpolationAmount = this.interpolation;
         } else if (this.sliderDragging === 'renderScale') {
             // Snap to 5% increments so the slider lands on intuitive values.
             const raw = 0.25 + ratio * 0.75;
@@ -913,16 +921,14 @@ export class SettingsMenu {
             case 'dynamicSkybox':
                 this.dynamicSkybox = !this.dynamicSkybox;
                 localStorage.setItem('dynamicSkybox', this.dynamicSkybox.toString());
-                if (window.currentGame && window.currentGame.graphics) {
-                    window.currentGame.graphics.dynamicSkybox = this.dynamicSkybox;
-                }
+                const skyboxGame = getCurrentGame();
+                if (skyboxGame?.graphics) skyboxGame.graphics.dynamicSkybox = this.dynamicSkybox;
                 break;
             case 'mobDeathAnimation':
                 this.mobDeathAnimation = !this.mobDeathAnimation;
                 localStorage.setItem('mobDeathAnimation', this.mobDeathAnimation.toString());
-                if (window.currentGame) {
-                    window.currentGame.mobDeathAnimation = this.mobDeathAnimation;
-                }
+                const deathAnimGame = getCurrentGame();
+                if (deathAnimGame) deathAnimGame.mobDeathAnimation = this.mobDeathAnimation;
                 break;
             case 'antialiasing':
                 this.antialiasing = !this.antialiasing;
@@ -938,7 +944,7 @@ export class SettingsMenu {
                 // reload is required to apply. Only reload if a context has
                 // already been committed (i.e. a game has run this session);
                 // otherwise it applies cleanly on the first join.
-                if ((window as any).__mainCanvasCtxCommitted) {
+                if (isMainCanvasCtxCommitted()) {
                     window.location.reload();
                 }
                 break;
@@ -950,9 +956,8 @@ export class SettingsMenu {
             case 'showConsoleLogs':
                 this.showConsoleLogs = !this.showConsoleLogs;
                 localStorage.setItem('showConsoleLogs', this.showConsoleLogs.toString());
-                if (window.currentGame && window.currentGame.graphics) {
-                    window.currentGame.graphics.setShowConsoleLogs(this.showConsoleLogs);
-                }
+                const logsGame = getCurrentGame();
+                if (logsGame?.graphics) logsGame.graphics.setShowConsoleLogs(this.showConsoleLogs);
                 break;
             case 'showAdminCommands':
                 this.showAdminCommands = !this.showAdminCommands;
@@ -977,7 +982,7 @@ export class SettingsMenu {
             case 'requestMobile':
                 this.requestMobile = !this.requestMobile;
                 localStorage.setItem('requestMobile', this.requestMobile.toString());
-                window.currentGame?.setMobileControlsEnabled(this.requestMobile);
+                getCurrentGame()?.setMobileControlsEnabled(this.requestMobile);
                 break;
         }
     }

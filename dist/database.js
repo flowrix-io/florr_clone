@@ -26,6 +26,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.database = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const crypto = __importStar(require("crypto"));
 const bcrypt = __importStar(require("bcrypt"));
 const dbPath = path.join(__dirname, '..', 'game.db');
 if (fs.existsSync(dbPath)) {
@@ -56,6 +57,12 @@ const pruneOldBackups = () => {
 };
 // Password hashing configuration
 const SALT_ROUNDS = 12;
+// Session configuration. A session token is what a logged-in browser keeps —
+// the password is never persisted client-side, so a shared or stolen machine
+// leaks at most one revocable, expiring handle instead of the account itself.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+/** Only the hash is stored, so a leaked inventory.json hands out no live sessions. */
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 let db = { players: {}, users: {} };
 /**
  * Set when the database file exists but could not be loaded. Every write is
@@ -119,6 +126,26 @@ const writeDatabase = () => {
     });
 };
 readDatabase();
+/**
+ * Drop expired sessions. Cheap and rare (login/logout only), so it just walks
+ * the map — it never grows past one entry per logged-in browser.
+ * Returns true when something was removed, so callers can skip a write.
+ */
+const pruneExpiredSessions = () => {
+    if (!db.sessions)
+        return false;
+    const now = Date.now();
+    let removed = false;
+    for (const tokenHash in db.sessions) {
+        if (db.sessions[tokenHash].expiresAt <= now) {
+            delete db.sessions[tokenHash];
+            removed = true;
+        }
+    }
+    return removed;
+};
+if (pruneExpiredSessions())
+    writeDatabase();
 function isDefaultProgress(progress) {
     // Has gained any XP
     if (progress.totalXP > 0)
@@ -193,6 +220,77 @@ exports.database = {
             return user;
         }
         return null;
+    },
+    /**
+     * Mint a login session for an already-authenticated user and return the raw
+     * token. This is the only time the raw token exists server-side — only its
+     * hash is kept, so it cannot be recovered from the database or a backup.
+     */
+    createSession: (user) => {
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = hashToken(token);
+        const now = Date.now();
+        if (!db.sessions)
+            db.sessions = {};
+        pruneExpiredSessions();
+        db.sessions[tokenHash] = {
+            tokenHash,
+            userId: user.id,
+            username: user.username,
+            createdAt: now,
+            expiresAt: now + SESSION_TTL_MS
+        };
+        writeDatabase();
+        return token;
+    },
+    /** Resolve a session token to its user, or null if unknown/expired/orphaned. */
+    getUserBySession: (token) => {
+        if (!token || typeof token !== 'string' || !db.sessions)
+            return null;
+        const session = db.sessions[hashToken(token)];
+        if (!session)
+            return null;
+        if (session.expiresAt <= Date.now()) {
+            delete db.sessions[session.tokenHash];
+            writeDatabase();
+            return null;
+        }
+        // The account may have been renamed or deleted since the session was
+        // issued; a session must never resurrect or reassign one.
+        const user = db.users[session.username];
+        if (!user || user.id !== session.userId) {
+            delete db.sessions[session.tokenHash];
+            writeDatabase();
+            return null;
+        }
+        user.lastActiveAt = Date.now();
+        writeDatabase();
+        return user;
+    },
+    /** Revoke a single session (logout). Unknown tokens are a no-op. */
+    destroySession: (token) => {
+        if (!token || typeof token !== 'string' || !db.sessions)
+            return;
+        const tokenHash = hashToken(token);
+        if (db.sessions[tokenHash]) {
+            delete db.sessions[tokenHash];
+            writeDatabase();
+        }
+    },
+    /** Revoke every session belonging to a user (password change, ban, admin action). */
+    destroySessionsForUser: (username) => {
+        if (!db.sessions)
+            return 0;
+        let revoked = 0;
+        for (const tokenHash in db.sessions) {
+            if (db.sessions[tokenHash].username === username) {
+                delete db.sessions[tokenHash];
+                revoked++;
+            }
+        }
+        if (revoked > 0)
+            writeDatabase();
+        return revoked;
     },
     // Check if a user is admin by username
     isUserAdmin: (username) => {

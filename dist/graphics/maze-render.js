@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const squad_state_1 = require("../squad_state");
 const maze_1 = require("../maze");
 // Ground fallback colors while the biome section texture is still loading.
 const MAZE_GROUND_FALLBACK = {
@@ -216,7 +217,7 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     ctx.clip();
     // Player dots (same rules as the regular minimap: self always, squadmates
     // always, others only while ALT is held).
-    const squadMemberIds = window.squadMemberIds || [];
+    const squadMemberIds = (0, squad_state_1.getSquadMemberIds)();
     const squadMemberSet = new Set(squadMemberIds);
     const worldToMapX = (wx) => minimapX + ((wx - maze_1.MAZE_ORIGIN_X) / maze.worldSize) * this.MINIMAP_WIDTH;
     const worldToMapY = (wy) => minimapY + ((wy - maze_1.MAZE_ORIGIN_Y) / maze.worldSize) * this.MINIMAP_HEIGHT;

@@ -7,6 +7,11 @@ import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT as CANVAS_LOADOUT_SLOT_COUNT } fro
 import { CanvasInventoryPanel, InventoryHitInfo } from '../graphics/inventory-panel';
 import { TitleScreenGameAdapter } from './game_adapter';
 import { getBaseDeviceScale } from '../zoom-compensation';
+import { getCurrentGame, getTitleScreen } from '../app_refs';
+import { getPreconnectedSocket, getLivePreconnectedSocket } from '../net/preconnect';
+import { getPreloadedAssets } from '../preloader';
+import { installAltKeyTracking, isAltPressed, onAltChange } from '../alt_key';
+import { getSocketAuth } from '../auth_session';
 
 /**
  * Title Screen Inventory Manager
@@ -45,41 +50,13 @@ export class TitleScreenInventoryManager {
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
         
-        // Setup ALT key tracking for tooltip value display (only once globally)
-        if (!(window as any).altKeyTrackingSetup) {
-            (window as any).altKeyPressed = false;
-            (window as any).altKeyTrackingSetup = true;
-            (window as any).titleScreenInventoryManagers = [];
-            document.addEventListener('keydown', (e: KeyboardEvent) => {
-                if (e.key === 'Alt') {
-                    (window as any).altKeyPressed = true;
-                    // Update all tooltips
-                    const managers = (window as any).titleScreenInventoryManagers || [];
-                    managers.forEach((manager: TitleScreenInventoryManager) => {
-                        if (manager.tooltipElement) {
-                            manager.updateTooltipValues(true);
-                        }
-                    });
-                }
-            });
-            document.addEventListener('keyup', (e: KeyboardEvent) => {
-                if (e.key === 'Alt') {
-                    (window as any).altKeyPressed = false;
-                    // Update all tooltips
-                    const managers = (window as any).titleScreenInventoryManagers || [];
-                    managers.forEach((manager: TitleScreenInventoryManager) => {
-                        if (manager.tooltipElement) {
-                            manager.updateTooltipValues(false);
-                        }
-                    });
-                }
-            });
-        }
-        // Register this instance
-        if (!(window as any).titleScreenInventoryManagers) {
-            (window as any).titleScreenInventoryManagers = [];
-        }
-        (window as any).titleScreenInventoryManagers.push(this);
+        // ALT held = tooltips show full values. The document listeners and the
+        // flag live in alt_key.ts; subscribing per instance replaces the old
+        // window-global array of every live manager.
+        installAltKeyTracking();
+        onAltChange((pressed) => {
+            if (this.tooltipElement) this.updateTooltipValues(pressed);
+        });
     }
     
     private setupGlobalDragAndDrop(): void {
@@ -134,7 +111,7 @@ export class TitleScreenInventoryManager {
                 loadout: this.getActiveLoadout()
             }),
             getPetalCanvas: (petalType: string, rarity: string, _time?: number): HTMLCanvasElement | null => {
-                const assets = (window as any).preloadedAssets;
+                const assets = getPreloadedAssets() as any;
                 if (!assets || !assets.petalImages) return null;
                 const entry = assets.petalImages[`${petalType}_${rarity}`];
                 if (!entry) return null;
@@ -146,7 +123,7 @@ export class TitleScreenInventoryManager {
             },
             getPetalStats: (petalType: string, rarity: string): any => getPetalStats(petalType, rarity),
             getItemSpriteDataUrl: (itemType: string): string | null => {
-                const assets = (window as any).preloadedAssets;
+                const assets = getPreloadedAssets() as any;
                 if (!assets || !assets.itemSprites) return null;
                 const img = assets.itemSprites[itemType];
                 if (!img) return null;
@@ -220,7 +197,7 @@ export class TitleScreenInventoryManager {
         ghost.style.left = '-1000px';
         document.body.appendChild(ghost);
         const gctx = ghost.getContext('2d');
-        const assets = (window as any).preloadedAssets;
+        const assets = getPreloadedAssets() as any;
 
         let drew = false;
         if (gctx && itemKey.startsWith('petal_')) {
@@ -337,17 +314,19 @@ export class TitleScreenInventoryManager {
 
     private setupSocketListeners(): void {
         // Check for preconnected socket and authenticate early to get player data
-        if (window.preconnectedSocket && window.preconnectedSocket.connected) {
-            this.socket = window.preconnectedSocket;
-            this.authenticateAndFetchData();
+        const live = getLivePreconnectedSocket();
+        if (live) {
+            this.socket = live;
+            void this.authenticateAndFetchData();
             this.setupCraftingSocketListeners();
             this.setupSkillsSocketListeners();
         } else {
             // Wait for socket to connect
             const checkSocket = setInterval(() => {
-                if (window.preconnectedSocket && window.preconnectedSocket.connected) {
-                    this.socket = window.preconnectedSocket;
-                    this.authenticateAndFetchData();
+                const socket = getLivePreconnectedSocket();
+                if (socket) {
+                    this.socket = socket;
+                    void this.authenticateAndFetchData();
                     this.setupCraftingSocketListeners();
                     this.setupSkillsSocketListeners();
                     clearInterval(checkSocket);
@@ -485,22 +464,21 @@ export class TitleScreenInventoryManager {
 
     /** Re-bind to the current preconnected socket and re-authenticate to fetch fresh data. */
     public reauthenticate(): void {
-        if (window.preconnectedSocket) {
-            this.socket = window.preconnectedSocket;
+        const socket = getPreconnectedSocket();
+        if (socket) {
+            this.socket = socket;
             // Clear the one-shot flag so authenticate runs again
             if ((this.socket as any)._titleScreenAuthenticated) {
                 (this.socket as any)._titleScreenAuthenticated = false;
             }
             this.isAuthenticated = false;
-            this.authenticateAndFetchData();
+            void this.authenticateAndFetchData();
         }
     }
 
-    private authenticateAndFetchData(): void {
+    private async authenticateAndFetchData(): Promise<void> {
         if (!this.socket || !this.socket.connected) return;
 
-        const username = localStorage.getItem('username');
-        const password = localStorage.getItem('password');
         // Get player name from localStorage or the name input element
         const nameInput = document.getElementById('nameInput') as HTMLInputElement;
         const playerName = (nameInput?.value || localStorage.getItem('playerName') || 'Unnamed');
@@ -512,10 +490,13 @@ export class TitleScreenInventoryManager {
         // silently unequipped) just for opening the page.
         const spawnBiome = 'default';
 
-        if (!username || !password) return;
+        // May await a first-load token exchange; the duplicate-auth flag below
+        // is still checked and set in one synchronous step afterwards.
+        const auth = await getSocketAuth(playerName, spawnBiome);
+        if (!auth || !this.socket?.connected) return;
 
         console.log('[TitleScreenInventory] Authenticating to fetch player data...');
-        
+
         // Authenticate to get player data (this will spawn on server but we won't show game until Ready)
         // Use a flag to prevent duplicate authentication
         if ((this.socket as any)._titleScreenAuthenticated) {
@@ -525,12 +506,7 @@ export class TitleScreenInventoryManager {
         
         (this.socket as any)._titleScreenAuthenticated = true;
         
-        this.socket.emit('authenticate', {
-            username,
-            password,
-            playerName,
-            spawnBiome
-        });
+        this.socket.emit('authenticate', auth);
 
         // Listen for authentication response (use on instead of once to catch it if already sent)
         const authenticatedHandler = (response: { success: boolean; error?: string; player?: any }) => {
@@ -584,9 +560,7 @@ export class TitleScreenInventoryManager {
                 }
                 
                 // Loadout has loaded, notify title screen to stop showing connecting
-                if ((window as any).titleScreen) {
-                    (window as any).titleScreen.onLoadoutLoaded();
-                }
+                getTitleScreen()?.onLoadoutLoaded();
             }
         };
         
@@ -1314,7 +1288,7 @@ export class TitleScreenInventoryManager {
                 if (this.hoveredElement === element && !isDragging) {
                     this.showTooltip(element, petalType, rarity);
                     // Check initial ALT state
-                    this.updateTooltipValues((window as any).altKeyPressed || false);
+                    this.updateTooltipValues(isAltPressed());
                 }
             }, 200);
         };
@@ -1459,7 +1433,7 @@ export class TitleScreenInventoryManager {
         const rect = hit.rect;
         this.tooltipTimeout = window.setTimeout(() => {
             this.showTooltipAtRect(rect, petalType, rarity);
-            this.updateTooltipValues((window as any).altKeyPressed || false);
+            this.updateTooltipValues(isAltPressed());
         }, 200);
     }
 
@@ -1561,9 +1535,7 @@ export class TitleScreenInventoryManager {
         }
         
         // Loadout has loaded, notify title screen to stop showing connecting
-        if ((window as any).titleScreen) {
-            (window as any).titleScreen.onLoadoutLoaded();
-        }
+        getTitleScreen()?.onLoadoutLoaded();
     }
     
     public updateSkillsData(tp: number, skills: { [key: string]: string }): void {
@@ -1576,8 +1548,9 @@ export class TitleScreenInventoryManager {
 
     public toggleCrafting(): void {
         // Check if game is running - if so, use game's crafting
-        if (window.currentGame && (window.currentGame as any).inventoryManager) {
-            (window.currentGame as any).inventoryManager.toggleCrafting();
+        const game = getCurrentGame();
+        if (game?.inventoryManager) {
+            game.inventoryManager.toggleCrafting();
             return;
         }
 

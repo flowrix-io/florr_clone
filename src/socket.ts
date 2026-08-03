@@ -4,6 +4,7 @@ import { registerWorldHandlers } from './net/handlers/world';
 import { registerItemHandlers } from './net/handlers/items';
 import { registerProgressionHandlers } from './net/handlers/progression';
 import { registerGameStateHandlers } from './net/handlers/gameState';
+import { getPreconnectedSocket, setPreconnectedSocket } from './net/preconnect';
 
 export { Socket };
 
@@ -15,19 +16,20 @@ export function initMultiPlayerMode(game: any, serverIp: string) {
     }
     
     // Check if there's a preconnected socket available
-    if (window.preconnectedSocket && window.preconnectedSocket.connected) {
-        console.log(`[CLIENT] Using preconnected socket (ID: ${window.preconnectedSocket.id})`);
-        game.socket = window.preconnectedSocket;
+    const preconnected = getPreconnectedSocket();
+    if (preconnected && preconnected.connected) {
+        console.log(`[CLIENT] Using preconnected socket (ID: ${preconnected.id})`);
+        game.socket = preconnected;
         // Remove only the mapData listener from preconnect, keep all other listeners
         game.socket.removeAllListeners('mapData');
         // Clear the preconnected socket reference since we're now using it
-        window.preconnectedSocket = null;
+        setPreconnectedSocket(null);
         // Socket is already connected
         console.log(`[CLIENT] Preconnected socket already connected, proceeding with authentication`);
-    } else if (window.preconnectedSocket && !window.preconnectedSocket.connected) {
+    } else if (preconnected && !preconnected.connected) {
         console.log(`[CLIENT] Preconnected socket exists but not connected yet, creating new connection instead`);
         // If preconnected socket exists but isn't connected, create a new one
-        window.preconnectedSocket = null;
+        setPreconnectedSocket(null);
         // Fall through to create new connection
     }
     

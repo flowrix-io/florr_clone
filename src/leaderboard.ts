@@ -1,5 +1,6 @@
 import { BASE_XP_REQUIREMENT, XP_MULTIPLIER } from './constants';
 import { getBaseDeviceScale } from './zoom-compensation';
+import { authHeaders } from './auth_session';
 
 interface LeaderboardEntry {
     username: string;
@@ -76,13 +77,12 @@ export class LeaderboardManager {
             if (typeof localStorage !== 'undefined' && localStorage.getItem('showAdminsOnLeaderboard') === 'true') {
                 params.set('includeAdmins', 'true');
             }
-            const username = typeof localStorage !== 'undefined' ? localStorage.getItem('username') : null;
-            const password = typeof localStorage !== 'undefined' ? localStorage.getItem('password') : null;
-            if (username && password) {
-                params.set('username', username);
-                params.set('password', password);
-            }
-            const response = await fetch(`${this.serverBaseUrl}/api/leaderboard?${params.toString()}`);
+            // Admin-only fields are unlocked by the session token in the
+            // Authorization header — credentials must never ride in the query
+            // string, where they end up in server access logs.
+            const response = await fetch(`${this.serverBaseUrl}/api/leaderboard?${params.toString()}`, {
+                headers: authHeaders()
+            });
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }

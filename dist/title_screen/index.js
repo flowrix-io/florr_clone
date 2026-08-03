@@ -23,6 +23,9 @@ const auth_form_1 = require("./auth_form");
 const submanagers_1 = require("./submanagers");
 const canvas_buttons_1 = require("./canvas_buttons");
 const app_shell_1 = require("../app_shell");
+const app_refs_1 = require("../app_refs");
+const preconnect_1 = require("../net/preconnect");
+const auth_session_1 = require("../auth_session");
 var styles_1 = require("./styles");
 Object.defineProperty(exports, "injectTitleScreenStyles", { enumerable: true, get: function () { return styles_1.injectTitleScreenStyles; } });
 Object.defineProperty(exports, "titleScreenStyles", { enumerable: true, get: function () { return styles_1.titleScreenStyles; } });
@@ -92,9 +95,6 @@ class TitleScreen {
         this.notificationsManager = new notifications_1.NotificationsManager();
         this.leaderboardManager = new leaderboard_1.LeaderboardManager();
         this.guildMenuManager = new guildMenu_1.GuildMenuManager();
-        window.guildMenuManager = this.guildMenuManager;
-        // Make notifications manager globally accessible
-        window.notificationsManager = this.notificationsManager;
         // Hand the panel managers the full-screen title canvas. They draw at
         // PANEL_X/PANEL_Y on whatever canvas they're attached to, so they
         // composite cleanly on top of the bg + petals + UI.
@@ -332,7 +332,7 @@ class TitleScreen {
         // Add keyboard shortcuts for chat and skills on title screen
         document.addEventListener('keydown', (event) => {
             // Don't interfere if game is running
-            if (window.currentGame)
+            if ((0, app_refs_1.getCurrentGame)())
                 return;
             // Don't interfere if an input/textarea is focused
             const activeEl = document.activeElement;
@@ -482,7 +482,7 @@ class TitleScreen {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     // Check if game is running
-                    if (window.currentGame) {
+                    if ((0, app_refs_1.getCurrentGame)()) {
                         // Get the controls from localStorage or use default
                         const savedControls = localStorage.getItem('controls');
                         const controls = savedControls ? JSON.parse(savedControls) : { crafting: 'c' };
@@ -506,7 +506,7 @@ class TitleScreen {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     // Check if game is running
-                    if (window.currentGame) {
+                    if ((0, app_refs_1.getCurrentGame)()) {
                         // Get the controls from localStorage or use default
                         // NOTE: default must match game's default ('x'), not 'k',
                         // since 'k' is the default for toggle_mouse_controls.
@@ -532,7 +532,7 @@ class TitleScreen {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     // Check if game is running
-                    if (window.currentGame) {
+                    if ((0, app_refs_1.getCurrentGame)()) {
                         // Get the controls from localStorage or use default
                         const savedControls = localStorage.getItem('controls');
                         const controls = savedControls ? JSON.parse(savedControls) : { inventory: 'z' };
@@ -557,8 +557,9 @@ class TitleScreen {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     // Check if game is running
-                    if (window.currentGame && window.currentGame.shopManager) {
-                        window.currentGame.shopManager.toggleShop();
+                    const game = (0, app_refs_1.getCurrentGame)();
+                    if (game?.shopManager) {
+                        game.shopManager.toggleShop();
                     }
                     else if (this.submanagers.shop) {
                         this.submanagers.shop.toggleShop();
@@ -580,8 +581,9 @@ class TitleScreen {
                     e.stopPropagation();
                     e.stopImmediatePropagation();
                     // Check if game is running
-                    if (window.currentGame && window.currentGame.inventoryManager) {
-                        window.currentGame.inventoryManager.toggleMobGallery();
+                    const game = (0, app_refs_1.getCurrentGame)();
+                    if (game?.inventoryManager) {
+                        game.inventoryManager.toggleMobGallery();
                     }
                     else if (this.submanagers.mobGallery) {
                         this.submanagers.mobGallery.toggleMobGallery();
@@ -634,13 +636,9 @@ class TitleScreen {
         // If user is not logged in, show login form after a short delay
         // (in case preconnectToServer is not called)
         setTimeout(() => {
-            if (this.authForm.isConnectingState()) {
-                const username = localStorage.getItem('username');
-                const password = localStorage.getItem('password');
-                if (!username || !password) {
-                    // User is not logged in and no connection attempt, show login form
-                    this.onLoadoutLoaded();
-                }
+            if (this.authForm.isConnectingState() && !(0, auth_session_1.isLoggedIn)()) {
+                // User is not logged in and no connection attempt, show login form
+                this.onLoadoutLoaded();
             }
         }, 2000); // Wait 2 seconds for connection attempt
     }
@@ -1238,10 +1236,8 @@ class TitleScreen {
             return; // Already handled
         this.authForm.setConnecting(false);
         // Check if user is logged in - if not, show auth form
-        const username = localStorage.getItem('username');
-        const password = localStorage.getItem('password');
         const currentUser = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
-        if (!username || !password || !currentUser) {
+        if (!(0, auth_session_1.isLoggedIn)() || !currentUser) {
             // User is not logged in, show auth form
             this.showAuthContainer();
         }
@@ -1256,9 +1252,7 @@ class TitleScreen {
     onConnectionComplete() {
         // If still connecting and no loadout will load (user not logged in), show login form
         if (this.authForm.isConnectingState()) {
-            const username = localStorage.getItem('username');
-            const password = localStorage.getItem('password');
-            if (!username || !password) {
+            if (!(0, auth_session_1.isLoggedIn)()) {
                 // User is not logged in, wait a bit for socket to connect, then show login
                 setTimeout(() => {
                     if (this.authForm.isConnectingState()) {
@@ -1276,22 +1270,20 @@ class TitleScreen {
         const password = this.authForm.password;
         const serverUrl = this.authForm.serverIP || window.location.origin;
         try {
-            const response = await fetch(`${serverUrl}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }),
-                credentials: 'include'
-            });
-            if (response.ok) {
-                localStorage.setItem('username', username);
-                localStorage.setItem('password', password);
-                localStorage.setItem('currentUser', username);
-                localStorage.setItem('serverUrl', serverUrl);
+            const result = await (0, auth_session_1.requestSessionToken)(serverUrl, username, password);
+            if (result.ok) {
+                if (!result.token) {
+                    alert('Login failed: the server did not issue a session. Please try again.');
+                    return;
+                }
+                // Only the session token is persisted — the password the user
+                // just typed goes out of scope here and is never stored.
+                (0, auth_session_1.startSession)(username, result.token, serverUrl);
                 sessionStorage.removeItem('isOffline');
                 this.hideAuthContainer();
                 // Connect socket if not already connected, then authenticate
-                if (!window.preconnectedSocket) {
-                    window.preconnectToServer?.();
+                if (!(0, preconnect_1.getPreconnectedSocket)()) {
+                    (0, preconnect_1.requestPreconnect)();
                 }
                 else {
                     this.titleScreenInventoryManager.reauthenticate();
@@ -1338,19 +1330,26 @@ class TitleScreen {
                 credentials: 'include'
             });
             if (response.ok) {
-                localStorage.setItem('username', guestUsername);
-                localStorage.setItem('password', guestPassword);
-                localStorage.setItem('currentUser', guestUsername);
-                localStorage.setItem('serverUrl', serverUrl);
+                // Registration issues no session, so log in for the token —
+                // the generated password is shown to the player below and then
+                // dropped, exactly like a typed one.
+                const login = await (0, auth_session_1.requestSessionToken)(serverUrl, guestUsername, guestPassword);
+                if (!login.ok || !login.token) {
+                    alert('Guest account was created but sign-in failed. Please log in with the credentials shown next.');
+                    alert(`Username: ${guestUsername}\nPassword: ${guestPassword}`);
+                    this.authForm.setLoginMode(true);
+                    return;
+                }
+                (0, auth_session_1.startSession)(guestUsername, login.token, serverUrl);
                 sessionStorage.removeItem('isOffline');
                 this.hideAuthContainer();
-                if (!window.preconnectedSocket) {
-                    window.preconnectToServer?.();
+                if (!(0, preconnect_1.getPreconnectedSocket)()) {
+                    (0, preconnect_1.requestPreconnect)();
                 }
                 else {
                     this.titleScreenInventoryManager.reauthenticate();
                 }
-                alert(`Guest account created!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nSave these credentials if you want to log in again!`);
+                alert(`Guest account created!\nUsername: ${guestUsername}\nPassword: ${guestPassword}\n\nWrite these down — the password is not saved in your browser, so this is the only time you will see it.`);
             }
             else {
                 const errorData = await response.json();
@@ -1397,9 +1396,10 @@ class TitleScreen {
                 credentials: 'include'
             });
             if (response.ok) {
-                const storedCredentials = JSON.parse(localStorage.getItem('credentials') || '[]');
-                storedCredentials.push({ username, password });
-                localStorage.setItem('credentials', JSON.stringify(storedCredentials));
+                // Registration deliberately stores nothing but the server URL:
+                // the account's password is the user's to remember. (This used
+                // to append {username, password} to a `credentials` array that
+                // accumulated every account ever registered in this browser.)
                 localStorage.setItem('serverUrl', serverUrl);
                 this.authForm.setLoginMode(true);
                 alert('Registration successful! Please login.');
@@ -1424,11 +1424,6 @@ class TitleScreen {
         }
         if (password !== confirmPassword) {
             alert('Passwords do not match');
-            return;
-        }
-        const storedCredentials = JSON.parse(localStorage.getItem('credentials') || '[]');
-        if (storedCredentials.some((cred) => cred.username === username)) {
-            alert('Username already exists locally');
             return;
         }
         const offlineCredentials = {
@@ -1558,10 +1553,8 @@ class TitleScreen {
         // Restart canvas rendering
         this.startCanvasRendering();
         // Only show auth form if the user is not logged in
-        const username = localStorage.getItem('username');
-        const password = localStorage.getItem('password');
         const currentUser = localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser');
-        if (!username || !password || !currentUser) {
+        if (!(0, auth_session_1.isLoggedIn)() || !currentUser) {
             this.showAuthContainer();
         }
         else {
@@ -1683,6 +1676,9 @@ class TitleScreen {
             if (!except.includes('debug'))
                 debug_menu_1.debugMenuPanel.close();
         };
+        // Null while on the title screen; the cases below fall back to the
+        // title screen's own managers when there is no running game.
+        const game = (0, app_refs_1.getCurrentGame)();
         switch (id) {
             case 'settings':
                 closeOthers('settings');
@@ -1728,8 +1724,8 @@ class TitleScreen {
                 // In-game routes through game.inventoryManager so the in-game
                 // panel (and keybindings) stay the source of truth. On title
                 // screen, the title-screen inventory manager handles it.
-                if (window.currentGame && window.currentGame.inventoryManager) {
-                    window.currentGame.inventoryManager.toggleInventory();
+                if (game?.inventoryManager) {
+                    game.inventoryManager.toggleInventory();
                 }
                 else {
                     this.toggleInventoryOnTitleScreen();
@@ -1739,16 +1735,16 @@ class TitleScreen {
                 this.toggleSkillsOnTitleScreen();
                 break;
             case 'mobGallery':
-                if (window.currentGame && window.currentGame.inventoryManager) {
-                    window.currentGame.inventoryManager.toggleMobGallery();
+                if (game?.inventoryManager) {
+                    game.inventoryManager.toggleMobGallery();
                 }
                 else if (this.submanagers.mobGallery) {
                     this.submanagers.mobGallery.toggleMobGallery();
                 }
                 break;
             case 'shop':
-                if (window.currentGame && window.currentGame.shopManager) {
-                    window.currentGame.shopManager.toggleShop();
+                if (game?.shopManager) {
+                    game.shopManager.toggleShop();
                 }
                 else if (this.submanagers.shop) {
                     this.submanagers.shop.toggleShop();
@@ -1781,7 +1777,7 @@ class TitleScreen {
      * progress — the in-game Graphics class owns the canvas then.
      */
     renderInGameMenusOverlay() {
-        if (window.currentGame)
+        if ((0, app_refs_1.getCurrentGame)())
             return;
         if (this.changelogManager.isChangelogOpen())
             this.changelogManager.render();
@@ -1800,8 +1796,9 @@ class TitleScreen {
     }
     toggleCraftingOnTitleScreen() {
         // Check if game is running - if so, use game's crafting
-        if (window.currentGame && window.currentGame.inventoryManager) {
-            window.currentGame.inventoryManager.toggleCrafting();
+        const game = (0, app_refs_1.getCurrentGame)();
+        if (game?.inventoryManager) {
+            game.inventoryManager.toggleCrafting();
             return;
         }
         // Use title screen inventory manager to show crafting
@@ -1809,8 +1806,9 @@ class TitleScreen {
     }
     toggleSkillsOnTitleScreen() {
         // Check if game is running - if so, use game's skills
-        if (window.currentGame && window.currentGame.skillsManager) {
-            window.currentGame.skillsManager.toggle();
+        const game = (0, app_refs_1.getCurrentGame)();
+        if (game?.skillsManager) {
+            game.skillsManager.toggle();
             return;
         }
         // Use title screen skills manager

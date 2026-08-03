@@ -8,6 +8,9 @@ import { GuildMenuManager } from '../guildMenu';
 import { DailyStreakWidget } from '../daily_streak_widget';
 import { applyZoomCompensation } from '../zoom-compensation';
 import { TitleScreenInventoryManager } from './inventory_manager';
+import { Socket } from '../ws_client';
+import { getPreconnectedSocket, getLivePreconnectedSocket } from '../net/preconnect';
+import { getPreloadedAssets } from '../preloader';
 
 export function cloneCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
     const c = document.createElement('canvas');
@@ -29,7 +32,7 @@ export function buildTitleScreenGameInterface(inventoryManager: TitleScreenInven
             const playerData = (inventoryManager as any).playerData;
             if (!playerData) return undefined;
             return {
-                id: window.preconnectedSocket?.id || '',
+                id: getPreconnectedSocket()?.id || '',
                 name: localStorage.getItem('username') || 'Unnamed',
                 x: 0, y: 0, angle: 0, score: 0,
                 imageLoaded: true, image: new Image(),
@@ -44,12 +47,12 @@ export function buildTitleScreenGameInterface(inventoryManager: TitleScreenInven
                 mobKills: playerData.mobKills || {},
             } as any;
         },
-        getSocket: () => window.preconnectedSocket,
+        getSocket: () => getPreconnectedSocket(),
         showFloatingText: () => {},
         showFallingStars: () => {},
         canvas: offscreenCanvas,
         getPetalCanvas: (petalType: string, rarity: string, time: number = Date.now()): HTMLCanvasElement | null => {
-            const assets = (window as any).preloadedAssets;
+            const assets = getPreloadedAssets() as any;
             if (!assets || !assets.petalImages) return null;
             const entry = assets.petalImages[`${petalType}_${rarity}`];
             if (!entry) return null;
@@ -60,7 +63,7 @@ export function buildTitleScreenGameInterface(inventoryManager: TitleScreenInven
             return cloneCanvas(entry);
         },
         getItemSpriteDataUrl: (itemType: string): string | null => {
-            const assets = (window as any).preloadedAssets;
+            const assets = getPreloadedAssets() as any;
             if (!assets || !assets.itemSprites) return null;
             const img = assets.itemSprites[itemType];
             if (!img) return null;
@@ -109,27 +112,26 @@ export class TitleScreenSubmanagers {
     }
 
     public initChat(): void {
-        const wireGuildEvents = () => {
-            const menu = this.guildMenuManager;
-            window.preconnectedSocket!.on('guildUpdate', (data: any) => menu.applyGuildUpdate(data));
-            window.preconnectedSocket!.on('guildInviteReceived', (data: any) => menu.applyInviteReceived(data));
-        };
-        const create = (label: string) => {
+        const create = (label: string, socket: Socket) => {
             console.log(`[TitleScreen] Initializing chat with preconnected socket${label}`);
-            this.chat = new Chat(window.preconnectedSocket);
-            this.guildMenuManager.setSocket(window.preconnectedSocket);
-            wireGuildEvents();
+            this.chat = new Chat(socket);
+            this.guildMenuManager.setSocket(socket);
+            const menu = this.guildMenuManager;
+            socket.on('guildUpdate', (data: any) => menu.applyGuildUpdate(data));
+            socket.on('guildInviteReceived', (data: any) => menu.applyInviteReceived(data));
         };
         const checkSocket = setInterval(() => {
-            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
-                create('');
+            const socket = getLivePreconnectedSocket();
+            if (socket) {
+                create('', socket);
                 clearInterval(checkSocket);
             }
         }, 100);
         setTimeout(() => {
             clearInterval(checkSocket);
-            if (!this.chat && window.preconnectedSocket && window.preconnectedSocket.connected) {
-                create(' (delayed)');
+            const socket = getLivePreconnectedSocket();
+            if (!this.chat && socket) {
+                create(' (delayed)', socket);
             }
         }, 5000);
     }
@@ -140,7 +142,7 @@ export class TitleScreenSubmanagers {
                 const playerData = (this.inventoryManager as any).playerData;
                 if (!playerData) return undefined;
                 return {
-                    id: window.preconnectedSocket?.id || '',
+                    id: getPreconnectedSocket()?.id || '',
                     name: localStorage.getItem('username') || 'Unnamed',
                     x: 0, y: 0, angle: 0, score: 0,
                     imageLoaded: true, image: new Image(),
@@ -153,7 +155,7 @@ export class TitleScreenSubmanagers {
                     skills: playerData.skills || {},
                 } as Player;
             },
-            getSocket: () => window.preconnectedSocket,
+            getSocket: () => getPreconnectedSocket(),
             showFloatingText: () => {},
             canvas: document.createElement('canvas'),
             graphics: (() => {
@@ -171,14 +173,14 @@ export class TitleScreenSubmanagers {
             }
         };
         const checkSocket = setInterval(() => {
-            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+            if (getLivePreconnectedSocket()) {
                 create('');
                 clearInterval(checkSocket);
             }
         }, 100);
         setTimeout(() => {
             clearInterval(checkSocket);
-            if (!this.skills && window.preconnectedSocket && window.preconnectedSocket.connected) {
+            if (!this.skills && getLivePreconnectedSocket()) {
                 create(' (delayed)');
             }
         }, 5000);
@@ -191,7 +193,7 @@ export class TitleScreenSubmanagers {
             console.log('[TitleScreen] Initializing shop manager');
             this.shop = new ShopManager(gameInterface as any);
 
-            const socket = window.preconnectedSocket;
+            const socket = getPreconnectedSocket();
             if (!socket) return;
             socket.on('shopPurchaseSuccess', (data: { inventory: any, stars: number }) => {
                 const playerData = (this.inventoryManager as any).playerData;
@@ -234,7 +236,7 @@ export class TitleScreenSubmanagers {
             });
         };
         const checkSocket = setInterval(() => {
-            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+            if (getLivePreconnectedSocket()) {
                 initShop();
                 clearInterval(checkSocket);
             }
@@ -250,7 +252,7 @@ export class TitleScreenSubmanagers {
             this.mobGallery = new InventoryManager(gameInterface as any, null, { mobGalleryOnly: true });
         };
         const checkSocket = setInterval(() => {
-            if (window.preconnectedSocket && window.preconnectedSocket.connected) {
+            if (getLivePreconnectedSocket()) {
                 initGallery();
                 clearInterval(checkSocket);
             }

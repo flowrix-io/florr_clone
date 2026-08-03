@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TitleScreenGameAdapter = void 0;
 const zoom_compensation_1 = require("../zoom-compensation");
 const petals_1 = require("../petals");
+const preconnect_1 = require("../net/preconnect");
+const preloader_1 = require("../preloader");
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
  * Wraps the title screen's player data and preconnected socket.
@@ -20,7 +22,7 @@ class TitleScreenGameAdapter {
         if (!this._playerData)
             return undefined;
         return {
-            id: window.preconnectedSocket?.id || '',
+            id: (0, preconnect_1.getPreconnectedSocket)()?.id || '',
             name: '',
             x: 0, y: 0, angle: 0, score: 0,
             imageLoaded: false,
@@ -34,14 +36,14 @@ class TitleScreenGameAdapter {
         };
     }
     getSocket() {
-        return window.preconnectedSocket || undefined;
+        return (0, preconnect_1.getPreconnectedSocket)() || undefined;
     }
     showFloatingText(_x, _y, text, _color, _fontSize) {
         console.log(`[TitleScreen] ${text}`);
     }
     /** Used by CanvasInventoryPanel — pulls petal frames from preloaded assets. */
     getPetalCanvas(petalType, rarity, _time) {
-        const assets = window.preloadedAssets;
+        const assets = (0, preloader_1.getPreloadedAssets)();
         if (!assets || !assets.petalImages)
             return null;
         const entry = assets.petalImages[`${petalType}_${rarity}`];
@@ -59,7 +61,7 @@ class TitleScreenGameAdapter {
     }
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
     getItemSpriteDataUrl(itemType) {
-        const assets = window.preloadedAssets;
+        const assets = (0, preloader_1.getPreloadedAssets)();
         if (!assets || !assets.itemSprites)
             return null;
         const img = assets.itemSprites[itemType];

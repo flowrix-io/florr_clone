@@ -67,9 +67,13 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
         }
     });
 
-    // Handle authentication
-    socket.on('authenticate', async (credentials: { username: string, password: string, playerName: string, spawnBiome?: string }) => {
-        const user = database.getUser(credentials.username, credentials.password);
+    // Handle authentication.
+    //
+    // A session token from /auth/login is the only credential this accepts —
+    // passwords are verified over HTTPS at login and nowhere else, so one never
+    // rides the socket or sits in a client's storage waiting to be replayed.
+    socket.on('authenticate', async (credentials: { token?: string, playerName: string, spawnBiome?: string }) => {
+        const user = credentials.token ? database.getUserBySession(credentials.token) : null;
 
         if (user) {
             socket.userId = user.id;

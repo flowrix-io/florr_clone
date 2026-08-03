@@ -5,6 +5,7 @@ exports.getSkinStudio = getSkinStudio;
 const zoom_compensation_1 = require("./zoom-compensation");
 const skin_format_1 = require("./skin_format");
 const player_skins_1 = require("./graphics/player-skins");
+const app_refs_1 = require("./app_refs");
 // Theme matches the purple "skins" icon-button on the title strip
 // (#c45cff bg / #9a3fd0 border in title_screen/canvas_buttons.ts).
 const ACCENT = '#c45cff';
@@ -131,7 +132,7 @@ class SkinStudio {
     applyCatalog(skins, isAdmin) {
         this.catalog = Array.isArray(skins) ? skins.slice() : [];
         this.isAdmin = isAdmin;
-        this.equippedId = window.currentGame?.getLocalPlayer?.()?.equippedSkinId || this.equippedId;
+        this.equippedId = (0, app_refs_1.getCurrentGame)()?.getLocalPlayer()?.equippedSkinId || this.equippedId;
     }
     applySkinPublished(skin) {
         if (!skin || !skin.id)
@@ -403,7 +404,7 @@ class SkinStudio {
         if ('error' in check) {
             if (!this.skinName)
                 this.openNameInput();
-            window.currentGame?.chat?.addChatMessage?.({ sender: 'Skins', content: check.error, timestamp: Date.now() });
+            (0, app_refs_1.getCurrentGame)()?.chat?.addChatMessage?.({ sender: 'Skins', content: check.error, timestamp: Date.now() });
             return;
         }
         this.socket.emit('publishSkin', payload);
@@ -413,7 +414,7 @@ class SkinStudio {
             return;
         this.equippedId = id;
         this.socket.emit('equipSkin', id);
-        const lp = window.currentGame?.getLocalPlayer?.();
+        const lp = (0, app_refs_1.getCurrentGame)()?.getLocalPlayer();
         if (lp) {
             lp.equippedSkinId = id;
             if (id)
@@ -456,7 +457,7 @@ class SkinStudio {
         }
     }
     currentUsername() {
-        return this.socket?.username || window.currentGame?.socket?.username || '';
+        return this.socket?.username || (0, app_refs_1.getCurrentGame)()?.socket?.username || '';
     }
     // ── rendering ──────────────────────────────────────────────────────────
     render() {

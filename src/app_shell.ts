@@ -9,7 +9,7 @@ import { getBaseDeviceScale } from './zoom-compensation';
  * requestAnimationFrame loop, and handing over meant toggling `display`,
  * re-pointing every shared panel manager at the other canvas, copying a
  * screenshot between the two to fake a transition, and arbitrating which loop
- * was allowed to run through a mutable `window.currentGame` global. Every one
+ * was allowed to run through a mutable global game reference. Every one
  * of those seams produced the same shape of bug: something in the handover
  * didn't happen, a loop stopped or was orphaned, and the screen froze on a
  * half-drawn frame while the DOM kept working.

@@ -4,6 +4,7 @@ import { ITEM_RARITY_COLORS } from '../petals';
 import { getSVGRenderer } from '../svg_renderer';
 import { FloatingText, ExplosionEffect, ExplosionParticle, PetalBreakEffect, LightningEffect, PetalParticleEffect, PetalParticle, FallingStar } from './types';
 import { getBaseDeviceScale } from '../zoom-compensation';
+import { markMainCanvasCtxCommitted } from './canvas_ctx_state';
 
 export { Player, FaceFlags, EquipmentFlags } from '../player';
 export { Enemy } from '../enemy';
@@ -277,7 +278,7 @@ export class Graphics {
         // The main-canvas 2D context's backing (GPU vs software) is locked in
         // by the getContext call above and can't change on a live canvas — the
         // settings toggle reloads the page when this flag is set.
-        if (typeof window !== 'undefined') (window as any).__mainCanvasCtxCommitted = true;
+        markMainCanvasCtxCommitted();
         this.playerSprite = playerSprite;
         this.wallTexture = wallTexture;
         this.healthPotionSprite = healthPotionSprite;

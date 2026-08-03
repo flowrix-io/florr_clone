@@ -3,6 +3,8 @@ import { Player, PlayerInventory } from '../player';
 import { GameInterface } from '../inventory';
 import { applyZoomCompensation } from '../zoom-compensation';
 import { getPetalStats } from '../petals';
+import { getPreconnectedSocket } from '../net/preconnect';
+import { getPreloadedAssets } from '../preloader';
 
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
@@ -24,7 +26,7 @@ export class TitleScreenGameAdapter implements GameInterface {
     getLocalPlayer(): Player | undefined {
         if (!this._playerData) return undefined;
         return {
-            id: (window as any).preconnectedSocket?.id || '',
+            id: getPreconnectedSocket()?.id || '',
             name: '',
             x: 0, y: 0, angle: 0, score: 0,
             imageLoaded: false,
@@ -39,7 +41,7 @@ export class TitleScreenGameAdapter implements GameInterface {
     }
 
     getSocket() {
-        return (window as any).preconnectedSocket || undefined;
+        return getPreconnectedSocket() || undefined;
     }
 
     showFloatingText(_x: number, _y: number, text: string, _color: string, _fontSize: number): void {
@@ -48,7 +50,7 @@ export class TitleScreenGameAdapter implements GameInterface {
 
     /** Used by CanvasInventoryPanel — pulls petal frames from preloaded assets. */
     getPetalCanvas(petalType: string, rarity: string, _time?: number): HTMLCanvasElement | null {
-        const assets = (window as any).preloadedAssets;
+        const assets = getPreloadedAssets() as any;
         if (!assets || !assets.petalImages) return null;
         const entry = assets.petalImages[`${petalType}_${rarity}`];
         if (!entry) return null;
@@ -66,7 +68,7 @@ export class TitleScreenGameAdapter implements GameInterface {
 
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
     getItemSpriteDataUrl(itemType: string): string | null {
-        const assets = (window as any).preloadedAssets;
+        const assets = getPreloadedAssets() as any;
         if (!assets || !assets.itemSprites) return null;
         const img = assets.itemSprites[itemType];
         if (!img) return null;

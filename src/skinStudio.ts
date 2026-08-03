@@ -13,6 +13,7 @@ import {
     MAX_STROKE_WIDTH,
 } from './skin_format';
 import { renderCustomSkinShapes } from './graphics/player-skins';
+import { getCurrentGame } from './app_refs';
 
 // Skin Studio: a canvas-drawn menu (same lifecycle/style as GuildMenuManager —
 // drawn on the shared title/game canvas, opened from the top icon-button strip).
@@ -176,7 +177,7 @@ export class SkinStudio {
     public applyCatalog(skins: CustomSkin[], isAdmin: boolean): void {
         this.catalog = Array.isArray(skins) ? skins.slice() : [];
         this.isAdmin = isAdmin;
-        this.equippedId = (window as any).currentGame?.getLocalPlayer?.()?.equippedSkinId || this.equippedId;
+        this.equippedId = getCurrentGame()?.getLocalPlayer()?.equippedSkinId || this.equippedId;
     }
     public applySkinPublished(skin: CustomSkin): void {
         if (!skin || !skin.id) return;
@@ -371,7 +372,7 @@ export class SkinStudio {
         const check = sanitizeSkin(payload);
         if ('error' in check) {
             if (!this.skinName) this.openNameInput();
-            (window as any).currentGame?.chat?.addChatMessage?.({ sender: 'Skins', content: check.error, timestamp: Date.now() });
+            (getCurrentGame() as any)?.chat?.addChatMessage?.({ sender: 'Skins', content: check.error, timestamp: Date.now() });
             return;
         }
         this.socket.emit('publishSkin', payload);
@@ -381,7 +382,7 @@ export class SkinStudio {
         if (!this.socket) return;
         this.equippedId = id;
         this.socket.emit('equipSkin', id);
-        const lp = (window as any).currentGame?.getLocalPlayer?.();
+        const lp = getCurrentGame()?.getLocalPlayer();
         if (lp) { lp.equippedSkinId = id; if (id) lp.renderFlags = 0; }
     }
 
@@ -413,7 +414,7 @@ export class SkinStudio {
     }
 
     private currentUsername(): string {
-        return (this.socket as any)?.username || (window as any).currentGame?.socket?.username || '';
+        return (this.socket as any)?.username || (getCurrentGame() as any)?.socket?.username || '';
     }
 
     // ── rendering ──────────────────────────────────────────────────────────

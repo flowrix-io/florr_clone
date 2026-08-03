@@ -24,6 +24,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Preloader = void 0;
+exports.setPreloadedAssets = setPreloadedAssets;
+exports.getPreloadedAssets = getPreloadedAssets;
 /**
  * Preloader - Handles loading all game assets and systems before showing the title screen
  */
@@ -288,3 +290,15 @@ class Preloader {
     }
 }
 exports.Preloader = Preloader;
+/**
+ * Assets loaded once at boot and shared by everything that draws petals or
+ * sprites. Was `window.preloadedAssets`; the sprite atlas has no business
+ * being on the global object, and the readers all live in this bundle.
+ */
+let preloadedAssets = null;
+function setPreloadedAssets(assets) {
+    preloadedAssets = assets;
+}
+function getPreloadedAssets() {
+    return preloadedAssets;
+}

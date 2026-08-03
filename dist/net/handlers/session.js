@@ -12,6 +12,7 @@ const player_skins_1 = require("../../graphics/player-skins");
 const maze_1 = require("../../maze");
 const ws_client_1 = require("../../ws_client");
 const playerRefs_1 = require("../playerRefs");
+const app_refs_1 = require("../../app_refs");
 /**
  * @param reRegisterAll Re-attaches every handler group to a fresh socket. A
  * cross-server transfer swaps game.socket wholesale, so the new socket needs
@@ -353,13 +354,13 @@ function registerSessionHandlers(game, reRegisterAll) {
     // Guild menu lifecycle events. Registered here (not inside GuildMenuManager)
     // so they stay wired to whatever socket instance the game is actually using.
     game.socket.on('guildUpdate', (data) => {
-        const menu = window.currentGame?.guildMenu;
+        const menu = (0, app_refs_1.getCurrentGame)()?.guildMenu;
         if (!menu)
             return;
         menu.applyGuildUpdate(data);
     });
     game.socket.on('guildInviteReceived', (data) => {
-        const menu = window.currentGame?.guildMenu;
+        const menu = (0, app_refs_1.getCurrentGame)()?.guildMenu;
         if (!menu)
             return;
         menu.applyInviteReceived(data);
@@ -368,15 +369,15 @@ function registerSessionHandlers(game, reRegisterAll) {
     // a skin renders) and refresh the Skin Studio gallery if it's open.
     game.socket.on('skinsUpdate', (data) => {
         (0, player_skins_1.setCustomSkins)(data?.skins);
-        window.currentGame?.skinStudio?.applyCatalog(data?.skins || [], !!data?.isAdmin);
+        (0, app_refs_1.getCurrentGame)()?.skinStudio?.applyCatalog(data?.skins || [], !!data?.isAdmin);
     });
     game.socket.on('skinPublished', (skin) => {
         (0, player_skins_1.upsertCustomSkin)(skin);
-        window.currentGame?.skinStudio?.applySkinPublished(skin);
+        (0, app_refs_1.getCurrentGame)()?.skinStudio?.applySkinPublished(skin);
     });
     game.socket.on('skinDeleted', (id) => {
         (0, player_skins_1.removeCustomSkin)(id);
-        window.currentGame?.skinStudio?.applySkinDeleted(id);
+        (0, app_refs_1.getCurrentGame)()?.skinStudio?.applySkinDeleted(id);
     });
     game.socket.on('disconnect', (reason) => {
         const disconnectTime = performance.now();

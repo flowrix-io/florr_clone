@@ -61,9 +61,13 @@ function registerSessionHandlers(ctx) {
             }
         }
     });
-    // Handle authentication
+    // Handle authentication.
+    //
+    // A session token from /auth/login is the only credential this accepts —
+    // passwords are verified over HTTPS at login and nowhere else, so one never
+    // rides the socket or sits in a client's storage waiting to be replayed.
     socket.on('authenticate', async (credentials) => {
-        const user = database_1.database.getUser(credentials.username, credentials.password);
+        const user = credentials.token ? database_1.database.getUserBySession(credentials.token) : null;
         if (user) {
             socket.userId = user.id;
             socket.username = user.username;

@@ -7,6 +7,7 @@ const inventory_panel_1 = require("./graphics/inventory-panel");
 const crafting_panel_1 = require("./graphics/crafting-panel");
 const mob_gallery_panel_1 = require("./graphics/mob-gallery-panel");
 const petal_icon_1 = require("./graphics/petal-icon");
+const alt_key_1 = require("./alt_key");
 class InventoryManager {
     getIsInventoryOpen() {
         return this.isInventoryOpen;
@@ -227,7 +228,7 @@ class InventoryManager {
                 return;
             const { petalType: pt, rarity: rr, rect } = this.canvasHoverPetal;
             this.showTooltipAtRect(rect, pt, rr);
-            this.updateTooltipValues(window.altKeyPressed || false);
+            this.updateTooltipValues((0, alt_key_1.isAltPressed)());
         }, 200);
     }
     /**
@@ -344,7 +345,7 @@ class InventoryManager {
                 if (this.hoveredElement === element && !this.isDragging) {
                     this.showTooltip(element, petalType, rarity);
                     // Check initial ALT state
-                    this.updateTooltipValues(window.altKeyPressed || false);
+                    this.updateTooltipValues((0, alt_key_1.isAltPressed)());
                 }
             }, 200); // 0.2 seconds
         };
@@ -424,19 +425,17 @@ class InventoryManager {
         this.chat = chat;
         const mobGalleryOnly = options?.mobGalleryOnly === true;
         const craftingOnly = options?.craftingOnly === true;
-        // Setup ALT key tracking for tooltip value display
-        window.altKeyPressed = false;
+        // ALT held = tooltips show full values. The flag itself lives in
+        // alt_key.ts (shared with the title-screen inventory); this only
+        // repaints our own tooltip, and unhooks with the rest of our listeners.
+        (0, alt_key_1.installAltKeyTracking)();
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Alt') {
-                window.altKeyPressed = true;
+            if (e.key === 'Alt')
                 this.updateTooltipValues(true);
-            }
         }, { signal: this.listenerAbort.signal });
         document.addEventListener('keyup', (e) => {
-            if (e.key === 'Alt') {
-                window.altKeyPressed = false;
+            if (e.key === 'Alt')
                 this.updateTooltipValues(false);
-            }
         }, { signal: this.listenerAbort.signal });
         if (!mobGalleryOnly && !craftingOnly) {
             // Loadout bar is now canvas-rendered (see graphics/loadout-bar.ts).

@@ -1,5 +1,6 @@
 import { Graphics, Player, Enemy, FaceFlags, getMobStats } from './core';
 import { getThirdEyeRarity } from './player-drawing';
+import { getSquadMemberIds } from '../squad_state';
 
 declare module './core' {
     interface Graphics {
@@ -186,7 +187,7 @@ Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player
 
         // Draw smaller HUDs for other squad members, stacked beneath the main HUD.
         // Uniformly scaled to 80% of the main HUD and mirrors its layout (flower + health + xp).
-        const squadMemberIds: string[] = (window as any).squadMemberIds || [];
+        const squadMemberIds: string[] = getSquadMemberIds();
         if (squadMemberIds.length > 0) {
             const scale = 0.8;
             const smBarWidth = healthBarWidth * scale;

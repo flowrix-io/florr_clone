@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FloatingPetalManager = void 0;
 const petals_1 = require("../petals");
+const preloader_1 = require("../preloader");
 const BASE_PETAL_PIXELS = 32;
 const SPAWN_PROBABILITY = 0.02;
 class FloatingPetalManager {
@@ -41,7 +42,7 @@ class FloatingPetalManager {
         };
     }
     getPetalCanvas(petalType, rarity) {
-        const assets = window.preloadedAssets;
+        const assets = (0, preloader_1.getPreloadedAssets)();
         if (!assets || !assets.petalImages)
             return null;
         const entry = assets.petalImages[`${petalType}_${rarity}`];

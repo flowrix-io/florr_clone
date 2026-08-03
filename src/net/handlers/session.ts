@@ -12,6 +12,7 @@ import { Player } from '../../player';
 import { CustomSkin } from '../../skin_format';
 import { io } from '../../ws_client';
 import { isLocalPlayerId, localPlayer, withoutRawPetalPositions } from '../playerRefs';
+import { getCurrentGame } from '../../app_refs';
 
 /**
  * @param reRegisterAll Re-attaches every handler group to a fresh socket. A
@@ -390,12 +391,12 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
     // Guild menu lifecycle events. Registered here (not inside GuildMenuManager)
     // so they stay wired to whatever socket instance the game is actually using.
     game.socket.on('guildUpdate', (data: any) => {
-        const menu = (window as any).currentGame?.guildMenu;
+        const menu = getCurrentGame()?.guildMenu;
         if (!menu) return;
         menu.applyGuildUpdate(data);
     });
     game.socket.on('guildInviteReceived', (data: { guildName: string; fromUsername: string }) => {
-        const menu = (window as any).currentGame?.guildMenu;
+        const menu = getCurrentGame()?.guildMenu;
         if (!menu) return;
         menu.applyInviteReceived(data);
     });
@@ -404,15 +405,15 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
     // a skin renders) and refresh the Skin Studio gallery if it's open.
     game.socket.on('skinsUpdate', (data: { skins: CustomSkin[]; isAdmin?: boolean }) => {
         setCustomSkins(data?.skins);
-        (window as any).currentGame?.skinStudio?.applyCatalog(data?.skins || [], !!data?.isAdmin);
+        getCurrentGame()?.skinStudio?.applyCatalog(data?.skins || [], !!data?.isAdmin);
     });
     game.socket.on('skinPublished', (skin: CustomSkin) => {
         upsertCustomSkin(skin);
-        (window as any).currentGame?.skinStudio?.applySkinPublished(skin);
+        getCurrentGame()?.skinStudio?.applySkinPublished(skin);
     });
     game.socket.on('skinDeleted', (id: string) => {
         removeCustomSkin(id);
-        (window as any).currentGame?.skinStudio?.applySkinDeleted(id);
+        getCurrentGame()?.skinStudio?.applySkinDeleted(id);
     });
 
     game.socket.on('disconnect', (reason: string) => {

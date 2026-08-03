@@ -304,3 +304,18 @@ export class Preloader {
         return this.progress;
     }
 }
+
+/**
+ * Assets loaded once at boot and shared by everything that draws petals or
+ * sprites. Was `window.preloadedAssets`; the sprite atlas has no business
+ * being on the global object, and the readers all live in this bundle.
+ */
+let preloadedAssets: PreloadedAssets | null = null;
+
+export function setPreloadedAssets(assets: PreloadedAssets | null): void {
+    preloadedAssets = assets;
+}
+
+export function getPreloadedAssets(): PreloadedAssets | null {
+    return preloadedAssets;
+}

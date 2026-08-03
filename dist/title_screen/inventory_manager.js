@@ -8,6 +8,11 @@ const loadout_bar_1 = require("../graphics/loadout-bar");
 const inventory_panel_1 = require("../graphics/inventory-panel");
 const game_adapter_1 = require("./game_adapter");
 const zoom_compensation_1 = require("../zoom-compensation");
+const app_refs_1 = require("../app_refs");
+const preconnect_1 = require("../net/preconnect");
+const preloader_1 = require("../preloader");
+const alt_key_1 = require("../alt_key");
+const auth_session_1 = require("../auth_session");
 /**
  * Title Screen Inventory Manager
  * Handles inventory and loadout on the title screen using the preconnected socket.
@@ -40,41 +45,14 @@ class TitleScreenInventoryManager {
         this.craftingInventoryManager = new inventory_1.InventoryManager(this.gameAdapter, null, { craftingOnly: true });
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
-        // Setup ALT key tracking for tooltip value display (only once globally)
-        if (!window.altKeyTrackingSetup) {
-            window.altKeyPressed = false;
-            window.altKeyTrackingSetup = true;
-            window.titleScreenInventoryManagers = [];
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Alt') {
-                    window.altKeyPressed = true;
-                    // Update all tooltips
-                    const managers = window.titleScreenInventoryManagers || [];
-                    managers.forEach((manager) => {
-                        if (manager.tooltipElement) {
-                            manager.updateTooltipValues(true);
-                        }
-                    });
-                }
-            });
-            document.addEventListener('keyup', (e) => {
-                if (e.key === 'Alt') {
-                    window.altKeyPressed = false;
-                    // Update all tooltips
-                    const managers = window.titleScreenInventoryManagers || [];
-                    managers.forEach((manager) => {
-                        if (manager.tooltipElement) {
-                            manager.updateTooltipValues(false);
-                        }
-                    });
-                }
-            });
-        }
-        // Register this instance
-        if (!window.titleScreenInventoryManagers) {
-            window.titleScreenInventoryManagers = [];
-        }
-        window.titleScreenInventoryManagers.push(this);
+        // ALT held = tooltips show full values. The document listeners and the
+        // flag live in alt_key.ts; subscribing per instance replaces the old
+        // window-global array of every live manager.
+        (0, alt_key_1.installAltKeyTracking)();
+        (0, alt_key_1.onAltChange)((pressed) => {
+            if (this.tooltipElement)
+                this.updateTooltipValues(pressed);
+        });
     }
     setupGlobalDragAndDrop() {
         // Handle dropping items outside loadout slots to move them back to inventory
@@ -125,7 +103,7 @@ class TitleScreenInventoryManager {
                 loadout: this.getActiveLoadout()
             }),
             getPetalCanvas: (petalType, rarity, _time) => {
-                const assets = window.preloadedAssets;
+                const assets = (0, preloader_1.getPreloadedAssets)();
                 if (!assets || !assets.petalImages)
                     return null;
                 const entry = assets.petalImages[`${petalType}_${rarity}`];
@@ -139,7 +117,7 @@ class TitleScreenInventoryManager {
             },
             getPetalStats: (petalType, rarity) => (0, petals_1.getPetalStats)(petalType, rarity),
             getItemSpriteDataUrl: (itemType) => {
-                const assets = window.preloadedAssets;
+                const assets = (0, preloader_1.getPreloadedAssets)();
                 if (!assets || !assets.itemSprites)
                     return null;
                 const img = assets.itemSprites[itemType];
@@ -214,7 +192,7 @@ class TitleScreenInventoryManager {
         ghost.style.left = '-1000px';
         document.body.appendChild(ghost);
         const gctx = ghost.getContext('2d');
-        const assets = window.preloadedAssets;
+        const assets = (0, preloader_1.getPreloadedAssets)();
         let drew = false;
         if (gctx && itemKey.startsWith('petal_')) {
             const petalType = itemKey.substring(6);
@@ -346,18 +324,20 @@ class TitleScreenInventoryManager {
     }
     setupSocketListeners() {
         // Check for preconnected socket and authenticate early to get player data
-        if (window.preconnectedSocket && window.preconnectedSocket.connected) {
-            this.socket = window.preconnectedSocket;
-            this.authenticateAndFetchData();
+        const live = (0, preconnect_1.getLivePreconnectedSocket)();
+        if (live) {
+            this.socket = live;
+            void this.authenticateAndFetchData();
             this.setupCraftingSocketListeners();
             this.setupSkillsSocketListeners();
         }
         else {
             // Wait for socket to connect
             const checkSocket = setInterval(() => {
-                if (window.preconnectedSocket && window.preconnectedSocket.connected) {
-                    this.socket = window.preconnectedSocket;
-                    this.authenticateAndFetchData();
+                const socket = (0, preconnect_1.getLivePreconnectedSocket)();
+                if (socket) {
+                    this.socket = socket;
+                    void this.authenticateAndFetchData();
                     this.setupCraftingSocketListeners();
                     this.setupSkillsSocketListeners();
                     clearInterval(checkSocket);
@@ -486,21 +466,20 @@ class TitleScreenInventoryManager {
     }
     /** Re-bind to the current preconnected socket and re-authenticate to fetch fresh data. */
     reauthenticate() {
-        if (window.preconnectedSocket) {
-            this.socket = window.preconnectedSocket;
+        const socket = (0, preconnect_1.getPreconnectedSocket)();
+        if (socket) {
+            this.socket = socket;
             // Clear the one-shot flag so authenticate runs again
             if (this.socket._titleScreenAuthenticated) {
                 this.socket._titleScreenAuthenticated = false;
             }
             this.isAuthenticated = false;
-            this.authenticateAndFetchData();
+            void this.authenticateAndFetchData();
         }
     }
-    authenticateAndFetchData() {
+    async authenticateAndFetchData() {
         if (!this.socket || !this.socket.connected)
             return;
-        const username = localStorage.getItem('username');
-        const password = localStorage.getItem('password');
         // Get player name from localStorage or the name input element
         const nameInput = document.getElementById('nameInput');
         const playerName = (nameInput?.value || localStorage.getItem('playerName') || 'Unnamed');
@@ -511,7 +490,10 @@ class TitleScreenInventoryManager {
         // (maze: whole inventory displayed one rarity lower, super+ petals
         // silently unequipped) just for opening the page.
         const spawnBiome = 'default';
-        if (!username || !password)
+        // May await a first-load token exchange; the duplicate-auth flag below
+        // is still checked and set in one synchronous step afterwards.
+        const auth = await (0, auth_session_1.getSocketAuth)(playerName, spawnBiome);
+        if (!auth || !this.socket?.connected)
             return;
         console.log('[TitleScreenInventory] Authenticating to fetch player data...');
         // Authenticate to get player data (this will spawn on server but we won't show game until Ready)
@@ -521,12 +503,7 @@ class TitleScreenInventoryManager {
             return;
         }
         this.socket._titleScreenAuthenticated = true;
-        this.socket.emit('authenticate', {
-            username,
-            password,
-            playerName,
-            spawnBiome
-        });
+        this.socket.emit('authenticate', auth);
         // Listen for authentication response (use on instead of once to catch it if already sent)
         const authenticatedHandler = (response) => {
             if (response.success && response.player) {
@@ -583,9 +560,7 @@ class TitleScreenInventoryManager {
                     }
                 }
                 // Loadout has loaded, notify title screen to stop showing connecting
-                if (window.titleScreen) {
-                    window.titleScreen.onLoadoutLoaded();
-                }
+                (0, app_refs_1.getTitleScreen)()?.onLoadoutLoaded();
             }
         };
         // Check if already authenticated (socket might have authenticated before we set up listener)
@@ -1268,7 +1243,7 @@ class TitleScreenInventoryManager {
                 if (this.hoveredElement === element && !isDragging) {
                     this.showTooltip(element, petalType, rarity);
                     // Check initial ALT state
-                    this.updateTooltipValues(window.altKeyPressed || false);
+                    this.updateTooltipValues((0, alt_key_1.isAltPressed)());
                 }
             }, 200);
         };
@@ -1407,7 +1382,7 @@ class TitleScreenInventoryManager {
         const rect = hit.rect;
         this.tooltipTimeout = window.setTimeout(() => {
             this.showTooltipAtRect(rect, petalType, rarity);
-            this.updateTooltipValues(window.altKeyPressed || false);
+            this.updateTooltipValues((0, alt_key_1.isAltPressed)());
         }, 200);
     }
     /** Like showTooltip() but anchored to a client-space rect (canvas hit). */
@@ -1503,9 +1478,7 @@ class TitleScreenInventoryManager {
             this.craftingInventoryManager.updateCraftingDisplay();
         }
         // Loadout has loaded, notify title screen to stop showing connecting
-        if (window.titleScreen) {
-            window.titleScreen.onLoadoutLoaded();
-        }
+        (0, app_refs_1.getTitleScreen)()?.onLoadoutLoaded();
     }
     updateSkillsData(tp, skills) {
         // Update skills data in playerData
@@ -1516,8 +1489,9 @@ class TitleScreenInventoryManager {
     }
     toggleCrafting() {
         // Check if game is running - if so, use game's crafting
-        if (window.currentGame && window.currentGame.inventoryManager) {
-            window.currentGame.inventoryManager.toggleCrafting();
+        const game = (0, app_refs_1.getCurrentGame)();
+        if (game?.inventoryManager) {
+            game.inventoryManager.toggleCrafting();
             return;
         }
         // Update adapter with current player data before toggling

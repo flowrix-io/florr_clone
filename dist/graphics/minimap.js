@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const constants_1 = require("../constants");
+const squad_state_1 = require("../squad_state");
 const MINIMAP_SPAWN_COLORS = {
     common: 'rgba(126, 239, 109, 0.4)',
     uncommon: 'rgba(255, 230, 93, 0.4)',
@@ -177,7 +178,7 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
     this.ctx.rect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     this.ctx.clip();
     // Draw all players on minimap with solid colors (with scroll offset)
-    const squadMemberIds = window.squadMemberIds || [];
+    const squadMemberIds = (0, squad_state_1.getSquadMemberIds)();
     const squadMemberSet = new Set(squadMemberIds);
     players.forEach(player => {
         const isCurrentPlayer = player.id === socket;

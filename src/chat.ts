@@ -1,5 +1,7 @@
 import { Socket } from './ws_client';
 import { FaceFlags, EquipmentFlags, PlayerRenderFlags } from './player';
+import { getCurrentGame } from './app_refs';
+import { setSquadMemberIds } from './squad_state';
 
 interface SandboxedScript {
     id: string;
@@ -139,7 +141,7 @@ export class Chat {
 
         this.socket.on('squadUpdate', (data: { squadId: string; memberIds: string[]; leaderId: string } | null) => {
             // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
-            (window as any).squadMemberIds = data ? data.memberIds : [];
+            setSquadMemberIds(data ? data.memberIds : []);
         });
 
         this.socket.on('squadInviteReceived', (data: { fromUsername: string }) => {
@@ -149,7 +151,7 @@ export class Chat {
 
     private handleClientCommand(message: string): boolean {
         if (message === '/skins' || message === '/skin-studio') {
-            const game = (window as any).currentGame;
+            const game = getCurrentGame() as any;
             if (game?.skinStudio) {
                 game.skinStudio.toggle();
             } else {
@@ -158,7 +160,7 @@ export class Chat {
             return true;
         }
         if (message === '/guild-menu' || message === '/guild menu') {
-            const game = (window as any).currentGame;
+            const game = getCurrentGame() as any;
             if (game?.guildMenu) {
                 game.guildMenu.toggle();
             } else {
@@ -168,7 +170,7 @@ export class Chat {
         }
         if (message.startsWith('/forcelocalplayerflags')) {
             const args = message.slice('/forcelocalplayerflags'.length).trim().split(/\s+/);
-            const game = (window as any).currentGame;
+            const game = getCurrentGame() as any;
             if (!game) {
                 this.addChatMessage({ sender: 'System', content: 'Game not loaded.', timestamp: Date.now() });
                 return true;

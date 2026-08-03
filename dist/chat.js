@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Chat = void 0;
 const player_1 = require("./player");
+const app_refs_1 = require("./app_refs");
+const squad_state_1 = require("./squad_state");
 const COMMANDS = [
     { command: '/help', description: 'Show available commands', isAdmin: false },
     { command: '/list_ultra', description: 'List all ultra mobs', isAdmin: false },
@@ -104,7 +106,7 @@ class Chat {
         });
         this.socket.on('squadUpdate', (data) => {
             // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
-            window.squadMemberIds = data ? data.memberIds : [];
+            (0, squad_state_1.setSquadMemberIds)(data ? data.memberIds : []);
         });
         this.socket.on('squadInviteReceived', (data) => {
             // Visual notification is already handled via chatMessage from server
@@ -112,7 +114,7 @@ class Chat {
     }
     handleClientCommand(message) {
         if (message === '/skins' || message === '/skin-studio') {
-            const game = window.currentGame;
+            const game = (0, app_refs_1.getCurrentGame)();
             if (game?.skinStudio) {
                 game.skinStudio.toggle();
             }
@@ -122,7 +124,7 @@ class Chat {
             return true;
         }
         if (message === '/guild-menu' || message === '/guild menu') {
-            const game = window.currentGame;
+            const game = (0, app_refs_1.getCurrentGame)();
             if (game?.guildMenu) {
                 game.guildMenu.toggle();
             }
@@ -133,7 +135,7 @@ class Chat {
         }
         if (message.startsWith('/forcelocalplayerflags')) {
             const args = message.slice('/forcelocalplayerflags'.length).trim().split(/\s+/);
-            const game = window.currentGame;
+            const game = (0, app_refs_1.getCurrentGame)();
             if (!game) {
                 this.addChatMessage({ sender: 'System', content: 'Game not loaded.', timestamp: Date.now() });
                 return true;

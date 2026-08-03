@@ -5,6 +5,7 @@ const constants_1 = require("../constants");
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
 const zoom_compensation_1 = require("../zoom-compensation");
+const canvas_ctx_state_1 = require("./canvas_ctx_state");
 var player_1 = require("../player");
 Object.defineProperty(exports, "FaceFlags", { enumerable: true, get: function () { return player_1.FaceFlags; } });
 Object.defineProperty(exports, "EquipmentFlags", { enumerable: true, get: function () { return player_1.EquipmentFlags; } });
@@ -304,8 +305,7 @@ class Graphics {
         // The main-canvas 2D context's backing (GPU vs software) is locked in
         // by the getContext call above and can't change on a live canvas — the
         // settings toggle reloads the page when this flag is set.
-        if (typeof window !== 'undefined')
-            window.__mainCanvasCtxCommitted = true;
+        (0, canvas_ctx_state_1.markMainCanvasCtxCommitted)();
         this.playerSprite = playerSprite;
         this.wallTexture = wallTexture;
         this.healthPotionSprite = healthPotionSprite;

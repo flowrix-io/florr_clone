@@ -8,6 +8,7 @@ import { CanvasInventoryPanel, InventoryHitInfo } from './graphics/inventory-pan
 import { CanvasCraftingPanel, CraftingItem } from './graphics/crafting-panel';
 import { CanvasMobGalleryPanel } from './graphics/mob-gallery-panel';
 import { drawPetalGroup } from './graphics/petal-icon';
+import { installAltKeyTracking, isAltPressed } from './alt_key';
 
 export interface GameInterface {
     getLocalPlayer(): Player | undefined;
@@ -317,7 +318,7 @@ export class InventoryManager {
             if (!this.canvasHoverPetal || this.isDragging) return;
             const { petalType: pt, rarity: rr, rect } = this.canvasHoverPetal;
             this.showTooltipAtRect(rect, pt, rr);
-            this.updateTooltipValues((window as any).altKeyPressed || false);
+            this.updateTooltipValues(isAltPressed());
         }, 200);
     }
 
@@ -448,7 +449,7 @@ export class InventoryManager {
                 if (this.hoveredElement === element && !this.isDragging) {
                     this.showTooltip(element, petalType, rarity);
                     // Check initial ALT state
-                    this.updateTooltipValues((window as any).altKeyPressed || false);
+                    this.updateTooltipValues(isAltPressed());
                 }
             }, 200); // 0.2 seconds
         };
@@ -488,19 +489,15 @@ export class InventoryManager {
         const mobGalleryOnly = options?.mobGalleryOnly === true;
         const craftingOnly = options?.craftingOnly === true;
 
-        // Setup ALT key tracking for tooltip value display
-        (window as any).altKeyPressed = false;
+        // ALT held = tooltips show full values. The flag itself lives in
+        // alt_key.ts (shared with the title-screen inventory); this only
+        // repaints our own tooltip, and unhooks with the rest of our listeners.
+        installAltKeyTracking();
         document.addEventListener('keydown', (e: KeyboardEvent) => {
-            if (e.key === 'Alt') {
-                (window as any).altKeyPressed = true;
-                this.updateTooltipValues(true);
-            }
+            if (e.key === 'Alt') this.updateTooltipValues(true);
         }, { signal: this.listenerAbort.signal });
         document.addEventListener('keyup', (e: KeyboardEvent) => {
-            if (e.key === 'Alt') {
-                (window as any).altKeyPressed = false;
-                this.updateTooltipValues(false);
-            }
+            if (e.key === 'Alt') this.updateTooltipValues(false);
         }, { signal: this.listenerAbort.signal });
 
         if (!mobGalleryOnly && !craftingOnly) {

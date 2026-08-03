@@ -1,5 +1,6 @@
 import { Graphics, Player, SECTION_CONFIGS, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState } from './core';
 import { getTileTypeConfig, isTileIdSolid } from '../constants';
+import { getSquadMemberIds } from '../squad_state';
 
 const MINIMAP_SPAWN_COLORS: Record<string, string> = {
     common: 'rgba(126, 239, 109, 0.4)',
@@ -219,7 +220,7 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
     this.ctx.clip();
 
     // Draw all players on minimap with solid colors (with scroll offset)
-    const squadMemberIds: string[] = (window as any).squadMemberIds || [];
+    const squadMemberIds: string[] = getSquadMemberIds();
     const squadMemberSet = new Set<string>(squadMemberIds);
     players.forEach(player => {
         const isCurrentPlayer = player.id === socket;
