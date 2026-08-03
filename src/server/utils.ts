@@ -1,7 +1,7 @@
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { ENEMY_TIERS, enemies, players } from '../constants';
-import { splitPlayers } from '../petal_actions';
+import { splitPlayers, syncSplitStars } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
 import { isBot } from './botManager';
 import { recordBossEvent, stripHtml } from './apiKeyApi';
@@ -314,6 +314,7 @@ export function trackMobKill(
             
             const starsAwarded = starRewards[enemy.tier] || 0;
             player.stars += starsAwarded;
+            syncSplitStars(player);
             
             // Notify player of stars earned
             if (io && starsAwarded > 0) {

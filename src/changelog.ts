@@ -491,6 +491,12 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Made pets smaller',
             'Nerf digger egg'
         ]
+    },
+    {
+        date: 'August 3, 2026',
+        changes: [
+            'Patched duping exploit',
+        ]
     }
 ];
 

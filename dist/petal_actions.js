@@ -17,6 +17,7 @@ exports.cleanupPetalActions = cleanupPetalActions;
 exports.cleanupPlayerPetalActionState = cleanupPlayerPetalActionState;
 exports.splitPlayer = splitPlayer;
 exports.switchPlayer = switchPlayer;
+exports.syncSplitStars = syncSplitStars;
 exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
 const playerWire_1 = require("./server/playerWire");
@@ -1610,6 +1611,22 @@ function switchPlayer(player, io, socketId) {
         io.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
     }
     console.log(`[PetalActions] Switched to player ${splitState.activeIndex === 0 ? '1' : '2'} (activePlayerId=${activePlayerId})`);
+}
+// Stars are one wallet per client, but each split half carries its own numeric
+// copy while the shop/redeem handlers always mutate players[socket.id] (half 1)
+// and saves persist whichever half a given path grabs. Every live stars
+// mutation must call this so both halves agree — an unsynced sibling turns
+// spent stars back into saved stars (or drops earned ones) on the next save.
+function syncSplitStars(player) {
+    const originalId = player.id.replace('_split2', '').replace('_split1', '');
+    const state = exports.splitPlayers.get(originalId);
+    if (!state)
+        return;
+    for (const id of [state.player1.id, state.player2.id]) {
+        const half = constants_1.players[id];
+        if (half && half !== player)
+            half.stars = player.stars;
+    }
 }
 // Update petal position in action context
 function updatePetalPosition(petalId, x, y) {

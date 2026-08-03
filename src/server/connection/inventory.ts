@@ -11,7 +11,7 @@ import { enemies, players } from '../../constants';
 import { Notification, database } from '../../database';
 import { ID_TO_ITEM_KEY, ID_TO_RARITY, getItemCount } from '../../inventoryCodec';
 import { Item, ItemWithRarity } from '../../item';
-import { despawnPet, spawnPet } from '../../petal_actions';
+import { despawnPet, spawnPet, syncSplitStars } from '../../petal_actions';
 import { ABSORBING_SKILL_MULTIPLIERS, ABSORB_XP, getEffectivePetalCooldown, getPetalStats, getRarityIndex, isUndroppableEggPetalType } from '../../petals';
 import { PlayerInventory } from '../../player';
 import { playerUserIds } from '../gameState';
@@ -478,14 +478,46 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
             player.loadout = validatedLoadout;
             player.inventory = serverInventory; // Use server's inventory, not client's
 
-            // Check if this player is split and update the other split player's inventory reference
-            // (splitState was already declared above, so we can reuse it)
+            // While split, the two halves share ONE inventory and ONE logical
+            // loadout (the split clones it, so they start identical). Every
+            // loadout edit must be mirrored onto the parked half: if it kept
+            // its own copy, unequipping on the active half would return petals
+            // to the shared inventory while the parked half still held them —
+            // and any save that grabs the parked half (the 60s autosave and
+            // the disconnect save both use players[originalId]) would persist
+            // both copies, duping the whole loadout every session.
             if (splitState) {
-                // Both players share the same inventory, so update the other player's reference
-                if (splitState.player1.id === socket.id) {
-                    splitState.player2.inventory = serverInventory;
-                } else if (splitState.player2.id === socket.id) {
-                    splitState.player1.inventory = serverInventory;
+                const otherHalfId = splitState.player1.id === targetPlayerId
+                    ? splitState.player2.id
+                    : splitState.player1.id;
+                const otherHalf = players[otherHalfId];
+                if (otherHalf) {
+                    // The parked half's pets follow its loadout: despawn pets of
+                    // any egg petal this edit removed (its mirrored copy is about
+                    // to lose that slot too).
+                    for (let index = 0; index < loadoutIterationLength; index++) {
+                        const oldItem = oldLoadout[index] || null;
+                        const newItem = validatedLoadout[index];
+                        if (!oldItem) continue;
+                        if (newItem && itemsMatch(oldItem, newItem)) continue;
+                        if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
+                            const oldPetalStats = getPetalStats(oldItem.petalType, oldItem.rarity);
+                            if (oldPetalStats?.petMobType) {
+                                for (let i = enemies.length - 1; i >= 0; i--) {
+                                    const e = enemies[i];
+                                    if (e.ownerId === otherHalf.id && e.type === oldPetalStats.petMobType) {
+                                        despawnPet(e, io);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    otherHalf.inventory = serverInventory;
+                    otherHalf.loadout = validatedLoadout.map(item => (item ? { ...item } : null));
+                    recalculatePlayerStats(otherHalf, io);
+                    // Broadcast like splitPlayer does so other clients re-render
+                    // the parked half's petals from its new loadout.
+                    io.emit('playerUpdated', sanitizePlayerForClient(otherHalf));
                 }
             }
 
@@ -824,6 +856,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
 
             // Deduct stars
             player.stars = stars - data.price;
+            syncSplitStars(player);
 
             // Add item to inventory. The inventory is always in regular-world
             // terms — even inside the maze (only the locked loadout shifts) —
@@ -884,6 +917,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                 player.stars = 0;
             }
             player.stars += redeemedCode.stars;
+            syncSplitStars(player);
 
             // Track usage
             redeemedCode.uses++;

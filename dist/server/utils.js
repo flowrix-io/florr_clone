@@ -264,6 +264,7 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
             };
             const starsAwarded = starRewards[enemy.tier] || 0;
             player.stars += starsAwarded;
+            (0, petal_actions_1.syncSplitStars)(player);
             // Notify player of stars earned
             if (io && starsAwarded > 0) {
                 // Map split player ID to original socket ID for socket room targeting
