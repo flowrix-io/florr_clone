@@ -2274,7 +2274,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         isAdminPetal: true
     },
     splitter: {
-        name: "Splitter Petal",
+        name: "Splitter",
         damage: 5,
         health: 15,
         size: 1.0,

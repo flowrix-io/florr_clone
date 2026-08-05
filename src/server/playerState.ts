@@ -822,7 +822,9 @@ export function validatePlayerPositions(io: SocketIOServer): void {
                 player.x < 0 || player.x > ACTUAL_WORLD_WIDTH ||
                 player.y < 0 || player.y > ACTUAL_WORLD_HEIGHT)) {
                 
-                console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
+                if (!playerId.startsWith('bot_')) {
+                    console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
+                }
                 
                 // Reset to center of world
                 player.x = ACTUAL_WORLD_WIDTH / 2;
@@ -2372,12 +2374,16 @@ export function updatePlayerState(
                                         }
                                     }
                                     
-                                    console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
+                                    if (!player.id.startsWith('bot_')) {
+                                        console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
+                                    }
                                 }
                             }, expirationTime);
                             itemExpirationTimeouts.set(itemId, timeout);
                             
-                            console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                            if (!player.id.startsWith('bot_')) {
+                                console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                            }
                         }
                     }
 
@@ -2630,7 +2636,9 @@ export function updatePlayerState(
                                 }
                             }, RESPAWN_INVULNERABILITY_TIME);
                             
-                            console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
+                            if (!player.id.startsWith('bot_') && !otherPlayerId.startsWith('bot_')) {
+                                console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
+                            }
                             
                             // Break out of the loop since we've used the petal
                             break;
@@ -2836,7 +2844,9 @@ export function updatePlayerState(
                     teleportTo: element.properties.teleportTo
                 });
 
-                console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
+                if (!player.id.startsWith('bot_')) {
+                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
+                }
             }
 
             // Check if player has been in teleporter for 1 second and is not on cooldown
@@ -2849,7 +2859,9 @@ export function updatePlayerState(
                 player.teleportCooldown = currentTime + TELEPORTER_COOLDOWN;
 
                 if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
-                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
+                    if (!player.id.startsWith('bot_')) {
+                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
+                    }
 
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
@@ -2878,7 +2890,9 @@ export function updatePlayerState(
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
 
-                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
+                    if (!player.id.startsWith('bot_')) {
+                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
+                    }
 
                     io.to(getOriginalSocketId(player.id)).emit('playerTeleported', {
                         newX,
@@ -2894,7 +2908,9 @@ export function updatePlayerState(
 
     // If player is no longer in any teleporter, reset teleporter state
     if (!currentTeleporter && player.currentTeleporter) {
-        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
+        if (!player.id.startsWith('bot_')) {
+            console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
+        }
         player.currentTeleporter = undefined;
         player.teleporterEnterTime = undefined;
 

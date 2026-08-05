@@ -677,7 +677,9 @@ function validatePlayerPositions(io) {
             if (!inArena && (isNaN(player.x) || isNaN(player.y) ||
                 player.x < 0 || player.x > constants_1.ACTUAL_WORLD_WIDTH ||
                 player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT)) {
-                console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
+                if (!playerId.startsWith('bot_')) {
+                    console.log(`[SERVER] Fixing invalid position for player ${playerId}: (${player.x}, ${player.y})`);
+                }
                 // Reset to center of world
                 player.x = constants_1.ACTUAL_WORLD_WIDTH / 2;
                 player.y = constants_1.ACTUAL_WORLD_HEIGHT / 2;
@@ -2071,11 +2073,15 @@ function updatePlayerState(player, deltaTime, deps) {
                                             io.to(originalSocketId).emit('itemRemoved', itemId);
                                         }
                                     }
-                                    console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
+                                    if (!player.id.startsWith('bot_')) {
+                                        console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
+                                    }
                                 }
                             }, expirationTime);
                             gameState_1.itemExpirationTimeouts.set(itemId, timeout);
-                            console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                            if (!player.id.startsWith('bot_')) {
+                                console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                            }
                         }
                     }
                     // Check collision with mob projectiles (treat them as enemy petals)
@@ -2295,7 +2301,9 @@ function updatePlayerState(player, deltaTime, deps) {
                                     io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
                                 }
                             }, constants_1.RESPAWN_INVULNERABILITY_TIME);
-                            console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
+                            if (!player.id.startsWith('bot_') && !otherPlayerId.startsWith('bot_')) {
+                                console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
+                            }
                             // Break out of the loop since we've used the petal
                             break;
                         }
@@ -2480,7 +2488,9 @@ function updatePlayerState(player, deltaTime, deps) {
                     timeRequired: 1000,
                     teleportTo: element.properties.teleportTo
                 });
-                console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
+                if (!player.id.startsWith('bot_')) {
+                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
+                }
             }
             // Check if player has been in teleporter for 1 second and is not on cooldown
             const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
@@ -2489,7 +2499,9 @@ function updatePlayerState(player, deltaTime, deps) {
                 // Set 5 second player-based cooldown
                 player.teleportCooldown = currentTime + constants_1.TELEPORTER_COOLDOWN;
                 if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
-                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
+                    if (!player.id.startsWith('bot_')) {
+                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
+                    }
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
                     transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_1.SCALE_FACTOR, teleportTo.y * constants_1.SCALE_FACTOR, io, database, useHttps, currentServerConfig, currentServerPort).catch(error => {
@@ -2504,7 +2516,9 @@ function updatePlayerState(player, deltaTime, deps) {
                     newY = teleportTo.y * constants_1.SCALE_FACTOR;
                     player.currentTeleporter = undefined;
                     player.teleporterEnterTime = undefined;
-                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
+                    if (!player.id.startsWith('bot_')) {
+                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
+                    }
                     io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTeleported', {
                         newX,
                         newY,
@@ -2517,7 +2531,9 @@ function updatePlayerState(player, deltaTime, deps) {
     }
     // If player is no longer in any teleporter, reset teleporter state
     if (!currentTeleporter && player.currentTeleporter) {
-        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
+        if (!player.id.startsWith('bot_')) {
+            console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
+        }
         player.currentTeleporter = undefined;
         player.teleporterEnterTime = undefined;
         io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterExited');

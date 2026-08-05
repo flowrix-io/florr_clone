@@ -651,11 +651,13 @@ function registerInventoryHandlers(ctx) {
                             apex: '#ff00ff'
                         };
                         const rarityColor = rarityColors[newRarity] || '#ffffff';
-                        const petalName = petalStats.name.slice(0, -5);
+                        const petalName = petalStats.name;
+                        const rarityLabel = newRarity.charAt(0).toUpperCase() + newRarity.slice(1);
+                        const article = /^[aeiou]/i.test(rarityLabel) ? 'An' : 'A';
                         const username = socket.username || 'Unknown';
                         const playerNickname = player.name || username;
-                        const chatMessage = `<b style="color: ${rarityColor};">A ${petalName}has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`;
-                        const plainMessage = `A ${petalName} has been crafted by @${username} [${playerNickname}]`;
+                        const chatMessage = `<b style="color: ${rarityColor};">${article} ${rarityLabel} ${petalName} has been crafted by <b style="color: #00ff00;">@${username}</b> [<b style="color: yellow;">${playerNickname}</b>]</b>`;
+                        const plainMessage = `${article} ${rarityLabel} ${petalName} has been crafted by @${username} [${playerNickname}]`;
                         io.emit('chatMessage', {
                             sender: '',
                             content: chatMessage,
@@ -664,7 +666,9 @@ function registerInventoryHandlers(ctx) {
                         // Save to global notifications with player info
                         const notification = {
                             id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                            type: newRarity === 'unique' ? 'unique_craft' : 'super_craft',
+                            type: newRarity === 'apex' ? 'apex_craft'
+                                : newRarity === 'unique' ? 'unique_craft'
+                                    : 'super_craft',
                             message: plainMessage,
                             timestamp: Date.now()
                         };

@@ -139,7 +139,7 @@ function registerApiKeyRoutes(app, deps) {
     // to every player.
     app.post('/api/v1/notifications', requireApiKey, requireAdminApiKey, (req, res) => {
         const { type, message } = req.body ?? {};
-        const validTypes = ['super_craft', 'unique_craft', 'star_code'];
+        const validTypes = ['super_craft', 'unique_craft', 'apex_craft', 'star_code'];
         if (!validTypes.includes(type)) {
             return res.status(400).json({ error: `"type" must be one of ${validTypes.join(', ')}` });
         }

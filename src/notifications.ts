@@ -2,7 +2,7 @@ import { getBaseDeviceScale } from './zoom-compensation';
 
 export interface Notification {
     id: string;
-    type: 'super_craft' | 'unique_craft' | 'star_code';
+    type: 'super_craft' | 'unique_craft' | 'apex_craft' | 'star_code';
     message: string;
     timestamp: number;
     read?: boolean; // Optional for server notifications
@@ -428,6 +428,7 @@ export class NotificationsManager {
                 if (!isRead) borderColor = '#ffd700';
                 if (notification.type === 'super_craft') borderColor = '#2bffa4';
                 if (notification.type === 'unique_craft') borderColor = '#bf00ff';
+                if (notification.type === 'apex_craft') borderColor = '#ff00ff';
                 if (notification.type === 'star_code') borderColor = '#ffd700';
 
                 // Calculate text width for wrapping (must match calculation used for contentHeight)

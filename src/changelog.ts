@@ -497,6 +497,12 @@ export const CHANGELOG: ChangelogEntry[] = [
         changes: [
             'Patched duping exploit',
         ]
+    },
+    {
+        date: 'August 4, 2026',
+        changes: [
+            'Removed some petals that were duped',
+        ]
     }
 ];
 

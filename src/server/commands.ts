@@ -505,7 +505,7 @@ export function executeServerCommand(
             const message = parts.slice(2).join(' '); // Join remaining parts as message
             
             // Validate type
-            const validTypes: Notification['type'][] = ['super_craft', 'unique_craft', 'star_code'];
+            const validTypes: Notification['type'][] = ['super_craft', 'unique_craft', 'apex_craft', 'star_code'];
             if (!validTypes.includes(type as Notification['type'])) {
                 sendOutput(`Invalid notification type. Valid types: ${validTypes.join(', ')}`, socketId, io);
                 return;
@@ -524,7 +524,7 @@ export function executeServerCommand(
         } else {
             sendOutput('Usage: notification <type> <message>', socketId, io);
             sendOutput('  Or: notify <type> <message> (shorthand)', socketId, io);
-            sendOutput('  Valid types: super_craft, unique_craft, star_code', socketId, io);
+            sendOutput('  Valid types: super_craft, unique_craft, apex_craft, star_code', socketId, io);
             sendOutput('  Examples:', socketId, io);
             sendOutput('    notification star_code Special event starting now!', socketId, io);
             sendOutput('    notify unique_craft New unique petal discovered!', socketId, io);

@@ -109,7 +109,7 @@ export interface RedeemedCode {
 
 export interface Notification {
     id: string;
-    type: 'super_craft' | 'unique_craft' | 'star_code';
+    type: 'super_craft' | 'unique_craft' | 'apex_craft' | 'star_code';
     message: string;
     timestamp: number;
 }

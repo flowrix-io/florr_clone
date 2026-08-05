@@ -387,6 +387,8 @@ class NotificationsManager {
                     borderColor = '#2bffa4';
                 if (notification.type === 'unique_craft')
                     borderColor = '#bf00ff';
+                if (notification.type === 'apex_craft')
+                    borderColor = '#ff00ff';
                 if (notification.type === 'star_code')
                     borderColor = '#ffd700';
                 // Calculate text width for wrapping (must match calculation used for contentHeight)
