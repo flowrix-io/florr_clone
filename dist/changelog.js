@@ -493,6 +493,9 @@ exports.CHANGELOG = [
         date: 'August 6, 2026',
         changes: [
             'Patched a cheat',
+            'Fixed apex mobs despawning',
+            'Admins can now post images in chat',
+            '/spawn command now announces boss mobs',
         ]
     }
 ];
