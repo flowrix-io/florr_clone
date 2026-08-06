@@ -545,6 +545,22 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
             }
         },
     },
+    // Yin Yang just flips rotation direction — it isn't a stacking speed bonus,
+    // so every rarity is pinned to the same -1.0 (reversed, same magnitude).
+    // Without these overrides the generic rarity scaler (which multiplies the
+    // delta from 1.0 by up to ~4.4x at apex) would blow -1.0 out to nearly
+    // -8x speed at high rarity.
+    yin_yang: {
+        uncommon: { playerModifiers: { rotationSpeed: -1.0 } },
+        rare: { playerModifiers: { rotationSpeed: -1.0 } },
+        epic: { playerModifiers: { rotationSpeed: -1.0 } },
+        legendary: { playerModifiers: { rotationSpeed: -1.0 } },
+        mythic: { playerModifiers: { rotationSpeed: -1.0 } },
+        ultra: { playerModifiers: { rotationSpeed: -1.0 } },
+        super: { playerModifiers: { rotationSpeed: -1.0 } },
+        unique: { playerModifiers: { rotationSpeed: -1.0 } },
+        apex: { playerModifiers: { rotationSpeed: -1.0 } },
+    },
     powder: {
         uncommon: {
             playerModifiers: {
