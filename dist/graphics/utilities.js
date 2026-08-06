@@ -276,8 +276,8 @@ core_1.Graphics.prototype.drawBossBars = function (enemies) {
         right: this.cameraX + scaledWidth,
         bottom: this.cameraY + scaledHeight
     };
-    // Find all super and unique mobs in view (ultras render with normal mob health bars).
-    // The super/unique candidate list is refreshed at 4Hz instead of scanning the whole
+    // Find all super, unique, and apex mobs in view (ultras render with normal mob health bars).
+    // The boss candidate list is refreshed at 4Hz instead of scanning the whole
     // enemies Map every frame — bosses (de)spawn rarely; the viewport test below still
     // runs per frame so bars appear/disappear instantly as the camera moves.
     // Target dummies and pets are never bosses: dummies are a permanent DPS-test
@@ -287,7 +287,7 @@ core_1.Graphics.prototype.drawBossBars = function (enemies) {
         this._bossCandidatesAt = nowMs;
         this._bossCandidates.length = 0;
         for (const e of enemies.values()) {
-            if (e.tier !== 'super' && e.tier !== 'unique')
+            if (e.tier !== 'super' && e.tier !== 'unique' && e.tier !== 'apex')
                 continue;
             if (e.type === 'target_dummy')
                 continue;

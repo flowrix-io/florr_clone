@@ -430,8 +430,8 @@ function despawnDistantEnemies() {
     const mazeOccupied = (0, mazeSpawner_1.hasMazePlayers)();
     for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
         const enemy = constants_2.enemies[i];
-        // Special mobs (ultra, super, unique) never despawn
-        if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique') {
+        // Special mobs (ultra, super, unique, apex) never despawn
+        if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique' || enemy.tier === 'apex') {
             continue;
         }
         // Target dummies never despawn
@@ -511,6 +511,34 @@ function createEnemy() {
         announceAmbientSuper(enemy);
     }
     return enemy;
+}
+// /spawn builds mobs directly via buildEnemy(), bypassing spawnSpecialMobs()/
+// announceAmbientSuper() entirely, so boss-tier mobs it creates never fired the
+// chat banner or the boss-event log. This mirrors that announcement for any
+// tier normally treated as a boss (super, unique, apex), regardless of spawn origin.
+function announceBossSpawn(bossMob, tier) {
+    const mobSection = (0, enemySpawner_1.getSectionAtPosition)(bossMob.x, bossMob.y);
+    const spawnTimestamp = Date.now();
+    const tierColor = constants_2.ENEMY_TIERS[tier].color;
+    Object.entries(constants_2.players).forEach(([playerId, player]) => {
+        const playerSection = (0, enemySpawner_1.getSectionAtPosition)(player.x, player.y);
+        const somewhere = playerSection === mobSection ? '' : ' somewhere';
+        io.to(playerId).emit('chatMessage', {
+            sender: '',
+            content: `<b style="color: ${tierColor};">A ${tier} ${bossMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
+            timestamp: spawnTimestamp
+        });
+    });
+    const message = `A ${tier} ${bossMob.type.replace('_', ' ')} has spawned!`;
+    (0, apiKeyApi_1.recordBossEvent)({
+        type: 'spawn',
+        tier,
+        mobType: bossMob.type,
+        x: bossMob.x,
+        y: bossMob.y,
+        timestamp: spawnTimestamp,
+        message: (0, apiKeyApi_1.stripHtml)(message)
+    });
 }
 function announceAmbientSuper(superMob) {
     gameState_1.superMobCount.value++;
@@ -645,6 +673,12 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
         constants_2.enemies.push(enemy);
         // Notify all clients
         io.emit('enemySpawned', enemy);
+        // Boss-tier mobs normally announce themselves via spawnSpecialMobs()/
+        // announceAmbientSuper(), neither of which runs for an admin-triggered
+        // spawn — fire the same chat banner + boss-event log here.
+        if ((tier === 'super' || tier === 'unique' || tier === 'apex') && enemy.type !== 'target_dummy') {
+            announceBossSpawn(enemy, tier);
+        }
         // Centipedes need their trailing body chain; without it the head behaves
         // like any other mob and the chain-specific features (severing, avoidance)
         // have nothing to act on.
