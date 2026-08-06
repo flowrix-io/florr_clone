@@ -1655,12 +1655,13 @@ export class TitleScreen implements AppScene {
             this.submanagers.shop = null;
         }
         if (this.submanagers.mobGallery) {
-            // cleanup() first: dropping the reference alone left this
-            // InventoryManager's document-level listeners attached, and
-            // showTitleScreen() builds a fresh one every time we come back.
+            // cleanup() removes this InventoryManager's own panel node by
+            // direct reference (and detaches its listeners). Do NOT also
+            // re-query getElementById('mobGalleryPanel') here: the in-game
+            // InventoryManager may have already created its own panel with
+            // the same id by this point, and a live id lookup after
+            // cleanup() would remove that one instead.
             this.submanagers.mobGallery.cleanup();
-            const mobGalleryPanel = document.getElementById('mobGalleryPanel');
-            mobGalleryPanel?.remove();
             this.submanagers.mobGallery = null;
         }
     }
