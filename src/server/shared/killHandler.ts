@@ -38,7 +38,7 @@ export interface KillContext {
     database: any;
     savePlayerProgress: (player: any, userId: string) => void;
     addXPToPlayer: (player: any, xp: number, socketId?: string) => void;
-    handleMobDrops: (enemy: Enemy) => void;
+    handleMobDrops: (enemy: Enemy, dropMultiplier?: number) => void;
     sendBossMobDefeatedMessage: (enemy: Enemy, io: any, players: Record<string, any>) => void;
     updateSpecialMobCounts: () => void;
     cleanupEnemy: (enemy: Enemy) => void;
@@ -122,9 +122,12 @@ export function killEnemy(
 
     // --- XP + drops + boss message + special-mob count (only when someone gets credit) ---
     if (creditedPlayer) {
-        const xpGained = getXPFromEnemy(enemy);
+        // Leaderboard reward tiers: top 10 accounts get 0.5x XP / 1.2x drop rate,
+        // top 20 get 0.75x XP / 1.1x drop rate.
+        const { xpMultiplier, dropMultiplier } = ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[creditedPlayerId!]);
+        const xpGained = Math.round(getXPFromEnemy(enemy) * xpMultiplier);
         ctx.addXPToPlayer(creditedPlayer, xpGained, creditedPlayerId);
-        ctx.handleMobDrops(enemy);
+        ctx.handleMobDrops(enemy, dropMultiplier);
         ctx.sendBossMobDefeatedMessage(enemy, ctx.io, ctx.players);
         ctx.updateSpecialMobCounts();
     }

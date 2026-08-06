@@ -578,7 +578,7 @@ function applyRaindropAuraDamage(player: ServerPlayer, deps: PlayerStateDependen
 export interface PlayerStateDependencies {
     io: SocketIOServer;
     addXPToPlayer: (player: ServerPlayer, xp: number, socketId?: string) => void;
-    handleMobDrops: (enemy: Enemy) => void;
+    handleMobDrops: (enemy: Enemy, dropMultiplier?: number) => void;
     sendBossMobDefeatedMessage: (enemy: Enemy, io: SocketIOServer, players: Record<string, ServerPlayer>) => void;
     updateSpecialMobCounts: () => void;
     createEnemy: () => Enemy | null;

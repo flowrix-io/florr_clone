@@ -30,10 +30,16 @@ import {
 
 // Function to handle mob drops when a mob dies
 // Accepts enemy data object instead of live enemy to avoid issues with cleaned up enemies
-export function handleMobDrops(enemyData: { type?: string, tier: string, x: number, y: number, damageContributors?: Map<string, number> }, io: SocketIOServer) {
+export function handleMobDrops(enemyData: { type?: string, tier: string, x: number, y: number, damageContributors?: Map<string, number> }, io: SocketIOServer, dropRateMultiplier: number = 1) {
     const mobType = enemyData.type || 'bee'; // Default to bee if type is not set
-    const drops = calculateMobDrops(mobType, enemyData.tier);
-    
+    let drops = calculateMobDrops(mobType, enemyData.tier);
+
+    // Leaderboard drop-rate bonus (e.g. 1.2x = 20% chance of an extra full drop roll).
+    const bonusDropChance = dropRateMultiplier - 1;
+    if (bonusDropChance > 0 && Math.random() < bonusDropChance) {
+        drops = drops.concat(calculateMobDrops(mobType, enemyData.tier));
+    }
+
     // Get list of eligible players based on damage ranking
     let eligiblePlayers = getEligiblePlayers(enemyData as Enemy);
     

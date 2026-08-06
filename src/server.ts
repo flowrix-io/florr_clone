@@ -187,7 +187,7 @@ export { trackDamage, sendBossMobDefeatedMessage };
 
 // Wrapper function for handleMobDrops that passes io (will be set up later)
 let ioInstance: any;
-export function handleMobDrops(enemy: Enemy, io?: any) {
+export function handleMobDrops(enemy: Enemy, dropMultiplier: number = 1, io?: any) {
     const enemyData = {
         type: enemy.type,
         tier: enemy.tier,
@@ -195,7 +195,13 @@ export function handleMobDrops(enemy: Enemy, io?: any) {
         y: enemy.y,
         damageContributors: enemy.damageContributors ? new Map(enemy.damageContributors) : undefined
     };
-    handleMobDropsModule(enemyData, io || ioInstance);
+    handleMobDropsModule(enemyData, io || ioInstance, dropMultiplier);
+}
+
+// Resolves the leaderboard XP/drop-rate reward multipliers for a mob-kill credit.
+// Top 10 players: 0.5x XP, 1.2x drop rate. Top 20 players: 0.75x XP, 1.1x drop rate.
+function getLeaderboardRewardMultipliers(playerId: string): { xpMultiplier: number; dropMultiplier: number } {
+    return database.getLeaderboardRewardMultipliers(playerUserIds[playerId]);
 }
 
 // Wrapper function for updateTargetDummyDPS
@@ -1285,12 +1291,12 @@ function updatePoisonEffects(deltaTime: number) {
                 const index = enemies.findIndex(e => e.id === enemy.id);
                 if (index !== -1) {
                     // Award XP to all players who contributed poison damage
-                    const xpGained = getXPFromEnemy(enemy);
-                    
+                    const baseXpGained = getXPFromEnemy(enemy);
+
                     // Find the player who dealt the most damage (including poison)
                     let topContributor: string | undefined;
                     let maxDamage = 0;
-                    
+
                     if (enemy.damageContributors) {
                         enemy.damageContributors.forEach((damage, playerId) => {
                             if (damage > maxDamage) {
@@ -1299,16 +1305,20 @@ function updatePoisonEffects(deltaTime: number) {
                             }
                         });
                     }
-                    
+
+                    const { xpMultiplier, dropMultiplier } = topContributor
+                        ? getLeaderboardRewardMultipliers(topContributor)
+                        : { xpMultiplier: 1, dropMultiplier: 1 };
+
                     // Award XP to the top contributor
                     if (topContributor && players[topContributor]) {
-                        addXPToPlayer(players[topContributor], xpGained, topContributor);
+                        addXPToPlayer(players[topContributor], Math.round(baseXpGained * xpMultiplier), topContributor);
                     }
-                    
+
                     // Track mob kill for eligible players (use debounced save to prevent lag)
                     trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
                     // Handle mob drops (includes all eligible players)
-                    handleMobDrops(enemy);
+                    handleMobDrops(enemy, dropMultiplier);
                     sendBossMobDefeatedMessage(enemy, io, players);
                     // Clean up enemy data structures before removal to prevent memory leaks
                     cleanupEnemy(enemy);
@@ -1440,9 +1450,10 @@ function reapDeadEnemies() {
             });
 
             if (topContributor && players[topContributor]) {
-                addXPToPlayer(players[topContributor], getXPFromEnemy(enemy), topContributor);
+                const { xpMultiplier, dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
+                addXPToPlayer(players[topContributor], Math.round(getXPFromEnemy(enemy) * xpMultiplier), topContributor);
                 trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
-                handleMobDrops(enemy);
+                handleMobDrops(enemy, dropMultiplier);
                 sendBossMobDefeatedMessage(enemy, io, players);
             }
         }

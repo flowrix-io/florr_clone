@@ -251,6 +251,16 @@ function isDefaultProgress(progress: PlayerProgress): boolean {
     return true;
 }
 
+/**
+ * Top-10/top-20 leaderboard userIds, cached: computing this is a full sort over
+ * every account, and it's consulted on every mob kill (via
+ * getLeaderboardRewardMultipliers) to grant the leaderboard reward tiers, so a
+ * fresh sort per kill would be far too hot. Refreshed lazily at most every 15s.
+ */
+let cachedTopRankUserIds: { top10: Set<string>; top20: Set<string> } | null = null;
+let cachedTopRankUserIdsAt = 0;
+const TOP_RANK_CACHE_MS = 15000;
+
 export const database = {
     // User-related functions
     createUser: (username: string, password: string): User | null => {
@@ -719,6 +729,38 @@ export const database = {
         // Sort by totalXP descending
         entries.sort((a, b) => b.totalXP - a.totalXP);
         return { entries: entries.slice(0, limit), totalAccounts, dailyActiveUsers };
+    },
+
+    // userIds of the current top-10/top-20 accounts by totalXP (non-admin), cached — see TOP_RANK_CACHE_MS.
+    getTopRankUserIds: (): { top10: Set<string>; top20: Set<string> } => {
+        const now = Date.now();
+        if (cachedTopRankUserIds && now - cachedTopRankUserIdsAt < TOP_RANK_CACHE_MS) {
+            return cachedTopRankUserIds;
+        }
+        const entries: { userId: string; totalXP: number }[] = [];
+        for (const username in db.users) {
+            const user = db.users[username];
+            if (user.admin === true) continue;
+            const progress = db.players[user.id];
+            entries.push({ userId: user.id, totalXP: progress?.totalXP || 0 });
+        }
+        entries.sort((a, b) => b.totalXP - a.totalXP);
+        cachedTopRankUserIds = {
+            top10: new Set(entries.slice(0, 10).map(e => e.userId)),
+            top20: new Set(entries.slice(0, 20).map(e => e.userId)),
+        };
+        cachedTopRankUserIdsAt = now;
+        return cachedTopRankUserIds;
+    },
+
+    // Reward multipliers for the leaderboard's top 10 / top 20 accounts:
+    // top 10 get 1.2x drop rate but 0.5x mob XP, top 20 get 1.1x drop rate but 0.75x mob XP.
+    getLeaderboardRewardMultipliers: (userId: string | undefined): { xpMultiplier: number; dropMultiplier: number } => {
+        if (!userId) return { xpMultiplier: 1, dropMultiplier: 1 };
+        const { top10, top20 } = database.getTopRankUserIds();
+        if (top10.has(userId)) return { xpMultiplier: 0.5, dropMultiplier: 1.2 };
+        if (top20.has(userId)) return { xpMultiplier: 0.75, dropMultiplier: 1.1 };
+        return { xpMultiplier: 1, dropMultiplier: 1 };
     },
 
     // Get users who have authenticated within the last 24 hours

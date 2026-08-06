@@ -60,9 +60,12 @@ function killEnemy(enemy, index, enemies, ctx, opts = {}) {
     const creditedPlayer = killerPlayerId !== undefined ? ctx.players[killerPlayerId] : undefined;
     // --- XP + drops + boss message + special-mob count (only when someone gets credit) ---
     if (creditedPlayer) {
-        const xpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+        // Leaderboard reward tiers: top 10 accounts get 0.5x XP / 1.2x drop rate,
+        // top 20 get 0.75x XP / 1.1x drop rate.
+        const { xpMultiplier, dropMultiplier } = ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[creditedPlayerId]);
+        const xpGained = Math.round((0, server_utils_1.getXPFromEnemy)(enemy) * xpMultiplier);
         ctx.addXPToPlayer(creditedPlayer, xpGained, creditedPlayerId);
-        ctx.handleMobDrops(enemy);
+        ctx.handleMobDrops(enemy, dropMultiplier);
         ctx.sendBossMobDefeatedMessage(enemy, ctx.io, ctx.players);
         ctx.updateSpecialMobCounts();
     }
