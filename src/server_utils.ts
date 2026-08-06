@@ -265,17 +265,13 @@ export function createSand(): Sand {
 export function getXPFromEnemy(enemy: Enemy): number {
   // Import mob config to get actual XP values
   const { getMobStats } = require('./mobs');
-  
-  // Map enemy types to mob types - only handle mobs that exist in our config
-  const mobType = enemy.type;
-  if (mobType === 'bee' || mobType === 'ladybug' || mobType === 'soldier_ant') {
-    const mobStats = getMobStats(mobType, enemy.tier);
-    if (mobStats && mobStats.xp) {
-      return mobStats.xp;
-    }
+
+  const mobStats = getMobStats(enemy.type, enemy.tier);
+  if (mobStats && mobStats.xp) {
+    return mobStats.xp;
   }
-  
-  // Fallback to tier-based XP for other enemy types or if mob config lookup fails
+
+  // Fallback to tier-based XP if mob config lookup fails (e.g. unconfigured mob type)
   const tierXP = {
     common: 10,
     uncommon: 30,
