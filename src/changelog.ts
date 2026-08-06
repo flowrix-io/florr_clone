@@ -503,6 +503,12 @@ export const CHANGELOG: ChangelogEntry[] = [
         changes: [
             'Removed some petals that were duped',
         ]
+    },
+    {
+        date: 'August 6, 2026',
+        changes: [
+            'Patched a cheat',
+        ]
     }
 ];
 

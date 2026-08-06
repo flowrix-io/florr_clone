@@ -12,7 +12,7 @@ import { Notification, database } from '../../database';
 import { ID_TO_ITEM_KEY, ID_TO_RARITY, getItemCount } from '../../inventoryCodec';
 import { Item, ItemWithRarity } from '../../item';
 import { despawnPet, spawnPet, syncSplitStars } from '../../petal_actions';
-import { ABSORBING_SKILL_MULTIPLIERS, ABSORB_XP, getEffectivePetalCooldown, getPetalStats, getRarityIndex, isUndroppableEggPetalType } from '../../petals';
+import { ABSORBING_SKILL_MULTIPLIERS, ABSORB_XP, getEffectivePetalCooldown, getPetalStats, getRarityIndex, getShopPrice, isUndroppableEggPetalType } from '../../petals';
 import { PlayerInventory } from '../../player';
 import { playerUserIds } from '../gameState';
 import { addItem, applyPetalHealthBonus, buildCollection, capLoadoutToCollection, getAbsorbingTier, getMazeAbsorbableCount, hasItem, recalculatePlayerStats, removeItem } from '../playerManager';
@@ -828,12 +828,6 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                 return;
             }
 
-            const stars = player.stars || 0;
-            if (stars < data.price) {
-                socket.emit('shopPurchaseError', 'Insufficient stars');
-                return;
-            }
-
             // Check if petal exists
             const petalStats = getPetalStats(data.petalType, data.rarity);
             if (!petalStats) {
@@ -852,14 +846,26 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                 return;
             }
 
-            // Skip unique rarity - not purchasable
-            if (data.rarity === 'unique') {
-                socket.emit('shopPurchaseError', 'Cannot purchase unique rarity petals');
+            // Skip unique/apex rarity - not purchasable (matches the client's
+            // buyableRarities filter in shop.ts; the server must enforce this
+            // itself since a modified client can send any rarity string).
+            if (data.rarity === 'unique' || data.rarity === 'apex') {
+                socket.emit('shopPurchaseError', 'Cannot purchase this rarity');
+                return;
+            }
+
+            // Price is always recomputed server-side — the client-supplied
+            // `data.price` is never trusted (a modified client could send an
+            // arbitrary or negative value to get free petals or mint stars).
+            const price = getShopPrice(data.petalType, data.rarity);
+            const stars = player.stars || 0;
+            if (stars < price) {
+                socket.emit('shopPurchaseError', 'Insufficient stars');
                 return;
             }
 
             // Deduct stars
-            player.stars = stars - data.price;
+            player.stars = stars - price;
             syncSplitStars(player);
 
             // Add item to inventory. The inventory is always in regular-world

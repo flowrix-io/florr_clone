@@ -118,6 +118,25 @@ export function getRarityIndex(rarity: Rarity | string): number {
     return RARITY_LEVELS.indexOf(rarity as Rarity);
 }
 
+// Shop pricing configuration — base price per petal type, multiplied by rarity.
+// Shared by client (to render prices) and server (to validate shopBuy) so the
+// two can never drift out of sync.
+export const SHOP_PRICES: { [petalType: string]: number } = {
+    basic: 10, rose: 15, stinger: 20, light: 12, rock: 18, sand: 14,
+    yggdrasil: 120, dandelion: 13, clover: 16, bone: 17, cactus: 19,
+    poison_cactus: 22, iris: 18, lightning: 25, missile: 21, jelly: 20,
+    yucca: 15, leaf: 14, cutter: 50, lightning_cutter: 60, wing: 23,
+    square: 1000, golden_leaf: 18, blood_leaf: 24, target_dummy_egg: 100000000,
+    splitter: 1000000,
+};
+export const DEFAULT_SHOP_PRICE = 10;
+
+export function getShopPrice(petalType: string, rarity: Rarity | string): number {
+    const basePrice = SHOP_PRICES[petalType] || DEFAULT_SHOP_PRICE;
+    const rarityIndex = getRarityIndex(rarity);
+    return Math.floor(basePrice * Math.pow(3.5, rarityIndex));
+}
+
 // XP granted per petal absorbed in the craft menu's Absorb tab. Roughly half
 // the tier-based XP of a same-rarity mob kill (see getXPFromEnemy), so
 // absorbing spare drops is a meaningful but not dominant XP source.

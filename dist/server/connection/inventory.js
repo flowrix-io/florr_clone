@@ -778,11 +778,6 @@ function registerInventoryHandlers(ctx) {
                 socket.emit('shopPurchaseError', 'Player not found');
                 return;
             }
-            const stars = player.stars || 0;
-            if (stars < data.price) {
-                socket.emit('shopPurchaseError', 'Insufficient stars');
-                return;
-            }
             // Check if petal exists
             const petalStats = (0, petals_1.getPetalStats)(data.petalType, data.rarity);
             if (!petalStats) {
@@ -798,13 +793,24 @@ function registerInventoryHandlers(ctx) {
                 socket.emit('shopPurchaseError', 'Cannot purchase undroppable eggs');
                 return;
             }
-            // Skip unique rarity - not purchasable
-            if (data.rarity === 'unique') {
-                socket.emit('shopPurchaseError', 'Cannot purchase unique rarity petals');
+            // Skip unique/apex rarity - not purchasable (matches the client's
+            // buyableRarities filter in shop.ts; the server must enforce this
+            // itself since a modified client can send any rarity string).
+            if (data.rarity === 'unique' || data.rarity === 'apex') {
+                socket.emit('shopPurchaseError', 'Cannot purchase this rarity');
+                return;
+            }
+            // Price is always recomputed server-side — the client-supplied
+            // `data.price` is never trusted (a modified client could send an
+            // arbitrary or negative value to get free petals or mint stars).
+            const price = (0, petals_1.getShopPrice)(data.petalType, data.rarity);
+            const stars = player.stars || 0;
+            if (stars < price) {
+                socket.emit('shopPurchaseError', 'Insufficient stars');
                 return;
             }
             // Deduct stars
-            player.stars = stars - data.price;
+            player.stars = stars - price;
             (0, petal_actions_1.syncSplitStars)(player);
             // Add item to inventory. The inventory is always in regular-world
             // terms — even inside the maze (only the locked loadout shifts) —

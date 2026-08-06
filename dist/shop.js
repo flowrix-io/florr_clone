@@ -3,21 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ShopManager = void 0;
 const petals_1 = require("./petals");
 const game_icons_net_icons_1 = require("./game-icons-net-icons");
-// Shop pricing configuration — base price per petal type, multiplied by rarity.
-const SHOP_PRICES = {
-    basic: 10, rose: 15, stinger: 20, light: 12, rock: 18, sand: 14,
-    yggdrasil: 120, dandelion: 13, clover: 16, bone: 17, cactus: 19,
-    poison_cactus: 22, iris: 18, lightning: 25, missile: 21, jelly: 20,
-    yucca: 15, leaf: 14, cutter: 50, lightning_cutter: 60, wing: 23,
-    square: 1000, golden_leaf: 18, blood_leaf: 24, target_dummy_egg: 100000000,
-    splitter: 1000000,
-};
-const DEFAULT_SHOP_PRICE = 10;
-function getShopPrice(petalType, rarity) {
-    const basePrice = SHOP_PRICES[petalType] || DEFAULT_SHOP_PRICE;
-    const rarityIndex = (0, petals_1.getRarityIndex)(rarity);
-    return Math.floor(basePrice * Math.pow(3.5, rarityIndex));
-}
 /* -------------------------- Layout constants -------------------------- */
 const PANEL_W = 700;
 const PANEL_PADDING = 20;
@@ -424,7 +409,7 @@ class ShopManager {
                 const stats = (0, petals_1.getPetalStats)(petalType, rarity);
                 if (!stats)
                     continue;
-                const price = getShopPrice(petalType, rarity);
+                const price = (0, petals_1.getShopPrice)(petalType, rarity);
                 const cx = startX + col * (cardSize + ITEM_GAP);
                 const cy = startY + row * (cardSize + ITEM_GAP) - scroll;
                 col++;
