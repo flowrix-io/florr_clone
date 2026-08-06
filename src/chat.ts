@@ -551,8 +551,8 @@ export class Chat {
 
     private sanitizeHTML(str: string): string {
         // Add 'script' to allowed tags
-        const allowedTags = new Set(['b', 'i', 'u', 'strong', 'em', 'span', 'color', 'blink', 'script', 'a', 'iframe']);
-        const allowedAttributes = new Set(['style', 'color']);
+        const allowedTags = new Set(['b', 'i', 'u', 'strong', 'em', 'span', 'color', 'blink', 'script', 'a', 'iframe', 'img']);
+        const allowedAttributes = new Set(['style', 'color', 'src', 'href', 'width', 'height', 'data-script-id', 'data-iframe-id']);
 
         // Create a temporary div to parse HTML
         const temp = document.createElement('div');
@@ -625,6 +625,22 @@ export class Chat {
                     embedBtn.textContent = '🔗 Click to show embed';
 
                     node.parentNode?.replaceChild(embedBtn, node);
+                    return;
+                }
+
+                if (tagName === 'img') {
+                    const src = element.getAttribute('src') || '';
+                    // Strip all attributes first, then only re-add a safe src.
+                    Array.from(element.attributes).forEach(attr => {
+                        element.removeAttribute(attr.name);
+                    });
+                    if (src.startsWith('http://') || src.startsWith('https://')) {
+                        element.setAttribute('src', src);
+                        element.setAttribute('loading', 'lazy');
+                        element.setAttribute('style', 'display: block; max-width: 100%; max-height: 200px; border-radius: 3px; margin: 4px 0;');
+                    } else {
+                        node.parentNode?.removeChild(node);
+                    }
                     return;
                 }
 

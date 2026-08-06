@@ -413,7 +413,8 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                 } else {
                     const player = players[socket.id];
                     const playerName = player ? player.name : socket.username;
-                    sendGuildChatMessage(guild, io, socket.username, playerName, guildMsg);
+                    const safeGuildMsg = database.isUserAdmin(socket.username) ? guildMsg : guildMsg.replace(/<img\b[^>]*>/gi, '');
+                    sendGuildChatMessage(guild, io, socket.username, playerName, safeGuildMsg);
                 }
             }
             return;
@@ -429,7 +430,8 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                 } else {
                     const player = players[socket.id];
                     const playerName = player ? player.name : socket.username;
-                    sendSquadChatMessage(squad, io, socket.username, playerName, squadMsg);
+                    const safeSquadMsg = database.isUserAdmin(socket.username) ? squadMsg : squadMsg.replace(/<img\b[^>]*>/gi, '');
+                    sendSquadChatMessage(squad, io, socket.username, playerName, safeSquadMsg);
                 }
             }
             return;
@@ -766,9 +768,13 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
         const player = players[socket.id];
         const playerName = player ? player.name : socket.username;
 
+        // Only admins may embed <img> tags in chat; strip them from everyone else's messages.
+        const isAdmin = database.isUserAdmin(socket.username);
+        const safeMessage = isAdmin ? message : message.replace(/<img\b[^>]*>/gi, '');
+
         const chatMessage: ChatMessage = {
             sender: `@${socket.username}`,
-            content: `[<span style="color: yellow;">${playerName}</span>] ${message}`,
+            content: `[<span style="color: yellow;">${playerName}</span>] ${safeMessage}`,
             timestamp: Date.now()
         };
 

@@ -462,7 +462,8 @@ function registerChatHandlers(ctx) {
                 else {
                     const player = constants_1.players[socket.id];
                     const playerName = player ? player.name : socket.username;
-                    (0, guildManager_1.sendGuildChatMessage)(guild, io, socket.username, playerName, guildMsg);
+                    const safeGuildMsg = database_1.database.isUserAdmin(socket.username) ? guildMsg : guildMsg.replace(/<img\b[^>]*>/gi, '');
+                    (0, guildManager_1.sendGuildChatMessage)(guild, io, socket.username, playerName, safeGuildMsg);
                 }
             }
             return;
@@ -478,7 +479,8 @@ function registerChatHandlers(ctx) {
                 else {
                     const player = constants_1.players[socket.id];
                     const playerName = player ? player.name : socket.username;
-                    (0, squadManager_1.sendSquadChatMessage)(squad, io, socket.username, playerName, squadMsg);
+                    const safeSquadMsg = database_1.database.isUserAdmin(socket.username) ? squadMsg : squadMsg.replace(/<img\b[^>]*>/gi, '');
+                    (0, squadManager_1.sendSquadChatMessage)(squad, io, socket.username, playerName, safeSquadMsg);
                 }
             }
             return;
@@ -801,9 +803,12 @@ function registerChatHandlers(ctx) {
         }
         const player = constants_1.players[socket.id];
         const playerName = player ? player.name : socket.username;
+        // Only admins may embed <img> tags in chat; strip them from everyone else's messages.
+        const isAdmin = database_1.database.isUserAdmin(socket.username);
+        const safeMessage = isAdmin ? message : message.replace(/<img\b[^>]*>/gi, '');
         const chatMessage = {
             sender: `@${socket.username}`,
-            content: `[<span style="color: yellow;">${playerName}</span>] ${message}`,
+            content: `[<span style="color: yellow;">${playerName}</span>] ${safeMessage}`,
             timestamp: Date.now()
         };
         // Add to history and trim if needed
