@@ -26,21 +26,27 @@ const server_1 = require("./server");
 const buildEnemy_1 = require("./server/shared/buildEnemy");
 const killHandler_1 = require("./server/shared/killHandler");
 const constants_1 = require("./constants");
+const database_1 = require("./database");
+const gameState_1 = require("./server/gameState");
 const mobs_1 = require("./mobs");
 const enemySpawner_1 = require("./server/enemySpawner");
 /**
  * Build a kill context for the partial death handlers in explodePetal /
  * strikeLightning. Those paths never call trackMobKill or cleanupEnemy
- * (trackMobKillTiming: 'none', skipCleanup: true), so the corresponding ctx
- * fields are stubbed — they exist only to satisfy the KillContext type.
+ * (trackMobKillTiming: 'none', skipCleanup: true), so those two ctx fields
+ * are stubbed. `database` and `playerUserIds` are NOT stubbable, though:
+ * killEnemy's credited-player branch reads them (via
+ * getLeaderboardRewardMultipliers) to grant the leaderboard reward tiers, so
+ * they must be the real live references.
  */
 function makePetalKillCtx(io) {
     return {
         io,
         players: constants_1.players,
-        // Stubs — never invoked for the partial (no-track, no-cleanup) path.
-        playerUserIds: undefined,
-        database: undefined,
+        playerUserIds: gameState_1.playerUserIds,
+        database: database_1.database,
+        // Stubs — only reachable when trackMobKillTiming !== 'none', which
+        // explodePetal/strikeLightning never pass.
         savePlayerProgress: undefined,
         trackMobKill: undefined,
         cleanupEnemy: undefined,

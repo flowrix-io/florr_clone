@@ -7,6 +7,8 @@ import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefea
 import { buildEnemy } from './server/shared/buildEnemy';
 import { killEnemy, type KillContext } from './server/shared/killHandler';
 import { players, enemies } from './constants';
+import { database } from './database';
+import { playerUserIds } from './server/gameState';
 import { getMobStats, getAllMobTypes } from './mobs';
 import { spawnCentipedeBodySegments } from './server/enemySpawner';
 
@@ -27,16 +29,20 @@ export interface ActionContext {
 /**
  * Build a kill context for the partial death handlers in explodePetal /
  * strikeLightning. Those paths never call trackMobKill or cleanupEnemy
- * (trackMobKillTiming: 'none', skipCleanup: true), so the corresponding ctx
- * fields are stubbed — they exist only to satisfy the KillContext type.
+ * (trackMobKillTiming: 'none', skipCleanup: true), so those two ctx fields
+ * are stubbed. `database` and `playerUserIds` are NOT stubbable, though:
+ * killEnemy's credited-player branch reads them (via
+ * getLeaderboardRewardMultipliers) to grant the leaderboard reward tiers, so
+ * they must be the real live references.
  */
 function makePetalKillCtx(io: any): KillContext {
     return {
         io,
         players,
-        // Stubs — never invoked for the partial (no-track, no-cleanup) path.
-        playerUserIds: undefined!,
-        database: undefined!,
+        playerUserIds,
+        database,
+        // Stubs — only reachable when trackMobKillTiming !== 'none', which
+        // explodePetal/strikeLightning never pass.
         savePlayerProgress: undefined!,
         trackMobKill: undefined!,
         cleanupEnemy: undefined!,
