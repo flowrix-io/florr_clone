@@ -29,7 +29,7 @@ function clampNum(v, lo, hi, dflt) {
 function sanColor(v) {
     return typeof v === 'string' && HEX_RE.test(v) ? v.toLowerCase() : '';
 }
-const SHAPE_TYPES = ['circle', 'ellipse', 'rect', 'polygon', 'line'];
+const SHAPE_TYPES = ['circle', 'ellipse', 'rect', 'polygon', 'line', 'curve'];
 /** Sanitize one shape from untrusted input, or return null if unusable. */
 function sanitizeShape(raw) {
     if (!raw || typeof raw !== 'object')
@@ -60,6 +60,23 @@ function sanitizeShape(raw) {
             s.stroke = '#000000';
         if (!s.sw)
             s.sw = 2;
+    }
+    else if (t === 'curve') {
+        // Cubic bezier: (x,y) → (x2,y2) bent by two control points. Every point
+        // is absolute local space, like the line endpoint.
+        s.x2 = clampNum(raw.x2, -exports.SKIN_COORD_LIMIT, exports.SKIN_COORD_LIMIT, 0);
+        s.y2 = clampNum(raw.y2, -exports.SKIN_COORD_LIMIT, exports.SKIN_COORD_LIMIT, 0);
+        s.cx1 = clampNum(raw.cx1, -exports.SKIN_COORD_LIMIT, exports.SKIN_COORD_LIMIT, s.x);
+        s.cy1 = clampNum(raw.cy1, -exports.SKIN_COORD_LIMIT, exports.SKIN_COORD_LIMIT, s.y);
+        s.cx2 = clampNum(raw.cx2, -exports.SKIN_COORD_LIMIT, exports.SKIN_COORD_LIMIT, s.x2);
+        s.cy2 = clampNum(raw.cy2, -exports.SKIN_COORD_LIMIT, exports.SKIN_COORD_LIMIT, s.y2);
+        // An unfilled curve is a stroked arc; only default the stroke when there
+        // is no fill either, so a filled blob stays outline-free.
+        if (!s.stroke && !s.fill) {
+            s.stroke = '#000000';
+            if (!s.sw)
+                s.sw = 2;
+        }
     }
     else if (t === 'polygon') {
         const pts = Array.isArray(raw.points) ? raw.points : [];

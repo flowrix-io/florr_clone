@@ -106,6 +106,13 @@ function renderCustomSkinShapes(ctx, shapes, radius) {
                 ctx.moveTo(0, 0);
                 ctx.lineTo((s.x2 || 0) - s.x, (s.y2 || 0) - s.y);
                 break;
+            case 'curve':
+                // Cubic bezier. Endpoint and both control points are absolute
+                // local-space, so rebase them onto the translated origin. A fill
+                // closes the path implicitly (chord from end back to start).
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo((s.cx1 ?? s.x) - s.x, (s.cy1 ?? s.y) - s.y, (s.cx2 ?? s.x2 ?? 0) - s.x, (s.cy2 ?? s.y2 ?? 0) - s.y, (s.x2 || 0) - s.x, (s.y2 || 0) - s.y);
+                break;
             case 'polygon': {
                 const p = s.points || [];
                 if (p.length >= 6) {

@@ -17,7 +17,7 @@ export const SKIN_RADIUS_LIMIT = 64;
 export const MAX_STROKE_WIDTH = 14;
 export const MAX_SKINS_PER_USER = 24;
 
-export type SkinShapeType = 'circle' | 'ellipse' | 'rect' | 'polygon' | 'line';
+export type SkinShapeType = 'circle' | 'ellipse' | 'rect' | 'polygon' | 'line' | 'curve';
 
 export interface SkinShape {
     t: SkinShapeType;
@@ -26,8 +26,12 @@ export interface SkinShape {
     r?: number;            // circle radius
     rx?: number;           // ellipse / rect half-width
     ry?: number;           // ellipse / rect half-height
-    x2?: number;           // line endpoint X
-    y2?: number;           // line endpoint Y
+    x2?: number;           // line / curve endpoint X
+    y2?: number;           // line / curve endpoint Y
+    cx1?: number;          // curve: first control point X (absolute local space)
+    cy1?: number;          // curve: first control point Y
+    cx2?: number;          // curve: second control point X
+    cy2?: number;          // curve: second control point Y
     points?: number[];     // polygon: flat [x0,y0,x1,y1,...] in local space
     rot?: number;          // rotation in degrees (ellipse / rect / polygon)
     fill?: string;         // '#rrggbb' or '' for no fill
@@ -54,7 +58,7 @@ function sanColor(v: any): string {
     return typeof v === 'string' && HEX_RE.test(v) ? v.toLowerCase() : '';
 }
 
-const SHAPE_TYPES: SkinShapeType[] = ['circle', 'ellipse', 'rect', 'polygon', 'line'];
+const SHAPE_TYPES: SkinShapeType[] = ['circle', 'ellipse', 'rect', 'polygon', 'line', 'curve'];
 
 /** Sanitize one shape from untrusted input, or return null if unusable. */
 export function sanitizeShape(raw: any): SkinShape | null {
@@ -82,6 +86,18 @@ export function sanitizeShape(raw: any): SkinShape | null {
         s.y2 = clampNum(raw.y2, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, 0);
         if (!s.stroke) s.stroke = '#000000';
         if (!s.sw) s.sw = 2;
+    } else if (t === 'curve') {
+        // Cubic bezier: (x,y) → (x2,y2) bent by two control points. Every point
+        // is absolute local space, like the line endpoint.
+        s.x2 = clampNum(raw.x2, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, 0);
+        s.y2 = clampNum(raw.y2, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, 0);
+        s.cx1 = clampNum(raw.cx1, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, s.x);
+        s.cy1 = clampNum(raw.cy1, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, s.y);
+        s.cx2 = clampNum(raw.cx2, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, s.x2);
+        s.cy2 = clampNum(raw.cy2, -SKIN_COORD_LIMIT, SKIN_COORD_LIMIT, s.y2);
+        // An unfilled curve is a stroked arc; only default the stroke when there
+        // is no fill either, so a filled blob stays outline-free.
+        if (!s.stroke && !s.fill) { s.stroke = '#000000'; if (!s.sw) s.sw = 2; }
     } else if (t === 'polygon') {
         const pts = Array.isArray(raw.points) ? raw.points : [];
         const out: number[] = [];

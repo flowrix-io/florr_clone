@@ -79,6 +79,7 @@ function defaultShape(t: SkinShapeType): SkinShape {
         case 'ellipse': return { t, x: 0, y: 0, rx: 10, ry: 6, fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
         case 'rect': return { t, x: 0, y: 0, rx: 8, ry: 8, fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
         case 'line': return { t, x: -10, y: 0, x2: 10, y2: 0, stroke: '#111111', sw: 2, fill: '', rot: 0 };
+        case 'curve': return { t, x: -12, y: 4, x2: 12, y2: 4, cx1: -8, cy1: -14, cx2: 8, cy2: -14, stroke: '#111111', sw: 2, fill: '', rot: 0 };
         case 'polygon': return { t, x: 0, y: 0, points: [0, -12, 11, 8, -11, 8], fill: '#3a86ff', stroke: '', sw: 0, rot: 0 };
     }
 }
@@ -216,6 +217,11 @@ export class SkinStudio {
         if (!s) return [];
         const out = [{ id: 'c', lx: s.x, ly: s.y }];
         if (s.t === 'line') out.push({ id: 'e', lx: s.x2 ?? 0, ly: s.y2 ?? 0 });
+        if (s.t === 'curve') {
+            out.push({ id: 'e', lx: s.x2 ?? 0, ly: s.y2 ?? 0 });
+            out.push({ id: 'c1', lx: s.cx1 ?? s.x, ly: s.cy1 ?? s.y });
+            out.push({ id: 'c2', lx: s.cx2 ?? s.x2 ?? 0, ly: s.cy2 ?? s.y2 ?? 0 });
+        }
         if (s.t === 'polygon' && s.points) {
             for (let i = 0; i + 1 < s.points.length; i += 2) {
                 out.push({ id: 'v' + (i / 2), lx: s.x + s.points[i], ly: s.y + s.points[i + 1] });
@@ -268,6 +274,8 @@ export class SkinStudio {
         const h = this.drag.handle;
         if (h === 'c') { s.x = round1(cx); s.y = round1(cy); }
         else if (h === 'e') { s.x2 = round1(cx); s.y2 = round1(cy); }
+        else if (h === 'c1') { s.cx1 = round1(cx); s.cy1 = round1(cy); }
+        else if (h === 'c2') { s.cx2 = round1(cx); s.cy2 = round1(cy); }
         else if (h[0] === 'v' && s.points) {
             const i = parseInt(h.slice(1)) * 2;
             s.points[i] = round1(cx - s.x); s.points[i + 1] = round1(cy - s.y);
@@ -508,12 +516,14 @@ export class SkinStudio {
             ctx.font = '11px Ubuntu, sans-serif'; ctx.fillStyle = MUTED; ctx.textAlign = 'left';
             ctx.fillText('Add shape', listX + 4, ay + 2);
             ay += 8;
-            const types: SkinShapeType[] = ['circle', 'ellipse', 'rect', 'polygon', 'line'];
-            const bw = (listW - 4 * 4) / 5;
+            // Two rows of three — six types no longer fit legibly on one row.
+            const types: SkinShapeType[] = ['circle', 'ellipse', 'rect', 'polygon', 'line', 'curve'];
+            const perRow = 3, bw = (listW - (perRow - 1) * 4) / perRow;
             types.forEach((t, i) => {
-                this.button(ctx, listX + i * (bw + 4), ay, bw, 22, shortType(t), false, { k: 'addShape', shape: t }, ROW_BG, BORDER, TEXT, '10px');
+                const col = i % perRow, row = Math.floor(i / perRow);
+                this.button(ctx, listX + col * (bw + 4), ay + row * 26, bw, 22, shortType(t), false, { k: 'addShape', shape: t }, ROW_BG, BORDER, TEXT, '10px');
             });
-            ay += 30;
+            ay += 26 * Math.ceil(types.length / perRow) + 4;
             this.drawShapeList(ctx, listX, ay, listW, this.PY + this.PH - ay - 46);
 
             // Right column: properties of selected shape
@@ -544,16 +554,37 @@ export class SkinStudio {
         ctx.restore();
         // handles for the selected shape (hidden in text mode — you edit by typing)
         if (!this.textMode) {
+            const sel = this.shapes[this.selected];
+            // Bezier tangent guides: anchor→control1 and endpoint→control2, so
+            // it's obvious which round handle bends which end of the curve.
+            if (sel && sel.t === 'curve') {
+                const a = this.toPx(sel.x, sel.y);
+                const b = this.toPx(sel.x2 ?? 0, sel.y2 ?? 0);
+                const g1 = this.toPx(sel.cx1 ?? sel.x, sel.cy1 ?? sel.y);
+                const g2 = this.toPx(sel.cx2 ?? sel.x2 ?? 0, sel.cy2 ?? sel.y2 ?? 0);
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y); ctx.lineTo(g1.x, g1.y);
+                ctx.moveTo(b.x, b.y); ctx.lineTo(g2.x, g2.y);
+                ctx.stroke();
+                ctx.restore();
+            }
             for (const h of this.handles()) {
                 const p = this.toPx(h.lx, h.ly);
-                ctx.fillStyle = h.id === 'c' ? ACCENT : '#ffffff';
+                const isCtrl = h.id === 'c1' || h.id === 'c2';
+                ctx.fillStyle = isCtrl ? '#ffe763' : h.id === 'c' ? ACCENT : '#ffffff';
                 ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
-                ctx.beginPath(); ctx.rect(p.x - 3, p.y - 3, 6, 6); ctx.fill(); ctx.stroke();
+                ctx.beginPath();
+                // Control points read as circles; anchors/vertices stay square.
+                if (isCtrl) ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+                else ctx.rect(p.x - 3, p.y - 3, 6, 6);
+                ctx.fill(); ctx.stroke();
             }
         }
         ctx.restore();
         ctx.fillStyle = MUTED; ctx.font = '10px Ubuntu, sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(this.textMode ? 'live preview' : 'drag the squares to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12);
+        ctx.fillText(this.textMode ? 'live preview' : 'drag the handles to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12);
     }
 
     private drawShapeList(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
@@ -598,7 +629,9 @@ export class SkinStudio {
         steppers.push(['X', 'x', s.x, 1], ['Y', 'y', s.y, 1]);
         if (s.t === 'circle') steppers.push(['Radius', 'r', s.r ?? 0, 1]);
         if (s.t === 'ellipse' || s.t === 'rect') steppers.push(['Width', 'rx', s.rx ?? 0, 1], ['Height', 'ry', s.ry ?? 0, 1]);
-        if (s.t !== 'line') steppers.push(['Rotation', 'rot', s.rot ?? 0, 15]);
+        // Line and curve are authored by dragging absolute endpoints, which the
+        // handles report unrotated — so no rotation control for those.
+        if (s.t !== 'line' && s.t !== 'curve') steppers.push(['Rotation', 'rot', s.rot ?? 0, 15]);
         steppers.push(['Outline w', 'sw', s.sw ?? 0, 1]);
 
         // two columns of steppers
@@ -612,6 +645,13 @@ export class SkinStudio {
         if (s.t === 'polygon') {
             this.button(ctx, x, cy, 90, 22, 'Add point', false, { k: 'addVertex' }, ROW_BG, BORDER, TEXT, '11px');
             this.button(ctx, x + 98, cy, 90, 22, 'Del point', false, { k: 'delVertex' }, ROW_BG, BORDER, TEXT, '11px');
+            cy += 30;
+        }
+
+        if (s.t === 'curve') {
+            ctx.fillStyle = MUTED; ctx.font = '10px Ubuntu, sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText('Drag the two round handles to bend it.', x, cy + 8);
+            ctx.fillText('A fill closes the curve into a blob.', x, cy + 21);
             cy += 30;
         }
 
@@ -747,9 +787,12 @@ export class SkinStudio {
         ctx.fillText('Canvas commands', this.PX + 14, hy); hy += 18;
         line('One shape per line:');
         line('type x=.. y=.. fill=#rrggbb');
-        line('types: circle ellipse rect line polygon');
+        line('types: circle ellipse rect line');
+        line('       polygon curve');
         line('circle: r=    ellipse/rect: rx= ry=');
         line('line: x2= y2=   polygon: points=x,y,x,y');
+        line('curve: x2= y2= cx1= cy1= cx2= cy2=');
+        line('  (cubic bezier; fill closes it)');
         line('optional: rot=  stroke=#rrggbb  sw=');
         hy += 4;
         if (this.textError) line(this.textError, ERROR_FG, 'bold 11px');
@@ -824,14 +867,14 @@ export class SkinStudio {
     private parseShapes(text: string): { shapes: SkinShape[] } | { error: string } {
         const lines = text.split('\n');
         const shapes: SkinShape[] = [];
-        const NUM_KEYS = ['x', 'y', 'rot', 'sw', 'r', 'rx', 'ry', 'x2', 'y2'];
+        const NUM_KEYS = ['x', 'y', 'rot', 'sw', 'r', 'rx', 'ry', 'x2', 'y2', 'cx1', 'cy1', 'cx2', 'cy2'];
         for (let li = 0; li < lines.length; li++) {
             const raw = lines[li].trim();
             if (!raw || raw.startsWith('#')) continue; // blanks + comments
             const at = (msg: string) => ({ error: `Line ${li + 1}: ${msg}` });
             const toks = raw.split(/\s+/);
             const t = toks[0] as SkinShapeType;
-            if (['circle', 'ellipse', 'rect', 'polygon', 'line'].indexOf(t) === -1) return at(`unknown shape "${toks[0]}"`);
+            if (['circle', 'ellipse', 'rect', 'polygon', 'line', 'curve'].indexOf(t) === -1) return at(`unknown shape "${toks[0]}"`);
             const kv: Record<string, string> = {};
             for (let i = 1; i < toks.length; i++) {
                 const eq = toks[i].indexOf('=');
@@ -841,10 +884,20 @@ export class SkinStudio {
             for (const k of NUM_KEYS) if (kv[k] !== undefined && !isFinite(parseFloat(kv[k]))) return at(`"${k}" must be a number`);
             for (const k of ['fill', 'stroke']) if (kv[k] && !/^#[0-9a-fA-F]{6}$/.test(kv[k])) return at(`"${k}" must be a #rrggbb color`);
             const num = (k: string, d: number) => (kv[k] !== undefined ? parseFloat(kv[k]) : d);
-            const s: SkinShape = { t, x: num('x', 0), y: num('y', 0), rot: num('rot', 0), fill: kv.fill || '', stroke: kv.stroke || '', sw: num('sw', 0) };
+            const s: SkinShape = { t, x: num('x', 0), y: num('y', 0), rot: num('rot', 0), fill: kv.fill || '', stroke: kv.stroke || '', sw: num('sw', kv.stroke ? 2 : 0) };
+            // Mirror sanitizeShape's stroke defaults for the open shapes, so the
+            // live preview matches what publishing would produce.
+            if ((t === 'line' || t === 'curve') && !s.stroke && !s.fill) { s.stroke = '#000000'; s.sw = s.sw || 2; }
             if (t === 'circle') s.r = num('r', 10);
             else if (t === 'ellipse' || t === 'rect') { s.rx = num('rx', 10); s.ry = num('ry', 6); }
             else if (t === 'line') { s.x2 = num('x2', 0); s.y2 = num('y2', 0); }
+            else if (t === 'curve') {
+                s.x2 = num('x2', 0); s.y2 = num('y2', 0);
+                // Control points default onto their own endpoint, so a curve
+                // written with only x/y/x2/y2 draws as a straight segment.
+                s.cx1 = num('cx1', s.x); s.cy1 = num('cy1', s.y);
+                s.cx2 = num('cx2', s.x2); s.cy2 = num('cy2', s.y2);
+            }
             else if (t === 'polygon') {
                 const pts = (kv.points || '').split(',').map(v => parseFloat(v));
                 if (kv.points && pts.some(v => !isFinite(v))) return at('"points" must be a comma list of numbers');
@@ -907,7 +960,8 @@ function actionKey(a: Action): string {
 function clamp(v: number, lo: number, hi: number): number { return v < lo ? lo : v > hi ? hi : v; }
 function round1(v: number): number { return Math.round(v * 10) / 10; }
 function shortType(t: SkinShapeType): string {
-    return t === 'circle' ? 'Circ' : t === 'ellipse' ? 'Elps' : t === 'rect' ? 'Rect' : t === 'polygon' ? 'Poly' : 'Line';
+    return t === 'circle' ? 'Circle' : t === 'ellipse' ? 'Ellipse' : t === 'rect' ? 'Rect'
+        : t === 'polygon' ? 'Polygon' : t === 'curve' ? 'Curve' : 'Line';
 }
 // One shape → one editable command line (round-trips through parseShapes).
 function serializeShape(s: SkinShape): string {
@@ -915,8 +969,13 @@ function serializeShape(s: SkinShape): string {
     if (s.t === 'circle') p.push(`r=${round1(s.r ?? 0)}`);
     else if (s.t === 'ellipse' || s.t === 'rect') p.push(`rx=${round1(s.rx ?? 0)}`, `ry=${round1(s.ry ?? 0)}`);
     else if (s.t === 'line') p.push(`x2=${round1(s.x2 ?? 0)}`, `y2=${round1(s.y2 ?? 0)}`);
+    else if (s.t === 'curve') {
+        p.push(`x2=${round1(s.x2 ?? 0)}`, `y2=${round1(s.y2 ?? 0)}`,
+            `cx1=${round1(s.cx1 ?? s.x)}`, `cy1=${round1(s.cy1 ?? s.y)}`,
+            `cx2=${round1(s.cx2 ?? s.x2 ?? 0)}`, `cy2=${round1(s.cy2 ?? s.y2 ?? 0)}`);
+    }
     else if (s.t === 'polygon' && s.points) p.push(`points=${s.points.map(round1).join(',')}`);
-    if (s.t !== 'line' && (s.rot ?? 0) !== 0) p.push(`rot=${round1(s.rot ?? 0)}`);
+    if (s.t !== 'line' && s.t !== 'curve' && (s.rot ?? 0) !== 0) p.push(`rot=${round1(s.rot ?? 0)}`);
     if (s.fill) p.push(`fill=${s.fill}`);
     if (s.stroke) p.push(`stroke=${s.stroke}`);
     if ((s.sw ?? 0) > 0) p.push(`sw=${round1(s.sw ?? 0)}`);
