@@ -230,6 +230,11 @@ function attachTitleScreenSocketListeners(sock) {
             return;
         (0, preconnect_1.setPreconnectedSocket)(sock);
         attachTitleScreenSocketListeners(sock);
+        // The Game stripped every handler off this socket on its way out, so the
+        // inventory manager's own listeners (craftingFinished, playerUpdated, ...)
+        // have to be re-installed too — without them a title-screen craft never
+        // gets its result back and the panel spins forever.
+        titleScreen?.titleScreenInventoryManager?.rebindSocketListeners(sock);
     },
 });
 function setupGameEventListeners() {

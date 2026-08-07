@@ -41,6 +41,10 @@ class TitleScreenInventoryManager {
         this.tooltipElement = null;
         this.tooltipTimeout = null;
         this.hoveredElement = null;
+        /** Handlers are built once and reused so re-registration can't double-fire
+         *  them (a second craftingFinished run would re-deduct the staged items). */
+        this.skillsHandlers = null;
+        this.craftingHandlers = null;
         this.gameAdapter = new game_adapter_1.TitleScreenGameAdapter();
         this.craftingInventoryManager = new inventory_1.InventoryManager(this.gameAdapter, null, { craftingOnly: true });
         this.setupSocketListeners();
@@ -345,130 +349,183 @@ class TitleScreenInventoryManager {
             }, 100);
         }
     }
+    /** Re-point at the current socket and (re-)install every title-screen
+     *  handler. Required whenever a socket is handed back from a game: Game
+     *  cleanup calls socket.removeAllListeners() before reuseSocketForTitleScreen,
+     *  which drops the title screen's handlers along with the game's own. Without
+     *  this, a craft started on the title screen after playing emits craftItems,
+     *  gets craftingFinished back, and has nobody listening — the panel spins
+     *  forever. Safe to call repeatedly: the handler objects are created once,
+     *  and the socket stores handlers in a Set keyed by function identity. */
+    rebindSocketListeners(socket) {
+        if (!socket)
+            return;
+        this.socket = socket;
+        this.setupCraftingSocketListeners();
+        this.setupSkillsSocketListeners();
+    }
+    /** Requests go out on whatever getPreconnectedSocket() returns *now* (that's
+     *  what the crafting adapter emits through), while our listeners sit on the
+     *  socket that existed when they were installed. A reconnect drops the old
+     *  socket and preconnects a new one, so those can drift apart — emitting on
+     *  one and listening on the other is exactly how a craft ends up with no
+     *  response. Re-bind whenever they diverge. */
+    ensureSocketBound() {
+        const live = (0, preconnect_1.getPreconnectedSocket)();
+        if (live && live !== this.socket) {
+            console.log('[TitleScreenInventory] Socket changed — re-binding listeners');
+            this.rebindSocketListeners(live);
+        }
+    }
     setupSkillsSocketListeners() {
         if (!this.socket)
             return;
-        // Listen for skills updates - this will be handled by index.ts which has access to titleScreen
-        // We just update our local skills data here
-        this.socket.on('skillsUpdated', (data) => {
-            console.log('[TitleScreenInventory] skillsUpdated received:', data);
-            // Check if this is for the current player
-            if (data.playerId === this.socket.id) {
-                // Update skills data in inventory manager
-                this.updateSkillsData(data.tp, data.skills);
-            }
-        });
-        // Authoritative maze-loadout preset from the server (after it validated/
-        // capped an edit against the collection). Apply unless a newer local edit
-        // is still in flight, so capping corrections land without flickering.
-        this.socket.on('mazeLoadoutUpdated', (data) => {
-            if (!this.playerData)
-                return;
-            if (Date.now() - this.lastLocalLoadoutChange < this.LOADOUT_SYNC_SUPPRESS_MS)
-                return;
-            const src = data.mazeLoadout || [];
-            const padded = new Array(this.LOADOUT_SLOTS).fill(null);
-            for (let i = 0; i < Math.min(src.length, this.LOADOUT_SLOTS); i++) {
-                if (src[i])
-                    src[i].onCooldown = false;
-                padded[i] = src[i] || null;
-            }
-            this.playerData.mazeLoadout = padded;
-            this.refreshForContext();
-        });
+        if (!this.skillsHandlers)
+            this.skillsHandlers = {
+                // Listen for skills updates - this will be handled by index.ts which has access to titleScreen
+                // We just update our local skills data here
+                skillsUpdated: (data) => {
+                    console.log('[TitleScreenInventory] skillsUpdated received:', data);
+                    // Check if this is for the current player
+                    if (data.playerId === this.socket.id) {
+                        // Update skills data in inventory manager
+                        this.updateSkillsData(data.tp, data.skills);
+                    }
+                },
+                // Authoritative maze-loadout preset from the server (after it validated/
+                // capped an edit against the collection). Apply unless a newer local edit
+                // is still in flight, so capping corrections land without flickering.
+                mazeLoadoutUpdated: (data) => {
+                    if (!this.playerData)
+                        return;
+                    if (Date.now() - this.lastLocalLoadoutChange < this.LOADOUT_SYNC_SUPPRESS_MS)
+                        return;
+                    const src = data.mazeLoadout || [];
+                    const padded = new Array(this.LOADOUT_SLOTS).fill(null);
+                    for (let i = 0; i < Math.min(src.length, this.LOADOUT_SLOTS); i++) {
+                        if (src[i])
+                            src[i].onCooldown = false;
+                        padded[i] = src[i] || null;
+                    }
+                    this.playerData.mazeLoadout = padded;
+                    this.refreshForContext();
+                },
+            };
+        for (const [event, handler] of Object.entries(this.skillsHandlers)) {
+            this.socket.on(event, handler);
+        }
     }
     setupCraftingSocketListeners() {
         if (!this.socket)
             return;
-        // Listen for crafting finished event
-        this.socket.on('craftingFinished', (data) => {
-            console.log('[TitleScreen] craftingFinished received:', data);
-            // Update inventory
-            if (this.playerData) {
-                this.playerData.inventory = data.inventory;
-                this.gameAdapter.setPlayerData(this.playerData);
-                // Re-deduct anything still staged in the craft slots — the
-                // snapshot includes those copies (staging is client-side only).
-                this.craftingInventoryManager.reconcileStagedWithInventory();
+        if (this.craftingHandlers) {
+            for (const [event, handler] of Object.entries(this.craftingHandlers)) {
+                this.socket.on(event, handler);
             }
-            const itemKey = data.newItem.type;
-            let itemType = 'petal';
-            let petalType;
-            if (itemKey.startsWith('petal_')) {
-                itemType = 'petal';
-                petalType = itemKey.substring(6);
-            }
-            else {
-                itemType = itemKey;
-            }
-            const displayItem = {
-                type: itemType,
-                rarity: data.newItem.rarity,
-                petalType: petalType
-            };
-            this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
-            if (data.failCount > 0) {
-                console.log(`[TitleScreen] Failed to craft ${data.failCount}x. Items were lost.`);
-            }
-            // Update displays
-            if (this.craftingInventoryManager.isCraftingOpen) {
-                this.craftingInventoryManager.updateCraftingDisplay();
-                this.updateInventoryDisplay();
-            }
-        });
-        // Listen for crafting failures
-        this.socket.on('craftingFailed', (error) => {
-            alert(error);
-        });
-        // Absorb tab results (petals → XP), mirroring the in-game handlers.
-        this.socket.on('itemsAbsorbed', (data) => {
-            if (this.playerData && data.inventory) {
-                this.playerData.inventory = data.inventory;
-                this.gameAdapter.setPlayerData(this.playerData);
-                this.craftingInventoryManager.reconcileStagedWithInventory();
-            }
-            this.craftingInventoryManager.handleItemsAbsorbed(data);
-            if (this.craftingInventoryManager.isCraftingOpen) {
-                this.updateInventoryDisplay();
-            }
-        });
-        this.socket.on('absorbFailed', (data) => {
-            if (this.playerData && data?.inventory) {
-                this.playerData.inventory = data.inventory;
-                this.gameAdapter.setPlayerData(this.playerData);
-                this.craftingInventoryManager.reconcileStagedWithInventory();
-            }
-            this.craftingInventoryManager.handleAbsorbFailed();
-            if (this.craftingInventoryManager.isCraftingOpen) {
-                this.updateInventoryDisplay();
-            }
-        });
-        // Listen for player updates to refresh inventory
-        this.socket.on('playerUpdated', (updatedPlayer) => {
-            if (updatedPlayer.inventory) {
+            return;
+        }
+        this.craftingHandlers = {
+            // Listen for crafting finished event
+            craftingFinished: (data) => {
+                console.log('[TitleScreen] craftingFinished received:', data);
+                // Update inventory
                 if (this.playerData) {
-                    this.playerData.inventory = updatedPlayer.inventory;
+                    this.playerData.inventory = data.inventory;
                     this.gameAdapter.setPlayerData(this.playerData);
+                    // Re-deduct anything still staged in the craft slots — the
+                    // snapshot includes those copies (staging is client-side only).
                     this.craftingInventoryManager.reconcileStagedWithInventory();
                 }
+                const itemKey = data.newItem.type;
+                let itemType = 'petal';
+                let petalType;
+                if (itemKey.startsWith('petal_')) {
+                    itemType = 'petal';
+                    petalType = itemKey.substring(6);
+                }
+                else {
+                    itemType = itemKey;
+                }
+                const displayItem = {
+                    type: itemType,
+                    rarity: data.newItem.rarity,
+                    petalType: petalType
+                };
+                this.craftingInventoryManager.showCraftingSuccess(displayItem, data.successCount, data.petalsReturned || 0);
+                if (data.failCount > 0) {
+                    console.log(`[TitleScreen] Failed to craft ${data.failCount}x. Items were lost.`);
+                }
+                // Update displays
                 if (this.craftingInventoryManager.isCraftingOpen) {
                     this.craftingInventoryManager.updateCraftingDisplay();
                     this.updateInventoryDisplay();
                 }
-            }
-            if (this.playerData) {
-                if (updatedPlayer.stars !== undefined)
-                    this.playerData.stars = updatedPlayer.stars;
-                if (updatedPlayer.mobKills)
-                    this.playerData.mobKills = updatedPlayer.mobKills;
-            }
-        });
+            },
+            // Listen for crafting failures. The panel is left mid-spin by the craft
+            // click, so the rejection has to end the animation as well as report it
+            // — otherwise the slots keep spinning until the panel is reopened.
+            craftingFailed: (error) => {
+                console.warn('[TitleScreen] craftingFailed:', error);
+                this.craftingInventoryManager.handleCraftFailed();
+                if (this.craftingInventoryManager.isCraftingOpen) {
+                    this.updateInventoryDisplay();
+                }
+            },
+            // Absorb tab results (petals → XP), mirroring the in-game handlers.
+            itemsAbsorbed: (data) => {
+                if (this.playerData && data.inventory) {
+                    this.playerData.inventory = data.inventory;
+                    this.gameAdapter.setPlayerData(this.playerData);
+                    this.craftingInventoryManager.reconcileStagedWithInventory();
+                }
+                this.craftingInventoryManager.handleItemsAbsorbed(data);
+                if (this.craftingInventoryManager.isCraftingOpen) {
+                    this.updateInventoryDisplay();
+                }
+            },
+            absorbFailed: (data) => {
+                if (this.playerData && data?.inventory) {
+                    this.playerData.inventory = data.inventory;
+                    this.gameAdapter.setPlayerData(this.playerData);
+                    this.craftingInventoryManager.reconcileStagedWithInventory();
+                }
+                this.craftingInventoryManager.handleAbsorbFailed();
+                if (this.craftingInventoryManager.isCraftingOpen) {
+                    this.updateInventoryDisplay();
+                }
+            },
+            // Listen for player updates to refresh inventory
+            playerUpdated: (updatedPlayer) => {
+                if (updatedPlayer.inventory) {
+                    if (this.playerData) {
+                        this.playerData.inventory = updatedPlayer.inventory;
+                        this.gameAdapter.setPlayerData(this.playerData);
+                        this.craftingInventoryManager.reconcileStagedWithInventory();
+                    }
+                    if (this.craftingInventoryManager.isCraftingOpen) {
+                        this.craftingInventoryManager.updateCraftingDisplay();
+                        this.updateInventoryDisplay();
+                    }
+                }
+                if (this.playerData) {
+                    if (updatedPlayer.stars !== undefined)
+                        this.playerData.stars = updatedPlayer.stars;
+                    if (updatedPlayer.mobKills)
+                        this.playerData.mobKills = updatedPlayer.mobKills;
+                }
+            },
+        };
+        for (const [event, handler] of Object.entries(this.craftingHandlers)) {
+            this.socket.on(event, handler);
+        }
     }
     /** Re-bind to the current preconnected socket and re-authenticate to fetch fresh data. */
     reauthenticate() {
         const socket = (0, preconnect_1.getPreconnectedSocket)();
         if (socket) {
-            this.socket = socket;
+            // Re-install our handlers first — coming back from a game the socket
+            // has been stripped bare (see rebindSocketListeners).
+            this.rebindSocketListeners(socket);
             // Clear the one-shot flag so authenticate runs again
             if (this.socket._titleScreenAuthenticated) {
                 this.socket._titleScreenAuthenticated = false;
@@ -1494,6 +1551,9 @@ class TitleScreenInventoryManager {
             game.inventoryManager.toggleCrafting();
             return;
         }
+        // The craft result has to be able to get back to us — verify our
+        // listeners are on the socket the request will leave through.
+        this.ensureSocketBound();
         // Update adapter with current player data before toggling
         this.gameAdapter.setPlayerData(this.playerData);
         this.craftingInventoryManager.toggleCrafting();

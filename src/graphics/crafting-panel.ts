@@ -287,6 +287,20 @@ export class CanvasCraftingPanel {
         return this.animState !== 'idle';
     }
 
+    /** Drop the spin/result animation and go straight back to idle. Used by the
+     *  craft watchdog: the spin holds at its final angle waiting for a server
+     *  result, so a response that never arrives would otherwise leave the panel
+     *  spinning until it is closed and reopened. */
+    public cancelCraftAnimation() {
+        this.animState = 'idle';
+        this.animCraftItem = null;
+        this.pendingResult = null;
+        this.successResult = null;
+        this.spinAngle = 0;
+        this.failRemainingCount = 0;
+        this.absorbResultXp = 0;
+    }
+
     // ----- Canvas size sync -----
 
     private syncCanvasSize(): { dpr: number; cssW: number; cssH: number } {

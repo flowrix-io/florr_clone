@@ -244,9 +244,9 @@ function registerProgressionHandlers(game) {
     });
     game.socket.on('craftingFailed', (message) => {
         console.log('[CLIENT] craftingFailed received:', message);
-        if (game.inventoryManager.isCraftingOpen) {
-            game.inventoryManager.updateCraftingDisplay();
-        }
+        // The craft click already started the spin — end it, or the slots keep
+        // spinning until the panel is closed and reopened.
+        game.inventoryManager?.handleCraftFailed();
     });
     // Shop handlers
     game.socket.on('shopPurchaseSuccess', (data) => {

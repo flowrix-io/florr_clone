@@ -518,7 +518,9 @@ function registerInventoryHandlers(ctx) {
                 socket.emit('craftingFailed', 'Player not found');
                 return;
             }
-            if (!data.items || data.items.length < 5 || data.items.length % 5 !== 0) {
+            // A shift "craft all" may stage a sub-batch remainder (it gets pooled
+            // below), so only a plain craft has to be whole batches of 5.
+            if (!data.items || data.items.length < 5 || (!data.craftAll && data.items.length % 5 !== 0)) {
                 console.log('[CRAFT] Invalid item count:', data.items?.length);
                 socket.emit('craftingFailed', 'Invalid number of items for crafting');
                 return;
@@ -677,6 +679,14 @@ function registerInventoryHandlers(ctx) {
                 }
             }
             console.log('[CRAFT] Crafting complete:', { successfulCrafts, failCount: numBatches - successfulCrafts, newRarity });
+            // Persist immediately. Crafting from the TITLE SCREEN otherwise never
+            // reaches the DB: nothing else there triggers a save, and pressing
+            // Play re-authenticates on the same socket, which rebuilds
+            // players[socket.id] from saved progress — silently reverting the
+            // craft. (Same reason updateLoadout saves immediately.)
+            if (socket.userId) {
+                savePlayerProgressImmediate(player, socket.userId);
+            }
             // Always emit craftingFinished, even if all crafts failed
             // This ensures the client gets feedback and updates inventory
             socket.emit('craftingFinished', {

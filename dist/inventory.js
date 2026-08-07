@@ -385,6 +385,11 @@ class InventoryManager {
          *  petal (failure-returns + remainder) in one pass, until fewer than 5 are
          *  left — resolved server-side so the client animates only once. */
         this.shiftStaged = false;
+        /** A craft request is in flight and its result hasn't been applied yet. */
+        this.craftPending = false;
+        /** Bumped per craft request so a late watchdog can't cancel a newer craft. */
+        this.craftRequestSeq = 0;
+        this.craftWatchdog = null;
         this.isInventoryOpen = false;
         this.isCraftingOpen = false;
         this.isMobGalleryOpen = false;
@@ -1656,21 +1661,18 @@ class InventoryManager {
                 return;
         }
         else {
-            let amountToAdd;
-            if (isShiftClick) {
-                amountToAdd = itemsFromStack;
-            }
-            else {
-                amountToAdd = 5;
-            }
+            const amountToAdd = isShiftClick ? itemsFromStack : 5;
             const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
             if (actualAmountToAdd < 5) {
                 return;
             }
-            const batchesToAdd = Math.floor(actualAmountToAdd / 5);
-            totalItemsToAdd = batchesToAdd * 5;
-            // A shift-click stages the whole stack and arms auto-recraft; a plain
-            // click (5 at a time) is a deliberate single batch, so disarm it.
+            // A shift-click stages the ENTIRE stack — including the sub-batch
+            // remainder past the last multiple of 5, which the server's craftAll
+            // pools in anyway (failure returns keep the pool above 5 for longer),
+            // so the slots show every petal the craft can consume. It also arms
+            // auto-recraft. A plain click stages one deliberate batch of 5 and
+            // disarms it.
+            totalItemsToAdd = isShiftClick ? actualAmountToAdd : 5;
             this.shiftStaged = isShiftClick;
         }
         const item = {
@@ -1796,16 +1798,36 @@ class InventoryManager {
         // Don't allow crafting while animation is playing
         if (this.canvasCraftingPanel?.isAnimating())
             return;
-        const itemsToCraftCount = this.craftingItems.length;
-        if (itemsToCraftCount < 5 || itemsToCraftCount % 5 !== 0) {
+        if (this.craftingItems.length < 5) {
             return;
         }
-        console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });
         // A shift-craft asks the server to keep crafting the leftovers of this
         // same petal (failure-returns + remainder) until fewer than 5 remain,
         // all in one pass — so the client plays the spin animation only once.
         const craftAll = this.shiftStaged;
         this.shiftStaged = false;
+        // Only a shift-craft may carry a sub-batch remainder (the server pools
+        // it). A plain craft is whole batches only, so hand any leftovers back
+        // to the inventory rather than refusing the craft — the slots can hold
+        // a non-multiple of 5 once the shift-staging was disarmed by hand
+        // (removing a batch, switching tabs, ...).
+        if (!craftAll) {
+            const remainder = this.craftingItems.length % 5;
+            if (remainder > 0) {
+                const extras = this.craftingItems.splice(-remainder);
+                for (const extra of extras) {
+                    const extraKey = extra.petalType ? `petal_${extra.petalType}` : extra.type;
+                    if (extra.rarity)
+                        this.addItem(extra.rarity, extraKey, 1);
+                }
+                if (this.craftingItems.length < 5) {
+                    this.updateCraftingDisplay();
+                    this.updateInventoryDisplay();
+                    return;
+                }
+            }
+        }
+        console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });
         // Start the spin animation with the first item info
         const firstItem = this.craftingItems[0];
         const animItem = {
@@ -1818,6 +1840,44 @@ class InventoryManager {
         this.game.getSocket()?.emit('craftItems', { items: this.craftingItems, craftAll });
         this.craftingItems = [];
         this.updateCraftingDisplay();
+        this.armCraftWatchdog();
+    }
+    /** The spin animation holds at its final frame until a server result lands,
+     *  so a craft response that never arrives (dropped frame, a handler that was
+     *  torn off the socket, a server-side throw) leaves the panel spinning
+     *  forever. Give up after a few seconds and re-sync from the authoritative
+     *  inventory instead — the craft itself is resolved server-side either way. */
+    armCraftWatchdog() {
+        const seq = ++this.craftRequestSeq;
+        this.craftPending = true;
+        if (this.craftWatchdog !== null)
+            clearTimeout(this.craftWatchdog);
+        this.craftWatchdog = window.setTimeout(() => {
+            this.craftWatchdog = null;
+            if (!this.craftPending || this.craftRequestSeq !== seq)
+                return;
+            this.craftPending = false;
+            console.warn('[CLIENT] No craft response after %dms — clearing the spin', InventoryManager.CRAFT_RESPONSE_TIMEOUT_MS);
+            this.canvasCraftingPanel?.cancelCraftAnimation();
+            this.updateCraftingDisplay();
+            this.updateInventoryDisplay();
+        }, InventoryManager.CRAFT_RESPONSE_TIMEOUT_MS);
+    }
+    /** A craft response (success or rejection) arrived — disarm the watchdog. */
+    resolveCraftPending() {
+        this.craftPending = false;
+        if (this.craftWatchdog !== null) {
+            clearTimeout(this.craftWatchdog);
+            this.craftWatchdog = null;
+        }
+    }
+    /** The server rejected the craft. End the spin (the click started it) and
+     *  re-sync the displays; without this the panel spins until it's reopened. */
+    handleCraftFailed() {
+        this.resolveCraftPending();
+        this.canvasCraftingPanel?.showCraftResult(false, null, 0);
+        this.updateCraftingDisplay();
+        this.updateInventoryDisplay();
     }
     updateCraftingDisplay() {
         if (!this.canvasCraftingPanel)
@@ -1849,6 +1909,7 @@ class InventoryManager {
     }
     showCraftingSuccess(newItem, successCount, petalsReturned = 0) {
         console.log('[INVENTORY] showCraftingSuccess called:', { newItem, successCount, petalsReturned });
+        this.resolveCraftPending();
         if (!this.canvasCraftingPanel) {
             console.log('[INVENTORY] No crafting panel found');
             return;
@@ -1927,6 +1988,7 @@ class InventoryManager {
     }
     cleanup() {
         this.listenerAbort.abort();
+        this.resolveCraftPending();
         this.inventoryPanel?.remove();
         this.canvasInventoryPanel?.destroy();
         this.canvasCraftingPanel?.destroy();
@@ -2007,3 +2069,6 @@ class InventoryManager {
 exports.InventoryManager = InventoryManager;
 /** Server-side per-request limit for absorbItems — staging stops here. */
 InventoryManager.MAX_ABSORB_BATCH = 1000;
+/** How long to wait for a craftItems response before giving up on the spin
+ *  animation (the craft still resolves server-side). */
+InventoryManager.CRAFT_RESPONSE_TIMEOUT_MS = 8000;
