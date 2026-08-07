@@ -497,6 +497,12 @@ exports.CHANGELOG = [
             'Admins can now post images in chat',
             '/spawn command now announces boss mobs',
         ]
+    },
+    {
+        date: 'August 7, 2026',
+        changes: [
+            'Everyone can now post images in chat, with a filter that blocks inappropriate ones',
+        ]
     }
 ];
 class ChangelogManager {

@@ -10,6 +10,7 @@ import { SCALE_FACTOR, SECTION_CONFIGS, enemies, players } from '../../constants
 import { ApiKey, database } from '../../database';
 import { getBotLevelForName, getBotLoadoutForName, triggerBotRaid } from '../botManager';
 import { getAdminHelpText, handleAdminCommand } from '../commands';
+import { filterChatImages, messageHasImage } from '../imageModeration';
 import { MAX_GUILD_SIZE, acceptGuildInvite, broadcastGuildUpdate, buildGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, listGuilds, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
 import { MAX_SQUAD_SIZE, acceptInvite, addBotToSquad, createSquad, declineInvite, findBotByName, findPlayerByUsername, getSquadForPlayer, inviteToSquad, joinPublicSquad, leaveSquad as leaveSquadFn, listPublicSquads, sendSquadChatMessage, sendSquadSystemMessage, setSquadVisibility } from '../squadManager';
 import { ConnectionContext } from './context';
@@ -28,6 +29,48 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
     // Add to class-level variables after other declarations
     const chatHistory: ChatMessage[] = [];
     const MAX_CHAT_HISTORY = 100;  // Keep last 100 messages
+
+    /**
+     * Everyone may embed <img> in chat, but non-admin images are screened by
+     * the moderation filter first (see server/imageModeration.ts). Admins are
+     * trusted and skip it, as they always have.
+     *
+     * Screening is async, so sends go through `queueSend`, which chains them
+     * per socket — a player's later messages wait behind their own pending
+     * image check instead of overtaking it.
+     */
+    let sendChain: Promise<void> = Promise.resolve();
+
+    const emitSelfNotice = (content: string): void => {
+        io.to(socket.id).emit('chatMessage', {
+            sender: 'System',
+            content: `<span style="color: #ff8866;">${content}</span>`,
+            timestamp: Date.now(),
+        });
+    };
+
+    /** The broadcast-safe form of `message`, with rejected images stripped. */
+    const applyImagePolicy = async (message: string, username: string): Promise<string> => {
+        if (!messageHasImage(message)) return message;
+        if (database.isUserAdmin(username)) return message;
+
+        const { content, notices } = await filterChatImages(message, username);
+        for (const notice of notices) emitSelfNotice(notice);
+        return content;
+    };
+
+    /** Send `message` once its images clear, preserving this socket's ordering. */
+    const queueSend = (message: string, username: string, send: (safeMessage: string) => void): void => {
+        sendChain = sendChain
+            .then(async () => {
+                const safeMessage = await applyImagePolicy(message, username);
+                // Drop a message that the filter emptied out — but only if the
+                // filter is what emptied it, so blank sends behave as before.
+                if (safeMessage !== message && !safeMessage.trim()) return;
+                send(safeMessage);
+            })
+            .catch(err => console.error('[chat] failed to send message:', err));
+    };
 
     // Add this inside the socket.io connection handler (after other socket handlers)
     socket.on('chatMessage', (message: string) => {
@@ -412,9 +455,10 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
                 } else {
                     const player = players[socket.id];
-                    const playerName = player ? player.name : socket.username;
-                    const safeGuildMsg = database.isUserAdmin(socket.username) ? guildMsg : guildMsg.replace(/<img\b[^>]*>/gi, '');
-                    sendGuildChatMessage(guild, io, socket.username, playerName, safeGuildMsg);
+                    const username = socket.username;
+                    const playerName = player ? player.name : username;
+                    queueSend(guildMsg, username, safeGuildMsg =>
+                        sendGuildChatMessage(guild, io, username, playerName, safeGuildMsg));
                 }
             }
             return;
@@ -429,9 +473,10 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
                 } else {
                     const player = players[socket.id];
-                    const playerName = player ? player.name : socket.username;
-                    const safeSquadMsg = database.isUserAdmin(socket.username) ? squadMsg : squadMsg.replace(/<img\b[^>]*>/gi, '');
-                    sendSquadChatMessage(squad, io, socket.username, playerName, safeSquadMsg);
+                    const username = socket.username;
+                    const playerName = player ? player.name : username;
+                    queueSend(squadMsg, username, safeSquadMsg =>
+                        sendSquadChatMessage(squad, io, username, playerName, safeSquadMsg));
                 }
             }
             return;
@@ -452,6 +497,7 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                 helpText += '/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; would roll <br/>';
                 helpText += '/create-api-key [label] - Issue an API key tied to your account for /api/v1/* <br/>';
                 helpText += '/delete-api-key &lt;key-or-prefix&gt; - Revoke one of your API keys <br/>';
+                helpText += '<br/>Post an image with &lt;img src="https://..."&gt; - links are screened, and inappropriate ones are blocked.<br/>';
                 helpText += '<br/><b>Squad commands (groups of 4, share loot as one instance):</b><br/>';
                 helpText += '/squad-create [public|private] - Create a new squad (defaults to private)<br/>';
                 helpText += '/squad-invite &lt;username&gt; - Invite a player to your squad<br/>';
@@ -766,26 +812,25 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
         }
 
         const player = players[socket.id];
-        const playerName = player ? player.name : socket.username;
+        const username = socket.username;
+        const playerName = player ? player.name : username;
 
-        // Only admins may embed <img> tags in chat; strip them from everyone else's messages.
-        const isAdmin = database.isUserAdmin(socket.username);
-        const safeMessage = isAdmin ? message : message.replace(/<img\b[^>]*>/gi, '');
+        queueSend(message, username, safeMessage => {
+            const chatMessage: ChatMessage = {
+                sender: `@${username}`,
+                content: `[<span style="color: yellow;">${playerName}</span>] ${safeMessage}`,
+                timestamp: Date.now()
+            };
 
-        const chatMessage: ChatMessage = {
-            sender: `@${socket.username}`,
-            content: `[<span style="color: yellow;">${playerName}</span>] ${safeMessage}`,
-            timestamp: Date.now()
-        };
+            // Add to history and trim if needed
+            chatHistory.push(chatMessage);
+            if (chatHistory.length > MAX_CHAT_HISTORY) {
+                chatHistory.shift();
+            }
 
-        // Add to history and trim if needed
-        chatHistory.push(chatMessage);
-        if (chatHistory.length > MAX_CHAT_HISTORY) {
-            chatHistory.shift();
-        }
-
-        // Broadcast to all connected clients
-        io.emit('chatMessage', chatMessage);
+            // Broadcast to all connected clients
+            io.emit('chatMessage', chatMessage);
+        });
 
         // Trigger a bot raid if the message mentions a raid-eligible boss tier.
         // Only supers and uniques count — never ultras. triggerBotRaid picks
