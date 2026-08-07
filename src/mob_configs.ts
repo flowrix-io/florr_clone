@@ -43,6 +43,9 @@ export interface BaseMobConfig {
         intervalMs: number;
         lifetimeMs: number;
         maxAlive: number;
+        // Rarity tiers below the summoner's own tier to spawn the escort at
+        // (e.g. -1 = one rarity below). Clamped at 'common'. Default 0 (same tier).
+        spawnRarityOffset?: number;
     };
 }
 
@@ -2644,6 +2647,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
             intervalMs: 2000,
             lifetimeMs: 10000,
             maxAlive: 5,
+            spawnRarityOffset: -1,
         },
     },
     digger: {

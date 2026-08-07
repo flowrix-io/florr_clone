@@ -86,6 +86,7 @@ const enemyGrid_1 = require("./server/enemyGrid");
 const buildEnemy_1 = require("./server/shared/buildEnemy");
 const positions_1 = require("./server/shared/positions");
 const killHandler_1 = require("./server/shared/killHandler");
+const rarity_1 = require("./server/shared/rarity");
 const apiKeyApi_1 = require("./server/apiKeyApi");
 const gameState_2 = require("./server/gameState");
 // Build today's maze up front so its spawn point and wall collision are live
@@ -1043,7 +1044,11 @@ function updatePeriodicSpawns() {
         const radius = (stats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
         const behindX = enemy.x - Math.cos(enemy.angle) * radius;
         const behindY = enemy.y - Math.sin(enemy.angle) * radius;
-        const child = (0, buildEnemy_1.buildEnemy)(spawnCfg.mobType, enemy.tier, behindX, behindY, {
+        let spawnTier = enemy.tier;
+        for (let step = 0; step < -(spawnCfg.spawnRarityOffset ?? 0); step++) {
+            spawnTier = (0, rarity_1.downgradeRarity)(spawnTier);
+        }
+        const child = (0, buildEnemy_1.buildEnemy)(spawnCfg.mobType, spawnTier, behindX, behindY, {
             parentHoleId: enemy.id,
             ownerId: enemy.ownerId,
         });

@@ -2600,6 +2600,7 @@ exports.BASE_MOB_CONFIGS = {
             intervalMs: 2000,
             lifetimeMs: 10000,
             maxAlive: 5,
+            spawnRarityOffset: -1,
         },
     },
     digger: {

@@ -152,6 +152,7 @@ import { rebuildEnemyGrid, queryEnemiesNear } from './server/enemyGrid';
 import { buildEnemy } from './server/shared/buildEnemy';
 import { isInOutOfBoundsZone, clampToWorld, isWallAt, samplePointInViewport } from './server/shared/positions';
 import { killEnemy } from './server/shared/killHandler';
+import { downgradeRarity } from './server/shared/rarity';
 import type { KillContext } from './server/shared/killHandler';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
 import { setSuperMobInSection } from './server/gameState';
@@ -1235,7 +1236,11 @@ function updatePeriodicSpawns() {
         const radius = (stats!.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
         const behindX = enemy.x - Math.cos(enemy.angle) * radius;
         const behindY = enemy.y - Math.sin(enemy.angle) * radius;
-        const child = buildEnemy(spawnCfg.mobType, enemy.tier, behindX, behindY, {
+        let spawnTier = enemy.tier;
+        for (let step = 0; step < -(spawnCfg.spawnRarityOffset ?? 0); step++) {
+            spawnTier = downgradeRarity(spawnTier);
+        }
+        const child = buildEnemy(spawnCfg.mobType, spawnTier, behindX, behindY, {
             parentHoleId: enemy.id,
             ownerId: enemy.ownerId,
         });

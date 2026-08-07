@@ -44,6 +44,9 @@ export interface MobStats {
         intervalMs: number;
         lifetimeMs: number;
         maxAlive: number;
+        // Rarity tiers below the summoner's own tier to spawn the escort at
+        // (e.g. -1 = one rarity below). Clamped at 'common'. Default 0 (same tier).
+        spawnRarityOffset?: number;
     };
     // Poison inflicted on players by body contact.
     poison?: number;          // damage per millisecond
@@ -117,6 +120,7 @@ interface RarityOverride {
         intervalMs: number;
         lifetimeMs: number;
         maxAlive: number;
+        spawnRarityOffset?: number;
     };
     poison?: number;
     poisonDuration?: number;
