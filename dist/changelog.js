@@ -501,7 +501,9 @@ exports.CHANGELOG = [
     {
         date: 'August 7, 2026',
         changes: [
-            'Everyone can now post images in chat, with a filter that blocks inappropriate ones',
+            'All players can post images in chat now(use <img src="Image Link">)',
+            'Fix crafting bugs',
+            'Added curves to skin editor',
         ]
     }
 ];
