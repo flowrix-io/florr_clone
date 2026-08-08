@@ -57,6 +57,36 @@ export const decorations: Decoration[] = [];
 export const sands: Sand[] = [];
 export const ENEMY_COUNT = { get value() { return _ENEMY_COUNT; }, set value(v: number) { _ENEMY_COUNT = v; } };
 
+/**
+ * Accounts that are authenticated but still sitting on the title screen.
+ *
+ * A title-screen client has to authenticate — its inventory, loadout, talent
+ * tree and stars all come from the account — but it must not exist in the world
+ * until the player presses Ready. Parking those players HERE instead of in
+ * `players` is what guarantees that: every simulation, spawn, targeting, save
+ * and broadcast loop in the server iterates `players`, so a lobby flower is
+ * invisible to all of them by construction rather than by a flag each of those
+ * loops would have to remember to check.
+ *
+ * `authenticate` builds the entry here when `lobby` is set and rebuilds it in
+ * `players` (from freshly-flushed saved progress) when the player enters the
+ * world. Nothing is ever in both maps.
+ */
+export const lobbyPlayers: Record<string, ServerPlayer> = {};
+
+/**
+ * The player behind a socket whether they are in the world or on the title
+ * screen.
+ *
+ * Use this in ACCOUNT-level handlers — loadout, crafting, shop, talents, skins,
+ * chat display names — i.e. anything the title screen can also do. Anything
+ * that touches the world must keep reading `players` directly so it can never
+ * act on a flower that isn't in it.
+ */
+export function getSessionPlayer(socketId: string): ServerPlayer | undefined {
+    return players[socketId] || lobbyPlayers[socketId];
+}
+
 export const playerUserIds: Record<string, string> = {}; // Maps player ID to user ID
 export const mobProjectiles: MobProjectile[] = []; // Track all active mob projectiles
 export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles

@@ -199,7 +199,12 @@ function registerInventoryHandlers(ctx) {
             // Player is split - route to the active player
             targetPlayerId = splitState.activeIndex === 0 ? splitState.player1.id : splitState.player2.id;
         }
-        const player = constants_1.players[targetPlayerId];
+        // Equipping is an account edit — the title screen is where most of it
+        // happens — so this resolves a lobby player too. Note the pet spawn /
+        // cooldown-timer paths below deliberately keep looking the player up in
+        // `players`, so a title-screen edit changes the loadout without putting
+        // anything (pets included) into the world.
+        const player = (0, gameState_1.getSessionPlayer)(targetPlayerId);
         if (!player) {
             console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id, 'targetPlayerId:', targetPlayerId);
             return;
@@ -512,7 +517,7 @@ function registerInventoryHandlers(ctx) {
     socket.on('craftItems', (data) => {
         try {
             console.log('[CRAFT] Craft request received:', { itemCount: data.items?.length, playerId: socket.id });
-            const player = constants_1.players[socket.id];
+            const player = (0, gameState_1.getSessionPlayer)(socket.id);
             if (!player) {
                 console.log('[CRAFT] Player not found');
                 socket.emit('craftingFailed', 'Player not found');
@@ -783,7 +788,7 @@ function registerInventoryHandlers(ctx) {
     // Shop handlers
     socket.on('shopBuy', (data) => {
         try {
-            const player = constants_1.players[socket.id];
+            const player = (0, gameState_1.getSessionPlayer)(socket.id);
             if (!player) {
                 socket.emit('shopPurchaseError', 'Player not found');
                 return;
@@ -846,7 +851,7 @@ function registerInventoryHandlers(ctx) {
     });
     socket.on('redeemCode', (data) => {
         try {
-            const player = constants_1.players[socket.id];
+            const player = (0, gameState_1.getSessionPlayer)(socket.id);
             if (!player) {
                 socket.emit('codeRedeemError', 'Player not found');
                 return;

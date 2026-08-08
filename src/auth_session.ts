@@ -119,6 +119,14 @@ export interface SocketAuthPayload {
     username: string;
     playerName: string;
     spawnBiome: string;
+    /**
+     * Load the account WITHOUT entering the world. The title screen needs the
+     * account (inventory, loadout, talents, stars) to fill its panels long
+     * before anyone presses Ready, and without this the server spawned a live
+     * flower for it — standing in the world, visible to everyone and killable
+     * by mobs, while its owner was still looking at the menu.
+     */
+    lobby?: boolean;
 }
 
 /**
@@ -128,14 +136,16 @@ export interface SocketAuthPayload {
  * the await. migrateLegacyCredentials() is idempotent and resolves immediately
  * once there is nothing left to migrate, which is every load after the first.
  */
-export async function getSocketAuth(playerName: string, spawnBiome: string): Promise<SocketAuthPayload | null> {
+export async function getSocketAuth(playerName: string, spawnBiome: string, lobby = false): Promise<SocketAuthPayload | null> {
     await migrateLegacyCredentials();
 
     const username = getUsername();
     const token = getAuthToken();
     if (!username || !token) return null;
 
-    return { token, username, playerName, spawnBiome };
+    return lobby
+        ? { token, username, playerName, spawnBiome, lobby: true }
+        : { token, username, playerName, spawnBiome };
 }
 
 export interface LoginResult {

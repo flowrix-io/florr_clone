@@ -14,6 +14,7 @@ const botManager_1 = require("../botManager");
 const commands_1 = require("../commands");
 const imageModeration_1 = require("../imageModeration");
 const guildManager_1 = require("../guildManager");
+const gameState_1 = require("../gameState");
 const squadManager_1 = require("../squadManager");
 function registerChatHandlers(ctx) {
     const { io, socket } = ctx;
@@ -94,7 +95,7 @@ function registerChatHandlers(ctx) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are already in a squad.', timestamp: Date.now() });
                 }
                 else {
-                    const player = constants_1.players[socket.id];
+                    const player = (0, gameState_1.getSessionPlayer)(socket.id);
                     if (player)
                         player.squadId = squad.id;
                     io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
@@ -179,7 +180,7 @@ function registerChatHandlers(ctx) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: error || 'Failed to join squad.', timestamp: Date.now() });
                 }
                 else {
-                    const player = constants_1.players[socket.id];
+                    const player = (0, gameState_1.getSessionPlayer)(socket.id);
                     if (player)
                         player.squadId = squad.id;
                     const playerName = player ? player.name : socket.username;
@@ -206,7 +207,7 @@ function registerChatHandlers(ctx) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
                 }
                 else {
-                    const player = constants_1.players[socket.id];
+                    const player = (0, gameState_1.getSessionPlayer)(socket.id);
                     if (player)
                         player.squadId = squad.id;
                     const playerName = player ? player.name : socket.username;
@@ -226,7 +227,7 @@ function registerChatHandlers(ctx) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
                 }
                 else {
-                    const player = constants_1.players[socket.id];
+                    const player = (0, gameState_1.getSessionPlayer)(socket.id);
                     const playerName = player ? player.name : socket.username;
                     if (player)
                         player.squadId = undefined;
@@ -399,7 +400,7 @@ function registerChatHandlers(ctx) {
                     if (!squad) {
                         squad = (0, squadManager_1.createSquad)(socket.id, false);
                         if (squad) {
-                            const player = constants_1.players[socket.id];
+                            const player = (0, gameState_1.getSessionPlayer)(socket.id);
                             if (player)
                                 player.squadId = squad.id;
                             io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
@@ -454,7 +455,7 @@ function registerChatHandlers(ctx) {
                         if (!squad) {
                             squad = (0, squadManager_1.createSquad)(socket.id, false);
                             if (squad) {
-                                const player = constants_1.players[socket.id];
+                                const player = (0, gameState_1.getSessionPlayer)(socket.id);
                                 if (player)
                                     player.squadId = squad.id;
                                 io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
@@ -502,7 +503,7 @@ function registerChatHandlers(ctx) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
                 }
                 else {
-                    const player = constants_1.players[socket.id];
+                    const player = (0, gameState_1.getSessionPlayer)(socket.id);
                     const username = socket.username;
                     const playerName = player ? player.name : username;
                     queueSend(guildMsg, username, safeGuildMsg => (0, guildManager_1.sendGuildChatMessage)(guild, io, username, playerName, safeGuildMsg));
@@ -519,7 +520,7 @@ function registerChatHandlers(ctx) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
                 }
                 else {
-                    const player = constants_1.players[socket.id];
+                    const player = (0, gameState_1.getSessionPlayer)(socket.id);
                     const username = socket.username;
                     const playerName = player ? player.name : username;
                     queueSend(squadMsg, username, safeSquadMsg => (0, squadManager_1.sendSquadChatMessage)(squad, io, username, playerName, safeSquadMsg));
@@ -844,7 +845,7 @@ function registerChatHandlers(ctx) {
             });
             return;
         }
-        const player = constants_1.players[socket.id];
+        const player = (0, gameState_1.getSessionPlayer)(socket.id);
         const username = socket.username;
         const playerName = player ? player.name : username;
         queueSend(message, username, safeMessage => {

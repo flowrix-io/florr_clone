@@ -129,13 +129,15 @@ function authHeaders() {
  * the await. migrateLegacyCredentials() is idempotent and resolves immediately
  * once there is nothing left to migrate, which is every load after the first.
  */
-async function getSocketAuth(playerName, spawnBiome) {
+async function getSocketAuth(playerName, spawnBiome, lobby = false) {
     await migrateLegacyCredentials();
     const username = getUsername();
     const token = getAuthToken();
     if (!username || !token)
         return null;
-    return { token, username, playerName, spawnBiome };
+    return lobby
+        ? { token, username, playerName, spawnBiome, lobby: true }
+        : { token, username, playerName, spawnBiome };
 }
 /**
  * Exchange a password for a session token. This is the only function in the

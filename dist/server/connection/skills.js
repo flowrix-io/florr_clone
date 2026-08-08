@@ -4,15 +4,17 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerSkillHandlers = registerSkillHandlers;
-const constants_1 = require("../../constants");
 const petals_1 = require("../../petals");
+const gameState_1 = require("../gameState");
 const playerManager_1 = require("../playerManager");
 const playerWire_1 = require("../playerWire");
 function registerSkillHandlers(ctx) {
     const { io, socket } = ctx;
     const { RARITY_TP_COSTS, savePlayerProgress } = ctx.deps;
     socket.on('upgradeSkill', (data) => {
-        const player = constants_1.players[socket.id];
+        // The talent tree is reachable from the title screen, so this resolves
+        // a lobby player too — spending TP is account state, not world state.
+        const player = (0, gameState_1.getSessionPlayer)(socket.id);
         if (!player) {
             socket.emit('skillUpgradeError', { message: 'Player not found' });
             return;
@@ -113,7 +115,7 @@ function registerSkillHandlers(ctx) {
         socket.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     });
     socket.on('resetSkills', () => {
-        const player = constants_1.players[socket.id];
+        const player = (0, gameState_1.getSessionPlayer)(socket.id);
         if (!player) {
             socket.emit('skillResetError', { message: 'Player not found' });
             return;

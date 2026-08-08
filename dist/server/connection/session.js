@@ -66,9 +66,30 @@ function registerSessionHandlers(ctx) {
     // A session token from /auth/login is the only credential this accepts —
     // passwords are verified over HTTPS at login and nowhere else, so one never
     // rides the socket or sits in a client's storage waiting to be replayed.
+    //
+    // `lobby` marks the title screen's background authentication. It loads the
+    // account exactly the same way — the title screen's inventory, loadout,
+    // crafting, talent and shop panels all need it — but parks the player in
+    // `lobbyPlayers` and stops short of every world-facing step below: no spawn
+    // position, no pets, no cooldown timers, no world-state dump and no
+    // `newPlayer` broadcast. The player only enters the world when the client
+    // authenticates again WITHOUT the flag, which is what pressing Ready does.
     socket.on('authenticate', async (credentials) => {
         const user = credentials.token ? database_1.database.getUserBySession(credentials.token) : null;
+        const lobby = credentials.lobby === true;
+        // Only the world cares about the biome, and a lobby session has none —
+        // so a lobby auth can never put the account into maze or PVP state.
+        const spawnBiome = lobby ? 'default' : (credentials.spawnBiome || 'default');
         if (user) {
+            // Any lobby session on this socket is being replaced — by the real
+            // spawn below, or by a fresh lobby load. Flush it first: a talent
+            // spend or shop purchase may still be sitting in a debounced save,
+            // and everything past this point rebuilds the player from disk.
+            const previousLobby = gameState_1.lobbyPlayers[socket.id];
+            if (previousLobby) {
+                delete gameState_1.lobbyPlayers[socket.id];
+                savePlayerProgressImmediate(previousLobby, user.id);
+            }
             socket.userId = user.id;
             socket.username = user.username;
             gameState_1.playerUserIds[socket.id] = user.id; // Store the mapping
@@ -83,31 +104,37 @@ function registerSessionHandlers(ctx) {
             const currentLevelXP = (0, playerManager_1.calculateCurrentLevelXP)(totalXP, level);
             const baseMaxHealth = (0, playerManager_1.calculateMaxHealthFromLevel)(level);
             const baseDamage = (0, playerManager_1.calculateDamageFromLevel)(level);
-            // Determine spawn position based on selected biome
+            // Determine spawn position based on selected biome. Skipped for a
+            // lobby session: it is never placed in the world, and the default
+            // branch below is a map scan plus a safe-spot search that would
+            // otherwise run for every client that merely opened the page.
             let spawnX = 200;
             let spawnY = constants_1.WORLD_HEIGHT / 2;
-            if (credentials.spawnBiome === 'pvp') {
+            if (lobby) {
+                // no world position
+            }
+            else if (spawnBiome === 'pvp') {
                 // PVP arena lives outside the regular map — skip biome lookup and drop the player at the arena spawn.
                 spawnX = constants_1.PVP_ARENA_SPAWN_X;
                 spawnY = constants_1.PVP_ARENA_SPAWN_Y;
                 console.log(`Player ${credentials.playerName} spawning in PVP arena`);
             }
-            else if (credentials.spawnBiome === 'maze') {
+            else if (spawnBiome === 'maze') {
                 // The maze also lives outside the regular map; drop the player at the maze entrance.
                 const mazeSpawn = (0, playerManager_1.getMazeSpawnPosition)();
                 spawnX = mazeSpawn.x;
                 spawnY = mazeSpawn.y;
                 console.log(`Player ${credentials.playerName} spawning in the maze`);
             }
-            else if (credentials.spawnBiome && credentials.spawnBiome !== 'default') {
-                const biomeSpawn = (0, playerManager_1.getSpawnPositionInBiome)(credentials.spawnBiome);
+            else if (spawnBiome !== 'default') {
+                const biomeSpawn = (0, playerManager_1.getSpawnPositionInBiome)(spawnBiome);
                 if (biomeSpawn) {
                     spawnX = biomeSpawn.x;
                     spawnY = biomeSpawn.y;
-                    console.log(`Player ${credentials.playerName} spawning in ${credentials.spawnBiome} biome`);
+                    console.log(`Player ${credentials.playerName} spawning in ${spawnBiome} biome`);
                 }
                 else {
-                    console.log(`Failed to find biome ${credentials.spawnBiome}, using default spawn`);
+                    console.log(`Failed to find biome ${spawnBiome}, using default spawn`);
                 }
             }
             else {
@@ -203,7 +230,7 @@ function registerSessionHandlers(ctx) {
             const reconstructedMazeLoadout = Array.isArray(savedProgress?.mazeLoadout)
                 ? reconstructLoadout(savedProgress.mazeLoadout)
                 : undefined;
-            constants_1.players[socket.id] = {
+            const sessionPlayer = {
                 id: socket.id,
                 name: (credentials.playerName || 'Unnamed').slice(0, 20),
                 x: spawnX,
@@ -235,31 +262,40 @@ function registerSessionHandlers(ctx) {
                 stars: savedProgress?.stars || 0,
                 renderFlags: savedProgress?.renderFlags || 0,
                 equippedSkinId: savedProgress?.equippedSkinId || '',
-                spawnBiome: credentials.spawnBiome || 'default',
+                spawnBiome: spawnBiome,
                 inPvpArena: false,
-                inMaze: credentials.spawnBiome === 'maze',
+                inMaze: spawnBiome === 'maze',
                 pvpScore: 0
             };
+            // The one line that decides whether this client is playing or just
+            // looking at the title screen. `players` is the world; `lobbyPlayers`
+            // is not reachable from any world loop.
+            if (lobby)
+                gameState_1.lobbyPlayers[socket.id] = sessionPlayer;
+            else
+                constants_1.players[socket.id] = sessionPlayer;
             // If the player chose PVP from the title screen, swap to the PVP
             // loadout/inventory now (this also stashes the regular versions and
             // recalcs stats to apply the PVP-fixed max health).
-            if (credentials.spawnBiome === 'pvp') {
-                (0, playerManager_1.enterPvpArena)(constants_1.players[socket.id], io);
+            if (spawnBiome === 'pvp') {
+                (0, playerManager_1.enterPvpArena)(sessionPlayer, io);
             }
             else {
-                if (constants_1.players[socket.id].inMaze) {
+                if (sessionPlayer.inMaze) {
                     // Maze entry: the regular loadout is stashed pristine and the
                     // player runs on a derived loadout that drops one rarity, with
                     // over-cap petals benched (saves persist the pristine stash, so
                     // the regular loadout is never changed), and the absorb baseline
                     // is snapshotted — all before pets/cooldowns are set up below.
-                    (0, playerManager_1.enterMazeState)(constants_1.players[socket.id], io);
+                    (0, playerManager_1.enterMazeState)(sessionPlayer, io);
                 }
                 // Recalculate player stats with modifiers after loadout is set
-                (0, playerManager_1.recalculatePlayerStats)(constants_1.players[socket.id], io);
+                (0, playerManager_1.recalculatePlayerStats)(sessionPlayer, io);
             }
-            // Start cooldown timers for all petals that are on cooldown
-            const player = constants_1.players[socket.id];
+            // Start cooldown timers for all petals that are on cooldown.
+            // World state, so a lobby session gets none: it has no flower for a
+            // pet to orbit, and its loadout is rebuilt from disk on entry.
+            const player = lobby ? null : sessionPlayer;
             if (player && player.loadout) {
                 for (let i = 0; i < player.loadout.length; i++) {
                     // Secondary loadout (slots 10+) is storage only — no pets, no cooldowns.
@@ -332,21 +368,23 @@ function registerSessionHandlers(ctx) {
             }
             // Save initial state and log the result
             // console.log('Saving initial player state');
-            savePlayerProgress(constants_1.players[socket.id], user.id);
-            // Trigger viewport update when new player joins
-            triggerViewportUpdate();
-            // Remove initial invulnerability after the specified time
-            setTimeout(() => {
-                if (constants_1.players[socket.id]) {
-                    constants_1.players[socket.id].isInvulnerable = false;
-                    // Notify client that invulnerability has ended
-                    io.emit('playerInvulnerabilityEnded', { playerId: socket.id });
-                }
-            }, constants_1.RESPAWN_INVULNERABILITY_TIME);
+            savePlayerProgress(sessionPlayer, user.id);
+            if (!lobby) {
+                // Trigger viewport update when new player joins
+                triggerViewportUpdate();
+                // Remove initial invulnerability after the specified time
+                setTimeout(() => {
+                    if (constants_1.players[socket.id]) {
+                        constants_1.players[socket.id].isInvulnerable = false;
+                        // Notify client that invulnerability has ended
+                        io.emit('playerInvulnerabilityEnded', { playerId: socket.id });
+                    }
+                }, constants_1.RESPAWN_INVULNERABILITY_TIME);
+            }
             // Send success response and game state
             socket.emit('authenticated', {
                 success: true,
-                player: constants_1.players[socket.id]
+                player: sessionPlayer
             });
             socket.emit('dailyStreakStatus', {
                 starsAwarded: streakResult.starsAwarded,
@@ -354,11 +392,11 @@ function registerSessionHandlers(ctx) {
                 newDay: streakResult.newDay,
                 nextClaimAtMs: streakResult.nextClaimAtMs,
                 streakExpiresAtMs: streakResult.streakExpiresAtMs,
-                totalStars: constants_1.players[socket.id].stars
+                totalStars: sessionPlayer.stars
             });
             // Explain the maze rules once on entry — otherwise the rarity
             // shift looks like petals silently vanishing a tier.
-            if (constants_1.players[socket.id].inMaze) {
+            if (sessionPlayer.inMaze) {
                 const mazeNow = (0, maze_1.getActiveMaze)();
                 const biomeName = mazeNow ? mazeNow.biome.charAt(0).toUpperCase() + mazeNow.biome.slice(1) : '';
                 socket.emit('chatMessage', {
@@ -371,8 +409,7 @@ function registerSessionHandlers(ctx) {
             if (socket.username) {
                 const userGuild = (0, guildManager_1.getGuildForUsername)(socket.username);
                 if (userGuild) {
-                    if (constants_1.players[socket.id])
-                        constants_1.players[socket.id].guildName = userGuild.name;
+                    sessionPlayer.guildName = userGuild.name;
                     (0, guildManager_1.broadcastGuildUpdate)(userGuild, io);
                     (0, guildManager_1.syncGuildToOnlineMembers)([socket.username], userGuild, io);
                 }
@@ -390,22 +427,29 @@ function registerSessionHandlers(ctx) {
             });
             // Send initial skills update
             socket.emit('skillsUpdated', {
-                playerId: constants_1.players[socket.id].id,
-                tp: constants_1.players[socket.id].tp || 0,
-                skills: constants_1.players[socket.id].skills || {}
+                playerId: sessionPlayer.id,
+                tp: sessionPlayer.tp || 0,
+                skills: sessionPlayer.skills || {}
             });
-            // Send current game state
-            socket.emit('currentPlayers', (0, playerWire_1.sanitizePlayersForClient)(constants_1.players, socket.id));
-            // Only send enemies in viewport with 200% buffer on connection
-            const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
-            socket.emit('enemiesUpdate', enemiesInViewport);
-            socket.emit('obstaclesUpdate', constants_1.obstacles);
-            // Filter items to only send ones this player is eligible for and hasn't picked up yet
-            socket.emit('itemsUpdate', (0, tickBroadcast_1.getEligibleItemsForSocket)(socket.id));
-            socket.emit('decorationsUpdate', gameState_1.decorations);
-            socket.emit('sandsUpdate', gameState_1.sands);
-            // Notify other players
-            socket.broadcast.emit('newPlayer', (0, playerWire_1.sanitizePublicPlayerForClient)(constants_1.players[socket.id]));
+            // Everything below puts this client in the world and the world in
+            // this client. A lobby session gets none of it: nobody is told a
+            // flower appeared, and the title screen has no use for the world
+            // dump (it also never receives a gameStateUpdate, since those are
+            // built from `players`).
+            if (!lobby) {
+                // Send current game state
+                socket.emit('currentPlayers', (0, playerWire_1.sanitizePlayersForClient)(constants_1.players, socket.id));
+                // Only send enemies in viewport with 200% buffer on connection
+                const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
+                socket.emit('enemiesUpdate', enemiesInViewport);
+                socket.emit('obstaclesUpdate', constants_1.obstacles);
+                // Filter items to only send ones this player is eligible for and hasn't picked up yet
+                socket.emit('itemsUpdate', (0, tickBroadcast_1.getEligibleItemsForSocket)(socket.id));
+                socket.emit('decorationsUpdate', gameState_1.decorations);
+                socket.emit('sandsUpdate', gameState_1.sands);
+                // Notify other players
+                socket.broadcast.emit('newPlayer', (0, playerWire_1.sanitizePublicPlayerForClient)(sessionPlayer));
+            }
         }
         else {
             socket.emit('authenticated', {
@@ -421,6 +465,15 @@ function registerSessionHandlers(ctx) {
     // counted as disconnected.
     const endPlayerSession = (removeListeners) => {
         console.log('A user disconnected');
+        // A title-screen session has no world state to tear down, but it does
+        // hold account state (talent spends, shop buys) that the 60s autosave
+        // never sees — it only walks `players`. Flush it before dropping it.
+        const lobbyPlayer = gameState_1.lobbyPlayers[socket.id];
+        if (lobbyPlayer) {
+            delete gameState_1.lobbyPlayers[socket.id];
+            if (socket.userId)
+                savePlayerProgressImmediate(lobbyPlayer, socket.userId);
+        }
         // Clean up squad membership
         (0, squadManager_1.handlePlayerDisconnect)(socket.id, io);
         // Refresh online status for this user's guildmates (guild itself is persistent).

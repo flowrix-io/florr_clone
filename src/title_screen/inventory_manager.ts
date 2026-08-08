@@ -553,12 +553,14 @@ export class TitleScreenInventoryManager {
 
         // May await a first-load token exchange; the duplicate-auth flag below
         // is still checked and set in one synchronous step afterwards.
-        const auth = await getSocketAuth(playerName, spawnBiome);
+        // `lobby` is what keeps this a data fetch: the server loads the account
+        // but does NOT put a flower in the world, so nothing spawns until the
+        // Game re-authenticates without the flag on Ready.
+        const auth = await getSocketAuth(playerName, spawnBiome, true);
         if (!auth || !this.socket?.connected) return;
 
         console.log('[TitleScreenInventory] Authenticating to fetch player data...');
 
-        // Authenticate to get player data (this will spawn on server but we won't show game until Ready)
         // Use a flag to prevent duplicate authentication
         if ((this.socket as any)._titleScreenAuthenticated) {
             console.log('[TitleScreenInventory] Already authenticated, skipping');

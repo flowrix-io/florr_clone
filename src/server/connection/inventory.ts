@@ -14,7 +14,7 @@ import { Item, ItemWithRarity } from '../../item';
 import { despawnPet, spawnPet, syncSplitStars } from '../../petal_actions';
 import { ABSORBING_SKILL_MULTIPLIERS, ABSORB_XP, getEffectivePetalCooldown, getPetalStats, getRarityIndex, getShopPrice, isUndroppableEggPetalType } from '../../petals';
 import { PlayerInventory } from '../../player';
-import { playerUserIds } from '../gameState';
+import { getSessionPlayer, playerUserIds } from '../gameState';
 import { addItem, applyPetalHealthBonus, buildCollection, capLoadoutToCollection, getAbsorbingTier, getMazeAbsorbableCount, hasItem, recalculatePlayerStats, removeItem } from '../playerManager';
 import { sanitizePlayerForClient } from '../playerWire';
 import { ConnectionContext } from './context';
@@ -217,7 +217,12 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
             targetPlayerId = splitState.activeIndex === 0 ? splitState.player1.id : splitState.player2.id;
         }
 
-        const player = players[targetPlayerId];
+        // Equipping is an account edit — the title screen is where most of it
+        // happens — so this resolves a lobby player too. Note the pet spawn /
+        // cooldown-timer paths below deliberately keep looking the player up in
+        // `players`, so a title-screen edit changes the loadout without putting
+        // anything (pets included) into the world.
+        const player = getSessionPlayer(targetPlayerId);
         if (!player) {
             console.warn('[SERVER] updateLoadout: Player not found for socket:', socket.id, 'targetPlayerId:', targetPlayerId);
             return;
@@ -538,7 +543,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
         try {
             console.log('[CRAFT] Craft request received:', { itemCount: data.items?.length, playerId: socket.id });
 
-            const player = players[socket.id];
+            const player = getSessionPlayer(socket.id);
             if (!player) {
                 console.log('[CRAFT] Player not found');
                 socket.emit('craftingFailed', 'Player not found');
@@ -833,7 +838,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
     // Shop handlers
     socket.on('shopBuy', (data: { petalType: string, rarity: string, price: number }) => {
         try {
-            const player = players[socket.id];
+            const player = getSessionPlayer(socket.id);
             if (!player) {
                 socket.emit('shopPurchaseError', 'Player not found');
                 return;
@@ -906,7 +911,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
 
     socket.on('redeemCode', (data: { code: string }) => {
         try {
-            const player = players[socket.id];
+            const player = getSessionPlayer(socket.id);
             if (!player) {
                 socket.emit('codeRedeemError', 'Player not found');
                 return;

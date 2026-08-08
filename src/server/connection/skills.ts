@@ -2,8 +2,8 @@
  * The skill tree: spending TP on upgrades, and refunding it all.
  */
 
-import { players } from '../../constants';
 import { RARITY_LEVELS, Rarity, getPetalStats, getRarityIndex } from '../../petals';
+import { getSessionPlayer } from '../gameState';
 import { applyPetalHealthBonus, isMazeTrackLive, recalculatePlayerStats } from '../playerManager';
 import { sanitizePlayerForClient } from '../playerWire';
 import { ConnectionContext } from './context';
@@ -13,7 +13,9 @@ export function registerSkillHandlers(ctx: ConnectionContext): void {
     const { RARITY_TP_COSTS, savePlayerProgress } = ctx.deps;
 
     socket.on('upgradeSkill', (data: { skillId: string; rarity: string }) => {
-        const player = players[socket.id];
+        // The talent tree is reachable from the title screen, so this resolves
+        // a lobby player too — spending TP is account state, not world state.
+        const player = getSessionPlayer(socket.id);
         if (!player) {
             socket.emit('skillUpgradeError', { message: 'Player not found' });
             return;
@@ -132,7 +134,7 @@ export function registerSkillHandlers(ctx: ConnectionContext): void {
     });
 
     socket.on('resetSkills', () => {
-        const player = players[socket.id];
+        const player = getSessionPlayer(socket.id);
         if (!player) {
             socket.emit('skillResetError', { message: 'Player not found' });
             return;

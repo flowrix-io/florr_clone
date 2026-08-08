@@ -5,8 +5,8 @@
  * guildManager, which own the actual group state.
  */
 
-import { players } from '../../constants';
 import { acceptGuildInvite, broadcastGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
+import { getSessionPlayer } from '../gameState';
 import { MAX_SQUAD_SIZE, acceptInvite, createSquad, declineInvite, findPlayerByUsername, getSquadForPlayer, inviteToSquad, leaveSquad as leaveSquadFn, sendSquadChatMessage, sendSquadSystemMessage } from '../squadManager';
 import { ConnectionContext } from './context';
 
@@ -20,7 +20,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are already in a squad.', timestamp: Date.now() });
             return;
         }
-        const player = players[socket.id];
+        const player = getSessionPlayer(socket.id);
         if (player) player.squadId = squad.id;
         io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
         io.to(socket.id).emit('chatMessage', { sender: 'System', content: '<span style="color: #4fc3f7;">Squad created! Use /squad invite &lt;username&gt; to invite players.</span>', timestamp: Date.now() });
@@ -54,7 +54,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: error, timestamp: Date.now() });
             return;
         }
-        const player = players[socket.id];
+        const player = getSessionPlayer(socket.id);
         if (player) player.squadId = squad.id;
         const playerName = player ? player.name : socket.username;
         sendSquadSystemMessage(squad, io, `${playerName} has joined the squad.`);
@@ -77,7 +77,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
             return;
         }
-        const player = players[socket.id];
+        const player = getSessionPlayer(socket.id);
         const playerName = player ? player.name : socket.username;
         if (player) player.squadId = undefined;
 
@@ -192,7 +192,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
         if (!squad) {
             squad = createSquad(socket.id, false);
             if (squad) {
-                const player = players[socket.id];
+                const player = getSessionPlayer(socket.id);
                 if (player) player.squadId = squad.id;
                 io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
             }
@@ -222,7 +222,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
         if (!squad) {
             squad = createSquad(socket.id, false);
             if (squad) {
-                const player = players[socket.id];
+                const player = getSessionPlayer(socket.id);
                 if (player) player.squadId = squad.id;
                 io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
             }
@@ -254,7 +254,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
             return;
         }
-        const player = players[socket.id];
+        const player = getSessionPlayer(socket.id);
         const playerName = player ? player.name : socket.username;
         sendGuildChatMessage(guild, io, socket.username, playerName, message);
     });
@@ -266,7 +266,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
             return;
         }
-        const player = players[socket.id];
+        const player = getSessionPlayer(socket.id);
         const playerName = player ? player.name : socket.username;
         sendSquadChatMessage(squad, io, socket.username, playerName, message);
     });

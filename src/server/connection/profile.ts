@@ -5,12 +5,18 @@
 import { players } from '../../constants';
 import { database } from '../../database';
 import { CustomSkin, MAX_SKINS_PER_USER, sanitizeSkin } from '../../skin_format';
+import { getSessionPlayer } from '../gameState';
 import { ConnectionContext } from './context';
 
 export function registerProfileHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
     const { savePlayerProgressImmediate } = ctx.deps;
 
+    // World-only on purpose: this broadcasts, and the client's playerUpdated
+    // handler CREATES a player it doesn't know yet — renaming a title-screen
+    // session would materialise a positionless ghost flower on every screen.
+    // Nothing calls it from the title screen anyway; the name a session enters
+    // the world with rides along with `authenticate`.
     socket.on('updateName', (newName: string) => {
         const player = players[socket.id];
         if (player) {
@@ -76,7 +82,8 @@ export function registerProfileHandlers(ctx: ConnectionContext): void {
 
     socket.on('equipSkin', (rawId: any) => {
         if (!socket.username) return;
-        const player = players[socket.id];
+        // Equipping a skin is done from the title screen's skin studio.
+        const player = getSessionPlayer(socket.id);
         if (!player) return;
         const id = typeof rawId === 'string' ? rawId : '';
         if (id && !database.getCustomSkin(id)) {

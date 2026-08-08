@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
+exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.lobbyPlayers = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
 exports.setSuperMobInSection = setSuperMobInSection;
 exports.getSuperMobInSection = getSuperMobInSection;
 exports.clearSuperMobFromSection = clearSuperMobFromSection;
+exports.getSessionPlayer = getSessionPlayer;
 exports.allocateMobProjectileId = allocateMobProjectileId;
 exports.allocatePlayerProjectileId = allocatePlayerProjectileId;
 exports.initializeMapObstacles = initializeMapObstacles;
@@ -56,6 +57,34 @@ exports.superMobPerSection = {
 exports.decorations = [];
 exports.sands = [];
 exports.ENEMY_COUNT = { get value() { return _ENEMY_COUNT; }, set value(v) { _ENEMY_COUNT = v; } };
+/**
+ * Accounts that are authenticated but still sitting on the title screen.
+ *
+ * A title-screen client has to authenticate — its inventory, loadout, talent
+ * tree and stars all come from the account — but it must not exist in the world
+ * until the player presses Ready. Parking those players HERE instead of in
+ * `players` is what guarantees that: every simulation, spawn, targeting, save
+ * and broadcast loop in the server iterates `players`, so a lobby flower is
+ * invisible to all of them by construction rather than by a flag each of those
+ * loops would have to remember to check.
+ *
+ * `authenticate` builds the entry here when `lobby` is set and rebuilds it in
+ * `players` (from freshly-flushed saved progress) when the player enters the
+ * world. Nothing is ever in both maps.
+ */
+exports.lobbyPlayers = {};
+/**
+ * The player behind a socket whether they are in the world or on the title
+ * screen.
+ *
+ * Use this in ACCOUNT-level handlers — loadout, crafting, shop, talents, skins,
+ * chat display names — i.e. anything the title screen can also do. Anything
+ * that touches the world must keep reading `players` directly so it can never
+ * act on a flower that isn't in it.
+ */
+function getSessionPlayer(socketId) {
+    return constants_1.players[socketId] || exports.lobbyPlayers[socketId];
+}
 exports.playerUserIds = {}; // Maps player ID to user ID
 exports.mobProjectiles = []; // Track all active mob projectiles
 exports.playerProjectiles = []; // Track all active player projectiles

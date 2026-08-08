@@ -7,9 +7,15 @@ exports.registerProfileHandlers = registerProfileHandlers;
 const constants_1 = require("../../constants");
 const database_1 = require("../../database");
 const skin_format_1 = require("../../skin_format");
+const gameState_1 = require("../gameState");
 function registerProfileHandlers(ctx) {
     const { io, socket } = ctx;
     const { savePlayerProgressImmediate } = ctx.deps;
+    // World-only on purpose: this broadcasts, and the client's playerUpdated
+    // handler CREATES a player it doesn't know yet — renaming a title-screen
+    // session would materialise a positionless ghost flower on every screen.
+    // Nothing calls it from the title screen anyway; the name a session enters
+    // the world with rides along with `authenticate`.
     socket.on('updateName', (newName) => {
         const player = constants_1.players[socket.id];
         if (player) {
@@ -74,7 +80,8 @@ function registerProfileHandlers(ctx) {
     socket.on('equipSkin', (rawId) => {
         if (!socket.username)
             return;
-        const player = constants_1.players[socket.id];
+        // Equipping a skin is done from the title screen's skin studio.
+        const player = (0, gameState_1.getSessionPlayer)(socket.id);
         if (!player)
             return;
         const id = typeof rawId === 'string' ? rawId : '';
