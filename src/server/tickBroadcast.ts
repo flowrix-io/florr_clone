@@ -123,6 +123,9 @@ export function buildPlayerSnapshots(): PlayerSnapshot[] {
         if (petalExtension > 1.0) { faceFlags |= FaceFlags.Attacking; mouth = 4; }
         if (petalExtension < 1.0) { faceFlags |= FaceFlags.Defending; mouth = 4; }
         if (p.poisonUntil && Date.now() < p.poisonUntil) faceFlags |= FaceFlags.Poisoned;
+        // Corruption paints the flower dark red for everyone — it is the only
+        // warning other players get that this flower's petals can hurt them.
+        if (p.corrupted) faceFlags |= FaceFlags.HasCorruption;
 
         let equipFlags = 0;
         if (p.loadout) {

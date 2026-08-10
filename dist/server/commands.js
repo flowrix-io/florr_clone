@@ -9,6 +9,7 @@ const database_1 = require("../database");
 const mobs_1 = require("../mobs");
 const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
+const petal_actions_1 = require("../petal_actions");
 const server_1 = require("../server");
 const petals_1 = require("../petals");
 const playerManager_1 = require("./playerManager");
@@ -372,6 +373,53 @@ function executeServerCommand(command, executor, deps, socketId) {
         else {
             sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
         }
+    }
+    else if (trimmedCommand === 'corrupt' || trimmedCommand.startsWith('corrupt ')) {
+        // corrupt <playerId/username> [on|off|toggle]
+        // Corrupts a flower: it turns dark red (FaceFlags.HasCorruption) and its
+        // petals damage OTHER PLAYERS anywhere in the world, not just inside the
+        // PVP arena — and theirs damage it back (canPetalsDamagePlayer). Mob
+        // combat is untouched, so a corrupted flower fights both.
+        const parts = trimmedCommand.split(' ').filter(p => p.length > 0);
+        if (parts.length < 2 || parts.length > 3) {
+            sendOutput('Usage: corrupt <playerId/username> [on|off|toggle]  (default: toggle)', socketId, io);
+            return;
+        }
+        const playerIdentifier = parts[1];
+        const modeArg = (parts[2] || 'toggle').toLowerCase();
+        if (!['on', 'off', 'toggle'].includes(modeArg)) {
+            sendOutput(`Unknown mode "${modeArg}". Use on, off or toggle.`, socketId, io);
+            return;
+        }
+        // Same resolution as set_skin: socket id first, then username.
+        let targetPlayer;
+        if (constants_1.players[playerIdentifier]) {
+            targetPlayer = constants_1.players[playerIdentifier];
+        }
+        else {
+            for (const [sid, player] of Object.entries(constants_1.players)) {
+                const s = io.sockets.sockets.get(sid);
+                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
+                    targetPlayer = player;
+                    break;
+                }
+            }
+        }
+        if (!targetPlayer) {
+            sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
+            return;
+        }
+        const corrupted = modeArg === 'toggle' ? !targetPlayer.corrupted : modeArg === 'on';
+        // A splitter's two halves are one person: corrupt (or clean) both, or the
+        // clone would keep fighting under the other half's rules.
+        const split = petal_actions_1.splitPlayers.get((0, utils_1.getOriginalSocketId)(targetPlayer.id));
+        const halves = split ? [split.player1, split.player2] : [targetPlayer];
+        for (const half of halves) {
+            if (constants_1.players[half.id])
+                (0, gameState_1.setPlayerCorrupted)(constants_1.players[half.id], corrupted);
+        }
+        sendOutput(`${corrupted ? 'Corrupted' : 'Cleansed'} ${targetPlayer.name} (${targetPlayer.id})`
+            + (halves.length > 1 ? ' and their splitter half' : ''), socketId, io);
     }
     else if (trimmedCommand.startsWith('generate_code') || trimmedCommand.startsWith('gen_code')) {
         // generate_code <stars> [maxUses] (default maxUses is 1)
@@ -969,5 +1017,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }

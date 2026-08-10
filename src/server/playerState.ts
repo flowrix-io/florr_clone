@@ -1,5 +1,5 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { ServerPlayer } from '../player';
+import { ServerPlayer, canPetalsDamagePlayer } from '../player';
 import { Enemy } from '../server_utils';
 import { PlayerProjectile } from '../enemy';
 import { WorldItem } from '../item';
@@ -45,7 +45,8 @@ import {
     GROUND_POLLEN_LIFETIME_MS,
     webFields,
     WEB_LIFETIME_MS,
-    WEB_THROW_DISTANCE
+    WEB_THROW_DISTANCE,
+    hasCorruptedPlayers
 } from './gameState';
 import {
     checkPlayerWallCollisions,
@@ -498,6 +499,19 @@ export function cleanupPetalPhysicsStates(playerId: string): void {
     keysToDelete.forEach(key => {
         petalPhysicsStates.delete(key);
         petalLastDamageTime.delete(key);
+    });
+    // Player-vs-player hit cooldowns key on BOTH sides
+    // (`${attacker}_${slot}_${inst}_pvp_${victim}`) and have no petalPhysicsStates
+    // entry to be swept by the pass above, so they outlive the players named in
+    // them. Bounded while this only happened inside the arena; with corruption
+    // any two flowers in the world can mint one, so drop them explicitly.
+    // `includes`, not `endsWith`: the victim may be this player's splitter half
+    // (`${playerId}_split2`), whose keys carry the suffix mid-string.
+    const pvpVictimMarker = `_pvp_${playerId}`;
+    petalLastDamageTime.forEach((_value, key) => {
+        if (key.startsWith(playerId) || key.includes(pvpVictimMarker)) {
+            petalLastDamageTime.delete(key);
+        }
     });
     raindropAuraLastDamage.delete(playerId);
     petalRingLastHit.delete(playerId);
@@ -1088,7 +1102,13 @@ function applyPvpDamage(
         const transferredScore = victim.pvpScore || 0;
         attacker.pvpScore = (attacker.pvpScore || 0) + transferredScore;
         victim.pvpScore = 0;
-        const victimGains = victim.inventory || [];
+        // Loot transfer is ARENA-ONLY. Inside the arena `inventory` is the
+        // throwaway PVP inventory that enterPvpArena() swapped in, so handing it
+        // to the killer and emptying it is the whole point. Outside it — the only
+        // place a corrupted flower can kill — `inventory` is the player's real,
+        // persisted one, and clearing it would delete their account's petals. A
+        // corruption kill costs the victim exactly what a mob kill costs them.
+        const victimGains = victim.inPvpArena ? (victim.inventory || []) : [];
         if (victimGains.length > 0 && attacker.inPvpArena) {
             if (!attacker.inventory) attacker.inventory = [];
             for (let i = 0; i < victimGains.length; i += 3) {
@@ -1104,8 +1124,10 @@ function applyPvpDamage(
             // A splitter half has no socket of its own — address the owner.
             io.to(getOriginalSocketId(attacker.id)).emit('inventoryUpdated', attacker.inventory);
         }
-        victim.inventory = [];
-        io.to(getOriginalSocketId(victim.id)).emit('inventoryUpdated', victim.inventory);
+        if (victim.inPvpArena) {
+            victim.inventory = [];
+            io.to(getOriginalSocketId(victim.id)).emit('inventoryUpdated', victim.inventory);
+        }
 
         // Mark dead immediately so passive-heal can't revive the victim before
         // their own update tick runs the standard death handler.
@@ -1589,6 +1611,11 @@ export function updatePlayerState(
             player, io, petalInstances, playerOrbitPhase, angleStep,
             playerRangeModifier, defendOnlyBaseRadius, playerSizeMult,
         });
+
+        // Resolved once per player-tick: the petal-vs-player pass below walks
+        // every other player, so outside the PVP arena it must stay behind a
+        // cheap "is anyone corrupted at all" check rather than run for free.
+        const anyCorruptedPlayers = hasCorruptedPlayers();
 
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const {petal, instanceIndex, loadoutIndex, slotIndex} = petalInstances[idx];
@@ -2689,16 +2716,26 @@ export function updatePlayerState(
                 }
             }
 
-            // PVP petal-vs-player collision: if both attacker and victim are inside the
-            // arena, a petal swing on contact deals damage and knocks the victim back.
-            if (player.inPvpArena) {
+            // Petal-vs-player collision: a petal swing on contact deals damage and
+            // knocks the victim back. Only runs between players who are allowed to
+            // fight — both inside the PVP arena, or either one corrupted, which makes
+            // a corrupted flower hostile to everyone anywhere in the world. The
+            // `player.corrupted` term is redundant with the registry check beside it
+            // and stays as a backstop: an attacker whose flag was set without
+            // setPlayerCorrupted() still swings.
+            if (player.inPvpArena || player.corrupted || anyCorruptedPlayers) {
                 const petalSizePx = 40 * effectiveSize;
                 const petalRadius = petalSizePx / 2;
+                // A splitter half is the SAME person as its other half — they must
+                // never damage each other, corrupted or not.
+                const ownerSocketId = getOriginalSocketId(player.id);
 
                 for (const otherId in players) {
                     if (otherId === player.id) continue;
                     const other = players[otherId];
-                    if (!other || other.isDead || !other.inPvpArena) continue;
+                    if (!other || other.isDead) continue;
+                    if (!canPetalsDamagePlayer(player, other)) continue;
+                    if (getOriginalSocketId(otherId) === ownerSocketId) continue;
 
                     const otherPlayerRadius = (PLAYER_SIZE / 2) * (other.sizeMultiplier ?? 1.0);
                     const minDist = petalRadius + otherPlayerRadius;

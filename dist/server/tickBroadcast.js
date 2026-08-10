@@ -88,6 +88,10 @@ function buildPlayerSnapshots() {
         }
         if (p.poisonUntil && Date.now() < p.poisonUntil)
             faceFlags |= player_1.FaceFlags.Poisoned;
+        // Corruption paints the flower dark red for everyone — it is the only
+        // warning other players get that this flower's petals can hurt them.
+        if (p.corrupted)
+            faceFlags |= player_1.FaceFlags.HasCorruption;
         let equipFlags = 0;
         if (p.loadout) {
             const loadoutLen = Math.min(p.loadout.length, 10);

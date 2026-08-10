@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlayerRenderFlags = exports.EquipmentFlags = exports.FaceFlags = void 0;
 exports.effectiveRenderFlags = effectiveRenderFlags;
+exports.canPetalsDamagePlayer = canPetalsDamagePlayer;
 var FaceFlags;
 (function (FaceFlags) {
     FaceFlags[FaceFlags["Poisoned"] = 1] = "Poisoned";
@@ -10,6 +11,7 @@ var FaceFlags;
     FaceFlags[FaceFlags["SquareEyes"] = 8] = "SquareEyes";
     FaceFlags[FaceFlags["Attacking"] = 16] = "Attacking";
     FaceFlags[FaceFlags["Defending"] = 32] = "Defending";
+    FaceFlags[FaceFlags["HasCorruption"] = 64] = "HasCorruption";
 })(FaceFlags || (exports.FaceFlags = FaceFlags = {}));
 var EquipmentFlags;
 (function (EquipmentFlags) {
@@ -49,4 +51,25 @@ var PlayerRenderFlags;
  */
 function effectiveRenderFlags(player) {
     return (player.renderFlags ?? 0) | (player.glitched ? PlayerRenderFlags.Glitch : 0);
+}
+/**
+ * Whether one flower's petals may damage another's.
+ *
+ * Two ways this is true:
+ *   - both stand inside the PVP arena (the original rule), or
+ *   - either side is CORRUPTED (ServerPlayer.corrupted). Corruption is
+ *     symmetric on purpose: a corrupted flower can attack anyone, and anyone
+ *     can fight it back. Making it one-way would leave a corrupted player
+ *     untouchable by everything except mobs.
+ *
+ * Nothing here checks distance or world region — the callers only reach this
+ * after a petal/flower overlap test, and the maze, the arena and the regular
+ * world sit at coordinates far enough apart that no pair across them can touch.
+ * Corruption does not change how a flower fights MOBS: that path never consults
+ * this and works exactly the same corrupted or not.
+ */
+function canPetalsDamagePlayer(attacker, victim) {
+    if (attacker.corrupted || victim.corrupted)
+        return true;
+    return !!attacker.inPvpArena && !!victim.inPvpArena;
 }

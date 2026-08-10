@@ -13,8 +13,13 @@ Graphics.prototype.drawFlower = function(this: Graphics, attrs: FlowerRenderAttr
     ctx.imageSmoothingEnabled = false;
 
     // Determine base color, applying status effects
+    // Corruption outranks the other two: poison and dandelion are timers, but a
+    // corrupted flower is one whose petals damage other players, so it has to
+    // stay recognisable at a glance even while it is also poisoned.
     let baseColor = attrs.color;
-    if (faceFlags & FaceFlags.Poisoned) {
+    if (faceFlags & FaceFlags.HasCorruption) {
+        baseColor = '#d91313';
+    } else if (faceFlags & FaceFlags.Poisoned) {
         baseColor = '#ce76db';
     } else if (faceFlags & FaceFlags.Dandelioned) {
         baseColor = Graphics.mixColors(baseColor, '#ffffff', 0.4);

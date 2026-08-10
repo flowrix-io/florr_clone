@@ -87,6 +87,38 @@ export function getSessionPlayer(socketId: string): ServerPlayer | undefined {
     return players[socketId] || lobbyPlayers[socketId];
 }
 
+/**
+ * Ids of the flowers currently CORRUPTED (ServerPlayer.corrupted).
+ *
+ * The flag itself lives on the player; this set exists only so the per-tick
+ * petal-vs-player pass can ask "is anyone corrupted at all?" in O(1) instead of
+ * scanning `players`. Outside the PVP arena that pass is dead weight for every
+ * ordinary server, so it stays behind this gate.
+ *
+ * Always go through setPlayerCorrupted() — writing `player.corrupted` directly
+ * leaves the set stale and the gate wrong.
+ */
+const corruptedPlayerIds = new Set<string>();
+
+export function setPlayerCorrupted(player: ServerPlayer, corrupted: boolean): void {
+    player.corrupted = corrupted || undefined;
+    if (corrupted) corruptedPlayerIds.add(player.id);
+    else corruptedPlayerIds.delete(player.id);
+}
+
+/**
+ * Whether any corrupted flower is in the world. Prunes ids whose player has
+ * left (or whose flag was cleared elsewhere, e.g. by a wholesale respawn
+ * rebuild) so a disconnect can't pin the gate open — or leak the id forever.
+ */
+export function hasCorruptedPlayers(): boolean {
+    if (corruptedPlayerIds.size === 0) return false;
+    for (const id of corruptedPlayerIds) {
+        if (!players[id]?.corrupted) corruptedPlayerIds.delete(id);
+    }
+    return corruptedPlayerIds.size > 0;
+}
+
 export const playerUserIds: Record<string, string> = {}; // Maps player ID to user ID
 export const mobProjectiles: MobProjectile[] = []; // Track all active mob projectiles
 export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles

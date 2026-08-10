@@ -8,6 +8,7 @@ export enum FaceFlags {
     SquareEyes = 1 << 3,
     Attacking = 1 << 4,
     Defending = 1 << 5,
+    HasCorruption = 1 << 6,
 }
 
 export enum EquipmentFlags {
@@ -48,6 +49,30 @@ export enum PlayerRenderFlags {
  */
 export function effectiveRenderFlags(player: { renderFlags?: number; glitched?: boolean }): number {
     return (player.renderFlags ?? 0) | (player.glitched ? PlayerRenderFlags.Glitch : 0);
+}
+
+/**
+ * Whether one flower's petals may damage another's.
+ *
+ * Two ways this is true:
+ *   - both stand inside the PVP arena (the original rule), or
+ *   - either side is CORRUPTED (ServerPlayer.corrupted). Corruption is
+ *     symmetric on purpose: a corrupted flower can attack anyone, and anyone
+ *     can fight it back. Making it one-way would leave a corrupted player
+ *     untouchable by everything except mobs.
+ *
+ * Nothing here checks distance or world region — the callers only reach this
+ * after a petal/flower overlap test, and the maze, the arena and the regular
+ * world sit at coordinates far enough apart that no pair across them can touch.
+ * Corruption does not change how a flower fights MOBS: that path never consults
+ * this and works exactly the same corrupted or not.
+ */
+export function canPetalsDamagePlayer(
+    attacker: { inPvpArena?: boolean; corrupted?: boolean },
+    victim: { inPvpArena?: boolean; corrupted?: boolean },
+): boolean {
+    if (attacker.corrupted || victim.corrupted) return true;
+    return !!attacker.inPvpArena && !!victim.inPvpArena;
 }
 
 // Compact inventory: flat number array of [rarityId, itemId, count, ...] triplets
@@ -234,6 +259,14 @@ export interface ServerPlayer {
   // effectiveRenderFlags() and is cleared on respawn, not on death — a corpse
   // stays glitched.
   glitched?: boolean;
+  // Corrupted flower: hostile to everything. A corrupted player's petals damage
+  // OTHER PLAYERS anywhere in the world (not just inside the PVP arena) on top
+  // of the mob damage every flower already deals, and other players' petals
+  // damage them back — see canPetalsDamagePlayer(). Transient and NEVER
+  // persisted (no save path writes it); it rides out to clients as the
+  // FaceFlags.HasCorruption bit that tickBroadcast ORs in, which paints the
+  // flower dark red. Currently only set by the `corrupt` admin command.
+  corrupted?: boolean;
   equippedSkinId?: string; // ID of an equipped user-created skin (broadcast so clients render it on this player)
   mouth?: number;          // Mouth curve Y control point
   squadId?: string;        // ID of the squad this player belongs to
