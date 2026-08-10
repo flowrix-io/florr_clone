@@ -1311,7 +1311,7 @@ function updateMobProjectiles(deltaTimeMs) {
                     }
                     // A glitch mob's shot infects on impact, whether or not it
                     // gets through invulnerability. Lasts until respawn.
-                    if (projectile.sourceType === 'glitch')
+                    if ((0, server_utils_1.isGlitchInfectingType)(projectile.sourceType ?? ''))
                         player.glitched = true;
                     // Hit player - apply damage
                     let damageDealt = 0;

@@ -61,7 +61,7 @@ export interface Enemy {
   // authoritative set is that file's keys, and values outside this union do
   // occur at runtime. Members are added here as code needs to compare against
   // them ('glitch' infects players on contact, see playerState.ts).
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger' | 'glitch';
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger' | 'glitch' | 'glitch_flower';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;
@@ -99,7 +99,8 @@ export interface Enemy {
   targetAngle?: number;
   // Snapshot buffer for high-ping interpolation
   _snapshots?: { t: number; x: number; y: number; angle?: number }[];
-  // Client-only: eased eye offset for mobs rendered as flowers (the digger),
+  // Client-only: eased eye offset for mobs rendered as flowers (the digger and
+  // the glitch flower),
   // mirroring Player.eye. Never set server-side.
   _eye?: { x: number; y: number };
   // Centipede chain tracking

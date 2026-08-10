@@ -817,6 +817,44 @@ export const MOB_DROP_TABLES: Record<string, MobDropTable> = {
             }
         ]
     },
+    // It drops the petals it was wearing.
+    glitch_flower: {
+        guaranteed: true,
+        drops: [
+            {
+                type: 'petal',
+                itemType: 'glitch',
+                rarity: 'common',
+                probability: 1.0,
+                minQuantity: 1,
+                maxQuantity: 2
+            },
+            {
+                type: 'petal',
+                itemType: 'javascript',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'bomb',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+            {
+                type: 'petal',
+                itemType: 'glass',
+                rarity: 'common',
+                probability: 0.4,
+                minQuantity: 1,
+                maxQuantity: 1
+            },
+        ]
+    },
     desert_centipede: {
         guaranteed: false,
         drops: [

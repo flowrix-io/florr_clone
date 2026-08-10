@@ -66,8 +66,14 @@ import {
     executePetalActions,
     despawnAllPlayerPets
 } from '../petal_actions';
-import { getMobStats } from '../mobs';
-import { queryEnemiesNear } from './enemyGrid';
+import {
+    getMobStats,
+    PETAL_RING_ORBIT_SCALE,
+    PETAL_RING_HIT_SCALE,
+    PETAL_RING_HIT_INTERVAL_MS,
+} from '../mobs';
+import { isGlitchInfectingType } from '../server_utils';
+import { queryEnemiesNear, petalRingEnemies } from './enemyGrid';
 
 // Reusable per-call buffers for enemy grid queries; avoids per-petal array allocs.
 // Two separate buffers because queryEnemiesNear() clears the one it is handed:
@@ -203,6 +209,13 @@ const raindropAuraLastDamage = new Map<string, Map<string, number>>();
 const RAINDROP_AURA_DAMAGE_INTERVAL_MS = 500;
 const RAINDROP_AURA_BASE_RADIUS = 180;
 const RAINDROP_AURA_RADIUS_PER_RARITY = 18;
+
+// Petal-ring mobs (glitch flower): last time each player was hit by ANY ring, so
+// walking into one costs a hit per sweep rather than one per tick. One timestamp
+// per player rather than per (player, mob) pair — two rings closing on the same
+// flower at once is rare, and sharing the timer keeps this map bounded by the
+// player count and cleaned up by cleanupPetalPhysicsStates.
+const petalRingLastHit = new Map<string, number>();
 
 // Drop an enemy's per-player aura damage-timestamps when it leaves the world.
 // Without this the inner maps grow by one entry per enemy ever seen in aura
@@ -487,6 +500,7 @@ export function cleanupPetalPhysicsStates(playerId: string): void {
         petalLastDamageTime.delete(key);
     });
     raindropAuraLastDamage.delete(playerId);
+    petalRingLastHit.delete(playerId);
 }
 
 /**
@@ -571,6 +585,113 @@ function applyRaindropAuraDamage(player: ServerPlayer, deps: PlayerStateDependen
                 trackMobKillTiming: 'sync-snapshot',
             });
         }
+    }
+}
+
+/**
+ * Damage from a mob's orbiting petal ring (the glitch flower) — the mob-side
+ * mirror of a player's petals shredding a mob.
+ *
+ * The test is a BAND, not a per-petal circle: a hit lands whenever the player
+ * overlaps the ring's orbit radius, regardless of where the individual petals
+ * are at that instant. The petals' angles are drawn from the viewer's own
+ * wallclock (the ring is never broadcast — see drawPetalRingFlower), so an
+ * angle-exact server test would disagree with what the player is looking at on
+ * every client whose clock is off. Rate-limiting to PETAL_RING_HIT_INTERVAL_MS
+ * makes the band cost about what being swept by each petal in turn would, and
+ * what the player sees — petals passing through them — is what happens.
+ *
+ * Runs before the movement/collision block of updatePlayerState, so a kill here
+ * is picked up by that function's usual end-of-tick death handling.
+ */
+function applyPetalRingDamage(player: ServerPlayer, io: SocketIOServer): void {
+    // Almost always empty (no glitch flower alive nearby), so this is the cost
+    // of the feature for everyone else.
+    if (petalRingEnemies.length === 0) return;
+    if (!player || player.isDead) return;
+
+    const playerRadius = (PLAYER_SIZE / 2) * (player.sizeMultiplier ?? 1.0);
+    const now = Date.now();
+
+    for (let i = 0; i < petalRingEnemies.length; i++) {
+        const enemy = petalRingEnemies[i];
+        if (enemy.isDead) continue;
+
+        const mobRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+        const orbitRadius = mobRadius * PETAL_RING_ORBIT_SCALE;
+        const petalRadius = mobRadius * PETAL_RING_HIT_SCALE;
+
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (Math.abs(distance - orbitRadius) > petalRadius + playerRadius) continue;
+
+        // Infection is a property of touch, so it lands even when the hit itself
+        // is on cooldown or the player is invulnerable — same rule as bouncing
+        // off a glitch mob's body.
+        if (isGlitchInfectingType(enemy.type)) player.glitched = true;
+
+        if (now - (petalRingLastHit.get(player.id) ?? 0) < PETAL_RING_HIT_INTERVAL_MS) continue;
+        petalRingLastHit.set(player.id, now);
+
+        // Knockback outward, off the ring. distance can only be ~0 if the mob is
+        // standing on the player, which the band test above already excludes for
+        // any real orbit radius, but guard the divide anyway.
+        let knockbackX = 0;
+        let knockbackY = 0;
+        if (distance > 0) {
+            const knockbackDistance = 25;
+            knockbackX = (dx / distance) * knockbackDistance;
+            knockbackY = (dy / distance) * knockbackDistance;
+            player.x += knockbackX;
+            player.y += knockbackY;
+        }
+
+        if (!player.isInvulnerable) {
+            const shieldAmount = getShieldAmount(player);
+            const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+            const spongeDuration = getSpongeAbsorbDuration(player);
+
+            if (damageToPlayer > 0 && spongeDuration > 0) {
+                queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
+                player.isInvulnerable = true;
+                setTimeout(() => {
+                    if (players[player.id]) {
+                        players[player.id].isInvulnerable = false;
+                        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                    }
+                }, 50);
+            } else {
+                player.health -= damageToPlayer;
+                player.lastDamageTime = now;
+
+                if (!(player.health <= 0 && trySecondChance(player, io))) {
+                    if (player.health <= 0) {
+                        player.killedBy = { type: enemy.type, tier: enemy.tier };
+                    }
+                    player.isInvulnerable = true;
+                    setTimeout(() => {
+                        if (players[player.id]) {
+                            players[player.id].isInvulnerable = false;
+                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                        }
+                    }, 50);
+                }
+            }
+        }
+
+        io.emit('playerDamaged', {
+            playerId: player.id,
+            health: player.health,
+            maxHealth: player.maxHealth,
+            isInvulnerable: player.isInvulnerable,
+            knockbackX,
+            knockbackY,
+        });
+
+        // One ring hit per tick: the cooldown stamp above would swallow the rest
+        // anyway, and a second ring should not knock the player twice in a frame.
+        break;
     }
 }
 
@@ -1273,6 +1394,9 @@ export function updatePlayerState(
     // Apply raindrop aura damage to mobs around the player
     applyRaindropAuraDamage(player, deps);
 
+    // ...and the reverse: a glitch flower's petal ring sweeping through the player.
+    applyPetalRingDamage(player, io);
+
     const { targetVelocityX, targetVelocityY } = computeTargetVelocity(player);
 
     // Player movement physics (gardn friction + substepped wall/water collision).
@@ -1320,7 +1444,7 @@ export function updatePlayerState(
                 // Glitch mobs infect on TOUCH, so this sits outside the damage
                 // branch below: bouncing off one while invulnerable still counts.
                 // Lasts until the player respawns (cleared in respawnPlayer).
-                if (enemy.type === 'glitch') player.glitched = true;
+                if (isGlitchInfectingType(enemy.type)) player.glitched = true;
 
                 // Only apply damage when not invulnerable
                 if (!player.isInvulnerable && enemy.type !== 'item_spawner') {

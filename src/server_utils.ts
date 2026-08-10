@@ -13,6 +13,16 @@ export interface PoisonEffect {
   playerId: string;  // ID of the player who applied the poison
 }
 
+/**
+ * Mobs whose touch (body, petal ring or shot) leaves a player glitched — the
+ * transient PlayerRenderFlags.Glitch bit, cleared only on respawn. Kept in one
+ * place so a new glitch-family mob infects through every contact path at once
+ * (body collision in playerState.ts, projectile impact in server.ts).
+ */
+export function isGlitchInfectingType(type: string): boolean {
+  return type === 'glitch' || type === 'glitch_flower';
+}
+
 export function isCentipedeHeadType(type: string): boolean {
   return type === 'centipede' || type === 'desert_centipede' || type === 'evil_centipede';
 }
@@ -31,7 +41,7 @@ export interface Enemy {
   id: string;
   // Partial union — see the note on the client-side Enemy in enemy.ts. The
   // authoritative type set is the mob_configs.ts keys.
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger' | 'glitch';
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger' | 'glitch' | 'glitch_flower';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;

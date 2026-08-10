@@ -38,6 +38,9 @@ export interface MobStats {
     initial_spawns?: string[];
     // If true, this mob does not participate in mob-mob collision resolution.
     no_mob_collision?: boolean;
+    // Orbiting petal ring carried like a player's (glitch flower). Drawn by the
+    // client and damaging on the server — see PetalRingConfig.
+    petal_ring?: PetalRingConfig;
     // Escorts summoned on a timer while this mob is alive (queen ant).
     periodic_spawn?: {
         mobType: string;
@@ -59,9 +62,18 @@ export interface MobConfig {
     };
 }
 
-import { BaseMobConfig, BASE_MOB_CONFIGS } from './mob_configs';
+import {
+    BaseMobConfig, BASE_MOB_CONFIGS, PetalRingConfig,
+    PETAL_RING_ORBIT_SCALE, PETAL_RING_PETAL_SCALE, PETAL_RING_HIT_SCALE,
+    PETAL_RING_ROTATION_SPEED, PETAL_RING_HIT_INTERVAL_MS,
+} from './mob_configs';
 import { DropItem, MobDropTable, MOB_DROP_TABLES, calculateMobDrops } from './mob_drops';
 export { BaseMobConfig, BASE_MOB_CONFIGS, DropItem, MobDropTable, MOB_DROP_TABLES, calculateMobDrops };
+export {
+    PetalRingConfig,
+    PETAL_RING_ORBIT_SCALE, PETAL_RING_PETAL_SCALE, PETAL_RING_HIT_SCALE,
+    PETAL_RING_ROTATION_SPEED, PETAL_RING_HIT_INTERVAL_MS,
+};
 
 
 // Rarity levels in order from lowest to highest
@@ -115,6 +127,7 @@ interface RarityOverride {
     spawn_waves?: string[][];
     initial_spawns?: string[];
     no_mob_collision?: boolean;
+    petal_ring?: PetalRingConfig;
     periodic_spawn?: {
         mobType: string;
         intervalMs: number;
@@ -541,6 +554,17 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         ultra: 220000,
         super: 1800000,
         unique: 10000000
+    },
+    glitch_flower: {
+        common: 2,
+        uncommon: 5,
+        rare: 16,
+        epic: 110,
+        legendary: 1500,
+        mythic: 22000,
+        ultra: 330000,
+        super: 2700000,
+        unique: 15000000
     },
     dust: {
         common: 1,
@@ -1008,6 +1032,34 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
             range: 1700,
         }
     },
+    // Sees a little further than a plain glitch at every tier — it has to close
+    // the distance to use its ring, so it commits to the chase earlier.
+    glitch_flower: {
+        uncommon: {
+            range: 850
+        },
+        rare: {
+            range: 1000
+        },
+        epic: {
+            range: 1150
+        },
+        legendary: {
+            range: 1300
+        },
+        mythic: {
+            range: 1500
+        },
+        ultra: {
+            range: 1700,
+        },
+        super: {
+            range: 1900,
+        },
+        unique: {
+            range: 2100,
+        }
+    },
     spider: {
         uncommon: {
             range: 800
@@ -1170,6 +1222,7 @@ function generateMobStats(baseConfig: BaseMobConfig, rarity: Rarity, mobType: st
         spawn_waves: overrides.spawn_waves ?? baseConfig.spawn_waves,
         initial_spawns: overrides.initial_spawns ?? baseConfig.initial_spawns,
         no_mob_collision: overrides.no_mob_collision ?? baseConfig.no_mob_collision,
+        petal_ring: overrides.petal_ring ?? baseConfig.petal_ring,
         periodic_spawn: overrides.periodic_spawn ?? baseConfig.periodic_spawn,
         // Poison is damage, so it rides the same DAMAGE_SCALING curve the mob's
         // body damage does — otherwise an apex evil centipede's bite would tick

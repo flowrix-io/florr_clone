@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEATH_ANIMATION_DURATION = void 0;
 const core_1 = require("./core");
+const glitch_effect_1 = require("./glitch-effect");
 // Shared with drawGameObjects' health-bar pass, which must skip mobs whose
 // death animation is running (drawEnemy scales/fades them instead).
 exports.DEATH_ANIMATION_DURATION = 200; // ms
@@ -198,6 +199,12 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         this.drawDiggerFlower(enemy, enemySize);
         rendered = true;
     }
+    else if (mobStats?.petal_ring) {
+        // Same deal for petal-ring mobs (the glitch flower): they are flowers
+        // carrying petals, so they go through the flower path rather than an SVG.
+        this.drawPetalRingFlower(enemy, enemySize, mobStats);
+        rendered = true;
+    }
     // Mobs are drawn straight from their compiled canvas commands, at the mob's
     // real size, every frame. There is deliberately NO bitmap bake in front of
     // this — one was added in e847451 and removed again after measurement: it
@@ -317,6 +324,86 @@ core_1.Graphics.prototype.drawDiggerFlower = function (enemy, enemySize) {
         eyeY: eye.y,
         mouth: 14.5,
     });
+};
+// The body colour of a flower-shaped mob. Not read off mob stats:
+// generateMobStats overwrites every mob's `color` with its rarity colour, and
+// the point of this mob is that it looks like a flower.
+const PETAL_RING_FLOWER_COLOR = '#ffe763';
+/**
+ * Draw a mob that carries an orbiting petal ring (the glitch flower) as a
+ * flower with petals, i.e. as something that looks like a player rather than
+ * like a bug — the same treatment the digger gets, one config field further:
+ * the ring's petal art and count come from the mob's `petal_ring`, and the
+ * geometry from the shared PETAL_RING_* constants the server damages with.
+ *
+ * Called with the mob's local frame active (origin at the mob centre, and
+ * unrotated — `hideRotation` keeps the face upright the way a flower's is).
+ * Every distance is a multiple of the mob's own radius, so the ring grows with
+ * rarity along with the body and the server's damage band lines up with it.
+ *
+ * Petal angles come from the viewer's own clock and are never broadcast: the
+ * ring is a spinning wheel of identical petals, so it reads correctly without a
+ * synchronised phase. The server's damage test is angle-blind for the same
+ * reason (see applyPetalRingDamage).
+ */
+core_1.Graphics.prototype.drawPetalRingFlower = function (enemy, enemySize, mobStats) {
+    const ring = mobStats?.petal_ring;
+    if (!ring)
+        return;
+    const radius = enemySize / 2;
+    // Eased eye offset, mirroring drawPlayer — with the body upright, the eyes
+    // are the only thing showing which way the mob is coming at you.
+    const angle = enemy.angle || 0;
+    const targetEyeX = Math.cos(angle) * 2;
+    const targetEyeY = Math.sin(angle) * 4.4;
+    let eye = enemy._eye;
+    if (!eye) {
+        eye = enemy._eye = { x: targetEyeX, y: targetEyeY };
+    }
+    else {
+        eye.x += (targetEyeX - eye.x) * 0.15;
+        eye.y += (targetEyeY - eye.y) * 0.15;
+    }
+    const petalStats = (0, core_1.getPetalStats)(ring.petalType, enemy.tier);
+    const petalKey = `${ring.petalType}_${enemy.tier}`;
+    const orbitRadius = radius * core_1.PETAL_RING_ORBIT_SCALE;
+    const petalSize = radius * core_1.PETAL_RING_PETAL_SCALE * (petalStats?.size ?? 1);
+    const count = Math.max(0, Math.min(16, ring.count || 0));
+    const rotation = (this.frameTimestamp * (petalStats?.speed ?? 1.0) * core_1.PETAL_RING_ROTATION_SPEED) % (Math.PI * 2);
+    const angleStep = count > 0 ? (Math.PI * 2) / count : 0;
+    // Body first, then the ring on top — same order a player is drawn in.
+    const drawFlowerAndRing = () => {
+        const ctx = this.ctx; // read at call time: the glitch wrapper swaps it
+        this.drawFlower({
+            radius,
+            color: PETAL_RING_FLOWER_COLOR,
+            faceFlags: core_1.FaceFlags.SquareEyes,
+            equipFlags: 0,
+            eyeX: eye.x,
+            eyeY: eye.y,
+            mouth: 14.5,
+        });
+        const petalCanvas = this.getPetalCanvas(petalKey, this.frameTimestamp);
+        if (!petalCanvas || petalCanvas.width <= 0 || petalCanvas.height <= 0)
+            return;
+        for (let i = 0; i < count; i++) {
+            const petalAngle = i * angleStep + rotation;
+            const px = Math.cos(petalAngle) * orbitRadius;
+            const py = Math.sin(petalAngle) * orbitRadius;
+            ctx.drawImage(petalCanvas, px - petalSize / 2, py - petalSize / 2, petalSize, petalSize);
+        }
+    };
+    this.ctx.save();
+    if (enemy.type === 'glitch_flower') {
+        // Wraps body AND ring, so the whole flower tears as one object. The
+        // radius handed to the wrapper has to cover the ring, not just the body
+        // (it sizes its buffer at radius * 2 + 24), hence the orbit scale.
+        (0, glitch_effect_1.drawBodyWithGlitch)(this, radius * (core_1.PETAL_RING_ORBIT_SCALE / 2 + 0.3), (0, glitch_effect_1.glitchSeedFor)(enemy.id), drawFlowerAndRing);
+    }
+    else {
+        drawFlowerAndRing();
+    }
+    this.ctx.restore();
 };
 core_1.Graphics.prototype.getEligiblePetalTypes = function () {
     if (!this.cachedEligiblePetalTypes) {

@@ -10,6 +10,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SVGCanvasCompiler = void 0;
+exports.awaitCompiledImages = awaitCompiledImages;
 exports.drawCompiledSVG = drawCompiledSVG;
 exports.renderCompiledSVGToCanvas = renderCompiledSVGToCanvas;
 // === Parsing Utilities ===
@@ -495,6 +496,46 @@ function treeHasImage(nodes) {
             return true;
     }
     return false;
+}
+function collectImages(nodes, out) {
+    for (const n of nodes) {
+        if (n.imageEl)
+            out.push(n.imageEl);
+        if (n.children)
+            collectImages(n.children, out);
+    }
+}
+/**
+ * Resolve once every `<image>` in a compiled tree has finished decoding.
+ *
+ * `<image href="data:...">` is compiled to an `Image` whose decode is
+ * asynchronous, so a caller that renders straight into an offscreen canvas and
+ * CACHES the result gets a permanently blank bake — which is what made the
+ * glitch petal invisible everywhere it was drawn from `petalImageCache`. The
+ * live per-frame renderer doesn't care (the image simply appears a frame or two
+ * later), so this is only needed before a bake.
+ *
+ * Failures and slow decodes resolve rather than reject: a missing image should
+ * cost one blank shape, never a stalled preloader.
+ */
+function awaitCompiledImages(compiled, timeoutMs = 3000) {
+    if (!compiled.hasImage)
+        return Promise.resolve();
+    const images = [];
+    collectImages(compiled.children, images);
+    const pending = images
+        .filter(img => !img.complete || img.naturalWidth === 0)
+        .map(img => new Promise(resolve => {
+        const done = () => resolve();
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+    }));
+    if (pending.length === 0)
+        return Promise.resolve();
+    return Promise.race([
+        Promise.all(pending).then(() => undefined),
+        new Promise(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
 }
 // === Animation Interpolation ===
 function cubicBezierEase(t, p1x, p1y, p2x, p2y) {

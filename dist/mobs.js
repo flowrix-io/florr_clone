@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MOB_CONFIG = exports.PET_SIZE_SCALING = exports.SIZE_SCALING = exports.RARITY_LEVELS = exports.calculateMobDrops = exports.MOB_DROP_TABLES = exports.BASE_MOB_CONFIGS = void 0;
+exports.MOB_CONFIG = exports.PET_SIZE_SCALING = exports.SIZE_SCALING = exports.RARITY_LEVELS = exports.PETAL_RING_HIT_INTERVAL_MS = exports.PETAL_RING_ROTATION_SPEED = exports.PETAL_RING_HIT_SCALE = exports.PETAL_RING_PETAL_SCALE = exports.PETAL_RING_ORBIT_SCALE = exports.calculateMobDrops = exports.MOB_DROP_TABLES = exports.BASE_MOB_CONFIGS = void 0;
 exports.getEnemySizeScale = getEnemySizeScale;
 exports.getMobStats = getMobStats;
 exports.getAllMobTypes = getAllMobTypes;
@@ -8,6 +8,11 @@ exports.getMobRarities = getMobRarities;
 exports.getMobTypesBySection = getMobTypesBySection;
 const mob_configs_1 = require("./mob_configs");
 Object.defineProperty(exports, "BASE_MOB_CONFIGS", { enumerable: true, get: function () { return mob_configs_1.BASE_MOB_CONFIGS; } });
+Object.defineProperty(exports, "PETAL_RING_ORBIT_SCALE", { enumerable: true, get: function () { return mob_configs_1.PETAL_RING_ORBIT_SCALE; } });
+Object.defineProperty(exports, "PETAL_RING_PETAL_SCALE", { enumerable: true, get: function () { return mob_configs_1.PETAL_RING_PETAL_SCALE; } });
+Object.defineProperty(exports, "PETAL_RING_HIT_SCALE", { enumerable: true, get: function () { return mob_configs_1.PETAL_RING_HIT_SCALE; } });
+Object.defineProperty(exports, "PETAL_RING_ROTATION_SPEED", { enumerable: true, get: function () { return mob_configs_1.PETAL_RING_ROTATION_SPEED; } });
+Object.defineProperty(exports, "PETAL_RING_HIT_INTERVAL_MS", { enumerable: true, get: function () { return mob_configs_1.PETAL_RING_HIT_INTERVAL_MS; } });
 const mob_drops_1 = require("./mob_drops");
 Object.defineProperty(exports, "MOB_DROP_TABLES", { enumerable: true, get: function () { return mob_drops_1.MOB_DROP_TABLES; } });
 Object.defineProperty(exports, "calculateMobDrops", { enumerable: true, get: function () { return mob_drops_1.calculateMobDrops; } });
@@ -433,6 +438,17 @@ const MOB_XP_TABLES = {
         ultra: 220000,
         super: 1800000,
         unique: 10000000
+    },
+    glitch_flower: {
+        common: 2,
+        uncommon: 5,
+        rare: 16,
+        epic: 110,
+        legendary: 1500,
+        mythic: 22000,
+        ultra: 330000,
+        super: 2700000,
+        unique: 15000000
     },
     dust: {
         common: 1,
@@ -899,6 +915,34 @@ const RARITY_OVERRIDES = {
             range: 1700,
         }
     },
+    // Sees a little further than a plain glitch at every tier — it has to close
+    // the distance to use its ring, so it commits to the chase earlier.
+    glitch_flower: {
+        uncommon: {
+            range: 850
+        },
+        rare: {
+            range: 1000
+        },
+        epic: {
+            range: 1150
+        },
+        legendary: {
+            range: 1300
+        },
+        mythic: {
+            range: 1500
+        },
+        ultra: {
+            range: 1700,
+        },
+        super: {
+            range: 1900,
+        },
+        unique: {
+            range: 2100,
+        }
+    },
     spider: {
         uncommon: {
             range: 800
@@ -1051,6 +1095,7 @@ function generateMobStats(baseConfig, rarity, mobType) {
         spawn_waves: overrides.spawn_waves ?? baseConfig.spawn_waves,
         initial_spawns: overrides.initial_spawns ?? baseConfig.initial_spawns,
         no_mob_collision: overrides.no_mob_collision ?? baseConfig.no_mob_collision,
+        petal_ring: overrides.petal_ring ?? baseConfig.petal_ring,
         periodic_spawn: overrides.periodic_spawn ?? baseConfig.periodic_spawn,
         // Poison is damage, so it rides the same DAMAGE_SCALING curve the mob's
         // body damage does — otherwise an apex evil centipede's bite would tick

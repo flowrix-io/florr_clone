@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isGlitchInfectingType = isGlitchInfectingType;
 exports.isCentipedeHeadType = isCentipedeHeadType;
 exports.isCentipedeBodyType = isCentipedeBodyType;
 exports.getCentipedeBodyType = getCentipedeBodyType;
@@ -10,6 +11,15 @@ exports.createSand = createSand;
 exports.getXPFromEnemy = getXPFromEnemy;
 const constants_1 = require("./constants");
 const sands = [];
+/**
+ * Mobs whose touch (body, petal ring or shot) leaves a player glitched — the
+ * transient PlayerRenderFlags.Glitch bit, cleared only on respawn. Kept in one
+ * place so a new glitch-family mob infects through every contact path at once
+ * (body collision in playerState.ts, projectile impact in server.ts).
+ */
+function isGlitchInfectingType(type) {
+    return type === 'glitch' || type === 'glitch_flower';
+}
 function isCentipedeHeadType(type) {
     return type === 'centipede' || type === 'desert_centipede' || type === 'evil_centipede';
 }

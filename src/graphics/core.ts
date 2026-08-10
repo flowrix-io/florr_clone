@@ -11,7 +11,7 @@ export { Enemy } from '../enemy';
 export { Item, WorldItem } from '../item';
 export { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, PLAYER_SIZE, getMobAnimationFrameTime, getHighQualityMobs, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState, WallTileState, SECTION_CONFIGS, seededRandom, getTileJaggedEdges, JaggedPoint } from '../constants';
 export { getPetalStats, getAllPetalTypes, isUndroppableEggPetalType } from '../petals';
-export { getMobStats, getAllMobTypes, getMobTypesBySection, getEnemySizeScale, MOB_CONFIG } from '../mobs';
+export { getMobStats, getAllMobTypes, getMobTypesBySection, getEnemySizeScale, MOB_CONFIG, PETAL_RING_ORBIT_SCALE, PETAL_RING_PETAL_SCALE, PETAL_RING_ROTATION_SPEED } from '../mobs';
 export { getSVGRenderer } from '../svg_renderer';
 export { FloatingText, ExplosionEffect, ExplosionParticle, PetalBreakEffect, LightningEffect, PetalParticleEffect, PetalParticle, FallingStar, FlowerRenderAttributes } from './types';
 

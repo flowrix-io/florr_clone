@@ -1,5 +1,46 @@
 // Base mob configuration data — extracted from mobs.ts for file-size management.
 
+/**
+ * A mob that orbits a ring of petals the way a flower does (the glitch flower).
+ *
+ * The ring is NOT decoration: the client draws it (graphics/enemy-drawing.ts)
+ * and the server damages players who stand in it (server/playerState.ts), both
+ * off this one config plus the PETAL_RING_* constants below, so what is drawn
+ * and what hurts stay the same ring.
+ */
+export interface PetalRingConfig {
+    /** Petal art the ring is drawn from — must be a key of PETAL_STATS. */
+    petalType: string;
+    /** Petals in the ring, evenly spaced. */
+    count: number;
+}
+
+/**
+ * Ring geometry, expressed in multiples of the mob's own radius so it scales
+ * with rarity exactly the way the body does. The reference is a player: a
+ * radius-25 flower orbits its petals at 60 (2.4x) and draws each at 12 across
+ * (0.48x), with a collision radius of 20 (0.8x — deliberately far more generous
+ * than the art, see the petal loop in server/playerState.ts).
+ */
+export const PETAL_RING_ORBIT_SCALE = 2.4;
+export const PETAL_RING_PETAL_SCALE = 0.55;
+export const PETAL_RING_HIT_SCALE = 0.5;
+
+/**
+ * Ring spin rate in rad/ms, matching a speed-1.0 petal on a player
+ * (drawPlayerPetals: stats.speed * 0.002). Client-side visual only — see
+ * applyPetalRingDamage for why the damage test is deliberately angle-blind.
+ */
+export const PETAL_RING_ROTATION_SPEED = 0.002;
+
+/**
+ * Minimum gap between two ring hits on the same player. Roughly the interval at
+ * which a 5-petal ring at PETAL_RING_ROTATION_SPEED sweeps past a fixed point
+ * (2π / 0.002 / 5 ≈ 628ms), so standing in the ring costs about what being
+ * swept by each petal in turn would.
+ */
+export const PETAL_RING_HIT_INTERVAL_MS = 600;
+
 export interface BaseMobConfig {
     name: string;
     damage: number;
@@ -36,6 +77,8 @@ export interface BaseMobConfig {
     spawn_waves?: string[][];
     initial_spawns?: string[];
     no_mob_collision?: boolean;
+    // Mobs that carry an orbiting petal ring like a player's (glitch flower).
+    petal_ring?: PetalRingConfig;
     // Mobs that summon escorts on a timer while alive (queen ant). Each summon is
     // removed again after `lifetimeMs`, and `maxAlive` caps the standing escort.
     periodic_spawn?: {
@@ -2344,6 +2387,70 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
             petalRarity: "common",
             speed: 200,
             spreadAngle: 0.2,
+        },
+    },
+    glitch_flower: {
+        name: "Glitch Flower",
+        health: 400,
+        damage: 30,
+        size: 1.2,
+        visual_scale: 1.0,
+        speed: 2.4,
+        cooldown: 2000,
+        description: "A flower the Computer wrote itself. It came with petals.",
+        // Drawn in-world by the flower renderer (graphics/enemy-drawing.ts), the
+        // same way the digger is — this SVG is only the gallery/icon art, so it
+        // compresses the petal ring inwards to fill the tile.
+        image: `<svg width="32" height="32" viewBox="-58 -58 116 116" xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <animateTransform attributeName="transform" type="rotate" values="0; 360" dur="4s" repeatCount="indefinite" />
+    <g fill="#2b2b2b" stroke="#111111" stroke-width="3">
+      <g transform="rotate(0)"><rect x="-9" y="-52" width="18" height="18" /></g>
+      <g transform="rotate(72)"><rect x="-9" y="-52" width="18" height="18" /></g>
+      <g transform="rotate(144)"><rect x="-9" y="-52" width="18" height="18" /></g>
+      <g transform="rotate(216)"><rect x="-9" y="-52" width="18" height="18" /></g>
+      <g transform="rotate(288)"><rect x="-9" y="-52" width="18" height="18" /></g>
+    </g>
+    <g fill="#7d7d7d">
+      <g transform="rotate(0)"><rect x="-4" y="-47" width="8" height="8" /></g>
+      <g transform="rotate(72)"><rect x="-4" y="-47" width="8" height="8" /></g>
+      <g transform="rotate(144)"><rect x="-4" y="-47" width="8" height="8" /></g>
+      <g transform="rotate(216)"><rect x="-4" y="-47" width="8" height="8" /></g>
+      <g transform="rotate(288)"><rect x="-4" y="-47" width="8" height="8" /></g>
+    </g>
+  </g>
+
+  <circle cx="0" cy="0" r="26.5" fill="#cfbb50" />
+  <circle cx="0" cy="0" r="23.5" fill="#ffe763" />
+
+  <g fill="#000000">
+    <rect x="-10" y="-11.3" width="6" height="13" />
+    <rect x="4" y="-11.3" width="6" height="13" />
+  </g>
+  <g fill="#ffffff">
+    <rect x="-10" y="-7.8" width="6" height="6" />
+    <rect x="4" y="-7.8" width="6" height="6" />
+  </g>
+  <path d="M -6 10 Q 0 14.5 6 10" fill="none" stroke="#222222" stroke-width="1.5" stroke-linecap="round" />
+
+  <g>
+    <animateTransform attributeName="transform" type="translate" values="0,0; -5,3; 4,-4; 0,0; 6,2; 0,0" dur="0.5s" repeatCount="indefinite" />
+    <rect x="-27" y="-14" width="54" height="9" fill="#ff0000" fill-opacity="0.35" />
+    <rect x="-27" y="6" width="54" height="7" fill="#00ffff" fill-opacity="0.35" />
+  </g>
+</svg>`,
+        ai_type: 'hostile',
+        range: 700,
+        section: [7],
+        color: "#ffffff",
+        // Its face stays upright like a player's; the eyes track its heading
+        // (see drawPetalRingFlower).
+        hideRotation: true,
+        spawn_weight: 0.08,
+        // Attacks by shoving its ring through you — same petal it drops.
+        petal_ring: {
+            petalType: "glitch",
+            count: 5,
         },
     },
     cube: {

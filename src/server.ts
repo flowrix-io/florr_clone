@@ -42,7 +42,7 @@ import { getInventoryCodecSignature } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, despawnAllPlayerPets } from './petal_actions';
 import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
-import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType } from './server_utils';
+import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
 import { WorldItem } from './item';
 import { getPetalStats } from './petals';
 import { getMobStats, getAllMobTypes, getEnemySizeScale } from './mobs';
@@ -1547,7 +1547,7 @@ function updateMobProjectiles(deltaTimeMs: number) {
 
                     // A glitch mob's shot infects on impact, whether or not it
                     // gets through invulnerability. Lasts until respawn.
-                    if (projectile.sourceType === 'glitch') player.glitched = true;
+                    if (isGlitchInfectingType(projectile.sourceType ?? '')) player.glitched = true;
 
                     // Hit player - apply damage
                     let damageDealt = 0;

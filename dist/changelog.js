@@ -505,6 +505,14 @@ exports.CHANGELOG = [
             'Fix crafting bugs',
             'Added curves to skin editor',
         ]
+    },
+    {
+        date: 'August 10, 2026',
+        changes: [
+            'New mob: Glitch Flower — a flower with its own ring of petals, found in the Computer biome',
+            'Its petals hurt, and its touch glitches you until you respawn',
+            'Fixed the Glitch petal rendering as nothing',
+        ]
     }
 ];
 class ChangelogManager {

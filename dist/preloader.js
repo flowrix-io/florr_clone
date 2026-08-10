@@ -172,9 +172,17 @@ class Preloader {
     /**
      * Render SVG string to offscreen canvas using compiled canvas commands.
      * No data URLs, no Image elements — direct canvas drawing.
+     *
+     * The one exception is an SVG that embeds a raster (`<image href="data:…">`,
+     * e.g. the glitch petal): that decodes asynchronously, and because what this
+     * produces is CACHED for the rest of the session, baking before the decode
+     * lands leaves the asset permanently blank. Wait for it here — this runs
+     * once per asset at preload, not per frame.
      */
     async renderSVGToCanvas(svgString, width = 100, height = 100, time = 0) {
         const compiled = this.svgCompiler.compile(svgString);
+        if (compiled.hasImage)
+            await (0, svg_canvas_renderer_1.awaitCompiledImages)(compiled);
         return (0, svg_canvas_renderer_1.renderCompiledSVGToCanvas)(compiled, width, height, time);
     }
     /**

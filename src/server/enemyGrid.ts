@@ -19,6 +19,19 @@ let _lastBadQuery = NaN;
 
 const grid: Map<number, Enemy[]> = new Map();
 
+/**
+ * Live wild mobs that carry a damaging petal ring (glitch flower), refreshed by
+ * `rebuildEnemyGrid` because it is the one pass that already walks every enemy
+ * each tick with pets and corpses filtered out.
+ *
+ * The ring reaches well past the mob's own radius, so a player standing in it
+ * is not necessarily in a cell the mob was inserted into — `queryEnemiesNear`
+ * from the player's side would miss it. Ring mobs are rare enough (usually
+ * none) that iterating this list per player is cheaper than widening every
+ * player's broad-phase query would be.
+ */
+export const petalRingEnemies: Enemy[] = [];
+
 // Monotonic per-query stamp. A mob wider than a cell lives in several buckets, so a
 // query spanning those buckets would otherwise return it more than once — and callers
 // apply damage per returned candidate, so a duplicate is a double hit. Stamping is O(1)
@@ -49,6 +62,7 @@ function key(cx: number, cy: number): number {
  */
 export function rebuildEnemyGrid(enemies: Enemy[]): void {
     grid.clear();
+    petalRingEnemies.length = 0;
     for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
         if (e.ownerId) continue;
@@ -80,6 +94,8 @@ export function rebuildEnemyGrid(enemies: Enemy[]): void {
             r = ENEMY_SIZE / 2;
             e._radius = r;
         }
+
+        if (e._mobStats?.petal_ring) petalRingEnemies.push(e);
 
         const minCX = Math.floor((e.x - r) / CELL_SIZE);
         const maxCX = Math.floor((e.x + r) / CELL_SIZE);

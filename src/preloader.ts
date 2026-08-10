@@ -2,7 +2,7 @@
  * Preloader - Handles loading all game assets and systems before showing the title screen
  */
 import { getBiomeSvgContent } from './biome_svgs';
-import { SVGCanvasCompiler, renderCompiledSVGToCanvas } from './svg_canvas_renderer';
+import { SVGCanvasCompiler, renderCompiledSVGToCanvas, awaitCompiledImages } from './svg_canvas_renderer';
 
 export interface PreloadedAssets {
     sprites: {
@@ -174,9 +174,16 @@ export class Preloader {
     /**
      * Render SVG string to offscreen canvas using compiled canvas commands.
      * No data URLs, no Image elements — direct canvas drawing.
+     *
+     * The one exception is an SVG that embeds a raster (`<image href="data:…">`,
+     * e.g. the glitch petal): that decodes asynchronously, and because what this
+     * produces is CACHED for the rest of the session, baking before the decode
+     * lands leaves the asset permanently blank. Wait for it here — this runs
+     * once per asset at preload, not per frame.
      */
     private async renderSVGToCanvas(svgString: string, width: number = 100, height: number = 100, time: number = 0): Promise<HTMLCanvasElement> {
         const compiled = this.svgCompiler.compile(svgString);
+        if (compiled.hasImage) await awaitCompiledImages(compiled);
         return renderCompiledSVGToCanvas(compiled, width, height, time);
     }
 
