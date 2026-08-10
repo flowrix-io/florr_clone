@@ -29,10 +29,26 @@ Open `https://localhost:3000`.
 | `npm start` | Build server and run `dist/server.js` |
 | `npm run dev` | Webpack dev watch |
 | `npm run dev:server` | Run server under `ts-node-dev` |
+| `npm run svg2skin -- art.svg` | Convert an SVG into custom-skin commands |
 
 ### Biomes
 
 The world is divided into biomes (ocean, desert, jungle, etc.) with their own mobs, rarities, and scaling. Biome maps are created in `MapEditor.html` and loaded from JSON (see `map.json`, `example_biome_map.json`).
+
+### Custom skins from SVG
+
+Player-made skins are a short list of canvas primitives (see `src/skin_format.ts`),
+typed into **Skin Studio ▸ Create ▸ Text**. To start from artwork instead:
+
+```bash
+npm run svg2skin -- logo.svg                    # prints the command lines
+npm run svg2skin -- logo.svg --max-shapes 16 --hole-fill '#ffe763'
+```
+
+Or open `SvgToSkin.html` for drag-and-drop with a live preview of the skin on a
+flower. Both use the same converter, which flattens transforms, turns paths into
+polygons/curves, fits the drawing to the flower body, and drops the smallest
+shapes when the artwork exceeds the 24-shape limit.
 
 ### Rarities
 
@@ -48,6 +64,7 @@ The world is divided into biomes (ocean, desert, jungle, etc.) with their own mo
 - **Bots** for populating servers
 - **Daily streak** rewards and a tutorial flow for new players
 - **Map editor** (`MapEditor.html`) for authoring biome layouts
+- **SVG → skin converter** (`SvgToSkin.html`, `scripts/svg-to-skin.js`) for turning artwork into custom-skin commands
 - **Persistence** via custom JSON database
 - **HTTPS** support (drop `cert.crt` / `cert.key` at the project root)
 
@@ -95,6 +112,7 @@ assembly/                   # AssemblyScript sources
 assets/                     # images and SVGs
 scripts/                    # build helpers (e.g. compressbundle.js)
 MapEditor.html              # standalone biome map editor
+SvgToSkin.html              # standalone SVG → skin command converter
 ```
 
 ## Stack

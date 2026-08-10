@@ -107,7 +107,7 @@ function buildPlayerSnapshots() {
             ownerId: (0, utils_1.getOriginalSocketId)(p.id),
             faceFlags,
             equipFlags,
-            renderFlags: p.renderFlags ?? 0,
+            renderFlags: (0, player_1.effectiveRenderFlags)(p),
             equippedSkinId: p.equippedSkinId ?? '',
             mouth,
             petalExtension,

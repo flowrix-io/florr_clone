@@ -1317,6 +1317,11 @@ export function updatePlayerState(
                 newX -= normalizedDx * knockbackDistance;
                 newY -= normalizedDy * knockbackDistance;
 
+                // Glitch mobs infect on TOUCH, so this sits outside the damage
+                // branch below: bouncing off one while invulnerable still counts.
+                // Lasts until the player respawns (cleared in respawnPlayer).
+                if (enemy.type === 'glitch') player.glitched = true;
+
                 // Only apply damage when not invulnerable
                 if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
                     const shieldAmount = getShieldAmount(player);

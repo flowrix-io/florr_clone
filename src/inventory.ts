@@ -33,9 +33,10 @@ export class InventoryManager {
     /** Server-side per-request limit for absorbItems — staging stops here. */
     private static readonly MAX_ABSORB_BATCH = 1000;
     /** True when the current craft slot contents were staged via a shift-click.
-     *  A shift-craft asks the server to keep crafting the leftovers of the same
-     *  petal (failure-returns + remainder) in one pass, until fewer than 5 are
-     *  left — resolved server-side so the client animates only once. */
+     *  Every craft pools its staged petals and re-crafts the leftovers
+     *  (failure-returns + remainder) until fewer than 5 are left; a shift-craft
+     *  additionally pools the rest of that petal still in the inventory —
+     *  resolved server-side, so the client animates only once either way. */
     private shiftStaged: boolean = false;
     /** How long to wait for a craftItems response before giving up on the spin
      *  animation (the craft still resolves server-side). */
@@ -1785,17 +1786,17 @@ export class InventoryManager {
         const petalType = isPetal ? type.substring(6) : undefined;
         const itemType = isPetal ? 'petal' : type;
 
-        if (this.craftingItems.length > 0) {
-            const firstItem = this.craftingItems[0];
-            if (firstItem.rarity !== rarity || firstItem.type !== itemType || firstItem.petalType !== petalType) {
-                const itemsToReturn = [...this.craftingItems];
-                this.craftingItems = [];
-                itemsToReturn.forEach(item => {
-                    const itemKey = item.petalType ? `petal_${item.petalType}` : item.type;
-                    this.addItem(item.rarity!, itemKey, 1);
-                });
-            }
-        }
+        // Clicking a different item than the one staged replaces the staged
+        // batch. Work out how much the new click would stage BEFORE handing the
+        // old batch back: a click that ends up staging nothing (a stack under a
+        // full batch, a non-absorbable item) must not silently empty the slots.
+        const firstItem = this.craftingItems.length > 0 ? this.craftingItems[0] : null;
+        const replacesStaged = firstItem !== null && (
+            firstItem.rarity !== rarity || firstItem.type !== itemType || firstItem.petalType !== petalType
+        );
+        // What the slots will hold once this click is applied — a replacing
+        // click clears them first.
+        const stagedCount = replacesStaged ? 0 : this.craftingItems.length;
 
         let totalItemsToAdd: number;
         if (this.absorbMode) {
@@ -1808,26 +1809,26 @@ export class InventoryManager {
                 this.getItemCount(rarity, type),
                 this.getMazeAbsorbableCount(rarity, type)
             );
-            const room = InventoryManager.MAX_ABSORB_BATCH - this.craftingItems.length;
+            const room = InventoryManager.MAX_ABSORB_BATCH - stagedCount;
             totalItemsToAdd = Math.min(isShiftClick ? available : Math.min(5, available), room);
             if (totalItemsToAdd < 1) return;
         } else {
-            const amountToAdd = isShiftClick ? itemsFromStack : 5;
-            const actualAmountToAdd = Math.min(amountToAdd, this.getItemCount(rarity, type));
-
-            if (actualAmountToAdd < 5) {
+            // A shift-click stages the ENTIRE stack and arms "craft all" (the
+            // server pools the rest of the inventory in too). A plain click
+            // stages one batch of 5, or whatever is left of the stack when
+            // that's less — the server crafts the staged petals as a pool, so a
+            // sub-batch tail is worth staging as long as the slots end up with
+            // at least one attempt's worth in them.
+            totalItemsToAdd = isShiftClick ? itemsFromStack : Math.min(5, itemsFromStack);
+            if (stagedCount + totalItemsToAdd < 5) {
                 return;
             }
-
-            // A shift-click stages the ENTIRE stack — including the sub-batch
-            // remainder past the last multiple of 5, which the server's craftAll
-            // pools in anyway (failure returns keep the pool above 5 for longer),
-            // so the slots show every petal the craft can consume. It also arms
-            // auto-recraft. A plain click stages one deliberate batch of 5 and
-            // disarms it.
-            totalItemsToAdd = isShiftClick ? actualAmountToAdd : 5;
-            this.shiftStaged = isShiftClick;
         }
+
+        // The new click is going to stage something — now it's safe to hand the
+        // previously staged (different) item back to the inventory.
+        if (replacesStaged) this.returnCraftingSlotItems();
+        if (!this.absorbMode) this.shiftStaged = isShiftClick;
 
         const item: Item = {
             type: itemType as Item['type'],
@@ -1958,32 +1959,13 @@ export class InventoryManager {
             return;
         }
 
-        // A shift-craft asks the server to keep crafting the leftovers of this
-        // same petal (failure-returns + remainder) until fewer than 5 remain,
-        // all in one pass — so the client plays the spin animation only once.
+        // Either way the server crafts the staged petals as a pool, recycling
+        // failure-returns until fewer than 5 are left, so the slots may hold any
+        // count from 5 up. A shift-craft additionally asks it to pool the rest
+        // of that petal still in the inventory. Both resolve in one pass, so the
+        // client plays the spin animation only once.
         const craftAll = this.shiftStaged;
         this.shiftStaged = false;
-
-        // Only a shift-craft may carry a sub-batch remainder (the server pools
-        // it). A plain craft is whole batches only, so hand any leftovers back
-        // to the inventory rather than refusing the craft — the slots can hold
-        // a non-multiple of 5 once the shift-staging was disarmed by hand
-        // (removing a batch, switching tabs, ...).
-        if (!craftAll) {
-            const remainder = this.craftingItems.length % 5;
-            if (remainder > 0) {
-                const extras = this.craftingItems.splice(-remainder);
-                for (const extra of extras) {
-                    const extraKey = extra.petalType ? `petal_${extra.petalType}` : extra.type;
-                    if (extra.rarity) this.addItem(extra.rarity, extraKey, 1);
-                }
-                if (this.craftingItems.length < 5) {
-                    this.updateCraftingDisplay();
-                    this.updateInventoryDisplay();
-                    return;
-                }
-            }
-        }
 
         console.log('[CLIENT] Sending craftItems request:', { itemCount: this.craftingItems.length });
 

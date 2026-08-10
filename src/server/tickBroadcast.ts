@@ -26,7 +26,7 @@ import {
     VIEWPORT_HEIGHT,
     VIEWPORT_BUFFER,
 } from '../constants';
-import { ServerPlayer, FaceFlags } from '../player';
+import { ServerPlayer, FaceFlags, effectiveRenderFlags } from '../player';
 import { WorldItem } from '../item';
 import { getPetalStats } from '../petals';
 import { getMobStats } from '../mobs';
@@ -141,7 +141,7 @@ export function buildPlayerSnapshots(): PlayerSnapshot[] {
             ownerId: getOriginalSocketId(p.id),
             faceFlags,
             equipFlags,
-            renderFlags: p.renderFlags ?? 0,
+            renderFlags: effectiveRenderFlags(p),
             equippedSkinId: p.equippedSkinId ?? '',
             mouth,
             petalExtension,

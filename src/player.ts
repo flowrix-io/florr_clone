@@ -23,9 +23,31 @@ export enum EquipmentFlags {
 // drawFlower() body. A skin only renders when its bit is set in player.renderFlags
 // — with no bit set the player draws as the normal flower. Bits are checked in
 // registration order, so the lowest-priority set bit wins if several are on.
+//
+// Glitch is the odd one out: it registers no skin and replaces no body. It is a
+// post-process MODIFIER applied to whatever body ends up rendering (default
+// flower, built-in skin or user-created skin), so it composes with the other
+// bits — e.g. renderFlags = Pumpkin | Glitch is a glitching pumpkin. See
+// graphics/glitch-effect.ts.
 export enum PlayerRenderFlags {
     Pumpkin = 1 << 0,
     Robot = 1 << 1,
+    Glitch = 1 << 2,
+}
+
+/**
+ * The render flags a client should actually draw this player with: the
+ * persisted cosmetic bits plus the transient Glitch bit a glitch mob infects
+ * them with (ServerPlayer.glitched).
+ *
+ * The two are kept apart on the server on purpose — `renderFlags` is account
+ * content that savePlayerProgress writes to the database, and an affliction
+ * that lasts until the next respawn must never end up in there. They are only
+ * merged on the way out, so no wire field or codec change is needed: the
+ * existing `r` field carries both.
+ */
+export function effectiveRenderFlags(player: { renderFlags?: number; glitched?: boolean }): number {
+    return (player.renderFlags ?? 0) | (player.glitched ? PlayerRenderFlags.Glitch : 0);
 }
 
 // Compact inventory: flat number array of [rarityId, itemId, count, ...] triplets
@@ -207,6 +229,11 @@ export interface ServerPlayer {
   faceFlags?: number;      // Bitmask of FaceFlags (computed each tick)
   equipFlags?: number;     // Bitmask of EquipmentFlags (computed from loadout)
   renderFlags?: number;    // Bitmask of PlayerRenderFlags — broadcast so clients pick the custom skin render
+  // Infected by a glitch mob (contact or projectile). Transient and NEVER
+  // persisted: it rides out to clients merged into renderFlags by
+  // effectiveRenderFlags() and is cleared on respawn, not on death — a corpse
+  // stays glitched.
+  glitched?: boolean;
   equippedSkinId?: string; // ID of an equipped user-created skin (broadcast so clients render it on this player)
   mouth?: number;          // Mouth curve Y control point
   squadId?: string;        // ID of the squad this player belongs to

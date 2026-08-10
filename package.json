@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "build:map": "node scripts/encodeMap.js",
+    "svg2skin": "node scripts/svg-to-skin.js",
     "build": "node scripts/encodeMap.js && webpack --mode production && cp src/styles.css dist/styles.css && cp src/favicon.ico dist/favicon.ico && cp src/land.svg dist/land.svg && cp src/index.html dist/index.html && node scripts/compressbundle.js",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "tsc -p tsconfig.client.json",

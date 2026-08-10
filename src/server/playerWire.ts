@@ -1,4 +1,4 @@
-import { ServerPlayer } from '../player';
+import { ServerPlayer, effectiveRenderFlags } from '../player';
 
 /**
  * Fields of ServerPlayer that a client actually consumes from a `playerUpdated`
@@ -113,6 +113,17 @@ function project(player: ServerPlayer, fields: readonly (keyof ServerPlayer)[]):
     const out: any = {};
     for (let i = 0; i < fields.length; i++) {
         const k = fields[i];
+        // renderFlags goes out merged with the transient glitch bit, matching
+        // what the per-tick `r` field carries (see effectiveRenderFlags). If it
+        // didn't, an occasional `playerUpdated` would assign the un-glitched
+        // value over what the tick stream just set, flickering the effect off
+        // for a frame.
+        if (k === 'renderFlags') {
+            if (player.renderFlags !== undefined || player.glitched) {
+                out.renderFlags = effectiveRenderFlags(player);
+            }
+            continue;
+        }
         const v = (player as any)[k];
         if (v !== undefined) out[k] = v;
     }

@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SVG → Skin Commands</title>
+<style>
+    :root { color-scheme: dark; }
+    body {
+        margin: 0; padding: 18px 20px 28px; background: #1a1a1a; color: #eee;
+        font-family: Ubuntu, Arial, sans-serif;
+    }
+    h1 { font-size: 19px; margin: 0 0 4px; }
+    h1 span { color: #b58bd6; }
+    .sub { color: #999; font-size: 12px; margin-bottom: 16px; }
+    .cols { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+    .panel { background: #242424; border: 1px solid #333; border-radius: 8px; padding: 14px; }
+    .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #9a8fb0; margin: 0 0 10px; }
+    #left { width: 330px; flex: 0 0 auto; }
+    #middle { flex: 1 1 420px; min-width: 380px; }
+    #right { flex: 1 1 380px; min-width: 340px; }
+
+    #drop {
+        border: 2px dashed #4a4a4a; border-radius: 8px; padding: 22px 12px; text-align: center;
+        color: #8d8d8d; font-size: 13px; cursor: pointer; transition: .12s; margin-bottom: 12px;
+    }
+    #drop:hover, #drop.over { border-color: #a86ed6; color: #d9c4ec; background: #2b2233; }
+    #drop b { color: #ddd; display: block; margin-bottom: 4px; font-size: 14px; }
+
+    label.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 9px 0; font-size: 12.5px; color: #c9c9c9; }
+    label.row input[type=range] { flex: 1 1 auto; accent-color: #a86ed6; }
+    label.row .val { width: 44px; text-align: right; color: #fff; font-variant-numeric: tabular-nums; }
+    select, input[type=text] {
+        background: #1c1c1c; color: #eee; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px 6px; font: inherit; font-size: 12px;
+    }
+    textarea {
+        width: 100%; box-sizing: border-box; background: #141414; color: #dfe6df; border: 1px solid #3a3a3a;
+        border-radius: 6px; padding: 9px 10px; font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 11.5px; line-height: 1.5; resize: vertical; white-space: pre; overflow-wrap: normal; overflow-x: auto;
+    }
+    button {
+        background: #7a3fa8; color: #fff; border: 0; border-radius: 5px; padding: 7px 13px;
+        font: inherit; font-size: 12.5px; font-weight: bold; cursor: pointer;
+    }
+    button:hover { background: #8f4cc4; }
+    button.ghost { background: #333; }
+    button.ghost:hover { background: #444; }
+    .btnrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+
+    .previews { display: flex; gap: 14px; flex-wrap: wrap; }
+    .pv { flex: 1 1 190px; }
+    .pv h3 { font-size: 11px; color: #8d8d8d; margin: 0 0 6px; font-weight: normal; text-transform: uppercase; letter-spacing: .06em; }
+    .stage {
+        background: #101010; border: 1px solid #333; border-radius: 6px; height: 230px;
+        display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .stage svg, .stage img { max-width: 92%; max-height: 92%; }
+    canvas { display: block; }
+
+    #stats { font-size: 12px; color: #b6b6b6; line-height: 1.7; margin-top: 10px; }
+    #stats b { color: #fff; font-weight: bold; }
+    .warn { color: #e8b661; font-size: 12px; line-height: 1.6; }
+    .err { color: #e88; font-size: 12.5px; }
+    .hint { color: #7d7d7d; font-size: 11.5px; line-height: 1.6; margin-top: 10px; }
+    code { background: #2e2e2e; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+    .ok { color: #8fd18f; }
+</style>
+</head>
+<body>
+
+<h1>SVG <span>→</span> Skin Commands</h1>
+<div class="sub">
+    Drop an SVG, tune the fit, paste the result into <b>Skin Studio ▸ Create ▸ Text</b>.
+    Same converter as <code>node scripts/svg-to-skin.js</code>.
+</div>
+
+<div class="cols">
+    <!-- ── input + options ───────────────────────────────────────────────── -->
+    <div class="panel" id="left">
+        <h2>Source</h2>
+        <div id="drop">
+            <b>Drop an .svg here</b>
+            or click to pick a file — or paste markup below
+        </div>
+        <input type="file" id="file" accept=".svg,image/svg+xml" style="display:none">
+        <textarea id="src" rows="7" spellcheck="false" placeholder="&lt;svg viewBox=&quot;0 0 100 100&quot;&gt; … &lt;/svg&gt;"></textarea>
+
+        <h2 style="margin-top:16px">Fit</h2>
+        <label class="row">Max shapes
+            <input type="range" id="maxShapes" min="1" max="24" value="24">
+            <span class="val" id="maxShapesV">24</span>
+        </label>
+        <label class="row">Size
+            <input type="range" id="size" min="10" max="120" step="2" value="50">
+            <span class="val" id="sizeV">50</span>
+        </label>
+        <label class="row">Drop tiny
+            <input type="range" id="minWeight" min="0" max="20" step="1" value="0">
+            <span class="val" id="minWeightV">0%</span>
+        </label>
+        <label class="row">Bounds
+            <select id="fit">
+                <option value="content">drawing bounds</option>
+                <option value="viewbox">viewBox</option>
+            </select>
+        </label>
+        <label class="row">Cut-outs
+            <select id="holeMode">
+                <option value="fill" selected>paint holes</option>
+                <option value="drop">drop holes</option>
+            </select>
+            <input type="color" id="holeColor" value="#ffe763" style="width:38px;height:24px;padding:0;border:1px solid #3d3d3d;background:#1c1c1c">
+        </label>
+        <label class="row">Decimals
+            <select id="precision">
+                <option value="0">0</option>
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+            </select>
+        </label>
+        <div class="hint">
+            Size 50 fills the flower body (radius 25). Anything past radius 100 in
+            local space is clipped by the renderer.<br><br>
+            Skins can't subtract shapes, so a donut or a cut-out has to be painted
+            over — the default is the flower-body yellow. The CLI drops holes
+            instead unless you pass <code>--hole-fill</code>.
+        </div>
+    </div>
+
+    <!-- ── previews ──────────────────────────────────────────────────────── -->
+    <div class="panel" id="middle">
+        <h2>Preview</h2>
+        <div class="previews">
+            <div class="pv">
+                <h3>Original SVG</h3>
+                <div class="stage" id="svgStage"></div>
+            </div>
+            <div class="pv">
+                <h3>As a skin</h3>
+                <div class="stage"><canvas id="out" width="230" height="230"></canvas></div>
+            </div>
+        </div>
+        <label class="row" style="margin-top:12px">
+            <span><input type="checkbox" id="showBody" checked> body outline &amp; petals</span>
+            <span><input type="checkbox" id="showClip"> clip ring (r=100)</span>
+        </label>
+        <div id="stats"></div>
+        <div id="warnings" class="warn"></div>
+    </div>
+
+    <!-- ── output ────────────────────────────────────────────────────────── -->
+    <div class="panel" id="right">
+        <h2>Skin commands</h2>
+        <textarea id="outText" rows="20" spellcheck="false" readonly></textarea>
+        <div class="btnrow">
+            <button id="copy">Copy</button>
+            <button id="download" class="ghost">Download .txt</button>
+            <button id="copyJson" class="ghost">Copy JSON</button>
+            <span id="copied" class="ok" style="font-size:12px"></span>
+        </div>
+        <div class="hint">
+            One shape per line, painted top-to-bottom — the same grammar the
+            studio's Text mode reads back. Edit freely after pasting.
+        </div>
+    </div>
+</div>
+
+<script src="scripts/svg-to-skin.js"></script>
+<script>
+(function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var lastResult = null, lastName = 'skin';
+
+    // ── skin rendering ──────────────────────────────────────────────────────
+    // Mirrors renderCustomSkinShapes() in src/graphics/player-skins.ts so the
+    // preview is what the game actually draws.
+    function renderSkin(ctx, shapes, radius) {
+        var scale = radius / 25;
+        ctx.save();
+        ctx.scale(scale, scale);
+        ctx.beginPath();
+        ctx.arc(0, 0, 100, 0, Math.PI * 2);
+        ctx.clip();
+        for (var i = 0; i < shapes.length; i++) {
+            var s = shapes[i];
+            ctx.save();
+            ctx.translate(s.x, s.y);
+            if (s.rot) ctx.rotate(s.rot * Math.PI / 180);
+            ctx.beginPath();
+            if (s.t === 'circle') ctx.arc(0, 0, s.r || 1, 0, Math.PI * 2);
+            else if (s.t === 'ellipse') ctx.ellipse(0, 0, s.rx || 1, s.ry || 1, 0, 0, Math.PI * 2);
+            else if (s.t === 'rect') ctx.rect(-(s.rx || 1), -(s.ry || 1), (s.rx || 1) * 2, (s.ry || 1) * 2);
+            else if (s.t === 'line') { ctx.moveTo(0, 0); ctx.lineTo((s.x2 || 0) - s.x, (s.y2 || 0) - s.y); }
+            else if (s.t === 'curve') {
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo((s.cx1 - s.x), (s.cy1 - s.y), (s.cx2 - s.x), (s.cy2 - s.y), (s.x2 - s.x), (s.y2 - s.y));
+            } else if (s.t === 'polygon' && s.points && s.points.length >= 6) {
+                ctx.moveTo(s.points[0], s.points[1]);
+                for (var j = 2; j + 1 < s.points.length; j += 2) ctx.lineTo(s.points[j], s.points[j + 1]);
+                ctx.closePath();
+            }
+            if (s.fill && s.t !== 'line') { ctx.fillStyle = s.fill; ctx.fill(); }
+            if (s.stroke && (s.sw || 0) > 0) {
+                ctx.strokeStyle = s.stroke; ctx.lineWidth = s.sw || 1;
+                ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+            }
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+
+    function drawPreview(shapes) {
+        var canvas = $('out');
+        var dpr = window.devicePixelRatio || 1;
+        var W = 230;
+        canvas.width = W * dpr; canvas.height = W * dpr;
+        canvas.style.width = canvas.style.height = W + 'px';
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, W);
+
+        // Checkerboard so light artwork stays visible.
+        for (var y = 0; y < W; y += 16) {
+            for (var x = 0; x < W; x += 16) {
+                ctx.fillStyle = ((x / 16 + y / 16) % 2) ? '#191919' : '#141414';
+                ctx.fillRect(x, y, 16, 16);
+            }
+        }
+
+        ctx.save();
+        ctx.translate(W / 2, W / 2);
+        var radius = 62;                      // on-screen flower radius for the preview
+        var scale = radius / 25;
+
+        if ($('showBody').checked) {
+            // Petal ring + body outline, so the fit against a real flower is obvious.
+            ctx.fillStyle = '#d2d2d2'; ctx.strokeStyle = '#a8a8a8'; ctx.lineWidth = 2;
+            for (var p = 0; p < 5; p++) {
+                var a = -Math.PI / 2 + p * Math.PI * 2 / 5;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * radius * 1.45, Math.sin(a) * radius * 1.45, radius * 0.28, 0, Math.PI * 2);
+                ctx.fill(); ctx.stroke();
+            }
+            ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffe763'; ctx.fill();
+            ctx.strokeStyle = '#cfbb4d'; ctx.lineWidth = 3; ctx.stroke();
+        }
+
+        if (shapes && shapes.length) renderSkin(ctx, shapes, radius);
+
+        if ($('showClip').checked) {
+            ctx.beginPath(); ctx.arc(0, 0, 100 * scale, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(168,110,214,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        // Body-radius guide (25 local units) — the size the editor authors against.
+        ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.restore();
+    }
+
+    // ── conversion ──────────────────────────────────────────────────────────
+    function convert() {
+        var src = $('src').value.trim();
+        $('svgStage').innerHTML = '';
+        if (!src) {
+            $('outText').value = ''; $('stats').textContent = ''; $('warnings').textContent = '';
+            lastResult = null; drawPreview(null);
+            return;
+        }
+        // Show the source as-is (local tool, local file — nothing is uploaded).
+        $('svgStage').innerHTML = src;
+
+        var opt = {
+            maxShapes: parseInt($('maxShapes').value, 10),
+            size: parseFloat($('size').value),
+            fit: $('fit').value,
+            precision: parseInt($('precision').value, 10),
+            minWeight: parseInt($('minWeight').value, 10) / 100,
+            // A hole can only be painted over, never subtracted — default to the
+            // flower-body yellow, which is what most artwork sits on.
+            holeFill: $('holeMode').value === 'fill' ? $('holeColor').value : '',
+        };
+        var res;
+        try {
+            res = SvgToSkin.convertSvg(src, opt);
+        } catch (e) {
+            $('stats').innerHTML = '<span class="err">Conversion failed: ' + String(e && e.message || e) + '</span>';
+            $('outText').value = ''; lastResult = null; drawPreview(null);
+            return;
+        }
+        lastResult = res;
+        $('outText').value = res.commands;
+        drawPreview(res.shapes);
+
+        if (res.stats) {
+            var types = Object.keys(res.stats.types)
+                .map(function (t) { return res.stats.types[t] + ' ' + t; }).join(', ');
+            $('stats').innerHTML =
+                '<b>' + res.stats.shapes + '</b> / ' + SvgToSkin.LIMITS.MAX_SKIN_SHAPES + ' shapes'
+                + ' &middot; ' + types
+                + '<br>from <b>' + res.stats.sourceShapes + '</b> source shapes'
+                + ' &middot; scaled &times;' + res.stats.scale.toFixed(3)
+                + ' &middot; bounds ' + res.stats.bounds.w.toFixed(1) + '&times;' + res.stats.bounds.h.toFixed(1);
+        } else {
+            $('stats').textContent = '';
+        }
+        $('warnings').innerHTML = res.warnings.map(function (w) {
+            return '! ' + w.replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; });
+        }).join('<br>');
+    }
+
+    // ── wiring ──────────────────────────────────────────────────────────────
+    function loadFile(file) {
+        if (!file) return;
+        lastName = file.name.replace(/\.svg$/i, '') || 'skin';
+        var r = new FileReader();
+        r.onload = function () { $('src').value = r.result; convert(); };
+        r.readAsText(file);
+    }
+
+    $('drop').addEventListener('click', function () { $('file').click(); });
+    $('file').addEventListener('change', function (e) { loadFile(e.target.files[0]); });
+    ['dragenter', 'dragover'].forEach(function (ev) {
+        document.addEventListener(ev, function (e) { e.preventDefault(); $('drop').classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+        document.addEventListener(ev, function (e) { e.preventDefault(); $('drop').classList.remove('over'); });
+    });
+    document.addEventListener('drop', function (e) {
+        if (e.dataTransfer && e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+    });
+
+    $('src').addEventListener('input', convert);
+    ['maxShapes', 'size', 'minWeight'].forEach(function (id) {
+        $(id).addEventListener('input', function () {
+            $(id + 'V').textContent = id === 'minWeight' ? $(id).value + '%' : $(id).value;
+            convert();
+        });
+    });
+    ['fit', 'precision', 'holeMode', 'holeColor'].forEach(function (id) { $(id).addEventListener('change', convert); });
+    $('holeColor').addEventListener('input', function () {
+        if ($('holeMode').value === 'fill') convert();
+    });
+    ['showBody', 'showClip'].forEach(function (id) {
+        $(id).addEventListener('change', function () { drawPreview(lastResult && lastResult.shapes); });
+    });
+
+    function flash(msg) {
+        $('copied').textContent = msg;
+        setTimeout(function () { $('copied').textContent = ''; }, 1400);
+    }
+    function copyText(text, msg) {
+        if (!text) return;
+        if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { flash(msg); });
+        else { $('outText').select(); document.execCommand('copy'); flash(msg); }
+    }
+    $('copy').addEventListener('click', function () { copyText($('outText').value, 'copied'); });
+    $('copyJson').addEventListener('click', function () {
+        if (!lastResult) return;
+        copyText(JSON.stringify(SvgToSkin.toSkinJson(lastResult, lastName), null, 2), 'JSON copied');
+    });
+    $('download').addEventListener('click', function () {
+        if (!$('outText').value) return;
+        var blob = new Blob([$('outText').value + '\n'], { type: 'text/plain' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = lastName + '.skin.txt';
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    });
+
+    // Sample art so the tool shows something on first open.
+    $('src').value = [
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">',
+        '  <circle cx="50" cy="50" r="46" fill="#3aa7e0" stroke="#1d6a94" stroke-width="4"/>',
+        '  <path d="M28 40 q10 -14 20 0" fill="none" stroke="#0d3f5c" stroke-width="5"/>',
+        '  <path d="M52 40 q10 -14 20 0" fill="none" stroke="#0d3f5c" stroke-width="5"/>',
+        '  <path d="M30 62 q20 22 40 0 q-20 10 -40 0 z" fill="#0d3f5c"/>',
+        '  <polygon points="50,6 58,20 42,20" fill="#ffd447"/>',
+        '</svg>',
+    ].join('\n');
+    convert();
+})();
+</script>
+</body>
+</html>

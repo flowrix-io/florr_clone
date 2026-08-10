@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getThirdEyeRarity = getThirdEyeRarity;
 const core_1 = require("./core");
 const player_skins_1 = require("./player-skins");
+const glitch_effect_1 = require("./glitch-effect");
+const player_1 = require("../player");
 // Symbol-keyed so JSON.stringify skips them. The client emits its loadout to the
 // server on every change; if these caches lived on string keys they would be
 // serialized (canvases stringify to {}), round-tripped back, and the truthy-but-
@@ -89,15 +91,27 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
     // flag, then the default flower.
     const customSkin = (0, player_skins_1.getCustomSkin)(player.equippedSkinId);
     const builtinSkin = customSkin ? undefined : (0, player_skins_1.getActivePlayerSkin)(player.renderFlags);
+    // Reads this.ctx at call time so the glitch wrapper can redirect the body
+    // into its offscreen buffer.
+    const drawBody = () => {
+        if (customSkin) {
+            (0, player_skins_1.renderCustomSkinShapes)(this.ctx, customSkin.shapes, flowerRadius);
+        }
+        else if (builtinSkin) {
+            builtinSkin.render(this, { ...flowerAttrs, renderFlags: player.renderFlags || 0 });
+        }
+        else {
+            this.drawFlower(flowerAttrs);
+        }
+    };
     this.ctx.save();
-    if (customSkin) {
-        (0, player_skins_1.renderCustomSkinShapes)(this.ctx, customSkin.shapes, flowerRadius);
-    }
-    else if (builtinSkin) {
-        builtinSkin.render(this, { ...flowerAttrs, renderFlags: player.renderFlags || 0 });
+    if ((player.renderFlags || 0) & player_1.PlayerRenderFlags.Glitch) {
+        // Post-process modifier, not a body: it wraps whichever body was picked
+        // above, so Glitch stacks on top of any skin.
+        (0, glitch_effect_1.drawBodyWithGlitch)(this, flowerRadius, (0, glitch_effect_1.glitchSeedFor)(player.id), drawBody);
     }
     else {
-        this.drawFlower(flowerAttrs);
+        drawBody();
     }
     this.ctx.restore();
     // Reset rotation before drawing petals so they don't spin

@@ -291,6 +291,7 @@ function fireProjectileVolley(enemy, mobStats, aimAngle, currentTime) {
             health: petalStats.health,
             maxHealth: petalStats.health,
             spawnTime: currentTime,
+            sourceType: enemy.type,
         };
         gameState_1.mobProjectiles.push(projectile);
     }

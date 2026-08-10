@@ -27,6 +27,10 @@ export interface MobProjectile {
   health: number; // Health of the projectile (can be destroyed by player petals)
   maxHealth: number; // Maximum health of the projectile
   spawnTime: number; // ms timestamp (server clock) when the projectile was created
+  // Mob type that fired this (server-only, never broadcast). Stamped at spawn
+  // rather than resolved from `enemyId` on impact, because the shooter can
+  // already be dead and despawned by the time the projectile lands.
+  sourceType?: string;
   lastSyncTime?: number; // ms timestamp of the most recent position re-sync broadcast (server-only)
 }
 
@@ -53,7 +57,11 @@ export interface PlayerProjectile {
 
 export interface Enemy {
   id: string;
-  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger';
+  // NOTE: this union lists only a fraction of the types in mob_configs.ts — the
+  // authoritative set is that file's keys, and values outside this union do
+  // occur at runtime. Members are added here as code needs to compare against
+  // them ('glitch' infects players on contact, see playerState.ts).
+  type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger' | 'glitch';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
   x: number;
   y: number;

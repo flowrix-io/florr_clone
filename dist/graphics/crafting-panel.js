@@ -413,6 +413,27 @@ class CanvasCraftingPanel {
         });
         return types;
     }
+    /** `invDict` with the items currently sitting in the craft/absorb slots added
+     *  back in. Staging deducts from the displayed inventory, so a stack clicked
+     *  down to zero drops out of the grid entirely — its row (and possibly its
+     *  rarity column) disappears and every cell below/right of it slides into a
+     *  new position mid-click. The next click of a spam-click then lands on a
+     *  DIFFERENT petal, which replaces the whole staged batch and hands it back
+     *  to the inventory: the "plain clicking doesn't craft everything I clicked"
+     *  bug. Used for the row/column set only — the counts drawn in the cells
+     *  still come from the real inventory. */
+    withStagedItems(invDict) {
+        const merged = {};
+        for (const rarity of Object.keys(invDict))
+            merged[rarity] = { ...invDict[rarity] };
+        for (const item of this.craftingItems) {
+            const key = item.petalType ? `petal_${item.petalType}` : item.type;
+            if (!merged[item.rarity])
+                merged[item.rarity] = {};
+            merged[item.rarity][key] = (merged[item.rarity][key] || 0) + 1;
+        }
+        return merged;
+    }
     /** Which rarities actually exist in the player's inventory? Common on left, no unique. */
     getOwnedRarities(invDict) {
         const result = [];
@@ -440,9 +461,11 @@ class CanvasCraftingPanel {
         const padding = 12;
         const itemSize = 56;
         const itemGap = 4;
-        // Rows = item types, Columns = rarities
-        const itemTypes = this.getOwnedItemTypes(invDict);
-        const rarities = this.getOwnedRarities(invDict);
+        // Rows = item types, Columns = rarities. Keyed on inventory + staged so
+        // the grid can't reflow under the cursor while petals sit in the slots.
+        const layoutDict = this.craftingItems.length > 0 ? this.withStagedItems(invDict) : invDict;
+        const itemTypes = this.getOwnedItemTypes(layoutDict);
+        const rarities = this.getOwnedRarities(layoutDict);
         const cols = rarities.length;
         if (cols === 0 || itemTypes.length === 0) {
             this.itemRects = [];

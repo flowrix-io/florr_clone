@@ -656,6 +656,9 @@ function respawnPlayer(player, io) {
     player.poisonDamage = undefined;
     player.poisonUntil = undefined;
     player.poisonSource = undefined;
+    // Neither does a glitch mob's infection — this is the only thing that
+    // clears it, so a corpse stays glitched until the player actually respawns.
+    player.glitched = undefined;
     setTimeout(() => {
         player.isInvulnerable = false;
         // Notify client that invulnerability has ended

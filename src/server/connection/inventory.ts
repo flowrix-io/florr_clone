@@ -550,9 +550,10 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                 return;
             }
 
-            // A shift "craft all" may stage a sub-batch remainder (it gets pooled
-            // below), so only a plain craft has to be whole batches of 5.
-            if (!data.items || data.items.length < 5 || (!data.craftAll && data.items.length % 5 !== 0)) {
+            // Any count from 5 up is valid: the staged petals are crafted as a
+            // pool below, so a sub-batch remainder is fine (it gets pooled with
+            // the petals failed attempts hand back).
+            if (!data.items || data.items.length < 5) {
                 console.log('[CRAFT] Invalid item count:', data.items?.length);
                 socket.emit('craftingFailed', 'Invalid number of items for crafting');
                 return;
@@ -635,55 +636,37 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
             let numBatches = 0;
             let petalsReturned = 0;
 
+            // Craft the staged petals as one pool: every attempt eats 5, and the
+            // 1-4 petals a failed attempt hands back drop straight back into the
+            // pool to be tried again, until fewer than 5 are left. That's what
+            // makes the remainder — the failure returns plus any sub-batch tail
+            // the client staged — actually get crafted instead of piling up in
+            // the inventory. Bounded: each attempt removes 5 and returns at most
+            // 4, so the pool strictly shrinks and the loop always terminates.
+            // `craftAll` (shift) is the same pass with the rest of this petal
+            // still in the inventory thrown into the pool as well.
+            let pool = data.items.length; // staged petals were removed above
             if (data.craftAll) {
-                // Shift "craft all": pool the staged petals with the rest of
-                // this petal still in inventory, then craft whole batches —
-                // recycling the petals returned from failed batches — until
-                // fewer than 5 remain, so it all resolves in one pass.
-                // Bounded: each batch removes 5 and returns at most 4, so the
-                // pool strictly shrinks and the loop always terminates.
-                let pool = data.items.length; // staged petals were removed above
-                const remainder = getItemCount(player.inventory, rarity, itemKey);
-                if (remainder > 0) {
-                    removeItem(player.inventory, rarity, itemKey, remainder);
-                    pool += remainder;
+                const rest = getItemCount(player.inventory, rarity, itemKey);
+                if (rest > 0) {
+                    removeItem(player.inventory, rarity, itemKey, rest);
+                    pool += rest;
                 }
-                while (pool >= 5) {
-                    pool -= 5;
-                    numBatches++;
-                    if (Math.random() * 100 < successChance) {
-                        successfulCrafts++; // all 5 consumed for one upgrade
-                    } else {
-                        // On failure, lose 1-4 petals; the survivors go back
-                        // into the pool to be crafted again.
-                        pool += 5 - (1 + Math.floor(Math.random() * 4));
-                    }
+            }
+            while (pool >= 5) {
+                pool -= 5;
+                numBatches++;
+                if (Math.random() * 100 < successChance) {
+                    successfulCrafts++; // all 5 consumed for one upgrade
+                } else {
+                    // On failure, lose 1-4 petals; the survivors go back into
+                    // the pool to be crafted again.
+                    pool += 5 - (1 + Math.floor(Math.random() * 4));
                 }
-                petalsReturned = pool; // sub-batch remainder (< 5)
-                if (pool > 0) {
-                    addItem(player.inventory, rarity, itemKey, pool);
-                }
-            } else {
-                // Normal craft: exactly the staged batches. Failure returns are
-                // handed back but not re-crafted.
-                let totalLost = 0;
-                numBatches = data.items.length / 5;
-                for (let i = 0; i < numBatches; i++) {
-                    if (Math.random() * 100 < successChance) {
-                        successfulCrafts++;
-                        totalLost += 5; // All 5 consumed on success
-                    } else {
-                        // On failure, lose 1-4 petals (return 1-4 back)
-                        const lost = 1 + Math.floor(Math.random() * 4); // 1 to 4
-                        totalLost += lost;
-                    }
-                }
-
-                // Return the petals that weren't lost
-                petalsReturned = data.items.length - totalLost;
-                if (petalsReturned > 0) {
-                    addItem(player.inventory, rarity, itemKey, petalsReturned);
-                }
+            }
+            petalsReturned = pool; // sub-batch remainder (< 5)
+            if (pool > 0) {
+                addItem(player.inventory, rarity, itemKey, pool);
             }
 
             if (successfulCrafts > 0) {

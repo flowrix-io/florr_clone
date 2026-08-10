@@ -1011,6 +1011,9 @@ function respawnBot(bot, io) {
     bot.isDead = false;
     bot.isInvulnerable = true;
     bot.killedBy = undefined;
+    // Same rule as a player respawn: the glitch infection doesn't survive it.
+    // Without this every long-lived bot ends up permanently glitched.
+    bot.glitched = undefined;
     // Refresh any broken petals so the bot is combat-ready
     if (bot.loadout) {
         for (let i = 0; i < bot.loadout.length; i++) {

@@ -1,5 +1,7 @@
 import { Graphics, Player, Enemy, getPetalStats, PLAYER_SIZE } from './core';
 import { getActivePlayerSkin, getCustomSkin, renderCustomSkinShapes } from './player-skins';
+import { drawBodyWithGlitch, glitchSeedFor } from './glitch-effect';
+import { PlayerRenderFlags } from '../player';
 
 declare module './core' {
     interface Graphics {
@@ -103,13 +105,24 @@ Graphics.prototype.drawPlayer = function(this: Graphics, player: Player, socket:
     // flag, then the default flower.
     const customSkin = getCustomSkin(player.equippedSkinId);
     const builtinSkin = customSkin ? undefined : getActivePlayerSkin(player.renderFlags);
+    // Reads this.ctx at call time so the glitch wrapper can redirect the body
+    // into its offscreen buffer.
+    const drawBody = () => {
+        if (customSkin) {
+            renderCustomSkinShapes(this.ctx, customSkin.shapes, flowerRadius);
+        } else if (builtinSkin) {
+            builtinSkin.render(this, { ...flowerAttrs, renderFlags: player.renderFlags || 0 });
+        } else {
+            this.drawFlower(flowerAttrs);
+        }
+    };
     this.ctx.save();
-    if (customSkin) {
-        renderCustomSkinShapes(this.ctx, customSkin.shapes, flowerRadius);
-    } else if (builtinSkin) {
-        builtinSkin.render(this, { ...flowerAttrs, renderFlags: player.renderFlags || 0 });
+    if ((player.renderFlags || 0) & PlayerRenderFlags.Glitch) {
+        // Post-process modifier, not a body: it wraps whichever body was picked
+        // above, so Glitch stacks on top of any skin.
+        drawBodyWithGlitch(this, flowerRadius, glitchSeedFor(player.id), drawBody);
     } else {
-        this.drawFlower(flowerAttrs);
+        drawBody();
     }
     this.ctx.restore();
 
