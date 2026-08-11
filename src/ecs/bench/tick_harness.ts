@@ -158,7 +158,33 @@ export interface HarnessResult {
     timings: Array<{ name: string; avgMs: number; maxMs: number }>;
 }
 
+/**
+ * Refuse to run if importing the ECS has dragged in the game server.
+ *
+ * server.ts starts a LISTENING SERVER at module scope — it binds :3000, opens
+ * the account database, spawns bots and schedules restarts. Two modules used to
+ * pull it in transitively (server/physics.ts and petal_actions.ts), so merely
+ * importing the ECS composition root booted a real server that then outlived
+ * the harness, held the port, and served stale code to anyone who connected.
+ *
+ * That is a much worse failure than a broken benchmark, so it is checked rather
+ * than assumed: if the module ever reappears in the require graph, fail loudly
+ * here instead of silently starting a second server.
+ */
+function assertNoServerBooted(): void {
+    const loaded = Object.keys(require.cache).filter(p =>
+        /[/\\]dist[^/\\]*[/\\]server\.js$/.test(p));
+    if (loaded.length > 0) {
+        throw new Error(
+            'The harness imported the game server (' + loaded.join(', ') + '). '
+            + 'Something in the ECS import graph now pulls in server.ts, which binds a '
+            + 'port and opens the database at module scope. Break that import before running.',
+        );
+    }
+}
+
 export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessResult {
+    assertNoServerBooted();
     const { players, enemies } = buildLegacyWorld(config);
 
     const runtime = createEcsRuntime({
