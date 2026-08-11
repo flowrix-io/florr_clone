@@ -10,10 +10,12 @@
  * driven from a runner script without a test framework — the project has none.
  */
 
-import { defineComponent, defineTag } from './component';
-import { entityGeneration, entityIndex, makeEntity, Entity } from './entity';
+import { allComponents, defineComponent, defineTag } from './component';
+import { entityGeneration, entityIndex, makeEntity, Entity, NULL_ENTITY } from './entity';
 import { Phase, Scheduler } from './system';
 import { World } from './world';
+import { mobTypes, rarityToId, idToRarity } from './interning';
+import * as C from './components';
 
 const Position = defineComponent('TestPosition', { x: 'f64', y: 'f64' });
 const Velocity = defineComponent('TestVelocity', { x: 'f32', y: 'f32' });
@@ -332,6 +334,142 @@ export function runEcsSelfTest(): Failure[] {
         f32[0] = 200000;
         for (let i = 0; i < 100; i++) f32[0] += 0.01;
         check('f32 would have lost the same motion', Math.abs(f32[0] - 200000 - 1) > 0.1);
+    }
+
+    // -- the game component catalog -------------------------------------------
+    {
+        // Component ids must be dense and unique: archetype bitmasks are sized
+        // from the count and index by id, so a gap or a collision corrupts
+        // storage rather than failing loudly.
+        const seenIds = new Set<number>();
+        const seenNames = new Set<string>();
+        let denseThroughout = true;
+        const components = allComponents();
+        for (let i = 0; i < components.length; i++) {
+            const c = components[i];
+            if (c.id !== i) denseThroughout = false;
+            seenIds.add(c.id);
+            seenNames.add(c.name);
+        }
+        check('component ids are dense', denseThroughout);
+        checkEqual('component ids are unique', seenIds.size, components.length);
+        checkEqual('component names are unique', seenNames.size, components.length);
+
+        // Rarity ids are the canonical wire/database ordering, not interned.
+        checkEqual('rarity id of common', rarityToId('common'), 0);
+        checkEqual('rarity roundtrip', idToRarity(rarityToId('legendary')), 'legendary');
+        checkEqual('unknown rarity is -1', rarityToId('not_a_rarity'), -1);
+
+        // Interned ids are stable within the process and distinct per string.
+        const bee = mobTypes.intern('bee');
+        const hornet = mobTypes.intern('hornet');
+        check('interned ids are distinct', bee !== hornet);
+        checkEqual('interning is idempotent', mobTypes.intern('bee'), bee);
+        checkEqual('interner resolves names', mobTypes.nameOf(hornet), 'hornet');
+        checkEqual('unknown string is -1', mobTypes.idOf('not_a_mob'), -1);
+    }
+
+    // -- composing realistic game entities ------------------------------------
+    {
+        const world = new World();
+
+        // A wild bee: moves, fights, wanders, despawns when unseen.
+        const beeEntity = world.create();
+        world.bindExternalId(beeEntity, 'mob-bee-1');
+        world.add(beeEntity, C.Position, { x: 1500, y: -320 });
+        world.add(beeEntity, C.Velocity, { x: 0, y: 0 });
+        world.add(beeEntity, C.Angle, { value: 1.2 });
+        world.add(beeEntity, C.Radius, { value: 22 });
+        world.add(beeEntity, C.Speed, { current: 90, base: 90 });
+        world.add(beeEntity, C.Health, { current: 40, max: 40 });
+        world.add(beeEntity, C.Damage, { value: 15 });
+        world.add(beeEntity, C.MobKind, { type: mobTypes.intern('bee'), tier: rarityToId('rare') });
+        world.add(beeEntity, C.MobAI, {
+            aiType: C.AiType.Neutral,
+            isChasing: 0,
+            targetPlayer: NULL_ENTITY,
+            targetEnemy: NULL_ENTITY,
+            targetPet: NULL_ENTITY,
+            range: 400,
+        });
+        world.add(beeEntity, C.Wander, { targetX: 1600, targetY: -300, lastTime: 0 });
+        world.add(beeEntity, C.Wobble, { phase: 0.5 });
+        world.add(beeEntity, C.ViewportTracked, { lastInViewport: 0 });
+        world.add(beeEntity, C.IsEnemy);
+
+        checkEqual('bee tier reads back as rare',
+            idToRarity(world.get(beeEntity, C.MobKind, 'tier')), 'rare');
+        checkEqual('bee type reads back as bee',
+            mobTypes.nameOf(world.get(beeEntity, C.MobKind, 'type')), 'bee');
+        checkEqual('bee resolves by external id', world.lookup('mob-bee-1'), beeEntity);
+
+        // A player: same spatial components, entirely different everything else.
+        const playerEntity = world.create();
+        world.bindExternalId(playerEntity, 'socket-xyz');
+        world.add(playerEntity, C.Position, { x: 0, y: 0 });
+        world.add(playerEntity, C.Velocity, { x: 0, y: 0 });
+        world.add(playerEntity, C.Angle, { value: 0 });
+        world.add(playerEntity, C.Radius, { value: 25 });
+        world.add(playerEntity, C.Health, { current: 100, max: 100 });
+        world.add(playerEntity, C.PlayerIdentity, { name: 'tester', userId: 'user-1' });
+        world.add(playerEntity, C.PlayerInput, { keys: [], seq: 0, lastProcessedSeq: 0 });
+        world.add(playerEntity, C.Progression, { level: 12, xp: 340, xpToNextLevel: 500, score: 340, tp: 3, skills: {} });
+        world.add(playerEntity, C.Inventory, { items: [] });
+        world.add(playerEntity, C.Loadout, { slots: [null, null] });
+        world.add(playerEntity, C.IsPlayer);
+
+        // Spatial systems see both; gameplay queries see only their own kind.
+        const spatial = world.query([C.Position, C.Radius]);
+        checkEqual('spatial query sees both kinds', spatial.count(), 2);
+        checkEqual('enemy query sees only the bee', world.query([C.IsEnemy]).count(), 1);
+        checkEqual('player query sees only the player', world.query([C.IsPlayer]).count(), 1);
+
+        // The lobby exclusion: a title-screen player must be invisible to any
+        // query that did not explicitly ask for lobby entities. This is what the
+        // separate `lobbyPlayers` map used to guarantee structurally.
+        const lobbyEntity = world.create();
+        world.add(lobbyEntity, C.Position, { x: 0, y: 0 });
+        world.add(lobbyEntity, C.Health, { current: 100, max: 100 });
+        world.add(lobbyEntity, C.IsPlayer);
+        world.add(lobbyEntity, C.IsLobby);
+
+        const worldPlayers = world.query([C.IsPlayer], [C.IsLobby]);
+        checkEqual('lobby player excluded from world queries', worldPlayers.count(), 1);
+        checkEqual('all players including lobby', world.query([C.IsPlayer]).count(), 2);
+
+        // Afflictions as components: only the afflicted are iterated.
+        world.add(beeEntity, C.Slowed, { until: 5000 });
+        const slowed = world.query([C.Slowed, C.Speed]);
+        checkEqual('only the slowed bee matches', slowed.count(), 1);
+        world.remove(beeEntity, C.Slowed);
+        checkEqual('slow removal empties the query', slowed.count(), 0);
+        checkEqual('bee keeps its speed after slow removal',
+            world.get(beeEntity, C.Speed, 'base'), 90);
+
+        // Poison stacks are their own entities pointing at a victim, so several
+        // players can poison one mob without allocating an array per mob.
+        for (let i = 0; i < 3; i++) {
+            const stack = world.create();
+            world.add(stack, C.PoisonStack, {
+                target: beeEntity,
+                source: playerEntity,
+                damagePerMs: 0.05,
+                endTime: 1000 + i,
+            });
+        }
+        checkEqual('three poison stacks exist', world.query([C.PoisonStack]).count(), 3);
+
+        // Killing the victim must leave the stacks detectably orphaned rather
+        // than pointing at whatever recycles the slot.
+        world.destroy(beeEntity);
+        let orphaned = 0;
+        world.query([C.PoisonStack]).chunks(chunk => {
+            const p = chunk.cols(C.PoisonStack);
+            for (let i = 0; i < chunk.count; i++) {
+                if (!world.isAlive(p.target[i] as Entity)) orphaned++;
+            }
+        });
+        checkEqual('stacks detect their dead target', orphaned, 3);
     }
 
     return failures;
