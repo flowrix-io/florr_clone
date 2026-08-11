@@ -26,6 +26,9 @@ class ChunkView {
     constructor() {
         this.count = 0;
     }
+    has(type) {
+        return this.archetype.columns[type.id] !== undefined;
+    }
     cols(type) {
         const col = this.archetype.columns[type.id];
         if (col === undefined) {
