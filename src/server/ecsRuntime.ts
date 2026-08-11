@@ -18,15 +18,22 @@
 import {
     MAX_SPEED,
     PLAYER_SIZE,
+    VIEWPORT_WIDTH,
+    getTileState,
+    isTileIdBlocking,
     resolveEntityWallCollisions,
     stepPlayerMovement,
 } from '../constants';
+import { WALL_GRID } from '../map_data';
+import { hasLineOfSight } from './physics';
+import { getRarityIndex } from '../petals';
 import { getSpeedMultiplier } from '../petal_actions';
 import { ServerPlayer } from '../player';
 
 import { Entity, Phase, Scheduler, World } from '../ecs';
 import * as C from '../ecs/components';
 import { GridQueryResult, SpatialGrid } from '../ecs/spatial/grid';
+import { mobTypes } from '../ecs/interning';
 import {
     createAfflictionQueries,
     registerAfflictionSystems,
@@ -39,6 +46,10 @@ import {
     createCentipedeQueries,
     registerCentipedeSystems,
 } from '../ecs/systems/centipede';
+import {
+    createEnemyAIQueries,
+    registerEnemyAISystem,
+} from '../ecs/systems/enemyAI';
 import {
     createEnemyPassiveQueries,
     registerEnemyPassiveSystems,
@@ -115,6 +126,35 @@ export function createEcsRuntime(lookupPlayer: LegacyPlayerLookup): EcsRuntime {
     });
 
     registerMovementSystems(scheduler, createMovementQueries(world));
+
+    // Mobs that chase at exactly the player's base speed, so a fleeing flower
+    // can never outrun them. Resolved to interned ids once, since the AI tests
+    // this per chasing mob per tick.
+    const playerSpeedChaserIds = new Set<number>(
+        [
+            'bee',
+            'ladybug', 'shiny_ladybug', 'dark_ladybug',
+            'soldier_ant', 'worker_ant', 'baby_ant',
+            'soldier_fire_ant', 'worker_fire_ant', 'baby_fire_ant',
+        ].map(name => mobTypes.intern(name)),
+    );
+
+    registerEnemyAISystem(scheduler, createEnemyAIQueries(world), {
+        hasLineOfSight,
+        resolveWall: (x, y, halfSize) => resolveEntityWallCollisions(x, y, halfSize),
+        isBlocked: (x, y) => isTileIdBlocking(getTileState(WALL_GRID, x, y)),
+        // Projectile firing is not ported yet: it needs mob stats, petal stats
+        // and the projectile allocator. Wired as a no-op so the movement and
+        // targeting halves can be exercised first; hasProjectile returning false
+        // means fireVolley is never reached in practice.
+        fireVolley: () => { /* TODO: port fireProjectileVolley */ },
+        hasProjectile: () => false,
+        isPlayerSpeedChaser: (typeId) => playerSpeedChaserIds.has(typeId),
+        playerChaseStep: MAX_SPEED / 30,
+        sandstormSuckTier: getRarityIndex('super'),
+        maxTargetDistance: VIEWPORT_WIDTH * 5,
+    });
+
     registerEnemyPassiveSystems(scheduler, createEnemyPassiveQueries(world));
 
     // The centipede passes take the real tile-grid resolver, so a chain pushed

@@ -63,7 +63,12 @@ export interface EnemyPassiveQueries {
 }
 
 export function createEnemyPassiveQueries(world: World): EnemyPassiveQueries {
-    const required = [C.Position, C.Velocity, C.Angle, C.Speed, C.Radius, C.PassiveMotion] as const;
+    // IsIdle is required: in the original, stepGardnPassive was called FROM
+    // stepIdle, so a chasing or homeward-bound mob never drifted. As a separate
+    // system it would otherwise fight the AI's own movement every tick.
+    const required = [
+        C.Position, C.Velocity, C.Angle, C.Speed, C.Radius, C.PassiveMotion, C.IsIdle,
+    ] as const;
     return {
         defaultPassive: world.query([...required], [C.IsDead, C.Wobble]),
         beePassive: world.query([...required, C.Wobble], [C.IsDead]),

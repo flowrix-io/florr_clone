@@ -172,6 +172,20 @@ export const GridStamps = defineComponent('GridStamps', {
     queryStamp: 'u32',
 });
 
+/**
+ * The mob is idling this tick — not chasing, not walking home, not a sandstorm.
+ *
+ * This tag exists because the passive-drift machine (systems/enemyPassive.ts)
+ * is a SEPARATE system from the AI, while in the original it was a call made
+ * from inside `stepIdle`. Without an explicit idle state the passive systems
+ * would drift mobs that are supposed to be chasing, fighting the AI's own
+ * movement in the same tick.
+ *
+ * The AI system maintains it, so the archetype change happens only on an actual
+ * state transition (chase start/stop) rather than every tick.
+ */
+export const IsIdle = defineTag('IsIdle');
+
 /** Tags identifying what an entity fundamentally is. */
 export const IsEnemy = defineTag('IsEnemy');
 export const IsObstacle = defineTag('IsObstacle');

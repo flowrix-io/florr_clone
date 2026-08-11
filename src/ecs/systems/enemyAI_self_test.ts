@@ -72,6 +72,7 @@ export function runEnemyAiSelfTest(): string[] {
         const h = makeHarness();
         const mob = addMob(h.world, 'passive', 0, 0, 50, 50);
         h.world.add(mob, C.PassiveMotion, { state: C.PassiveState.Idle, stateStart: h.now });
+        h.world.add(mob, C.IsIdle);
         h.world.set(mob, C.Angle, 'value', 0);
 
         // Idle lasts ~1s: nothing moves before then.
@@ -111,6 +112,7 @@ export function runEnemyAiSelfTest(): string[] {
         const h = makeHarness();
         const mob = addMob(h.world, 'units', 0, 0, 10, 50);
         h.world.add(mob, C.PassiveMotion, { state: C.PassiveState.Moving, stateStart: h.now - 1500 });
+        h.world.add(mob, C.IsIdle);
         h.world.set(mob, C.Angle, 'value', 0);
 
         const before = h.world.get(mob, C.Position, 'x') as number;
@@ -136,6 +138,7 @@ export function runEnemyAiSelfTest(): string[] {
         const big = addMob(h.world, 'big', 0, 5000, 5, 200);
         for (const m of [small, big]) {
             h.world.add(m, C.PassiveMotion, { state: C.PassiveState.Moving, stateStart: h.now - 1500 });
+            h.world.add(m, C.IsIdle);
             h.world.set(m, C.Angle, 'value', 0);
         }
 
@@ -158,6 +161,7 @@ export function runEnemyAiSelfTest(): string[] {
         const h = makeHarness();
         const huge = addMob(h.world, 'huge', 0, 0, 200, 900);
         h.world.add(huge, C.PassiveMotion, { state: C.PassiveState.Moving, stateStart: h.now - 1500 });
+        h.world.add(huge, C.IsIdle);
         h.world.set(huge, C.Angle, 'value', 0);
 
         h.tick(10);
@@ -173,6 +177,7 @@ export function runEnemyAiSelfTest(): string[] {
         const h = makeHarness();
         const hole = addMob(h.world, 'hole', 100, 100, 0, 200);
         h.world.add(hole, C.PassiveMotion, { state: C.PassiveState.Moving, stateStart: h.now - 1500 });
+        h.world.add(hole, C.IsIdle);
 
         h.tick(30);
         checkEqual('zero-speed mob stays put (x)', h.world.get(hole, C.Position, 'x'), 100);
@@ -184,6 +189,7 @@ export function runEnemyAiSelfTest(): string[] {
         const h = makeHarness();
         const bee = addMob(h.world, 'bee', 0, 0, 50, 50);
         h.world.add(bee, C.PassiveMotion, { state: C.PassiveState.Idle, stateStart: h.now });
+        h.world.add(bee, C.IsIdle);
         h.world.add(bee, C.Wobble, { phase: 0.7 });
         h.world.set(bee, C.Angle, 'value', 0);
 
@@ -207,6 +213,7 @@ export function runEnemyAiSelfTest(): string[] {
         const h = makeHarness();
         const bee = addMob(h.world, 'routed', 0, 0, 50, 50);
         h.world.add(bee, C.PassiveMotion, { state: C.PassiveState.Idle, stateStart: h.now });
+        h.world.add(bee, C.IsIdle);
         h.world.add(bee, C.Wobble, { phase: 0 });
 
         h.tick(40);
