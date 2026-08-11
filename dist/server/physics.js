@@ -1,21 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.hasLineOfSight = void 0;
 exports.getExtendedWallForCollision = getExtendedWallForCollision;
 exports.checkPlayerWallCollisions = checkPlayerWallCollisions;
 exports.checkEnemyWallCollisions = checkEnemyWallCollisions;
 exports.applyEnemyKnockback = applyEnemyKnockback;
 exports.checkItemWallCollisions = checkItemWallCollisions;
 exports.checkProjectileWallCollision = checkProjectileWallCollision;
-exports.hasLineOfSight = hasLineOfSight;
 exports.checkEnemyEnemyCollisions = checkEnemyEnemyCollisions;
 exports.checkPlayerEnemyCollision = checkPlayerEnemyCollision;
 const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
-const map_data_1 = require("../map_data");
 const mobs_1 = require("../mobs");
 const utils_1 = require("./utils");
 const killHandler_1 = require("./shared/killHandler");
-const maze_1 = require("../maze");
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
 /**
@@ -168,35 +166,10 @@ function checkProjectileWallCollision(projectileX, projectileY, projectileHalfSi
     const collision = (0, constants_1.checkTileCollision)(projectileX, projectileY, projectileHalfSize);
     return collision !== null && collision.collided;
 }
-/**
- * Check if there's a clear line of sight between two points (no walls or water blocking)
- * Uses raycasting with sample points along the line
- */
-function hasLineOfSight(x1, y1, x2, y2, sampleCount = 20) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    // If points are very close, assume clear line of sight
-    if (distance < 10) {
-        return true;
-    }
-    // Maze region uses its own wall grid (WALL_GRID doesn't cover it).
-    if ((0, maze_1.isInMazeRegion)(x1, y1) || (0, maze_1.isInMazeRegion)(x2, y2)) {
-        return !(0, maze_1.mazeBlocksLine)(x1, y1, x2, y2);
-    }
-    // Sample points along the line
-    for (let i = 0; i <= sampleCount; i++) {
-        const t = i / sampleCount;
-        const sampleX = x1 + dx * t;
-        const sampleY = y1 + dy * t;
-        // Any blocking tile (solid/water — built-in or custom) blocks line of sight
-        const state = (0, constants_1.getTileState)(map_data_1.WALL_GRID, sampleX, sampleY);
-        if ((0, constants_1.isTileIdBlocking)(state)) {
-            return false;
-        }
-    }
-    return true; // Clear line of sight
-}
+// hasLineOfSight now lives in ./lineOfSight so callers that only need a
+// raycast do not have to import this module (which boots the server).
+var lineOfSight_1 = require("./lineOfSight");
+Object.defineProperty(exports, "hasLineOfSight", { enumerable: true, get: function () { return lineOfSight_1.hasLineOfSight; } });
 // Broad-phase state for checkEnemyEnemyCollisions, reused across ticks.
 // Cell size must exceed the largest collision reach (two max mob radii +
 // buffer) divided across the 3×3-ish neighborhood the query box spans; 512

@@ -1,3 +1,4 @@
+"use strict";
 /**
  * The World: entity table, archetype graph, and component access.
  *
@@ -14,93 +15,26 @@
  * has — not their own tag. Components that describe what an entity fundamentally
  * *is* (a projectile, a pet, a centipede segment) are what tags are for.
  */
-
-import {
-    Archetype,
-    archetypeKey,
-    ComponentMask,
-    createMask,
-    maskContainsAll,
-    maskIntersects,
-    maskSet,
-} from './archetype';
-import {
-    componentById,
-    ComponentType,
-    Columns,
-    componentCount,
-    Schema,
-} from './component';
-import {
-    Entity,
-    ENTITY_MAX_GENERATION,
-    entityGeneration,
-    entityIndex,
-    entityToString,
-    makeEntity,
-    NULL_ENTITY,
-} from './entity';
-
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.World = exports.Query = void 0;
+const archetype_1 = require("./archetype");
+const component_1 = require("./component");
+const entity_1 = require("./entity");
 /** Initial number of entity slots; grows geometrically. */
 const INITIAL_SLOTS = 1024;
-
-/**
- * Values used to initialise a component when it is added.
- *
- * Deliberately `unknown` per field rather than a union of the storable
- * primitives: `obj` columns legitimately hold arbitrary payloads (loadouts,
- * Maps, config objects) that callers often have only as `unknown`, and a
- * narrower type here would force a cast at every prefab call site without
- * catching anything — the field's storage type already decides how the value is
- * used.
- */
-export type ComponentInit<S extends Schema> = { [K in keyof S]?: unknown };
-
-/**
- * One archetype's worth of rows handed to a system.
- *
- * `count` is the number of live rows; iterate `0 <= i < count`. `entities[i]`
- * is the handle for row `i`. Column arrays are fetched once per chunk and then
- * indexed directly — that hoisting is the whole point of the chunked API, so
- * always pull the arrays out ABOVE the row loop, never inside it.
- */
-export interface Chunk {
-    readonly archetype: Archetype;
-    readonly count: number;
-    readonly entities: Float64Array;
-    /** The backing arrays for `type` in this chunk. Throws if not present. */
-    cols<S extends Schema>(type: ComponentType<S>): Columns<S>;
-    /**
-     * Whether this chunk's archetype carries `type`.
-     *
-     * For components a query did not require but can still use when present —
-     * e.g. interpolating facing only for entities that have an Angle. Hoist the
-     * check above the row loop; within one chunk the answer never changes.
-     */
-    has(type: ComponentType<any>): boolean;
-}
-
-class ChunkView implements Chunk {
-    archetype!: Archetype;
-    count = 0;
-    entities!: Float64Array;
-
-    has(type: ComponentType<any>): boolean {
-        return this.archetype.columns[type.id] !== undefined;
+class ChunkView {
+    constructor() {
+        this.count = 0;
     }
-
-    cols<S extends Schema>(type: ComponentType<S>): Columns<S> {
+    cols(type) {
         const col = this.archetype.columns[type.id];
         if (col === undefined) {
-            throw new Error(
-                `Chunk does not contain component "${type.name}". ` +
-                `Add it to the query, or use an optional-component branch.`,
-            );
+            throw new Error(`Chunk does not contain component "${type.name}". ` +
+                `Add it to the query, or use an optional-component branch.`);
         }
-        return col.arrays as Columns<S>;
+        return col.arrays;
     }
 }
-
 /**
  * A cached set of archetypes matching a component filter.
  *
@@ -109,55 +43,50 @@ class ChunkView implements Chunk {
  * world grows a new archetype, so steady-state iteration costs nothing beyond
  * the loop itself.
  */
-export class Query {
-    private readonly all: ComponentMask;
-    private readonly none: ComponentMask;
-    private readonly matched: Archetype[] = [];
-    private seenArchetypes = -1;
-
-    constructor(
-        private readonly world: World,
-        all: ReadonlyArray<ComponentType<any>>,
-        none: ReadonlyArray<ComponentType<any>> = [],
-    ) {
-        const cap = Math.max(componentCount(), 1);
-        this.all = createMask(cap);
-        this.none = createMask(cap);
-        for (const t of all) maskSet(this.all, t.id);
-        for (const t of none) maskSet(this.none, t.id);
+class Query {
+    constructor(world, all, none = []) {
+        this.world = world;
+        this.matched = [];
+        this.seenArchetypes = -1;
+        const cap = Math.max((0, component_1.componentCount)(), 1);
+        this.all = (0, archetype_1.createMask)(cap);
+        this.none = (0, archetype_1.createMask)(cap);
+        for (const t of all)
+            (0, archetype_1.maskSet)(this.all, t.id);
+        for (const t of none)
+            (0, archetype_1.maskSet)(this.none, t.id);
     }
-
     /** Refresh the archetype list if the world has grown new archetypes. */
-    private refresh(): void {
+    refresh() {
         const archetypes = this.world.archetypes;
-        if (this.seenArchetypes === archetypes.length) return;
+        if (this.seenArchetypes === archetypes.length)
+            return;
         this.matched.length = 0;
         for (const a of archetypes) {
-            if (maskContainsAll(a.mask, this.all) && !maskIntersects(a.mask, this.none)) {
+            if ((0, archetype_1.maskContainsAll)(a.mask, this.all) && !(0, archetype_1.maskIntersects)(a.mask, this.none)) {
                 this.matched.push(a);
             }
         }
         this.seenArchetypes = archetypes.length;
     }
-
     /**
      * Run `fn` over every matching chunk.
      *
      * The chunk view is REUSED between calls to avoid per-tick allocation, so
      * never retain it past the callback.
      */
-    chunks(fn: (chunk: Chunk) => void): void {
+    chunks(fn) {
         this.refresh();
         const view = this.world.chunkView;
         for (const a of this.matched) {
-            if (a.count === 0) continue;
+            if (a.count === 0)
+                continue;
             view.archetype = a;
             view.count = a.count;
             view.entities = a.entities;
             fn(view);
         }
     }
-
     /**
      * Collect matching entities into an array.
      *
@@ -165,381 +94,347 @@ export class Query {
      * everything matching" case — never a per-tick hot loop. Taking a snapshot
      * first is also what makes structural mutation safe while acting on results.
      */
-    collect(out: Entity[] = []): Entity[] {
+    collect(out = []) {
         out.length = 0;
         this.refresh();
         for (const a of this.matched) {
-            for (let i = 0; i < a.count; i++) out.push(a.entities[i] as Entity);
+            for (let i = 0; i < a.count; i++)
+                out.push(a.entities[i]);
         }
         return out;
     }
-
     /** Number of entities currently matching. */
-    count(): number {
+    count() {
         this.refresh();
         let n = 0;
-        for (const a of this.matched) n += a.count;
+        for (const a of this.matched)
+            n += a.count;
         return n;
     }
 }
-
-export class World {
-    // --- entity table --------------------------------------------------------
-    private generations = new Uint32Array(INITIAL_SLOTS);
-    private alive = new Uint8Array(INITIAL_SLOTS);
-    private archetypeOf = new Int32Array(INITIAL_SLOTS).fill(-1);
-    private rowOf = new Int32Array(INITIAL_SLOTS).fill(-1);
-    private freeSlots: number[] = [];
-    /**
-     * Starts at 1: slot 0 is permanently reserved and never handed out, because
-     * index 0 with generation 0 packs to the handle `0` — which is NULL_ENTITY.
-     * Without this the very first entity created would be indistinguishable from
-     * "no entity", and every zero-filled `entity` column would appear to point
-     * at it.
-     */
-    private slotCount = 1;
-    private capacity = INITIAL_SLOTS;
-
-    // --- archetypes ----------------------------------------------------------
-    readonly archetypes: Archetype[] = [];
-    private readonly archetypeByKey = new Map<string, Archetype>();
-
-    /** Reused chunk view; see Query.chunks. */
-    readonly chunkView = new ChunkView();
-
-    /** Live entity count. */
-    private liveCount = 0;
-
-    /**
-     * String id <-> entity, for the parts of the game that address entities by
-     * socket id or mob id (the wire protocol, squads, pet ownership, targeting).
-     * Kept here rather than in a component so `destroy` can drop both directions
-     * in one place and never leak an id.
-     */
-    private readonly byExternalId = new Map<string, Entity>();
-    private readonly externalIds: string[] = [];
-
+exports.Query = Query;
+class World {
     constructor() {
+        // --- entity table --------------------------------------------------------
+        this.generations = new Uint32Array(INITIAL_SLOTS);
+        this.alive = new Uint8Array(INITIAL_SLOTS);
+        this.archetypeOf = new Int32Array(INITIAL_SLOTS).fill(-1);
+        this.rowOf = new Int32Array(INITIAL_SLOTS).fill(-1);
+        this.freeSlots = [];
+        /**
+         * Starts at 1: slot 0 is permanently reserved and never handed out, because
+         * index 0 with generation 0 packs to the handle `0` — which is NULL_ENTITY.
+         * Without this the very first entity created would be indistinguishable from
+         * "no entity", and every zero-filled `entity` column would appear to point
+         * at it.
+         */
+        this.slotCount = 1;
+        this.capacity = INITIAL_SLOTS;
+        // --- archetypes ----------------------------------------------------------
+        this.archetypes = [];
+        this.archetypeByKey = new Map();
+        /** Reused chunk view; see Query.chunks. */
+        this.chunkView = new ChunkView();
+        /** Live entity count. */
+        this.liveCount = 0;
+        /**
+         * String id <-> entity, for the parts of the game that address entities by
+         * socket id or mob id (the wire protocol, squads, pet ownership, targeting).
+         * Kept here rather than in a component so `destroy` can drop both directions
+         * in one place and never leak an id.
+         */
+        this.byExternalId = new Map();
+        this.externalIds = [];
         // The empty archetype (no components) holds freshly created entities.
         this.getOrCreateArchetype([]);
     }
-
     // -------------------------------------------------------------------------
     // Entity lifecycle
     // -------------------------------------------------------------------------
-
     /** Create an entity with no components. */
-    create(): Entity {
-        let index: number;
+    create() {
+        let index;
         if (this.freeSlots.length > 0) {
-            index = this.freeSlots.pop()!;
-        } else {
-            index = this.slotCount++;
-            if (index >= this.capacity) this.growSlots(this.capacity * 2);
+            index = this.freeSlots.pop();
         }
-
-        const entity = makeEntity(index, this.generations[index]);
+        else {
+            index = this.slotCount++;
+            if (index >= this.capacity)
+                this.growSlots(this.capacity * 2);
+        }
+        const entity = (0, entity_1.makeEntity)(index, this.generations[index]);
         this.alive[index] = 1;
         this.liveCount++;
-
         const empty = this.archetypes[0];
         this.archetypeOf[index] = 0;
         this.rowOf[index] = empty.addRow(entity);
         return entity;
     }
-
     /** True when the handle refers to a live entity (right generation). */
-    isAlive(e: Entity): boolean {
-        if (e === NULL_ENTITY) return false;
-        const index = entityIndex(e);
+    isAlive(e) {
+        if (e === entity_1.NULL_ENTITY)
+            return false;
+        const index = (0, entity_1.entityIndex)(e);
         return index < this.slotCount
             && this.alive[index] === 1
-            && this.generations[index] === entityGeneration(e);
+            && this.generations[index] === (0, entity_1.entityGeneration)(e);
     }
-
     /**
      * Destroy an entity and free its slot.
      *
      * Bumps the slot's generation so every outstanding handle to it goes stale.
      * Safe to call on an already-dead handle (returns false).
      */
-    destroy(e: Entity): boolean {
-        if (!this.isAlive(e)) return false;
-        const index = entityIndex(e);
-
+    destroy(e) {
+        if (!this.isAlive(e))
+            return false;
+        const index = (0, entity_1.entityIndex)(e);
         const archetype = this.archetypes[this.archetypeOf[index]];
         this.releaseRow(archetype, this.rowOf[index]);
-
         const externalId = this.externalIds[index];
         if (externalId !== undefined) {
             this.byExternalId.delete(externalId);
-            this.externalIds[index] = undefined as unknown as string;
+            this.externalIds[index] = undefined;
         }
-
         this.alive[index] = 0;
         this.archetypeOf[index] = -1;
         this.rowOf[index] = -1;
         // Wrap rather than overflow the Uint32Array; see entity.ts on why the
         // generation space is large enough that this is not a practical concern.
-        this.generations[index] = (this.generations[index] + 1) % ENTITY_MAX_GENERATION;
+        this.generations[index] = (this.generations[index] + 1) % entity_1.ENTITY_MAX_GENERATION;
         this.freeSlots.push(index);
         this.liveCount--;
         return true;
     }
-
     /** Number of live entities. */
-    size(): number {
+    size() {
         return this.liveCount;
     }
-
     // -------------------------------------------------------------------------
     // Components
     // -------------------------------------------------------------------------
-
     /** True when `e` currently has `type`. */
-    has(e: Entity, type: ComponentType<any>): boolean {
-        if (!this.isAlive(e)) return false;
-        return this.archetypes[this.archetypeOf[entityIndex(e)]].has(type.id);
+    has(e, type) {
+        if (!this.isAlive(e))
+            return false;
+        return this.archetypes[this.archetypeOf[(0, entity_1.entityIndex)(e)]].has(type.id);
     }
-
     /**
      * Add `type` to `e`, initialising the given fields (others start zeroed).
      * No-op apart from applying `values` when the entity already has it.
      */
-    add<S extends Schema>(e: Entity, type: ComponentType<S>, values?: ComponentInit<S>): void {
+    add(e, type, values) {
         this.assertAlive(e, 'add');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const from = this.archetypes[this.archetypeOf[index]];
-
         if (!from.has(type.id)) {
             const ids = from.componentIds.slice();
             ids.push(type.id);
             const to = this.getOrCreateArchetypeByIds(ids);
             this.moveEntity(e, index, from, to);
             // Zero the destination slot: the row may be recycled storage.
-            const col = to.columns[type.id]!;
+            const col = to.columns[type.id];
             const row = this.rowOf[index];
             for (const field of type.fields) {
-                const arr = col.arrays[field] as any;
+                const arr = col.arrays[field];
                 arr[row] = type.schema[field] === 'obj' || type.schema[field] === 'str' ? undefined : 0;
             }
         }
-
-        if (values) this.write(e, type, values);
+        if (values)
+            this.write(e, type, values);
     }
-
     /** Remove `type` from `e`. No-op when absent. */
-    remove(e: Entity, type: ComponentType<any>): void {
+    remove(e, type) {
         this.assertAlive(e, 'remove');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const from = this.archetypes[this.archetypeOf[index]];
-        if (!from.has(type.id)) return;
-
+        if (!from.has(type.id))
+            return;
         const ids = from.componentIds.filter(id => id !== type.id);
         const to = this.getOrCreateArchetypeByIds(ids);
         this.moveEntity(e, index, from, to);
     }
-
     /** Read one field. Throws if the entity lacks the component. */
-    get<S extends Schema, K extends Extract<keyof S, string>>(
-        e: Entity,
-        type: ComponentType<S>,
-        field: K,
-    ): any {
+    get(e, type, field) {
         this.assertAlive(e, 'get');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const archetype = this.archetypes[this.archetypeOf[index]];
         const col = archetype.columns[type.id];
-        if (!col) throw new Error(`${entityToString(e)} has no component "${type.name}"`);
-        return (col.arrays[field] as any)[this.rowOf[index]];
+        if (!col)
+            throw new Error(`${(0, entity_1.entityToString)(e)} has no component "${type.name}"`);
+        return col.arrays[field][this.rowOf[index]];
     }
-
     /** Write one field. Throws if the entity lacks the component. */
-    set<S extends Schema, K extends Extract<keyof S, string>>(
-        e: Entity,
-        type: ComponentType<S>,
-        field: K,
-        value: any,
-    ): void {
+    set(e, type, field, value) {
         this.assertAlive(e, 'set');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const archetype = this.archetypes[this.archetypeOf[index]];
         const col = archetype.columns[type.id];
-        if (!col) throw new Error(`${entityToString(e)} has no component "${type.name}"`);
-        (col.arrays[field] as any)[this.rowOf[index]] = value;
+        if (!col)
+            throw new Error(`${(0, entity_1.entityToString)(e)} has no component "${type.name}"`);
+        col.arrays[field][this.rowOf[index]] = value;
     }
-
     /** Write several fields at once. */
-    write<S extends Schema>(e: Entity, type: ComponentType<S>, values: ComponentInit<S>): void {
+    write(e, type, values) {
         this.assertAlive(e, 'write');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const archetype = this.archetypes[this.archetypeOf[index]];
         const col = archetype.columns[type.id];
-        if (!col) throw new Error(`${entityToString(e)} has no component "${type.name}"`);
+        if (!col)
+            throw new Error(`${(0, entity_1.entityToString)(e)} has no component "${type.name}"`);
         const row = this.rowOf[index];
         for (const field in values) {
             const v = values[field];
-            if (v === undefined) continue;
-            (col.arrays[field] as any)[row] = v;
+            if (v === undefined)
+                continue;
+            col.arrays[field][row] = v;
         }
     }
-
     /**
      * Read every field of a component into a plain object.
      * Allocates — for debug dumps, persistence and wire encoding, not hot loops.
      */
-    snapshot<S extends Schema>(e: Entity, type: ComponentType<S>): Record<string, any> {
+    snapshot(e, type) {
         this.assertAlive(e, 'snapshot');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const col = this.archetypes[this.archetypeOf[index]].columns[type.id];
-        if (!col) throw new Error(`${entityToString(e)} has no component "${type.name}"`);
+        if (!col)
+            throw new Error(`${(0, entity_1.entityToString)(e)} has no component "${type.name}"`);
         const row = this.rowOf[index];
-        const out: Record<string, any> = {};
-        for (const field of type.fields) out[field] = (col.arrays[field] as any)[row];
+        const out = {};
+        for (const field of type.fields)
+            out[field] = col.arrays[field][row];
         return out;
     }
-
     /** Every component type currently on `e`. Diagnostics only. */
-    componentsOf(e: Entity): ComponentType<any>[] {
+    componentsOf(e) {
         this.assertAlive(e, 'componentsOf');
-        const archetype = this.archetypes[this.archetypeOf[entityIndex(e)]];
-        const out: ComponentType<any>[] = [];
-        for (const col of archetype.columns) if (col) out.push(col.type);
+        const archetype = this.archetypes[this.archetypeOf[(0, entity_1.entityIndex)(e)]];
+        const out = [];
+        for (const col of archetype.columns)
+            if (col)
+                out.push(col.type);
         return out;
     }
-
     // -------------------------------------------------------------------------
     // Queries
     // -------------------------------------------------------------------------
-
     /**
      * Build a query for entities having all of `all` and none of `none`.
      * Create these ONCE and reuse; constructing one per tick defeats the cache.
      */
-    query(all: ReadonlyArray<ComponentType<any>>, none: ReadonlyArray<ComponentType<any>> = []): Query {
+    query(all, none = []) {
         return new Query(this, all, none);
     }
-
     // -------------------------------------------------------------------------
     // External string ids
     // -------------------------------------------------------------------------
-
     /** Associate a string id (socket id, mob id) with an entity. */
-    bindExternalId(e: Entity, id: string): void {
+    bindExternalId(e, id) {
         this.assertAlive(e, 'bindExternalId');
-        const index = entityIndex(e);
+        const index = (0, entity_1.entityIndex)(e);
         const previous = this.externalIds[index];
-        if (previous !== undefined) this.byExternalId.delete(previous);
+        if (previous !== undefined)
+            this.byExternalId.delete(previous);
         this.externalIds[index] = id;
         this.byExternalId.set(id, e);
     }
-
     /** Look up an entity by its string id, if it is still alive. */
-    lookup(id: string): Entity | undefined {
+    lookup(id) {
         const e = this.byExternalId.get(id);
-        if (e === undefined) return undefined;
+        if (e === undefined)
+            return undefined;
         if (!this.isAlive(e)) {
             this.byExternalId.delete(id);
             return undefined;
         }
         return e;
     }
-
     /** The string id bound to `e`, if any. */
-    externalIdOf(e: Entity): string | undefined {
-        if (!this.isAlive(e)) return undefined;
-        return this.externalIds[entityIndex(e)];
+    externalIdOf(e) {
+        if (!this.isAlive(e))
+            return undefined;
+        return this.externalIds[(0, entity_1.entityIndex)(e)];
     }
-
     // -------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------
-
-    private assertAlive(e: Entity, op: string): void {
+    assertAlive(e, op) {
         if (!this.isAlive(e)) {
-            throw new Error(`${op}() called on dead or invalid entity ${entityToString(e)}`);
+            throw new Error(`${op}() called on dead or invalid entity ${(0, entity_1.entityToString)(e)}`);
         }
     }
-
-    private growSlots(capacity: number): void {
+    growSlots(capacity) {
         const generations = new Uint32Array(capacity);
         generations.set(this.generations);
         this.generations = generations;
-
         const alive = new Uint8Array(capacity);
         alive.set(this.alive);
         this.alive = alive;
-
         const archetypeOf = new Int32Array(capacity).fill(-1);
         archetypeOf.set(this.archetypeOf);
         this.archetypeOf = archetypeOf;
-
         const rowOf = new Int32Array(capacity).fill(-1);
         rowOf.set(this.rowOf);
         this.rowOf = rowOf;
-
         this.externalIds.length = capacity;
         this.capacity = capacity;
     }
-
-    private getOrCreateArchetype(types: ReadonlyArray<ComponentType<any>>): Archetype {
+    getOrCreateArchetype(types) {
         return this.getOrCreateArchetypeByIds(types.map(t => t.id));
     }
-
-    private getOrCreateArchetypeByIds(ids: ReadonlyArray<number>): Archetype {
-        const key = archetypeKey(ids);
+    getOrCreateArchetypeByIds(ids) {
+        const key = (0, archetype_1.archetypeKey)(ids);
         const existing = this.archetypeByKey.get(key);
-        if (existing) return existing;
-
-        const types: ComponentType<any>[] = [];
+        if (existing)
+            return existing;
+        const types = [];
         for (const id of ids) {
             const t = componentByIdOrThrow(id);
             types.push(t);
         }
-        const archetype = new Archetype(types, Math.max(componentCount(), 1));
+        const archetype = new archetype_1.Archetype(types, Math.max((0, component_1.componentCount)(), 1));
         archetype.index = this.archetypes.length;
         this.archetypeByKey.set(key, archetype);
         this.archetypes.push(archetype);
         return archetype;
     }
-
     /**
      * Move `e` from one archetype to another, carrying over every component the
      * two have in common. Components only in `from` are dropped; components only
      * in `to` are left for the caller to initialise.
      */
-    private moveEntity(e: Entity, index: number, from: Archetype, to: Archetype): void {
+    moveEntity(e, index, from, to) {
         const fromRow = this.rowOf[index];
         const toRow = to.addRow(e);
-
         for (const id of to.componentIds) {
             const src = from.columns[id];
-            if (!src) continue;
-            const dst = to.columns[id]!;
+            if (!src)
+                continue;
+            const dst = to.columns[id];
             for (const field of src.type.fields) {
-                (dst.arrays[field] as any)[toRow] = (src.arrays[field] as any)[fromRow];
+                dst.arrays[field][toRow] = src.arrays[field][fromRow];
             }
         }
-
         this.archetypeOf[index] = to.index;
         this.rowOf[index] = toRow;
         this.releaseRow(from, fromRow);
     }
-
     /**
      * Swap-remove `row` from `archetype` and repair the location of whichever
      * entity was moved into the hole.
      */
-    private releaseRow(archetype: Archetype, row: number): void {
+    releaseRow(archetype, row) {
         const moved = archetype.removeRow(row);
-        if (moved !== NULL_ENTITY) {
-            this.rowOf[entityIndex(moved)] = row;
+        if (moved !== entity_1.NULL_ENTITY) {
+            this.rowOf[(0, entity_1.entityIndex)(moved)] = row;
         }
     }
 }
-
-function componentByIdOrThrow(id: number): ComponentType<any> {
-    const t = componentById(id);
-    if (!t) throw new Error(`Unknown component id ${id} — was defineComponent() called at module scope?`);
+exports.World = World;
+function componentByIdOrThrow(id) {
+    const t = (0, component_1.componentById)(id);
+    if (!t)
+        throw new Error(`Unknown component id ${id} — was defineComponent() called at module scope?`);
     return t;
 }
