@@ -9,7 +9,7 @@
  * original inline block.
  *
  * What lives here:
- *   - `markDeadAndEmit` — the 4 minimal sites in physics.checkEnemyEnemyCollisions
+ *   - `killEnemy` — the full death sequence (XP, drops, cleanup, splice)
  *     (only set isDead + emit enemyDestroyed; the full cleanup runs later in the
  *     moveEnemies sweep).
  *   - `killEnemy` — the "full" death sequence used by mob-projectile,
@@ -75,16 +75,6 @@ export interface KillOptions {
      * called cleanupEnemy historically (minor per-enemy-map leak); preserve.
      */
     skipCleanup?: boolean;
-}
-
-/**
- * Minimal death marker for physics.checkEnemyEnemyCollisions: set isDead and
- * emit enemyDestroyed. The full XP/loot/cleanup/splice is deferred to the
- * moveEnemies post-melee sweep (which credits via damageContributors).
- */
-export function markDeadAndEmit(enemy: Enemy, io: any): void {
-    (enemy as any).isDead = true;
-    if (io) io.emit('enemyDestroyed', enemy.id);
 }
 
 /**

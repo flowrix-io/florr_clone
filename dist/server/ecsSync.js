@@ -57,24 +57,12 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ecsSimulationEnabled = ecsSimulationEnabled;
 exports.configureCutover = configureCutover;
 exports.syncToEcs = syncToEcs;
 exports.syncFromEcs = syncFromEcs;
 exports.resetSyncState = resetSyncState;
 const C = __importStar(require("../ecs/components"));
 const ecsBridge_1 = require("./ecsBridge");
-/**
- * Kill switch.
- *
- * Set `ECS_SIMULATION=0` to fall straight back to the legacy `moveEnemies`
- * path without a redeploy. This is a live game on a memory-capped box; a
- * rewrite of the hot loop needs a way to be turned off from the shell at 3am,
- * not a rollback.
- */
-function ecsSimulationEnabled() {
-    return process.env.ECS_SIMULATION !== '0';
-}
 /** Systems legacy still owns, disabled so the two do not both act. */
 const LEGACY_OWNED_SYSTEMS = [
     'playerMovement', // legacy updatePlayerState still moves players

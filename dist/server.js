@@ -70,7 +70,6 @@ const guildManager_1 = require("./server/guildManager");
 const physics_1 = require("./server/physics");
 const ecsRuntime_1 = require("./server/ecsRuntime");
 const ecsSync_1 = require("./server/ecsSync");
-const enemyAI_1 = require("./server/enemyAI");
 const tickBroadcast_1 = require("./server/tickBroadcast");
 const connection_1 = require("./server/connection");
 const playerState_1 = require("./server/playerState");
@@ -1196,28 +1195,8 @@ function spawnWaveMobs() {
  * The steering and targeting live in server/enemyAI.ts. Reaping stays here
  * because it awards XP, rolls drops and touches the database.
  */
-function moveEnemies() {
-    if ((0, ecsSync_1.ecsSimulationEnabled)()) {
-        moveEnemiesEcs();
-    }
-    else {
-        moveEnemiesLegacy();
-    }
-    // Reaping stays here either way: it awards XP, rolls drops and touches the
-    // database, none of which is ported.
-    reapDeadEnemies();
-    // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
-}
-/** The original path, kept intact as the fallback behind ECS_SIMULATION=0. */
-function moveEnemiesLegacy() {
-    const ctx = (0, enemyAI_1.beginEnemyTick)(Date.now());
-    (0, enemyAI_1.repairSeveredCentipedeChains)(ctx);
-    constants_2.enemies.forEach(enemy => (0, enemyAI_1.stepEnemy)(enemy, ctx));
-    (0, enemyAI_1.propagateCentipedeChains)(ctx);
-    (0, physics_1.checkEnemyEnemyCollisions)(constants_2.enemies, io);
-}
 /**
- * Mob simulation on the ECS.
+ * Mob simulation, on the ECS.
  *
  * Legacy state is pushed in, the ECS scheduler runs AI / drift / chains /
  * mob collision, and the results are written back onto the same Enemy objects
@@ -1225,7 +1204,7 @@ function moveEnemiesLegacy() {
  * downstream knows the simulation moved. See server/ecsSync.ts for the
  * ownership split and why lifecycle deliberately stays with legacy.
  */
-function moveEnemiesEcs() {
+function moveEnemies() {
     const now = Date.now();
     const runtime = getEcsRuntime();
     (0, ecsSync_1.syncToEcs)(runtime.world, constants_2.enemies, constants_2.players, now);
@@ -1234,6 +1213,10 @@ function moveEnemiesEcs() {
     // mobCatchupCalls times rather than being handed a larger dt.
     runtime.tick(1 / 30, 1000 / 30, now);
     (0, ecsSync_1.syncFromEcs)(runtime.world, constants_2.enemies);
+    // Reaping stays here: it awards XP, rolls drops and touches the database,
+    // none of which is ported.
+    reapDeadEnemies();
+    // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
 }
 /**
  * The ECS runtime, built on first use so nothing is constructed on servers
@@ -1270,7 +1253,7 @@ function getEcsRuntime() {
         onEnemyKilled: () => { },
     });
     (0, ecsSync_1.configureCutover)(_ecsRuntime);
-    console.log('[ECS] mob simulation ENABLED (set ECS_SIMULATION=0 to fall back)');
+    console.log('[ECS] mob simulation initialised');
     return _ecsRuntime;
 }
 // A dying ant hole sometimes has a digger under it (gardn Death.cc, gated on
