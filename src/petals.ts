@@ -127,7 +127,7 @@ export const SHOP_PRICES: { [petalType: string]: number } = {
     poison_cactus: 22, iris: 18, lightning: 25, missile: 21, jelly: 20,
     yucca: 15, leaf: 14, cutter: 50, lightning_cutter: 60, wing: 23,
     square: 1000, golden_leaf: 18, blood_leaf: 24, target_dummy_egg: 100000000,
-    splitter: 1000000,
+    splitter: 1000000, flower: 3000000, moon: 2000, shell: 15, observer: 75, guided_missile: 30
 };
 export const DEFAULT_SHOP_PRICE = 10;
 
@@ -2075,7 +2075,7 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         damage: 5,
         health: 15,
         size: 1.0,
-        cooldown: 2000,
+        cooldown: 50000,
         description: "Why is it whole???",
         color: "#9B59B6",
         count: 1,

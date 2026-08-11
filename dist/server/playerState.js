@@ -141,6 +141,29 @@ const RAINDROP_AURA_RADIUS_PER_RARITY = 18;
 // flower at once is rare, and sharing the timer keeps this map bounded by the
 // player count and cleaned up by cleanupPetalPhysicsStates.
 const petalRingLastHit = new Map();
+// The flower petal is a whole flower, so touching a mob shatters it and lets out
+// whatever was inside: nearly always a squad of glitch flowers that fight for the
+// player, and one break in twenty the glitch itself, which takes the player.
+const FLOWER_PETAL_PET_TYPE = 'glitch_flower';
+const FLOWER_PETAL_PET_COUNT = 3;
+const FLOWER_PETAL_CORRUPT_CHANCE = 0.05;
+/**
+ * Corrupt a flower, splitter half included.
+ *
+ * Same rule the `corrupt` server command follows: the two halves of a split
+ * player are one person, so corrupting only the half that happened to be
+ * holding the petal would leave the clone fighting under the other half's
+ * rules. tickBroadcast picks the state up from `player.corrupted` on its own,
+ * so nothing needs to be emitted here.
+ */
+function corruptFlowerAndSplitHalf(player) {
+    const split = petal_actions_1.splitPlayers.get((0, utils_1.getOriginalSocketId)(player.id));
+    const halves = split ? [split.player1, split.player2] : [player];
+    for (const half of halves) {
+        if (constants_1.players[half.id])
+            (0, gameState_1.setPlayerCorrupted)(constants_1.players[half.id], true);
+    }
+}
 // Drop an enemy's per-player aura damage-timestamps when it leaves the world.
 // Without this the inner maps grow by one entry per enemy ever seen in aura
 // range and are only ever cleared on player disconnect — a heap leak that
@@ -2119,6 +2142,28 @@ function updatePlayerState(player, deltaTime, deps) {
                     }
                     // Mark enemy for batched damage update at end of frame
                     (0, utils_1.markEnemyDamaged)(enemy);
+                    // The flower petal cracks open on the mob it touches, whatever
+                    // the mob's damage was: zeroing this instance's health makes the
+                    // next tick's petal loop run the normal break + reload path, so
+                    // it comes back on its cooldown like any other spent petal. The
+                    // squad spawns at the petal, not the player, so it lands on the
+                    // mob that broke it. Pass the petal's own rarity through — a
+                    // rarer flower opens onto rarer glitch flowers.
+                    if (petal.petalType === 'flower') {
+                        setInstanceHealth(petal, instanceIndex, petalStats, 0);
+                        if (Math.random() < FLOWER_PETAL_CORRUPT_CHANCE) {
+                            corruptFlowerAndSplitHalf(player);
+                        }
+                        else {
+                            // spawnPet's apex rule turns one summon into three unique
+                            // pets, which would make an apex flower open onto nine.
+                            // Clamp so the squad is always the three this petal promises.
+                            const petRarity = (petal.rarity ?? 'common') === 'apex' ? 'unique' : (petal.rarity ?? 'common');
+                            (0, petal_actions_1.spawnPet)(FLOWER_PETAL_PET_TYPE, petRarity, petalX, petalY, player.id, io, false, FLOWER_PETAL_PET_COUNT);
+                        }
+                        // Broken petals don't hit anything else this tick.
+                        break;
+                    }
                     // Check if item spawner was hit and has 1% chance to spawn a random petal
                     if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
                         // Get all petal types and filter out admin petals
