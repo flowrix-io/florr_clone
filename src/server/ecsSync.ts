@@ -1,5 +1,6 @@
 /**
- * The cutover: run mob simulation on the ECS while legacy code keeps the rest.
+ * The cutover: run mob and projectile simulation on the ECS while legacy code
+ * keeps the rest.
  *
  * ---------------------------------------------------------------------------
  * What owns what
@@ -18,11 +19,12 @@
  * no projectile handling in this file at all — a projectile never needs syncing
  * because legacy never writes one.
  *
- * Lifecycle deliberately stays with legacy. The ECS despawn and reaper systems
- * are disabled here, because the viewport-status pass is not ported — with it
- * absent, `unseenDespawn` reaps every mob after 30 seconds (the tick harness hit
- * exactly that and silently measured an empty world). Legacy already does
- * lifecycle correctly, so it keeps doing it until the viewport pass moves over.
+ * Lifecycle deliberately stays with legacy. The viewport-status pass IS ported
+ * (systems/viewport.ts), so ViewportTracked is accurate; what still blocks the
+ * ECS despawn/reaper is the REMOVAL side. Destroying the entity would leave the
+ * mob in legacy `enemies[]` forever and clients would never receive
+ * enemyDestroyed, so moving it needs a despawn hook that splices the array and
+ * emits — the same shape as the creditDamage/onEnemyDamaged hooks.
  *
  * ---------------------------------------------------------------------------
  * The sync contract
@@ -51,7 +53,12 @@ const LEGACY_OWNED_SYSTEMS = [
     'playerMovement',    // legacy updatePlayerState still moves players
     'playerModifiers',   // derived from the legacy loadout for now
     'expiry',            // legacy timers
-    'unseenDespawn',     // needs the unported viewport pass
+    // The viewport pass IS ported now (systems/viewport.ts), so ViewportTracked
+    // is accurate. What still blocks this is the removal side: the ECS reaper
+    // destroys the entity, but legacy enemies[] would keep the mob forever and
+    // clients would never get enemyDestroyed. Moving it needs a despawn hook
+    // that splices the legacy array and emits.
+    'unseenDespawn',
     'reaper',            // legacy reapDeadEnemies awards XP and drops
     'poisonStacks',      // legacy updatePoisonEffects
     'playerPoison',      // legacy updatePlayerPoison
