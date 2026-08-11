@@ -10,7 +10,7 @@
  * original inline block.
  *
  * What lives here:
- *   - `markDeadAndEmit` — the 4 minimal sites in physics.checkEnemyEnemyCollisions
+ *   - `killEnemy` — the full death sequence (XP, drops, cleanup, splice)
  *     (only set isDead + emit enemyDestroyed; the full cleanup runs later in the
  *     moveEnemies sweep).
  *   - `killEnemy` — the "full" death sequence used by mob-projectile,
@@ -27,19 +27,8 @@
  *     several more flags for one-off behavior; they stay inline.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markDeadAndEmit = markDeadAndEmit;
 exports.killEnemy = killEnemy;
 const server_utils_1 = require("../../server_utils");
-/**
- * Minimal death marker for physics.checkEnemyEnemyCollisions: set isDead and
- * emit enemyDestroyed. The full XP/loot/cleanup/splice is deferred to the
- * moveEnemies post-melee sweep (which credits via damageContributors).
- */
-function markDeadAndEmit(enemy, io) {
-    enemy.isDead = true;
-    if (io)
-        io.emit('enemyDestroyed', enemy.id);
-}
 /**
  * Run the full death sequence for `enemy` and splice it from `enemies` at
  * `index`. The caller owns the index (loop variable or findIndex result);

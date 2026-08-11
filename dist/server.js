@@ -1188,15 +1188,7 @@ function spawnWaveMobs() {
     }
 }
 /**
- * Advance every enemy by one tick: repair severed centipede chains, run each
- * mob's AI, drag chain segments along, resolve mob-vs-mob combat, then reap the
- * dead.
- *
- * The steering and targeting live in server/enemyAI.ts. Reaping stays here
- * because it awards XP, rolls drops and touches the database.
- */
-/**
- * Mob simulation, on the ECS.
+ * Advance every enemy by one tick, on the ECS.
  *
  * Legacy state is pushed in, the ECS scheduler runs AI / drift / chains /
  * mob collision, and the results are written back onto the same Enemy objects

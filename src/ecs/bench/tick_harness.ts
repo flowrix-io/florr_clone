@@ -192,6 +192,16 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         creditDamage: () => { /* attribution is exercised elsewhere */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },
+        // Mirrors the real near-a-player test closely enough to exercise the
+        // viewport pass: mobs within a viewport-ish radius of a player stay.
+        isNearAnyPlayer: (x, y) => {
+            for (let i = 0; i < players.length; i++) {
+                const dx = players[i].x - x;
+                const dy = players[i].y - y;
+                if (dx * dx + dy * dy < 2200 * 2200) return true;
+            }
+            return false;
+        },
     });
 
     const now0 = 1_000_000;
@@ -199,18 +209,9 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
 
     const world = runtime.world;
     const positioned = world.query([C.Position]);
-    // The viewport-status pass is NOT ported yet. Without it nothing refreshes
-    // ViewportTracked, so unseenDespawn reaps every mob at the 30-second mark
-    // and the rest of the run measures an almost-empty world. Standing in for
-    // it here keeps the population realistic; remove this once the real pass
-    // exists.
-    const tracked = world.query([C.ViewportTracked]);
-    const refreshViewport = (now: number) => {
-        tracked.chunks(chunk => {
-            const v = chunk.cols(C.ViewportTracked);
-            for (let i = 0; i < chunk.count; i++) v.lastInViewport[i] = now;
-        });
-    };
+    // The viewport-status pass is now a real system (systems/viewport.ts), so
+    // the harness no longer stands in for it. Mob lifetime here is whatever the
+    // real near-a-player test decides.
 
     let badCoordinates = 0;
     let firstBadTick = -1;
@@ -222,9 +223,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
 
     // Warm up the JIT before timing.
     for (let t = 0; t < 60; t++) {
-        const now = now0 + t * (1000 / 30);
-        refreshViewport(now);
-        runtime.tick(1 / 30, 1000 / 30, now);
+        runtime.tick(1 / 30, 1000 / 30, now0 + t * (1000 / 30));
     }
     runtime.scheduler.drainTimings();
 
@@ -233,7 +232,6 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
 
     for (let t = 0; t < config.ticks; t++) {
         const now = now0 + (60 + t) * (1000 / 30);
-        refreshViewport(now);
         const tickStart = performance.now();
         runtime.tick(1 / 30, 1000 / 30, now);
         const elapsed = performance.now() - tickStart;

@@ -1455,6 +1455,7 @@ function getEcsRuntime(): EcsRuntime {
         // Death is left to reapDeadEnemies: syncFromEcs zeroes the legacy
         // health, and the existing reaper awards XP and drops from there.
         onEnemyKilled: () => { /* handled by reapDeadEnemies */ },
+        isNearAnyPlayer: isPositionNearAnyPlayer,
     });
     configureCutover(_ecsRuntime);
     console.log('[ECS] mob simulation initialised');

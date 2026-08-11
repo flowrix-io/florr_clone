@@ -64,6 +64,10 @@ import {
     registerMovementSystems,
 } from '../ecs/systems/movement';
 import {
+    createViewportQueries,
+    registerViewportSystem,
+} from '../ecs/systems/viewport';
+import {
     createPlayerMovementQueries,
     registerPlayerMovementSystem,
 } from '../ecs/systems/playerMovement';
@@ -114,10 +118,20 @@ export interface EcsRuntimeOptions {
     onEnemyDamaged(victim: Entity): void;
     /** The victim died: award XP and drops, and emit to clients. */
     onEnemyKilled(victim: Entity): void;
+    /**
+     * Whether a world position is near enough to a live player to count as
+     * seen, feeding the unseen-despawn timer.
+     *
+     * INJECTED, not imported. The real implementation lives in playerState.ts,
+     * and importing that module here pulls in server.ts — which binds a port
+     * and opens the database at module scope. The harness guard caught exactly
+     * that when this was first written as an import.
+     */
+    isNearAnyPlayer(x: number, y: number): boolean;
 }
 
 export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
-    const { creditDamage, onEnemyDamaged, onEnemyKilled } = options;
+    const { creditDamage, onEnemyDamaged, onEnemyKilled, isNearAnyPlayer } = options;
     const world = new World();
     const scheduler = new Scheduler(world);
     const grid = new SpatialGrid();
@@ -237,6 +251,12 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         createCentipedeQueries(world),
         (x, y, halfSize) => resolveEntityWallCollisions(x, y, halfSize),
     );
+
+    // Feeds the unseen-despawn timer. Registered even while despawn itself is
+    // legacy-owned, so ViewportTracked is accurate the moment lifecycle moves.
+    registerViewportSystem(scheduler, createViewportQueries(world), {
+        isNearAnyPlayer,
+    });
 
     registerAfflictionSystems(scheduler, createAfflictionQueries(world));
     registerLifetimeSystems(scheduler, createLifetimeQueries(world));
