@@ -16,23 +16,14 @@ import { Entity } from '../entity';
 import { Phase, SystemContext } from '../system';
 import { Query, World } from '../world';
 
-/**
- * Friction applied to the passive-motion velocity integrator each tick,
- * matching the gardn-style decay the old `moveEnemies` passive branch used.
- */
-const PASSIVE_FRICTION = 0.9;
-
 export interface MovementQueries {
     projectiles: Query;
-    drifting: Query;
 }
 
 export function createMovementQueries(world: World): MovementQueries {
     return {
         // Projectiles fly along a fixed heading; they never consult Velocity.
         projectiles: world.query([C.Position, C.Angle, C.Speed, C.Projectile], [C.IsDead]),
-        // Entities carrying PassiveMotion integrate a decaying velocity instead.
-        drifting: world.query([C.Position, C.Velocity, C.PassiveMotion], [C.IsDead]),
     };
 }
 
@@ -71,35 +62,16 @@ export function projectileFlightSystem(queries: MovementQueries) {
 }
 
 /**
- * Integrate the passive-motion velocity with friction.
+ * Register the projectile flight system in the Simulation phase.
  *
- * Separate from the projectile pass because the two have genuinely different
- * shapes — a heading and a speed versus a decaying velocity vector — and
- * merging them would put a branch in both hot loops.
+ * Passive mob drift used to live here as a dt-scaled friction integrator. That
+ * was wrong: the real gardn passive step is PER TICK with no deltaTime, uses a
+ * state-machine acceleration and clamps the resulting drift. It now lives in
+ * systems/enemyPassive.ts as a faithful port.
  */
-export function passiveDriftSystem(queries: MovementQueries) {
-    return (ctx: SystemContext): void => {
-        const { deltaTime } = ctx;
-
-        queries.drifting.chunks(chunk => {
-            const pos = chunk.cols(C.Position);
-            const vel = chunk.cols(C.Velocity);
-
-            for (let i = 0; i < chunk.count; i++) {
-                pos.x[i] += vel.x[i] * deltaTime;
-                pos.y[i] += vel.y[i] * deltaTime;
-                vel.x[i] *= PASSIVE_FRICTION;
-                vel.y[i] *= PASSIVE_FRICTION;
-            }
-        });
-    };
-}
-
-/** Register both movement systems in the Simulation phase. */
 export function registerMovementSystems(
     scheduler: { add: (name: string, phase: Phase, run: (ctx: SystemContext) => void) => unknown },
     queries: MovementQueries,
 ): void {
     scheduler.add('projectileFlight', Phase.Simulation, projectileFlightSystem(queries));
-    scheduler.add('passiveDrift', Phase.Simulation, passiveDriftSystem(queries));
 }

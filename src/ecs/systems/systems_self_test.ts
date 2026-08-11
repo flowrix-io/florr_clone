@@ -125,29 +125,11 @@ export function runSystemsSelfTest(): string[] {
         checkEqual('stamped source tier survives', h.world.get(p, C.ProjectileOrigin, 'sourceTier'), 2);
     }
 
-    // -- passive drift --------------------------------------------------------
-    {
-        const h = makeHarness();
-        const mob = spawnMob(h.world, {
-            id: 'drifter', type: 'bee', tier: 'common', x: 0, y: 0,
-            health: 10, maxHealth: 10, speed: 0, damage: 1, radius: 10, now: h.now,
-        });
-        h.world.add(mob, C.PassiveMotion, { state: C.PassiveState.Moving, stateStart: h.now });
-        h.world.write(mob, C.Velocity, { x: 300, y: 0 });
-
-        h.tick();
-        checkClose('passive drift integrates per second', h.world.get(mob, C.Position, 'x') as number, 300 * TICK_SECONDS, 1e-3);
-        checkClose('passive drift applies friction', h.world.get(mob, C.Velocity, 'x') as number, 270, 1e-2);
-
-        // A mob without PassiveMotion must not be integrated at all.
-        const still = spawnMob(h.world, {
-            id: 'still', type: 'bee', tier: 'common', x: 50, y: 0,
-            health: 10, maxHealth: 10, speed: 0, damage: 1, radius: 10, now: h.now,
-        });
-        h.world.write(still, C.Velocity, { x: 999, y: 999 });
-        h.tick();
-        checkEqual('non-drifting mob does not move', h.world.get(still, C.Position, 'x'), 50);
-    }
+    // NOTE: passive mob drift used to be tested here against a dt-scaled
+    // friction integrator in movement.ts. That system was wrong — the real
+    // gardn passive step is per-tick with a state-machine acceleration — and
+    // has been replaced by systems/enemyPassive.ts, which is covered by
+    // enemyAI_self_test.ts.
 
     // -- poison stacks --------------------------------------------------------
     {

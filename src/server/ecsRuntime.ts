@@ -15,7 +15,12 @@
  * system at a time with the wiring already in place and verified.
  */
 
-import { MAX_SPEED, PLAYER_SIZE, stepPlayerMovement } from '../constants';
+import {
+    MAX_SPEED,
+    PLAYER_SIZE,
+    resolveEntityWallCollisions,
+    stepPlayerMovement,
+} from '../constants';
 import { getSpeedMultiplier } from '../petal_actions';
 import { ServerPlayer } from '../player';
 
@@ -30,6 +35,14 @@ import {
     createLifetimeQueries,
     registerLifetimeSystems,
 } from '../ecs/systems/lifetime';
+import {
+    createCentipedeQueries,
+    registerCentipedeSystems,
+} from '../ecs/systems/centipede';
+import {
+    createEnemyPassiveQueries,
+    registerEnemyPassiveSystems,
+} from '../ecs/systems/enemyPassive';
 import {
     createMovementQueries,
     registerMovementSystems,
@@ -102,6 +115,16 @@ export function createEcsRuntime(lookupPlayer: LegacyPlayerLookup): EcsRuntime {
     });
 
     registerMovementSystems(scheduler, createMovementQueries(world));
+    registerEnemyPassiveSystems(scheduler, createEnemyPassiveQueries(world));
+
+    // The centipede passes take the real tile-grid resolver, so a chain pushed
+    // into geometry is corrected the same way every other wall contact is.
+    registerCentipedeSystems(
+        scheduler,
+        createCentipedeQueries(world),
+        (x, y, halfSize) => resolveEntityWallCollisions(x, y, halfSize),
+    );
+
     registerAfflictionSystems(scheduler, createAfflictionQueries(world));
     registerLifetimeSystems(scheduler, createLifetimeQueries(world));
 
