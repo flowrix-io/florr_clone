@@ -15,3 +15,4 @@ server_*.pid
 .Trashes
 ehthumbs.db
 Thumbs.db
+dist_ecs_test/
