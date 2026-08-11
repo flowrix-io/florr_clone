@@ -5,17 +5,13 @@ import {
     ACTUAL_WORLD_HEIGHT,
     PLAYER_SIZE,
     ENEMY_SIZE,
-    getTileState,
-    isTileIdBlocking,
     resolveEntityWallCollisions,
     checkTileCollision,
     MAX_SANE_WORLD_COORD
 } from '../constants';
-import { WALL_GRID } from '../map_data';
 import { getMobStats, getEnemySizeScale } from '../mobs';
 import { markEnemyDamaged } from './utils';
 import { markDeadAndEmit } from './shared/killHandler';
-import { isInMazeRegion, mazeBlocksLine } from '../maze';
 
 // Boundary threshold for wall extension (same as out-of-bounds zone)
 const BOUNDARY_THRESHOLD = 100;
@@ -183,40 +179,9 @@ export function checkProjectileWallCollision(
     return collision !== null && collision.collided;
 }
 
-/**
- * Check if there's a clear line of sight between two points (no walls or water blocking)
- * Uses raycasting with sample points along the line
- */
-export function hasLineOfSight(x1: number, y1: number, x2: number, y2: number, sampleCount: number = 20): boolean {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    // If points are very close, assume clear line of sight
-    if (distance < 10) {
-        return true;
-    }
-
-    // Maze region uses its own wall grid (WALL_GRID doesn't cover it).
-    if (isInMazeRegion(x1, y1) || isInMazeRegion(x2, y2)) {
-        return !mazeBlocksLine(x1, y1, x2, y2);
-    }
-    
-    // Sample points along the line
-    for (let i = 0; i <= sampleCount; i++) {
-        const t = i / sampleCount;
-        const sampleX = x1 + dx * t;
-        const sampleY = y1 + dy * t;
-        
-        // Any blocking tile (solid/water — built-in or custom) blocks line of sight
-        const state = getTileState(WALL_GRID, sampleX, sampleY);
-        if (isTileIdBlocking(state)) {
-            return false;
-        }
-    }
-    
-    return true; // Clear line of sight
-}
+// hasLineOfSight now lives in ./lineOfSight so callers that only need a
+// raycast do not have to import this module (which boots the server).
+export { hasLineOfSight } from './lineOfSight';
 
 // Broad-phase state for checkEnemyEnemyCollisions, reused across ticks.
 // Cell size must exceed the largest collision reach (two max mob radii +

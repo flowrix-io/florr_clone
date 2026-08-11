@@ -17,12 +17,13 @@
  * So this system's job is only: gather inputs from columns, decide a target
  * velocity, hand it to the shared physics, write the result back.
  *
- * The speed multiplier is injected for the same reason at a lower stake — it
- * reads the loadout and active effects, which are their own subsystem.
+ * Derived modifiers are NOT computed here. `PlayerModifiers.speedBoost` is
+ * written by the playerModifiers system from component state, so movement never
+ * reaches back into a ServerPlayer — that dual representation was the shape
+ * behind this codebase's split-half and staged-inventory bugs.
  */
 
 import * as C from '../components';
-import { Entity } from '../entity';
 import { Phase, SystemContext } from '../system';
 import { Query, World } from '../world';
 
@@ -50,12 +51,6 @@ export interface PlayerMovementDeps {
     playerSize: number;
     /** The shared physics step. Inject `stepPlayerMovement` verbatim. */
     step: StepPlayerMovement;
-    /**
-     * Equivalent of `getSpeedMultiplier(player)` — the product of active speed
-     * effects and petal modifiers. Injected because it reads the loadout and
-     * effect list, which are a separate subsystem.
-     */
-    speedMultiplier(entity: Entity): number;
 }
 
 /**
@@ -110,7 +105,7 @@ export function createPlayerMovementQueries(world: World): PlayerMovementQueries
  * prediction moves at exactly the server's speed.
  */
 export function playerMovementSystem(queries: PlayerMovementQueries, deps: PlayerMovementDeps) {
-    const { maxSpeed, playerSize, step, speedMultiplier } = deps;
+    const { maxSpeed, playerSize, step } = deps;
 
     // Reused across players so the per-tick input object is not reallocated.
     // `step` still returns a fresh object per call; that is one small object per
@@ -127,13 +122,14 @@ export function playerMovementSystem(queries: PlayerMovementQueries, deps: Playe
             const angle = chunk.cols(C.Angle);
             const input = chunk.cols(C.PlayerInput);
             const mods = chunk.cols(C.PlayerModifiers);
-            const entities = chunk.entities;
 
             for (let i = 0; i < chunk.count; i++) {
-                const entity = entities[i] as Entity;
-
                 // --- effective speed factor, clamped exactly as before -------
-                let speedFactor = mods.speedBoost[i] * speedMultiplier(entity);
+                // speedBoost is the product of every loadout and effect
+                // modifier, written by the playerModifiers system from
+                // COMPONENT state — so movement no longer reaches back into a
+                // ServerPlayer to compute it.
+                let speedFactor = mods.speedBoost[i];
                 if (!(speedFactor >= 0)) speedFactor = 1;          // NaN / negative
                 if (speedFactor > MAX_SPEED_FACTOR) speedFactor = MAX_SPEED_FACTOR;
                 mods.speedFactor[i] = speedFactor;

@@ -13,7 +13,8 @@
     "start": "npm run build:server && node --max-old-space-size=192 --optimize-for-size dist/server.js",
     "dev": "webpack --mode development --watch",
     "dev:server": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "start_nobuild": "node --max-old-space-size=192 --optimize-for-size dist/server.js"
+    "start_nobuild": "node --max-old-space-size=192 --optimize-for-size dist/server.js",
+    "harness:ecs": "node scripts/ecs-tick-harness.js"
   },
   "keywords": [],
   "author": "",

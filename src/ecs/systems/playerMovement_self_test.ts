@@ -50,7 +50,7 @@ export function runPlayerMovementSelfTest(): string[] {
         effectiveSize: number;
     }
 
-    function makeHarness(speedMultiplier: (e: Entity) => number = () => 1) {
+    function makeHarness(speedBoost = 1) {
         const world = new World();
         const scheduler = new Scheduler(world);
         const calls: StepCall[] = [];
@@ -58,7 +58,6 @@ export function runPlayerMovementSelfTest(): string[] {
         registerPlayerMovementSystem(scheduler, createPlayerMovementQueries(world), {
             maxSpeed: MAX_SPEED,
             playerSize: PLAYER_SIZE,
-            speedMultiplier,
             step: (state: PlayerMoveState, targetVX, targetVY, dt, effectiveSize) => {
                 calls.push({ targetVX, targetVY, dt, effectiveSize });
                 // Straight Euler: velocity becomes the target, position advances.
@@ -75,6 +74,7 @@ export function runPlayerMovementSelfTest(): string[] {
         return {
             world,
             calls,
+            speedBoost,
             tick(times = 1) {
                 for (let i = 0; i < times; i++) {
                     now += TICK_MS;
@@ -185,10 +185,10 @@ export function runPlayerMovementSelfTest(): string[] {
         // getSpeedMultiplier has no internal cap, so a stacked apex boost can
         // otherwise move the player thousands of px in a tick and land them at a
         // coordinate that hangs raycast loops elsewhere.
-        const h = makeHarness(() => 100);
+        const h = makeHarness();
         const p = addPlayer(h.world, 'fast');
         h.world.write(p, C.PlayerInput, { useMouse: 0, keys: ['d'] });
-        h.world.set(p, C.PlayerModifiers, 'speedBoost', 5);
+        h.world.set(p, C.PlayerModifiers, 'speedBoost', 500);
 
         h.tick();
         checkClose('speed factor caps at 8', h.calls[0].targetVX, MAX_SPEED * 8);
@@ -197,9 +197,10 @@ export function runPlayerMovementSelfTest(): string[] {
     }
 
     {
-        const h = makeHarness(() => NaN);
+        const h = makeHarness();
         const p = addPlayer(h.world, 'nan');
         h.world.write(p, C.PlayerInput, { useMouse: 0, keys: ['d'] });
+        h.world.set(p, C.PlayerModifiers, 'speedBoost', NaN);
 
         h.tick();
         checkClose('NaN speed factor falls back to 1', h.calls[0].targetVX, MAX_SPEED);
@@ -207,9 +208,10 @@ export function runPlayerMovementSelfTest(): string[] {
     }
 
     {
-        const h = makeHarness(() => -3);
+        const h = makeHarness();
         const p = addPlayer(h.world, 'neg');
         h.world.write(p, C.PlayerInput, { useMouse: 0, keys: ['d'] });
+        h.world.set(p, C.PlayerModifiers, 'speedBoost', -3);
 
         h.tick();
         checkClose('negative speed factor falls back to 1', h.calls[0].targetVX, MAX_SPEED);

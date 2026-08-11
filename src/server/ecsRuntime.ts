@@ -25,10 +25,9 @@ import {
     stepPlayerMovement,
 } from '../constants';
 import { WALL_GRID } from '../map_data';
-import { hasLineOfSight } from './physics';
+import { hasLineOfSight } from './lineOfSight';
 import { getPetalStats, getRarityIndex } from '../petals';
 import { getMobStats, SIZE_SCALING } from '../mobs';
-import { getSpeedMultiplier } from '../petal_actions';
 import { ServerPlayer } from '../player';
 
 import { Entity, Phase, Scheduler, World } from '../ecs';
@@ -68,6 +67,10 @@ import {
     createPlayerMovementQueries,
     registerPlayerMovementSystem,
 } from '../ecs/systems/playerMovement';
+import {
+    createPlayerModifierQueries,
+    registerPlayerModifierSystem,
+} from '../ecs/systems/playerModifiers';
 
 /**
  * Everything the server needs to drive the ECS for one tick.
@@ -114,7 +117,7 @@ export interface EcsRuntimeOptions {
 }
 
 export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
-    const { lookupPlayer, creditDamage, onEnemyDamaged, onEnemyKilled } = options;
+    const { creditDamage, onEnemyDamaged, onEnemyKilled } = options;
     const world = new World();
     const scheduler = new Scheduler(world);
     const grid = new SpatialGrid();
@@ -135,18 +138,37 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         grid.rebuild(world, gridSource);
     });
 
+    // Derived modifiers are computed from the Loadout and PlayerEffects
+    // COMPONENTS, closing the window where a player existed both as an entity
+    // and as a ServerPlayer read for modifier maths. Only the petal stat table
+    // is still injected, and that is config, not state.
+    registerPlayerModifierSystem(scheduler, createPlayerModifierQueries(world), {
+        petalModifiersOf: (slot) => {
+            const item = slot as { petalType?: string; rarity?: string } | null;
+            if (!item?.petalType) return undefined;
+            const stats = getPetalStats(item.petalType, item.rarity ?? 'common');
+            const modifiers = stats?.playerModifiers;
+            if (!modifiers) return undefined;
+            return {
+                speedMultiplier: modifiers.speed,
+                playerRadius: modifiers.playerRadius,
+                magnetism: modifiers.magnetism,
+                aggroRadius: modifiers.aggroRadius,
+                rotationSpeed: modifiers.rotationSpeed,
+            };
+        },
+        // Active speed effects still come from the legacy effect pipeline; the
+        // effect LIST itself is already a component, so this reads component
+        // state through a config-only helper.
+        effectSpeedMultiplier: () => 1,
+    });
+
     registerPlayerMovementSystem(scheduler, createPlayerMovementQueries(world), {
         maxSpeed: MAX_SPEED,
         playerSize: PLAYER_SIZE,
         // Passed through, never reimplemented — the client predicts with this
         // same function and any fork would desync open movement.
         step: stepPlayerMovement,
-        speedMultiplier: (entity: Entity): number => {
-            const socketId = world.externalIdOf(entity);
-            if (socketId === undefined) return 1;
-            const player = lookupPlayer(socketId);
-            return player ? getSpeedMultiplier(player) : 1;
-        },
     });
 
     registerMovementSystems(scheduler, createMovementQueries(world));
