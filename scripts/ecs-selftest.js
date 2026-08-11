@@ -43,6 +43,7 @@ function main() {
     const { runPlayerMovementSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'playerMovement_self_test.js'));
     const { runEnemyAiSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'enemyAI_self_test.js'));
     const { runEnemyAiBehaviourSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'enemyAI_behaviour_self_test.js'));
+    const { runCombatSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'combat_self_test.js'));
     const failures = [
         ...runEcsSelfTest(),
         ...runSystemsSelfTest(),
@@ -50,6 +51,7 @@ function main() {
         ...runPlayerMovementSelfTest(),
         ...runEnemyAiSelfTest(),
         ...runEnemyAiBehaviourSelfTest(),
+        ...runCombatSelfTest(),
     ];
 
     if (failures.length === 0) {
