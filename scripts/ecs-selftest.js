@@ -38,7 +38,8 @@ function main() {
     }
 
     const { runEcsSelfTest } = require(entry);
-    const failures = runEcsSelfTest();
+    const { runSystemsSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'systems_self_test.js'));
+    const failures = [...runEcsSelfTest(), ...runSystemsSelfTest()];
 
     if (failures.length === 0) {
         console.log('ECS self-test: ALL PASS');

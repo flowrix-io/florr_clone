@@ -44,8 +44,17 @@ import {
 /** Initial number of entity slots; grows geometrically. */
 const INITIAL_SLOTS = 1024;
 
-/** Values used to initialise a component when it is added. */
-export type ComponentInit<S extends Schema> = { [K in keyof S]?: number | string | boolean | object | null };
+/**
+ * Values used to initialise a component when it is added.
+ *
+ * Deliberately `unknown` per field rather than a union of the storable
+ * primitives: `obj` columns legitimately hold arbitrary payloads (loadouts,
+ * Maps, config objects) that callers often have only as `unknown`, and a
+ * narrower type here would force a cast at every prefab call site without
+ * catching anything — the field's storage type already decides how the value is
+ * used.
+ */
+export type ComponentInit<S extends Schema> = { [K in keyof S]?: unknown };
 
 /**
  * One archetype's worth of rows handed to a system.
