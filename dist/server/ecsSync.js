@@ -238,6 +238,29 @@ function syncFromEcs(world, enemies) {
             // The ECS killed it (pet melee); let legacy's reaper award the drop.
             enemy.health = 0;
         }
+        // Targeting must round-trip. Legacy code still reads targetPlayerId —
+        // trackDamage gates provocation on it (`!enemy.targetPlayerId`), a
+        // splitting centipede copies it to its children, and item drops use it
+        // for eligibility. Writing only INTO the ECS left those readers looking
+        // at a field the simulation no longer maintained, so a mob the ECS had
+        // acquired or dropped looked un-aggroed to every legacy consumer.
+        if (world.has(entity, C.MobAI)) {
+            const target = world.get(entity, C.MobAI, 'targetPlayer');
+            if (world.isAlive(target)) {
+                enemy.targetPlayerId = world.externalIdOf(target);
+            }
+            else if (enemy.targetPlayerId !== undefined) {
+                // Only clear once the ECS has genuinely dropped it, so a
+                // provocation applied by legacy later this tick survives.
+                enemy.targetPlayerId = undefined;
+            }
+            const targetEnemy = world.get(entity, C.MobAI, 'targetEnemy');
+            enemy.targetEnemyId = world.isAlive(targetEnemy)
+                ? world.externalIdOf(targetEnemy) : undefined;
+            const targetPet = world.get(entity, C.MobAI, 'targetPet');
+            enemy.targetPetId = world.isAlive(targetPet)
+                ? world.externalIdOf(targetPet) : undefined;
+        }
         // Centipede chain links can be re-headed by the repair pass.
         if (world.has(entity, C.CentipedeSegment)) {
             const leader = world.get(entity, C.CentipedeSegment, 'leader');

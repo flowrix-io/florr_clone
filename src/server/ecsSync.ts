@@ -40,18 +40,6 @@ import * as C from '../ecs/components';
 import { EcsRuntime } from './ecsRuntime';
 import { importEnemy, importPlayer, linkEnemyReferences } from './ecsBridge';
 
-/**
- * Kill switch.
- *
- * Set `ECS_SIMULATION=0` to fall straight back to the legacy `moveEnemies`
- * path without a redeploy. This is a live game on a memory-capped box; a
- * rewrite of the hot loop needs a way to be turned off from the shell at 3am,
- * not a rollback.
- */
-export function ecsSimulationEnabled(): boolean {
-    return process.env.ECS_SIMULATION !== '0';
-}
-
 /** Systems legacy still owns, disabled so the two do not both act. */
 const LEGACY_OWNED_SYSTEMS = [
     'playerMovement',    // legacy updatePlayerState still moves players
