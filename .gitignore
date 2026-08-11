@@ -16,3 +16,4 @@ server_*.pid
 ehthumbs.db
 Thumbs.db
 dist_ecs_test/
+dist_bench/

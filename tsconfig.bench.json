@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "outDir": "./dist_bench",
+    "noUnusedLocals": false
+  }
+}
