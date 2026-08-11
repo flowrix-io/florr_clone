@@ -68,6 +68,8 @@ Object.defineProperty(exports, "trackDamage", { enumerable: true, get: function 
 Object.defineProperty(exports, "sendBossMobDefeatedMessage", { enumerable: true, get: function () { return utils_1.sendBossMobDefeatedMessage; } });
 const guildManager_1 = require("./server/guildManager");
 const physics_1 = require("./server/physics");
+const ecsRuntime_1 = require("./server/ecsRuntime");
+const ecsSync_1 = require("./server/ecsSync");
 const enemyAI_1 = require("./server/enemyAI");
 const tickBroadcast_1 = require("./server/tickBroadcast");
 const connection_1 = require("./server/connection");
@@ -1195,13 +1197,81 @@ function spawnWaveMobs() {
  * because it awards XP, rolls drops and touches the database.
  */
 function moveEnemies() {
+    if ((0, ecsSync_1.ecsSimulationEnabled)()) {
+        moveEnemiesEcs();
+    }
+    else {
+        moveEnemiesLegacy();
+    }
+    // Reaping stays here either way: it awards XP, rolls drops and touches the
+    // database, none of which is ported.
+    reapDeadEnemies();
+    // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
+}
+/** The original path, kept intact as the fallback behind ECS_SIMULATION=0. */
+function moveEnemiesLegacy() {
     const ctx = (0, enemyAI_1.beginEnemyTick)(Date.now());
     (0, enemyAI_1.repairSeveredCentipedeChains)(ctx);
     constants_2.enemies.forEach(enemy => (0, enemyAI_1.stepEnemy)(enemy, ctx));
     (0, enemyAI_1.propagateCentipedeChains)(ctx);
     (0, physics_1.checkEnemyEnemyCollisions)(constants_2.enemies, io);
-    reapDeadEnemies();
-    // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
+}
+/**
+ * Mob simulation on the ECS.
+ *
+ * Legacy state is pushed in, the ECS scheduler runs AI / drift / chains /
+ * mob collision, and the results are written back onto the same Enemy objects
+ * that petals, the broadcast and the reaper already read — so nothing
+ * downstream knows the simulation moved. See server/ecsSync.ts for the
+ * ownership split and why lifecycle deliberately stays with legacy.
+ */
+function moveEnemiesEcs() {
+    const now = Date.now();
+    const runtime = getEcsRuntime();
+    (0, ecsSync_1.syncToEcs)(runtime.world, constants_2.enemies, constants_2.players, now);
+    // deltaTime is nominal here on purpose: the ported mob step is a FIXED
+    // per-call step, exactly as the legacy one was, and moveEnemies is called
+    // mobCatchupCalls times rather than being handed a larger dt.
+    runtime.tick(1 / 30, 1000 / 30, now);
+    (0, ecsSync_1.syncFromEcs)(runtime.world, constants_2.enemies);
+}
+/**
+ * The ECS runtime, built on first use so nothing is constructed on servers
+ * running with the simulation switched off.
+ */
+let _ecsRuntime;
+function getEcsRuntime() {
+    if (_ecsRuntime)
+        return _ecsRuntime;
+    _ecsRuntime = (0, ecsRuntime_1.createEcsRuntime)({
+        lookupPlayer: (socketId) => constants_2.players[socketId],
+        // Pet kills are credited to the owning PLAYER, matching trackDamage.
+        creditDamage: (victim, ownerPlayer, amount) => {
+            const world = _ecsRuntime.world;
+            const victimId = world.externalIdOf(victim);
+            const ownerId = world.externalIdOf(ownerPlayer);
+            if (!victimId || !ownerId)
+                return;
+            const enemy = constants_2.enemies.find(e => e.id === victimId);
+            if (enemy)
+                (0, utils_1.trackDamage)(enemy, ownerId, amount);
+        },
+        onEnemyDamaged: (victim) => {
+            const world = _ecsRuntime.world;
+            const victimId = world.externalIdOf(victim);
+            if (!victimId)
+                return;
+            const enemy = constants_2.enemies.find(e => e.id === victimId);
+            if (enemy)
+                (0, utils_1.markEnemyDamaged)(enemy);
+        },
+        // Death is left to reapDeadEnemies: syncFromEcs zeroes the legacy
+        // health, and the existing reaper awards XP and drops from there.
+        onEnemyKilled: () => { },
+    });
+    (0, ecsSync_1.configureCutover)(_ecsRuntime);
+    console.log('[ECS] mob simulation ENABLED (set ECS_SIMULATION=0 to fall back)');
+    return _ecsRuntime;
 }
 // A dying ant hole sometimes has a digger under it (gardn Death.cc, gated on
 // DIGGER_SPAWN_CHANCE). This is the digger's ONLY spawn path — its section list

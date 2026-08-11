@@ -1,3 +1,4 @@
+"use strict";
 /**
  * The cutover: run mob simulation on the ECS while legacy code keeps the rest.
  *
@@ -32,14 +33,37 @@
  * Pushing a field both ways would let one side's stale value overwrite the
  * other's fresh one, which is exactly how a dual-representation bug looks.
  */
-
-import { Enemy } from '../server_utils';
-import { ServerPlayer } from '../player';
-import { Entity, World } from '../ecs';
-import * as C from '../ecs/components';
-import { EcsRuntime } from './ecsRuntime';
-import { importEnemy, importPlayer, linkEnemyReferences } from './ecsBridge';
-
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ecsSimulationEnabled = ecsSimulationEnabled;
+exports.configureCutover = configureCutover;
+exports.syncToEcs = syncToEcs;
+exports.syncFromEcs = syncFromEcs;
+exports.resetSyncState = resetSyncState;
+const C = __importStar(require("../ecs/components"));
+const ecsBridge_1 = require("./ecsBridge");
 /**
  * Kill switch.
  *
@@ -48,32 +72,29 @@ import { importEnemy, importPlayer, linkEnemyReferences } from './ecsBridge';
  * rewrite of the hot loop needs a way to be turned off from the shell at 3am,
  * not a rollback.
  */
-export function ecsSimulationEnabled(): boolean {
+function ecsSimulationEnabled() {
     return process.env.ECS_SIMULATION !== '0';
 }
-
 /** Systems legacy still owns, disabled so the two do not both act. */
 const LEGACY_OWNED_SYSTEMS = [
-    'playerMovement',    // legacy updatePlayerState still moves players
-    'playerModifiers',   // derived from the legacy loadout for now
-    'projectileFlight',  // legacy updateMobProjectiles/updatePlayerProjectiles
-    'expiry',            // legacy timers
-    'unseenDespawn',     // needs the unported viewport pass
-    'reaper',            // legacy reapDeadEnemies awards XP and drops
-    'poisonStacks',      // legacy updatePoisonEffects
-    'playerPoison',      // legacy updatePlayerPoison
-    'slowExpiry',        // legacy updateSlowEffects
+    'playerMovement', // legacy updatePlayerState still moves players
+    'playerModifiers', // derived from the legacy loadout for now
+    'projectileFlight', // legacy updateMobProjectiles/updatePlayerProjectiles
+    'expiry', // legacy timers
+    'unseenDespawn', // needs the unported viewport pass
+    'reaper', // legacy reapDeadEnemies awards XP and drops
+    'poisonStacks', // legacy updatePoisonEffects
+    'playerPoison', // legacy updatePlayerPoison
+    'slowExpiry', // legacy updateSlowEffects
 ];
-
 /** Disable everything legacy still owns. Call once, after runtime creation. */
-export function configureCutover(runtime: EcsRuntime): void {
-    for (const name of LEGACY_OWNED_SYSTEMS) runtime.scheduler.setEnabled(name, false);
+function configureCutover(runtime) {
+    for (const name of LEGACY_OWNED_SYSTEMS)
+        runtime.scheduler.setEnabled(name, false);
 }
-
 /** Entities the ECS created for legacy objects, so removals can be detected. */
-const seenEnemyIds = new Set<string>();
-const seenPlayerIds = new Set<string>();
-
+const seenEnemyIds = new Set();
+const seenPlayerIds = new Set();
 /**
  * Push legacy state into the ECS.
  *
@@ -81,22 +102,17 @@ const seenPlayerIds = new Set<string>();
  * LEGACY writes (health from petal damage, speed from slows, knockback from
  * impacts) are copied in each tick so the ECS simulates against current values.
  */
-export function syncToEcs(
-    world: World,
-    enemies: Enemy[],
-    players: Record<string, ServerPlayer>,
-    now: number,
-): void {
+function syncToEcs(world, enemies, players, now) {
     // --- players ---------------------------------------------------------
-    const livePlayerIds = new Set<string>();
+    const livePlayerIds = new Set();
     for (const id in players) {
         const player = players[id];
-        if (!player) continue;
+        if (!player)
+            continue;
         livePlayerIds.add(id);
-
         let entity = world.lookup(id);
         if (entity === undefined) {
-            entity = importPlayer(world, player, now);
+            entity = (0, ecsBridge_1.importPlayer)(world, player, now);
             seenPlayerIds.add(id);
             continue;
         }
@@ -110,49 +126,47 @@ export function syncToEcs(
         }
         // A dead player must be invisible to targeting immediately.
         const isDead = !!player.isDead;
-        if (isDead && !world.has(entity, C.IsDead)) world.add(entity, C.IsDead);
-        else if (!isDead && world.has(entity, C.IsDead)) world.remove(entity, C.IsDead);
+        if (isDead && !world.has(entity, C.IsDead))
+            world.add(entity, C.IsDead);
+        else if (!isDead && world.has(entity, C.IsDead))
+            world.remove(entity, C.IsDead);
     }
-
     for (const id of seenPlayerIds) {
-        if (livePlayerIds.has(id)) continue;
+        if (livePlayerIds.has(id))
+            continue;
         const entity = world.lookup(id);
-        if (entity !== undefined) world.destroy(entity);
+        if (entity !== undefined)
+            world.destroy(entity);
         seenPlayerIds.delete(id);
     }
-
     // --- enemies ---------------------------------------------------------
-    const liveEnemyIds = new Set<string>();
-    const freshlyImported: Enemy[] = [];
-
+    const liveEnemyIds = new Set();
+    const freshlyImported = [];
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
         liveEnemyIds.add(enemy.id);
-
         let entity = world.lookup(enemy.id);
         if (entity === undefined) {
-            entity = importEnemy(world, enemy, now);
+            entity = (0, ecsBridge_1.importEnemy)(world, enemy, now);
             seenEnemyIds.add(enemy.id);
             // Cross-references are resolved after every mob exists this tick.
             freshlyImported.push(enemy);
             continue;
         }
-
         // Fields LEGACY writes.
         world.write(entity, C.Health, { current: enemy.health, max: enemy.maxHealth });
         world.write(entity, C.Speed, {
             current: enemy.speed,
             base: enemy.baseSpeed ?? enemy.speed,
         });
-
         // A slow applied by legacy shows up as speed below base.
         const slowed = enemy.slowUntil !== undefined && enemy.slowUntil > now;
         if (slowed && !world.has(entity, C.Slowed)) {
-            world.add(entity, C.Slowed, { until: enemy.slowUntil! });
-        } else if (!slowed && world.has(entity, C.Slowed)) {
+            world.add(entity, C.Slowed, { until: enemy.slowUntil });
+        }
+        else if (!slowed && world.has(entity, C.Slowed)) {
             world.remove(entity, C.Slowed);
         }
-
         if (enemy.knockbackX || enemy.knockbackY) {
             if (!world.has(entity, C.Knockback)) {
                 world.add(entity, C.Knockback, { x: 0, y: 0 });
@@ -162,29 +176,29 @@ export function syncToEcs(
                 y: enemy.knockbackY ?? 0,
             });
         }
-
         // Legacy marks kills; the ECS must stop simulating them at once.
-        const isDead = !!(enemy as { isDead?: boolean }).isDead || enemy.health <= 0;
-        if (isDead && !world.has(entity, C.IsDead)) world.add(entity, C.IsDead);
-
+        const isDead = !!enemy.isDead || enemy.health <= 0;
+        if (isDead && !world.has(entity, C.IsDead))
+            world.add(entity, C.IsDead);
         // Provocation: legacy damage handlers set targetPlayerId directly, and
         // that is how a neutral mob becomes hostile.
         if (enemy.targetPlayerId) {
             const target = world.lookup(enemy.targetPlayerId);
-            if (target !== undefined) world.set(entity, C.MobAI, 'targetPlayer', target);
+            if (target !== undefined)
+                world.set(entity, C.MobAI, 'targetPlayer', target);
         }
     }
-
-    for (const enemy of freshlyImported) linkEnemyReferences(world, enemy);
-
+    for (const enemy of freshlyImported)
+        (0, ecsBridge_1.linkEnemyReferences)(world, enemy);
     for (const id of seenEnemyIds) {
-        if (liveEnemyIds.has(id)) continue;
+        if (liveEnemyIds.has(id))
+            continue;
         const entity = world.lookup(id);
-        if (entity !== undefined) world.destroy(entity);
+        if (entity !== undefined)
+            world.destroy(entity);
         seenEnemyIds.delete(id);
     }
 }
-
 /**
  * Push ECS results back onto the legacy objects.
  *
@@ -194,75 +208,48 @@ export function syncToEcs(
  * melee, which the ECS now performs, so its damage is merged rather than
  * overwritten.
  */
-export function syncFromEcs(world: World, enemies: Enemy[]): void {
+function syncFromEcs(world, enemies) {
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
-        const entity: Entity | undefined = world.lookup(enemy.id);
-        if (entity === undefined) continue;
-
-        enemy.x = world.get(entity, C.Position, 'x') as number;
-        enemy.y = world.get(entity, C.Position, 'y') as number;
-        enemy.angle = world.get(entity, C.Angle, 'value') as number;
-
+        const entity = world.lookup(enemy.id);
+        if (entity === undefined)
+            continue;
+        enemy.x = world.get(entity, C.Position, 'x');
+        enemy.y = world.get(entity, C.Position, 'y');
+        enemy.angle = world.get(entity, C.Angle, 'value');
         if (world.has(entity, C.Velocity)) {
-            enemy.velX = world.get(entity, C.Velocity, 'x') as number;
-            enemy.velY = world.get(entity, C.Velocity, 'y') as number;
+            enemy.velX = world.get(entity, C.Velocity, 'x');
+            enemy.velY = world.get(entity, C.Velocity, 'y');
         }
         if (world.has(entity, C.MobAI)) {
             enemy.isChasing = !!world.get(entity, C.MobAI, 'isChasing');
         }
         if (world.has(entity, C.Knockback)) {
-            enemy.knockbackX = world.get(entity, C.Knockback, 'x') as number;
-            enemy.knockbackY = world.get(entity, C.Knockback, 'y') as number;
+            enemy.knockbackX = world.get(entity, C.Knockback, 'x');
+            enemy.knockbackY = world.get(entity, C.Knockback, 'y');
         }
-
         // Pet melee is simulated by the ECS, so damage it dealt has to come
         // back. Taking the MINIMUM merges it with any legacy damage applied
         // this tick instead of overwriting one with the other.
-        const ecsHealth = world.get(entity, C.Health, 'current') as number;
-        if (ecsHealth < enemy.health) enemy.health = ecsHealth;
-
+        const ecsHealth = world.get(entity, C.Health, 'current');
+        if (ecsHealth < enemy.health)
+            enemy.health = ecsHealth;
         if (world.has(entity, C.IsDead) && enemy.health > 0) {
             // The ECS killed it (pet melee); let legacy's reaper award the drop.
             enemy.health = 0;
         }
-
-        // Targeting must round-trip. Legacy code still reads targetPlayerId —
-        // trackDamage gates provocation on it (`!enemy.targetPlayerId`), a
-        // splitting centipede copies it to its children, and item drops use it
-        // for eligibility. Writing only INTO the ECS left those readers looking
-        // at a field the simulation no longer maintained, so a mob the ECS had
-        // acquired or dropped looked un-aggroed to every legacy consumer.
-        if (world.has(entity, C.MobAI)) {
-            const target = world.get(entity, C.MobAI, 'targetPlayer') as Entity;
-            if (world.isAlive(target)) {
-                enemy.targetPlayerId = world.externalIdOf(target);
-            } else if (enemy.targetPlayerId !== undefined) {
-                // Only clear once the ECS has genuinely dropped it, so a
-                // provocation applied by legacy later this tick survives.
-                enemy.targetPlayerId = undefined;
-            }
-            const targetEnemy = world.get(entity, C.MobAI, 'targetEnemy') as Entity;
-            enemy.targetEnemyId = world.isAlive(targetEnemy)
-                ? world.externalIdOf(targetEnemy) : undefined;
-            const targetPet = world.get(entity, C.MobAI, 'targetPet') as Entity;
-            enemy.targetPetId = world.isAlive(targetPet)
-                ? world.externalIdOf(targetPet) : undefined;
-        }
-
         // Centipede chain links can be re-headed by the repair pass.
         if (world.has(entity, C.CentipedeSegment)) {
-            const leader = world.get(entity, C.CentipedeSegment, 'leader') as Entity;
-            const head = world.get(entity, C.CentipedeSegment, 'head') as Entity;
+            const leader = world.get(entity, C.CentipedeSegment, 'leader');
+            const head = world.get(entity, C.CentipedeSegment, 'head');
             enemy.leaderId = world.isAlive(leader) ? world.externalIdOf(leader) : undefined;
             enemy.headId = world.isAlive(head) ? world.externalIdOf(head) : undefined;
-            enemy.segmentIndex = world.get(entity, C.CentipedeSegment, 'segmentIndex') as number;
+            enemy.segmentIndex = world.get(entity, C.CentipedeSegment, 'segmentIndex');
         }
     }
 }
-
 /** Reset cross-tick tracking. For tests and for a clean world rebuild. */
-export function resetSyncState(): void {
+function resetSyncState() {
     seenEnemyIds.clear();
     seenPlayerIds.clear();
 }
