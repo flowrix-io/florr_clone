@@ -101,6 +101,13 @@ export interface ProjectileSpawn {
     sourceTier?: string;
     /** True for player-fired projectiles. */
     fromPlayer: boolean;
+    /**
+     * Wire id, minted by the caller from the monotonic per-kind counter.
+     *
+     * Required rather than derived: the entity handle is recycled and must never
+     * reach a client, so every spawn site has to go and get a real id.
+     */
+    netId: number;
     now: number;
 }
 
@@ -139,6 +146,7 @@ export function spawnProjectile(world: World, spec: ProjectileSpawn): Entity {
         sourceTier: spec.sourceTier === undefined ? 0 : rarityToId(spec.sourceTier),
     });
     world.add(e, C.ProjectileSync, { spawnTime: spec.now, lastSyncTime: spec.now });
+    world.add(e, C.NetId, { id: spec.netId });
     world.add(e, C.IsProjectile);
     if (spec.fromPlayer) world.add(e, C.FromPlayer);
     return e;

@@ -37,7 +37,7 @@ export function registerWorldHandlers(game: any): void {
         handleEnemyUpdate(enemy);
     });
 
-    // Delta projectile protocol — see server.ts updateMobProjectiles for the wire format.
+    // Delta projectile protocol — see src/ecs/net/projectileEncoder.ts for the wire format.
     // The client adds projectiles on mpSpawn / ppSpawn, removes them on mpRemove /
     // ppRemove, and dead-reckons positions each frame in Game.update() using the
     // angle/speed stored on the projectile. No periodic re-sync: straight-line motion

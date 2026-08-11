@@ -1,7 +1,6 @@
 import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer, canPetalsDamagePlayer } from '../player';
 import { Enemy } from '../server_utils';
-import { PlayerProjectile } from '../enemy';
 import { WorldItem } from '../item';
 import { RARITY_LEVELS, getRarityIndex, Rarity, getAllPetalTypes, getPetalStats, getEffectivePetalCooldown } from '../petals';
 import {
@@ -34,11 +33,8 @@ import { WORLD_MAP } from '../map_data';
 import {
     items,
     playerUserIds,
-    mobProjectiles,
-    playerProjectiles,
     petalLastProjectileTime,
     petalLastRadiationTime,
-    allocatePlayerProjectileId,
     itemExpirationTimeouts,
     ITEM_EXPIRATION_TIMES,
     groundPollens,
@@ -751,6 +747,51 @@ export interface PlayerStateDependencies {
     useHttps: boolean;
     database: any;
     trackMobKill: (enemy: Enemy, players: Record<string, ServerPlayer>, playerUserIds: Record<string, string>, database: any, io: SocketIOServer, savePlayerProgress?: (player: ServerPlayer, userId: string) => void) => void;
+    /**
+     * The two places petals still touch projectiles, now that projectiles are
+     * ECS entities.
+     *
+     * Injected rather than imported so this module keeps knowing nothing about
+     * the ECS — and, more importantly, so the ECS keeps knowing nothing about
+     * this module: playerState.ts binds a port at module scope, and any import
+     * edge from src/ecs/** back to here boots a real server inside the headless
+     * harness (which asserts against exactly that).
+     */
+    projectiles: ProjectileBridge;
+}
+
+/** Damage a mob projectile deals to whatever blocked it. */
+export interface BlockedProjectile {
+    damage: number;
+}
+
+/** The petal <-> ECS-projectile boundary. Implemented in server.ts. */
+export interface ProjectileBridge {
+    /** Spawn a player-fired projectile. Speed is pixels per MILLISECOND. */
+    spawn(spec: {
+        playerId: string;
+        x: number;
+        y: number;
+        angle: number;
+        speed: number;
+        maxDistance: number;
+        petalType: string;
+        petalRarity: string;
+        damage: number;
+        health: number;
+        size: number;
+        now: number;
+    }): void;
+    /**
+     * Run `visit` for every mob projectile a petal at (x, y) is overlapping.
+     * The return value is the damage the petal deals back to that projectile.
+     */
+    forEachBlocking(
+        x: number,
+        y: number,
+        petalRadius: number,
+        visit: (projectile: BlockedProjectile) => number,
+    ): void;
 }
 
 /**
@@ -2247,27 +2288,24 @@ export function updatePlayerState(
                             finalAngle = projectileAngle + spreadOffset;
                         }
 
-                        const projectile: PlayerProjectile = {
-                            id: allocatePlayerProjectileId(),
+                        // NOTE: a player projectile does NOT get the rarity
+                        // distance/size scaling a mob volley gets (see
+                        // ecs/systems/projectileFiring.ts) — it inherits the
+                        // petal's own size and the config's flat distance.
+                        deps.projectiles.spawn({
                             playerId: player.id,
                             x: petalX,
                             y: petalY,
-                            startX: petalX,
-                            startY: petalY,
                             angle: finalAngle,
                             speed: projectileSpeed / 1000, // Convert to pixels per millisecond
-                            distance: 0,
                             maxDistance: projectileConfig.distance,
                             petalType: petal.petalType,
                             petalRarity: petal.rarity,
                             damage: petalStats.damage,
                             size: effectiveSize,
                             health: petalStats.health,
-                            maxHealth: petalStats.health,
-                            spawnTime: currentTime
-                        };
-
-                        playerProjectiles.push(projectile);
+                            now: currentTime,
+                        });
                     }
 
                     // Update last shot time for this petal instance
@@ -2592,44 +2630,27 @@ export function updatePlayerState(
                         }
                     }
 
-            // Check collision with mob projectiles (treat them as enemy petals)
-            for (let projIdx = mobProjectiles.length - 1; projIdx >= 0; projIdx--) {
-                const mobProjectile = mobProjectiles[projIdx];
-                
-                // Skip destroyed projectiles
-                if (!mobProjectile || mobProjectile.health <= 0) {
-                    continue;
-                }
-                
-                const projectileSize = mobProjectile.size * 20; // Convert to pixels
-                const projectileRadius = projectileSize / 2;
-                const petalSize = 40 * effectiveSize; // Use effective size (custom or base)
-                const petalRadius = petalSize / 2;
-                
-                const dx = mobProjectile.x - petalX;
-                const dy = mobProjectile.y - petalY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const minDistance = projectileRadius + petalRadius;
-                
-                if (distance < minDistance && distance > 0) {
-                    // Player petal hits mob projectile - deal damage to both
-                    const damageMultiplier = getDamageMultiplier(player);
-                    const finalDamage = petalStats.damage * damageMultiplier;
-                    
-                    // Damage the mob projectile
-                    mobProjectile.health -= finalDamage;
-                    
-                    // Damage the player petal (mob projectile acts as enemy petal)
-                    const projectilePetalStats = getPetalStats(mobProjectile.petalType, mobProjectile.petalRarity);
-                    const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : mobProjectile.damage;
-                    const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
-                    setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevProjInstanceHealth - projectileDamage));
-                    
-                    // Remove projectile if destroyed
-                    if (mobProjectile.health <= 0) {
-                        mobProjectiles.splice(projIdx, 1);
+            // Petals block mob projectiles: each side damages the other, exactly
+            // as if the projectile were an enemy petal. The projectile lives in
+            // the ECS now, so the bridge does the overlap test and applies the
+            // damage this callback returns; the petal side stays here because
+            // petal instance health is legacy state.
+            {
+                // Resolved lazily: the callback fires only on an actual block,
+                // and this runs for every petal instance of every player.
+                let projectileDamageMultiplier = -1;
+                const petalBlockRadius = (40 * effectiveSize) / 2;
+                deps.projectiles.forEachBlocking(petalX, petalY, petalBlockRadius, (mobProjectile) => {
+                    if (projectileDamageMultiplier < 0) {
+                        projectileDamageMultiplier = getDamageMultiplier(player);
                     }
-                }
+                    const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                    setInstanceHealth(
+                        petal, instanceIndex, petalStats,
+                        Math.max(0, prevProjInstanceHealth - mobProjectile.damage),
+                    );
+                    return petalStats.damage * projectileDamageMultiplier;
+                });
             }
 
                     // Handle petal collision for wait_until_collision actions

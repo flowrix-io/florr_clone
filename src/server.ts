@@ -44,7 +44,6 @@ import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, SAND
 import { WALL_GRID } from './map_data';
 import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
 import { WorldItem } from './item';
-import { getPetalStats } from './petals';
 import { getMobStats, getAllMobTypes, getEnemySizeScale } from './mobs';
 
 // Import from refactored modules
@@ -65,10 +64,15 @@ import {
 } from './server/guildManager';
 import {
     checkItemWallCollisions,
-    checkProjectileWallCollision,
 } from './server/physics';
 import { createEcsRuntime, EcsRuntime } from './server/ecsRuntime';
-import { configureCutover, syncFromEcs, syncToEcs } from './server/ecsSync';
+import { configureCutover, ensurePlayerEntity, syncFromEcs, syncToEcs } from './server/ecsSync';
+import { Entity } from './ecs';
+import {
+    diffRemoved,
+    encodeProjectilesInBox,
+    ProjectileWire,
+} from './ecs/net/projectileEncoder';
 import {
     buildPlayerSnapshots,
     broadcastGameState,
@@ -96,12 +100,12 @@ import {
     sands,
     ENEMY_COUNT,
     playerUserIds,
-    mobProjectiles,
-    playerProjectiles,
     petalLastProjectileTime,
     petalLastRadiationTime,
     knownMobProjectilesByPlayer,
     knownPlayerProjectilesByPlayer,
+    allocateMobProjectileId,
+    allocatePlayerProjectileId,
     itemExpirationTimeouts,
     ITEM_EXPIRATION_TIMES,
     groundPollens,
@@ -1096,7 +1100,14 @@ const playerStateDeps: PlayerStateDependencies = {
     currentServerPort: CURRENT_SERVER_PORT,
     useHttps: USE_HTTPS,
     database,
-    trackMobKill
+    trackMobKill,
+    // Lazy on purpose: this bag is built at module scope, long before the ECS
+    // runtime is constructed on first tick.
+    projectiles: {
+        spawn: (spec) => getEcsRuntime().spawnPlayerProjectile(spec),
+        forEachBlocking: (x, y, petalRadius, visit) =>
+            getEcsRuntime().forEachMobProjectileHitting(x, y, petalRadius, visit),
+    }
 };
 
 // Kill-handler context for the consolidated death sequence (see shared/killHandler).
@@ -1456,10 +1467,107 @@ function getEcsRuntime(): EcsRuntime {
         // health, and the existing reaper awards XP and drops from there.
         onEnemyKilled: () => { /* handled by reapDeadEnemies */ },
         isNearAnyPlayer: isPositionNearAnyPlayer,
+
+        // --- projectiles -------------------------------------------------
+        // The wire-id counters stay in gameState because they are broadcast
+        // bookkeeping, not simulation state.
+        allocateProjectileNetId: (fromPlayer) =>
+            fromPlayer ? allocatePlayerProjectileId() : allocateMobProjectileId(),
+        resolvePlayerEntity: (socketId) => {
+            const player = players[socketId];
+            if (!player) return undefined;
+            return ensurePlayerEntity(_ecsRuntime!.world, player, Date.now());
+        },
+        playerRadiusOf: (entity) => {
+            const player = playerFromEntity(entity);
+            return (PLAYER_SIZE / 2) * (player?.sizeMultiplier ?? 1.0);
+        },
+        damageMultiplierOf: (entity) => {
+            const player = playerFromEntity(entity);
+            return player ? getDamageMultiplier(player) : undefined;
+        },
+        onPlayerHit: applyProjectileHitToPlayer,
+        emitEnemyDamaged: (victim, health) => {
+            const enemyId = _ecsRuntime!.world.externalIdOf(victim);
+            if (enemyId) io.emit('enemyDamaged', { enemyId, health });
+        },
+        onProjectileKill: (victim, killer, timing) => {
+            const world = _ecsRuntime!.world;
+            const victimId = world.externalIdOf(victim);
+            if (!victimId) return;
+            const index = enemies.findIndex(e => e.id === victimId);
+            if (index < 0) return;
+            killEnemy(enemies[index], index, enemies, killCtx, {
+                killerPlayerId: world.externalIdOf(killer),
+                trackMobKillTiming: timing,
+            });
+        },
     });
     configureCutover(_ecsRuntime);
     console.log('[ECS] mob simulation initialised');
     return _ecsRuntime;
+}
+
+/** The ServerPlayer behind an ECS entity, if it is still in the world. */
+function playerFromEntity(entity: Entity): ServerPlayer | undefined {
+    const id = _ecsRuntime!.world.externalIdOf(entity);
+    return id ? players[id] : undefined;
+}
+
+/**
+ * Apply a mob projectile's hit to a player.
+ *
+ * This stays on the legacy side because every line of it is legacy-owned state:
+ * the direct x/y write is what the client reconciles its prediction against,
+ * `playerDamaged` is emitted UNCONDITIONALLY (that is what keeps a client's
+ * health bar and knockback in sync even while invulnerable), and glitch
+ * infection applies even when the damage does not — a glitch mob's shot marks
+ * you on contact, and the mark lasts until respawn.
+ */
+function applyProjectileHitToPlayer(
+    entity: Entity,
+    damage: number,
+    knockbackX: number,
+    knockbackY: number,
+    sourceTypeName: string,
+): boolean {
+    const player = playerFromEntity(entity);
+    if (!player) return false;
+
+    // Written straight onto the player: the ECS must not do this itself, because
+    // syncToEcs pushes each player's legacy position back INTO the ECS every
+    // tick and would overwrite the write before it could be broadcast.
+    player.x += knockbackX;
+    player.y += knockbackY;
+
+    if (isGlitchInfectingType(sourceTypeName)) player.glitched = true;
+
+    let damageDealt = 0;
+    if (!player.isInvulnerable) {
+        damageDealt = damage;
+        player.health -= damageDealt;
+
+        if (player.health <= 0) {
+            player.isDead = true;
+            player.health = 0;
+            despawnAllPlayerPets(player.id, io);
+            io.emit('playerDied', { playerId: player.id });
+        }
+    }
+
+    io.emit('playerDamaged', {
+        playerId: player.id,
+        health: player.health,
+        maxHealth: player.maxHealth,
+        isInvulnerable: player.isInvulnerable,
+        knockbackX,
+        knockbackY,
+        damageDealt,
+    });
+
+    // Reported back so the rest of an incoming volley skips a flower that just
+    // died, exactly as the legacy `if (player.isDead) continue` did.
+    return !player.isDead;
 }
 
 // A dying ant hole sometimes has a digger under it (gardn Death.cc, gated on
@@ -1517,442 +1625,63 @@ function reapDeadEnemies() {
     }
 }
 
-// Update and move mob projectiles
-function updateMobProjectiles(deltaTimeMs: number) {
-    if (mobProjectiles.length === 0) return;
-    // Hoisted out of the per-projectile loop: each iteration used to allocate
-    // Object.values(players) AND linear-scan all ~1400 enemies for its shooter.
-    const playerArray: ServerPlayer[] = Object.values(players);
-    const enemyById = new Map<string, Enemy>();
-    for (const e of enemies) enemyById.set(e.id, e);
+/**
+ * Delta-sync projectiles to every client that can see them.
+ *
+ * This is the ONLY part of the projectile pipeline that is still legacy, and it
+ * stays legacy on purpose: the known-sets, the split-player camera rule and the
+ * socket bookkeeping are per-client wire state, not simulation state.
+ *
+ * Projectiles travel in straight lines at constant velocity, so a client can
+ * dead-reckon them perfectly from a single spawn message — there is no per-tick
+ * position update at all. (Earlier versions sent periodic re-syncs to "correct"
+ * the client; under latency jitter they only ever snapped projectiles to a
+ * stale server position and produced visible stutter.)
+ *
+ *   mpSpawn / ppSpawn  — projectiles newly in this player's viewport
+ *   mpRemove / ppRemove — ids that left the viewport or were destroyed
+ */
+const projectileSpawnBuffer: ProjectileWire[] = [];
+const projectileRemovedBuffer: number[] = [];
 
-    for (let i = mobProjectiles.length - 1; i >= 0; i--) {
-        const projectile = mobProjectiles[i];
-        
-        // Remove projectile if it has no health
-        if (projectile.health <= 0) {
-            mobProjectiles.splice(i, 1);
-            continue;
-        }
-        
-        // Move projectile (speed is already in pixels per millisecond)
-        const moveDistance = projectile.speed * deltaTimeMs;
-        projectile.x += Math.cos(projectile.angle) * moveDistance;
-        projectile.y += Math.sin(projectile.angle) * moveDistance;
-        projectile.distance += moveDistance;
+function broadcastProjectiles(): void {
+    const runtime = getEcsRuntime();
 
-        // Check for wall collisions
-        const projectileSize = projectile.size * 20; // Convert to pixels
-        const halfSize = projectileSize / 2;
+    for (let kind = 0; kind < 2; kind++) {
+        const fromPlayer = kind === 1;
+        const query = fromPlayer ? runtime.projectileQueries.player : runtime.projectileQueries.mob;
+        const knownByPlayer = fromPlayer ? knownPlayerProjectilesByPlayer : knownMobProjectilesByPlayer;
+        const spawnEvent = fromPlayer ? 'ppSpawn' : 'mpSpawn';
+        const removeEvent = fromPlayer ? 'ppRemove' : 'mpRemove';
 
-        if (checkProjectileWallCollision(projectile.x, projectile.y, halfSize)) {
-            mobProjectiles.splice(i, 1);
-            continue;
-        }
+        for (const playerId of Object.keys(players)) {
+            const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
+            if (!socket || !socket.userId) continue;
+            // Box the client's CAMERA flower, which is the active half while split.
+            const player = getActivePlayerForSocket(playerId);
+            if (!player) continue;
+            const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
+            const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
 
-        // Check for collision with player body first (before petals)
-        const projectileEnemy = enemyById.get(projectile.enemyId);
-        const isPetProjectile = projectileEnemy?.ownerId;
-        const petOwnerId = projectileEnemy?.ownerId;
-        let hitPlayer = false;
-
-        if (!isPetProjectile) {
-            for (const player of playerArray) {
-                if (player.isDead) continue;
-
-                const dx = player.x - projectile.x;
-                const dy = player.y - projectile.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const hitRadius = (PLAYER_SIZE / 2) * (player.sizeMultiplier ?? 1.0) + halfSize;
-
-                if (distance < hitRadius) {
-                    // Calculate knockback direction
-                    let knockbackX = 0;
-                    let knockbackY = 0;
-                    if (distance > 0) {
-                        const knockbackForce = 25;
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
-                        knockbackX = normalizedDx * knockbackForce;
-                        knockbackY = normalizedDy * knockbackForce;
-                        // Apply knockback to server-side position
-                        player.x += knockbackX;
-                        player.y += knockbackY;
-                    }
-
-                    // A glitch mob's shot infects on impact, whether or not it
-                    // gets through invulnerability. Lasts until respawn.
-                    if (isGlitchInfectingType(projectile.sourceType ?? '')) player.glitched = true;
-
-                    // Hit player - apply damage
-                    let damageDealt = 0;
-                    if (!player.isInvulnerable) {
-                        damageDealt = projectile.damage;
-                        player.health -= damageDealt;
-
-                        // Check if player dies
-                        if (player.health <= 0) {
-                            player.isDead = true;
-                            player.health = 0;
-                            despawnAllPlayerPets(player.id, io);
-                            io.emit('playerDied', { playerId: player.id });
-                        }
-                    }
-
-                    // Always emit knockback and current health state
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: knockbackX,
-                        knockbackY: knockbackY,
-                        damageDealt: damageDealt
-                    });
-
-                    // Remove projectile after hitting player
-                    mobProjectiles.splice(i, 1);
-                    hitPlayer = true;
-                    break;
-                }
+            let known = knownByPlayer.get(playerId);
+            if (!known) {
+                known = new Set();
+                knownByPlayer.set(playerId, known);
             }
+
+            // A fresh set per client per tick: it becomes that client's new
+            // known-set, so it cannot be a shared scratch buffer.
+            const stillKnown = new Set<number>();
+            encodeProjectilesInBox(
+                query, player.x, player.y, vw, vh,
+                known, projectileSpawnBuffer, stillKnown,
+            );
+            diffRemoved(known, stillKnown, projectileRemovedBuffer);
+            knownByPlayer.set(playerId, stillKnown);
+
+            if (projectileSpawnBuffer.length) io.to(playerId).emit(spawnEvent, projectileSpawnBuffer.slice());
+            if (projectileRemovedBuffer.length) io.to(playerId).emit(removeEvent, projectileRemovedBuffer.slice());
         }
-
-        if (hitPlayer) continue;
-
-        // Check for collision with wild mobs (enemies without ownerId) if this is a pet projectile
-        if (projectile.health > 0 && isPetProjectile && petOwnerId) {
-            // Pet projectile can hit wild mobs
-            for (let j = enemies.length - 1; j >= 0; j--) {
-                const targetEnemy = enemies[j];
-                
-                // Skip if target is a pet or the same enemy that shot the projectile
-                if (targetEnemy.ownerId || targetEnemy.id === projectile.enemyId) {
-                    continue;
-                }
-                
-                const targetMobStats = getMobStats(targetEnemy.type, targetEnemy.tier);
-                const targetEnemySize = targetMobStats ? targetMobStats.size * 40 : ENEMY_SIZE;
-                const targetEnemyHalfSize = targetEnemySize / 2;
-                
-                const dx = targetEnemy.x - projectile.x;
-                const dy = targetEnemy.y - projectile.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const hitRadius = targetEnemyHalfSize + halfSize;
-                
-                if (distance < hitRadius) {
-                    // Pet projectile hits wild mob
-                    const projectilePetalStats = getPetalStats(projectile.petalType, projectile.petalRarity);
-                    const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : projectile.damage;
-                    
-                    // Track damage with pet owner's ID
-                    trackDamage(targetEnemy, petOwnerId, projectileDamage);
-                    
-                    // Skip further processing if enemy is already dead
-                    if ((targetEnemy as any).isDead) {
-                        mobProjectiles.splice(i, 1);
-                        break;
-                    }
-                    
-                    targetEnemy.health = Math.max(0, targetEnemy.health - projectileDamage);
-                    io.emit('enemyDamaged', { enemyId: targetEnemy.id, health: targetEnemy.health });
-                    
-                    // Apply knockback
-                    if (distance > 0) {
-                        const knockbackForce = 20;
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
-                        const mobMass = targetMobStats ? targetMobStats.mass : 1.0;
-                        const effectiveKnockback = knockbackForce / mobMass;
-                        targetEnemy.knockbackX = normalizedDx * effectiveKnockback;
-                        targetEnemy.knockbackY = normalizedDy * effectiveKnockback;
-                    }
-                    
-                    // Check if enemy dies
-                    if (targetEnemy.health <= 0 && !(targetEnemy as any).isDead) {
-                        // trackMobKill is deferred via setImmediate here: it's
-                        // expensive (emits playerUpdated to all players), and
-                        // deferring keeps the projectile tick budget intact.
-                        killEnemy(targetEnemy, j, enemies, killCtx, {
-                            killerPlayerId: petOwnerId,
-                            trackMobKillTiming: 'deferred',
-                        });
-                    }
-                    
-                    // Remove projectile after hitting enemy
-                    mobProjectiles.splice(i, 1);
-                    break;
-                }
-            }
-        }
-
-        // Check if projectile has traveled max distance (after collision checks)
-        if (projectile.distance >= projectile.maxDistance) {
-            mobProjectiles.splice(i, 1);
-            continue;
-        }
-    }
-
-    // Delta-sync mob projectiles to nearby players. Projectiles travel in straight lines
-    // at constant velocity, so the client can dead-reckon their positions perfectly from
-    // a single spawn message — no periodic re-syncs needed. (Earlier we sent re-sync
-    // packets to "correct" client positions; they only ever snapped projectiles to a
-    // stale server position under latency jitter, producing visible stutter.)
-    //
-    //   mpSpawn  — projectiles newly in this player's viewport (slim spawn payload)
-    //   mpRemove — projectiles that have left viewport or been destroyed (ids only)
-    for (const playerId of Object.keys(players)) {
-        const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
-        if (!socket || !socket.userId) continue;
-        // Box the client's CAMERA flower, which is the active half while split.
-        const player = getActivePlayerForSocket(playerId);
-        if (!player) continue;
-        const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
-        const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
-
-        let known = knownMobProjectilesByPlayer.get(playerId);
-        if (!known) {
-            known = new Set();
-            knownMobProjectilesByPlayer.set(playerId, known);
-        }
-
-        const spawned: any[] = [];
-        const stillKnown = new Set<number>();
-        const ppx = player.x, ppy = player.y;
-
-        for (let pi = 0; pi < mobProjectiles.length; pi++) {
-            const proj = mobProjectiles[pi];
-            const dx = proj.x - ppx;
-            const dy = proj.y - ppy;
-            if ((dx < 0 ? -dx : dx) >= vw || (dy < 0 ? -dy : dy) >= vh) continue;
-            stillKnown.add(proj.id);
-            if (!known.has(proj.id)) {
-                // Only the fields the client actually renders / dead-reckons with.
-                // enemyId, startX/Y, damage, health/maxHealth, distance, spawnTime are
-                // not read on the client and would just inflate the payload.
-                spawned.push({
-                    i: proj.id,
-                    x: proj.x,
-                    y: proj.y,
-                    a: proj.angle,
-                    s: proj.speed,
-                    mD: proj.maxDistance,
-                    pT: proj.petalType,
-                    pR: proj.petalRarity,
-                    sz: proj.size
-                });
-            }
-        }
-
-        const removed: number[] = [];
-        for (const id of known) {
-            if (!stillKnown.has(id)) removed.push(id);
-        }
-
-        knownMobProjectilesByPlayer.set(playerId, stillKnown);
-
-        if (spawned.length) io.to(playerId).emit('mpSpawn', spawned);
-        if (removed.length) io.to(playerId).emit('mpRemove', removed);
-    }
-}
-
-// Update and move player projectiles
-function updatePlayerProjectiles(deltaTimeMs: number) {
-    for (let i = playerProjectiles.length - 1; i >= 0; i--) {
-        const projectile = playerProjectiles[i];
-        
-        // Remove projectile if it has no health
-        if (projectile.health <= 0) {
-            playerProjectiles.splice(i, 1);
-            continue;
-        }
-        
-        // Move projectile
-        const moveDistance = projectile.speed * deltaTimeMs;
-        projectile.x += Math.cos(projectile.angle) * moveDistance;
-        projectile.y += Math.sin(projectile.angle) * moveDistance;
-        projectile.distance += moveDistance;
-        
-        // Check if projectile has traveled max distance
-        if (projectile.distance >= projectile.maxDistance) {
-            playerProjectiles.splice(i, 1);
-            continue;
-        }
-        
-        // Check for wall collisions
-        const projectileSize = projectile.size * 20; // Convert to pixels
-        const halfSize = projectileSize / 2;
-        
-        if (checkProjectileWallCollision(projectile.x, projectile.y, halfSize)) {
-            playerProjectiles.splice(i, 1);
-            continue;
-        }
-        
-        // Check for collision with mob projectiles (projectile vs projectile)
-        for (let mobProjIdx = mobProjectiles.length - 1; mobProjIdx >= 0; mobProjIdx--) {
-            const mobProjectile = mobProjectiles[mobProjIdx];
-            
-            // Skip destroyed projectiles
-            if (!mobProjectile || mobProjectile.health <= 0) {
-                continue;
-            }
-            
-            const mobProjSize = mobProjectile.size * 20;
-            const mobProjHalfSize = mobProjSize / 2;
-            
-            const dx = mobProjectile.x - projectile.x;
-            const dy = mobProjectile.y - projectile.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const minDistance = halfSize + mobProjHalfSize;
-            
-            if (distance < minDistance && distance > 0) {
-                // Player projectile hits mob projectile - deal damage to both
-                const playerProjPetalStats = getPetalStats(projectile.petalType, projectile.petalRarity);
-                const playerProjDamage = playerProjPetalStats ? playerProjPetalStats.damage : projectile.damage;
-                
-                const mobProjPetalStats = getPetalStats(mobProjectile.petalType, mobProjectile.petalRarity);
-                const mobProjDamage = mobProjPetalStats ? mobProjPetalStats.damage : mobProjectile.damage;
-                
-                // Damage both projectiles
-                projectile.health -= mobProjDamage;
-                mobProjectile.health -= playerProjDamage;
-                
-                // Remove projectiles if destroyed
-                if (projectile.health <= 0) {
-                    playerProjectiles.splice(i, 1);
-                    break; // Exit mob projectile loop
-                }
-                if (mobProjectile.health <= 0) {
-                    mobProjectiles.splice(mobProjIdx, 1);
-                }
-            }
-        }
-        
-        // Skip enemy collision if projectile was destroyed
-        if (projectile.health <= 0) {
-            continue;
-        }
-        
-        // Check for enemy collisions
-        for (let j = enemies.length - 1; j >= 0; j--) {
-            const enemy = enemies[j];
-            
-            // Skip all pets (pets should not be damaged by any player's projectiles)
-            if (enemy.ownerId) {
-                continue;
-            }
-            
-            const mobStats = getMobStats(enemy.type, enemy.tier);
-            const enemySize = mobStats ? mobStats.size * 40 : ENEMY_SIZE;
-            const enemyHalfSize = enemySize / 2;
-            
-            const dx = enemy.x - projectile.x;
-            const dy = enemy.y - projectile.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const hitRadius = enemyHalfSize + halfSize;
-            
-            if (distance < hitRadius) {
-                // Hit enemy
-                const player = players[projectile.playerId];
-                if (!player) {
-                    // Player disconnected, remove projectile
-                    playerProjectiles.splice(i, 1);
-                    break;
-                }
-                
-                const damageMultiplier = getDamageMultiplier(player);
-                const finalDamage = projectile.damage * damageMultiplier;
-                
-                // Track damage dealt by this player (always track, even if enemy is dead)
-                trackDamage(enemy, projectile.playerId, finalDamage);
-                
-                // Skip further processing if enemy is already dead (being processed)
-                if ((enemy as any).isDead) {
-                    continue;
-                }
-                
-                enemy.health = Math.max(0, enemy.health - finalDamage);
-                // Mark enemy for batched damage update at end of frame
-                markEnemyDamaged(enemy);
-
-                // Apply knockback, accounting for mass (heavier mobs are harder to knock back)
-                if (distance > 0) {
-                    const knockbackForce = 20;
-                    const normalizedDx = dx / distance;
-                    const normalizedDy = dy / distance;
-                    // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
-                    const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
-                    const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
-                    enemy.knockbackX = normalizedDx * effectiveKnockback;
-                    enemy.knockbackY = normalizedDy * effectiveKnockback;
-                }
-                
-                // Check if enemy dies (only process once per enemy)
-                if (enemy.health <= 0 && !(enemy as any).isDead) {
-                    killEnemy(enemy, j, enemies, killCtx, {
-                        killerPlayerId: projectile.playerId,
-                        trackMobKillTiming: 'sync-snapshot',
-                    });
-                }
-                
-                // Remove projectile after hitting enemy
-                playerProjectiles.splice(i, 1);
-                break;
-            }
-        }
-    }
-    
-    // See updateMobProjectiles for the rationale — straight-line dead-reckoning
-    // on the client means we only need spawn + remove events.
-    for (const playerId of Object.keys(players)) {
-        const socket = io.sockets.sockets.get(playerId) as AuthenticatedSocket;
-        if (!socket || !socket.userId) continue;
-        // Box the client's CAMERA flower, which is the active half while split.
-        const player = getActivePlayerForSocket(playerId);
-        if (!player) continue;
-        const vw = (player.viewportWidth || VIEWPORT_WIDTH) * 1.5;
-        const vh = (player.viewportHeight || VIEWPORT_HEIGHT) * 1.5;
-
-        let known = knownPlayerProjectilesByPlayer.get(playerId);
-        if (!known) {
-            known = new Set();
-            knownPlayerProjectilesByPlayer.set(playerId, known);
-        }
-
-        const spawned: any[] = [];
-        const stillKnown = new Set<number>();
-        const ppx = player.x, ppy = player.y;
-
-        for (let pi = 0; pi < playerProjectiles.length; pi++) {
-            const proj = playerProjectiles[pi];
-            const dx = proj.x - ppx;
-            const dy = proj.y - ppy;
-            if ((dx < 0 ? -dx : dx) >= vw || (dy < 0 ? -dy : dy) >= vh) continue;
-            stillKnown.add(proj.id);
-            if (!known.has(proj.id)) {
-                spawned.push({
-                    i: proj.id,
-                    x: proj.x,
-                    y: proj.y,
-                    a: proj.angle,
-                    s: proj.speed,
-                    mD: proj.maxDistance,
-                    pT: proj.petalType,
-                    pR: proj.petalRarity,
-                    sz: proj.size
-                });
-            }
-        }
-
-        const removed: number[] = [];
-        for (const id of known) {
-            if (!stillKnown.has(id)) removed.push(id);
-        }
-
-        knownPlayerProjectilesByPlayer.set(playerId, stillKnown);
-
-        if (spawned.length) io.to(playerId).emit('ppSpawn', spawned);
-        if (removed.length) io.to(playerId).emit('ppRemove', removed);
     }
 }
 
@@ -2120,9 +1849,22 @@ function runSimulationStep(deltaTime: number, deltaMs: number, mobCatchupCalls: 
         moveEnemies();
     }
 
-    // Both take real elapsed milliseconds.
-    updateMobProjectiles(deltaMs);
-    updatePlayerProjectiles(deltaMs);
+    // Projectiles are dt-SCALED, so unlike moveEnemies they run exactly ONCE
+    // with the real elapsed milliseconds. Replaying them the way mobs are
+    // replayed would fly every shot mobCatchupCalls times its distance.
+    const projectileRuntime = getEcsRuntime();
+    projectileRuntime.tickProjectiles(deltaMs, Date.now());
+
+    // Projectile damage lands on ECS components, but this runs OUTSIDE the
+    // syncToEcs/syncFromEcs window inside moveEnemies. Without a second
+    // write-back, next tick's syncToEcs would push the legacy (undamaged)
+    // enemy.health straight back over C.Health and every projectile hit on a
+    // mob would be silently discarded — mobs unkillable by ranged attacks.
+    // syncFromEcs already merges health with MIN and carries knockback, so it
+    // is exactly the right pass to repeat here.
+    syncFromEcs(projectileRuntime.world, enemies);
+
+    broadcastProjectiles();
 }
 
 /**

@@ -38,7 +38,9 @@ export function runSystemsSelfTest(): string[] {
     function makeHarness() {
         const world = new World();
         const scheduler = new Scheduler(world);
-        registerMovementSystems(scheduler, createMovementQueries(world));
+        // No walls in these worlds: the wall test is exercised by
+        // projectileCollision_self_test.ts, which stubs a real one.
+        registerMovementSystems(scheduler, createMovementQueries(world), { hitsWall: () => false });
         registerAfflictionSystems(scheduler, createAfflictionQueries(world));
         registerLifetimeSystems(scheduler, createLifetimeQueries(world));
         let now = 10_000;
@@ -67,7 +69,7 @@ export function runSystemsSelfTest(): string[] {
             x: 0, y: 0, angle: 0, speed: 1, maxDistance: 100,
             damage: 5, health: 1, size: 2,
             petalType: 'basic', petalRarity: 'common',
-            shooter, fromPlayer: true, now: h.now,
+            shooter, fromPlayer: true, netId: 1, now: h.now,
         });
 
         h.tick();
@@ -92,7 +94,7 @@ export function runSystemsSelfTest(): string[] {
             x: 100, y: 100, angle: Math.PI / 2, speed: 0.5, maxDistance: 10_000,
             damage: 1, health: 1, size: 1,
             petalType: 'basic', petalRarity: 'common',
-            shooter, fromPlayer: false, now: h.now,
+            shooter, fromPlayer: false, netId: 2, now: h.now,
         });
         h.tick();
         const expected = 0.5 * TICK_MS;
@@ -112,7 +114,7 @@ export function runSystemsSelfTest(): string[] {
             damage: 5, health: 1, size: 2,
             petalType: 'stinger', petalRarity: 'rare',
             shooter, sourceType: 'hornet', sourceTier: 'rare',
-            fromPlayer: false, now: h.now,
+            fromPlayer: false, netId: 3, now: h.now,
         });
 
         h.world.destroy(shooter);

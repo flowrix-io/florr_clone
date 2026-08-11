@@ -1,6 +1,5 @@
 import { WorldItem } from '../item';
 import { Decoration, Sand } from '../server_utils';
-import { MobProjectile, PlayerProjectile } from '../enemy';
 import { ServerPlayer } from '../player';
 import { Enemy, Obstacle } from '../server_utils';
 import {
@@ -120,8 +119,6 @@ export function hasCorruptedPlayers(): boolean {
 }
 
 export const playerUserIds: Record<string, string> = {}; // Maps player ID to user ID
-export const mobProjectiles: MobProjectile[] = []; // Track all active mob projectiles
-export const playerProjectiles: PlayerProjectile[] = []; // Track all active player projectiles
 export const petalLastProjectileTime: Map<string, number> = new Map(); // Track last projectile time per petal instance
 export const petalLastRadiationTime: Map<string, number> = new Map(); // Track last radiation pulse per petal instance (uranium)
 
@@ -133,6 +130,11 @@ export const knownPlayerProjectilesByPlayer: Map<string, Set<number>> = new Map(
 
 // Monotonic counters for projectile IDs. Numeric IDs encode as 1-5 bytes in the binary codec
 // versus ~52 bytes for a 50-char string ID — a huge win for high-volume petals (gas/rainbow).
+//
+// The projectiles themselves are ECS entities (src/ecs/systems/projectileCollision.ts); these
+// counters stay here because an ENTITY HANDLE can never be a wire id — handles pack
+// index+generation and the index is recycled within seconds under projectile churn, so a
+// client would eventually see one alias a different projectile. See components/projectile.ts.
 let _nextMobProjectileId = 1;
 let _nextPlayerProjectileId = 1;
 export function allocateMobProjectileId(): number { return _nextMobProjectileId++; }
@@ -231,14 +233,6 @@ export function getEnemies(): Enemy[] {
 
 export function getItems(): WorldItem[] {
     return items;
-}
-
-export function getMobProjectiles(): MobProjectile[] {
-    return mobProjectiles;
-}
-
-export function getPlayerProjectiles(): PlayerProjectile[] {
-    return playerProjectiles;
 }
 
 export function setEnemyCount(count: number) {

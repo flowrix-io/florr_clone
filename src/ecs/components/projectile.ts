@@ -58,6 +58,24 @@ export const ProjectileSync = defineComponent('ProjectileSync', {
 });
 
 /**
+ * The small monotonic number this entity is known by ON THE WIRE.
+ *
+ * Entity handles can NEVER be used for this. They pack index+generation and the
+ * index is recycled the moment an entity dies, so a client holding a projectile
+ * id would eventually see it aliased onto a completely different projectile —
+ * and projectile churn recycles slots within seconds. The counters that mint
+ * these live in server/gameState.ts and are injected at spawn.
+ *
+ * Stored as f64 rather than u32 deliberately. The counter is monotonic for the
+ * life of the process, and a u32 wrap would silently collide with an id a client
+ * still has in its map; f64 holds every integer up to 2^53, which no amount of
+ * gas/rainbow volume reaches.
+ */
+export const NetId = defineComponent('NetId', {
+    id: 'f64',
+});
+
+/**
  * Fired by a player rather than a mob. Splits the two damage rules (player
  * projectiles hurt mobs, mob projectiles hurt players) without a per-projectile
  * branch on an id lookup.

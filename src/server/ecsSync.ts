@@ -8,9 +8,15 @@
  * whole design:
  *
  *   ECS owns   mob movement, AI, targeting, passive drift, centipede chains,
- *              mob-vs-mob collision and pet melee.
+ *              mob-vs-mob collision, pet melee, and projectile flight,
+ *              collision and damage.
  *   LEGACY owns spawning, despawning, viewport tracking, players, petals,
- *              projectiles, damage attribution, drops, XP and the broadcast.
+ *              damage attribution, drops, XP and the broadcast.
+ *
+ * Projectiles are worth calling out: they are ECS entities end to end, and
+ * nothing about them is mirrored back into a legacy array. That is why there is
+ * no projectile handling in this file at all — a projectile never needs syncing
+ * because legacy never writes one.
  *
  * Lifecycle deliberately stays with legacy. The ECS despawn and reaper systems
  * are disabled here, because the viewport-status pass is not ported — with it
@@ -44,7 +50,6 @@ import { importEnemy, importPlayer, linkEnemyReferences } from './ecsBridge';
 const LEGACY_OWNED_SYSTEMS = [
     'playerMovement',    // legacy updatePlayerState still moves players
     'playerModifiers',   // derived from the legacy loadout for now
-    'projectileFlight',  // legacy updateMobProjectiles/updatePlayerProjectiles
     'expiry',            // legacy timers
     'unseenDespawn',     // needs the unported viewport pass
     'reaper',            // legacy reapDeadEnemies awards XP and drops
@@ -61,6 +66,25 @@ export function configureCutover(runtime: EcsRuntime): void {
 /** Entities the ECS created for legacy objects, so removals can be detected. */
 const seenEnemyIds = new Set<string>();
 const seenPlayerIds = new Set<string>();
+
+/**
+ * The entity for `player`, importing it if this is the first time it has been
+ * seen.
+ *
+ * Exported because a player can act before syncToEcs has run for them: petal
+ * firing happens in updatePlayerState, which runs BEFORE moveEnemies in the
+ * simulation step, so on a player's very first tick their shots would otherwise
+ * be stamped with a dead shooter and deal nothing. Going through here (rather
+ * than importing directly) is also what keeps `seenPlayerIds` complete, so the
+ * entity is still destroyed when the player leaves.
+ */
+export function ensurePlayerEntity(world: World, player: ServerPlayer, now: number): Entity {
+    const existing = world.lookup(player.id);
+    if (existing !== undefined) return existing;
+    const entity = importPlayer(world, player, now);
+    seenPlayerIds.add(player.id);
+    return entity;
+}
 
 /**
  * Push legacy state into the ECS.
@@ -82,10 +106,9 @@ export function syncToEcs(
         if (!player) continue;
         livePlayerIds.add(id);
 
-        let entity = world.lookup(id);
+        const entity = world.lookup(id);
         if (entity === undefined) {
-            entity = importPlayer(world, player, now);
-            seenPlayerIds.add(id);
+            ensurePlayerEntity(world, player, now);
             continue;
         }
         // Legacy moves players, so their transform is pushed IN, not out.

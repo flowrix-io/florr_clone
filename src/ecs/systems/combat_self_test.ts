@@ -47,6 +47,8 @@ export function runCombatSelfTest(): string[] {
     // Projectile firing
     // =====================================================================
 
+    let netIdCounter = 0;
+
     function makeFiring(config: ProjectileConfig | undefined, cooldown = 2000) {
         const world = new World();
         const deps: FiringDeps = {
@@ -58,6 +60,7 @@ export function runCombatSelfTest(): string[] {
             sizeScalingOf: () => 9,
             mobTypeNameOf: () => 'hornet',
             rarityNameOf: () => 'rare',
+            allocateNetId: () => ++netIdCounter,
         };
         return { world, fire: createFireVolley(world, deps) };
     }

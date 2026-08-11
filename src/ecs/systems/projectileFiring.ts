@@ -53,6 +53,15 @@ export interface FiringDeps {
     mobTypeNameOf(shooter: Entity): string;
     /** Rarity name for an index, for the projectile's rarity field. */
     rarityNameOf(rarityIndex: number): string;
+    /**
+     * Mint the next MOB-projectile wire id.
+     *
+     * The counters live in server/gameState.ts and stay there: they are wire
+     * bookkeeping, not simulation state, and the numeric id is what makes a
+     * spawn record 1-5 bytes instead of ~52. Entity handles can never stand in —
+     * they are recycled.
+     */
+    allocateNetId(): number;
 }
 
 /** Default volley cooldown when a mob's config does not specify one. */
@@ -131,6 +140,7 @@ export function createFireVolley(world: World, deps: FiringDeps) {
                 sourceType,
                 sourceTier: rarityName,
                 fromPlayer: false,
+                netId: deps.allocateNetId(),
                 now,
             });
         }

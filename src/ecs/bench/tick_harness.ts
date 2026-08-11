@@ -155,6 +155,19 @@ export interface HarnessResult {
     /** Non-finite / absurd coordinate detections. Must be zero. */
     badCoordinates: number;
     firstBadTick: number;
+    /**
+     * Live projectiles at the halfway point and at the end.
+     *
+     * These two numbers are the leak check. Mob volleys spawn projectile
+     * entities continuously, and only flight/collision retire them — with either
+     * missing the population grows without bound, which drags
+     * `grid.ensureStampCapacity` up with it every tick. A healthy run reaches a
+     * steady state, so the two counts should be in the same ballpark.
+     */
+    projectilesMid: number;
+    projectilesEnd: number;
+    /** Mob projectiles that connected with a player over the run. */
+    playerHits: number;
     timings: Array<{ name: string; avgMs: number; maxMs: number }>;
 }
 
@@ -183,9 +196,15 @@ function assertNoServerBooted(): void {
     }
 }
 
+/** Stand-in for `(PLAYER_SIZE / 2) * sizeMultiplier`; the real one reads legacy state. */
+const PLAYER_HIT_RADIUS = 25;
+
 export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessResult {
     assertNoServerBooted();
     const { players, enemies } = buildLegacyWorld(config);
+
+    let netIdCounter = 0;
+    let playerHits = 0;
 
     const runtime = createEcsRuntime({
         lookupPlayer: () => undefined,
@@ -202,6 +221,18 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
             }
             return false;
         },
+
+        // --- projectiles ---------------------------------------------------
+        // Wire ids and the player-side hooks are broadcast/legacy concerns; the
+        // harness only needs them to be callable, since what is under test here
+        // is that the systems compose without producing a bad coordinate.
+        allocateProjectileNetId: () => ++netIdCounter,
+        resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),
+        playerRadiusOf: () => PLAYER_HIT_RADIUS,
+        damageMultiplierOf: () => 1,
+        onPlayerHit: () => { playerHits++; return true; },
+        emitEnemyDamaged: () => { /* broadcast is not under test here */ },
+        onProjectileKill: () => { /* drops/XP are not under test here */ },
     });
 
     const now0 = 1_000_000;
@@ -209,6 +240,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
 
     const world = runtime.world;
     const positioned = world.query([C.Position]);
+    const projectiles = world.query([C.IsProjectile]);
     // The viewport-status pass is now a real system (systems/viewport.ts), so
     // the harness no longer stands in for it. Mob lifetime here is whatever the
     // real near-a-player test decides.
@@ -216,16 +248,23 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     let badCoordinates = 0;
     let firstBadTick = -1;
     let maxTickMs = 0;
+    let projectilesMid = 0;
 
     runtime.scheduler.profiling = true;
+    // Projectiles run on their own scheduler; without this they are absent from
+    // the tick-budget report entirely.
+    runtime.projectileScheduler.profiling = true;
 
     const startingEntities = world.size();
 
     // Warm up the JIT before timing.
     for (let t = 0; t < 60; t++) {
-        runtime.tick(1 / 30, 1000 / 30, now0 + t * (1000 / 30));
+        const now = now0 + t * (1000 / 30);
+        runtime.tick(1 / 30, 1000 / 30, now);
+        runtime.tickProjectiles(1000 / 30, now);
     }
     runtime.scheduler.drainTimings();
+    runtime.projectileScheduler.drainTimings();
 
     const heapBefore = process.memoryUsage().heapUsed;
     const started = performance.now();
@@ -234,8 +273,13 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         const now = now0 + (60 + t) * (1000 / 30);
         const tickStart = performance.now();
         runtime.tick(1 / 30, 1000 / 30, now);
+        // Exactly once per simulation step, with the real elapsed time — the
+        // same split server.ts uses. Mob volleys leak entities forever without
+        // it, because flight is what retires a projectile.
+        runtime.tickProjectiles(1000 / 30, now);
         const elapsed = performance.now() - tickStart;
         if (elapsed > maxTickMs) maxTickMs = elapsed;
+        if (t === (config.ticks >> 1)) projectilesMid = projectiles.count();
 
         // The composition check: nothing may drift to a coordinate that breaks
         // the grid loops or renders as NaN.
@@ -257,8 +301,9 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     const totalMs = performance.now() - started;
     const heapMB = (process.memoryUsage().heapUsed - heapBefore) / (1024 * 1024);
 
-    const timings = runtime.scheduler.drainTimings()
-        .map(t => ({ name: t.name, avgMs: t.avgMs, maxMs: t.maxMs }));
+    const timings = [...runtime.scheduler.drainTimings(), ...runtime.projectileScheduler.drainTimings()]
+        .map(t => ({ name: t.name, avgMs: t.avgMs, maxMs: t.maxMs }))
+        .sort((a, b) => b.avgMs - a.avgMs);
 
     return {
         ticks: config.ticks,
@@ -269,6 +314,9 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         heapMB,
         badCoordinates,
         firstBadTick,
+        projectilesMid,
+        projectilesEnd: projectiles.count(),
+        playerHits,
         timings,
     };
 }
@@ -285,6 +333,7 @@ export function main(): void {
     console.log(`worst tick:    ${result.maxTickMs.toFixed(3)} ms`);
     console.log(`heap growth:   ${result.heapMB.toFixed(1)} MB over the run`);
     console.log(`bad coords:    ${result.badCoordinates}${result.firstBadTick >= 0 ? ` (first at tick ${result.firstBadTick})` : ''}`);
+    console.log(`projectiles:   ${result.projectilesMid} at half-way -> ${result.projectilesEnd} at the end   (${result.playerHits} player hits)`);
     console.log('\nper-system (mean ms/call, slowest first):');
     for (const t of result.timings) {
         console.log(`  ${t.name.padEnd(22)} ${t.avgMs.toFixed(4)}   max ${t.maxMs.toFixed(3)}`);
@@ -297,6 +346,13 @@ export function main(): void {
     }
     if (result.msPerTick > 33.3) {
         console.error('\nFAIL: mean tick exceeds the 30Hz budget.');
+        process.exitCode = 1;
+        return;
+    }
+    // Projectiles must reach a steady state. Unbounded growth means nothing is
+    // retiring them, which also grows grid.ensureStampCapacity every tick.
+    if (result.projectilesEnd > result.projectilesMid * 2 + 100) {
+        console.error('\nFAIL: projectile population is still growing — they are not being retired.');
         process.exitCode = 1;
         return;
     }

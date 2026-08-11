@@ -9,52 +9,6 @@ export interface PoisonEffect {
   playerId: string;  // ID of the player who applied the poison
 }
 
-export interface MobProjectile {
-  id: number;
-  enemyId: string;
-  x: number;
-  y: number;
-  startX: number;
-  startY: number;
-  angle: number;
-  speed: number;
-  distance: number;
-  maxDistance: number;
-  petalType: string;
-  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
-  damage: number;
-  size: number;
-  health: number; // Health of the projectile (can be destroyed by player petals)
-  maxHealth: number; // Maximum health of the projectile
-  spawnTime: number; // ms timestamp (server clock) when the projectile was created
-  // Mob type that fired this (server-only, never broadcast). Stamped at spawn
-  // rather than resolved from `enemyId` on impact, because the shooter can
-  // already be dead and despawned by the time the projectile lands.
-  sourceType?: string;
-  lastSyncTime?: number; // ms timestamp of the most recent position re-sync broadcast (server-only)
-}
-
-export interface PlayerProjectile {
-  id: number;
-  playerId: string;
-  x: number;
-  y: number;
-  startX: number;
-  startY: number;
-  angle: number;
-  speed: number;
-  distance: number;
-  maxDistance: number;
-  petalType: string;
-  petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
-  damage: number;
-  size: number;
-  health: number; // Health of the projectile (can be destroyed by enemy petals)
-  maxHealth: number; // Maximum health of the projectile
-  spawnTime: number; // ms timestamp (server clock) when the projectile was created
-  lastSyncTime?: number; // ms timestamp of the most recent position re-sync broadcast (server-only)
-}
-
 export interface Enemy {
   id: string;
   // NOTE: this union lists only a fraction of the types in mob_configs.ts — the
