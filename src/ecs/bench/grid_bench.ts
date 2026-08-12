@@ -31,7 +31,6 @@
 import { makeEnemy, Enemy } from '../../server_utils';
 import { getMobStats, getEnemySizeScale } from '../../mobs';
 import { rebuildEnemyGrid, queryEnemiesNear } from '../../server/enemyGrid';
-import { enemies } from '../../constants';
 import * as C from '../components';
 import { World } from '../world';
 import { spawnMob } from '../prefabs';
@@ -124,7 +123,11 @@ interface Result {
 
 /** Baseline: the production grid over real Enemy objects. */
 function runBaseline(specs: Spec[], queries: QuerySpec[], ticks: number): Result {
-    enemies.length = 0;
+    // A LOCAL array, not the game's `enemies`: that one is `LiveEnemy[]` now
+    // (membership means "has an ECS entity"), and a benchmark has no business
+    // pushing statues into it. rebuildEnemyGrid takes the array as a parameter,
+    // so the measurement is identical.
+    const enemies: Enemy[] = [];
     for (let i = 0; i < specs.length; i++) {
         const s = specs[i];
         enemies.push(makeEnemy({

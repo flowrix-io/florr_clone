@@ -1,6 +1,11 @@
-import { Graphics, Player, SECTION_CONFIGS, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState } from './core';
+import { ClientWorld } from '../client_world';
+import { Entity } from '../ecs';
+import { Graphics, SECTION_CONFIGS, WALL_GRID, WALL_TILE_SIZE, WALL_GRID_WIDTH, WALL_GRID_HEIGHT, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileState } from './core';
 import { getTileTypeConfig, isTileIdSolid } from '../constants';
 import { getSquadMemberIds } from '../squad_state';
+
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const minimapScratch: Entity[] = [];
 
 const MINIMAP_SPAWN_COLORS: Record<string, string> = {
     common: 'rgba(126, 239, 109, 0.4)',
@@ -25,7 +30,7 @@ declare module './core' {
         setMinimapZoom(zoom: number): void;
         getMinimapZoom(): number;
         followPlayerOnMinimap(playerX: number, playerY: number): void;
-        drawMinimap(players: Map<string, Player>, socket: string): void;
+        drawMinimap(world: ClientWorld, socket: string): void;
         bakeMinimapStatic(minimapScale: { x: number; y: number }): HTMLCanvasElement;
     }
 }
@@ -186,10 +191,10 @@ Graphics.prototype.followPlayerOnMinimap = function(this: Graphics, playerX: num
     );
 };
 
-Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, Player>, socket: string) {
+Graphics.prototype.drawMinimap = function(this: Graphics, world: ClientWorld, socket: string) {
     // Inside the maze, the section-based minimap is meaningless — draw the
     // maze layout instead (returns false when the player isn't in the maze).
-    if (this.drawMazeMinimap(players, socket)) {
+    if (this.drawMazeMinimap(world, socket)) {
         return;
     }
 
@@ -222,16 +227,20 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
     // Draw all players on minimap with solid colors (with scroll offset)
     const squadMemberIds: string[] = getSquadMemberIds();
     const squadMemberSet = new Set<string>(squadMemberIds);
-    players.forEach(player => {
-        const isCurrentPlayer = player.id === socket;
-        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(player.id);
+    for (const entity of world.collectPlayers(minimapScratch)) {
+        const playerId = world.playerId(entity);
+        const isCurrentPlayer = playerId === socket;
+        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(playerId);
         // Only show other non-squad players when ALT is pressed. Always show current player and squadmates.
         if (!isCurrentPlayer && !isSquadMember && !this.altKeyPressed) {
-            return;
+            continue;
         }
 
-        const playerMinimapX = minimapX + ((player.x - this.minimapScrollX) * minimapScale.x);
-        const playerMinimapY = minimapY + ((player.y - this.minimapScrollY) * minimapScale.y);
+        // The DRAWN position, so the dot tracks the flower rather than leading it.
+        // Read off the f64 Position column: the maze sits at ~200000 and an f32
+        // round-trip there quantises to ~0.015px steps.
+        const playerMinimapX = minimapX + ((world.playerX(entity) - this.minimapScrollX) * minimapScale.x);
+        const playerMinimapY = minimapY + ((world.playerY(entity) - this.minimapScrollY) * minimapScale.y);
 
         // Only draw if player is within the visible minimap area
         if (playerMinimapX > minimapX && playerMinimapX < minimapX + this.MINIMAP_WIDTH &&
@@ -261,7 +270,7 @@ Graphics.prototype.drawMinimap = function(this: Graphics, players: Map<string, P
                 this.ctx.fill();
             }
         }
-    });
+    }
 
     // Draw viewport rectangle in black (with scroll offset) - only when hitboxes are enabled
     if (this.showHitboxes) {

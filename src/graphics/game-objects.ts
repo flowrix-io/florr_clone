@@ -1,13 +1,19 @@
-import { Graphics, Player, Enemy, WorldItem, PLAYER_SIZE, getMobStats, getEnemySizeScale, getPetalStats } from './core';
+import { Graphics, WorldItem, PLAYER_SIZE, getMobStats, getEnemySizeScale, getPetalStats } from './core';
+import { ClientWorld } from '../client_world';
+import { Entity } from '../ecs';
 import { DEATH_ANIMATION_DURATION } from './enemy-drawing';
 
 declare module './core' {
     interface Graphics {
-        drawGameObjects(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number): void;
+        drawGameObjects(world: ClientWorld, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number): void;
     }
 }
 
-Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0): void {
+/** Reused entity snapshots; see ClientWorld.collectMobs on why not chunks. */
+const mobScratch: Entity[] = [];
+const playerScratch: Entity[] = [];
+
+Graphics.prototype.drawGameObjects = function(this: Graphics, world: ClientWorld, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0): void {
     // Calculate viewport accounting for zoom level
     const scaledWidth = this.viewW / this.zoomLevel;
     const scaledHeight = this.viewH / this.zoomLevel;
@@ -29,12 +35,15 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
     // (glow sprites, baked label overlays) need it, and per-mob toggles forced
     // a canvas pipeline flush per mob on the GPU path.
     this.ctx.imageSmoothingEnabled = true;
-    for (const enemy of enemies.values()) {
+    for (const enemy of world.collectMobs(mobScratch)) {
+        const ex = world.mobX(enemy);
+        const ey = world.mobY(enemy);
         // Calculate actual enemy size for accurate culling. Must match drawEnemy's
         // own size math (pet scale included) — this value is also what the
         // health-bar pass below sizes bars against.
-        const mobStats = getMobStats(enemy.type, enemy.tier);
-        const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(enemy.isPet, enemy.tier);
+        const tier = world.mobTier(enemy);
+        const mobStats = getMobStats(world.mobType(enemy), tier);
+        const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier);
         const visualScale = mobStats?.visual_scale ?? 1.0;
         const enemySize = baseSize * visualScale;
 
@@ -44,26 +53,26 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
 
         // Only cull if the mob is completely outside the viewport (with buffer)
         // A mob is completely outside if all of its edges are outside the viewport bounds
-        if (enemy.x + enemySize / 2 + cullingBuffer < viewport.left ||
-            enemy.x - enemySize / 2 - cullingBuffer > viewport.right ||
-            enemy.y + enemySize / 2 + cullingBuffer < viewport.top ||
-            enemy.y - enemySize / 2 - cullingBuffer > viewport.bottom) {
+        if (ex + enemySize / 2 + cullingBuffer < viewport.left ||
+            ex - enemySize / 2 - cullingBuffer > viewport.right ||
+            ey + enemySize / 2 + cullingBuffer < viewport.top ||
+            ey - enemySize / 2 - cullingBuffer > viewport.bottom) {
             continue;
         }
 
         this._hbEnemies.push(enemy);
         this._hbSizes.push(enemySize);
         try {
-            this.drawEnemy(enemy);
+            this.drawEnemy(world, enemy);
         } catch (error) {
-            console.error('[Graphics] Error drawing enemy:', error, enemy);
+            console.error('[Graphics] Error drawing enemy:', error, world.mobId(enemy));
             // Draw a simple fallback circle if rendering fails
             try {
                 // drawEnemy may have died mid-mob with its local frame active.
                 const b = this._worldBaseTf!;
                 this.ctx.setTransform(b.a, b.b, b.c, b.d, b.e, b.f);
                 this.ctx.save();
-                this.ctx.translate(enemy.x, enemy.y);
+                this.ctx.translate(ex, ey);
                 this.ctx.fillStyle = '#ff0000';
                 this.ctx.beginPath();
                 this.ctx.arc(0, 0, 20, 0, Math.PI * 2);
@@ -89,32 +98,40 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
         const hbSizes = this._hbSizes;
         for (let i = 0; i < hbEnemies.length; i++) {
             const enemy = hbEnemies[i];
+            // The mob may have been reaped between the body pass and here only
+            // if something structural ran in between; nothing does, but the
+            // handle test is free and a stale handle would throw.
+            if (!world.world.isAlive(enemy)) continue;
             // Skip while the death animation runs (mirrors drawEnemy's isDying).
-            if (this.mobDeathAnimation && enemy.deathAnimationStartTime &&
-                this.frameTimestamp - enemy.deathAnimationStartTime < DEATH_ANIMATION_DURATION) {
+            const dyingAt = world.deathAnimationStart(enemy);
+            if (this.mobDeathAnimation && dyingAt !== 0 &&
+                this.frameTimestamp - dyingAt < DEATH_ANIMATION_DURATION) {
                 continue;
             }
-            this.drawEnemyHealthBar(enemy, hbSizes[i]);
+            this.drawEnemyHealthBar(world, enemy, hbSizes[i]);
         }
         hbEnemies.length = 0;
         hbSizes.length = 0;
     }
 
     // Draw players (with petals) - above enemies
-    for (const player of players.values()) {
-        if (player.x > viewport.left - PLAYER_SIZE && player.x < viewport.right + PLAYER_SIZE &&
-            player.y > viewport.top - PLAYER_SIZE && player.y < viewport.bottom + PLAYER_SIZE) {
+    for (const entity of world.collectPlayers(playerScratch)) {
+        const px = world.playerX(entity);
+        const py = world.playerY(entity);
+        if (px > viewport.left - PLAYER_SIZE && px < viewport.right + PLAYER_SIZE &&
+            py > viewport.top - PLAYER_SIZE && py < viewport.bottom + PLAYER_SIZE) {
+            const player = world.playerOf(entity);
+            if (!player) continue;
 
             if (player.isDead) {
                 // Draw corpse for dead players
-                this.drawCorpse(player.x, player.y, player.angle, player);
+                this.drawCorpse(px, py, world.playerAngle(entity), player);
             } else {
                 // Use each player's own petal extension, or fallback to the passed value (for current player)
                 const playerPetalExtension = player.id === currentPlayerId
                     ? petalExtension
                     : (player.petalExtension || 1.0);
-                // Draw normal player (pass enemies for petal physics)
-                this.drawPlayer(player, currentPlayerId, playerPetalExtension, enemies);
+                this.drawPlayer(world, entity, currentPlayerId, playerPetalExtension);
             }
         }
     }
@@ -132,7 +149,7 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, players: Map<strin
             item.y - ITEM_CULL_BUFFER > viewport.bottom) {
             continue;
         }
-        this.drawItem(item, players);
+        this.drawItem(item, world);
         itemsDrawn++;
     }
     this.perfItemsMs = performance.now() - itemsT0;

@@ -88,7 +88,7 @@ function sizeFactor(radius: number): number {
  */
 function integrate(
     pos: { x: Float64Array; y: Float64Array },
-    vel: { x: Float32Array; y: Float32Array },
+    vel: { x: Float64Array; y: Float64Array },
     i: number,
     accelX: number,
     accelY: number,

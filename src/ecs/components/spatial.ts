@@ -27,18 +27,32 @@ export const Position = defineComponent('Position', {
  * Integrated velocity, in pixels per second.
  *
  * Corresponds to `velX`/`velY` on Enemy (the passive-AI friction integrator)
- * and `velocityX`/`velocityY` on ServerPlayer. f32 is fine here: velocities are
- * small numbers near zero where f32 has plenty of precision — it is only the
- * large absolute coordinates that need f64.
+ * and `velocityX`/`velocityY` on ServerPlayer.
+ *
+ * f64, though the magnitudes are small enough that f32 would hold them fine.
+ * The reason is not range, it is IDENTITY: velocity is a per-tick accumulator
+ * that the shared `stepPlayerMovement` reads back and re-integrates, so storing
+ * it narrower makes the ECS integration diverge in the low bits from the legacy
+ * path — which is doubles, as is the client's copy of the same physics. The
+ * divergence is far too small to see in the game, and exactly big enough to
+ * force the player-cutover check (bench/player_cutover_check.ts) to compare with
+ * a tolerance instead of `===`. A tolerance is what lets a real drift hide.
  */
 export const Velocity = defineComponent('Velocity', {
-    x: 'f32',
-    y: 'f32',
+    x: 'f64',
+    y: 'f64',
 });
 
-/** Facing angle in radians. Separate from Position because many systems that move things never touch facing, and vice versa. */
+/**
+ * Facing angle in radians. Separate from Position because many systems that move
+ * things never touch facing, and vice versa.
+ *
+ * f64 for the same identity reason as Velocity: a player's angle is
+ * `Math.atan2` of the raw input direction, and the legacy path stored the
+ * double.
+ */
 export const Angle = defineComponent('Angle', {
-    value: 'f32',
+    value: 'f64',
 });
 
 /**

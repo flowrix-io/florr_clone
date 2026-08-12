@@ -200,6 +200,24 @@ export function makeEnemy(init: EnemyInit): Enemy {
   };
 }
 
+/**
+ * An enemy that has been ADMITTED to the world: it is in `enemies[]` AND it has
+ * an ECS entity.
+ *
+ * This brand is the structural half of the spawn cutover. `enemies` is declared
+ * as `LiveEnemy[]`, so `enemies.push(makeEnemy({...}))` no longer compiles —
+ * the only way to obtain a `LiveEnemy` is `spawnEnemy()` in
+ * server/enemyRegistry.ts, which creates the ECS entity FIRST and pushes
+ * second. A mob can therefore never exist as a legacy shell with no entity
+ * (invisible to the simulation) or as an entity with no shell (invisible to
+ * clients and never reaped).
+ *
+ * The brand is erased at runtime; it costs nothing and exists purely so the
+ * compiler enumerates every spawn site.
+ */
+declare const ecsBound: unique symbol;
+export type LiveEnemy = Enemy & { readonly [ecsBound]: true };
+
 export interface Obstacle {
   id: string;
   x: number;

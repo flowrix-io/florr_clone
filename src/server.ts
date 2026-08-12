@@ -42,7 +42,7 @@ import { getInventoryCodecSignature } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalActions, despawnAllPlayerPets } from './petal_actions';
 import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
-import { Enemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
+import { Enemy, LiveEnemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
 import { WorldItem } from './item';
 import { getMobStats, getAllMobTypes, getEnemySizeScale } from './mobs';
 
@@ -66,7 +66,15 @@ import {
     checkItemWallCollisions,
 } from './server/physics';
 import { createEcsRuntime, EcsRuntime } from './server/ecsRuntime';
-import { configureCutover, ensurePlayerEntity, syncFromEcs, syncToEcs } from './server/ecsSync';
+import {
+    configureCutover,
+    ensurePlayerEntity,
+    PlayerSyncDeps,
+    syncFromEcs,
+    syncPlayersFromEcs,
+    syncPlayersToEcs,
+    syncToEcs,
+} from './server/ecsSync';
 import { Entity } from './ecs';
 import {
     diffRemoved,
@@ -80,6 +88,8 @@ import {
 import { AuthenticatedSocket } from './server/shared/socketTypes';
 import { registerConnectionHandlers } from './server/connection';
 import {
+    computeSpeedBoost,
+    updatePlayerPreMovement,
     updatePlayerState,
     getPlayerViewports,
     isPositionInPlayerPetalRange,
@@ -148,7 +158,7 @@ import {
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
 import { updateSpawnZones } from './server/spawnZoneManager';
 import { rebuildEnemyGrid, queryEnemiesNear } from './server/enemyGrid';
-import { buildEnemy } from './server/shared/buildEnemy';
+import { bindEnemySpawnHost, spawnEnemy } from './server/enemyRegistry';
 import { isInOutOfBoundsZone, clampToWorld, isWallAt, samplePointInViewport } from './server/shared/positions';
 import { killEnemy } from './server/shared/killHandler';
 import { downgradeRarity } from './server/shared/rarity';
@@ -529,11 +539,8 @@ function triggerViewportUpdate() {
             let spawned = 0;
 
             for (let i = 0; i < enemiesToSpawn; i++) {
-                const newEnemy = createEnemy();
-                if (newEnemy) {
-                    enemies.push(newEnemy);
-                    spawned++;
-                }
+                // createEnemy admits the mob itself (entity + enemies[]).
+                if (createEnemy()) spawned++;
             }
 
             if (spawned > 0) {
@@ -636,8 +643,9 @@ function clearAllMobs(): number {
     return removed;
 }
 
-// Wrapper for createEnemy
-function createEnemy(): Enemy | null {
+// Wrapper for createEnemy. The mob is already in `enemies` and already has an
+// entity by the time this returns — see server/enemyRegistry.ts.
+function createEnemy(): LiveEnemy | null {
     const enemy = createEnemyModule(enemySpawnerHelpers);
     if (enemy && enemy.tier === 'super' && enemy.type !== 'target_dummy') {
         // Ambient super spawn (e.g. via the 1% ultra-zone upgrade). The module
@@ -649,7 +657,7 @@ function createEnemy(): Enemy | null {
     return enemy;
 }
 
-// /spawn builds mobs directly via buildEnemy(), bypassing spawnSpecialMobs()/
+// /spawn admits mobs directly via spawnEnemy(), bypassing spawnSpecialMobs()/
 // announceAmbientSuper() entirely, so boss-tier mobs it creates never fired the
 // chat banner or the boss-event log. This mirrors that announcement for any
 // tier normally treated as a boss (super, unique, apex), regardless of spawn origin.
@@ -821,13 +829,12 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
             ey = clamped.y;
         }
 
-        const enemy = buildEnemy(mobType, tier, ex, ey);
+        // Admits the mob (ECS entity + enemies[]); the `beforeCount` reads below
+        // still work because admission appends in creation order.
+        const enemy = spawnEnemy(mobType, tier, ex, ey);
         if (!enemy) continue;
 
         // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
-
-        // Add to enemies array
-        enemies.push(enemy);
 
         // Notify all clients
         io.emit('enemySpawned', enemy);
@@ -1060,15 +1067,11 @@ function adjustEnemyCount() {
         }
     }
 
-    // Add new enemies if current count is lower than target
+    // Add new enemies if current count is lower than target. createEnemy admits
+    // the mob itself, so the loop is bounded by it returning null (no valid
+    // position) rather than by a push here.
     while (enemies.length < targetEnemyCount) {
-        const enemy = createEnemy();
-        if (enemy) {
-            enemies.push(enemy);
-        } else {
-            // If we can't spawn more enemies (no valid positions), break the loop
-            break;
-        }
+        if (!createEnemy()) break;
     }
 
     // Don't send enemiesUpdate here - enemies are sent via enemySpawned/enemyDestroyed events
@@ -1108,6 +1111,18 @@ const playerStateDeps: PlayerStateDependencies = {
         forEachBlocking: (x, y, petalRadius, visit) =>
             getEcsRuntime().forEachMobProjectileHitting(x, y, petalRadius, visit),
     }
+};
+
+/**
+ * What the ECS player-movement window needs from the legacy modifier pipeline.
+ *
+ * One function, and it is injected rather than imported by ecsSync because
+ * `getSpeedMultiplier` lives in petal_actions.ts, which pulls in this module at
+ * module scope and binds port 3000 on require. server.ts is already the place
+ * that owns both halves, so the edge lives here.
+ */
+const playerSyncDeps: PlayerSyncDeps = {
+    speedBoostOf: computeSpeedBoost,
 };
 
 // Kill-handler context for the consolidated death sequence (see shared/killHandler).
@@ -1246,14 +1261,16 @@ function updatePeriodicSpawns() {
         for (let step = 0; step < -(spawnCfg.spawnRarityOffset ?? 0); step++) {
             spawnTier = downgradeRarity(spawnTier);
         }
-        const child = buildEnemy(spawnCfg.mobType, spawnTier, behindX, behindY, {
+        // despawnAt and the inherited target are constructor arguments, not
+        // post-spawn patches: both reach ECS components (Expires, MobAI.target)
+        // at construction and nothing re-reads the legacy fields afterwards.
+        const child = spawnEnemy(spawnCfg.mobType, spawnTier, behindX, behindY, {
             parentHoleId: enemy.id,
             ownerId: enemy.ownerId,
+            despawnAt: currentTime + spawnCfg.lifetimeMs,
+            targetPlayerId: enemy.targetPlayerId,
         });
         if (!child) continue;
-        child.despawnAt = currentTime + spawnCfg.lifetimeMs;
-        child.targetPlayerId = enemy.targetPlayerId;
-        enemies.push(child);
         io.emit('enemySpawned', child);
     }
 }
@@ -1336,12 +1353,9 @@ function updatePoisonEffects(deltaTime: number) {
                     enemies.splice(index, 1);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
-                    
-                    // Try to spawn a new enemy
-                    const newEnemy = createEnemy();
-                    if (newEnemy) {
-                        enemies.push(newEnemy);
-                    }
+
+                    // Try to spawn a new enemy (admits itself)
+                    createEnemy();
                 }
             }
         }
@@ -1394,7 +1408,7 @@ function spawnWaveMobs() {
             for (const childType of wave) {
                 const angle = Math.random() * Math.PI * 2;
                 const dist = parentRadius + 10 + Math.random() * parentRadius;
-                const child = buildEnemy(
+                const child = spawnEnemy(
                     childType,
                     enemy.tier,
                     enemy.x + Math.cos(angle) * dist,
@@ -1402,7 +1416,6 @@ function spawnWaveMobs() {
                     { parentHoleId: enemy.id },
                 );
                 if (!child) continue;
-                enemies.push(child);
                 io.emit('enemySpawned', child);
             }
         }
@@ -1508,6 +1521,29 @@ function getEcsRuntime(): EcsRuntime {
     return _ecsRuntime;
 }
 
+/**
+ * Give the spawn registry its world.
+ *
+ * A module-scope statement, so it is impossible for a spawn to happen before
+ * the wiring exists — a mob admitted without an entity would be a statue, and
+ * nothing would report it. `getWorld` is a thunk rather than a world so the
+ * runtime stays lazily constructed; the registry is the first thing to ask for
+ * it if a mob spawns before the first tick.
+ *
+ * `resolvePlayer` goes through ensurePlayerEntity, not a bare lookup: pets are
+ * spawned by petal actions inside updatePlayerState, which runs BEFORE
+ * moveEnemies' syncToEcs, so a player summoning on their very first tick would
+ * otherwise hand their pet a null owner that nothing ever repairs.
+ */
+bindEnemySpawnHost({
+    getWorld: () => getEcsRuntime().world,
+    resolvePlayer: (socketId) => {
+        const player = players[socketId];
+        if (!player) return undefined;
+        return ensurePlayerEntity(getEcsRuntime().world, player, Date.now());
+    },
+});
+
 /** The ServerPlayer behind an ECS entity, if it is still in the world. */
 function playerFromEntity(entity: Entity): ServerPlayer | undefined {
     const id = _ecsRuntime!.world.externalIdOf(entity);
@@ -1611,11 +1647,8 @@ function reapDeadEnemies() {
         // the loop walks backwards, so the new mob is never visited this pass
         // (and it spawns at full health, so it wouldn't be reaped anyway).
         if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
-            const digger = buildEnemy('digger', enemy.tier, enemy.x, enemy.y);
-            if (digger) {
-                enemies.push(digger);
-                io.emit('enemySpawned', digger);
-            }
+            const digger = spawnEnemy('digger', enemy.tier, enemy.x, enemy.y);
+            if (digger) io.emit('enemySpawned', digger);
         }
 
         // Clean up enemy data structures before removal to prevent memory leaks
@@ -1829,6 +1862,34 @@ export function getSimulatedTickSpikeInfo(): { deltaSeconds: number; remainingMs
  * have — otherwise mobs would lag behind the (correctly dt-compensated) players.
  */
 function runSimulationStep(deltaTime: number, deltaMs: number, mobCatchupCalls: number): void {
+    // --- the player movement window --------------------------------------
+    // Integration is an ECS pass over every flower at once, so the per-player
+    // work that used to bracket it inside updatePlayerState is now two loops
+    // with the window between them. The ORDER of the three stages is what
+    // preserves behaviour, and it is the same order one player used to see:
+    //
+    //   pre-movement   effect expiry (decides this tick's speed factor) and the
+    //                  glitch-ring knockback (writes x/y directly)
+    //   movement       the ECS integrates velocity into position
+    //   post-movement  mob contact, petals, pickups, walls, teleporters — all
+    //                  still legacy, all still committing to player.x/y at the
+    //                  end of updatePlayerState
+    //
+    // Crucially this runs BEFORE moveEnemies, exactly where the legacy movement
+    // sat. Mobs still see each flower's fully committed end-of-tick position,
+    // so mob-vs-player contact timing is unchanged by the cutover.
+    const playerRuntime = getEcsRuntime();
+    for (const id in players) {
+        updatePlayerPreMovement(players[id], deltaTime, playerStateDeps);
+    }
+    const movementNow = Date.now();
+    syncPlayersToEcs(playerRuntime.world, players, movementNow, playerSyncDeps);
+    // dt-SCALED, so exactly once per simulation step — never replayed for
+    // catch-up the way the fixed-step mob tick is. Replaying it would move every
+    // flower mobCatchupCalls times its distance.
+    playerRuntime.tickPlayers(deltaTime, deltaMs, movementNow);
+    syncPlayersFromEcs(playerRuntime.world, players);
+
     for (const id in players) {
         updatePlayerState(players[id], deltaTime, playerStateDeps);
     }
@@ -2327,25 +2388,17 @@ setInterval(() => {
         const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
         const currentViewportEnemies = getEnemiesInViewportCount();
         
-        // Keep the PVP arena populated with garden mobs + spiders.
-        const arenaMobs = spawnArenaMobs(3);
-        for (const mob of arenaMobs) {
-            enemies.push(mob);
-        }
+        // Keep the PVP arena populated with garden mobs + spiders. These
+        // spawners admit their own mobs now — see server/enemyRegistry.ts.
+        spawnArenaMobs(3);
 
         // Keep the maze corridors populated (tier by depth zone) and its
         // ultra bosses alive in the deepest rooms. 40 per half-second fills a
         // fresh maze (~1300-mob target at full world density) in ~17s; at
         // steady state the target cap throttles this down to a
         // kill-replacement trickle.
-        const mazeMobs = spawnMazeMobs(40);
-        for (const mob of mazeMobs) {
-            enemies.push(mob);
-        }
-        const mazeBosses = spawnMazeBosses();
-        for (const boss of mazeBosses) {
-            enemies.push(boss);
-        }
+        spawnMazeMobs(40);
+        spawnMazeBosses();
 
         if (currentViewportEnemies < targetEnemyCount) {
             // Scale spawn cap with player count so each player's viewport fills at the same rate
@@ -2353,13 +2406,9 @@ setInterval(() => {
             let spawned = 0;
 
             for (let i = 0; i < enemiesToSpawn; i++) {
-                const newEnemy = createEnemy();
-                if (newEnemy) {
-                    enemies.push(newEnemy);
-                    spawned++;
-                }
+                if (createEnemy()) spawned++;
             }
-            
+
             // if (spawned > 0) {
             //     console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
             // }

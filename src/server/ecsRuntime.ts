@@ -127,11 +127,35 @@ export interface EcsRuntime {
      * projectile system from the tick-budget report.
      */
     projectileScheduler: Scheduler;
+    /**
+     * The PLAYER half of the tick, on its own scheduler — see `tickPlayers`.
+     *
+     * Exposed for the same reason as the projectile scheduler: timings drained
+     * from `scheduler` alone would omit it from the tick-budget report.
+     */
+    playerScheduler: Scheduler;
     grid: SpatialGrid;
     /** Reusable broad-phase result buffer. */
     gridResult: GridQueryResult;
     /** Advance one tick. `now` is sampled once by the caller. */
     tick(deltaTime: number, deltaMs: number, now: number): void;
+    /**
+     * Advance every player one movement step.
+     *
+     * On its OWN scheduler, and this is the whole point of the split. The mob
+     * scheduler runs inside `moveEnemies()`, which is AFTER `updatePlayerState`
+     * in `runSimulationStep`; a player-movement system registered there would
+     * move flowers a whole tick after the legacy code that used to move them,
+     * shifting every mob-vs-player contact by one tick. Giving players their own
+     * scheduler lets the caller run them at the exact point in the tick the
+     * legacy movement occupied, so the sequence of COMMITTED player positions
+     * that mobs, petals and the broadcast see is unchanged.
+     *
+     * Like the projectile scheduler and unlike the mob one, this is dt-SCALED,
+     * so it runs exactly once per simulation step and is never replayed for
+     * catch-up.
+     */
+    tickPlayers(deltaTime: number, deltaMs: number, now: number): void;
     /**
      * Advance projectiles by one step of REAL elapsed time.
      *
@@ -249,6 +273,13 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
      * EcsRuntime.tickProjectiles.
      */
     const projectileScheduler = new Scheduler(world);
+    /**
+     * Players run on their OWN scheduler so the caller can place them at the
+     * point in the server tick the legacy movement occupied — before
+     * `updatePlayerState`, and therefore before `moveEnemies` runs the mob
+     * scheduler. See EcsRuntime.tickPlayers.
+     */
+    const playerScheduler = new Scheduler(world);
     const grid = new SpatialGrid();
     const gridResult = new GridQueryResult(256);
 
@@ -271,7 +302,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
     // COMPONENTS, closing the window where a player existed both as an entity
     // and as a ServerPlayer read for modifier maths. Only the petal stat table
     // is still injected, and that is config, not state.
-    registerPlayerModifierSystem(scheduler, createPlayerModifierQueries(world), {
+    registerPlayerModifierSystem(playerScheduler, createPlayerModifierQueries(world), {
         petalModifiersOf: (slot) => {
             const item = slot as { petalType?: string; rarity?: string } | null;
             if (!item?.petalType) return undefined;
@@ -292,7 +323,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         effectSpeedMultiplier: () => 1,
     });
 
-    registerPlayerMovementSystem(scheduler, createPlayerMovementQueries(world), {
+    registerPlayerMovementSystem(playerScheduler, createPlayerMovementQueries(world), {
         maxSpeed: MAX_SPEED,
         playerSize: PLAYER_SIZE,
         // Passed through, never reimplemented — the client predicts with this
@@ -414,6 +445,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         world,
         scheduler,
         projectileScheduler,
+        playerScheduler,
         grid,
         gridResult,
         projectileQueries: {
@@ -426,6 +458,13 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
             // with the world as the population grows.
             grid.ensureStampCapacity(world.size() * 4 + 1024);
             scheduler.tick(deltaTime, deltaMs, now);
+        },
+
+        tickPlayers(deltaTime: number, deltaMs: number, now: number): void {
+            // No grid work here: nothing in the player pass queries the spatial
+            // index. Player-vs-mob contact is still resolved by the legacy
+            // collision block in updatePlayerState, against the legacy grid.
+            playerScheduler.tick(deltaTime, deltaMs, now);
         },
 
         tickProjectiles(deltaMs: number, now: number): void {

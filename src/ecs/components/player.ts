@@ -44,11 +44,23 @@ export const PlayerInput = defineComponent('PlayerInput', {
     /** string[] of held keys. */
     keys: 'obj',
     useMouse: 'bool',
-    /** Normalised mouse direction, -1..1. */
-    mouseDirectionX: 'f32',
-    mouseDirectionY: 'f32',
+    /**
+     * Normalised mouse direction, -1..1.
+     *
+     * f64, not f32, even though the magnitudes are tiny. These three fields are
+     * multiplied by MAX_SPEED and the speed factor to produce the target
+     * velocity that the SHARED `stepPlayerMovement` integrates, and the legacy
+     * path this replaces did that arithmetic in doubles. Storing them narrower
+     * would make the ECS result differ from the legacy one in the low bits, and
+     * that difference is not observable in the game (petal positions are
+     * quantised to 3-6px before they are hashed for the broadcast) but it IS
+     * observable in the cutover check, which asserts exact equality against the
+     * legacy formula. Keeping the check exact is worth 12 bytes per player.
+     */
+    mouseDirectionX: 'f64',
+    mouseDirectionY: 'f64',
     /** Client-computed speed multiplier, 0.15..1.0. */
-    mouseSpeedMultiplier: 'f32',
+    mouseSpeedMultiplier: 'f64',
     petalExtension: 'f32',
 });
 
@@ -137,10 +149,17 @@ export const Cosmetics = defineComponent('Cosmetics', {
  * client so client-side prediction moves at exactly the server's speed.
  */
 export const PlayerModifiers = defineComponent('PlayerModifiers', {
-    speedBoost: 'f32',
-    speedFactor: 'f32',
+    /**
+     * The three fields movement consumes are f64 for the same reason
+     * PlayerInput's direction fields are: they feed the shared physics step, and
+     * the legacy code they replace computed them in doubles. `sizeMultiplier`
+     * additionally decides the substep count inside `stepPlayerMovement`, where
+     * a rounding difference can change how many substeps a wall contact gets.
+     */
+    speedBoost: 'f64',
+    speedFactor: 'f64',
     /** Multiplier on the flower's radius and hitbox. */
-    sizeMultiplier: 'f32',
+    sizeMultiplier: 'f64',
     /** Additive pixels on item pickup radius. */
     magnetism: 'f32',
     /** Additive pixels on the range at which mobs aggro this player. */

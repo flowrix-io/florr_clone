@@ -8,7 +8,6 @@ import {
     enemies,
     PLAYER_SIZE,
     ENEMY_SIZE,
-    MAX_SPEED,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
     VIEWPORT_WIDTH,
@@ -25,8 +24,7 @@ import {
     PVP_ARENA_CENTER_X,
     PVP_ARENA_CENTER_Y,
     PVP_ARENA_RADIUS,
-    isInPvpArena,
-    stepPlayerMovement
+    isInPvpArena
 } from '../constants';
 import { isInMazeRegion, getActiveMaze, MAZE_ORIGIN_X, MAZE_ORIGIN_Y } from '../maze';
 import { WORLD_MAP } from '../map_data';
@@ -1247,61 +1245,59 @@ function applyPassiveHealing(player: ServerPlayer, deltaTime: number): void {
 }
 
 /**
- * The velocity the player is trying to reach this tick, from mouse or keyboard
- * input. Also caches the clamped speed multiplier on the player, which the
- * broadcast sends to the owning client for prediction.
+ * The unclamped effective speed multiplier for this player.
+ *
+ * This was the first three lines of `computeTargetVelocity`, which the ECS
+ * `playerMovement` system now replaces. It stays here — and is exported —
+ * because the ECS may not import petal_actions.ts (it binds port 3000 at module
+ * scope), so server.ts injects this into the sync layer instead. The CLAMP that
+ * used to live alongside it moved into the system with the rest of the maths.
+ *
+ * When the `playerModifiers` system is enabled this function and its injection
+ * both disappear; until then it is the single definition of the value, so bot
+ * standoff maths and movement cannot disagree about it.
  */
-function computeTargetVelocity(player: ServerPlayer): { targetVelocityX: number; targetVelocityY: number } {
-    let targetVelocityX = 0;
-    let targetVelocityY = 0;
+export function computeSpeedBoost(player: ServerPlayer): number {
+    return player.speed_boost * getSpeedMultiplier(player);
+}
 
-    // Effective speed multiplier (boosts + petal/effect modifiers). Cached on the
-    // player so the broadcast can send it to the owning client for prediction.
-    let speedFactor = player.speed_boost * getSpeedMultiplier(player);
-    // Clamp the effective speed. getSpeedMultiplier multiplies every speed_boost effect
-    // and petal modifier with no cap, so an apex/stacked boost (or a degenerate value)
-    // can make this enormous — moving the player thousands of px in one tick and landing
-    // them at an absurd coordinate that then hangs distance/raycast loops elsewhere (e.g.
-    // bot wall-avoidance rayHitsWall). 8x is well above any intended boost.
-    if (!(speedFactor >= 0)) speedFactor = 1;   // NaN / negative → 1
-    if (speedFactor > 8) speedFactor = 8;
-    player.speedFactor = speedFactor;
+/**
+ * The per-player work that used to run BEFORE movement inside
+ * `updatePlayerState`, lifted out so it still runs before movement now that
+ * movement is a batched ECS pass over every player at once.
+ *
+ * Splitting it out is not cosmetic. `applyPetalRingDamage` writes `player.x/y`
+ * DIRECTLY (a glitch flower's ring knocks you off it), and `updatePlayerEffects`
+ * expires the speed_boost effects that decide this tick's speed factor — both
+ * are inputs to the integration step, so both have to land on the same side of
+ * it they always did. Everything else here is health bookkeeping and mob damage
+ * that movement does not read.
+ *
+ * Called once per player, for every player, immediately before the movement
+ * window opens. See runSimulationStep.
+ */
+export function updatePlayerPreMovement(
+    player: ServerPlayer,
+    deltaTime: number,
+    deps: PlayerStateDependencies,
+): void {
+    // The same guards updatePlayerState opens with, so the two halves agree on
+    // exactly which flowers are live this tick.
+    if (!player || !player.inputs) return;
+    if (player.isDead) return;
 
-    if (player.inputs.useMouse &&
-        player.inputs.mouseDirectionX !== undefined &&
-        player.inputs.mouseDirectionY !== undefined &&
-        player.inputs.mouseSpeedMultiplier !== undefined) {
-        // Client has already calculated the direction and speed multiplier
-        // Server just needs to apply MAX_SPEED and the effective speed factor
-        // mouseSpeedMultiplier is a client-supplied fraction (normally 0..1); clamp it so
-        // a malformed/huge value can't bypass the speedFactor cap above. NaN → 0 (no move).
-        const mouseMult = Math.min(1.5, Math.max(0, player.inputs.mouseSpeedMultiplier)) || 0;
-        const speed = MAX_SPEED * speedFactor * mouseMult;
-        targetVelocityX = player.inputs.mouseDirectionX * speed;
-        targetVelocityY = player.inputs.mouseDirectionY * speed;
-        player.angle = Math.atan2(player.inputs.mouseDirectionY, player.inputs.mouseDirectionX);
-    } else if (player.inputs.keys) {
-        if (player.inputs.keys.includes('ArrowLeft') || player.inputs.keys.includes('a')) targetVelocityX -= 1;
-        if (player.inputs.keys.includes('ArrowRight') || player.inputs.keys.includes('d')) targetVelocityX += 1;
-        if (player.inputs.keys.includes('ArrowUp') || player.inputs.keys.includes('w')) targetVelocityY -= 1;
-        if (player.inputs.keys.includes('ArrowDown') || player.inputs.keys.includes('s')) targetVelocityY += 1;
+    const { io } = deps;
 
-        if (targetVelocityX !== 0 && targetVelocityY !== 0) {
-            const length = Math.sqrt(targetVelocityX * targetVelocityX + targetVelocityY * targetVelocityY);
-            targetVelocityX /= length;
-            targetVelocityY /= length;
-        }
+    updatePlayerEffects(player, deltaTime);
+    updateSpongeDamage(player, deltaTime, io);
 
-        const speed = MAX_SPEED * speedFactor;
-        targetVelocityX *= speed;
-        targetVelocityY *= speed;
+    applyPassiveHealing(player, deltaTime);
 
-        if (targetVelocityX !== 0 || targetVelocityY !== 0) {
-            player.angle = Math.atan2(targetVelocityY, targetVelocityX);
-        }
-    }
+    // Apply raindrop aura damage to mobs around the player
+    applyRaindropAuraDamage(player, deps);
 
-    return { targetVelocityX, targetVelocityY };
+    // ...and the reverse: a glitch flower's petal ring sweeping through the player.
+    applyPetalRingDamage(player, io);
 }
 
 /**
@@ -1475,34 +1471,25 @@ export function updatePlayerState(
 
     const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
 
-    // Update player effects
-    updatePlayerEffects(player, deltaTime);
-    updateSpongeDamage(player, deltaTime, io);
-
-    applyPassiveHealing(player, deltaTime);
-
-    // Apply raindrop aura damage to mobs around the player
-    applyRaindropAuraDamage(player, deps);
-
-    // ...and the reverse: a glitch flower's petal ring sweeping through the player.
-    applyPetalRingDamage(player, io);
-
-    const { targetVelocityX, targetVelocityY } = computeTargetVelocity(player);
-
-    // Player movement physics (gardn friction + substepped wall/water collision).
-    // Run through the SHARED stepPlayerMovement so the client's movement prediction
-    // (game.ts) executes byte-for-byte the same physics — nothing to reconcile in
-    // open movement. targetVelocity is the terminal velocity it converges to
-    // (MAX_SPEED × speed_boost × multipliers, computed above).
+    // The pre-movement half (effects, healing, aura and ring damage) ran in
+    // updatePlayerPreMovement, and INTEGRATION now happens on the ECS between
+    // the two — see runSimulationStep and server/ecsSync.syncPlayersToEcs.
+    //
+    // `movedX`/`movedY` are what `stepPlayerMovement` used to return straight
+    // into these locals, so newX/newY start in exactly the same place they
+    // always did, and everything below — knockback, wall repulsion, pickups,
+    // teleporters, the maze/arena clamps — is unchanged and still commits to
+    // player.x/y at the very end of the function.
+    //
+    // What matters just as much is what is NOT assigned yet: `player.x`/
+    // `player.y` still hold the PREVIOUS tick's committed position for the whole
+    // of this function, which is what the petal block below reads and what makes
+    // petals trail the flower. velocity, angle and speedFactor were all written
+    // up-front by the legacy code too, so the movement window writes those
+    // directly and they are already current here.
     const effectivePlayerSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-    const moved = stepPlayerMovement(
-        { x: player.x, y: player.y, vx: player.velocityX, vy: player.velocityY },
-        targetVelocityX, targetVelocityY, deltaTime, effectivePlayerSize
-    );
-    player.velocityX = moved.vx;
-    player.velocityY = moved.vy;
-    let newX = moved.x;
-    let newY = moved.y;
+    let newX = player.movedX ?? player.x;
+    let newY = player.movedY ?? player.y;
 
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
@@ -1968,7 +1955,7 @@ export function updatePlayerState(
                     getShieldAmount(player) <= 0 &&
                     timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
 
-                let closestEnemy: typeof enemies[number] | null = null;
+                let closestEnemy: Enemy | null = null;
                 let closestDistanceSq = Infinity;
                 if (playerPetalAttractionRadius > 0 && !burstHealHoming && !burstShieldHoming) {
                     // Broad-phase around this petal's own orbit point. The eligibility test

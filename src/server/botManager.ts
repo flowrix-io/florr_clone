@@ -5,6 +5,7 @@
 
 import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer } from '../player';
+import { Enemy } from '../server_utils';
 import { sanitizePublicPlayerForClient } from './playerWire';
 import {
     players,
@@ -43,7 +44,6 @@ import {
     playerSquadMap
 } from './squadManager';
 import { registerBotGuild, clearBotGuilds, getBotGuildNameForBot } from './guildManager';
-import { cleanupPlayerPetalActionState } from '../petal_actions';
 import { RARITY_ORDER } from './shared/rarity';
 
 const BOT_ID_PREFIX = 'bot_';
@@ -1093,6 +1093,28 @@ function removeBot(id: string, io: SocketIOServer): void {
     botAIState.delete(id);
     botPersona.delete(id);
     botSquadNextTick.delete(id);
+    // Required LAZILY, and this is the only reason it is not a normal import.
+    // petal_actions.ts imports './server' at module scope, and server.ts binds
+    // port 3000 and opens the account database on require — so a top-level
+    // import here means that merely REQUIRING botManager starts a second live
+    // server on the port the real game is using, which is why nothing can drive
+    // this file from a harness today.
+    //
+    // Deferring this edge does NOT fix that on its own, and it is worth being
+    // precise about why rather than leaving a comment that overclaims: there is
+    // a SECOND module-scope path, botManager -> server/playerManager ->
+    // server/utils -> petal_actions -> server. Closing that one means deferring
+    // `splitPlayers`/`syncSplitStars` inside server/utils.ts, which reorders
+    // module initialisation inside a CIRCULAR graph (petal_actions and server.ts
+    // already require each other), and the failure mode for getting that wrong
+    // is a "Cannot access X before initialization" at boot that no gate here can
+    // catch, because no gate may start a server. So that half is deliberately
+    // left undone. This edge is closed because it is free — playerManager has
+    // already pulled petal_actions into the cache long before this line, so the
+    // require order is unchanged either way.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { cleanupPlayerPetalActionState } =
+        require('../petal_actions') as typeof import('../petal_actions');
     cleanupPlayerPetalActionState(id);
     io.emit('playerDisconnected', id);
 }
@@ -1320,8 +1342,8 @@ function findInterceptingMob(
     dirY: number,
     excludeId: string | null,
     range: number
-): { enemy: typeof enemies[number]; dist: number } | null {
-    let best: typeof enemies[number] | null = null;
+): { enemy: Enemy; dist: number } | null {
+    let best: Enemy | null = null;
     let bestDist = Infinity;
     // The acceptance test below is dist <= range + mobRadius — exactly the
     // "hitbox overlaps circle(range)" contract of the fat-inserted grid, so a
@@ -1745,14 +1767,14 @@ function pickBestEnemyTarget(
     preferredTiers: Set<string>,
     stickyId?: string,
     stickiness: number = TARGET_STICKINESS
-): { enemy: typeof enemies[number]; dist: number } | null {
+): { enemy: Enemy; dist: number } | null {
     // Score = priority * 10000 - distance, so bosses within their aggro range
     // beat every regular mob and the closer target wins among same tier.
     // Preferred-tier (matches bot's rarity progression) gets a +0.5 priority
     // bump so it beats same-tier-class unpreferred mobs, but never bosses.
     // The bot's existing target gets a flat score bonus on top (see
     // TARGET_STICKINESS) so ties resolve in favour of staying committed.
-    let best: typeof enemies[number] | null = null;
+    let best: Enemy | null = null;
     let bestScore = -Infinity;
     let bestDist = 0;
 
@@ -1763,7 +1785,7 @@ function pickBestEnemyTarget(
     // per-tick bossIndex instead of the grid. Same selection as the old full
     // scan, without iterating all ~1400 enemies per bot.
     const near = queryEnemiesNear(bot.x, bot.y, HIGH_TIER_AGGRO_RANGE, _botQueryScratch);
-    const scoreEnemy = (enemy: typeof enemies[number]) => {
+    const scoreEnemy = (enemy: Enemy) => {
         if (enemy.isDead) return;
         if (enemy.type === 'item_spawner') return;
         if (enemy.type === 'target_dummy') return;
@@ -1860,7 +1882,7 @@ function distSqToNearestHumanPlayer(x: number, y: number): number {
 // freshly-spawned bosses bothering humans rather than chasing whatever stale
 // boss happens to come first in the enemies array.
 function pickRaidTargetGlobal(): { x: number; y: number; tier: string } | null {
-    let pool: typeof enemies[number][] = [];
+    let pool: Enemy[] = [];
     let preferUnique = false;
     for (const enemy of enemies) {
         if (enemy.ownerId) continue;
@@ -2034,7 +2056,7 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     // ram every mob in their path because powder mode skips the standoff
     // bands. Among in-range bosses, prefer uniques over supers, then most
     // recently spawned, then proximity to the nearest human player.
-    let pool: typeof enemies[number][] = [];
+    let pool: Enemy[] = [];
     let preferUnique = false;
     for (const enemy of bossIndex) {
         if (enemy.isDead) continue; // may have died since the index was built this tick
@@ -2497,10 +2519,10 @@ function updateBotSquadMembership(io: SocketIOServer, now: number): void {
 // per tick (there are only a handful), and the range-bounded scans go through the
 // enemy spatial grid instead. rebuildEnemyGrid() must run BEFORE updateBotAI in
 // the tick for the grid queries to see this tick's positions (see server.ts).
-const bossIndex: (typeof enemies[number])[] = [];
+const bossIndex: (Enemy)[] = [];
 // One shared broad-phase scratch: the three query users per bot (mode scan, target
 // pick, intercept) each fully consume their results before the next query runs.
-const _botQueryScratch: (typeof enemies[number])[] = [];
+const _botQueryScratch: (Enemy)[] = [];
 
 function rebuildBossIndex(): void {
     bossIndex.length = 0;

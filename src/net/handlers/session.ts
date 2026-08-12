@@ -6,12 +6,18 @@
  * *which* flower this client is, before any world state arrives.
  */
 
+import { ClientWorld } from '../../client_world';
 import { removeCustomSkin, setCustomSkins, upsertCustomSkin } from '../../graphics/player-skins';
 import { setActiveMazeDay } from '../../maze';
-import { Player } from '../../player';
 import { CustomSkin } from '../../skin_format';
 import { io } from '../../ws_client';
-import { isLocalPlayerId, localPlayer, withoutRawPetalPositions } from '../playerRefs';
+import {
+    isLocalPlayerId,
+    localPlayer,
+    PlayerPayload,
+    toClientPlayer,
+    withoutRawPetalPositions,
+} from '../playerRefs';
 import { getCurrentGame } from '../../app_refs';
 
 /**
@@ -21,6 +27,8 @@ import { getCurrentGame } from '../../app_refs';
  * module free of a cycle back through the registration barrel.
  */
 export function registerSessionHandlers(game: any, reRegisterAll: (game: any) => void): void {
+    const cw: ClientWorld = game.clientWorld;
+
     // Per-event wire-byte counters now live on the WSClientSocket wrapper (see
     // ws_client.ts getEventStats). The wrapper records true encoded byte sizes,
     // so we no longer need the old JSON-stringify estimator here.
@@ -55,7 +63,7 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
                     // Ensure player data is properly initialized with defaults if needed
                     if (data.playerData && game.socket.id) {
                         // Clean up any existing player with the same ID to prevent duplicates
-                        game.players.delete(game.socket.id);
+                        cw.removePlayer(game.socket.id);
 
                         // Ensure loadout is properly initialized
                         if (!data.playerData.loadout || !Array.isArray(data.playerData.loadout)) {
@@ -69,13 +77,13 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
                             console.warn('[CLIENT] Transferred player had invalid inventory, initialized empty array');
                         }
 
-                        // Create new player object with transferred data
+                        // Create new player object with transferred data. Position
+                        // goes to the entity, not onto this object.
+                        const spawnX = data.playerData.x || 200;
+                        const spawnY = data.playerData.y || 200;
                         const currentPlayer = {
                             id: game.socket.id,
                             name: data.playerData.name || 'Anonymous',
-                            x: data.playerData.x || 200,
-                            y: data.playerData.y || 200,
-                            angle: data.playerData.angle || 0,
                             score: data.playerData.score || 0,
                             imageLoaded: false,
                             image: new Image(),
@@ -89,12 +97,14 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
                             level: data.playerData.level || 1,
                             xp: data.playerData.xp || 0,
                             xpToNextLevel: data.playerData.xpToNextLevel || 100,
-                            targetX: data.playerData.x || 200,
-                            targetY: data.playerData.y || 200
                         };
 
                         // Set the new player data
-                        game.players.set(game.socket.id, currentPlayer);
+                        cw.upsertPlayer(
+                            game.socket.id, spawnX, spawnY,
+                            data.playerData.angle || 0,
+                            toClientPlayer(currentPlayer),
+                        );
                         console.log('[CLIENT] Player data updated after transfer');
                     }
 
@@ -151,7 +161,7 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
 
         try {
             // Clear spinning state since we're transferring
-            const transferPlayer = game.players.get(game.socket.id);
+            const transferPlayer = cw.player(game.socket.id);
             if (transferPlayer) {
                 transferPlayer.teleporterCharging = false;
                 transferPlayer.teleporterChargeStart = undefined;
@@ -212,15 +222,17 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
     game.socket.on('playerTeleported', (data: any) => {
         console.log(`[CLIENT] Player ${data.playerId} teleported to (${data.newX}, ${data.newY})`);
 
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         const isCurrentPlayer = isLocalPlayerId(game, data.playerId);
 
+        // teleportPlayer, not a raw position write: the flower is CUT onto the
+        // new spot on the next tick instead of easing to it. Easing would glide
+        // it across the world — and the maze sits at (200000, 200000).
         if (isCurrentPlayer && player && game.graphics) {
             // Freeze the current frame and iris close over it
             const screenshot = game.graphics.captureScreenshot();
             game.graphics.startIrisClose(screenshot, () => {
-                player.x = data.newX;
-                player.y = data.newY;
+                cw.teleportPlayer(data.playerId, data.newX, data.newY);
                 player.teleporterCharging = false;
                 player.teleporterChargeStart = undefined;
                 // Open iris to reveal new location
@@ -228,8 +240,7 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
             });
         } else if (player) {
             // Other players just teleport instantly
-            player.x = data.newX;
-            player.y = data.newY;
+            cw.teleportPlayer(data.playerId, data.newX, data.newY);
         }
     });
 
@@ -285,7 +296,7 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
             // death overlay belongs to the half that died, and the loadout bar
             // renders the active half's petals (the two halves carry separate
             // loadouts).
-            const active = game.players.get(data.activePlayerId);
+            const active = cw.player(data.activePlayerId);
             if (active) {
                 if (active.isDead && !game.isPlayerDead) {
                     game.isPlayerDead = true;
@@ -315,54 +326,59 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
         console.log(`Connected to ${type} server`);
     });
 
-    game.socket.on('currentPlayers', (players: Record<string, Player>) => {
+    game.socket.on('currentPlayers', (players: Record<string, PlayerPayload>) => {
         //console.log('Received current players:', players);
-        game.players.clear();
+        cw.clearPlayers();
         Object.values(players).forEach(player => {
             // Don't override health with max health
-            game.players.set(player.id, withoutRawPetalPositions({
+            const x = player.x;
+            const y = player.y;
+            const angle = player.angle ?? 0;
+            cw.upsertPlayer(player.id, x, y, angle, toClientPlayer(withoutRawPetalPositions({
                 ...player,
                 imageLoaded: true,
                 score: 0,
                 velocityX: 0,
                 velocityY: 0
-            }));
+            })));
         });
         // Update loadout display after player loadout and inventory is received
-        if (game.socket.id && game.players.has(game.socket.id) && game.inventoryManager) {
+        if (game.socket.id && cw.hasPlayer(game.socket.id) && game.inventoryManager) {
             game.inventoryManager.updateLoadoutDisplay();
         }
     });
 
-    game.socket.on('newPlayer', (player: Player) => {
+    game.socket.on('newPlayer', (player: PlayerPayload) => {
         //console.log('New player joined:', player);
-        game.players.set(player.id, withoutRawPetalPositions({
+        const x = player.x;
+        const y = player.y;
+        const angle = player.angle ?? 0;
+        cw.upsertPlayer(player.id, x, y, angle, toClientPlayer(withoutRawPetalPositions({
             ...player,
             imageLoaded: true,
             score: 0,
             velocityX: 0,
             velocityY: 0
-        }));
+        })));
         if (player.id === game.socket.id && game.inventoryManager) {
             game.inventoryManager.updateLoadoutDisplay();
         }
     });
 
-    game.socket.on('playerMoved', (player: Player) => {
+    game.socket.on('playerMoved', (player: PlayerPayload) => {
         const now = performance.now();
         game.lastHeartbeat = now; // Update heartbeat on any server message
 
-        const existingPlayer = game.players.get(player.id);
+        const existingPlayer = cw.player(player.id);
 
         if (existingPlayer) {
-            // Positions are targets only — game.ts eases every flower (local and
-            // remote) toward them at the same rate. (This handler is dead anyway:
-            // the server never emits 'playerMoved'; gameStateUpdate carries P.)
-            existingPlayer.targetX = player.x;
-            existingPlayer.targetY = player.y;
+            // Positions are interpolation targets only — every flower (local and
+            // remote) eases toward them at the same rate. (This handler is dead
+            // anyway: the server never emits 'playerMoved'; gameStateUpdate
+            // carries P.)
+            cw.movePlayer(player.id, player.x, player.y, player.angle);
 
             // Update other properties
-            existingPlayer.angle = player.angle;
             existingPlayer.velocityX = player.velocityX;
             existingPlayer.velocityY = player.velocityY;
             existingPlayer.health = player.health;
@@ -370,20 +386,19 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
             existingPlayer.level = player.level;
             existingPlayer.score = player.score;
         } else {
-            game.players.set(player.id, withoutRawPetalPositions({
-                ...player,
-                imageLoaded: true,
-                score: 0,
-                velocityX: 0,
-                velocityY: 0,
-                targetX: player.x,
-                targetY: player.y
-            }));
+            cw.upsertPlayer(player.id, player.x, player.y, player.angle ?? 0,
+                toClientPlayer(withoutRawPetalPositions({
+                    ...player,
+                    imageLoaded: true,
+                    score: 0,
+                    velocityX: 0,
+                    velocityY: 0,
+                })));
         }
     });
 
     game.socket.on('guildTagUpdate', (data: { id: string; guildName: string | null }) => {
-        const player = game.players.get(data.id);
+        const player = cw.player(data.id);
         if (!player) return;
         player.guildName = data.guildName || undefined;
     });
@@ -456,17 +471,17 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
     game.socket.on('playerDisconnected', (playerId: string) => {
         const disconnectTime = performance.now();
         console.log(`[CLIENT] Player ${playerId} disconnected at ${disconnectTime.toFixed(0)}`);
-        game.players.delete(playerId);
+        cw.removePlayer(playerId);
     });
 
     // Handle player leaving (for cross-server transfers)
     game.socket.on('playerLeft', (playerId: string) => {
         console.log(`[CLIENT] Player ${playerId} left the server`);
-        game.players.delete(playerId);
+        cw.removePlayer(playerId);
     });
 
     game.socket.on('dotCollected', (data: { playerId: string, dotIndex: number }) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.score++;
         }

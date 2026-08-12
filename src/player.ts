@@ -96,12 +96,24 @@ export interface PlayerInventoryDict {
     };
 }
 
+/**
+ * The client's view of a flower, MINUS everything the client ECS owns.
+ *
+ * Position, facing, the render-position anchor the petal ring is measured from
+ * and the eased eye offset are components on the client world (see
+ * src/client_world.ts) and are deliberately ABSENT here. That absence is the
+ * mechanical guarantee that no renderer keeps reading a stale legacy copy of a
+ * field the ECS moved — the same class of bug that made every projectile hit
+ * silently vanish during the server cutover, with all four verification gates
+ * green. Adding `x`/`y` back to this interface reopens it.
+ *
+ * Everything below is account and UI state: no system iterates it, every panel
+ * in the game takes a `Player`, and it is held as-is in the entity's
+ * `LegacyPlayer.ref`.
+ */
 export interface Player {
   id: string;
   name: string;
-  x: number;
-  y: number;
-  angle: number;
   score: number;
   imageLoaded: boolean;
   image: HTMLImageElement;
@@ -120,22 +132,10 @@ export interface Player {
   xpToNextLevel: number;
   lastDamageTime?: number;
   speed_boost?: boolean;
-  targetX: number;
-  targetY: number;
-  // The flower's own eased render position, republished by game.ts easeToTarget()
-  // for EVERY player, and used to anchor that player's absolute (server-sent)
-  // petal positions in graphics/player-drawing.ts.
-  _refX?: number;
-  _refY?: number;
-  // NOTE: players deliberately have NO `_snapshots` buffer (enemies do). Every
-  // flower, local and remote, renders by easing x/y toward targetX/targetY at
-  // the same rate — see game.ts easeToTarget()/predictLocalPlayer().
-  // Effective speed multiplier from the server (speed boosts / speed petals), so
-  // client-side prediction can move at the same speed as the server.
+  // Effective speed multiplier from the server (speed boosts / speed petals).
   speedFactor?: number;
-  eye?: {x: number, y: number};
-  targetEye?: {x: number, y: number};
   isDead?: boolean;
+  killedBy?: { type: string; tier: string };
   petalExtension?: number; // Petal extension value from server (per-player)
   // Authoritative per-petal positions from the server, with interpolation targets.
   // Sent for the local player AND every on-screen remote player (server.ts
@@ -220,6 +220,27 @@ export interface ServerPlayer {
   // movement this tick. Cached so the broadcast can send it to the owning client
   // for accurate client-side prediction.
   speedFactor?: number;
+  /**
+   * Where this tick's movement integration PUT the flower, before the rest of
+   * updatePlayerState has had its say. Server-internal; never broadcast (the
+   * wire projection in server/playerWire.ts is a strict allowlist).
+   *
+   * This pair is not a cache, it is a deliberate one-tick stage, and it exists
+   * to protect an invariant that is easy to destroy by accident. Movement used
+   * to be inline in updatePlayerState and its result lived in the `newX`/`newY`
+   * LOCALS for ~1700 lines, so throughout the petal block `player.x`/`player.y`
+   * still held the position committed at the end of the PREVIOUS tick — which is
+   * why petals orbit where the flower was, trailing it, rather than snapping to
+   * where it is. Now that integration is a batched ECS pass that runs before
+   * updatePlayerState, writing its result straight onto `player.x/y` would have
+   * silently removed that lag from every petal in the game.
+   *
+   * So the ECS window writes HERE, updatePlayerState seeds `newX`/`newY` from
+   * it, and `player.x/y` are still only assigned at the very end of the
+   * function, exactly as before.
+   */
+  movedX?: number;
+  movedY?: number;
   inputs: {
     seq?: number;
     keys: string[];

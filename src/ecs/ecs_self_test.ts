@@ -10,6 +10,7 @@
  * driven from a runner script without a test framework — the project has none.
  */
 
+import { createMask, maskContainsAll, maskIntersects, maskSet } from './archetype';
 import { allComponents, defineComponent, defineTag } from './component';
 import { entityGeneration, entityIndex, makeEntity, Entity, NULL_ENTITY } from './entity';
 import { Phase, Scheduler } from './system';
@@ -470,6 +471,31 @@ export function runEcsSelfTest(): Failure[] {
             }
         });
         checkEqual('stacks detect their dead target', orphaned, 3);
+    }
+
+    // -- component masks survive the sign bit --------------------------------
+    {
+        // JS bitwise operators yield a SIGNED int32, so a mask word with bit 31
+        // set comes back from `&` negative and never equals the unsigned word it
+        // was masked with. A query requiring a component whose id is 31 mod 32
+        // then matches nothing at all — one system silently stops running, and
+        // every typecheck and every other assertion here stays green. This bit
+        // this project once the catalog grew past id 95.
+        for (const id of [0, 1, 30, 31, 32, 63, 64, 95, 127]) {
+            const archetype = createMask(160);
+            const required = createMask(160);
+            maskSet(archetype, id);
+            maskSet(required, id);
+            check(`mask containment holds for component id ${id}`,
+                maskContainsAll(archetype, required));
+            check(`mask intersection holds for component id ${id}`,
+                maskIntersects(archetype, required));
+
+            const other = createMask(160);
+            maskSet(other, id === 0 ? 1 : id - 1);
+            check(`mask containment rejects a missing component near id ${id}`,
+                !maskContainsAll(other, required));
+        }
     }
 
     return failures;

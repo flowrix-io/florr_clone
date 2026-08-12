@@ -57,11 +57,21 @@ export function maskHas(mask: ComponentMask, componentId: number): boolean {
     return (mask[componentId >>> 5] & ((1 << (componentId & 31)) >>> 0)) !== 0;
 }
 
-/** True when every bit set in `required` is also set in `mask`. */
+/**
+ * True when every bit set in `required` is also set in `mask`.
+ *
+ * The `>>> 0` is load-bearing, not decoration. JS bitwise operators produce a
+ * SIGNED int32, so a word whose bit 31 is set comes back from `&` as a negative
+ * number and never compares equal to the unsigned value it was masked with —
+ * the query silently matches NOTHING for any component whose id is 31 mod 32.
+ * That is invisible until the component catalog happens to grow past such an id,
+ * at which point one system stops running and nothing fails.
+ */
 export function maskContainsAll(mask: ComponentMask, required: ComponentMask): boolean {
     for (let i = 0; i < required.length; i++) {
         const r = required[i];
-        if (r !== 0 && ((mask[i] ?? 0) & r) !== r) return false;
+        if (r === 0) continue;
+        if ((((mask[i] ?? 0) & r) >>> 0) !== r) return false;
     }
     return true;
 }

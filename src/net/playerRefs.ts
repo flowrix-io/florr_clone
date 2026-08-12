@@ -27,6 +27,39 @@ export function withoutRawPetalPositions<T extends { petalPositions?: any }>(pla
     return player;
 }
 
+/**
+ * A full player payload exactly as the server sends it: a `Player` plus the
+ * position fields the client ECS owns and the `Player` interface no longer
+ * declares.
+ */
+export type PlayerPayload = Player & { x: number; y: number; angle?: number };
+
+/**
+ * Turn a server payload into the object the client stores on the entity.
+ *
+ * Deleting the position fields is not tidiness. `Player` no longer declares
+ * them, but a spread or `Object.assign` copies them anyway — TypeScript does
+ * not excess-property-check either — so without this the stored object would
+ * carry a second, frozen copy of x/y that the ECS never updates. That is the
+ * exact shape of the bug this rewrite keeps hitting: one field, two homes, and
+ * the stale one wins somewhere. The wire's position goes to the entity and
+ * nowhere else.
+ *
+ * Mutates and returns the same object, like withoutRawPetalPositions above.
+ */
+export function toClientPlayer(payload: Record<string, any>): Player {
+    delete payload.x;
+    delete payload.y;
+    delete payload.angle;
+    delete payload.targetX;
+    delete payload.targetY;
+    delete payload._refX;
+    delete payload._refY;
+    delete payload.eye;
+    delete payload.targetEye;
+    return payload as unknown as Player;
+}
+
 // After the splitter petal runs, this client owns two flowers — `socket.id` and
 // `${socket.id}_split2` — but drives only one at a time (`game.activePlayerId`,
 // flipped by the server's `playerSwitched`). The camera, prediction, inventory
@@ -40,7 +73,7 @@ export function localPlayerId(game: any): string {
 }
 
 export function localPlayer(game: any): Player | undefined {
-    return game.players.get(localPlayerId(game));
+    return game.clientWorld.player(localPlayerId(game));
 }
 
 // True for the half currently being driven — use for camera/UI/death state.
@@ -68,7 +101,7 @@ export function forEachOwnPlayer(game: any, fn: (player: any) => void): void {
     for (const id of [socketId, game.activePlayerId, `${socketId}_split2`]) {
         if (!id || seen.has(id)) continue;
         seen.add(id);
-        const p = game.players.get(id);
+        const p = game.clientWorld.player(id);
         if (p) fn(p);
     }
 }

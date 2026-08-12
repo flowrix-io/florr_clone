@@ -1,14 +1,27 @@
-import { Graphics, Player, Enemy, WorldItem } from './core';
+import { Graphics, WorldItem } from './core';
+import { ClientWorld } from '../client_world';
 import { isInMazeRegion } from '../maze';
 
 declare module './core' {
     interface Graphics {
-        render(players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number, groundPollens?: Map<string, any>, webFields?: Map<string, any>): void;
+        render(world: ClientWorld, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension?: number, groundPollens?: Map<string, any>, webFields?: Map<string, any>): void;
     }
 }
 
-Graphics.prototype.render = function(this: Graphics, players: Map<string, Player>, enemies: Map<string, Enemy>, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0, groundPollens?: Map<string, any>, webFields?: Map<string, any>): void {
-    // Cache timestamp for this frame to avoid Date.now() per enemy
+/**
+ * One entry point, one entity source.
+ *
+ * Every renderer below takes the same `ClientWorld` and reads components off
+ * it. There is deliberately no Map rebuilt from the world for the older
+ * renderers to keep using: a compatibility shim like that is exactly the dual
+ * representation this pass removes, and a half-migrated renderer set means one
+ * mob with two positions.
+ */
+Graphics.prototype.render = function(this: Graphics, world: ClientWorld, items: Map<string, WorldItem>, mobProjectiles: Map<string, any>, playerProjectiles: Map<string, any>, currentPlayerId: string, petalExtension: number = 1.0, groundPollens?: Map<string, any>, webFields?: Map<string, any>): void {
+    // Cache timestamp for this frame to avoid Date.now() per enemy. This is the
+    // DEATH-ANIMATION clock — the same Date.now() the ingest layer stamps
+    // DeathAnimation.startTime with. Snapshot timestamps live in the
+    // performance.now() domain and are never compared against it.
     this.frameTimestamp = Date.now();
 
     // Apply the antialiasing preference at the start of every frame so
@@ -17,9 +30,9 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     this.ctx.imageSmoothingEnabled = this.antialiasing;
 
     // Update section-based texture loading based on player position
-    const currentPlayer = players.get(currentPlayerId);
-    if (currentPlayer) {
-        this.updateSectionTextures(currentPlayer.x, currentPlayer.y);
+    const currentPlayer = world.playerEntity(currentPlayerId);
+    if (currentPlayer !== undefined) {
+        this.updateSectionTextures(world.playerX(currentPlayer), world.playerY(currentPlayer));
     }
 
     // HiDPI base transform. The main canvas backing store is physical pixels
@@ -122,10 +135,10 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     }
 
     // Draw raindrop auras (grass + droplets) below enemies and players
-    this.drawRaindropAuras(players);
+    this.drawRaindropAuras(world);
 
     // Draw game objects
-    this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
+    this.drawGameObjects(world, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
 
     // Draw explosion effects (in world coordinates, before camera restore)
     this.drawExplosionEffects();
@@ -145,16 +158,16 @@ Graphics.prototype.render = function(this: Graphics, players: Map<string, Player
     }
 
     // Draw UI elements (not affected by camera)
-    this.drawUI(players, currentPlayerId);
+    this.drawUI(world, currentPlayerId);
 
     // Draw falling stars (screen coordinates)
     this.drawFallingStars();
 
     // Draw boss bars for ultra, super, and unique mobs in view
-    this.drawBossBars(enemies);
+    this.drawBossBars(world);
 
     // Draw the live PVP leaderboard (only visible while in the arena)
-    this.drawPvpLeaderboard(players, currentPlayerId);
+    this.drawPvpLeaderboard(world, currentPlayerId);
 
     // Draw changelog and notifications menus. The canvas' stacking is set once
     // by AppShell.attachCanvas() and never changes, so there is nothing to

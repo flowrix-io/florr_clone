@@ -184,7 +184,7 @@ export interface HarnessResult {
  * than assumed: if the module ever reappears in the require graph, fail loudly
  * here instead of silently starting a second server.
  */
-function assertNoServerBooted(): void {
+export function assertNoServerBooted(): void {
     const loaded = Object.keys(require.cache).filter(p =>
         /[/\\]dist[^/\\]*[/\\]server\.js$/.test(p));
     if (loaded.length > 0) {
@@ -251,20 +251,25 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     let projectilesMid = 0;
 
     runtime.scheduler.profiling = true;
-    // Projectiles run on their own scheduler; without this they are absent from
-    // the tick-budget report entirely.
+    // Projectiles and players run on their own schedulers; without these they
+    // are absent from the tick-budget report entirely.
     runtime.projectileScheduler.profiling = true;
+    runtime.playerScheduler.profiling = true;
 
     const startingEntities = world.size();
 
     // Warm up the JIT before timing.
     for (let t = 0; t < 60; t++) {
         const now = now0 + t * (1000 / 30);
+        // Players first, matching runSimulationStep: the movement window opens
+        // before the mob tick, not inside it.
+        runtime.tickPlayers(1 / 30, 1000 / 30, now);
         runtime.tick(1 / 30, 1000 / 30, now);
         runtime.tickProjectiles(1000 / 30, now);
     }
     runtime.scheduler.drainTimings();
     runtime.projectileScheduler.drainTimings();
+    runtime.playerScheduler.drainTimings();
 
     const heapBefore = process.memoryUsage().heapUsed;
     const started = performance.now();
@@ -272,6 +277,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     for (let t = 0; t < config.ticks; t++) {
         const now = now0 + (60 + t) * (1000 / 30);
         const tickStart = performance.now();
+        runtime.tickPlayers(1 / 30, 1000 / 30, now);
         runtime.tick(1 / 30, 1000 / 30, now);
         // Exactly once per simulation step, with the real elapsed time — the
         // same split server.ts uses. Mob volleys leak entities forever without
@@ -301,7 +307,11 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     const totalMs = performance.now() - started;
     const heapMB = (process.memoryUsage().heapUsed - heapBefore) / (1024 * 1024);
 
-    const timings = [...runtime.scheduler.drainTimings(), ...runtime.projectileScheduler.drainTimings()]
+    const timings = [
+        ...runtime.scheduler.drainTimings(),
+        ...runtime.projectileScheduler.drainTimings(),
+        ...runtime.playerScheduler.drainTimings(),
+    ]
         .map(t => ({ name: t.name, avgMs: t.avgMs, maxMs: t.maxMs }))
         .sort((a, b) => b.avgMs - a.avgMs);
 

@@ -3,10 +3,12 @@
  * animations, petal break/restore, and inventory replacement.
  */
 
+import { ClientWorld } from '../../client_world';
 import { Item, WorldItem } from '../../item';
 import { forEachOwnPlayer, isLocalPlayerId, isOwnPlayerId, localPlayer, localPlayerId } from '../playerRefs';
 
 export function registerItemHandlers(game: any): void {
+    const cw: ClientWorld = game.clientWorld;
 
     game.socket.on('itemsUpdate', (items: WorldItem[]) => {
         game.items.clear();
@@ -59,8 +61,9 @@ export function registerItemHandlers(game: any): void {
 
     // Petal action event handlers
     game.socket.on('playerHealed', (data: { playerId: string, health: number, healAmount: number }) => {
-        const player = game.players.get(data.playerId);
-        if (player) {
+        const player = cw.player(data.playerId);
+        const entity = cw.playerEntity(data.playerId);
+        if (player && entity !== undefined) {
             player.health = data.health;
 
             // Show healing effect
@@ -68,8 +71,8 @@ export function registerItemHandlers(game: any): void {
                 const roundedHeal = Math.round(data.healAmount * 10) / 10;
                 const formattedHeal = roundedHeal % 1 === 0 ? roundedHeal.toString() : roundedHeal.toFixed(1);
                 game.showFloatingText(
-                    player.x,
-                    player.y - 20,
+                    cw.playerX(entity),
+                    cw.playerY(entity) - 20,
                     `+${formattedHeal}`,
                     '#00FF00',
                     20
@@ -99,11 +102,12 @@ export function registerItemHandlers(game: any): void {
     }
 
     game.socket.on('petalBroken', (data: { playerId: string, slotIndex: number, petalType: string, rarity: string }) => {
-        const player = game.players.get(data.playerId);
-        if (player && player.loadout && player.loadout[data.slotIndex]) {
+        const player = cw.player(data.playerId);
+        const entity = cw.playerEntity(data.playerId);
+        if (player && entity !== undefined && player.loadout && player.loadout[data.slotIndex]) {
             player.loadout[data.slotIndex]!.health = 0;
             player.loadout[data.slotIndex]!.onCooldown = true;
-            game.showPetalBreakEffect(player.x, player.y, data.petalType);
+            game.showPetalBreakEffect(cw.playerX(entity), cw.playerY(entity), data.petalType);
             if (isLocalPlayerId(game, data.playerId)) {
                 scheduleLoadoutUIUpdate();
             }
@@ -111,7 +115,7 @@ export function registerItemHandlers(game: any): void {
     });
 
     game.socket.on('petalRestored', (data: { playerId: string, slotIndex: number, petal: any }) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player && player.loadout) {
             player.loadout[data.slotIndex] = data.petal;
             if (isLocalPlayerId(game, data.playerId)) {
@@ -176,7 +180,7 @@ export function registerItemHandlers(game: any): void {
     });
 
     game.socket.on('itemCollected', (data: { playerId: string, itemId: string }) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             registerPickupAnim(data.itemId, data.playerId);
             if (isOwnPlayerId(game, data.playerId)) {

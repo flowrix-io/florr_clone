@@ -35,3 +35,16 @@ if (!fs.existsSync(entry)) {
     process.exit(1);
 }
 require(entry).main();
+
+// The player-movement cutover check runs here rather than in test:ecs because it
+// needs the SERVER tree (server/ecsSync, constants) compiled, which is what this
+// script already builds. It drives the real sync window against a verbatim copy
+// of the legacy movement code — see the file header for why the other three
+// gates cannot catch what it catches.
+const cutover = path.join(outDir, 'ecs', 'bench', 'player_cutover_check.js');
+if (!fs.existsSync(cutover)) {
+    console.error(`Compiled cutover check missing at ${cutover}`);
+    process.exit(1);
+}
+console.log('');
+require(cutover).main();

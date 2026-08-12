@@ -1,4 +1,6 @@
-import { Graphics, Player } from './core';
+import { Graphics } from './core';
+import { ClientWorld } from '../client_world';
+import { Entity } from '../ecs';
 import { getSquadMemberIds } from '../squad_state';
 import {
     getActiveMaze,
@@ -14,9 +16,12 @@ import {
 declare module './core' {
     interface Graphics {
         drawMazeWorld(): void;
-        drawMazeMinimap(players: Map<string, Player>, socket: string): boolean;
+        drawMazeMinimap(world: ClientWorld, socket: string): boolean;
     }
 }
+
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const mazeMinimapScratch: Entity[] = [];
 
 // Ground fallback colors while the biome section texture is still loading.
 const MAZE_GROUND_FALLBACK: Record<string, string> = {
@@ -155,11 +160,11 @@ Graphics.prototype.drawMazeWorld = function (this: Graphics): void {
  * dark. Returns false when the local player isn't in the maze so the regular
  * minimap can draw instead.
  */
-Graphics.prototype.drawMazeMinimap = function (this: Graphics, players: Map<string, Player>, socket: string): boolean {
+Graphics.prototype.drawMazeMinimap = function (this: Graphics, world: ClientWorld, socket: string): boolean {
     const maze = getActiveMaze();
     if (!maze) return false;
-    const self = players.get(socket);
-    if (!self || !isInMazeRegion(self.x, self.y)) return false;
+    const self = world.playerEntity(socket);
+    if (self === undefined || !isInMazeRegion(world.playerX(self), world.playerY(self))) return false;
 
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
@@ -243,13 +248,16 @@ Graphics.prototype.drawMazeMinimap = function (this: Graphics, players: Map<stri
     const squadMemberSet = new Set<string>(squadMemberIds);
     const worldToMapX = (wx: number) => minimapX + ((wx - MAZE_ORIGIN_X) / maze.worldSize) * this.MINIMAP_WIDTH;
     const worldToMapY = (wy: number) => minimapY + ((wy - MAZE_ORIGIN_Y) / maze.worldSize) * this.MINIMAP_HEIGHT;
-    players.forEach(player => {
-        if (!isInMazeRegion(player.x, player.y)) return;
-        const isCurrentPlayer = player.id === socket;
-        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(player.id);
-        if (!isCurrentPlayer && !isSquadMember && !this.altKeyPressed) return;
-        const px = worldToMapX(player.x);
-        const py = worldToMapY(player.y);
+    for (const entity of world.collectPlayers(mazeMinimapScratch)) {
+        const wx = world.playerX(entity);
+        const wy = world.playerY(entity);
+        if (!isInMazeRegion(wx, wy)) continue;
+        const playerId = world.playerId(entity);
+        const isCurrentPlayer = playerId === socket;
+        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(playerId);
+        if (!isCurrentPlayer && !isSquadMember && !this.altKeyPressed) continue;
+        const px = worldToMapX(wx);
+        const py = worldToMapY(wy);
         ctx.fillStyle = isCurrentPlayer ? '#0000FF' : isSquadMember ? '#FF69B4' : '#000000';
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 1;
@@ -257,7 +265,7 @@ Graphics.prototype.drawMazeMinimap = function (this: Graphics, players: Map<stri
         ctx.arc(px, py, isCurrentPlayer ? 3 : 4, 0, Math.PI * 2);
         ctx.fill();
         if (isCurrentPlayer || isSquadMember) ctx.stroke();
-    });
+    }
 
     ctx.restore();
 

@@ -34,7 +34,7 @@ export function buildTitleScreenGameInterface(inventoryManager: TitleScreenInven
             return {
                 id: getPreconnectedSocket()?.id || '',
                 name: localStorage.getItem('username') || 'Unnamed',
-                x: 0, y: 0, angle: 0, score: 0,
+                score: 0,
                 imageLoaded: true, image: new Image(),
                 velocityX: 0, velocityY: 0,
                 health: 100, maxHealth: 100, damage: 10,
@@ -144,7 +144,7 @@ export class TitleScreenSubmanagers {
                 return {
                     id: getPreconnectedSocket()?.id || '',
                     name: localStorage.getItem('username') || 'Unnamed',
-                    x: 0, y: 0, angle: 0, score: 0,
+                    score: 0,
                     imageLoaded: true, image: new Image(),
                     velocityX: 0, velocityY: 0,
                     health: 100, maxHealth: 100, damage: 10,

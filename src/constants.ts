@@ -1,7 +1,7 @@
 import { ServerPlayer } from "./player";
 import { Dot } from "./enemy";
 import { Obstacle } from "./enemy";
-import { Enemy } from "./server_utils";
+import { LiveEnemy } from "./server_utils";
 import { Item } from "./item";
 import { isInMazeRegion, resolveMazeCollision, mazeCircleWallOverlap } from "./maze";
 
@@ -82,7 +82,15 @@ export const VIEWPORT_AREA = VIEWPORT_WIDTH * VIEWPORT_HEIGHT;  // 2,073,600 pix
 
 export const players: Record<string, ServerPlayer> = {};
 export const dots: Dot[] = [];
-export const enemies: Enemy[] = [];
+/**
+ * Every wild mob in the world.
+ *
+ * Typed `LiveEnemy[]`, not `Enemy[]`: membership of this array means "has an ECS
+ * entity", and the brand is what makes that structural rather than a convention
+ * (see server_utils.LiveEnemy). Mobs are admitted by `spawnEnemy()` in
+ * server/enemyRegistry.ts, which is the only producer of the branded type.
+ */
+export const enemies: LiveEnemy[] = [];
 export const obstacles: Obstacle[] = [];
 export const items: Item[] = [];
 
