@@ -499,6 +499,24 @@ function findPetalWith(predicate: (stats: any) => boolean, rarity: string): stri
     return null;
 }
 
+/**
+ * Reach cases, and why every CONTROL loadout holds only the petal under test.
+ *
+ * Reach is a MAXIMUM over the ring, so one ordinary petal can hide any of the
+ * three bugs. `basic` at rare is size 2 — a 40px half-size orbiting at the full
+ * attack radius — which out-reaches a rose (capped at the neutral radius) and
+ * exactly matches a sand clump (radius + 20px cluster offset + 20px half-size).
+ * Pair either flagged petal with a single basic and the old formula agrees with
+ * the real ring to the pixel. That is precisely how this drift survived in the
+ * live game: it only bites builds where the flagged petal IS the outermost thing
+ * the flower has.
+ *
+ * So each control equips two copies of the flagged petal and nothing else, and
+ * the masked pairing is kept beside it as a NON-control case — `botPetalReach`
+ * still has to be exact there, it just cannot prove anything about the old
+ * formula, and marking it `legacyWasWrong` would make the control assertion fire
+ * on a build where everything is correct.
+ */
 function checkReach(): void {
     const cases: ReachCase[] = [];
 
@@ -516,26 +534,59 @@ function checkReach(): void {
         legacyWasWrong: false,
     });
 
+    // A defendOnly petal (rose) stays at the NEUTRAL orbit while the flower is
+    // attacking, so its radius must not scale with the attack extension. The old
+    // formula extended it like anything else and over-estimated by ~60px.
     const defendOnly = findPetalWith(s => s.defendOnly === true, 'rare');
     if (defendOnly) {
         cases.push({
-            name: `defendOnly (${defendOnly}) at attack extension`,
-            loadout: [petal(defendOnly, 'rare'), petal('basic', 'rare')],
+            name: `defendOnly (${defendOnly}) only, at attack extension`,
+            loadout: [petal(defendOnly, 'rare'), petal(defendOnly, 'rare')],
             legacyWasWrong: true,
+        });
+        cases.push({
+            name: `defendOnly (${defendOnly}) masked by a bigger petal`,
+            loadout: [petal(defendOnly, 'rare'), petal('basic', 'rare')],
+            legacyWasWrong: false,
         });
     } else {
         fail('no defendOnly petal found in the petal table — the rose case is not being covered');
     }
 
+    // A clumped petal (sand) sits a cluster offset beyond its slot centre, so it
+    // reaches FURTHER than its radius suggests. The old formula ignored the
+    // offset and under-estimated by half a petal width.
     const clumped = findPetalWith(s => s.clumped === true && (s.count ?? 1) > 1, 'rare');
     if (clumped) {
         cases.push({
-            name: `clumped (${clumped})`,
-            loadout: [petal(clumped, 'rare'), petal('basic', 'rare')],
+            name: `clumped (${clumped}) only`,
+            loadout: [petal(clumped, 'rare'), petal(clumped, 'rare')],
             legacyWasWrong: true,
+        });
+        cases.push({
+            name: `clumped (${clumped}) masked by a bigger petal`,
+            loadout: [petal(clumped, 'rare'), petal('basic', 'rare')],
+            legacyWasWrong: false,
         });
     } else {
         fail('no clumped petal found in the petal table — the sand case is not being covered');
+    }
+
+    // The third bug, and the only one that needs a MIXED loadout to show: the old
+    // formula took `max(range multiplier)` and `max(half size)` over DIFFERENT
+    // petals and added them, describing a petal that does not exist — the long
+    // one's orbit with the fat one's width. Here the long petal is thin and the
+    // fat petal is short, so the old answer exceeds both real edges.
+    const longRange = findPetalWith(s => (s.range ?? 1) > 1, 'rare');
+    if (longRange) {
+        cases.push({
+            name: `long-range (${longRange}) beside a fat short-range petal`,
+            loadout: [petal(longRange, 'rare'), petal('basic', 'rare')],
+            legacyWasWrong: true,
+        });
+    } else {
+        fail('no petal with range > 1 found in the petal table — the mixed-maxima case is '
+            + 'not being covered');
     }
 
     // Storage slots. `layoutPetalRing` never lays out slot 10+, so a huge petal
@@ -689,6 +740,34 @@ function checkTagAndLoadout(): void {
                 + 'is not actually reading the tag, so the tag can silently stop being set');
         }
         world.add(victim, C.IsBot);
+    }
+
+    // --- a DEAD bot must stay in the roster ------------------------------
+    // The roster is a query, and adding C.IsDead moves the entity to a different
+    // archetype — so excluding the dead is a one-word change that reads like
+    // tidying ("why drive a corpse?"). It would be the worst kind of wrong: the
+    // respawn countdown lives in `updateBotAI`'s own loop, which is the only
+    // thing that ever calls `respawnBot`. Drop dead bots from the roster and
+    // every bot that dies stays a corpse for the life of the process, the
+    // population maintainer keeps counting it as a live bot so no replacement is
+    // spawned, and the world quietly empties out. Nothing throws, no gate below
+    // notices, and the roster/prefix consistency check above still passes because
+    // it counts `players` either way.
+    const corpse = world.lookup(bots[2].id);
+    if (corpse === undefined) {
+        fail('a bot inserted into `players` never got an entity');
+    } else {
+        bots[2].isDead = true;
+        world.add(corpse, C.IsDead);
+        const withCorpse = botRosterCounts(world);
+        if (withCorpse.ecs !== withCorpse.prefix) {
+            fail(`a DEAD bot dropped out of the ECS roster (${withCorpse.ecs} of `
+                + `${withCorpse.prefix}) — its respawn timer only runs from updateBotAI's roster `
+                + 'loop, so it would stay a corpse forever while still counting toward the '
+                + 'bot population');
+        }
+        world.remove(corpse, C.IsDead);
+        bots[2].isDead = false;
     }
 
     // --- the loadout the ECS sees ---------------------------------------

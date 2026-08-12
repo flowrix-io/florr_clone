@@ -74,3 +74,19 @@ if (!fs.existsSync(petals)) {
 }
 console.log('');
 require(petals).main();
+
+// The bot cutover oracle. It lives here for a stronger reason than the three
+// above: as well as needing the server tree, it is the only gate that REQUIRES
+// server/botManager.ts at all. Loading it is itself the first assertion — that
+// module used to drag petal_actions.ts and server/playerState.ts in at module
+// scope, either of which binds port 3000 and opens the account database, so no
+// gate could touch bot code without starting a second live game server. Keep
+// this last: it drives a full bot tick (targeting, squads, chat emits, the
+// oscillation watchdog) and then re-asserts that nothing booted.
+const bots = path.join(outDir, 'ecs', 'bench', 'bot_cutover_check.js');
+if (!fs.existsSync(bots)) {
+    console.error(`Compiled bot cutover check missing at ${bots}`);
+    process.exit(1);
+}
+console.log('');
+require(bots).main();
