@@ -48,3 +48,29 @@ if (!fs.existsSync(cutover)) {
 }
 console.log('');
 require(cutover).main();
+
+// The other half of the same boundary: writes aimed at ANOTHER player made from
+// inside a player's updatePlayerState (PVP knockback, the yggdrasil revive).
+// Those land in the gap between the movement window and that player's own
+// commit, so whether they survive depends on iteration order — see the file
+// header. Same reason as above for living here: it needs the server tree.
+const writeback = path.join(outDir, 'ecs', 'bench', 'player_writeback_check.js');
+if (!fs.existsSync(writeback)) {
+    console.error(`Compiled write-back check missing at ${writeback}`);
+    process.exit(1);
+}
+console.log('');
+require(writeback).main();
+
+// The petal-ring cutover oracle. Same reason as the two above for living here
+// rather than in test:ecs — it drives server/ecsSync's real `openPetalRing`, so
+// it needs the SERVER tree compiled. It compares the ECS ring against a verbatim
+// copy of the legacy petal kinematics, bit for bit; see the file header for the
+// three failure modes the other gates structurally cannot see.
+const petals = path.join(outDir, 'ecs', 'bench', 'petal_cutover_check.js');
+if (!fs.existsSync(petals)) {
+    console.error(`Compiled petal cutover check missing at ${petals}`);
+    process.exit(1);
+}
+console.log('');
+require(petals).main();

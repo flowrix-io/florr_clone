@@ -151,6 +151,29 @@ export interface HarnessResult {
     entities: number;
     msPerTick: number;
     maxTickMs: number;
+    /**
+     * The tick-time distribution, which is the only honest way to read this
+     * number.
+     *
+     * The mean was the sole assertion here for a long time, and the mean is
+     * exactly the statistic a tick spike cannot move: 2000 ticks averaging 2ms
+     * absorb a 107ms tick without shifting the mean by a twentieth of a
+     * millisecond. So the harness printed "OK: simulation stable, within tick
+     * budget" on runs that had dropped three frames — the failure it exists to
+     * catch, reported as a pass.
+     *
+     * p99 is the one that decides whether the server feels smooth: at 30Hz it is
+     * a tick that lands roughly every three seconds, so if it is over budget the
+     * game is visibly stuttering. `maxTickMs` is REPORTED only: a single 100ms
+     * tick really is three dropped frames, but the max is also the quantity that
+     * spikes on GC, so asserting on it makes a required gate fail at random —
+     * which teaches everyone to ignore the gate. Report it loudly, fail on p99.
+     */
+    p50TickMs: number;
+    p95TickMs: number;
+    p99TickMs: number;
+    /** Ticks that ran over the 30Hz budget. */
+    overBudgetTicks: number;
     heapMB: number;
     /** Non-finite / absurd coordinate detections. Must be zero. */
     badCoordinates: number;
@@ -198,6 +221,20 @@ export function assertNoServerBooted(): void {
 
 /** Stand-in for `(PLAYER_SIZE / 2) * sizeMultiplier`; the real one reads legacy state. */
 const PLAYER_HIT_RADIUS = 25;
+
+/** One tick at 30Hz. Every timing assertion below is against this and nothing else. */
+export const TICK_BUDGET_MS = 1000 / 30;
+
+/**
+ * The `q`th percentile of `sorted` by nearest-rank, which is the conservative
+ * choice: with 2000 samples p99 is the 20th-worst tick, and no interpolation
+ * smooths a spike away.
+ */
+function percentile(sorted: number[], q: number): number {
+    if (sorted.length === 0) return 0;
+    const rank = Math.ceil(q * sorted.length);
+    return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
+}
 
 export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessResult {
     assertNoServerBooted();
@@ -249,6 +286,9 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     let firstBadTick = -1;
     let maxTickMs = 0;
     let projectilesMid = 0;
+    // Every tick is kept, not just the worst: the distribution is the finding.
+    // The array is pre-sized so the sampling never itself allocates mid-run.
+    const tickMs: number[] = new Array(config.ticks).fill(0);
 
     runtime.scheduler.profiling = true;
     // Projectiles and players run on their own schedulers; without these they
@@ -284,6 +324,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         // it, because flight is what retires a projectile.
         runtime.tickProjectiles(1000 / 30, now);
         const elapsed = performance.now() - tickStart;
+        tickMs[t] = elapsed;
         if (elapsed > maxTickMs) maxTickMs = elapsed;
         if (t === (config.ticks >> 1)) projectilesMid = projectiles.count();
 
@@ -307,6 +348,15 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     const totalMs = performance.now() - started;
     const heapMB = (process.memoryUsage().heapUsed - heapBefore) / (1024 * 1024);
 
+    // Sorted after the run, never during it — sorting inside the loop would add
+    // its own cost to the very samples being measured.
+    const sortedTicks = tickMs.slice().sort((a, b) => a - b);
+    let overBudgetTicks = 0;
+    for (let i = sortedTicks.length - 1; i >= 0; i--) {
+        if (sortedTicks[i] <= TICK_BUDGET_MS) break;
+        overBudgetTicks++;
+    }
+
     const timings = [
         ...runtime.scheduler.drainTimings(),
         ...runtime.projectileScheduler.drainTimings(),
@@ -321,6 +371,10 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         entities: world.size(),
         msPerTick: totalMs / config.ticks,
         maxTickMs,
+        p50TickMs: percentile(sortedTicks, 0.50),
+        p95TickMs: percentile(sortedTicks, 0.95),
+        p99TickMs: percentile(sortedTicks, 0.99),
+        overBudgetTicks,
         heapMB,
         badCoordinates,
         firstBadTick,
@@ -339,8 +393,12 @@ export function main(): void {
 
     console.log(`entities:      ${result.startingEntities} at start -> ${result.entities} after the run`);
     console.log(`ticks:         ${result.ticks}`);
-    console.log(`mean tick:     ${result.msPerTick.toFixed(3)} ms   (budget 33.3 ms at 30Hz)`);
-    console.log(`worst tick:    ${result.maxTickMs.toFixed(3)} ms`);
+    console.log(`mean tick:     ${result.msPerTick.toFixed(3)} ms   (budget ${TICK_BUDGET_MS.toFixed(1)} ms at 30Hz)`);
+    console.log(`tick p50/p95:  ${result.p50TickMs.toFixed(3)} / ${result.p95TickMs.toFixed(3)} ms`);
+    console.log(`tick p99:      ${result.p99TickMs.toFixed(3)} ms   <- asserted`);
+    console.log(`worst tick:    ${result.maxTickMs.toFixed(3)} ms   (reported, not asserted)`);
+    console.log(`over budget:   ${result.overBudgetTicks} of ${result.ticks} ticks `
+        + `(${(100 * result.overBudgetTicks / result.ticks).toFixed(2)}%)`);
     console.log(`heap growth:   ${result.heapMB.toFixed(1)} MB over the run`);
     console.log(`bad coords:    ${result.badCoordinates}${result.firstBadTick >= 0 ? ` (first at tick ${result.firstBadTick})` : ''}`);
     console.log(`projectiles:   ${result.projectilesMid} at half-way -> ${result.projectilesEnd} at the end   (${result.playerHits} player hits)`);
@@ -349,22 +407,63 @@ export function main(): void {
         console.log(`  ${t.name.padEnd(22)} ${t.avgMs.toFixed(4)}   max ${t.maxMs.toFixed(3)}`);
     }
 
+    // Collected rather than returned on: a run that both spikes and leaks should
+    // report both, and stopping at the first finding is how the mean-only
+    // assertion managed to hide everything behind it for so long.
+    const failures: string[] = [];
+
     if (result.badCoordinates > 0) {
-        console.error('\nFAIL: entities reached non-finite or absurd coordinates.');
-        process.exitCode = 1;
-        return;
+        failures.push('entities reached non-finite or absurd coordinates.');
     }
-    if (result.msPerTick > 33.3) {
-        console.error('\nFAIL: mean tick exceeds the 30Hz budget.');
-        process.exitCode = 1;
-        return;
+    if (result.msPerTick > TICK_BUDGET_MS) {
+        failures.push(`mean tick ${result.msPerTick.toFixed(3)} ms exceeds the `
+            + `${TICK_BUDGET_MS.toFixed(1)} ms budget.`);
+    }
+    // The assertion the mean cannot make. p99 over budget means roughly one
+    // stuttering tick every three seconds of play, for every player on the box.
+    if (result.p99TickMs > TICK_BUDGET_MS) {
+        failures.push(`p99 tick ${result.p99TickMs.toFixed(3)} ms exceeds the `
+            + `${TICK_BUDGET_MS.toFixed(1)} ms budget — one tick in a hundred stutters.`);
+    }
+    // And the assertion p99 cannot make. 2000 ticks hide twenty spikes below
+    // p99, so a run can drop frames repeatedly with a healthy p99. There is no
+    // budget under which a 100ms tick is fine; if this fires, find the spike
+    // rather than raising the number.
+    //
+    // Reading the per-system table when it does fire: a spike belonging to ONE
+    // system shows up as that system's `max` accounting for the whole overshoot
+    // while every other system's max stays at its usual value — that is an
+    // algorithmic outlier and it is fixable in that system. A spike where the
+    // two heaviest systems are BOTH elevated and their maxes sum to roughly the
+    // whole tick is a process-wide stall (GC, compaction) that happened to
+    // straddle them; the lead there is the run's heap growth, not the systems.
+    // The worst tick is REPORTED, never asserted on.
+    //
+    // It was briefly a hard failure, and both reviewers rejected that for the
+    // right reason: the max is exactly the quantity that spikes, so asserting on
+    // it turns a required gate into a coin flip. A gate that fails at random is
+    // worse than one that is too lenient — it trains everyone to ignore the
+    // gate, and then it stops catching the thing it was added for. p99 above is
+    // the stable statistic and it is the one that fails the build.
+    if (result.maxTickMs > TICK_BUDGET_MS) {
+        console.warn(`\n  NOTE: worst tick ${result.maxTickMs.toFixed(3)} ms exceeded the `
+            + `${TICK_BUDGET_MS.toFixed(1)} ms budget (${result.overBudgetTicks} tick(s) over) — `
+            + Math.ceil(result.maxTickMs / TICK_BUDGET_MS) + ' frame(s) dropped in one go.\n'
+            + '  Not a failure: single spikes are usually GC. If p99 is also near '
+            + 'budget, or the per-system maxes show ONE system elevated, it is '
+            + 'algorithmic and worth chasing.');
     }
     // Projectiles must reach a steady state. Unbounded growth means nothing is
     // retiring them, which also grows grid.ensureStampCapacity every tick.
     if (result.projectilesEnd > result.projectilesMid * 2 + 100) {
-        console.error('\nFAIL: projectile population is still growing — they are not being retired.');
+        failures.push('projectile population is still growing — they are not being retired.');
+    }
+
+    if (failures.length > 0) {
+        console.error(`\n${failures.length} FAILURE(S):`);
+        for (const f of failures) console.error('  FAIL: ' + f);
         process.exitCode = 1;
         return;
     }
-    console.log('\nOK: simulation stable, within tick budget.');
+    console.log('\nOK: simulation stable, mean and p99 within budget.');
 }

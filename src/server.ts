@@ -69,6 +69,7 @@ import { createEcsRuntime, EcsRuntime } from './server/ecsRuntime';
 import {
     configureCutover,
     ensurePlayerEntity,
+    openPetalRing,
     PlayerSyncDeps,
     syncFromEcs,
     syncPlayersFromEcs,
@@ -125,7 +126,7 @@ import {
     GROUND_POLLEN_DAMAGE_INTERVAL_MS
 } from './server/gameState';
 import { handleMobDrops as handleMobDropsModule } from './server/itemManager';
-import { updateBotAI, maintainBotCount, initializeBotGuilds } from './server/botManager';
+import { registerBotInputSystem, maintainBotCount, initializeBotGuilds } from './server/botManager';
 import {
     respawnPlayer as respawnPlayerModule,
     calculateLevelFromTotalXP,
@@ -1110,7 +1111,14 @@ const playerStateDeps: PlayerStateDependencies = {
         spawn: (spec) => getEcsRuntime().spawnPlayerProjectile(spec),
         forEachBlocking: (x, y, petalRadius, visit) =>
             getEcsRuntime().forEachMobProjectileHitting(x, y, petalRadius, visit),
-    }
+    },
+    // Same lazy-on-purpose reason as `projectiles` above: this bag is built at
+    // module scope, and the ECS world it needs does not exist until first tick.
+    petalRing: {
+        open: (player, slotCount, rotationSpeedModifier, deltaTime, now) => openPetalRing(
+            getEcsRuntime().world, player, now, slotCount, rotationSpeedModifier, deltaTime,
+        ),
+    },
 };
 
 /**
@@ -1517,6 +1525,13 @@ function getEcsRuntime(): EcsRuntime {
         },
     });
     configureCutover(_ecsRuntime);
+    // Bot AI is a Phase.Input system, registered from HERE rather than from
+    // createEcsRuntime: server/botManager.ts reaches the squad manager, the
+    // world map and the chat socket, and importing it inside the ECS
+    // composition root would drag all of that into every module that only
+    // wanted a world. See registerBotInputSystem for why it lands on the input
+    // scheduler and nowhere else.
+    registerBotInputSystem(_ecsRuntime.inputScheduler, io);
     console.log('[ECS] mob simulation initialised');
     return _ecsRuntime;
 }
@@ -2139,7 +2154,7 @@ function start_loop() {
 
         // Keep bot population aligned with real player count. Despawns all bots
         // when nobody is online so the server goes fully idle.
-        maintainBotCount(io, authenticatedPlayerIds.length);
+        maintainBotCount(io, authenticatedPlayerIds.length, getEcsRuntime().world);
 
         // Skip game processing if there are no authenticated players
         if (authenticatedPlayerIds.length === 0) {
@@ -2148,12 +2163,24 @@ function start_loop() {
 
         // Build a spatial grid of enemies once per tick. Player/petal collision
         // loops in updatePlayerState query this instead of scanning all enemies.
-        // Must run BEFORE updateBotAI: bot targeting queries this grid.
+        // Must run BEFORE the input tick: bot targeting queries this grid.
         rebuildEnemyGrid(enemies);
 
-        // Populate bot inputs before running the normal update pipeline so
-        // bots move/attack just like real players.
-        updateBotAI(io);
+        // The INPUT phase: bot AI writes into `player.inputs` before the normal
+        // update pipeline reads them, so bots move and attack just like real
+        // players. This is exactly where the bare `updateBotAI(io)` call used to
+        // sit, and the placement is load-bearing — see EcsRuntime.tickInput.
+        // Unlike runSimulationStep below it is NOT gated on `runSimTick`: bot
+        // decisions were made every real tick before the cutover and still are.
+        // `Date.now()`, NOT the `nowMs` performance-clock sample above. Every
+        // deadline bot AI keeps — respawn, flee, unstick, wander, squad and boss
+        // announce cooldowns — is stored as an absolute timestamp and compared
+        // against clocks taken elsewhere with `Date.now()` (respawnBot, the
+        // maintain interval). Feeding a performance.now() epoch in here would put
+        // two epochs into the same fields and nothing would fail: the timers would
+        // just resolve at nonsense times. moveEnemies and the movement window
+        // sample the same way, for the same reason.
+        getEcsRuntime().tickInput(deltaTime, deltaMs, Date.now());
 
         if (runSimTick) runSimulationStep(deltaTime, deltaMs, mobCatchupCalls);
 

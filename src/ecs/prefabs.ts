@@ -16,6 +16,7 @@
 import * as C from './components';
 import { Entity, NULL_ENTITY } from './entity';
 import { mobTypes, petalTypes, rarityToId } from './interning';
+import { PetalRingState } from './systems/petalRing';
 import { World } from './world';
 
 export interface MobSpawn {
@@ -210,6 +211,10 @@ export function spawnPlayer(world: World, spec: PlayerSpawn): Entity {
     });
     world.add(e, C.Inventory, { items: spec.inventory });
     world.add(e, C.Loadout, { slots: spec.loadout });
+    // Given at birth rather than on the flower's first petal tick, so every
+    // player has ONE archetype instead of splitting into "has orbited" and
+    // "has not". A ring with no petals in it is an empty Map.
+    world.add(e, C.PetalRing, { state: new PetalRingState(), slotCount: 0 });
     world.add(e, C.SpawnTime, { at: spec.now });
     world.add(e, C.IsPlayer);
     if (spec.lobby) world.add(e, C.IsLobby);

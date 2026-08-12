@@ -168,8 +168,21 @@ export const PlayerModifiers = defineComponent('PlayerModifiers', {
      * Continuous integral of the rotation-speed modifier. Kept as an
      * accumulated phase so that changing rotation speed mid-flight bends the
      * orbit rate instead of snapping the angle.
+     *
+     * f64, and that is not a spare-bytes decision. This is an UNBOUNDED
+     * accumulator — it grows by `rotationSpeed * deltaTime` every tick for the
+     * whole of a session and is never wrapped, so a long-lived flower reaches
+     * ~1e5 after a day of play. It is then multiplied by up to the petal's speed
+     * multiplier and fed to cos/sin, and the result is the petal position that
+     * gets hashed for the broadcast change detector. In f32 the representable
+     * step at 1e5 is ~0.008 while a tick's increment is ~0.03, so the phase
+     * would quantise to a coarse ladder: the whole ring would visibly step
+     * rather than rotate, and — because the hash would change on a different
+     * schedule from the legacy value — the broadcast would churn. The legacy
+     * `ServerPlayer.petalOrbitPhase` this replaces was a plain JS double, and
+     * `ecs/bench/petal_cutover_check.ts` asserts exact equality against it.
      */
-    petalOrbitPhase: 'f32',
+    petalOrbitPhase: 'f64',
 });
 
 /** Server-computed absolute petal positions, broadcast for accurate rendering. */

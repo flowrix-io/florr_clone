@@ -134,6 +134,13 @@ export interface EcsRuntime {
      * from `scheduler` alone would omit it from the tick-budget report.
      */
     playerScheduler: Scheduler;
+    /**
+     * The INPUT half of the tick, on its own scheduler — see `tickInput`.
+     *
+     * Exposed for the same reason as the other two: timings drained from
+     * `scheduler` alone would omit it from the tick-budget report.
+     */
+    inputScheduler: Scheduler;
     grid: SpatialGrid;
     /** Reusable broad-phase result buffer. */
     gridResult: GridQueryResult;
@@ -156,6 +163,29 @@ export interface EcsRuntime {
      * catch-up.
      */
     tickPlayers(deltaTime: number, deltaMs: number, now: number): void;
+    /**
+     * Sample this tick's inputs — today, run bot AI.
+     *
+     * On its OWN scheduler, and like the player split that is the entire point.
+     * `Phase.Input` on the MOB scheduler runs inside `moveEnemies()`, which is
+     * after `updatePlayerState`; an input system there would produce decisions
+     * that legacy had already consumed this tick, one tick stale, with every
+     * gate green. `Phase.Input` on the PLAYER scheduler runs inside the movement
+     * window, after `syncPlayersToEcs` has already pushed `player.inputs` into
+     * `C.PlayerInput` — a second writer racing a push that already won.
+     *
+     * So the caller ticks this one at the point in `start_loop` the legacy
+     * `updateBotAI(io)` call occupied: after the enemy grid rebuild that bot
+     * targeting queries, and before `runSimulationStep`. Nothing is registered
+     * here by `createEcsRuntime` itself — `server.ts` registers bot AI, because
+     * server/botManager.ts reaches the squad manager, the world map and the chat
+     * socket, and importing it from this file would put all of that (and, until
+     * recently, a second listening server) into the ECS composition root.
+     *
+     * dt-SCALED like the player and projectile schedulers: it runs exactly once
+     * per real tick and is never replayed for catch-up.
+     */
+    tickInput(deltaTime: number, deltaMs: number, now: number): void;
     /**
      * Advance projectiles by one step of REAL elapsed time.
      *
@@ -280,6 +310,12 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
      * scheduler. See EcsRuntime.tickPlayers.
      */
     const playerScheduler = new Scheduler(world);
+    /**
+     * Inputs run on their OWN scheduler so the caller can place them where the
+     * legacy `updateBotAI` call sat — before the whole simulation step, and
+     * therefore before anything reads an input. See EcsRuntime.tickInput.
+     */
+    const inputScheduler = new Scheduler(world);
     const grid = new SpatialGrid();
     const gridResult = new GridQueryResult(256);
 
@@ -446,6 +482,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         scheduler,
         projectileScheduler,
         playerScheduler,
+        inputScheduler,
         grid,
         gridResult,
         projectileQueries: {
@@ -465,6 +502,14 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
             // index. Player-vs-mob contact is still resolved by the legacy
             // collision block in updatePlayerState, against the legacy grid.
             playerScheduler.tick(deltaTime, deltaMs, now);
+        },
+
+        tickInput(deltaTime: number, deltaMs: number, now: number): void {
+            // No grid work: the systems here read the LEGACY enemy grid, which
+            // server.ts rebuilds immediately before this call. See tickInput's
+            // declaration for why that ordering is the contract rather than an
+            // accident.
+            inputScheduler.tick(deltaTime, deltaMs, now);
         },
 
         tickProjectiles(deltaMs: number, now: number): void {

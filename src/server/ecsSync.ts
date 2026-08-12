@@ -10,11 +10,24 @@
  *
  *   ECS owns   mob CREATION (see server/enemyRegistry.ts), movement, AI,
  *              targeting, passive drift, centipede chains, mob-vs-mob
- *              collision, pet melee, projectile flight/collision/damage, and
- *              PLAYER MOVEMENT INTEGRATION.
- *   LEGACY owns despawning, everything else about players (collision, petals,
- *              pickups, teleporters, respawn), petals, damage attribution,
- *              drops, XP, persistence and the broadcast.
+ *              collision, pet melee, projectile flight/collision/damage,
+ *              PLAYER MOVEMENT INTEGRATION, and PETAL RING KINEMATICS.
+ *   LEGACY owns despawning, everything else about players (collision, pickups,
+ *              teleporters, respawn), the rest of petals — per-instance health,
+ *              the break/cooldown/reload machine, combat, fields and auras, the
+ *              action VM — damage attribution, drops, XP, persistence and the
+ *              broadcast.
+ *
+ * "Petal ring kinematics" means the orbit-slot layout, the orbit point, the
+ * spring/glide integrator and the per-instance state behind it (ecs/systems/
+ * petalRing.ts, stored in the PetalRing component). It is stepped ONE INSTANCE
+ * AT A TIME from the legacy petal loop rather than as a scheduled system,
+ * because that loop interleaves kinematics with effects and instance k's
+ * effects change instance k+1's kinematics. Note there is no petal SYNC below:
+ * the ECS is the sole writer of petal kinematic state, so unlike mobs and
+ * players there is no window and no field two sides can fight over. The one
+ * value that crosses is the orbit phase, and it crosses one way — see
+ * `openPetalRing`.
  *
  * "Player movement integration" is deliberately narrow: the ECS decides where a
  * flower's velocity carries it this tick and nothing else about the flower. See
@@ -58,6 +71,7 @@ import { Enemy } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { Entity, Query, World } from '../ecs';
 import * as C from '../ecs/components';
+import { advanceOrbitPhase, PetalRingState } from '../ecs/systems/petalRing';
 import { EcsRuntime } from './ecsRuntime';
 import { importEnemy, importPlayer, linkEnemyReferences } from './ecsBridge';
 
@@ -92,14 +106,19 @@ const LEGACY_OWNED_SYSTEMS = [
  * Disable everything legacy still owns. Call once, after runtime creation.
  *
  * Every scheduler is searched and a name that matches NOTHING is fatal. The
- * systems are spread across three schedulers now (mob, player, projectile), and
- * `Scheduler.setEnabled` reports a miss with a return value nobody was reading —
+ * systems are spread across four schedulers now (mob, player, projectile,
+ * input), and `Scheduler.setEnabled` reports a miss with a return value nobody was reading —
  * so moving a system between schedulers, or renaming one, would silently leave
  * it enabled and have BOTH implementations run. That is the same silent-no-op
  * shape as the projectile-damage bug; make it crash at boot instead.
  */
 export function configureCutover(runtime: EcsRuntime): void {
-    const schedulers = [runtime.scheduler, runtime.playerScheduler, runtime.projectileScheduler];
+    const schedulers = [
+        runtime.scheduler,
+        runtime.playerScheduler,
+        runtime.projectileScheduler,
+        runtime.inputScheduler,
+    ];
     for (const name of LEGACY_OWNED_SYSTEMS) {
         let found = 0;
         for (const scheduler of schedulers) {
@@ -230,6 +249,27 @@ export function syncPlayersToEcs(
         let entity = world.lookup(id);
         if (entity === undefined) entity = ensurePlayerEntity(world, player, now);
 
+        // Seed the staging pair with the identity, so a flower that somehow
+        // misses the pull below (no entity, an exception mid-window) resumes
+        // from where it actually is rather than from a position left over from
+        // an earlier tick. See ServerPlayer.movedX for what the pair is for.
+        //
+        // This sits ABOVE the dead-player skip on purpose, and that placement is
+        // a bug fix rather than tidying. A corpse is never integrated, so its
+        // pair used to freeze at whatever the integrator produced on the last
+        // tick the player was ALIVE, while legacy carried on moving the corpse
+        // (validatePlayerPositions recentres an out-of-bounds one, the death
+        // knockback lands after the window, arena/maze exits teleport it). Then
+        // a mid-tick revive — the yggdrasil petal sets `isDead = false` from
+        // inside ANOTHER player's updatePlayerState — let the revived flower's
+        // own updatePlayerState run in that same loop, seed `newX` from that
+        // stale pair and commit it, teleporting the player back to where they
+        // stood before they died. Keeping the pair pinned to the corpse's real
+        // position makes a revive resume in place from any revive path, not just
+        // the yggdrasil one.
+        player.movedX = player.x;
+        player.movedY = player.y;
+
         // A dead player must not be moved, and must be invisible to targeting.
         // Kept in step here as well as in syncToEcs because this pass runs first
         // and the movement query routes on the tag.
@@ -241,12 +281,6 @@ export function syncPlayersToEcs(
         world.write(entity, C.Position, { x: player.x, y: player.y });
         world.write(entity, C.Velocity, { x: player.velocityX, y: player.velocityY });
         world.set(entity, C.Angle, 'value', player.angle);
-        // Seed the staging pair with the identity, so a flower that somehow
-        // misses the pull below (no entity, an exception mid-window) resumes
-        // from where it actually is rather than from a position left over from
-        // an earlier tick. See ServerPlayer.movedX for what the pair is for.
-        player.movedX = player.x;
-        player.movedY = player.y;
 
         // --- input ----------------------------------------------------------
         // Pushed EVERY TICK. It used to be written once, at import, which meant
@@ -321,6 +355,129 @@ export function syncPlayersFromEcs(world: World, players: Record<string, ServerP
         player.angle = world.get(entity, C.Angle, 'value') as number;
         player.speedFactor = world.get(entity, C.PlayerModifiers, 'speedFactor') as number;
     }
+}
+
+/**
+ * Move a player from OUTSIDE their own `updatePlayerState`.
+ *
+ * `player.x/y` is not the whole of a flower's position during the player loop.
+ * Between the movement window closing and a given flower's own
+ * updatePlayerState committing, that flower's live position is the STAGING PAIR:
+ * updatePlayerState opens with `let newX = player.movedX ?? player.x` and closes
+ * ~1700 lines later with `player.x = newX`. A write to `player.x` made inside
+ * that gap is overwritten by the commit and silently lost.
+ *
+ * Whether the gap is open depends on the iteration order over `players`, which
+ * is insertion order and nothing a caller can reason about. PVP knockback is
+ * written by the ATTACKER's update, so it landed for a victim that had already
+ * been updated this tick and vanished for one that had not — the same flower
+ * knocked back or not depending on who joined the server first. This is a
+ * regression from the movement cutover: integration used to run INSIDE
+ * updatePlayerState starting from `player.x`, so a knockback written by an
+ * earlier player in the loop was picked up by the victim's own step.
+ *
+ * Applying the delta to BOTH representations restores that, in either order and
+ * without ever applying it twice:
+ *   - victim not yet updated: `newX` is seeded from the bumped `movedX`, and the
+ *     commit writes that same displaced value back over the bumped `player.x`.
+ *     Bumping `player.x` as well is not redundant — it is what the pre-cutover
+ *     code did, and the victim's petal block reads `player.x` as the flower's
+ *     previous position while it runs.
+ *   - victim already updated: `player.x` is live and keeps the delta; the
+ *     `movedX` bump is inert, because the next `syncPlayersToEcs` reseeds the
+ *     pair from `player.x` before anything reads it.
+ *
+ * Callers that run after the whole player loop has finished (projectile
+ * knockback in server.ts, respawn, admin teleports) may write `player.x/y`
+ * directly since the gap is closed by then, but going through here is correct
+ * for them too.
+ */
+export function displacePlayer(player: ServerPlayer, dx: number, dy: number): void {
+    player.x += dx;
+    player.y += dy;
+    if (player.movedX !== undefined) player.movedX += dx;
+    if (player.movedY !== undefined) player.movedY += dy;
+}
+
+// ---------------------------------------------------------------------------
+// The petal ring
+// ---------------------------------------------------------------------------
+/**
+ * What a flower's petal ring needs, resolved for one tick.
+ *
+ * Note what is NOT here: there is no petal push-in and no petal pull-out. That
+ * is deliberate and it is the safest possible shape for this boundary. The ECS
+ * is the SOLE owner of petal kinematic state — nothing legacy writes a petal's
+ * position, velocity or spring state — so there is no window to get wrong and
+ * no field that two writers can fight over. Compare the mob and player halves of
+ * this file, which exist only because legacy still writes health, speed,
+ * knockback and transforms.
+ *
+ * The one value that does cross is the orbit phase, and it crosses ONE WAY
+ * (out): see `openPetalRing`.
+ */
+export interface OpenPetalRing {
+    /** The ECS-owned per-instance spring/glide store for this flower. */
+    state: PetalRingState;
+    /** The orbit phase AFTER this tick's integration. */
+    orbitPhase: number;
+}
+
+/**
+ * Open a flower's petal ring for this tick.
+ *
+ * Call once per player per tick, at the point in `updatePlayerState` where the
+ * legacy code integrated `player.petalOrbitPhase` — i.e. AFTER the ring layout
+ * is known (it stores the slot count) and BEFORE any instance is stepped.
+ *
+ * ---------------------------------------------------------------------------
+ * Why `player.petalOrbitPhase` is still written
+ * ---------------------------------------------------------------------------
+ * The ECS owns the phase; the legacy field is a MIRROR, written out and never
+ * read back by the simulation. It is kept because two legacy paths still consume
+ * it and both would otherwise silently reset a flower's orbit:
+ *
+ *   - `ecsBridge.importPlayer` seeds the component from it, which is what makes
+ *     an entity rebuilt for an existing player resume its orbit in place;
+ *   - `petal_actions.splitPlayer` clones the ServerPlayer wholesale, so the
+ *     splitter half inherits the phase and the two halves' rings stay in step
+ *     instead of the clone snapping to angle 0.
+ *
+ * It is written OUT only, exactly like `speedFactor` in `syncPlayersFromEcs`.
+ * Nothing in the tick reads it, so there is no direction for a stale value to
+ * flow back in.
+ */
+export function openPetalRing(
+    world: World,
+    player: ServerPlayer,
+    now: number,
+    slotCount: number,
+    rotationSpeedModifier: number,
+    deltaTime: number,
+): OpenPetalRing {
+    const entity = ensurePlayerEntity(world, player, now);
+
+    // `spawnPlayer` gives every flower a PetalRing at birth, so this is a
+    // backstop for an entity that reached here some other way rather than the
+    // normal path. Adding it here would be an archetype move mid-player-loop —
+    // safe (no query is iterating), but it should never happen.
+    if (!world.has(entity, C.PetalRing)) {
+        world.add(entity, C.PetalRing, { state: new PetalRingState(), slotCount: 0 });
+    }
+    world.set(entity, C.PetalRing, 'slotCount', slotCount);
+
+    const orbitPhase = advanceOrbitPhase(
+        world.get(entity, C.PlayerModifiers, 'petalOrbitPhase') as number,
+        rotationSpeedModifier,
+        deltaTime,
+    );
+    world.set(entity, C.PlayerModifiers, 'petalOrbitPhase', orbitPhase);
+    player.petalOrbitPhase = orbitPhase;
+
+    return {
+        state: world.get(entity, C.PetalRing, 'state') as PetalRingState,
+        orbitPhase,
+    };
 }
 
 /**

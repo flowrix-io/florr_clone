@@ -132,10 +132,26 @@ export function playerModifierSystem(queries: PlayerModifierQueries, deps: Playe
                 mods.magnetism[i] = magnetism;
                 mods.aggroRadiusBonus[i] = aggro;
 
-                // Rotation is integrated as a continuous phase so that changing
-                // the modifier mid-flight bends the orbit rate rather than
-                // snapping the angle to a new one.
-                mods.petalOrbitPhase[i] += rotation * ctx.deltaTime;
+                // `petalOrbitPhase` is deliberately NOT integrated here any
+                // more, even though the rotation modifier is derived here and
+                // this looks like its home. The ring advances it instead
+                // (petalRing.advanceOrbitPhase, driven from
+                // server/ecsSync.openPetalRing), for two reasons:
+                //
+                //  - This system is DISABLED during the cutover (see
+                //    LEGACY_OWNED_SYSTEMS in server/ecsSync.ts), so integrating
+                //    only here would freeze every orbit. Integrating in BOTH
+                //    places once it is re-enabled would silently double the
+                //    rate, with nothing failing — the exact shape of bug this
+                //    cutover keeps producing.
+                //  - `rotation` above stacks MULTIPLICATIVELY, while the legacy
+                //    `calculatePlayerModifiers` the ring still reads stacks it
+                //    ADDITIVELY (`+= rotationSpeed - 1`). Those disagree for any
+                //    two-petal build, so this value cannot drive the ring until
+                //    that difference is reconciled deliberately.
+                //
+                // Whoever enables this system must move the ring's call here,
+                // not add a second one.
             }
         });
     };
