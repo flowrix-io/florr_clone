@@ -9,10 +9,23 @@
 
 import { defineComponent, defineTag } from '../component';
 
-/** Current and maximum hit points. */
+/**
+ * Current and maximum hit points.
+ *
+ * f64, NOT f32, for the same reason Position is — the values are far outside
+ * f32's exact-integer range. Mob health is base x HEALTH_SCALING, and an apex
+ * target dummy is 3e15 HP where one f32 ulp is 2.8e7. A 500-damage hit lands
+ * entirely inside the rounding error: the stored value does not change, so the
+ * client's damage readout (previousHealth - newHealth) is arithmetic garbage
+ * and sometimes zero. An apex digger at 3e10 has a 4096 ulp and drifts too.
+ *
+ * The target dummy is the one entity whose entire purpose is displaying damage
+ * numbers, so this is not a rounding curiosity. Damage.value stays f32: real
+ * mob damage tops out around 5e5, well inside f32's exact range.
+ */
 export const Health = defineComponent('Health', {
-    current: 'f32',
-    max: 'f32',
+    current: 'f64',
+    max: 'f64',
 });
 
 /** Contact/attack damage this entity deals. */
