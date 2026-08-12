@@ -317,6 +317,23 @@ export function syncPlayersToEcs(
         // the NaN guard stay in the system, exactly where they were.
         world.set(entity, C.PlayerModifiers, 'speedBoost', deps.speedBoostOf(player));
         world.set(entity, C.PlayerModifiers, 'sizeMultiplier', player.sizeMultiplier ?? 1.0);
+
+        // The loadout is LEGACY-owned, so it is pushed in every tick like health
+        // and speed — not captured once at import.
+        //
+        // This was missed, and bots showed no petals because of it. `C.Loadout`
+        // holds a REFERENCE to the legacy array, and several legacy sites
+        // REPLACE that array rather than mutating it — respawnBot assigns a
+        // fresh `buildBotLoadout(...)`, and the loadout editors build new
+        // arrays too. After any of those the component still pointed at the
+        // array captured at importPlayer, so the ring laid out stale slots.
+        // Bots die and respawn constantly, which is why it showed there first
+        // and most obviously; a human hitting a loadout edit or a respawn had
+        // the same stale reference.
+        //
+        // A pointer write per player per tick, and it makes the ownership rule
+        // uniform: everything legacy still writes gets pushed IN.
+        world.set(entity, C.Loadout, 'slots', player.loadout);
     }
 }
 
