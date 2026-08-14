@@ -111,6 +111,14 @@ exports.VIEWPORT_HEIGHT = 1080;
 exports.VIEWPORT_AREA = exports.VIEWPORT_WIDTH * exports.VIEWPORT_HEIGHT; // 2,073,600 pixels²
 exports.players = {};
 exports.dots = [];
+/**
+ * Every wild mob in the world.
+ *
+ * Typed `LiveEnemy[]`, not `Enemy[]`: membership of this array means "has an ECS
+ * entity", and the brand is what makes that structural rather than a convention
+ * (see server_utils.LiveEnemy). Mobs are admitted by `spawnEnemy()` in
+ * server/enemyRegistry.ts, which is the only producer of the branded type.
+ */
 exports.enemies = [];
 exports.obstacles = [];
 exports.items = [];

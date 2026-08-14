@@ -1,12 +1,18 @@
-import { Graphics, Player, Enemy, FaceFlags, getMobStats } from './core';
+import { Graphics, Player, FaceFlags, getMobStats } from './core';
+import { ClientWorld } from '../client_world';
+import { Entity } from '../ecs';
 import { getThirdEyeRarity } from './player-drawing';
 import { getSquadMemberIds } from '../squad_state';
+
+/** Reused entity snapshots; see ClientWorld.collectMobs. */
+const bossScanScratch: Entity[] = [];
+const bossScratch: Entity[] = [];
 
 declare module './core' {
     interface Graphics {
         sampleColorAtPosition(worldX: number, worldY: number): string;
-        drawUI(players: Map<string, Player>, socket: string): void;
-        drawBossBars(enemies: Map<string, Enemy>): void;
+        drawUI(world: ClientWorld, socket: string): void;
+        drawBossBars(world: ClientWorld): void;
         formatNumber(num: number): string;
         drawCorpse(x: number, y: number, angle: number, player?: Player): void;
         setShowConsoleLogs(enabled: boolean): void;
@@ -77,9 +83,9 @@ Graphics.prototype.sampleColorAtPosition = function(this: Graphics, worldX: numb
     return 'rgba(0, 151, 93, 0.5)';
 };
 
-Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player>, socket: string) {
+Graphics.prototype.drawUI = function(this: Graphics, world: ClientWorld, socket: string) {
     // Draw player stats
-    const player = players.get(socket);
+    const player = world.player(socket);
     if (player) {
         // Draw flower in top left (moved down for exit button)
         const flowerCenterX = 50;
@@ -213,7 +219,7 @@ Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player
 
             for (const memberId of squadMemberIds) {
                 if (memberId === socket) continue;
-                const member = players.get(memberId);
+                const member = world.player(memberId);
                 if (!member) continue;
 
                 this.ctx.font = `${smFontSize}px Ubuntu, sans-serif`;
@@ -306,13 +312,13 @@ Graphics.prototype.drawUI = function(this: Graphics, players: Map<string, Player
     this.drawFloatingTexts();
 
     // Draw minimap (hidden inside the PVP arena — that map has its own UI)
-    const localPlayer = players.get(socket) as any;
+    const localPlayer = world.player(socket) as any;
     if (!localPlayer || !localPlayer.inPvpArena) {
-        this.drawMinimap(players, socket);
+        this.drawMinimap(world, socket);
     }
 };
 
-Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, Enemy>) {
+Graphics.prototype.drawBossBars = function(this: Graphics, world: ClientWorld) {
     // Calculate viewport accounting for zoom level
     const scaledWidth = this.viewW / this.zoomLevel;
     const scaledHeight = this.viewH / this.zoomLevel;
@@ -333,36 +339,39 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
     if (nowMs - this._bossCandidatesAt > 250) {
         this._bossCandidatesAt = nowMs;
         this._bossCandidates.length = 0;
-        for (const e of enemies.values()) {
-            if (e.tier !== 'super' && e.tier !== 'unique' && e.tier !== 'apex') continue;
-            if (e.type === 'target_dummy') continue;
-            if (e.isPet || e.ownerId) continue;
+        for (const e of world.collectMobs(bossScanScratch)) {
+            const tier = world.mobTier(e);
+            if (tier !== 'super' && tier !== 'unique' && tier !== 'apex') continue;
+            if (world.mobType(e) === 'target_dummy') continue;
+            if (world.isPet(e)) continue;
             this._bossCandidates.push(e);
         }
     }
-    const bossMobs: Enemy[] = [];
-    for (const candidate of this._bossCandidates) {
-        // Re-resolve by id: the list is up to 250ms stale, and the socket layer
-        // may replace enemy objects on update — always use the live object and
-        // skip bosses that despawned since the last refresh.
-        const enemy = enemies.get(candidate.id);
-        if (enemy) {
-            // Check if enemy is in viewport (same logic as drawGameObjects)
-            const mobStats = getMobStats(enemy.type, enemy.tier);
-            const baseSize = mobStats ? mobStats.size * 40 : 40;
-            const visualScale = mobStats?.visual_scale ?? 1.0;
-            const enemySize = baseSize * visualScale;
+    const bossMobs: Entity[] = bossScratch;
+    bossMobs.length = 0;
+    for (const enemy of this._bossCandidates) {
+        // The candidate list is up to 250ms stale. A handle packs a generation,
+        // so a despawned boss whose slot was recycled fails isAlive() instead of
+        // silently resolving to whatever mob took its place — which is exactly
+        // the aliasing the old "always re-resolve by id" step guarded against.
+        if (!world.world.isAlive(enemy)) continue;
+        // Check if enemy is in viewport (same logic as drawGameObjects)
+        const ex = world.mobX(enemy);
+        const ey = world.mobY(enemy);
+        const mobStats = getMobStats(world.mobType(enemy), world.mobTier(enemy));
+        const baseSize = mobStats ? mobStats.size * 40 : 40;
+        const visualScale = mobStats?.visual_scale ?? 1.0;
+        const enemySize = baseSize * visualScale;
 
-            // Add a buffer margin to ensure mobs are completely out before considering them out of viewport
-            const cullingBuffer = Math.max(enemySize, 100); // At least 100px buffer, or enemy size if larger
+        // Add a buffer margin to ensure mobs are completely out before considering them out of viewport
+        const cullingBuffer = Math.max(enemySize, 100); // At least 100px buffer, or enemy size if larger
 
-            // Mob is in viewport if it's NOT completely outside (with buffer)
-            if (!(enemy.x + enemySize / 2 + cullingBuffer < viewport.left ||
-                  enemy.x - enemySize / 2 - cullingBuffer > viewport.right ||
-                  enemy.y + enemySize / 2 + cullingBuffer < viewport.top ||
-                  enemy.y - enemySize / 2 - cullingBuffer > viewport.bottom)) {
-                bossMobs.push(enemy);
-            }
+        // Mob is in viewport if it's NOT completely outside (with buffer)
+        if (!(ex + enemySize / 2 + cullingBuffer < viewport.left ||
+              ex - enemySize / 2 - cullingBuffer > viewport.right ||
+              ey + enemySize / 2 + cullingBuffer < viewport.top ||
+              ey - enemySize / 2 - cullingBuffer > viewport.bottom)) {
+            bossMobs.push(enemy);
         }
     }
 
@@ -382,8 +391,10 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
             const bossBarX = centerX - bossBarWidth / 2;
 
             // Get mob stats for name
-            const mobStats = getMobStats(enemy.type, enemy.tier);
-            const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
+            const enemyType = world.mobType(enemy);
+            const enemyTier = world.mobTier(enemy);
+            const mobStats = getMobStats(enemyType, enemyTier);
+            const mobName = mobStats ? mobStats.name : `${enemyTier} ${enemyType}`;
 
             // Draw mob name above the bar (larger font, centered)
             this.ctx.font = `${nameFontSize}px Ubuntu, sans-serif`;
@@ -396,8 +407,9 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
             this.ctx.fillText(mobName, nameX, nameY);
 
             // Draw health bar with rounded ends
-            const clampedHealth = Math.max(0, enemy.health);
-            const healthFillWidth = (clampedHealth / enemy.maxHealth) * bossBarWidth;
+            const bossMaxHealth = world.mobMaxHealth(enemy);
+            const clampedHealth = Math.max(0, world.mobHealth(enemy));
+            const healthFillWidth = (clampedHealth / bossMaxHealth) * bossBarWidth;
             const radius = bossBarHeight / 2;
 
             // Boss bar background (rounded)
@@ -415,7 +427,7 @@ Graphics.prototype.drawBossBars = function(this: Graphics, enemies: Map<string, 
             // Draw health text (centered on the bar)
             this.ctx.font = '16px Ubuntu, sans-serif';
             const textY = bossBarY + 18;
-            const healthText = `${this.formatNumber(Math.round(clampedHealth))}/${this.formatNumber(enemy.maxHealth)}`;
+            const healthText = `${this.formatNumber(Math.round(clampedHealth))}/${this.formatNumber(bossMaxHealth)}`;
             const healthTextWidth = this.ctx.measureText(healthText).width;
             const healthTextX = centerX - healthTextWidth / 2;
             this.ctx.strokeStyle = '#000000';

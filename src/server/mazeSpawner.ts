@@ -17,7 +17,7 @@ import {
 } from '../maze';
 import { RARITY_ORDER as TIER_ORDER } from './shared/rarity';
 import { pickWeighted } from './shared/weighted';
-import { buildEnemy } from './shared/buildEnemy';
+import { spawnEnemy } from './enemyRegistry';
 
 // Population control. Unlike the open world (which only populates viewports),
 // the maze is a bounded dungeon populated rrolf-style: mobs spawn across ALL
@@ -180,28 +180,30 @@ function findMazeSpawnPosition(mobRadius: number): { x: number; y: number } | nu
 /**
  * Keep the maze corridors populated. Tier comes from the depth zone the spawn
  * position lands in (common at the entrance through mythic at the deepest
- * corridors), with a little jitter. Returns the newly created enemies —
- * caller appends them to the global `enemies` array.
+ * corridors), with a little jitter.
+ *
+ * Mobs are admitted by `spawnEnemy` as they are created; the return value is
+ * how many landed.
  */
-export function spawnMazeMobs(limit: number = 3): Enemy[] {
+export function spawnMazeMobs(limit: number = 3): number {
     const maze = getActiveMaze();
-    if (!maze) return [];
+    if (!maze) return 0;
     const mazePlayerIds = getMazePlayerIds();
-    if (mazePlayerIds.length === 0) return [];
+    if (mazePlayerIds.length === 0) return 0;
 
     const pool = getMazeMobPool();
-    if (pool.length === 0) return [];
+    if (pool.length === 0) return 0;
 
     const { total } = countMazeMobs();
     const target = getMazePopulationTarget();
     const needed = Math.min(limit, target - total);
-    if (needed <= 0) return [];
+    if (needed <= 0) return 0;
 
     // Fresh broad-phase grid for the too-close checks below (the tick loop
     // rebuilds it too, but this call runs on its own interval).
     rebuildEnemyGrid(enemies);
 
-    const spawned: Enemy[] = [];
+    let spawned = 0;
     for (let i = 0; i < needed; i++) {
         const mobEntry = pickWeighted(pool);
         const prelimStats = getMobStats(mobEntry.type, 'common');
@@ -225,33 +227,30 @@ export function spawnMazeMobs(limit: number = 3): Enemy[] {
         const tierRadius = tierStats ? (tierStats.size * 40) / 2 : mobRadius;
         if (tierRadius > mobRadius && !mazeBodyFits(position.x, position.y, tierRadius)) continue;
 
-        const enemy = buildEnemy(mobEntry.type, tier, position.x, position.y);
-        if (!enemy) continue;
-        spawned.push(enemy);
+        if (spawnEnemy(mobEntry.type, tier, position.x, position.y)) spawned++;
     }
     return spawned;
 }
 
 /**
  * Ultra mobs are the maze bosses: keep MAZE_BOSS_COUNT of them alive in the
- * mythic-zone boss rooms while anyone is inside the maze. Returns created
- * bosses (with any centipede body segments already chained via the shared
- * helper) — caller appends the returned heads to `enemies`; body segments are
- * appended by spawnCentipedeBodySegments itself.
+ * mythic-zone boss rooms while anyone is inside the maze. Bosses (and any
+ * centipede chain they need) are admitted as they are created; returns how many
+ * were spawned.
  */
-export function spawnMazeBosses(): Enemy[] {
+export function spawnMazeBosses(): number {
     const maze = getActiveMaze();
-    if (!maze || maze.bossSpots.length === 0) return [];
-    if (getMazePlayerIds().length === 0) return [];
+    if (!maze || maze.bossSpots.length === 0) return 0;
+    if (getMazePlayerIds().length === 0) return 0;
 
     const { ultras } = countMazeMobs();
     let toSpawn = MAZE_BOSS_COUNT - ultras;
-    if (toSpawn <= 0) return [];
+    if (toSpawn <= 0) return 0;
 
     const pool = getMazeMobPool();
-    if (pool.length === 0) return [];
+    if (pool.length === 0) return 0;
 
-    const spawned: Enemy[] = [];
+    let spawned = 0;
     for (const spot of maze.bossSpots) {
         if (toSpawn <= 0) break;
         // Don't drop a boss on someone's head.
@@ -274,12 +273,12 @@ export function spawnMazeBosses(): Enemy[] {
         if (bossHere) continue;
 
         const mobEntry = pickWeighted(pool);
-        const boss = buildEnemy(mobEntry.type, 'ultra', spot.x, spot.y);
+        const boss = spawnEnemy(mobEntry.type, 'ultra', spot.x, spot.y);
         if (!boss) continue;
         if (isCentipedeHeadType(boss.type)) {
             spawnCentipedeBodySegments(boss);
         }
-        spawned.push(boss);
+        spawned++;
         toSpawn--;
     }
     return spawned;

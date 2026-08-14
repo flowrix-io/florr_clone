@@ -4,7 +4,7 @@ import { sanitizePlayerForClient } from './server/playerWire';
 import { Item } from './item';
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
-import { buildEnemy } from './server/shared/buildEnemy';
+import { spawnEnemy } from './server/enemyRegistry';
 import { killEnemy, type KillContext } from './server/shared/killHandler';
 import { players, enemies } from './constants';
 import { database } from './database';
@@ -583,27 +583,26 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     const rangeBonus = rarityIndex >= 0 ? rarityIndex * 200 : 0;
     const petRange = (mobStats.range || 0) + rangeBonus;
 
-    // Create the pet enemy
-    const pet = buildEnemy(mobType, tier, x, y, {
-        aiType: 'passive', // Pets are not hostile to players
-        range: petRange,
-        ownerId, // Set the owner
-        petImage: mobStats.petImage, // Use pet image if available
-    })!; // mobStats validated above
-
     // Pet-only stat nerfs (see PET_STAT_MULTIPLIERS). maxHealth is what the
     // client's health bar divides by, and encodeEnemyDelta only puts maxHealth
     // on the wire when it differs from the mob config's, so this reaches the
     // client on its own.
+    //
+    // Passed INTO the spawn rather than patched on after it: `damage` is written
+    // to the ECS once, at construction, and never re-synced — a nerf applied
+    // afterwards would leave ECS-owned pet melee hitting for the full wild
+    // value while the legacy object read the nerfed one.
     const statMods = PET_STAT_MULTIPLIERS[mobType];
-    if (statMods) {
-        pet.maxHealth = mobStats.health * statMods.health;
-        pet.health = pet.maxHealth;
-        pet.damage = mobStats.damage * statMods.damage;
-    }
 
-    // Add to enemies array
-    enemies.push(pet);
+    // Create the pet enemy (ECS entity + enemies[] admission, atomically)
+    const pet = spawnEnemy(mobType, tier, x, y, {
+        aiType: 'passive', // Pets are not hostile to players
+        range: petRange,
+        ownerId, // Set the owner
+        petImage: mobStats.petImage, // Use pet image if available
+        maxHealth: statMods ? mobStats.health * statMods.health : undefined,
+        damage: statMods ? mobStats.damage * statMods.damage : undefined,
+    })!; // mobStats validated above
 
     // Notify all clients
     io.emit('enemySpawned', pet);

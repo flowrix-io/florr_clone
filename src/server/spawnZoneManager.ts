@@ -1,5 +1,4 @@
 import {
-    enemies,
     MapElement,
     SCALE_FACTOR,
     ORIGINAL_ENEMY_COUNT,
@@ -69,12 +68,11 @@ function ensureInitialized(): void {
     }));
 }
 
+/** `createEnemyInZone` admits the mob itself; this only counts what landed. */
 function spawnUpTo(state: SpawnZoneState, helpers: EnemySpawnerHelpers, maxThisTick: number): number {
     let spawned = 0;
     for (let i = 0; i < maxThisTick; i++) {
-        const enemy = createEnemyInZone(helpers, state.zone);
-        if (!enemy) break;
-        enemies.push(enemy);
+        if (!createEnemyInZone(helpers, state.zone)) break;
         spawned++;
     }
     return spawned;

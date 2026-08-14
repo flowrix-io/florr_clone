@@ -4,56 +4,31 @@
  *
  * Both paths must treat a mid-death-animation enemy identically — updating or
  * deleting one out from under the animation makes mobs blink out instead of
- * playing their death pop — so the logic lives in one place.
+ * playing their death pop — so the logic lives in one place: the client world
+ * (src/client_world.ts), which this file is a thin binding over.
+ *
+ * The `Enemy` record handed in is transient. Nothing retains it; the world
+ * copies what it needs into components and drops it.
  */
 
 import { Enemy } from '../enemy';
 
-export function applyEnemyUpdate(game: any, enemy: Enemy, snapTimeMs?: number) {
-    // If enemy is already in death animation, don't update it (let animation complete)
-    const existingEnemy = game.enemies.get(enemy.id);
-    if (existingEnemy && existingEnemy.deathAnimationStartTime) {
-        const DEATH_ANIMATION_DURATION = 200; // Must match duration in graphics.ts
-        const elapsed = Date.now() - existingEnemy.deathAnimationStartTime;
-        if (elapsed < DEATH_ANIMATION_DURATION) {
-            // Enemy is still animating, don't update it
-            return;
-        }
-    }
+/**
+ * The clock the death animation is stamped and compared against.
+ *
+ * `Date.now()`, matching `Graphics.frameTimestamp`. NOT `performance.now()`,
+ * which is what snapshot timestamps use — the two are ~1.7e12 ms apart and
+ * mixing them means animations that never start or entities that are never
+ * reaped. See the header of ecs/client/ingest.ts.
+ */
+export function worldNow(): number {
+    return Date.now();
+}
 
-    if (existingEnemy) {
-        // Update existing enemy: set interpolation targets instead of snapping
-        existingEnemy.targetX = enemy.x;
-        existingEnemy.targetY = enemy.y;
-        existingEnemy.targetAngle = enemy.angle;
-        const sNow = snapTimeMs ?? performance.now();
-        if (!existingEnemy._snapshots) existingEnemy._snapshots = [];
-        const buf = existingEnemy._snapshots;
-        // Keep the buffer monotonic even across a clock-offset re-anchor.
-        const t = buf.length > 0 && sNow <= buf[buf.length - 1].t ? buf[buf.length - 1].t + 1 : sNow;
-        buf.push({ t, x: enemy.x, y: enemy.y, angle: enemy.angle });
-        if (buf.length > 12) buf.shift();
-        existingEnemy.health = enemy.health;
-        existingEnemy.maxHealth = enemy.maxHealth;
-        // Update other fields directly
-        if (enemy.type) existingEnemy.type = enemy.type;
-        if (enemy.tier) existingEnemy.tier = enemy.tier;
-    } else {
-        // New enemy: set position immediately (no interpolation on first appearance)
-        enemy.targetX = enemy.x;
-        enemy.targetY = enemy.y;
-        enemy.targetAngle = enemy.angle;
-        // The full `enemySpawned` payload identifies a pet by `ownerId`; the delta
-        // stream sets `isPet` directly. Normalize so the renderer only reads one.
-        if (enemy.ownerId) enemy.isPet = true;
-        game.enemies.set(enemy.id, enemy);
-    }
+export function applyEnemyUpdate(game: any, enemy: Enemy, snapTimeMs?: number) {
+    game.clientWorld.ingestEnemy(enemy, worldNow(), snapTimeMs ?? performance.now());
 }
 
 export function forgetEnemy(game: any, enemyId: string) {
-    const enemy = game.enemies.get(enemyId);
-    // Don't remove enemies mid-death-animation - let the animation finish
-    if (enemy?.deathAnimationStartTime) return;
-    game.graphics.clearEnemyDamage(enemyId);
-    game.enemies.delete(enemyId);
+    game.clientWorld.forgetEnemy(enemyId, worldNow());
 }

@@ -7,8 +7,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerProgressionHandlers = registerProgressionHandlers;
 const playerRefs_1 = require("../playerRefs");
 function registerProgressionHandlers(game) {
+    const cw = game.clientWorld;
     game.socket.on('xpGained', (data) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.xp = data.totalXp;
             player.level = data.level;
@@ -22,14 +23,14 @@ function registerProgressionHandlers(game) {
     // every mob kill in there. The XP bar shows the maze level, so it must not
     // move; we just record where the outside level has got to.
     game.socket.on('outsideXpGained', (data) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.outsideLevel = data.outsideLevel;
         }
     });
     game.socket.on('levelUp', (data) => {
         //console.log('Level up:', data);  // Add logging
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.level = data.level;
             player.maxHealth = data.maxHealth;
@@ -38,11 +39,26 @@ function registerProgressionHandlers(game) {
         }
     });
     game.socket.on('playerRespawned', (player) => {
-        const existingPlayer = game.players.get(player.id);
+        const existingPlayer = cw.player(player.id);
         if (existingPlayer) {
-            Object.assign(existingPlayer, player);
+            const spawnX = player.x;
+            const spawnY = player.y;
+            // toClientPlayer strips the position fields BEFORE the merge:
+            // Object.assign would otherwise stamp a frozen x/y back onto the
+            // stored object, which the ECS never updates.
+            Object.assign(existingPlayer, (0, playerRefs_1.toClientPlayer)(player));
             // Reset the isDead flag
             existingPlayer.isDead = false;
+            // Respawn is a jump, not a move: cut the flower onto the spawn point
+            // instead of gliding it there from the corpse. (This is what the old
+            // `predInit` reset did, but for every flower rather than only the
+            // local one.)
+            if (typeof spawnX === 'number' && typeof spawnY === 'number') {
+                cw.teleportPlayer(player.id, spawnX, spawnY);
+            }
+            else {
+                cw.snapPlayer(player.id);
+            }
             if ((0, playerRefs_1.isLocalPlayerId)(game, player.id)) {
                 game.isPlayerDead = false;
                 game.hideDeathScreen();
@@ -63,19 +79,19 @@ function registerProgressionHandlers(game) {
         //     hasMobKills: !!updatedPlayer.mobKills,
         //     mobKills: updatedPlayer.mobKills
         // });
-        let player = game.players.get(updatedPlayer.id);
+        let player = cw.player(updatedPlayer.id);
         // If player doesn't exist yet, create it (e.g., for split players)
         if (!player) {
-            player = {
+            const spawnX = updatedPlayer.x;
+            const spawnY = updatedPlayer.y;
+            player = (0, playerRefs_1.toClientPlayer)({
                 ...updatedPlayer,
                 imageLoaded: true,
                 score: 0,
                 velocityX: 0,
                 velocityY: 0,
-                targetX: updatedPlayer.x,
-                targetY: updatedPlayer.y
-            };
-            game.players.set(updatedPlayer.id, player);
+            });
+            cw.upsertPlayer(updatedPlayer.id, spawnX, spawnY, updatedPlayer.angle ?? 0, player);
         }
         else {
             let loadoutChanged = false;
@@ -87,9 +103,8 @@ function registerProgressionHandlers(game) {
                 inventoryChanged = updatedPlayer.inventory !== undefined && player.inventory !== updatedPlayer.inventory;
                 mobKillsChanged = updatedPlayer.mobKills !== undefined && player.mobKills !== updatedPlayer.mobKills;
             }
-            // Set position as interpolation targets to avoid camera jitter
-            const prevX = player.x;
-            const prevY = player.y;
+            // Position rides in as an interpolation TARGET, so the flower eases
+            // to it instead of the camera jumping.
             const newX = updatedPlayer.x;
             const newY = updatedPlayer.y;
             // The full server player carries its raw petalPositions. Assigning
@@ -100,15 +115,13 @@ function registerProgressionHandlers(game) {
             // which is exactly when the jump was seen. Petal positions are
             // owned by the gameStateUpdate delta pipeline; keep the client's.
             const prevPetalPositions = player.petalPositions;
-            Object.assign(player, updatedPlayer);
+            // Strip position before merging: `Object.assign` would otherwise
+            // put a frozen copy of x/y back on the stored object.
+            Object.assign(player, (0, playerRefs_1.toClientPlayer)(updatedPlayer));
             if (prevPetalPositions)
                 player.petalPositions = prevPetalPositions;
-            // Restore interpolated position, update targets
             if (newX !== undefined && newY !== undefined) {
-                player.x = prevX;
-                player.y = prevY;
-                player.targetX = newX;
-                player.targetY = newY;
+                cw.movePlayer(updatedPlayer.id, newX, newY);
             }
             // The snapshot resurrected any craft-slot staged items into the
             // inventory (staging is client-side only) — re-deduct them so the
@@ -174,7 +187,7 @@ function registerProgressionHandlers(game) {
         }
     });
     game.socket.on('skillsUpdated', (data) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.tp = data.tp;
             player.skills = data.skills;
@@ -291,7 +304,7 @@ function registerProgressionHandlers(game) {
     game.socket.on('starsEarned', (data) => {
         console.log('[CLIENT] starsEarned received:', data);
         // Update player stars
-        const player = game.getLocalPlayer();
+        const player = cw.player(game.activePlayerId || game.socket?.id || '');
         if (player) {
             player.stars = data.total;
         }

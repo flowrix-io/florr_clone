@@ -4,7 +4,7 @@ exports.spawnArenaMobs = spawnArenaMobs;
 const constants_1 = require("../constants");
 const mobs_1 = require("../mobs");
 const weighted_1 = require("./shared/weighted");
-const buildEnemy_1 = require("./shared/buildEnemy");
+const enemyRegistry_1 = require("./enemyRegistry");
 // Garden-themed mobs + spider. Weights control relative spawn frequency.
 // Spider is intentionally rarer — it's the standout threat in the arena.
 const ARENA_MOB_POOL = [
@@ -93,19 +93,20 @@ function findArenaSpawnPosition(mobRadius) {
 }
 /**
  * Spawn up to `limit` mobs this tick to keep the arena populated.
- * Returns the list of newly-created enemies (caller is responsible for
- * appending them to the global `enemies` array).
+ *
+ * Mobs are admitted by `spawnEnemy` as they are created (entity + `enemies[]`);
+ * the return value is the count, for logging and pacing.
  */
 function spawnArenaMobs(limit = 3) {
     const arenaPlayers = countArenaPlayers();
     if (arenaPlayers === 0)
-        return [];
+        return 0;
     const target = Math.min(MAX_ARENA_MOBS, arenaPlayers * MOBS_PER_PLAYER);
     const current = countArenaMobs();
     const needed = Math.min(limit, target - current);
     if (needed <= 0)
-        return [];
-    const spawned = [];
+        return 0;
+    let spawned = 0;
     for (let i = 0; i < needed; i++) {
         const mobEntry = (0, weighted_1.pickWeighted)(ARENA_MOB_POOL);
         const tierEntry = (0, weighted_1.pickWeighted)(ARENA_TIER_WEIGHTS);
@@ -116,10 +117,8 @@ function spawnArenaMobs(limit = 3) {
         const position = findArenaSpawnPosition(mobRadius);
         if (!position)
             continue;
-        const enemy = (0, buildEnemy_1.buildEnemy)(mobEntry.type, tierEntry.tier, position.x, position.y);
-        if (!enemy)
-            continue;
-        spawned.push(enemy);
+        if ((0, enemyRegistry_1.spawnEnemy)(mobEntry.type, tierEntry.tier, position.x, position.y))
+            spawned++;
     }
     return spawned;
 }

@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const squad_state_1 = require("../squad_state");
 const maze_1 = require("../maze");
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const mazeMinimapScratch = [];
 // Ground fallback colors while the biome section texture is still loading.
 const MAZE_GROUND_FALLBACK = {
     garden: '#00d885',
@@ -135,12 +137,12 @@ core_1.Graphics.prototype.drawMazeWorld = function () {
  * dark. Returns false when the local player isn't in the maze so the regular
  * minimap can draw instead.
  */
-core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
+core_1.Graphics.prototype.drawMazeMinimap = function (world, socket) {
     const maze = (0, maze_1.getActiveMaze)();
     if (!maze)
         return false;
-    const self = players.get(socket);
-    if (!self || !(0, maze_1.isInMazeRegion)(self.x, self.y))
+    const self = world.playerEntity(socket);
+    if (self === undefined || !(0, maze_1.isInMazeRegion)(world.playerX(self), world.playerY(self)))
         return false;
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
     const minimapY = this.MINIMAP_PADDING;
@@ -221,15 +223,18 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
     const squadMemberSet = new Set(squadMemberIds);
     const worldToMapX = (wx) => minimapX + ((wx - maze_1.MAZE_ORIGIN_X) / maze.worldSize) * this.MINIMAP_WIDTH;
     const worldToMapY = (wy) => minimapY + ((wy - maze_1.MAZE_ORIGIN_Y) / maze.worldSize) * this.MINIMAP_HEIGHT;
-    players.forEach(player => {
-        if (!(0, maze_1.isInMazeRegion)(player.x, player.y))
-            return;
-        const isCurrentPlayer = player.id === socket;
-        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(player.id);
+    for (const entity of world.collectPlayers(mazeMinimapScratch)) {
+        const wx = world.playerX(entity);
+        const wy = world.playerY(entity);
+        if (!(0, maze_1.isInMazeRegion)(wx, wy))
+            continue;
+        const playerId = world.playerId(entity);
+        const isCurrentPlayer = playerId === socket;
+        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(playerId);
         if (!isCurrentPlayer && !isSquadMember && !this.altKeyPressed)
-            return;
-        const px = worldToMapX(player.x);
-        const py = worldToMapY(player.y);
+            continue;
+        const px = worldToMapX(wx);
+        const py = worldToMapY(wy);
         ctx.fillStyle = isCurrentPlayer ? '#0000FF' : isSquadMember ? '#FF69B4' : '#000000';
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 1;
@@ -238,7 +243,7 @@ core_1.Graphics.prototype.drawMazeMinimap = function (players, socket) {
         ctx.fill();
         if (isCurrentPlayer || isSquadMember)
             ctx.stroke();
-    });
+    }
     ctx.restore();
     // Border + label.
     ctx.strokeStyle = '#FFD700';

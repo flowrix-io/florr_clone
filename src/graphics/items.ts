@@ -1,8 +1,9 @@
-import { Graphics, WorldItem, Player, getPetalStats } from './core';
+import { Graphics, WorldItem, getPetalStats } from './core';
+import { ClientWorld } from '../client_world';
 
 declare module './core' {
     interface Graphics {
-        drawItem(item: WorldItem, players?: Map<string, Player>): void;
+        drawItem(item: WorldItem, world?: ClientWorld): void;
         drawWorldPetal(item: WorldItem): void;
         getItemCanvas(item: WorldItem): HTMLCanvasElement | null;
         itemCanvasCache?: Map<string, HTMLCanvasElement>;
@@ -108,7 +109,7 @@ Graphics.prototype.getItemCanvas = function(this: Graphics, item: WorldItem): HT
     return canvas;
 };
 
-Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, players?: Map<string, Player>): void {
+Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, world?: ClientWorld): void {
     // Compute spawn spin-out animation offset
     let drawX = item.x;
     let drawY = item.y;
@@ -127,11 +128,11 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, players?
             const eased = t * t;
             let targetX = deathAnim.startX;
             let targetY = deathAnim.startY;
-            if (deathAnim.targetPlayerId && players) {
-                const targetPlayer = players.get(deathAnim.targetPlayerId);
-                if (targetPlayer) {
-                    targetX = targetPlayer.x;
-                    targetY = targetPlayer.y;
+            if (deathAnim.targetPlayerId && world) {
+                const targetPlayer = world.playerEntity(deathAnim.targetPlayerId);
+                if (targetPlayer !== undefined) {
+                    targetX = world.playerX(targetPlayer);
+                    targetY = world.playerY(targetPlayer);
                 }
             }
             drawX = deathAnim.startX + (targetX - deathAnim.startX) * eased;

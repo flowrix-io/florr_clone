@@ -85,7 +85,7 @@ core_1.Graphics.prototype.getItemCanvas = function (item) {
     this.itemCanvasCache.set(key, canvas);
     return canvas;
 };
-core_1.Graphics.prototype.drawItem = function (item, players) {
+core_1.Graphics.prototype.drawItem = function (item, world) {
     // Compute spawn spin-out animation offset
     let drawX = item.x;
     let drawY = item.y;
@@ -103,11 +103,11 @@ core_1.Graphics.prototype.drawItem = function (item, players) {
             const eased = t * t;
             let targetX = deathAnim.startX;
             let targetY = deathAnim.startY;
-            if (deathAnim.targetPlayerId && players) {
-                const targetPlayer = players.get(deathAnim.targetPlayerId);
-                if (targetPlayer) {
-                    targetX = targetPlayer.x;
-                    targetY = targetPlayer.y;
+            if (deathAnim.targetPlayerId && world) {
+                const targetPlayer = world.playerEntity(deathAnim.targetPlayerId);
+                if (targetPlayer !== undefined) {
+                    targetX = world.playerX(targetPlayer);
+                    targetY = world.playerY(targetPlayer);
                 }
             }
             drawX = deathAnim.startX + (targetX - deathAnim.startX) * eased;

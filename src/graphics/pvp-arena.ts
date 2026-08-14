@@ -1,10 +1,15 @@
-import { Graphics, Player } from './core';
+import { Graphics } from './core';
+import { ClientWorld } from '../client_world';
+import { Entity } from '../ecs';
+
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const leaderboardScratch: Entity[] = [];
 import { PVP_ARENA_CENTER_X, PVP_ARENA_CENTER_Y, PVP_ARENA_RADIUS } from '../constants';
 
 declare module './core' {
     interface Graphics {
         drawPvpArenaBoundary(): void;
-        drawPvpLeaderboard(players: Map<string, Player>, currentPlayerId: string): void;
+        drawPvpLeaderboard(world: ClientWorld, currentPlayerId: string): void;
     }
 }
 
@@ -95,19 +100,20 @@ Graphics.prototype.drawPvpArenaBoundary = function(this: Graphics): void {
 // Render a live leaderboard styled to match gardn's: green pill header with the
 // player count on top, dark-gray rounded container below, and each row is a dark
 // pill with a flower-colored progress bar behind centered "Name - Score" text.
-Graphics.prototype.drawPvpLeaderboard = function(this: Graphics, players: Map<string, Player>, currentPlayerId: string): void {
-    const local = players.get(currentPlayerId) as any;
+Graphics.prototype.drawPvpLeaderboard = function(this: Graphics, world: ClientWorld, currentPlayerId: string): void {
+    const local = world.player(currentPlayerId) as any;
     if (!local || !local.inPvpArena) return;
 
     const arenaPlayers: Array<{ name: string; score: number; color: string }> = [];
-    players.forEach((p) => {
-        if (!(p as any).inPvpArena) return;
+    for (const entity of world.collectPlayers(leaderboardScratch)) {
+        const p = world.playerOf(entity) as any;
+        if (!p || !p.inPvpArena) continue;
         arenaPlayers.push({
             name: p.name || 'Unnamed',
-            score: (p as any).pvpScore || 0,
-            color: (p as any).flowerColor || '#FFE763',
+            score: p.pvpScore || 0,
+            color: p.flowerColor || '#FFE763',
         });
-    });
+    }
     if (arenaPlayers.length === 0) return;
 
     arenaPlayers.sort((a, b) => b.score - a.score);

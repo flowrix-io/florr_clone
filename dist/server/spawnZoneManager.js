@@ -43,13 +43,12 @@ function ensureInitialized() {
         pendingFillCount: 0
     }));
 }
+/** `createEnemyInZone` admits the mob itself; this only counts what landed. */
 function spawnUpTo(state, helpers, maxThisTick) {
     let spawned = 0;
     for (let i = 0; i < maxThisTick; i++) {
-        const enemy = (0, enemySpawner_1.createEnemyInZone)(helpers, state.zone);
-        if (!enemy)
+        if (!(0, enemySpawner_1.createEnemyInZone)(helpers, state.zone))
             break;
-        constants_1.enemies.push(enemy);
         spawned++;
     }
     return spawned;

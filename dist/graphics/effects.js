@@ -37,7 +37,9 @@ const RAINDROP_DOT_SPAWN_INTERVAL_MS = 90;
 const RAINDROP_MAX_TILES_PER_PLAYER = 400;
 const RAINDROP_MAX_DOTS_PER_PLAYER = 80;
 const FLOWER_COLORS = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#00ffff", "#ff00ff"];
-core_1.Graphics.prototype.drawRaindropAuras = function (players) {
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const auraScratch = [];
+core_1.Graphics.prototype.drawRaindropAuras = function (world) {
     const now = Date.now();
     const viewW = this.viewW / (this.zoomLevel * this.renderScale);
     const viewH = this.viewH / (this.zoomLevel * this.renderScale);
@@ -48,12 +50,15 @@ core_1.Graphics.prototype.drawRaindropAuras = function (players) {
     // Spawn new tiles/dots for any player currently emitting an aura. Cleanup
     // for players who no longer have raindrop (or who disconnected) happens
     // naturally when their trails finish fading and we drop the empty entry.
-    for (const player of players.values()) {
-        if (player.isDead)
+    for (const entity of world.collectPlayers(auraScratch)) {
+        const player = world.playerOf(entity);
+        if (!player || player.isDead)
             continue;
         const radius = getRaindropAuraRadiusFromLoadout(player);
         if (radius <= 0)
             continue;
+        const playerX = world.playerX(entity);
+        const playerY = world.playerY(entity);
         let trail = raindropTrails.get(player.id);
         if (!trail) {
             trail = { tiles: [], dots: [], lastTileSpawn: 0, lastDotSpawn: 0 };
@@ -64,8 +69,8 @@ core_1.Graphics.prototype.drawRaindropAuras = function (players) {
             const ang = Math.random() * Math.PI * 2;
             const r = Math.sqrt(Math.random()) * radius * 0.92;
             trail.tiles.push({
-                x: player.x + Math.cos(ang) * r,
-                y: player.y + Math.sin(ang) * r,
+                x: playerX + Math.cos(ang) * r,
+                y: playerY + Math.sin(ang) * r,
                 spawnedAt: now,
                 kind: Math.random() < 0.45 ? 1 : 0,
                 seedA: Math.random(),
@@ -81,8 +86,8 @@ core_1.Graphics.prototype.drawRaindropAuras = function (players) {
             const ang = Math.random() * Math.PI * 2;
             const r = Math.sqrt(Math.random()) * radius * 0.9;
             trail.dots.push({
-                x: player.x + Math.cos(ang) * r,
-                y: player.y + Math.sin(ang) * r,
+                x: playerX + Math.cos(ang) * r,
+                y: playerY + Math.sin(ang) * r,
                 spawnedAt: now
             });
             if (trail.dots.length > RAINDROP_MAX_DOTS_PER_PLAYER) {

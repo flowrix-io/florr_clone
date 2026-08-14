@@ -1,6 +1,7 @@
 import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
 import { Player, PlayerInventory } from './player';
-import { Enemy } from './enemy';
+import { ClientWorld } from './client_world';
+import { Entity } from './ecs';
 import { WorldItem } from './item';
 import { MapElement, ACTUAL_WORLD_WIDTH, ACTUAL_WORLD_HEIGHT, MOUSE_FULL_SPEED_DISTANCE } from './constants';
 import { WORLD_MAP } from './map_data';
@@ -21,13 +22,22 @@ import { CanvasLoadoutBar, LOADOUT_SLOT_COUNT } from './graphics/loadout-bar';
 import { MobileControls, resolveMobileControlsEnabled } from './graphics/mobile-controls';
 import { getCurrentGame, setCurrentGame, getTitleScreen } from './app_refs';
 import { reuseSocketForTitleScreen } from './net/preconnect';
+import { toClientPlayer } from './net/playerRefs';
 import { clearSession, getSocketAuth } from './auth_session';
 
 export class Game {
     public canvas: HTMLCanvasElement;
     public graphics: Graphics;
     private socket!: Socket;  // Using the definite assignment assertion
-    private players: Map<string, Player> = new Map();
+    /**
+     * Every flower and every mob this client knows about.
+     *
+     * Replaces the old `players`/`enemies` Maps. There is no second store: the
+     * net handlers write into it, the interpolation systems advance it, and the
+     * renderers read it. Public so net/handlers/** (which take an untyped
+     * `game`) can name it and get a checked signature.
+     */
+    public readonly clientWorld = new ClientWorld();
     private activePlayerId: string | null = null; // Track active player ID for split players
     private cameraX = 0;
     private cameraY = 0;
@@ -47,7 +57,6 @@ export class Game {
     private keysPressed: Set<string> = new Set();
     private mouseButtonsPressed: Set<number> = new Set(); // Track mouse buttons: 0 = left, 2 = right
     private petalExtension: number = 1.0; // 1.0 = normal, >1.0 = extended, <1.0 = retracted
-    private enemies: Map<string, Enemy> = new Map();
     private mobProjectiles: Map<string, any> = new Map(); // Store mob projectiles
     private playerProjectiles: Map<string, any> = new Map(); // Store player projectiles
     public groundPollens: Map<string, any> = new Map(); // Store ground pollen drops from broken pollen petals
@@ -77,16 +86,26 @@ export class Game {
     private showHitboxes: boolean = false;  // Changed from true to false
     private showStats: boolean = false;  // Combined setting for FPS, counters, and memory
     public mobDeathAnimation: boolean = true;  // Mob death animation setting (default true)
-    public interpolationAmount: number = 0.3;  // Interpolation factor (0 = no interpolation/snap, 1 = instant)
+    /**
+     * Interpolation factor (0 = snap, 1 = instant), the user's setting.
+     *
+     * A property pair rather than a field because the value the systems use is
+     * a per-SECOND rate derived from it; assigning the raw fraction has to
+     * re-derive, or the settings slider silently stops doing anything.
+     */
+    private _interpolationAmount: number = 0.3;
+    public get interpolationAmount(): number { return this._interpolationAmount; }
+    public set interpolationAmount(value: number) {
+        this._interpolationAmount = value;
+        this.clientWorld.setInterpolationAmount(value);
+    }
     private lastInterpolationTime: number = 0;
-    // Client-side prediction state for the local player. The local flower is
-    // simulated locally with the same gardn physics the server uses, so input is
-    // The local flower renders with gardn-style eased interpolation toward the
-    // authoritative server position (see predictLocalPlayer()); predInit tracks
-    // whether it has snapped onto the first authoritative position yet (reset on
-    // death so it re-snaps on respawn). inputSeq stamps outgoing inputs.
+    // The local flower has NO position prediction: it renders with gardn-style
+    // eased interpolation toward the authoritative server position, exactly like
+    // every remote flower (see ecs/client/interpolation.ts). Respawns and
+    // teleports cut instead of easing, via the NeedsSnap tag. inputSeq stamps
+    // outgoing inputs.
     private inputSeq: number = 0;
-    private predInit: boolean = false;
     // One covered frame must render after the camera snaps before the join
     // iris reveals, so the first visible frame is guaranteed to have been drawn
     // with the authoritative camera rather than the origin (see gameLoop /
@@ -190,6 +209,22 @@ export class Game {
         this.graphics.showHitboxes = this.showHitboxes;
         this.graphics.dynamicSkybox = dynamicSkybox;
         this.graphics.mobDeathAnimation = this.mobDeathAnimation;
+
+        // Everything keyed by entity id that lives OUTSIDE the world has to be
+        // torn down with the entity. The world clears its own columns; these
+        // five Maps in graphics/core.ts are the ones it cannot see, and the
+        // death-animation reap path never cleared any of them before this hook
+        // existed — every mob that died leaked two entries, which is the same
+        // class of slow leak that once put the server into V8's heap limit.
+        this.clientWorld.setReaper({
+            // clearEnemyDamage drops both accumulatedDamage and
+            // lastDamageTextTime for the mob.
+            enemyGone: (id) => this.graphics.clearEnemyDamage(id),
+            playerGone: (id) => {
+                this.graphics.invulFadeStates.delete(id);
+                this.graphics.clearPetalPhysicsForPlayer(id);
+            },
+        });
 
         // Set initial canvas size
         this.resizeCanvas();
@@ -676,10 +711,14 @@ export class Game {
                 }
                 if (response.player) {
                     if (this.socket.id) {
-                        // Update player data with saved progress
-                        const player = this.players.get(this.socket.id);
+                        // Update player data with saved progress. toClientPlayer
+                        // strips the position fields first: this payload carries
+                        // an x/y, and Object.assign would stamp a frozen copy of
+                        // them onto the stored object for the ECS to be ignored
+                        // in favour of.
+                        const player = this.clientWorld.player(this.socket.id);
                         if (player) {
-                            Object.assign(player, response.player);
+                            Object.assign(player, toClientPlayer({ ...response.player }));
                             // Update loadout display after player loadout and inventory is received
                             this.inventoryManager.updateLoadoutDisplay();
                         }
@@ -818,9 +857,12 @@ export class Game {
                 return;
             }
             if (key === normalizeKey(this.controls.minimap_center_player)) {
-                const currentPlayer = this.getLocalPlayer();
-                if (currentPlayer) {
-                    this.graphics.centerMinimapOnPlayer(currentPlayer.x, currentPlayer.y);
+                const currentEntity = this.getLocalPlayerEntity();
+                if (currentEntity !== undefined) {
+                    this.graphics.centerMinimapOnPlayer(
+                        this.clientWorld.playerX(currentEntity),
+                        this.clientWorld.playerY(currentEntity),
+                    );
                 }
                 return;
             }
@@ -1021,16 +1063,21 @@ export class Game {
         this.mobileControlsEnabled = enabled;
     }
 
-    private updateCamera(player: Player) {
+    private updateCamera(entity: Entity) {
         if (this.isAnimatingViewport) {
             this.updateViewportAnimation();
             return;
         }
 
-        // Validate player position before updating camera
-        if (!player || isNaN(player.x) || isNaN(player.y) || !isFinite(player.x) || !isFinite(player.y)) {
+        // The camera locks to the flower's DRAWN position, not the server one,
+        // so the world scrolls at the same eased rate the flower moves at and
+        // stays exactly screen-centred — which is what makes the mouse control
+        // law (cursor relative to screen centre) map to world space correctly.
+        const playerX = this.clientWorld.playerX(entity);
+        const playerY = this.clientWorld.playerY(entity);
+        if (!isFinite(playerX) || !isFinite(playerY)) {
             // Player position is invalid, don't update camera
-            console.warn('[Game] Invalid player position, skipping camera update:', player);
+            console.warn('[Game] Invalid player position, skipping camera update');
             return;
         }
 
@@ -1039,8 +1086,8 @@ export class Game {
         const scaledWidth = this.graphics.viewW / effectiveZoom;
         const scaledHeight = this.graphics.viewH / effectiveZoom;
 
-        const targetX = player.x - scaledWidth / 2;
-        const targetY = player.y - scaledHeight / 2;
+        const targetX = playerX - scaledWidth / 2;
+        const targetY = playerY - scaledHeight / 2;
 
         // Clamp camera to world bounds with proper dimensions
         // this.cameraX = Math.max(0, Math.min(ACTUAL_WORLD_WIDTH - scaledWidth, targetX)); // messes up mouse control
@@ -1050,15 +1097,18 @@ export class Game {
         this.graphics.setCamera(this.cameraX, this.cameraY, effectiveZoom);
         
         // Automatically follow player on minimap
-        this.graphics.followPlayerOnMinimap(player.x, player.y);
+        this.graphics.followPlayerOnMinimap(playerX, playerY);
     }
 
     private startViewportAnimation(mobX: number, mobY: number) {
-        const localPlayer = this.getLocalPlayer();
-        if (!localPlayer) return;
+        const localEntity = this.getLocalPlayerEntity();
+        if (localEntity === undefined) return;
 
         // Save current player position
-        this.savedPlayerPos = { x: localPlayer.x, y: localPlayer.y };
+        this.savedPlayerPos = {
+            x: this.clientWorld.playerX(localEntity),
+            y: this.clientWorld.playerY(localEntity),
+        };
         
         // Set up animation to mob
         this.animationStartPos = { x: this.cameraX, y: this.cameraY };
@@ -1140,7 +1190,10 @@ export class Game {
      * so the reveal itself is jank-free and the world never flashes at (0,0).
      */
     public readyToReveal(): boolean {
-        if (!this.predInit) return false;
+        // The local flower's entity only exists once a position has arrived, and
+        // it is created ON that position rather than easing in from the origin —
+        // so its existence is exactly "the camera has something real to snap to".
+        if (this.getLocalPlayerEntity() === undefined) return false;
         if (!this._irisCoveredFrameRendered) {
             this._irisCoveredFrameRendered = true;
             return false;
@@ -1229,7 +1282,7 @@ export class Game {
         
         // Use active player ID for rendering (or socket.id if not split)
         const activePlayerId = this.activePlayerId || this.socket?.id || '';
-        this.graphics.render(this.players, this.enemies, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens, this.webFields);
+        this.graphics.render(this.clientWorld, visibleItems, this.mobProjectiles, this.playerProjectiles, activePlayerId, this.petalExtension, this.groundPollens, this.webFields);
         // Overlays drawn after render() must re-establish the HiDPI base
         // transform so they render at native resolution in logical coordinates.
         const ui = this.graphics.uiScale || 1;
@@ -1273,102 +1326,43 @@ export class Game {
     }
 
     private update() {
-        // Clean up enemies that have completed their death animation
-        const DEATH_ANIMATION_DURATION = 200; // Must match the duration in graphics.ts
-        const enemiesToRemove: string[] = [];
-        for (const [enemyId, enemy] of this.enemies.entries()) {
-            if (enemy.deathAnimationStartTime) {
-                const elapsed = Date.now() - enemy.deathAnimationStartTime;
-                if (elapsed >= DEATH_ANIMATION_DURATION) {
-                    enemiesToRemove.push(enemyId);
-                }
-            }
-        }
-        // Remove enemies after death animation completes
-        for (const enemyId of enemiesToRemove) {
-            this.enemies.delete(enemyId);
-        }
-        
-        // Interpolate all players' positions using frame-rate-independent smoothing
         const now = performance.now();
         const frameDeltaMs = this.lastInterpolationTime > 0 ? now - this.lastInterpolationTime : 16.67;
         this.lastInterpolationTime = now;
-        // One ease amount for the whole frame, shared by the local flower, remote
-        // flowers, petals and enemy facing — so nothing eases at a different rate
-        // than anything else. See easeAmount().
+
+        // Advance every drawn position for this frame: flower eases, mob
+        // snapshot playback, mob facing, teleport/respawn snaps, the petal-ring
+        // anchor, and the death-animation reap. This runs exactly where the
+        // legacy interpolation loops ran — before input, camera and the eye —
+        // so nothing downstream sees a different ordering than it used to.
+        //
+        // Two clocks, on purpose: Date.now() is the death-animation clock (the
+        // renderer compares against its own Date.now() frame stamp) and
+        // performance.now() is the snapshot-playback clock (samples are stamped
+        // in that domain). They differ by ~1.7e12 ms and are never compared with
+        // each other — see ecs/client/ingest.ts.
+        this.clientWorld.tickFrame(frameDeltaMs, Date.now(), now);
+
+        // The SAME ease amount the flowers just used, for the petal rings below,
+        // so a ring never drifts off the flower it belongs to.
         const smoothingFactor = this.easeAmount(frameDeltaMs);
 
-        // How far in the past remote enemies are rendered. 80ms = ~2.4 server ticks,
-        // which guarantees a bracket pair even with moderate network jitter (±33ms).
-        const RENDER_DELAY_MS = 80;
-        const renderTime = now - RENDER_DELAY_MS;
-
-        const localPlayerId = this.activePlayerId || this.socket?.id || '';
-        for (const [pid, player] of this.players.entries()) {
-            // EVERY flower — yours and everyone else's — renders with the same
-            // gardn eased interpolation toward its authoritative server position,
-            // so a remote player moving beside you glides exactly the way you do.
-            // (Remote players used to use time-based snapshot interpolation with an
-            // 80ms render delay instead: a faithful replay of the server path, so
-            // they started, stopped and cornered sharply while the local flower —
-            // which cannot afford that delay without adding input latency — eased.
-            // Two different motion curves on identical entities read as "other
-            // players move differently".) The local flower is stepped later this
-            // frame by predictLocalPlayer(), which applies the SAME ease and also
-            // republishes _refX/_refY for its server-anchored petal ring; don't
-            // also step it here or the two would fight.
-            const isLocalPredicted = pid === localPlayerId && !player.isDead;
-            if (isLocalPredicted) {
-                // no-op: handled by predictLocalPlayer()
-            } else if (player.targetX !== undefined && player.targetY !== undefined) {
-                this.easeToTarget(player, smoothingFactor);
-            }
-
-            // Interpolate petal positions
-            if (player.petalPositions) {
-                player.petalPositions.forEach((petalPos: any) => {
-                    if (petalPos.targetX !== undefined && petalPos.targetY !== undefined) {
-                        if (petalPos.noPhysics) {
-                            // Snap directly to target — no interpolation lag
-                            petalPos.x = petalPos.targetX;
-                            petalPos.y = petalPos.targetY;
-                        } else {
-                            petalPos.x += (petalPos.targetX - petalPos.x) * smoothingFactor;
-                            petalPos.y += (petalPos.targetY - petalPos.y) * smoothingFactor;
-                        }
-                    }
-                });
-            }
-        }
-
-        // Interpolate all enemies' positions (skip dying enemies)
-        for (const enemy of this.enemies.values()) {
-            if (enemy.deathAnimationStartTime) continue;
-            const snaps = enemy._snapshots;
-            if (snaps && snaps.length >= 2) {
-                const interp = this.interpolateFromSnapshots(snaps, renderTime);
-                if (interp) {
-                    enemy.x = interp.x;
-                    enemy.y = interp.y;
+        // Petal positions are still legacy: they arrive as absolute world
+        // coordinates on the Player object and are interpolated per petal, then
+        // drawn relative to the flower's RenderRef.
+        for (const entity of this.clientWorld.collectPlayers(this._playerScratch)) {
+            const player = this.clientWorld.playerOf(entity);
+            if (!player?.petalPositions) continue;
+            for (const petalPos of player.petalPositions as any[]) {
+                if (petalPos.targetX === undefined || petalPos.targetY === undefined) continue;
+                if (petalPos.noPhysics) {
+                    // Snap directly to target — no interpolation lag
+                    petalPos.x = petalPos.targetX;
+                    petalPos.y = petalPos.targetY;
+                } else {
+                    petalPos.x += (petalPos.targetX - petalPos.x) * smoothingFactor;
+                    petalPos.y += (petalPos.targetY - petalPos.y) * smoothingFactor;
                 }
-            } else if (enemy.targetX !== undefined && enemy.targetY !== undefined) {
-                // Fallback to lerp until buffer has at least two entries
-                enemy.x += (enemy.targetX - enemy.x) * smoothingFactor;
-                enemy.y += (enemy.targetY - enemy.y) * smoothingFactor;
-            }
-
-            // Facing: ease toward the authoritative angle (gardn's angle.step_angle)
-            // instead of taking it straight from the snapshot interpolation. The
-            // passive AI changes heading in one discrete server jump (up to 180°);
-            // snapshot-interpolating that whips the mob through the whole turn in a
-            // single ~33ms snapshot interval, which reads as a snap. Easing spreads
-            // it over gardn's time constant (~150ms) for a smooth rotation. Uses
-            // targetAngle (last authoritative), never the render-mutated .angle.
-            if (enemy.targetAngle !== undefined) {
-                let angleDiff = enemy.targetAngle - enemy.angle;
-                if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                enemy.angle += angleDiff * smoothingFactor;
             }
         }
 
@@ -1406,20 +1400,15 @@ export class Game {
         // Update petal extension based on key presses
         this.updatePetalExtension(frameDeltaMs);
 
-        const player = this.getLocalPlayer();
-        if (player) {
-            this.updatePlayerMovement(player, 1); // Sends input to the server
-            // Ease the local flower toward the authoritative server position
-            // (gardn client model); when dead, fall back to plain server
-            // interpolation (handled in the loop above) and reset so it re-snaps
-            // cleanly onto the authoritative position on respawn.
-            if (!player.isDead) {
-                this.predictLocalPlayer(player, frameDeltaMs);
-            } else {
-                this.predInit = false;
-            }
-            this.updateCamera(player);
-            this.updatePlayerEye();
+        const localEntity = this.getLocalPlayerEntity();
+        if (localEntity !== undefined) {
+            this.updatePlayerMovement(); // Sends input to the server
+            // Camera then eye, in that order and after the ease: the camera locks
+            // to the flower's DRAWN position and mouse control maps the cursor
+            // relative to the screen centre, so reordering these changes how
+            // steering feels.
+            this.updateCamera(localEntity);
+            this.updatePlayerEye(localEntity);
         }
     }
 
@@ -1457,7 +1446,7 @@ export class Game {
         }
     }
 
-    private updatePlayerMovement(player: Player, deltaTime: number) {
+    private updatePlayerMovement() {
         let dx = 0;
         let dy = 0;
 
@@ -1579,40 +1568,6 @@ export class Game {
         }
     }
 
-    // Local flower rendering — gardn client model (Client/Simulation.cc +
-    // Client/Game.cc). The flower's rendered position eases exponentially toward
-    // the AUTHORITATIVE server position every frame. There is NO client-side
-    // prediction and NO latency extrapolation, so nothing can overshoot (no
-    // rubber-band) and every server correction — input, bubble propulsion,
-    // knockback, wall resolution — arrives as a smooth ease instead of a snap.
-    // The cost is a little input latency (~half-ping + the ease time constant),
-    // which is exactly the tradeoff gardn makes for its buttery feel.
-    //
-    // The camera stays locked to this eased position (updateCamera), so the world
-    // scrolls at the same smooth rate while the flower remains screen-centered —
-    // which keeps the mouse-control mapping (cursor-relative-to-center) exact.
-    //
-    // Eases at the SAME rate (interpolationAmount) as remote entities and the
-    // local server-anchored petal ring, and republishes it as _refX/_refY, so the
-    // flower and its petals move in lockstep with no drift. gardn uses 0.2.
-    private predictLocalPlayer(player: Player, frameDeltaMs: number) {
-        if (player.targetX === undefined || player.targetY === undefined) return;
-
-        // On first run / after respawn (predInit cleared while dead), snap onto
-        // the authoritative position rather than gliding in from a stale spot.
-        if (!this.predInit) {
-            player.x = player.targetX;
-            player.y = player.targetY;
-            player._refX = player.targetX;
-            player._refY = player.targetY;
-            this.predInit = true;
-            return;
-        }
-
-        // easeToTarget also republishes _refX/_refY, the petal-ring anchor.
-        this.easeToTarget(player, this.easeAmount(frameDeltaMs));
-    }
-
     // Frame-rate-independent exponential ease amount; same shape as gardn's
     // Ui::lerp_amount = 1 - (1 - k)^(dt*60). interpolationAmount is k at 60fps.
     // dt is clamped so a backgrounded tab's huge frame gap can't produce a
@@ -1624,86 +1579,11 @@ export class Game {
         return 1 - Math.exp(-rate * dtMs / 1000);
     }
 
-    // Step a flower's rendered position toward its authoritative server position.
-    // Shared by the local flower and every remote one so they move identically.
-    private easeToTarget(player: Player, amt: number) {
-        const dx = player.targetX - player.x;
-        const dy = player.targetY - player.y;
-        if (dx * dx + dy * dy > 600 * 600) {
-            // Teleport / portal / big desync: snap instead of gliding across the map.
-            player.x = player.targetX;
-            player.y = player.targetY;
-        } else if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
-            // Settle exactly on target instead of asymptoting forever.
-            player.x = player.targetX;
-            player.y = player.targetY;
-        } else {
-            player.x += dx * amt;
-            player.y += dy * amt;
-        }
-        // Petals are drawn as (serverPetalAbsolute - _refX) offset from the flower
-        // render (player-drawing.ts). Anchoring _refX to the exact render position
-        // keeps every petal ring — local and remote — centered with no drift.
-        player._refX = player.x;
-        player._refY = player.y;
-    }
-
-    // Reused result for interpolateFromSnapshots: it runs once per enemy per
-    // FRAME (players ease toward target* instead), and the call site copies
-    // x/y/angle out immediately, so a fresh object per call was pure GC pressure.
-    private _interpScratch: { x: number; y: number; angle?: number } = { x: 0, y: 0, angle: undefined };
+    // Reused snapshot of the flower entities, refilled each frame. Handles, not
+    // rows: see ClientWorld.collectPlayers on why this is not chunk iteration.
+    private _playerScratch: Entity[] = [];
     // Reused per-frame container for the not-yet-picked-up item filter.
     private _visibleItemsScratch: Map<string, WorldItem> = new Map();
-
-    // Snapshot interpolation: find the two snapshots bracketing `renderTime` and
-    // return the linearly interpolated position. Returns null if the buffer is too
-    // small or renderTime is newer than all snapshots (caller should fall back to lerp).
-    // NOTE: returns a reused scratch object — copy fields out before the next call.
-    private interpolateFromSnapshots(
-        snaps: { t: number; x: number; y: number; angle?: number }[],
-        renderTime: number
-    ): { x: number; y: number; angle?: number } | null {
-        if (snaps.length < 2) return null;
-        const out = this._interpScratch;
-        // Walk backward from the end to find the pair where snaps[i].t <= renderTime <= snaps[i+1].t
-        let i = snaps.length - 2;
-        while (i > 0 && snaps[i].t > renderTime) i--;
-        const s0 = snaps[i];
-        const s1 = snaps[i + 1];
-        if (s1.t <= renderTime) {
-            // renderTime is after ALL snapshots (buffer hasn't caught up yet) — extrapolate
-            // from the latest pair at most one server tick forward to avoid freezing.
-            const dt = s1.t - s0.t;
-            if (dt <= 0) {
-                out.x = s1.x; out.y = s1.y; out.angle = s1.angle;
-                return out;
-            }
-            const overshoot = Math.min((renderTime - s1.t) / dt, 1);
-            out.x = s1.x + (s1.x - s0.x) * overshoot;
-            out.y = s1.y + (s1.y - s0.y) * overshoot;
-            out.angle = s1.angle;
-            return out;
-        }
-        const span = s1.t - s0.t;
-        if (span <= 0) {
-            out.x = s1.x; out.y = s1.y; out.angle = s1.angle;
-            return out;
-        }
-        // Clamp: renderTime can predate the oldest pair right after the buffer
-        // seeds; a negative alpha would extrapolate backward past s0.
-        const alpha = Math.max(0, (renderTime - s0.t) / span);
-        out.x = s0.x + (s1.x - s0.x) * alpha;
-        out.y = s0.y + (s1.y - s0.y) * alpha;
-        out.angle = (s0.angle !== undefined && s1.angle !== undefined)
-            ? (() => {
-                let da = s1.angle - s0.angle;
-                if (da > Math.PI) da -= Math.PI * 2;
-                if (da < -Math.PI) da += Math.PI * 2;
-                return s0.angle + da * alpha;
-            })()
-            : undefined;
-        return out;
-    }
 
     private getInputInterval(): number {
         // Keep local controls at the server tick cadence even when RTT is high.
@@ -1732,13 +1612,19 @@ export class Game {
         ctx.strokeStyle = '#000000';
 
         const x = this.graphics.viewW - 8;
-        const player = this.socket?.id ? this.players.get(this.socket.id) : undefined;
+        // Deliberately socket.id, NOT the active half: this readout is a probe
+        // for where the SOCKET's own flower is, and after a splitter switch the
+        // two differ. Changing it to the active half would quietly change what
+        // the overlay means.
+        const socketEntity = this.socket?.id ? this.clientWorld.playerEntity(this.socket.id) : undefined;
 
         const lines: { text: string; color: string }[] = [];
 
         // Player position
-        if (player) {
-            lines.push({ text: `Pos: ${Math.round(player.x)}, ${Math.round(player.y)}`, color: '#ffd700' });
+        if (socketEntity !== undefined) {
+            const px = this.clientWorld.playerX(socketEntity);
+            const py = this.clientWorld.playerY(socketEntity);
+            lines.push({ text: `Pos: ${Math.round(px)}, ${Math.round(py)}`, color: '#ffd700' });
         }
 
         // Network
@@ -1755,8 +1641,8 @@ export class Game {
         }
 
         // Counters
-        lines.push({ text: `Players: ${this.players.size}`, color: '#4ecdc4' });
-        lines.push({ text: `Mobs: ${this.enemies.size}`, color: '#ff6b6b' });
+        lines.push({ text: `Players: ${this.clientWorld.playerCount()}`, color: '#4ecdc4' });
+        lines.push({ text: `Mobs: ${this.clientWorld.enemyCount()}`, color: '#ff6b6b' });
 
         // FPS & memory
         const memoryMB = this.getOffscreenCanvasMemoryMB();
@@ -1890,22 +1776,19 @@ export class Game {
         if (except !== 'debugMenu') debugMenuPanel.close();
     }
 
-    private updatePlayerEye() {
-        const player = this.getLocalPlayer();
-        if (player) {
-            const dx = this.mouseX - player.x;
-            const dy = this.mouseY - player.y;
-            const angle = Math.atan2(dy, dx);
-            const distance = Math.min(Math.sqrt(dx * dx + dy * dy), 10);
-            this.playerEye = {
-                x: Math.cos(angle) * distance,
-                y: Math.sin(angle) * distance
-            };
-            if (player.eye) {
-                player.eye.x = this.playerEye.x;
-                player.eye.y = this.playerEye.y;
-            }
-        }
+    private updatePlayerEye(entity: Entity) {
+        const dx = this.mouseX - this.clientWorld.playerX(entity);
+        const dy = this.mouseY - this.clientWorld.playerY(entity);
+        const angle = Math.atan2(dy, dx);
+        const distance = Math.min(Math.sqrt(dx * dx + dy * dy), 10);
+        this.playerEye = {
+            x: Math.cos(angle) * distance,
+            y: Math.sin(angle) * distance
+        };
+        // Keep the entity's stored eye in step with the shared local
+        // accumulator, so a splitter switch doesn't leave the abandoned half
+        // looking somewhere else.
+        this.clientWorld.setEye(entity, this.playerEye.x, this.playerEye.y);
     }
 
     public showFloatingText(x: number, y: number, text: string, color: string, fontSize: number) {
@@ -1996,9 +1879,11 @@ export class Game {
             this.heartbeatInterval = null;
         }
 
-        // Clear all game data
-        this.players.clear();
-        this.enemies.clear();
+        // Clear all game data. Tearing the world down also runs the reaper over
+        // every entity, so the graphics side-maps keyed by entity id (accumulated
+        // damage, damage-text throttles, invulnerability fades, petal physics)
+        // do not survive into the next session.
+        this.clientWorld.clear();
         this.items = new Map();
 
         // Reset game state
@@ -2063,10 +1948,26 @@ export class Game {
 
 
 
-    public getLocalPlayer() {
-        // If we have an active player ID (from split), use that; otherwise use socket.id
-        const playerId = this.activePlayerId || this.socket?.id || '';
-        return this.players.get(playerId);
+    /**
+     * The active half's plain `Player` object — the stable seam every UI panel
+     * depends on. It carries no position; ask the world for that.
+     */
+    public getLocalPlayer(): Player | undefined {
+        return this.clientWorld.player(this.localPlayerId());
+    }
+
+    /** The active half's entity, for anything that needs its position. */
+    public getLocalPlayerEntity(): Entity | undefined {
+        return this.clientWorld.playerEntity(this.localPlayerId());
+    }
+
+    /**
+     * The half this client is DRIVING. After a splitter petal both halves exist;
+     * the camera, death screen, loadout bar and prediction all follow this one,
+     * so every "is this me?" check has to as well (see playerRefs.ts).
+     */
+    private localPlayerId(): string {
+        return this.activePlayerId || this.socket?.id || '';
     }
 
     public getSocket() {

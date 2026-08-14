@@ -5,10 +5,13 @@
  * stream that actually drives rendering is in gameState.ts.
  */
 
+import { ClientWorld } from '../../client_world';
 import { Enemy, Obstacle } from '../../enemy';
-import { applyEnemyUpdate, forgetEnemy } from '../enemyIngest';
+import { applyEnemyUpdate, forgetEnemy, worldNow } from '../enemyIngest';
 
 export function registerWorldHandlers(game: any): void {
+    const cw: ClientWorld = game.clientWorld;
+
     // Thin bindings over the shared ingestion helpers (see net/enemyIngest.ts),
     // so every call site below reads exactly as it did when they were local.
     const handleEnemyUpdate = (enemy: Enemy, snapTimeMs?: number) => applyEnemyUpdate(game, enemy, snapTimeMs);
@@ -20,7 +23,7 @@ export function registerWorldHandlers(game: any): void {
         const serverEnemyIds = new Set(enemies.map(e => e.id));
 
         // Remove enemies that left the viewport - no death animation
-        for (const [enemyId] of game.enemies) {
+        for (const enemyId of cw.enemyIds()) {
             if (!serverEnemyIds.has(enemyId)) {
                 handleEnemyOutOfView(enemyId);
             }
@@ -37,7 +40,7 @@ export function registerWorldHandlers(game: any): void {
         handleEnemyUpdate(enemy);
     });
 
-    // Delta projectile protocol — see server.ts updateMobProjectiles for the wire format.
+    // Delta projectile protocol — see src/ecs/net/projectileEncoder.ts for the wire format.
     // The client adds projectiles on mpSpawn / ppSpawn, removes them on mpRemove /
     // ppRemove, and dead-reckons positions each frame in Game.update() using the
     // angle/speed stored on the projectile. No periodic re-sync: straight-line motion
@@ -119,8 +122,9 @@ export function registerWorldHandlers(game: any): void {
         knockbackY?: number,
         damageDealt?: number
     }) => {
-        const player = game.players.get(data.playerId);
-        if (player) {
+        const player = cw.player(data.playerId);
+        const entity = cw.playerEntity(data.playerId);
+        if (player && entity !== undefined) {
             const oldHealth = player.health;
             player.health = data.health;
             player.maxHealth = data.maxHealth || player.maxHealth;
@@ -151,8 +155,8 @@ export function registerWorldHandlers(game: any): void {
             const damageTaken = data.damageDealt ?? (oldHealth - data.health);
             if (damageTaken > 0) {
                 game.showFloatingText(
-                    player.x,
-                    player.y - 20,
+                    cw.playerX(entity),
+                    cw.playerY(entity) - 20,
                     `-${Math.round(damageTaken)}`,
                     '#FF0000',
                     20
@@ -163,18 +167,17 @@ export function registerWorldHandlers(game: any): void {
 
     // Unified handler for enemy damage - all damage goes through the same path
     function handleEnemyDamage(data: { enemyId: string, health: number, p?: 1 }) {
-        const enemy = game.enemies.get(data.enemyId);
-        if (enemy) {
-            const oldHealth = enemy.health;
-            enemy.health = data.health;
+        const entity = cw.enemyEntity(data.enemyId);
+        if (entity === undefined) return;
+        const oldHealth = cw.setEnemyHealth(data.enemyId, data.health);
+        if (oldHealth === undefined) return;
 
-            // Calculate damage dealt and show floating damage number (throttled)
-            if (oldHealth > data.health) {
-                const damage = oldHealth - data.health;
-                // Use throttled damage text to prevent spam when many enemies are damaged.
-                // `p` marks a batch whose damage was all poison — shown in purple.
-                game.graphics.showDamageText(data.enemyId, enemy.x, enemy.y, damage, data.p === 1);
-            }
+        // Calculate damage dealt and show floating damage number (throttled)
+        if (oldHealth > data.health) {
+            const damage = oldHealth - data.health;
+            // Use throttled damage text to prevent spam when many enemies are damaged.
+            // `p` marks a batch whose damage was all poison — shown in purple.
+            game.graphics.showDamageText(data.enemyId, cw.mobX(entity), cw.mobY(entity), damage, data.p === 1);
         }
     }
 
@@ -185,25 +188,25 @@ export function registerWorldHandlers(game: any): void {
     // Handler for enemy killed - plays death animation
     function handleEnemyRemoval(enemyId: string) {
         // Show any accumulated damage before cleaning up
-        const enemy = game.enemies.get(enemyId);
-        if (enemy) {
-            // Only start death animation if it hasn't already started
-            if (!enemy.deathAnimationStartTime) {
-                const accumulated = game.graphics.getAccumulatedDamage(enemyId);
-                if (accumulated > 0) {
-                    // Show final accumulated damage
-                    game.graphics.showFloatingText(
-                        enemy.x,
-                        enemy.y - 20,
-                        `-${Math.round(accumulated)}`,
-                        '#ff0000',
-                        16
-                    );
-                }
-
-                // Start death animation instead of immediately removing
-                enemy.deathAnimationStartTime = Date.now();
+        const entity = cw.enemyEntity(enemyId);
+        // Only start death animation if it hasn't already started
+        if (entity !== undefined && cw.deathAnimationStart(entity) === 0) {
+            const accumulated = game.graphics.getAccumulatedDamage(enemyId);
+            if (accumulated > 0) {
+                // Show final accumulated damage
+                game.graphics.showFloatingText(
+                    cw.mobX(entity),
+                    cw.mobY(entity) - 20,
+                    `-${Math.round(accumulated)}`,
+                    '#ff0000',
+                    16
+                );
             }
+
+            // Start death animation instead of immediately removing. Stamped on
+            // the world clock (Date.now()), which is what the renderer compares
+            // it against.
+            cw.beginEnemyDeath(enemyId, worldNow());
         }
 
         // Clean up accumulated damage for this enemy
@@ -226,9 +229,9 @@ export function registerWorldHandlers(game: any): void {
     });
 
     game.socket.on('targetDummyDPS', (data: { enemyId: string, dps: number }) => {
-        const enemy = game.enemies.get(data.enemyId);
-        if (enemy && enemy.type === 'target_dummy') {
-            enemy.currentDPS = data.dps;
+        const entity = cw.enemyEntity(data.enemyId);
+        if (entity !== undefined && cw.mobType(entity) === 'target_dummy') {
+            cw.setEnemyDps(data.enemyId, data.dps);
         }
     });
 
@@ -238,7 +241,7 @@ export function registerWorldHandlers(game: any): void {
     });
 
     game.socket.on('playerInvulnerabilityEnded', (data: { playerId: string }) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.isInvulnerable = false;
             console.log(`[CLIENT] Player ${data.playerId} invulnerability ended`);

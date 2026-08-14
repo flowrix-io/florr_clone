@@ -2,7 +2,8 @@ import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer, PlayerInventory, PlayerSkills } from '../player';
 import { sanitizePlayerForClient } from './playerWire';
 import { Item } from '../item';
-import { getPetalStats, PlayerModifiers } from '../petals';
+import { getPetalStats } from '../petals';
+import { calculatePlayerModifiers } from './shared/playerModifiers';
 import {
     SCALE_FACTOR,
     ACTUAL_WORLD_WIDTH,
@@ -918,78 +919,15 @@ export function applyPetalHealthBonus(petal: Item | null, player: ServerPlayer):
 }
 
 /**
- * Calculate combined player modifiers from all equipped petals
+ * Calculate combined player modifiers from all equipped petals.
+ *
+ * The implementation moved to server/shared/playerModifiers.ts so that callers
+ * which must stay loadable without booting a server (server/bots/botReach.ts,
+ * and the gates that drive it) can reach the REAL formula instead of keeping a
+ * hand-copy of it. Re-exported from here because ~6 modules import it by this
+ * path and the indirection is free.
  */
-export function calculatePlayerModifiers(player: ServerPlayer): PlayerModifiers {
-    const modifiers: PlayerModifiers = {
-        damage: 1.0,
-        maxHealth: 1.0,
-        speed: 1.0,
-        range: 1.0,
-        rotationSpeed: 1.0,
-        playerRadius: 1.0,
-        magnetism: 0,
-        luck: 1.0,
-        petalAttractionRadius: 30,
-        aggroRadius: 0,
-        poisonArmor: 0
-    };
-    
-    if (!player.loadout) return modifiers;
-
-    // Sum up modifiers from all equipped petals.
-    // Secondary loadout (slots 10+) is storage only — its petals contribute no modifiers.
-    for (let i = 0; i < player.loadout.length; i++) {
-        if (i >= 10) break;
-        const item = player.loadout[i];
-        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity) continue;
-        
-        const petalStats = getPetalStats(item.petalType, item.rarity);
-        if (!petalStats || !petalStats.playerModifiers) continue;
-        
-        const petalModifiers = petalStats.playerModifiers;
-        
-        // Multiplicative stacking: multiply all modifiers together
-        if (petalModifiers.damage !== undefined && modifiers.damage !== undefined) {
-            modifiers.damage *= petalModifiers.damage;
-        }
-        if (petalModifiers.maxHealth !== undefined && modifiers.maxHealth !== undefined) {
-            modifiers.maxHealth *= petalModifiers.maxHealth;
-        }
-        if (petalModifiers.speed !== undefined && modifiers.speed !== undefined) {
-            modifiers.speed *= petalModifiers.speed;
-        }
-        if (petalModifiers.range !== undefined && modifiers.range !== undefined) {
-            modifiers.range *= petalModifiers.range;
-        }
-        if (petalModifiers.rotationSpeed !== undefined && modifiers.rotationSpeed !== undefined) {
-            modifiers.rotationSpeed += petalModifiers.rotationSpeed - 1;
-        }
-        if (petalModifiers.playerRadius !== undefined && modifiers.playerRadius !== undefined) {
-            modifiers.playerRadius *= petalModifiers.playerRadius;
-        }
-        if (petalModifiers.magnetism !== undefined && modifiers.magnetism !== undefined) {
-            modifiers.magnetism += petalModifiers.magnetism;
-        }
-        if (petalModifiers.luck !== undefined && modifiers.luck !== undefined) {
-            modifiers.luck += petalModifiers.luck;
-        }
-        if (petalModifiers.petalAttractionRadius !== undefined && modifiers.petalAttractionRadius !== undefined) {
-            modifiers.petalAttractionRadius += petalModifiers.petalAttractionRadius;
-        }
-        if (petalModifiers.aggroRadius !== undefined && modifiers.aggroRadius !== undefined) {
-            modifiers.aggroRadius += petalModifiers.aggroRadius;
-        }
-        // Poison armor does NOT stack: gardn takes the strongest equipped lotus
-        // (`player.poison_armor = std::fmax(...)` in Process/Flower.cc), the same
-        // way salt's damage reflection is documented as not stacking with itself.
-        if (petalModifiers.poisonArmor !== undefined && modifiers.poisonArmor !== undefined) {
-            modifiers.poisonArmor = Math.max(modifiers.poisonArmor, petalModifiers.poisonArmor);
-        }
-    }
-
-    return modifiers;
-}
+export { calculatePlayerModifiers };
 
 /**
  * Recalculate and apply player stats based on level, skills, and equipped petal modifiers

@@ -7,6 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerItemHandlers = registerItemHandlers;
 const playerRefs_1 = require("../playerRefs");
 function registerItemHandlers(game) {
+    const cw = game.clientWorld;
     game.socket.on('itemsUpdate', (items) => {
         game.items.clear();
         items.forEach(item => {
@@ -56,14 +57,15 @@ function registerItemHandlers(game) {
     });
     // Petal action event handlers
     game.socket.on('playerHealed', (data) => {
-        const player = game.players.get(data.playerId);
-        if (player) {
+        const player = cw.player(data.playerId);
+        const entity = cw.playerEntity(data.playerId);
+        if (player && entity !== undefined) {
             player.health = data.health;
             // Show healing effect
             if (data.healAmount > 0) {
                 const roundedHeal = Math.round(data.healAmount * 10) / 10;
                 const formattedHeal = roundedHeal % 1 === 0 ? roundedHeal.toString() : roundedHeal.toFixed(1);
-                game.showFloatingText(player.x, player.y - 20, `+${formattedHeal}`, '#00FF00', 20);
+                game.showFloatingText(cw.playerX(entity), cw.playerY(entity) - 20, `+${formattedHeal}`, '#00FF00', 20);
             }
         }
     });
@@ -87,18 +89,19 @@ function registerItemHandlers(game) {
         }, 50);
     }
     game.socket.on('petalBroken', (data) => {
-        const player = game.players.get(data.playerId);
-        if (player && player.loadout && player.loadout[data.slotIndex]) {
+        const player = cw.player(data.playerId);
+        const entity = cw.playerEntity(data.playerId);
+        if (player && entity !== undefined && player.loadout && player.loadout[data.slotIndex]) {
             player.loadout[data.slotIndex].health = 0;
             player.loadout[data.slotIndex].onCooldown = true;
-            game.showPetalBreakEffect(player.x, player.y, data.petalType);
+            game.showPetalBreakEffect(cw.playerX(entity), cw.playerY(entity), data.petalType);
             if ((0, playerRefs_1.isLocalPlayerId)(game, data.playerId)) {
                 scheduleLoadoutUIUpdate();
             }
         }
     });
     game.socket.on('petalRestored', (data) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player && player.loadout) {
             player.loadout[data.slotIndex] = data.petal;
             if ((0, playerRefs_1.isLocalPlayerId)(game, data.playerId)) {
@@ -163,7 +166,7 @@ function registerItemHandlers(game) {
         registerDespawnAnim(itemId);
     });
     game.socket.on('itemCollected', (data) => {
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             registerPickupAnim(data.itemId, data.playerId);
             if ((0, playerRefs_1.isOwnPlayerId)(game, data.playerId)) {

@@ -1,4 +1,5 @@
 import { Enemy } from '../enemy';
+import { Entity } from '../ecs';
 import { MapElement, getDisableUltraParticles, getGpuAcceleration } from '../constants';
 import { ITEM_RARITY_COLORS } from '../petals';
 import { getSVGRenderer } from '../svg_renderer';
@@ -201,7 +202,11 @@ export class Graphics {
     public mazeMinimapStaticCache: { key: string; canvas: HTMLCanvasElement } | null = null;
     // Boss-bar candidates (super/unique mobs), refreshed at 4Hz by drawBossBars
     // instead of scanning the whole enemies Map every frame.
-    public _bossCandidates: Enemy[] = [];
+    // Entity HANDLES, not objects. A handle packs a generation, so a recycled
+    // slot can never silently alias the stale candidate to a different mob —
+    // which is the aliasing the "always re-resolve by id" comment used to guard
+    // against by hand.
+    public _bossCandidates: Entity[] = [];
     public _bossCandidatesAt: number = 0;
     // World (camera) transform snapshot, refreshed by drawGameObjects each
     // frame. Lets drawEnemy position mobs with one setTransform instead of
@@ -214,7 +219,7 @@ export class Graphics {
     // Scratch lists of the mobs drawn this frame (and their sizes), reused
     // across frames. drawGameObjects fills them during the body loop and
     // drains them in the single world-frame health-bar pass.
-    public _hbEnemies: Enemy[] = [];
+    public _hbEnemies: Entity[] = [];
     public _hbSizes: number[] = [];
     public svgRenderer = getSVGRenderer();
 

@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const constants_1 = require("../constants");
 const squad_state_1 = require("../squad_state");
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const minimapScratch = [];
 const MINIMAP_SPAWN_COLORS = {
     common: 'rgba(126, 239, 109, 0.4)',
     uncommon: 'rgba(255, 230, 93, 0.4)',
@@ -149,10 +151,10 @@ core_1.Graphics.prototype.followPlayerOnMinimap = function (playerX, playerY) {
     const sectionCenterY = clampedSectionY * SECTION_SIZE + SECTION_SIZE / 2;
     this.setMinimapScroll(sectionCenterX - SECTION_SIZE / 2, sectionCenterY - SECTION_SIZE / 2);
 };
-core_1.Graphics.prototype.drawMinimap = function (players, socket) {
+core_1.Graphics.prototype.drawMinimap = function (world, socket) {
     // Inside the maze, the section-based minimap is meaningless — draw the
     // maze layout instead (returns false when the player isn't in the maze).
-    if (this.drawMazeMinimap(players, socket)) {
+    if (this.drawMazeMinimap(world, socket)) {
         return;
     }
     const minimapX = this.viewW - this.MINIMAP_WIDTH - this.MINIMAP_PADDING;
@@ -180,15 +182,19 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
     // Draw all players on minimap with solid colors (with scroll offset)
     const squadMemberIds = (0, squad_state_1.getSquadMemberIds)();
     const squadMemberSet = new Set(squadMemberIds);
-    players.forEach(player => {
-        const isCurrentPlayer = player.id === socket;
-        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(player.id);
+    for (const entity of world.collectPlayers(minimapScratch)) {
+        const playerId = world.playerId(entity);
+        const isCurrentPlayer = playerId === socket;
+        const isSquadMember = !isCurrentPlayer && squadMemberSet.has(playerId);
         // Only show other non-squad players when ALT is pressed. Always show current player and squadmates.
         if (!isCurrentPlayer && !isSquadMember && !this.altKeyPressed) {
-            return;
+            continue;
         }
-        const playerMinimapX = minimapX + ((player.x - this.minimapScrollX) * minimapScale.x);
-        const playerMinimapY = minimapY + ((player.y - this.minimapScrollY) * minimapScale.y);
+        // The DRAWN position, so the dot tracks the flower rather than leading it.
+        // Read off the f64 Position column: the maze sits at ~200000 and an f32
+        // round-trip there quantises to ~0.015px steps.
+        const playerMinimapX = minimapX + ((world.playerX(entity) - this.minimapScrollX) * minimapScale.x);
+        const playerMinimapY = minimapY + ((world.playerY(entity) - this.minimapScrollY) * minimapScale.y);
         // Only draw if player is within the visible minimap area
         if (playerMinimapX > minimapX && playerMinimapX < minimapX + this.MINIMAP_WIDTH &&
             playerMinimapY > minimapY && playerMinimapY < minimapY + this.MINIMAP_HEIGHT) {
@@ -219,7 +225,7 @@ core_1.Graphics.prototype.drawMinimap = function (players, socket) {
                 this.ctx.fill();
             }
         }
-    });
+    }
     // Draw viewport rectangle in black (with scroll offset) - only when hitboxes are enabled
     if (this.showHitboxes) {
         this.ctx.strokeStyle = '#000000';

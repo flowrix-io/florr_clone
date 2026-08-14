@@ -9,6 +9,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.padLoadout = padLoadout;
 exports.withoutRawPetalPositions = withoutRawPetalPositions;
+exports.toClientPlayer = toClientPlayer;
 exports.localPlayerId = localPlayerId;
 exports.localPlayer = localPlayer;
 exports.isLocalPlayerId = isLocalPlayerId;
@@ -33,6 +34,31 @@ function withoutRawPetalPositions(player) {
         player.petalPositions = undefined;
     return player;
 }
+/**
+ * Turn a server payload into the object the client stores on the entity.
+ *
+ * Deleting the position fields is not tidiness. `Player` no longer declares
+ * them, but a spread or `Object.assign` copies them anyway — TypeScript does
+ * not excess-property-check either — so without this the stored object would
+ * carry a second, frozen copy of x/y that the ECS never updates. That is the
+ * exact shape of the bug this rewrite keeps hitting: one field, two homes, and
+ * the stale one wins somewhere. The wire's position goes to the entity and
+ * nowhere else.
+ *
+ * Mutates and returns the same object, like withoutRawPetalPositions above.
+ */
+function toClientPlayer(payload) {
+    delete payload.x;
+    delete payload.y;
+    delete payload.angle;
+    delete payload.targetX;
+    delete payload.targetY;
+    delete payload._refX;
+    delete payload._refY;
+    delete payload.eye;
+    delete payload.targetEye;
+    return payload;
+}
 // After the splitter petal runs, this client owns two flowers — `socket.id` and
 // `${socket.id}_split2` — but drives only one at a time (`game.activePlayerId`,
 // flipped by the server's `playerSwitched`). The camera, prediction, inventory
@@ -45,7 +71,7 @@ function localPlayerId(game) {
     return game.activePlayerId || game.socket?.id || '';
 }
 function localPlayer(game) {
-    return game.players.get(localPlayerId(game));
+    return game.clientWorld.player(localPlayerId(game));
 }
 // True for the half currently being driven — use for camera/UI/death state.
 function isLocalPlayerId(game, id) {
@@ -74,7 +100,7 @@ function forEachOwnPlayer(game, fn) {
         if (!id || seen.has(id))
             continue;
         seen.add(id);
-        const p = game.players.get(id);
+        const p = game.clientWorld.player(id);
         if (p)
             fn(p);
     }

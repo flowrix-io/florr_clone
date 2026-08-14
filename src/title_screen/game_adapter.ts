@@ -28,7 +28,7 @@ export class TitleScreenGameAdapter implements GameInterface {
         return {
             id: getPreconnectedSocket()?.id || '',
             name: '',
-            x: 0, y: 0, angle: 0, score: 0,
+            score: 0,
             imageLoaded: false,
             image: new Image(),
             velocityX: 0, velocityY: 0,
@@ -36,7 +36,6 @@ export class TitleScreenGameAdapter implements GameInterface {
             inventory: this._playerData.inventory,
             loadout: this._playerData.loadout,
             level: 1, xp: 0, xpToNextLevel: 100,
-            targetX: 0, targetY: 0,
         };
     }
 

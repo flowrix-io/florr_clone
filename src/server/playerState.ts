@@ -1,7 +1,6 @@
 import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer, canPetalsDamagePlayer } from '../player';
 import { Enemy } from '../server_utils';
-import { PlayerProjectile } from '../enemy';
 import { WorldItem } from '../item';
 import { RARITY_LEVELS, getRarityIndex, Rarity, getAllPetalTypes, getPetalStats, getEffectivePetalCooldown } from '../petals';
 import {
@@ -9,7 +8,6 @@ import {
     enemies,
     PLAYER_SIZE,
     ENEMY_SIZE,
-    MAX_SPEED,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
     VIEWPORT_WIDTH,
@@ -26,19 +24,15 @@ import {
     PVP_ARENA_CENTER_X,
     PVP_ARENA_CENTER_Y,
     PVP_ARENA_RADIUS,
-    isInPvpArena,
-    stepPlayerMovement
+    isInPvpArena
 } from '../constants';
 import { isInMazeRegion, getActiveMaze, MAZE_ORIGIN_X, MAZE_ORIGIN_Y } from '../maze';
 import { WORLD_MAP } from '../map_data';
 import {
     items,
     playerUserIds,
-    mobProjectiles,
-    playerProjectiles,
     petalLastProjectileTime,
     petalLastRadiationTime,
-    allocatePlayerProjectileId,
     itemExpirationTimeouts,
     ITEM_EXPIRATION_TIMES,
     groundPollens,
@@ -78,6 +72,23 @@ import {
 } from '../mobs';
 import { isGlitchInfectingType } from '../server_utils';
 import { queryEnemiesNear, petalRingEnemies } from './enemyGrid';
+import { displacePlayer, type OpenPetalRing } from './ecsSync';
+// The ECS petal ring. Importing `src/ecs` from here is the SAFE direction: that
+// tree is isomorphic and side-effect free. The banned direction is the reverse —
+// this module binds a port at import, so nothing under src/ecs may import it.
+import {
+    computeRingGeometry,
+    layoutPetalRing,
+    petalOrbitTarget,
+    stepPetalKinematics,
+    type PetalAttractionTarget,
+    type PetalKinematicsResult,
+    type PetalOrbitTarget,
+    type PetalRingDeps,
+    type PetalRingGeometry,
+    type PetalRingStats,
+    type RingInstance,
+} from '../ecs/systems/petalRing';
 
 // Reusable per-call buffers for enemy grid queries; avoids per-petal array allocs.
 // Two separate buffers because queryEnemiesNear() clears the one it is handed:
@@ -92,6 +103,118 @@ const _radiationQueryBuffer: Enemy[] = [];
 
 // How long shell's burst shield lasts once delivered.
 const BURST_SHIELD_DURATION_MS = 10000;
+
+// ---------------------------------------------------------------------------
+// The petal ring's view of the legacy world
+// ---------------------------------------------------------------------------
+/**
+ * Scratch and dependency plumbing for `ecs/systems/petalRing`.
+ *
+ * One SHARED deps object and one shared result struct rather than a fresh set
+ * per player per tick. That is safe because `updatePlayerState` is not
+ * re-entrant — the tick loop calls it for one flower at a time and nothing
+ * inside it calls back into it — and it matters because the alternative is
+ * allocating four closures and two objects per player per tick, on the path
+ * that already dominates the tick budget with 30 players and a full ring each.
+ *
+ * The `_ringHoming*` pair is how `isHoming` reports WHICH burst fired back to
+ * the petal loop: the ring only needs the boolean, but the loop has to know
+ * whether to heal or to shield. Both are only meaningful immediately after a
+ * `stepPetalKinematics` call that reported `homing`.
+ */
+let _ringDepsPlayer: ServerPlayer | null = null;
+let _ringHomingWasHeal = false;
+let _ringHomingWasShield = false;
+const _ringStepResult: PetalKinematicsResult = { x: 0, y: 0, angle: 0, homing: false };
+const _dropTargetScratch: PetalOrbitTarget = { x: 0, y: 0, angle: 0, range: 0 };
+const _attractionTarget: PetalAttractionTarget = { id: '', x: 0, y: 0, radius: 0 };
+
+const _petalRingDeps: PetalRingDeps = {
+    /**
+     * The closest attractable mob to a petal's ORBIT point.
+     *
+     * Reads the legacy `enemyGrid`, rebuilt once per tick in start_loop — not
+     * the ECS spatial grid, which is rebuilt at two other points in the tick and
+     * would therefore hold different mob positions. See PetalRingDeps.
+     *
+     * The eligibility test uses the grid's CACHED `_radius` (which includes the
+     * pet/rarity size scaling) while the returned projection radius comes from
+     * the mob CONFIG. That asymmetry is in the code this replaces and is
+     * preserved deliberately: unifying them would move where attracted petals
+     * sit on every rarity-scaled mob.
+     */
+    findAttractionTarget(x: number, y: number, radius: number): PetalAttractionTarget | null {
+        const candidates = queryEnemiesNear(x, y, radius, _attractionQueryBuffer);
+        let closest: Enemy | null = null;
+        let closestDistanceSq = Infinity;
+        for (let ai = 0; ai < candidates.length; ai++) {
+            const enemy = candidates[ai];
+            // A mob killed earlier this tick (by an earlier petal in this same
+            // loop) is spliced out of `enemies` but is still in the grid.
+            if (enemy.isDead) continue;
+            const candidateEnemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+            const dx = enemy.x - x;
+            const dy = enemy.y - y;
+            const distSq = dx * dx + dy * dy;
+            const maxDist = radius + candidateEnemyRadius;
+            if (distSq <= maxDist * maxDist && distSq < closestDistanceSq) {
+                closestDistanceSq = distSq;
+                closest = enemy;
+            }
+        }
+        if (!closest) return null;
+        const stats = getMobStats(closest.type, closest.tier);
+        _attractionTarget.id = closest.id;
+        _attractionTarget.x = closest.x;
+        _attractionTarget.y = closest.y;
+        _attractionTarget.radius = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
+        return _attractionTarget;
+    },
+
+    isEnemyPresent(id: string): boolean {
+        for (let i = 0; i < enemies.length; i++) {
+            if (enemies[i].id === id) return true;
+        }
+        return false;
+    },
+
+    resolveWall(x: number, y: number, size: number) {
+        return checkPlayerWallCollisions(x, y, size);
+    },
+
+    /**
+     * Burst-delivery homing: rose flies home to heal, shell flies home to lay a
+     * shield. Both wait out a charge time in orbit first, which is why this is a
+     * callback — `timeSinceSpawn` is ring state and only exists inside the step.
+     *
+     * The cast is sound: `stepPetalKinematics` hands back the very object the
+     * petal loop passed in, which is a full `PetalStats`. `PetalRingStats` is a
+     * structural subset naming only the fields the KINEMATICS read, and burst
+     * behaviour is not one of them.
+     */
+    isHoming(stats: PetalRingStats, timeSinceSpawn: number): boolean {
+        const player = _ringDepsPlayer!;
+        const full = stats as unknown as {
+            burstHeal?: number; burstShield?: number; burstHealChargeMs?: number;
+        };
+        const chargeMs = full.burstHealChargeMs ?? 1000;
+        _ringHomingWasHeal = !!full.burstHeal
+            && player.health < player.maxHealth
+            && timeSinceSpawn >= chargeMs;
+        _ringHomingWasShield = !!full.burstShield
+            && getShieldAmount(player) <= 0
+            && timeSinceSpawn >= chargeMs;
+        return _ringHomingWasHeal || _ringHomingWasShield;
+    },
+};
+
+/** Point the shared ring deps at `player` for the duration of its petal loop. */
+function makePetalRingDeps(player: ServerPlayer): PetalRingDeps {
+    _ringDepsPlayer = player;
+    _ringHomingWasHeal = false;
+    _ringHomingWasShield = false;
+    return _petalRingDeps;
+}
 
 /**
  * How much of a stall lands on this mob, in [0, 1].
@@ -161,47 +284,30 @@ function killCtxFromDeps(deps: PlayerStateDependencies): KillContext {
     };
 }
 
-// Petal physics state interface
-interface PetalPhysicsState {
-    vx: number; // Velocity X
-    vy: number; // Velocity Y
-    x: number; // Current position X
-    y: number; // Current position Y
-    spawnTime?: number; // Time when petal was spawned (for smooth initialization)
-    attractedEnemyId?: string; // Enemy this petal is currently attraction-locked to (for smooth release when it dies)
-    // While set and in the future, the petal glides toward its (moving) orbit
-    // target with a first-order approach instead of the spring. The spring is
-    // underdamped for large displacements (visible overshoot/oscillation), and
-    // ramping its force down instead just stalls the petal while the orbit
-    // rotates on, so it slings to a point far ahead when the ramp ends. The
-    // glide has no momentum: it starts moving immediately, never overshoots,
-    // and tracks the rotating target continuously. Used for the spawn/reload
-    // fly-out and for the release when an attracting mob dies.
-    glideUntil?: number;
-}
-
-const PETAL_SPAWN_GLIDE_MS = 300;   // reload/spawn: fly-out from the flower into orbit
-const PETAL_RELEASE_GLIDE_MS = 250; // attracting mob died: glide back into orbit
-const PETAL_GLIDE_RATE = 14;        // 1/s first-order approach rate (~95% converged in 220ms)
-
-// Map to store petal physics state (keyed by petalId)
-const petalPhysicsStates = new Map<string, PetalPhysicsState>();
-
-// Drop a broken petal instance's spring state so its reload re-initializes at
-// the flower's center (the petal flies back out into orbit instead of resuming
-// from the stale position where it broke).
-function resetPetalPhysicsOnBreak(playerId: string, loadoutIndex: number, instanceIndex: number): void {
-    petalPhysicsStates.delete(`${playerId}_${loadoutIndex}_${instanceIndex}`);
-}
-
-// Slot-wide break: every instance of the slot goes on cooldown together, so
-// drop all of their spring states.
-function resetSlotPetalPhysicsOnBreak(playerId: string, loadoutIndex: number): void {
-    const prefix = `${playerId}_${loadoutIndex}_`;
-    for (const key of petalPhysicsStates.keys()) {
-        if (key.startsWith(prefix)) petalPhysicsStates.delete(key);
-    }
-}
+// ---------------------------------------------------------------------------
+// Petal kinematics live in the ECS now
+// ---------------------------------------------------------------------------
+// The spring/glide state that used to sit in a module-level
+// `Map<"<socketId>_<slot>_<instance>", PetalPhysicsState>` here is a
+// `PetalRingState` held in the `PetalRing` component on the flower's entity,
+// and the integrator, the orbit-slot layout and the orbit-point maths are in
+// `ecs/systems/petalRing.ts`. That file's header carries the modelling
+// argument for why a petal instance is component data on the player rather
+// than an entity of its own.
+//
+// Everything BELOW the kinematics is still legacy and stays that way for now:
+// per-instance health, the break/cooldown/reload state machine, petal-vs-mob
+// and petal-vs-projectile combat, the fields and auras, PVP swings and the
+// specials. The reason is ordering, not effort — see the "What is NOT here"
+// section of the ring's header. In short: this loop interleaves kinematics and
+// effects per instance, and instance k's effects change instance k+1's
+// kinematics, so the ring has to be STEPPED from inside this loop rather than
+// batched ahead of it.
+//
+// The one thing to keep in mind when editing below: the ring is the SOLE writer
+// of petal positions. Nothing here may write back into a PetalPhysics — the
+// wall-collision write-back that used to live in this file is now inside
+// `stepPetalKinematics`, where it belongs.
 
 // Map to track last damage time for petals with damageCooldown (keyed by petalId)
 const petalLastDamageTime = new Map<string, number>();
@@ -404,10 +510,8 @@ function isInstanceOnCooldown(petal: any, instanceIndex: number, petalStats: any
     return !!petal.onCooldown;
 }
 
-// Physics constants
-const SPRING_FORCE = 600; // Spring force back to orbit position (pixels per second^2) - reduced from 300
-const DAMPING = 0.72; // Velocity damping per frame (0-1, lower = more damping)
-const SPAWN_SMOOTH_TIME = 300; // Time in ms to smoothly ramp up forces after spawn - reduced from 500
+// The orbit spring/damping/smoothing constants moved with the integrator; see
+// PETAL_SPRING_FORCE and friends in ecs/systems/petalRing.ts.
 
 // Healing-skill multiplier applied to all petal healing (passive and burst).
 // Skills are disabled inside the PVP arena.
@@ -514,24 +618,25 @@ function updateSpongeDamage(player: ServerPlayer, deltaTime: number, io: SocketI
 }
 
 /**
- * Clean up petal physics states for a player
+ * Clean up a departing player's petal bookkeeping.
+ *
+ * The SPRING STATE half of this is gone: petal kinematics live in the
+ * `PetalRing` component on the player's entity, so they are released when
+ * `syncToEcs` destroys the entity for a player who has left `players`. That is
+ * the point of moving them — this function used to be the only thing standing
+ * between a missed disconnect path and a permanently leaked ring, and it swept
+ * by string prefix, so `"abc"` also matched `"abcdef"`'s petals.
+ *
+ * What remains is the damage-cooldown table, which is keyed by petal id but is
+ * NOT petal kinematic state (it is combat bookkeeping, still legacy).
  */
 export function cleanupPetalPhysicsStates(playerId: string): void {
-    const keysToDelete: string[] = [];
-    petalPhysicsStates.forEach((_value, key) => {
-        if (key.startsWith(playerId)) {
-            keysToDelete.push(key);
-        }
-    });
-    keysToDelete.forEach(key => {
-        petalPhysicsStates.delete(key);
-        petalLastDamageTime.delete(key);
-    });
-    // Player-vs-player hit cooldowns key on BOTH sides
-    // (`${attacker}_${slot}_${inst}_pvp_${victim}`) and have no petalPhysicsStates
-    // entry to be swept by the pass above, so they outlive the players named in
-    // them. Bounded while this only happened inside the arena; with corruption
-    // any two flowers in the world can mint one, so drop them explicitly.
+    // Attacker-side keys (`${playerId}_${slot}_${inst}`) and player-vs-player
+    // hit cooldowns, which key on BOTH sides
+    // (`${attacker}_${slot}_${inst}_pvp_${victim}`) and so outlive the players
+    // named in them. Bounded while PVP only happened inside the arena; with
+    // corruption any two flowers in the world can mint one, so drop them
+    // explicitly.
     // `includes`, not `endsWith`: the victim may be this player's splitter half
     // (`${playerId}_split2`), whose keys carry the suffix mid-string.
     const pvpVictimMarker = `_pvp_${playerId}`;
@@ -751,6 +856,80 @@ export interface PlayerStateDependencies {
     useHttps: boolean;
     database: any;
     trackMobKill: (enemy: Enemy, players: Record<string, ServerPlayer>, playerUserIds: Record<string, string>, database: any, io: SocketIOServer, savePlayerProgress?: (player: ServerPlayer, userId: string) => void) => void;
+    /**
+     * The two places petals still touch projectiles, now that projectiles are
+     * ECS entities.
+     *
+     * Injected rather than imported so this module keeps knowing nothing about
+     * the ECS — and, more importantly, so the ECS keeps knowing nothing about
+     * this module: playerState.ts binds a port at module scope, and any import
+     * edge from src/ecs/** back to here boots a real server inside the headless
+     * harness (which asserts against exactly that).
+     */
+    projectiles: ProjectileBridge;
+    /**
+     * The petal <-> ECS boundary: hands back the flower's ECS-owned petal ring.
+     *
+     * Injected for the same reason `projectiles` is — this module must not reach
+     * the live `World`, which only server.ts holds. The ring's PURE half
+     * (layout, orbit maths, the integrator) is imported directly from
+     * `ecs/systems/petalRing`, because that module is side-effect free; only the
+     * bit that needs the world comes through here.
+     */
+    petalRing: PetalRingBridge;
+}
+
+/** The petal-ring boundary. Implemented in server.ts. */
+export interface PetalRingBridge {
+    /**
+     * Open a flower's ring for this tick: store the ring's slot count, integrate
+     * the orbit phase, and return the ECS-owned kinematic store.
+     *
+     * Must be called exactly once per player per tick, after the layout is known
+     * and before any instance is stepped — the orbit phase is an accumulator, so
+     * calling it twice doubles the rotation rate for that tick.
+     */
+    open(
+        player: ServerPlayer,
+        slotCount: number,
+        rotationSpeedModifier: number,
+        deltaTime: number,
+        now: number,
+    ): OpenPetalRing;
+}
+
+/** Damage a mob projectile deals to whatever blocked it. */
+export interface BlockedProjectile {
+    damage: number;
+}
+
+/** The petal <-> ECS-projectile boundary. Implemented in server.ts. */
+export interface ProjectileBridge {
+    /** Spawn a player-fired projectile. Speed is pixels per MILLISECOND. */
+    spawn(spec: {
+        playerId: string;
+        x: number;
+        y: number;
+        angle: number;
+        speed: number;
+        maxDistance: number;
+        petalType: string;
+        petalRarity: string;
+        damage: number;
+        health: number;
+        size: number;
+        now: number;
+    }): void;
+    /**
+     * Run `visit` for every mob projectile a petal at (x, y) is overlapping.
+     * The return value is the damage the petal deals back to that projectile.
+     */
+    forEachBlocking(
+        x: number,
+        y: number,
+        petalRadius: number,
+        visit: (projectile: BlockedProjectile) => number,
+    ): void;
 }
 
 /**
@@ -1111,8 +1290,11 @@ function applyPvpDamage(
     const knockDist = 25;
     const knockbackX = (dx / dist) * knockDist;
     const knockbackY = (dy / dist) * knockDist;
-    victim.x += knockbackX;
-    victim.y += knockbackY;
+    // NOT `victim.x += ...`. This runs inside the ATTACKER's updatePlayerState,
+    // so for a victim the player loop has not reached yet the write would sit in
+    // the gap between the movement window and that victim's own commit, and be
+    // thrown away by `player.x = newX`. See displacePlayer in server/ecsSync.
+    displacePlayer(victim, knockbackX, knockbackY);
 
     io.emit('playerDamaged', {
         playerId: victim.id,
@@ -1206,124 +1388,130 @@ function applyPassiveHealing(player: ServerPlayer, deltaTime: number): void {
 }
 
 /**
- * The velocity the player is trying to reach this tick, from mouse or keyboard
- * input. Also caches the clamped speed multiplier on the player, which the
- * broadcast sends to the owning client for prediction.
+ * The unclamped effective speed multiplier for this player.
+ *
+ * This was the first three lines of `computeTargetVelocity`, which the ECS
+ * `playerMovement` system now replaces. It stays here — and is exported —
+ * because the ECS may not import petal_actions.ts (it binds port 3000 at module
+ * scope), so server.ts injects this into the sync layer instead. The CLAMP that
+ * used to live alongside it moved into the system with the rest of the maths.
+ *
+ * When the `playerModifiers` system is enabled this function and its injection
+ * both disappear; until then it is the single definition of the value, so bot
+ * standoff maths and movement cannot disagree about it.
  */
-function computeTargetVelocity(player: ServerPlayer): { targetVelocityX: number; targetVelocityY: number } {
-    let targetVelocityX = 0;
-    let targetVelocityY = 0;
+export function computeSpeedBoost(player: ServerPlayer): number {
+    return player.speed_boost * getSpeedMultiplier(player);
+}
 
-    // Effective speed multiplier (boosts + petal/effect modifiers). Cached on the
-    // player so the broadcast can send it to the owning client for prediction.
-    let speedFactor = player.speed_boost * getSpeedMultiplier(player);
-    // Clamp the effective speed. getSpeedMultiplier multiplies every speed_boost effect
-    // and petal modifier with no cap, so an apex/stacked boost (or a degenerate value)
-    // can make this enormous — moving the player thousands of px in one tick and landing
-    // them at an absurd coordinate that then hangs distance/raycast loops elsewhere (e.g.
-    // bot wall-avoidance rayHitsWall). 8x is well above any intended boost.
-    if (!(speedFactor >= 0)) speedFactor = 1;   // NaN / negative → 1
-    if (speedFactor > 8) speedFactor = 8;
-    player.speedFactor = speedFactor;
+/**
+ * The per-player work that used to run BEFORE movement inside
+ * `updatePlayerState`, lifted out so it still runs before movement now that
+ * movement is a batched ECS pass over every player at once.
+ *
+ * Splitting it out is not cosmetic. `applyPetalRingDamage` writes `player.x/y`
+ * DIRECTLY (a glitch flower's ring knocks you off it), and `updatePlayerEffects`
+ * expires the speed_boost effects that decide this tick's speed factor — both
+ * are inputs to the integration step, so both have to land on the same side of
+ * it they always did. Everything else here is health bookkeeping and mob damage
+ * that movement does not read.
+ *
+ * Called once per player, for every player, immediately before the movement
+ * window opens. See runSimulationStep.
+ */
+export function updatePlayerPreMovement(
+    player: ServerPlayer,
+    deltaTime: number,
+    deps: PlayerStateDependencies,
+): void {
+    // The same guards updatePlayerState opens with, so the two halves agree on
+    // exactly which flowers are live this tick.
+    if (!player || !player.inputs) return;
+    if (player.isDead) return;
 
-    if (player.inputs.useMouse &&
-        player.inputs.mouseDirectionX !== undefined &&
-        player.inputs.mouseDirectionY !== undefined &&
-        player.inputs.mouseSpeedMultiplier !== undefined) {
-        // Client has already calculated the direction and speed multiplier
-        // Server just needs to apply MAX_SPEED and the effective speed factor
-        // mouseSpeedMultiplier is a client-supplied fraction (normally 0..1); clamp it so
-        // a malformed/huge value can't bypass the speedFactor cap above. NaN → 0 (no move).
-        const mouseMult = Math.min(1.5, Math.max(0, player.inputs.mouseSpeedMultiplier)) || 0;
-        const speed = MAX_SPEED * speedFactor * mouseMult;
-        targetVelocityX = player.inputs.mouseDirectionX * speed;
-        targetVelocityY = player.inputs.mouseDirectionY * speed;
-        player.angle = Math.atan2(player.inputs.mouseDirectionY, player.inputs.mouseDirectionX);
-    } else if (player.inputs.keys) {
-        if (player.inputs.keys.includes('ArrowLeft') || player.inputs.keys.includes('a')) targetVelocityX -= 1;
-        if (player.inputs.keys.includes('ArrowRight') || player.inputs.keys.includes('d')) targetVelocityX += 1;
-        if (player.inputs.keys.includes('ArrowUp') || player.inputs.keys.includes('w')) targetVelocityY -= 1;
-        if (player.inputs.keys.includes('ArrowDown') || player.inputs.keys.includes('s')) targetVelocityY += 1;
+    const { io } = deps;
 
-        if (targetVelocityX !== 0 && targetVelocityY !== 0) {
-            const length = Math.sqrt(targetVelocityX * targetVelocityX + targetVelocityY * targetVelocityY);
-            targetVelocityX /= length;
-            targetVelocityY /= length;
-        }
+    updatePlayerEffects(player, deltaTime);
+    updateSpongeDamage(player, deltaTime, io);
 
-        const speed = MAX_SPEED * speedFactor;
-        targetVelocityX *= speed;
-        targetVelocityY *= speed;
+    applyPassiveHealing(player, deltaTime);
 
-        if (targetVelocityX !== 0 || targetVelocityY !== 0) {
-            player.angle = Math.atan2(targetVelocityY, targetVelocityX);
-        }
-    }
+    // Apply raindrop aura damage to mobs around the player
+    applyRaindropAuraDamage(player, deps);
 
-    return { targetVelocityX, targetVelocityY };
+    // ...and the reverse: a glitch flower's petal ring sweeping through the player.
+    applyPetalRingDamage(player, io);
+}
+
+/**
+ * The stat lookup the ring layout is driven by.
+ *
+ * `getPetalStats` returns the full `PetalStats`, of which `PetalRingStats` is a
+ * structural subset — so this is a widening, not a conversion. Hoisted to module
+ * scope so the ring layout does not allocate a closure per player per tick.
+ */
+function ringStatsOf(slot: any): PetalRingStats | null {
+    return getPetalStats(slot.petalType, slot.rarity) as PetalRingStats | null;
 }
 
 /**
  * Expand the loadout into one entry per petal instance, assigning each an orbit
- * slot. Petals with `count` occupy `count` entries; `clumped` petals share a
- * single slot so their instances cluster instead of spreading round the ring.
+ * slot, and run the per-instance spawn side effects.
+ *
+ * The slot ASSIGNMENT is `ecs/systems/petalRing.layoutPetalRing` — one source of
+ * truth, because the same expansion decides the ring divisor, which instance
+ * indices the kinematic store is keyed by, and which orbit angle a pollen puff
+ * is dropped at. What stays here is the pair of side effects the ECS has no
+ * business doing: sizing the per-instance health arrays that live on the loadout
+ * ITEM (persisted, and carried across the cross-server portal) and seeding the
+ * petal action VM.
  *
  * Returns the instances and the number of slots consumed (the ring divisor).
  */
 function buildPetalInstances(
     player: ServerPlayer,
     io: SocketIOServer,
-): { petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}>; nextSlotIndex: number } {
-    const petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}> = [];
+): { petalInstances: Array<RingInstance<any>>; nextSlotIndex: number } {
+    const petalInstances: Array<RingInstance<any>> = [];
     let nextSlotIndex = 0;
     try {
-        for (let i = 0; i < player.loadout.length; i++) {
-            // Secondary loadout (slots 10+) is storage only — don't spawn petals
-            if (i >= 10) continue;
-            const petal = player.loadout[i];
-            if (petal && petal.type === 'petal' && petal.petalType && petal.rarity) {
-                const petalStats = getPetalStats(petal.petalType, petal.rarity);
-                if (!petalStats) continue;
+        nextSlotIndex = layoutPetalRing(player.loadout as any[], ringStatsOf, petalInstances);
 
-                const count = petalStats.count || 1; // Use count from stats, default to 1
+        // Second pass for the side effects. Splitting them out of the expansion
+        // is what lets the expansion itself be pure and shared; the order is
+        // unchanged because `layoutPetalRing` emits instances in exactly the
+        // loadout-then-count order the single loop used to.
+        let lastSizedPetal: any = null;
+        for (let k = 0; k < petalInstances.length; k++) {
+            const { petal, loadoutIndex: i, instanceIndex: j } = petalInstances[k];
+            const petalStats = getPetalStats(petal.petalType, petal.rarity);
+            if (!petalStats) continue;
 
-                // Validate count is a valid number
-                if (typeof count !== 'number' || count < 1 || !isFinite(count)) {
-                    console.warn('Invalid petal count:', count, 'for', petal.petalType, petal.rarity);
-                    continue;
-                }
-
-                // Clumped petals share a single orbit slot across all their instances
-                const clumped = !!petalStats.clumped;
-                const sharedSlot = nextSlotIndex;
-                // Ensure per-instance health/cooldown arrays are sized to count
+            // Once per SLOT, on its first instance — `ensureInstanceArrays` is
+            // idempotent, but calling it per instance would re-check the array
+            // lengths `count` times for every slot of every player every tick.
+            if (petal !== lastSizedPetal) {
                 ensureInstanceArrays(petal, petalStats);
-                // Create multiple instances based on count
-                for (let j = 0; j < count; j++) {
-                    const slotIndex = clumped ? sharedSlot : nextSlotIndex;
-                    if (!clumped) nextSlotIndex++;
-                    petalInstances.push({ petal, instanceIndex: j, loadoutIndex: i, slotIndex });
+                lastSizedPetal = petal;
+            }
 
-                    // Execute petal actions immediately when spawned
-                    if (petalStats.actions) {
-                        const petalId = `${player.id}_${i}_${j}`;
-                        const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
-                        const actionContext = {
-                            player: player,
-                            petalX: player.x, // Will be updated with actual position in game loop
-                            petalY: player.y, // Will be updated with actual position in game loop
-                            petalSize: effectiveSize * 40,
-                            petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                            enemies: enemies,
-                            io: io,
-                            petalId: petalId,
-                            loadoutIndex: i,
-                            instanceIndex: j
-                        };
-                        executePetalActionsOnSpawn(petalStats.actions, actionContext);
-                    }
-                }
-                if (clumped) nextSlotIndex++;
+            // Execute petal actions immediately when spawned
+            if (petalStats.actions) {
+                const petalId = `${player.id}_${i}_${j}`;
+                const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
+                const actionContext = {
+                    player: player,
+                    petalX: player.x, // Will be updated with actual position in game loop
+                    petalY: player.y, // Will be updated with actual position in game loop
+                    petalSize: effectiveSize * 40,
+                    petalDamage: petalStats.damage, // Include petal damage for rarity scaling
+                    enemies: enemies,
+                    io: io,
+                    petalId: petalId,
+                    loadoutIndex: i,
+                    instanceIndex: j
+                };
+                executePetalActionsOnSpawn(petalStats.actions, actionContext);
             }
         }
     } catch (error) {
@@ -1347,21 +1535,13 @@ function buildPetalInstances(
 function dropFieldsOnExtension(opts: {
     player: ServerPlayer;
     io: SocketIOServer;
-    petalInstances: Array<{petal: any, instanceIndex: number, loadoutIndex: number, slotIndex: number}>;
-    playerOrbitPhase: number;
-    angleStep: number;
-    playerRangeModifier: number;
-    defendOnlyBaseRadius: number;
-    playerSizeMult: number;
+    petalInstances: Array<RingInstance<any>>;
+    geom: PetalRingGeometry;
 }): void {
-    const {
-        player, io, petalInstances, playerOrbitPhase, angleStep,
-        playerRangeModifier, defendOnlyBaseRadius, playerSizeMult,
-    } = opts;
+    const { player, io, petalInstances, geom } = opts;
 
     const playerExt = player.inputs?.petalExtension || 1.0;
     if (playerExt !== 1.0) {
-        const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * playerExt;
         const dropsToBreak: Array<{petal: any, instanceIndex: number, stats: any}> = [];
         for (let idx = 0; idx < petalInstances.length; idx++) {
             const {petal, instanceIndex, slotIndex} = petalInstances[idx];
@@ -1374,26 +1554,16 @@ function dropFieldsOnExtension(opts: {
             if (isInstanceOnCooldown(petal, instanceIndex, stats)) continue;
             if (getInstanceHealth(petal, instanceIndex, stats) <= 0) continue;
 
-            const rotationAngle = ((stats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
-            const totalAngle = stats.fixedDirection !== undefined
-                ? slotIndex * angleStep
-                : slotIndex * angleStep + rotationAngle;
-            const range = (stats.range ?? 1.0) * playerRangeModifier;
-            // Web is defendOnly, so it is sitting at its unextended orbit
-            // radius when the throw starts — same rule the main petal loop
-            // uses below.
-            const orbitR = (stats.defendOnly ? defendOnlyBaseRadius : baseRadius) * range;
-            let dropX = player.x + Math.cos(totalAngle) * orbitR;
-            let dropY = player.y + Math.sin(totalAngle) * orbitR;
-
             const eSize = (petal as any).customSize !== undefined ? (petal as any).customSize : stats.size;
-            const clumpCount = stats.count || 1;
-            if (stats.clumped && clumpCount > 1) {
-                const clumpSpacing = eSize * 40 * 0.5;
-                const subAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
-                dropX += Math.cos(subAngle) * clumpSpacing;
-                dropY += Math.sin(subAngle) * clumpSpacing;
-            }
+            // The SAME orbit-point function the petal loop steps against, so a
+            // puff lands exactly where its petal was rather than at a
+            // separately-maintained copy of the formula that can drift from it.
+            // (Web is defendOnly, so it is sitting at its unextended orbit radius
+            // when the throw starts — `petalOrbitTarget` applies that rule.)
+            petalOrbitTarget(geom, stats as PetalRingStats, slotIndex, instanceIndex, eSize, _dropTargetScratch);
+            const totalAngle = _dropTargetScratch.angle;
+            let dropX = _dropTargetScratch.x;
+            let dropY = _dropTargetScratch.y;
 
             if (isWeb) {
                 // Throwing (attacking) flings it outward along the petal's
@@ -1434,34 +1604,25 @@ export function updatePlayerState(
 
     const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
 
-    // Update player effects
-    updatePlayerEffects(player, deltaTime);
-    updateSpongeDamage(player, deltaTime, io);
-
-    applyPassiveHealing(player, deltaTime);
-
-    // Apply raindrop aura damage to mobs around the player
-    applyRaindropAuraDamage(player, deps);
-
-    // ...and the reverse: a glitch flower's petal ring sweeping through the player.
-    applyPetalRingDamage(player, io);
-
-    const { targetVelocityX, targetVelocityY } = computeTargetVelocity(player);
-
-    // Player movement physics (gardn friction + substepped wall/water collision).
-    // Run through the SHARED stepPlayerMovement so the client's movement prediction
-    // (game.ts) executes byte-for-byte the same physics — nothing to reconcile in
-    // open movement. targetVelocity is the terminal velocity it converges to
-    // (MAX_SPEED × speed_boost × multipliers, computed above).
+    // The pre-movement half (effects, healing, aura and ring damage) ran in
+    // updatePlayerPreMovement, and INTEGRATION now happens on the ECS between
+    // the two — see runSimulationStep and server/ecsSync.syncPlayersToEcs.
+    //
+    // `movedX`/`movedY` are what `stepPlayerMovement` used to return straight
+    // into these locals, so newX/newY start in exactly the same place they
+    // always did, and everything below — knockback, wall repulsion, pickups,
+    // teleporters, the maze/arena clamps — is unchanged and still commits to
+    // player.x/y at the very end of the function.
+    //
+    // What matters just as much is what is NOT assigned yet: `player.x`/
+    // `player.y` still hold the PREVIOUS tick's committed position for the whole
+    // of this function, which is what the petal block below reads and what makes
+    // petals trail the flower. velocity, angle and speedFactor were all written
+    // up-front by the legacy code too, so the movement window writes those
+    // directly and they are already current here.
     const effectivePlayerSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-    const moved = stepPlayerMovement(
-        { x: player.x, y: player.y, vx: player.velocityX, vy: player.velocityY },
-        targetVelocityX, targetVelocityY, deltaTime, effectivePlayerSize
-    );
-    player.velocityX = moved.vx;
-    player.velocityY = moved.vy;
-    let newX = moved.x;
-    let newY = moved.y;
+    let newX = player.movedX ?? player.x;
+    let newY = player.movedY ?? player.y;
 
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
@@ -1607,37 +1768,48 @@ export function updatePlayerState(
 
         const currentTime = Date.now();
         const petalExtension = player.inputs.petalExtension || 1.0;
-        // Keep petals a constant distance from the flower edge: scale only the body-radius portion by sizeMultiplier.
         const playerSizeMult = player.sizeMultiplier ?? 1.0;
-        const baseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * petalExtension;
-        // Defend-only petals (rose) never fly out while attacking — their extension is
-        // clamped at the neutral orbit, though they still pull in on defend (<1).
-        const defendOnlyBaseRadius = (60 + (PLAYER_SIZE / 2) * (playerSizeMult - 1)) * Math.min(petalExtension, 1.0);
         const totalSlots = nextSlotIndex;
-        const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
         const playerModifiers = calculatePlayerModifiers(player);
-        const playerRangeModifier = playerModifiers.range ?? 1.0;
         const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
-        // Integrate the rotation-speed modifier over time so swapping a petal that
-        // changes the modifier (Faster, Yin Yang) only bends the rate from this point
-        // forward, rather than remapping `currentTime * newSpeed` and yanking every
-        // petal to a different angle.
-        player.petalOrbitPhase = (player.petalOrbitPhase ?? 0) + playerRotationSpeedModifier * deltaTime;
-        const playerOrbitPhase = player.petalOrbitPhase;
-        const playerPetalAttractionRadius = playerModifiers.petalAttractionRadius ?? 0;
 
-        // Per-petal eligibility (mob within playerPetalAttractionRadius of the petal's
-        // own orbit position) is checked inside the petal physics loop via a spatial-grid
-        // broad-phase, so each petal only considers mobs actually near where *it* will
-        // swing past. See the query at the attraction block below.
+        // Open the ECS-owned ring for this tick. This is the only stateful step:
+        // it records the slot count and advances the orbit phase (an integral, so
+        // exactly once per player per tick — see PetalRingBridge).
+        const ring = deps.petalRing.open(
+            player, totalSlots, playerRotationSpeedModifier, deltaTime, currentTime,
+        );
+
+        // The ring's per-tick constants. `player.x`/`player.y` here are the
+        // PREVIOUS tick's committed position — the integrated one is parked in
+        // movedX/movedY and is not committed until the end of this function —
+        // and that is exactly what makes petals trail the flower rather than
+        // orbit its live centre. Do not "fix" this to newX/newY.
+        const geom = computeRingGeometry({
+            playerX: player.x,
+            playerY: player.y,
+            orbitPhase: ring.orbitPhase,
+            slotCount: totalSlots,
+            petalExtension,
+            sizeMultiplier: playerSizeMult,
+            playerSize: PLAYER_SIZE,
+            rangeModifier: playerModifiers.range ?? 1.0,
+            rotationSpeedModifier: playerRotationSpeedModifier,
+            attractionRadius: playerModifiers.petalAttractionRadius ?? 0,
+            deltaTime,
+            now: currentTime,
+        });
+
+        // Per-petal attraction eligibility (a mob within the attraction radius of
+        // the petal's own orbit position) is resolved inside the ring step, via
+        // the grid broad-phase injected below, so each petal only considers mobs
+        // actually near where *it* will swing past.
+        const ringDeps = makePetalRingDeps(player);
 
         // Initialize petal positions array
         player.petalPositions = [];
 
-        dropFieldsOnExtension({
-            player, io, petalInstances, playerOrbitPhase, angleStep,
-            playerRangeModifier, defendOnlyBaseRadius, playerSizeMult,
-        });
+        dropFieldsOnExtension({ player, io, petalInstances, geom });
 
         // Resolved once per player-tick: the petal-vs-player pass below walks
         // every other player, so outside the PVP arena it must stay behind a
@@ -1712,12 +1884,18 @@ export function updatePlayerState(
                 if (petalStats) {
                     // Execute petal actions before breaking
                     if (petalStats.actions) {
+                        // NOTE: this reconstructs the orbit point with its OWN,
+                        // different radius (`60 + level*2`) rather than the
+                        // ring's. That is a pre-existing quirk of the on-break
+                        // action context and it is preserved verbatim: routing it
+                        // through `petalOrbitTarget` would move where an
+                        // on_break explosion or lightning strike lands.
                         const baseRadius = 60 + (player.level * 2);
                         const breakAngleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
                         const baseAngle = slotIndex * breakAngleStep;
-                        const rotationAngle = ((petalStats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
+                        const rotationAngle = ((petalStats.speed ?? 1.0) * geom.orbitPhase * 2) % (Math.PI * 2);
                         const totalAngle = baseAngle + rotationAngle;
-                        const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
+                        const petalRange = (petalStats.range ?? 1.0) * geom.rangeModifier;
                         const petalRadius = baseRadius * petalRange;
                         const petalX = player.x + Math.cos(totalAngle) * petalRadius;
                         const petalY = player.y + Math.sin(totalAngle) * petalRadius;
@@ -1750,7 +1928,7 @@ export function updatePlayerState(
                             petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
                         }
                         petal.instanceCooldownEndTime[instanceIndex] = currentTime + cooldownTime;
-                        resetPetalPhysicsOnBreak(player.id, loadoutIndex, instanceIndex);
+                        ring.state.dropInstance(loadoutIndex, instanceIndex);
                         const snapshotPetalType = petal.petalType;
                         const snapshotRarity = petal.rarity;
                         const snapshotMaxHealth = petal.maxHealth;
@@ -1787,7 +1965,7 @@ export function updatePlayerState(
                         // Absolute restore deadline — survives process handoff where the
                         // setTimeout below does not. See the tick-loop backstop.
                         petal.cooldownEndTime = currentTime + cooldownTime;
-                        resetSlotPetalPhysicsOnBreak(player.id, loadoutIndex);
+                        ring.state.dropSlot(loadoutIndex);
                         const originalPetal = {
                             type: petal.type,
                             petalType: petal.petalType,
@@ -1835,272 +2013,54 @@ export function updatePlayerState(
             
             // Get effective size (custom size if set, otherwise base stats)
             const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
-            
-            // Per-frame angular velocity (rad/ms) — used by the mob-orbit projection
-            // boost below, which is integrated against this frame's deltaTime.
-            const rotationSpeed = (petalStats.speed ?? 1.0) * playerRotationSpeedModifier * 0.002;
-            const baseAngle = slotIndex * angleStep;
-            // Angle is the per-petal speed times the integrated phase, *2 to preserve
-            // the original 0.002 rad/ms × 1000 ms/s rate.
-            const rotationAngle = ((petalStats.speed ?? 1.0) * playerOrbitPhase * 2) % (Math.PI * 2);
-            // Fixed-direction petals don't orbit - they stay at a fixed relative position
-            const totalAngle = petalStats.fixedDirection !== undefined ? baseAngle : baseAngle + rotationAngle;
 
-            // Apply petal range multiplier and player range modifier to base radius
-            const petalRange = (petalStats.range ?? 1.0) * playerRangeModifier;
-            const petalRadius = (petalStats.defendOnly ? defendOnlyBaseRadius : baseRadius) * petalRange;
-
-            // Calculate target orbit position (where petal should be without physics)
-            let targetX = player.x + Math.cos(totalAngle) * petalRadius;
-            let targetY = player.y + Math.sin(totalAngle) * petalRadius;
-
-            // Clumped petals arrange instances in a small cluster around the slot center
-            const clumpCount = petalStats.count || 1;
-            if (petalStats.clumped && clumpCount > 1) {
-                const clumpSpacing = effectiveSize * 40 * 0.5;
-                const subAngle = (instanceIndex / clumpCount) * Math.PI * 2 + totalAngle;
-                targetX += Math.cos(subAngle) * clumpSpacing;
-                targetY += Math.sin(subAngle) * clumpSpacing;
-            }
-            
-            // Petal ID is needed for actions, projectiles, and collisions regardless of physics
+            // Petal ID is needed for actions, projectiles and damage cooldowns
+            // regardless of physics. The ECS ring keys the same instance by the
+            // integer pair (loadoutIndex, instanceIndex) instead; this string
+            // form survives because the legacy tables it indexes
+            // (petalLastProjectileTime, petalLastRadiationTime,
+            // petalLastDamageTime, the action VM) are all still legacy.
             const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-            
-            // Skip physics for petals with range 0 (they should stay at player position)
-            let petalX: number;
-            let petalY: number;
 
-            // Rose-style burst heal (rysteria_gardn): once the petal has been in orbit
-            // past its charge time and the flower is below max health, it detaches,
-            // homes to the flower, heals a burst and is consumed. Set inside the
-            // physics branch (needs the petal's spawn time); consumed after the
-            // position is final.
-            let burstHealHoming = false;
-            // Shell works the same way, but it flies home to lay a shield on the
-            // flower rather than to heal it, and it waits for the current shield
-            // to lapse instead of for missing health.
-            let burstShieldHoming = false;
+            // ---- kinematics: ECS-owned -------------------------------------
+            // Everything from the orbit angle to the wall push-out now lives in
+            // ecs/systems/petalRing.ts, against per-instance state held in the
+            // `PetalRing` component on this flower's entity. It is stepped HERE,
+            // one instance at a time in ring order, rather than batched ahead of
+            // the loop — see the ring header for why: the effects below change
+            // the next instance's kinematics (a kill removes an attraction
+            // target; damage to a shared-health slot makes the next instance
+            // take the break path above and emit no position at all), so
+            // batching would change both the values and the LENGTH of
+            // petalPositions, which the broadcast hashes.
+            stepPetalKinematics(
+                ring.state,
+                geom,
+                petalStats as PetalRingStats,
+                loadoutIndex,
+                instanceIndex,
+                slotIndex,
+                effectiveSize,
+                ringDeps,
+                _ringStepResult,
+            );
+            const petalX = _ringStepResult.x;
+            const petalY = _ringStepResult.y;
+            const petalOrbitAngle = _ringStepResult.angle;
 
-            if (petalStats.fixedDirection !== undefined) {
-                // Fixed-direction petals stay directly on the player
-                petalX = player.x;
-                petalY = player.y;
-            } else if (petalRange === 0 || petalStats.noPhysics) {
-                // No physics for range 0 or noPhysics petals - snap to orbit position directly
-                petalX = targetX;
-                petalY = targetY;
-            } else {
-                // Get per-petal physics values (use defaults if not specified)
-                const petalSpringForce = petalStats.springForce ?? SPRING_FORCE;
-                const petalDamping = petalStats.damping ?? DAMPING;
-                const petalSpawnSmoothTime = petalStats.spawnSmoothTime ?? SPAWN_SMOOTH_TIME;
-                
-                // Get or initialize petal physics state
-                let physicsState = petalPhysicsStates.get(petalId);
-                if (!physicsState) {
-                    // New or reloaded petal: start at the flower's center and glide
-                    // out into orbit (overshoot-free, see glideUntil).
-                    physicsState = {
-                        x: player.x,
-                        y: player.y,
-                        vx: 0,
-                        vy: 0,
-                        spawnTime: currentTime,
-                        glideUntil: currentTime + PETAL_SPAWN_GLIDE_MS
-                    };
-                    petalPhysicsStates.set(petalId, physicsState);
-                }
-                
-                // Calculate smooth initialization factor (ramp up forces over spawn smooth time)
-                const timeSinceSpawn = physicsState.spawnTime ? currentTime - physicsState.spawnTime : petalSpawnSmoothTime;
-                const smoothFactor = Math.min(1.0, timeSinceSpawn / petalSpawnSmoothTime);
-                
-                // Pick the closest mob within playerPetalAttractionRadius of this petal's
-                // orbit position (targetX/Y). Measuring eligibility from the orbit point
-                // — not the petal's current physics-displaced position or the player —
-                // means "30 px attraction" reliably lights up when a mob is 30 px from
-                // where the petal will naturally swing past.
-                burstHealHoming = !!petalStats.burstHeal &&
-                    player.health < player.maxHealth &&
-                    timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
-                burstShieldHoming = !!petalStats.burstShield &&
-                    getShieldAmount(player) <= 0 &&
-                    timeSinceSpawn >= (petalStats.burstHealChargeMs ?? 1000);
-
-                let closestEnemy: typeof enemies[number] | null = null;
-                let closestDistanceSq = Infinity;
-                if (playerPetalAttractionRadius > 0 && !burstHealHoming && !burstShieldHoming) {
-                    // Broad-phase around this petal's own orbit point. The eligibility test
-                    // below is `dist <= attractionRadius + thatMob's radius`, so querying
-                    // `attractionRadius + largest mob radius` returns a strict superset of
-                    // the eligible mobs — same closest-mob result as scanning every enemy,
-                    // but not O(mobs) per petal. That mattered: a full Light loadout is ~70
-                    // petal instances, and with a populated maze `enemies` is ~1400 long, so
-                    // the old scan cost ~100k iterations per player per tick.
-                    // The grid already excludes pets and mobs that were dead at rebuild.
-                    const attractionCandidates = queryEnemiesNear(
-                        targetX,
-                        targetY,
-                        playerPetalAttractionRadius,
-                        _attractionQueryBuffer
-                    );
-                    for (let ai = 0; ai < attractionCandidates.length; ai++) {
-                        const enemy = attractionCandidates[ai];
-                        // A mob killed earlier this tick (by another petal in this same
-                        // loop) is spliced out of `enemies` but is still in the grid.
-                        if (enemy.isDead) continue;
-                        // _radius is cached on every grid member by rebuildEnemyGrid.
-                        const candidateEnemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
-                        const dx = enemy.x - targetX;
-                        const dy = enemy.y - targetY;
-                        const distSq = dx * dx + dy * dy;
-                        const maxDist = playerPetalAttractionRadius + candidateEnemyRadius;
-                        if (distSq <= maxDist * maxDist && distSq < closestDistanceSq) {
-                            closestDistanceSq = distSq;
-                            closestEnemy = enemy;
-                        }
-                    }
-                }
-
-                // The spring target is normally the petal's player-orbit position. When
-                // attracted, it gets redirected to the closest point on the mob's hitbox edge
-                // (slightly inside, so contact is continuous) along the direction of the
-                // natural orbit position from the mob. As the player's orbit rotates around
-                // the player, that projection rotates around the mob — so the petal spinning
-                // around the mob falls out as a side-effect of the existing rotation, no
-                // dedicated angular-motion code needed.
-                let effectiveTargetX = targetX;
-                let effectiveTargetY = targetY;
-
-                if (closestEnemy) {
-                    physicsState.attractedEnemyId = closestEnemy.id;
-                } else if (physicsState.attractedEnemyId !== undefined) {
-                    // Attraction just released. If it released because the mob died
-                    // (rather than the orbit sweeping out of range), glide back into
-                    // orbit — the raw spring covers most of the gap in a couple of
-                    // ticks, which reads as the whole orbit jumping.
-                    const releasedFrom = physicsState.attractedEnemyId;
-                    physicsState.attractedEnemyId = undefined;
-                    if (!enemies.some(e => e.id === releasedFrom)) {
-                        physicsState.glideUntil = currentTime + PETAL_RELEASE_GLIDE_MS;
-                    }
-                }
-
-                if (closestEnemy) {
-                    const closestMobStats = getMobStats(closestEnemy.type, closestEnemy.tier);
-                    const closestEnemyRadius = closestMobStats ? (closestMobStats.size * 40) / 2 : ENEMY_SIZE / 2;
-                    const dx = targetX - closestEnemy.x;
-                    const dy = targetY - closestEnemy.y;
-                    const len = Math.sqrt(dx * dx + dy * dy);
-                    const mobOrbitRadius = closestEnemyRadius * 0.85;
-                    // Most of the angular motion comes for free from the player orbit moving
-                    // the projection point around the mob's edge each frame; this small extra
-                    // boost on top makes the spin feel snappier without overriding the
-                    // side-effect rotation. Tunable: bigger multiplier = faster whip.
-                    const MOB_ORBIT_SPIN_BOOST = 2;
-                    const baseProjectionAngle = len > 0 ? Math.atan2(dy, dx) : totalAngle;
-                    const projectionAngle = baseProjectionAngle + rotationSpeed * MOB_ORBIT_SPIN_BOOST * (deltaTime * 1000);
-                    effectiveTargetX = closestEnemy.x + Math.cos(projectionAngle) * mobOrbitRadius;
-                    effectiveTargetY = closestEnemy.y + Math.sin(projectionAngle) * mobOrbitRadius;
-                }
-
-                if (burstHealHoming || burstShieldHoming) {
-                    // Home straight to the flower. Keeping the glide window open every
-                    // tick uses the overshoot-free first-order approach instead of the
-                    // spring, so the petal flies in cleanly and tracks a moving player.
-                    effectiveTargetX = player.x;
-                    effectiveTargetY = player.y;
-                    physicsState.glideUntil = currentTime + PETAL_RELEASE_GLIDE_MS;
-                }
-
-                if (physicsState.glideUntil !== undefined && currentTime < physicsState.glideUntil) {
-                    // Transit glide (spawn fly-out / post-kill release): first-order
-                    // approach toward the live target. vx/vy track the glide motion
-                    // so the spring takes over seamlessly when the window ends.
-                    const approach = 1 - Math.exp(-PETAL_GLIDE_RATE * deltaTime);
-                    const glideX = physicsState.x + (effectiveTargetX - physicsState.x) * approach;
-                    const glideY = physicsState.y + (effectiveTargetY - physicsState.y) * approach;
-                    physicsState.vx = (glideX - physicsState.x) / deltaTime;
-                    physicsState.vy = (glideY - physicsState.y) / deltaTime;
-                    physicsState.x = glideX;
-                    physicsState.y = glideY;
-                } else {
-                    if (physicsState.glideUntil !== undefined) physicsState.glideUntil = undefined;
-
-                    // This semi-implicit Euler spring is unconditionally unstable once
-                    // dt exceeds sqrt(2*(1+damping)/(damping*springForce)) — ~0.089s at
-                    // the defaults above — because the tracked error's growth factor per
-                    // tick passes -( 1+damping) beyond that point and blows up exponentially,
-                    // with no restoring force able to bring it back (this is how a petal
-                    // "flies off and never returns"). The server's own tick-time smoothing
-                    // already allows dt up to 0.1s under load (server.ts MAX_DELTA), which
-                    // is past that threshold, so substep the integration to keep each
-                    // slice's dt safely below it regardless of real tick time.
-                    const SPRING_SUBSTEP_DT = 0.05;
-                    const substeps = Math.min(4, Math.max(1, Math.ceil(deltaTime / SPRING_SUBSTEP_DT)));
-                    const subDt = deltaTime / substeps;
-
-                    for (let sub = 0; sub < substeps; sub++) {
-                        const springDx = effectiveTargetX - physicsState.x;
-                        const springDy = effectiveTargetY - physicsState.y;
-                        const springDistance = Math.sqrt(springDx * springDx + springDy * springDy);
-
-                        let springFx = 0;
-                        let springFy = 0;
-
-                        if (springDistance > 0) {
-                            const normalizedSpringDx = springDx / springDistance;
-                            const normalizedSpringDy = springDy / springDistance;
-
-                            // Spring force is proportional to distance from target
-                            // Apply smooth factor to spring force (gradually increase after spawn)
-                            springFx = normalizedSpringDx * petalSpringForce * springDistance * subDt * smoothFactor;
-                            springFy = normalizedSpringDy * petalSpringForce * springDistance * subDt * smoothFactor;
-                        }
-
-                        physicsState.vx += springFx;
-                        physicsState.vy += springFy;
-
-                        physicsState.vx *= petalDamping;
-                        physicsState.vy *= petalDamping;
-
-                        physicsState.x += physicsState.vx * subDt;
-                        physicsState.y += physicsState.vy * subDt;
-                    }
-
-                    // Defense in depth: if the integrator ever ends up non-finite anyway,
-                    // self-heal to the target instead of leaving the petal stuck away forever.
-                    if (!Number.isFinite(physicsState.x) || !Number.isFinite(physicsState.y)) {
-                        physicsState.x = effectiveTargetX;
-                        physicsState.y = effectiveTargetY;
-                        physicsState.vx = 0;
-                        physicsState.vy = 0;
-                    }
-                }
-                
-                // Use physics-based position
-                petalX = physicsState.x;
-                petalY = physicsState.y;
-            }
-
-            // Petals flagged wallCollide can't orbit through walls/water — push them
-            // back out of any solid tile. Persist the resolved position (and kill the
-            // velocity into the wall) into the physics state so the orbit spring
-            // doesn't keep driving them back inside on the next frame.
-            if (petalStats.wallCollide) {
-                const resolved = checkPlayerWallCollisions(petalX, petalY, 40 * effectiveSize);
-                if (resolved.collided) {
-                    petalX = resolved.x;
-                    petalY = resolved.y;
-                    const ps = petalPhysicsStates.get(petalId);
-                    if (ps) {
-                        ps.x = petalX;
-                        ps.y = petalY;
-                        ps.vx = 0;
-                        ps.vy = 0;
-                    }
-                }
-            }
+            // Rose-style burst heal (rysteria_gardn): once the petal has been in
+            // orbit past its charge time and the flower is below max health, it
+            // detaches, homes to the flower, heals a burst and is consumed.
+            // Shell works the same way but lays a shield instead, and waits for
+            // the current shield to lapse rather than for missing health.
+            //
+            // The ring decides WHETHER a petal is homing (it needs the spawn
+            // time, which is ring state) by calling `ringDeps.isHoming`; that
+            // callback records which of the two fired into the pair below, which
+            // the delivery block further down consumes. `_ringHoming*` are module
+            // scratch, valid only until the next `stepPetalKinematics` call.
+            const burstHealHoming = _ringStepResult.homing && _ringHomingWasHeal;
+            const burstShieldHoming = _ringStepResult.homing && _ringHomingWasShield;
 
             // Update petal position in action context
             updatePetalPosition(petalId, petalX, petalY);
@@ -2204,8 +2164,10 @@ export function updatePlayerState(
                 // Check if cooldown has passed
                 if (currentTime - lastShotTime >= cooldown) {
                     // Calculate projectile angle - shoot in the direction the petal is facing (tangent to rotation)
-                    // The petal is at totalAngle, so the projectile should go in that direction
-                    let projectileAngle = totalAngle;
+                    // The petal is at its orbit bearing, so the projectile goes
+                    // that way. Reported by the ring step rather than recomputed,
+                    // so the two cannot drift apart.
+                    let projectileAngle = petalOrbitAngle;
 
                     // Guided shots re-aim at the nearest mob inside a cone around
                     // the firing direction (gardn find_nearest_enemy_within_angle).
@@ -2247,27 +2209,24 @@ export function updatePlayerState(
                             finalAngle = projectileAngle + spreadOffset;
                         }
 
-                        const projectile: PlayerProjectile = {
-                            id: allocatePlayerProjectileId(),
+                        // NOTE: a player projectile does NOT get the rarity
+                        // distance/size scaling a mob volley gets (see
+                        // ecs/systems/projectileFiring.ts) — it inherits the
+                        // petal's own size and the config's flat distance.
+                        deps.projectiles.spawn({
                             playerId: player.id,
                             x: petalX,
                             y: petalY,
-                            startX: petalX,
-                            startY: petalY,
                             angle: finalAngle,
                             speed: projectileSpeed / 1000, // Convert to pixels per millisecond
-                            distance: 0,
                             maxDistance: projectileConfig.distance,
                             petalType: petal.petalType,
                             petalRarity: petal.rarity,
                             damage: petalStats.damage,
                             size: effectiveSize,
                             health: petalStats.health,
-                            maxHealth: petalStats.health,
-                            spawnTime: currentTime
-                        };
-
-                        playerProjectiles.push(projectile);
+                            now: currentTime,
+                        });
                     }
 
                     // Update last shot time for this petal instance
@@ -2592,44 +2551,27 @@ export function updatePlayerState(
                         }
                     }
 
-            // Check collision with mob projectiles (treat them as enemy petals)
-            for (let projIdx = mobProjectiles.length - 1; projIdx >= 0; projIdx--) {
-                const mobProjectile = mobProjectiles[projIdx];
-                
-                // Skip destroyed projectiles
-                if (!mobProjectile || mobProjectile.health <= 0) {
-                    continue;
-                }
-                
-                const projectileSize = mobProjectile.size * 20; // Convert to pixels
-                const projectileRadius = projectileSize / 2;
-                const petalSize = 40 * effectiveSize; // Use effective size (custom or base)
-                const petalRadius = petalSize / 2;
-                
-                const dx = mobProjectile.x - petalX;
-                const dy = mobProjectile.y - petalY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                const minDistance = projectileRadius + petalRadius;
-                
-                if (distance < minDistance && distance > 0) {
-                    // Player petal hits mob projectile - deal damage to both
-                    const damageMultiplier = getDamageMultiplier(player);
-                    const finalDamage = petalStats.damage * damageMultiplier;
-                    
-                    // Damage the mob projectile
-                    mobProjectile.health -= finalDamage;
-                    
-                    // Damage the player petal (mob projectile acts as enemy petal)
-                    const projectilePetalStats = getPetalStats(mobProjectile.petalType, mobProjectile.petalRarity);
-                    const projectileDamage = projectilePetalStats ? projectilePetalStats.damage : mobProjectile.damage;
-                    const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
-                    setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevProjInstanceHealth - projectileDamage));
-                    
-                    // Remove projectile if destroyed
-                    if (mobProjectile.health <= 0) {
-                        mobProjectiles.splice(projIdx, 1);
+            // Petals block mob projectiles: each side damages the other, exactly
+            // as if the projectile were an enemy petal. The projectile lives in
+            // the ECS now, so the bridge does the overlap test and applies the
+            // damage this callback returns; the petal side stays here because
+            // petal instance health is legacy state.
+            {
+                // Resolved lazily: the callback fires only on an actual block,
+                // and this runs for every petal instance of every player.
+                let projectileDamageMultiplier = -1;
+                const petalBlockRadius = (40 * effectiveSize) / 2;
+                deps.projectiles.forEachBlocking(petalX, petalY, petalBlockRadius, (mobProjectile) => {
+                    if (projectileDamageMultiplier < 0) {
+                        projectileDamageMultiplier = getDamageMultiplier(player);
                     }
-                }
+                    const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                    setInstanceHealth(
+                        petal, instanceIndex, petalStats,
+                        Math.max(0, prevProjInstanceHealth - mobProjectile.damage),
+                    );
+                    return petalStats.damage * projectileDamageMultiplier;
+                });
             }
 
                     // Handle petal collision for wait_until_collision actions
@@ -2680,7 +2622,7 @@ export function updatePlayerState(
                                 petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
                             }
                             petal.instanceCooldownEndTime[instanceIndex] = cooldownEndsAt;
-                            resetPetalPhysicsOnBreak(player.id, loadoutIndex, instanceIndex);
+                            ring.state.dropInstance(loadoutIndex, instanceIndex);
                             const snapshotPetalType = petal.petalType;
                             const snapshotRarity = petal.rarity;
                             const snapshotMaxHealth = petal.maxHealth;
@@ -2711,7 +2653,7 @@ export function updatePlayerState(
                             // Non-clumped: whole slot breaks (legacy behavior)
                             petal.onCooldown = true;
                             petal.cooldownEndTime = cooldownEndsAt;
-                            resetSlotPetalPhysicsOnBreak(player.id, loadoutIndex);
+                            ring.state.dropSlot(loadoutIndex);
                             const originalPetal = {
                                 type: petal.type,
                                 petalType: petal.petalType,
@@ -2829,7 +2771,16 @@ export function updatePlayerState(
                             // Break the yggdrasil petal when it revives someone
                             petal.health = 0; // This will trigger the petal breaking logic below
                             
-                            // Revive the target player
+                            // Revive the target player.
+                            //
+                            // This lands inside the REVIVER's updatePlayerState,
+                            // so the revived flower may still have its own
+                            // updatePlayerState to run in this same loop — it
+                            // will, from here on, seed newX from movedX/movedY
+                            // and commit. That is safe only because
+                            // syncPlayersToEcs keeps the staging pair pinned to a
+                            // corpse's real position; see the comment there. Do
+                            // not move the seed back below the dead-player skip.
                             otherPlayer.isDead = false;
                             otherPlayer.health = otherPlayer.maxHealth;
                             otherPlayer.isInvulnerable = true;

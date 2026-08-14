@@ -23,7 +23,7 @@ const petals_1 = require("./petals");
 const playerWire_1 = require("./server/playerWire");
 const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
-const buildEnemy_1 = require("./server/shared/buildEnemy");
+const enemyRegistry_1 = require("./server/enemyRegistry");
 const killHandler_1 = require("./server/shared/killHandler");
 const constants_1 = require("./constants");
 const database_1 = require("./database");
@@ -477,25 +477,25 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     const rarityIndex = (0, petals_1.getRarityIndex)(rarity.toLowerCase());
     const rangeBonus = rarityIndex >= 0 ? rarityIndex * 200 : 0;
     const petRange = (mobStats.range || 0) + rangeBonus;
-    // Create the pet enemy
-    const pet = (0, buildEnemy_1.buildEnemy)(mobType, tier, x, y, {
-        aiType: 'passive', // Pets are not hostile to players
-        range: petRange,
-        ownerId, // Set the owner
-        petImage: mobStats.petImage, // Use pet image if available
-    }); // mobStats validated above
     // Pet-only stat nerfs (see PET_STAT_MULTIPLIERS). maxHealth is what the
     // client's health bar divides by, and encodeEnemyDelta only puts maxHealth
     // on the wire when it differs from the mob config's, so this reaches the
     // client on its own.
+    //
+    // Passed INTO the spawn rather than patched on after it: `damage` is written
+    // to the ECS once, at construction, and never re-synced — a nerf applied
+    // afterwards would leave ECS-owned pet melee hitting for the full wild
+    // value while the legacy object read the nerfed one.
     const statMods = PET_STAT_MULTIPLIERS[mobType];
-    if (statMods) {
-        pet.maxHealth = mobStats.health * statMods.health;
-        pet.health = pet.maxHealth;
-        pet.damage = mobStats.damage * statMods.damage;
-    }
-    // Add to enemies array
-    constants_1.enemies.push(pet);
+    // Create the pet enemy (ECS entity + enemies[] admission, atomically)
+    const pet = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, x, y, {
+        aiType: 'passive', // Pets are not hostile to players
+        range: petRange,
+        ownerId, // Set the owner
+        petImage: mobStats.petImage, // Use pet image if available
+        maxHealth: statMods ? mobStats.health * statMods.health : undefined,
+        damage: statMods ? mobStats.damage * statMods.damage : undefined,
+    }); // mobStats validated above
     // Notify all clients
     io.emit('enemySpawned', pet);
     // Centipede pets need their trailing body chain too, with ownerId propagated
