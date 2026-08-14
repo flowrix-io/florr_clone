@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+/** Reused entity snapshot; see ClientWorld.collectPlayers. */
+const leaderboardScratch = [];
 const constants_1 = require("../constants");
 // Gardn's "???" zone uses a plain medium-gray floor with a faint dark grid.
 // We replicate that inside the arena circle and paint a darker void outside.
@@ -75,20 +77,21 @@ core_1.Graphics.prototype.drawPvpArenaBoundary = function () {
 // Render a live leaderboard styled to match gardn's: green pill header with the
 // player count on top, dark-gray rounded container below, and each row is a dark
 // pill with a flower-colored progress bar behind centered "Name - Score" text.
-core_1.Graphics.prototype.drawPvpLeaderboard = function (players, currentPlayerId) {
-    const local = players.get(currentPlayerId);
+core_1.Graphics.prototype.drawPvpLeaderboard = function (world, currentPlayerId) {
+    const local = world.player(currentPlayerId);
     if (!local || !local.inPvpArena)
         return;
     const arenaPlayers = [];
-    players.forEach((p) => {
-        if (!p.inPvpArena)
-            return;
+    for (const entity of world.collectPlayers(leaderboardScratch)) {
+        const p = world.playerOf(entity);
+        if (!p || !p.inPvpArena)
+            continue;
         arenaPlayers.push({
             name: p.name || 'Unnamed',
             score: p.pvpScore || 0,
             color: p.flowerColor || '#FFE763',
         });
-    });
+    }
     if (arenaPlayers.length === 0)
         return;
     arenaPlayers.sort((a, b) => b.score - a.score);

@@ -2,17 +2,29 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const maze_1 = require("../maze");
-core_1.Graphics.prototype.render = function (players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0, groundPollens, webFields) {
-    // Cache timestamp for this frame to avoid Date.now() per enemy
+/**
+ * One entry point, one entity source.
+ *
+ * Every renderer below takes the same `ClientWorld` and reads components off
+ * it. There is deliberately no Map rebuilt from the world for the older
+ * renderers to keep using: a compatibility shim like that is exactly the dual
+ * representation this pass removes, and a half-migrated renderer set means one
+ * mob with two positions.
+ */
+core_1.Graphics.prototype.render = function (world, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0, groundPollens, webFields) {
+    // Cache timestamp for this frame to avoid Date.now() per enemy. This is the
+    // DEATH-ANIMATION clock — the same Date.now() the ingest layer stamps
+    // DeathAnimation.startTime with. Snapshot timestamps live in the
+    // performance.now() domain and are never compared against it.
     this.frameTimestamp = Date.now();
     // Apply the antialiasing preference at the start of every frame so
     // intermediate `ctx.save()/restore()` sequences (which capture and roll
     // back the smoothing state) can't drift away from the user's setting.
     this.ctx.imageSmoothingEnabled = this.antialiasing;
     // Update section-based texture loading based on player position
-    const currentPlayer = players.get(currentPlayerId);
-    if (currentPlayer) {
-        this.updateSectionTextures(currentPlayer.x, currentPlayer.y);
+    const currentPlayer = world.playerEntity(currentPlayerId);
+    if (currentPlayer !== undefined) {
+        this.updateSectionTextures(world.playerX(currentPlayer), world.playerY(currentPlayer));
     }
     // HiDPI base transform. The main canvas backing store is physical pixels
     // (logical × uiScale); applying scale(uiScale) once lets all drawing below
@@ -101,9 +113,9 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
         this.drawWebFields(webFields);
     }
     // Draw raindrop auras (grass + droplets) below enemies and players
-    this.drawRaindropAuras(players);
+    this.drawRaindropAuras(world);
     // Draw game objects
-    this.drawGameObjects(players, enemies, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
+    this.drawGameObjects(world, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension);
     // Draw explosion effects (in world coordinates, before camera restore)
     this.drawExplosionEffects();
     this.drawPetalBreakEffects();
@@ -121,13 +133,13 @@ core_1.Graphics.prototype.render = function (players, enemies, items, mobProject
         this.ctx.restore();
     }
     // Draw UI elements (not affected by camera)
-    this.drawUI(players, currentPlayerId);
+    this.drawUI(world, currentPlayerId);
     // Draw falling stars (screen coordinates)
     this.drawFallingStars();
     // Draw boss bars for ultra, super, and unique mobs in view
-    this.drawBossBars(enemies);
+    this.drawBossBars(world);
     // Draw the live PVP leaderboard (only visible while in the arena)
-    this.drawPvpLeaderboard(players, currentPlayerId);
+    this.drawPvpLeaderboard(world, currentPlayerId);
     // Draw changelog and notifications menus. The canvas' stacking is set once
     // by AppShell.attachCanvas() and never changes, so there is nothing to
     // re-assert per frame here any more.

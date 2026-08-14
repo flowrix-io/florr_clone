@@ -22,9 +22,13 @@ function getThirdEyeRarity(player) {
     }
     return undefined;
 }
-core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension = 1.0, enemies = new Map()) {
+core_1.Graphics.prototype.drawPlayer = function (world, entity, socket, petalExtension = 1.0) {
+    const player = world.playerOf(entity);
+    if (!player)
+        return;
     this.ctx.save();
-    this.ctx.translate(player.x, player.y);
+    // The DRAWN position, from this frame's ease.
+    this.ctx.translate(world.playerX(entity), world.playerY(entity));
     const sizeMultiplier = player.sizeMultiplier ?? 1.0;
     const flowerRadius = 25 * sizeMultiplier;
     const hitboxRadius = (core_1.PLAYER_SIZE / 2) * sizeMultiplier;
@@ -52,8 +56,9 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
     // this.playerEye accumulator; remote players (and bots) each carry their own.
     let eyeX;
     let eyeY;
-    const targetEyeX = Math.cos(player.angle) * 2;
-    const targetEyeY = Math.sin(player.angle) * 4.4;
+    const playerAngle = world.playerAngle(entity);
+    const targetEyeX = Math.cos(playerAngle) * 2;
+    const targetEyeY = Math.sin(playerAngle) * 4.4;
     const lerpFactor = 0.15;
     if (player.id === socket) {
         this.playerEye.x += (targetEyeX - this.playerEye.x) * lerpFactor;
@@ -62,17 +67,12 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
         eyeY = this.playerEye.y;
     }
     else {
-        if (!player.eye) {
-            player.eye = { x: 0, y: 0 };
-            player.targetEye = { x: 0, y: 0 };
-        }
         // Same formula as the local player so remote players' eyes look in their
-        // facing direction rather than 90° off.
-        player.targetEye = { x: targetEyeX, y: targetEyeY };
-        player.eye.x += (player.targetEye.x - player.eye.x) * lerpFactor;
-        player.eye.y += (player.targetEye.y - player.eye.y) * lerpFactor;
-        eyeX = player.eye.x;
-        eyeY = player.eye.y;
+        // facing direction rather than 90° off. Stored on the entity, so it dies
+        // with the flower instead of lingering in a side Map.
+        eyeX = world.eyeX(entity) + (targetEyeX - world.eyeX(entity)) * lerpFactor;
+        eyeY = world.eyeY(entity) + (targetEyeY - world.eyeY(entity)) * lerpFactor;
+        world.setEye(entity, eyeX, eyeY);
     }
     // Build the flower attributes once, then either hand them to the active
     // custom skin (when a render flag is set) or to the default flower renderer.
@@ -122,11 +122,12 @@ core_1.Graphics.prototype.drawPlayer = function (player, socket, petalExtension 
     }
     // Draw petals around player (while still in player's transform context)
     // This ensures petals are positioned relative to the player
-    this.drawPlayerPetals(player, petalExtension, enemies, socket);
+    this.drawPlayerPetals(world, entity, petalExtension, socket);
     this.ctx.restore();
 };
-core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 1.0, enemies = new Map(), currentPlayerId) {
-    if (!player.loadout || !Array.isArray(player.loadout)) {
+core_1.Graphics.prototype.drawPlayerPetals = function (world, entity, petalExtension = 1.0, currentPlayerId) {
+    const player = world.playerOf(entity);
+    if (!player || !player.loadout || !Array.isArray(player.loadout)) {
         return;
     }
     const petalInstances = [];
@@ -192,8 +193,8 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
     const angleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
     const ctx = this.ctx;
     const showGlow = this.showRarityGlow;
-    const playerX = player.x;
-    const playerY = player.y;
+    const playerX = world.playerX(entity);
+    const playerY = world.playerY(entity);
     // EVERY flower on screen renders its petals from the server's authoritative
     // per-petal positions — the local player and remote players run the exact same
     // path. The server sends the `p` array for the recipient plus every on-screen
@@ -264,14 +265,13 @@ core_1.Graphics.prototype.drawPlayerPetals = function (player, petalExtension = 
             if (foundX !== null) {
                 // Server petal positions are absolute coords orbiting the player's
                 // SERVER position, while the flower itself renders at its eased
-                // position, so anchor petals to that same eased reference
-                // (_refX/_refY, republished by game.ts easeToTarget for every
-                // flower) — using the raw 30Hz targetX/Y would subtract a stairstep
-                // from the interpolated petal and make petals jitter. Both the
-                // flower and its petals ease at the same rate, so the ring stays
-                // centred with no drift. Falls back to targetX/playerX.
-                const refX = player._refX ?? player.targetX ?? playerX;
-                const refY = player._refY ?? player.targetY ?? playerY;
+                // position, so anchor petals to that same eased reference —
+                // RenderRef, republished for EVERY flower by renderRefSystem in
+                // the same frame, after the eases and before this draw. Using the
+                // raw 30Hz server position instead would subtract a stairstep from
+                // the interpolated petal and make petals jitter.
+                const refX = world.renderRefX(entity);
+                const refY = world.renderRefY(entity);
                 petalX = foundX - refX;
                 petalY = foundY - refY;
             }

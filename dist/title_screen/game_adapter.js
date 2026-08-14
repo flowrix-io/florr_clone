@@ -24,7 +24,7 @@ class TitleScreenGameAdapter {
         return {
             id: (0, preconnect_1.getPreconnectedSocket)()?.id || '',
             name: '',
-            x: 0, y: 0, angle: 0, score: 0,
+            score: 0,
             imageLoaded: false,
             image: new Image(),
             velocityX: 0, velocityY: 0,
@@ -32,7 +32,6 @@ class TitleScreenGameAdapter {
             inventory: this._playerData.inventory,
             loadout: this._playerData.loadout,
             level: 1, xp: 0, xpToNextLevel: 100,
-            targetX: 0, targetY: 0,
         };
     }
     getSocket() {

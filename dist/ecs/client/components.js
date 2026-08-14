@@ -12,7 +12,7 @@
  * ever queries one of these, that is a bug, and the import path says so.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RendersAsPet = exports.IsLocalPlayer = exports.RenderEye = exports.RenderRef = exports.MAX_SNAPSHOTS = exports.SnapshotBuffer = exports.InterpTarget = void 0;
+exports.RendersAsPet = exports.LegacyPlayer = exports.DpsLabel = exports.MobRender = exports.NeedsSnap = exports.IsPlayerRender = exports.IsLocalPlayer = exports.RenderEye = exports.RenderRef = exports.MAX_SNAPSHOTS = exports.SnapshotBuffer = exports.InterpTarget = void 0;
 exports.pushSnapshot = pushSnapshot;
 const component_1 = require("../component");
 /**
@@ -56,12 +56,25 @@ exports.RenderRef = (0, component_1.defineComponent)('RenderRef', {
     x: 'f64',
     y: 'f64',
 });
-/** Eased eye offset, a purely cosmetic follow with its own target. */
+/**
+ * Eased eye offset, purely cosmetic.
+ *
+ * STORAGE ONLY — no system eases this. The eye follow is a fixed fraction per
+ * FRAME (0.15) rather than a rate per second, and it is applied by the flower
+ * and mob-flower renderers at the moment they draw. Adding a scheduler system
+ * for it would either duplicate that ease or replace it with a frame-rate
+ * independent one, which changes how eyes track at any refresh rate other than
+ * 60Hz. Living in a component is still what matters: `destroy` clears it, so a
+ * disconnected player's eye state cannot outlive them the way a side Map would.
+ *
+ * `init` distinguishes "never drawn" from "eased to (0,0)": mobs start their
+ * eye ON the target (a mob popping in should not roll its eyes into place),
+ * flowers start at the origin.
+ */
 exports.RenderEye = (0, component_1.defineComponent)('RenderEye', {
     x: 'f32',
     y: 'f32',
-    targetX: 'f32',
-    targetY: 'f32',
+    init: 'bool',
 });
 /**
  * The entity this client controls.
@@ -69,8 +82,65 @@ exports.RenderEye = (0, component_1.defineComponent)('RenderEye', {
  * Tagged rather than compared by id so the prediction system routes by
  * archetype: exactly one entity carries it, and only that one is predicted
  * forward from local input.
+ *
+ * After the splitter petal this client owns TWO flowers but drives one; the tag
+ * follows the ACTIVE half and flips on `playerSwitched`. Binding it to the
+ * socket id instead answers for the abandoned half (see the split-active-half
+ * invariant) — camera, death screen and loadout bar all read through it.
  */
 exports.IsLocalPlayer = (0, component_1.defineTag)('IsLocalPlayer');
+/**
+ * Drawn as a flower.
+ *
+ * The renderer's player pass queries this rather than "has Position and is not
+ * a mob": one World holds both, and an untagged position query would sweep mobs
+ * into the flower renderer.
+ */
+exports.IsPlayerRender = (0, component_1.defineTag)('IsPlayerRender');
+/**
+ * Cut to the interpolation target on the next tick instead of easing to it.
+ *
+ * Respawn and teleport move a flower further than any ease should cross. The
+ * legacy client did this with a `predInit` boolean that only covered the local
+ * flower's first frame; as a tag it covers every entity and every reason
+ * (portal, `playerTeleported`, respawn) through one path.
+ */
+exports.NeedsSnap = (0, component_1.defineTag)('NeedsSnap');
+/**
+ * Mob render state that is neither position nor identity.
+ *
+ * `aiType`/`chasing` together double the sprite animation speed for a mob that
+ * is actively hunting, and `flipped` mirrors it horizontally. All three arrive
+ * ONLY on the full `enemySpawned`/`enemiesUpdate` payloads — the per-tick delta
+ * wire does not carry them — so a mob first seen through the delta stream has
+ * them at their zero defaults, exactly as it had them `undefined` before.
+ */
+exports.MobRender = (0, component_1.defineComponent)('MobRender', {
+    /** Matches components/mob.ts AiType; 255 = "the server never told us". */
+    aiType: 'u8',
+    chasing: 'bool',
+    flipped: 'bool',
+});
+/** Measured DPS shown beside a target dummy's health bar. */
+exports.DpsLabel = (0, component_1.defineComponent)('DpsLabel', {
+    value: 'f32',
+});
+/**
+ * The client's plain `Player` object, for everything this pass did NOT move.
+ *
+ * Position, facing, the eased eye and the petal-ring anchor are ECS columns and
+ * have been DELETED from the `Player` interface, so no renderer can read a
+ * stale copy of them. The other ~45 fields — name, health, loadout, inventory,
+ * cosmetics, maze/PVP state — are account and UI data that no system iterates,
+ * and splitting them into columns would buy nothing while breaking every panel
+ * that takes a `Player`.
+ *
+ * Typed `obj` because src/ecs must not import src/player.ts (it reaches
+ * petal_actions.ts, which is server-side); the client casts on the way out.
+ */
+exports.LegacyPlayer = (0, component_1.defineComponent)('LegacyPlayer', {
+    ref: 'obj',
+});
 /**
  * Rendered as somebody's pet.
  *

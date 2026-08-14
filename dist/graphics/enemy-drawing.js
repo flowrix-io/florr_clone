@@ -3,6 +3,30 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEATH_ANIMATION_DURATION = void 0;
 const core_1 = require("./core");
 const glitch_effect_1 = require("./glitch-effect");
+/**
+ * Ease a mob's eye toward where it is facing, and store it back.
+ *
+ * The eye lives in a component so it dies with the mob; the ease itself stays
+ * here because it is a fixed fraction per FRAME (0.15), not per second, and
+ * moving it into a scheduler system would change how eyes track at any refresh
+ * rate other than 60Hz.
+ */
+function easeMobEye(world, enemy, angle) {
+    const targetX = Math.cos(angle) * 2;
+    const targetY = Math.sin(angle) * 4.4;
+    if (!world.hasEye(enemy))
+        return { x: targetX, y: targetY };
+    if (!world.eyeInitialised(enemy)) {
+        // First sight starts ON target: a mob popping in should not roll its
+        // eyes into place from the origin.
+        world.setEye(enemy, targetX, targetY);
+        return { x: targetX, y: targetY };
+    }
+    const x = world.eyeX(enemy) + (targetX - world.eyeX(enemy)) * 0.15;
+    const y = world.eyeY(enemy) + (targetY - world.eyeY(enemy)) * 0.15;
+    world.setEye(enemy, x, y);
+    return { x, y };
+}
 // Shared with drawGameObjects' health-bar pass, which must skip mobs whose
 // death animation is running (drawEnemy scales/fades them instead).
 exports.DEATH_ANIMATION_DURATION = 200; // ms
@@ -88,17 +112,23 @@ core_1.Graphics.prototype.drawMobProjectile = function (projectile, currentTime,
     }
     this.ctx.restore();
 };
-core_1.Graphics.prototype.drawEnemy = function (enemy) {
-    // Validate enemy has required properties
-    if (!enemy || typeof enemy.x !== 'number' || typeof enemy.y !== 'number') {
-        console.error('[Graphics] Invalid enemy data:', enemy);
+core_1.Graphics.prototype.drawEnemy = function (world, enemy) {
+    // Component reads hoisted once. Everything below works off these locals, so
+    // there is exactly one place each field is sourced from.
+    const enemyX = world.mobX(enemy);
+    const enemyY = world.mobY(enemy);
+    const enemyType = world.mobType(enemy);
+    const enemyTier = world.mobTier(enemy);
+    if (!isFinite(enemyX) || !isFinite(enemyY)) {
+        console.error('[Graphics] Invalid enemy position:', world.mobId(enemy));
         return;
     }
     // Check if enemy is in death animation (only if setting is enabled)
     let isDying = false;
     let deathProgress = 0;
-    if (this.mobDeathAnimation && enemy.deathAnimationStartTime) {
-        const elapsed = this.frameTimestamp - enemy.deathAnimationStartTime;
+    const deathStart = world.deathAnimationStart(enemy);
+    if (this.mobDeathAnimation && deathStart !== 0) {
+        const elapsed = this.frameTimestamp - deathStart;
         if (elapsed < exports.DEATH_ANIMATION_DURATION) {
             isDying = true;
             deathProgress = Math.min(1.0, elapsed / exports.DEATH_ANIMATION_DURATION); // 0 to 1, clamped
@@ -107,9 +137,9 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // Get enemy size from mob stats. A pet is drawn smaller than the wild mob of
     // its rarity (getEnemySizeScale) — the same factor the server applies to its
     // hitbox, so the sprite and what it collides with stay the same circle.
-    const mobStats = (0, core_1.getMobStats)(enemy.type, enemy.tier);
+    const mobStats = (0, core_1.getMobStats)(enemyType, enemyTier);
     // Use visual_scale for rendering (affects visual only, not hitbox)
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(enemy.isPet, enemy.tier);
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(world.isPet(enemy), enemyTier);
     const visualScale = mobStats?.visual_scale ?? 1.0;
     let enemySize = baseSize * visualScale;
     // Apply death animation effects: scale up, fade out, red tint
@@ -139,10 +169,10 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         const tf = this.ctx.getTransform();
         baseTf = this._worldBaseTf = { a: tf.a, b: tf.b, c: tf.c, d: tf.d, e: tf.e, f: tf.f };
     }
-    const angle = mobStats?.hideRotation ? 0 : (enemy.angle || 0);
-    const flip = (enemy.reversed || mobStats?.reversed) ? -1 : 1;
+    const angle = mobStats?.hideRotation ? 0 : world.mobAngle(enemy);
+    const flip = (world.mobFlipped(enemy) || mobStats?.reversed) ? -1 : 1;
     const cosA = Math.cos(angle), sinA = Math.sin(angle);
-    this.ctx.setTransform((baseTf.a * cosA + baseTf.c * sinA) * flip, (baseTf.b * cosA + baseTf.d * sinA) * flip, baseTf.c * cosA - baseTf.a * sinA, baseTf.d * cosA - baseTf.b * sinA, baseTf.a * enemy.x + baseTf.c * enemy.y + baseTf.e, baseTf.b * enemy.x + baseTf.d * enemy.y + baseTf.f);
+    this.ctx.setTransform((baseTf.a * cosA + baseTf.c * sinA) * flip, (baseTf.b * cosA + baseTf.d * sinA) * flip, baseTf.c * cosA - baseTf.a * sinA, baseTf.d * cosA - baseTf.b * sinA, baseTf.a * enemyX + baseTf.c * enemyY + baseTf.e, baseTf.b * enemyX + baseTf.d * enemyY + baseTf.f);
     // Apply death animation: transparency (before drawing, preserves transparency)
     if (isDying) {
         this.ctx.globalAlpha = deathAlpha;
@@ -160,8 +190,8 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         this.ctx.drawImage(glow, -lightRadius, -lightRadius, lightRadius * 2, lightRadius * 2);
     }
     // Special rendering for garbage mob - render as a pile of random petals
-    if (enemy.type === 'garbage') {
-        this.drawGarbagePile(enemy, enemySize);
+    if (enemyType === 'garbage') {
+        this.drawGarbagePile(world, enemy, enemySize);
         // No death tint for the garbage pile. It's drawn from baked petal
         // bitmaps, so there's no per-shape colour to blend the way the mob path
         // does — and the source-atop rect this used to do tinted a square of
@@ -179,13 +209,16 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // NOTE: imageSmoothingEnabled is NOT touched per mob — drawGameObjects
     // sets it once for the whole pass. Per-mob toggles broke Chrome's canvas
     // op batching (a pipeline flush per mob on the GPU path).
-    const cacheKey = `${enemy.type}_${enemy.tier}`;
+    // Memoised by interned (type, tier) — building this string per mob per
+    // frame is an allocation right where the measured mob-pass optimisations
+    // live. See ClientWorld.mobCacheKey.
+    const cacheKey = world.mobCacheKey(enemy);
     const mobSVG = this.mobSVGCache[cacheKey];
     // Pass raw time to the canvas-command renderer — it handles animation
     // timing internally using each animation's own dur/repeatCount.
     let currentTime = this.frameTimestamp;
     // If enemy is chasing, play animation 2x faster
-    if (enemy.isChasing && (enemy.aiType === 'hostile' || enemy.aiType === 'neutral')) {
+    if (world.mobAnimatesFast(enemy)) {
         currentTime = this.frameTimestamp * 2;
     }
     let rendered = false;
@@ -195,14 +228,14 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // the tint is blended per shape by the SVG renderer below and there are no
     // shapes here; the scale-up and fade still read as a death (same trade-off
     // as the garbage pile above).
-    if (enemy.type === 'digger') {
-        this.drawDiggerFlower(enemy, enemySize);
+    if (enemyType === 'digger') {
+        this.drawDiggerFlower(world, enemy, enemySize);
         rendered = true;
     }
     else if (mobStats?.petal_ring) {
         // Same deal for petal-ring mobs (the glitch flower): they are flowers
         // carrying petals, so they go through the flower path rather than an SVG.
-        this.drawPetalRingFlower(enemy, enemySize, mobStats);
+        this.drawPetalRingFlower(world, enemy, enemySize, mobStats);
         rendered = true;
     }
     // Mobs are drawn straight from their compiled canvas commands, at the mob's
@@ -236,7 +269,7 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
         // Draw a colored circle as fallback
         // This should ALWAYS render something visible
         {
-            const tierColor = this.ENEMY_COLORS[enemy.tier] || '#ff0000';
+            const tierColor = this.ENEMY_COLORS[enemyTier] || '#ff0000';
             // Ensure we're in the right context state
             this.ctx.globalAlpha = 1.0;
             this.ctx.fillStyle = tierColor;
@@ -252,7 +285,7 @@ core_1.Graphics.prototype.drawEnemy = function (enemy) {
     // Draw hitbox if enabled (before restore, so it's in enemy's coordinate space)
     // Use baseSize for hitbox (actual collision size, not visual size)
     if (this.showHitboxes) {
-        this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
+        this.ctx.strokeStyle = this.ENEMY_COLORS[enemyTier];
         this.ctx.lineWidth = 2;
         this.ctx.globalAlpha = 1.0; // Ensure hitbox is always fully opaque
         this.ctx.shadowBlur = 0; // Remove any glow effects for hitbox
@@ -283,7 +316,7 @@ const DIGGER_FLOWER_COLOR = '#999999';
  * flower's is). The flower art is authored in radius-25 space, the same space
  * drawFlower and the player petal ring use, so everything scales by radius/25.
  */
-core_1.Graphics.prototype.drawDiggerFlower = function (enemy, enemySize) {
+core_1.Graphics.prototype.drawDiggerFlower = function (world, enemy, enemySize) {
     const ctx = this.ctx;
     const radius = enemySize / 2;
     const scale = radius / 25;
@@ -302,17 +335,7 @@ core_1.Graphics.prototype.drawDiggerFlower = function (enemy, enemySize) {
     }
     // The body never rotates, so the digger has to show where it is heading with
     // its eyes — same offsets and easing drawPlayer uses for a flower.
-    const angle = enemy.angle || 0;
-    const targetEyeX = Math.cos(angle) * 2;
-    const targetEyeY = Math.sin(angle) * 4.4;
-    let eye = enemy._eye;
-    if (!eye) {
-        eye = enemy._eye = { x: targetEyeX, y: targetEyeY };
-    }
-    else {
-        eye.x += (targetEyeX - eye.x) * 0.15;
-        eye.y += (targetEyeY - eye.y) * 0.15;
-    }
+    const eye = easeMobEye(world, enemy, world.mobAngle(enemy));
     this.drawFlower({
         radius,
         color: DIGGER_FLOWER_COLOR,
@@ -346,26 +369,17 @@ const PETAL_RING_FLOWER_COLOR = '#ffe763';
  * synchronised phase. The server's damage test is angle-blind for the same
  * reason (see applyPetalRingDamage).
  */
-core_1.Graphics.prototype.drawPetalRingFlower = function (enemy, enemySize, mobStats) {
+core_1.Graphics.prototype.drawPetalRingFlower = function (world, enemy, enemySize, mobStats) {
     const ring = mobStats?.petal_ring;
     if (!ring)
         return;
     const radius = enemySize / 2;
     // Eased eye offset, mirroring drawPlayer — with the body upright, the eyes
     // are the only thing showing which way the mob is coming at you.
-    const angle = enemy.angle || 0;
-    const targetEyeX = Math.cos(angle) * 2;
-    const targetEyeY = Math.sin(angle) * 4.4;
-    let eye = enemy._eye;
-    if (!eye) {
-        eye = enemy._eye = { x: targetEyeX, y: targetEyeY };
-    }
-    else {
-        eye.x += (targetEyeX - eye.x) * 0.15;
-        eye.y += (targetEyeY - eye.y) * 0.15;
-    }
-    const petalStats = (0, core_1.getPetalStats)(ring.petalType, enemy.tier);
-    const petalKey = `${ring.petalType}_${enemy.tier}`;
+    const eye = easeMobEye(world, enemy, world.mobAngle(enemy));
+    const tier = world.mobTier(enemy);
+    const petalStats = (0, core_1.getPetalStats)(ring.petalType, tier);
+    const petalKey = `${ring.petalType}_${tier}`;
     const orbitRadius = radius * core_1.PETAL_RING_ORBIT_SCALE;
     const petalSize = radius * core_1.PETAL_RING_PETAL_SCALE * (petalStats?.size ?? 1);
     const count = Math.max(0, Math.min(16, ring.count || 0));
@@ -394,11 +408,11 @@ core_1.Graphics.prototype.drawPetalRingFlower = function (enemy, enemySize, mobS
         }
     };
     this.ctx.save();
-    if (enemy.type === 'glitch_flower') {
+    if (world.mobType(enemy) === 'glitch_flower') {
         // Wraps body AND ring, so the whole flower tears as one object. The
         // radius handed to the wrapper has to cover the ring, not just the body
         // (it sizes its buffer at radius * 2 + 24), hence the orbit scale.
-        (0, glitch_effect_1.drawBodyWithGlitch)(this, radius * (core_1.PETAL_RING_ORBIT_SCALE / 2 + 0.3), (0, glitch_effect_1.glitchSeedFor)(enemy.id), drawFlowerAndRing);
+        (0, glitch_effect_1.drawBodyWithGlitch)(this, radius * (core_1.PETAL_RING_ORBIT_SCALE / 2 + 0.3), (0, glitch_effect_1.glitchSeedFor)(world.mobId(enemy)), drawFlowerAndRing);
     }
     else {
         drawFlowerAndRing();
@@ -415,12 +429,13 @@ core_1.Graphics.prototype.getEligiblePetalTypes = function () {
     }
     return this.cachedEligiblePetalTypes;
 };
-core_1.Graphics.prototype.drawGarbagePile = function (enemy, enemySize) {
+core_1.Graphics.prototype.drawGarbagePile = function (world, enemy, enemySize) {
     // Get base size for hitbox calculation
-    const mobStats = (0, core_1.getMobStats)(enemy.type, enemy.tier);
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(enemy.isPet, enemy.tier);
+    const tier = world.mobTier(enemy);
+    const mobStats = (0, core_1.getMobStats)(world.mobType(enemy), tier);
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(world.isPet(enemy), tier);
     // Use enemy position as seed for deterministic random petal selection
-    const seed = Math.floor(enemy.x * 1000 + enemy.y * 1000);
+    const seed = Math.floor(world.mobX(enemy) * 1000 + world.mobY(enemy) * 1000);
     const eligiblePetalTypes = this.getEligiblePetalTypes();
     const numPetals = 5 + Math.floor((seed % 5)); // 5-9 petals
     // Disable anti-aliasing for pixelated look
@@ -473,7 +488,7 @@ core_1.Graphics.prototype.drawGarbagePile = function (enemy, enemySize) {
     // Draw hitbox if enabled
     if (this.showHitboxes) {
         const baseSize = enemySize;
-        this.ctx.strokeStyle = this.ENEMY_COLORS[enemy.tier];
+        this.ctx.strokeStyle = this.ENEMY_COLORS[tier];
         this.ctx.lineWidth = 2;
         this.ctx.globalAlpha = 1.0;
         this.ctx.shadowBlur = 0;
@@ -492,8 +507,8 @@ core_1.Graphics.prototype.drawGarbagePile = function (enemy, enemySize) {
 // health-fill roundRect stays dynamic.
 const MOB_LABEL_PAD_X = 4; // room for stroke overhang
 const MOB_LABEL_ASCENT = 14; // px above the name baseline kept in the canvas
-core_1.Graphics.prototype.getMobLabelCanvas = function (enemy, healthBarWidth, mobName) {
-    const key = `${enemy.type}_${enemy.tier}_${healthBarWidth | 0}`;
+core_1.Graphics.prototype.getMobLabelCanvas = function (cacheKey, tier, healthBarWidth, mobName) {
+    const key = `${cacheKey}_${healthBarWidth | 0}`;
     let cell = this.mobLabelCache[key];
     if (cell)
         return cell;
@@ -527,11 +542,11 @@ core_1.Graphics.prototype.getMobLabelCanvas = function (enemy, healthBarWidth, m
     cctx.roundRect(ox + MOB_LABEL_PAD_X - 1, oy + MOB_LABEL_ASCENT + 3, healthBarWidth + 2, healthBarHeight + 2, healthBarHeight / 2);
     cctx.fill();
     cctx.textAlign = 'right';
-    cctx.fillStyle = this.ENEMY_COLORS[enemy.tier];
+    cctx.fillStyle = this.ENEMY_COLORS[tier];
     cctx.font = '10px Ubuntu, sans-serif';
     cctx.strokeStyle = '#000000';
     cctx.lineWidth = 3;
-    const tierLabel = enemy.tier.charAt(0).toUpperCase() + enemy.tier.slice(1);
+    const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
     cctx.strokeText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
     cctx.fillText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
     cctx.restore();
@@ -542,29 +557,35 @@ core_1.Graphics.prototype.getMobLabelCanvas = function (enemy, healthBarWidth, m
 // Drawn in world coordinates under the camera transform — no save/translate/
 // restore of its own (a second per-mob save() pair showed up hot under CPU
 // throttling). Steady-state cost is one drawImage + one roundRect fill.
-core_1.Graphics.prototype.drawEnemyHealthBar = function (enemy, enemySize) {
-    const mobStats = enemy._mobStats ?? (0, core_1.getMobStats)(enemy.type, enemy.tier);
-    const mobName = mobStats ? mobStats.name : `${enemy.tier} ${enemy.type}`;
+core_1.Graphics.prototype.drawEnemyHealthBar = function (world, enemy, enemySize) {
+    const enemyX = world.mobX(enemy);
+    const enemyY = world.mobY(enemy);
+    const enemyType = world.mobType(enemy);
+    const enemyTier = world.mobTier(enemy);
+    const mobStats = (0, core_1.getMobStats)(enemyType, enemyTier);
+    const mobName = mobStats ? mobStats.name : `${enemyTier} ${enemyType}`;
     const minHealthBarWidth = 60; // Minimum size: common hornet (size 1.0 * 40 * visual_scale 1.5)
     const healthBarWidth = Math.max(enemySize, minHealthBarWidth);
     const healthBarHeight = 8;
-    const healthBarY = enemy.y + enemySize / 2 + 8;
+    const healthBarY = enemyY + enemySize / 2 + 8;
     const radius = healthBarHeight / 2;
     const nameY = healthBarY - 4;
     // Baked name + rarity + bar-background overlay (see getMobLabelCanvas),
     // blitted 1:1 from its shared-atlas cell.
-    const label = this.getMobLabelCanvas(enemy, healthBarWidth, mobName);
-    this.ctx.drawImage(label.canvas, label.sx, label.sy, label.w, label.h, enemy.x - healthBarWidth / 2 - MOB_LABEL_PAD_X, nameY - MOB_LABEL_ASCENT, label.w, label.h);
+    const label = this.getMobLabelCanvas(world.mobCacheKey(enemy), enemyTier, healthBarWidth, mobName);
+    this.ctx.drawImage(label.canvas, label.sx, label.sy, label.w, label.h, enemyX - healthBarWidth / 2 - MOB_LABEL_PAD_X, nameY - MOB_LABEL_ASCENT, label.w, label.h);
     // Health bar fill (rounded) - same green as player health bar
-    const clampedHealth = Math.max(0, Math.min(enemy.health, enemy.maxHealth));
-    const healthFillWidth = (clampedHealth / enemy.maxHealth) * healthBarWidth;
+    const maxHealth = world.mobMaxHealth(enemy);
+    const clampedHealth = Math.max(0, Math.min(world.mobHealth(enemy), maxHealth));
+    const healthFillWidth = (clampedHealth / maxHealth) * healthBarWidth;
     this.ctx.fillStyle = '#73ff54';
     this.ctx.beginPath();
-    this.ctx.roundRect(enemy.x - healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
+    this.ctx.roundRect(enemyX - healthBarWidth / 2, healthBarY, healthFillWidth, healthBarHeight, radius);
     this.ctx.fill();
     // Draw DPS for target dummies
-    if (enemy.type === 'target_dummy' && enemy.currentDPS !== undefined) {
-        const dps = enemy.currentDPS || 0;
+    const reportedDps = world.mobDps(enemy);
+    if (enemyType === 'target_dummy' && reportedDps !== undefined) {
+        const dps = reportedDps || 0;
         const formattedDPS = this.formatNumber(dps);
         const dpsText = `DPS: ${formattedDPS}`;
         this.ctx.textAlign = 'right';
@@ -573,8 +594,8 @@ core_1.Graphics.prototype.drawEnemyHealthBar = function (enemy, enemySize) {
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 2;
         const dpsY = healthBarY + healthBarHeight + 12 + 14;
-        this.ctx.strokeText(dpsText, enemy.x + healthBarWidth / 2, dpsY);
-        this.ctx.fillText(dpsText, enemy.x + healthBarWidth / 2, dpsY);
+        this.ctx.strokeText(dpsText, enemyX + healthBarWidth / 2, dpsY);
+        this.ctx.fillText(dpsText, enemyX + healthBarWidth / 2, dpsY);
         this.ctx.textAlign = 'start'; // no restore() here anymore — reset explicitly
     }
 };

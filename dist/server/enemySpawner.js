@@ -23,7 +23,7 @@ const apiKeyApi_1 = require("./apiKeyApi");
 const playerManager_1 = require("./playerManager");
 const rarity_1 = require("./shared/rarity");
 const weighted_1 = require("./shared/weighted");
-const buildEnemy_1 = require("./shared/buildEnemy");
+const enemyRegistry_1 = require("./enemyRegistry");
 const positions_1 = require("./shared/positions");
 // Sections (0-8) where all rarities have equal spawn chance
 // Section layout:
@@ -258,7 +258,12 @@ function getRandomPositionInZoneType(zoneType) {
     return { x, y };
 }
 /**
- * Create a new enemy at a valid position
+ * Create a new enemy at a valid position.
+ *
+ * The mob is ADMITTED here (entity + `enemies[]`) rather than returned for the
+ * caller to push — see server/enemyRegistry.ts. The return value is only for
+ * bookkeeping the caller still owns (the ambient-super announcement, spawn
+ * counters).
  */
 function createEnemy(helpers) {
     const playerCount = Object.keys(constants_1.players).length;
@@ -596,11 +601,13 @@ function createEnemy(helpers) {
     if (overlapsExistingMob) {
         return null;
     }
-    const enemy = (0, buildEnemy_1.buildEnemy)(mobType, tier, x, y, { reversed });
+    const enemy = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, x, y, { reversed });
     if (!enemy)
         return null;
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
-    // Spawn centipede body segments as a chain trailing the head
+    // Chain and cluster spawns come AFTER the parent is admitted, so their
+    // leader/hole references resolve to a live entity on the spot instead of
+    // waiting for a second linking pass.
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         spawnCentipedeBodySegments(enemy);
     }
@@ -800,7 +807,7 @@ function createEnemyInZone(helpers, zone) {
     });
     if (overlapsExistingMob)
         return null;
-    const enemy = (0, buildEnemy_1.buildEnemy)(mobType, tier, x, y, { reversed });
+    const enemy = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, x, y, { reversed });
     if (!enemy)
         return null;
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
@@ -821,13 +828,12 @@ function spawnInitialSpawns(parent) {
     if (!parentStats || !parentStats.initial_spawns)
         return;
     const parentRadius = (parentStats.size * 40) / 2;
+    // `parent` is a LiveEnemy, which is the type-level statement that it has
+    // already been admitted — so each child's HoleTether resolves immediately.
     for (const childType of parentStats.initial_spawns) {
         const angle = Math.random() * Math.PI * 2;
         const dist = parentRadius + 30 + Math.random() * parentRadius;
-        const child = (0, buildEnemy_1.buildEnemy)(childType, parent.tier, parent.x + Math.cos(angle) * dist, parent.y + Math.sin(angle) * dist, { parentHoleId: parent.id });
-        if (!child)
-            continue;
-        constants_1.enemies.push(child);
+        (0, enemyRegistry_1.spawnEnemy)(childType, parent.tier, parent.x + Math.cos(angle) * dist, parent.y + Math.sin(angle) * dist, { parentHoleId: parent.id });
     }
 }
 /**
@@ -836,8 +842,10 @@ function spawnInitialSpawns(parent) {
  * appears alone.
  */
 function spawnCentipedeBodySegments(head) {
-    head.headId = head.id;
-    head.segmentIndex = 0;
+    // Stamps the head's own chain fields on BOTH representations. The chain
+    // passes are ECS-owned now, so setting only the legacy fields would leave
+    // the head out of its own chain.
+    (0, enemyRegistry_1.markCentipedeHead)(head);
     const bodyType = (0, server_utils_1.getCentipedeBodyType)(head.type);
     const bodyStats = (0, mobs_1.getMobStats)(bodyType, head.tier);
     if (!bodyStats)
@@ -855,7 +863,11 @@ function spawnCentipedeBodySegments(head) {
     for (let i = 1; i <= segmentCount; i++) {
         const segX = prevX + dirX * spacing;
         const segY = prevY + dirY * spacing;
-        const segment = (0, buildEnemy_1.buildEnemy)(bodyType, head.tier, segX, segY, {
+        // Facing is passed in rather than patched on afterwards: the entity's
+        // Angle is written at construction, so a post-spawn `segment.angle = ...`
+        // would only move the legacy half and the chain would start out bent.
+        const segment = (0, enemyRegistry_1.spawnEnemy)(bodyType, head.tier, segX, segY, {
+            angle: head.angle,
             // undefined for wild centipedes, set for pet ones — either way the key exists.
             ownerId: head.ownerId,
             leaderId: prevId,
@@ -864,9 +876,6 @@ function spawnCentipedeBodySegments(head) {
         });
         if (!segment)
             break;
-        // Segments inherit the head's facing (buildEnemy defaults angle to random).
-        segment.angle = head.angle;
-        constants_1.enemies.push(segment);
         prevId = segment.id;
         prevX = segX;
         prevY = segY;
@@ -877,8 +886,13 @@ function spawnCentipedeBodySegments(head) {
  * @param tier - The tier of the mob to create
  * @param helpers - Helper functions for spawning
  * @param targetSection - Optional: specific section (0-8) to spawn in (for super bosses)
+ * @param acceptPosition - Last-moment veto on the FINAL position, evaluated just
+ *   before the mob is admitted. `spawnSpecialMobs` used to run this check on the
+ *   returned mob and drop it if the destination section already had a super —
+ *   which, now that creation also creates an entity, would leak one. The check
+ *   only ever looked at the position, so it moves in front of construction.
  */
-function createSpecialMob(tier, helpers, targetSection) {
+function createSpecialMob(tier, helpers, targetSection, acceptPosition) {
     let zoneType;
     if (tier === 'ultra') {
         // Ultras spawn in zones explicitly tagged as ultra spawn zones.
@@ -1011,29 +1025,15 @@ function createSpecialMob(tier, helpers, targetSection) {
     if (overlapsExistingMob) {
         return null;
     }
-    const currentTime = Date.now();
-    // NOTE: intentionally calls makeEnemy directly instead of buildEnemy.
-    // Special mobs (ultra/super/unique bosses) historically omit `reversed` and
-    // `lastViewportCheck`; buildEnemy would set both, changing the wire payload
-    // (see the makeEnemy docstring — concrete defaults add keys to enemySpawned/
-    // enemiesUpdate). Preserve the existing key set.
-    return (0, server_utils_1.makeEnemy)({
-        id: Math.random().toString(36).substr(2, 9),
-        type: mobType,
-        tier: tier,
-        x: position.x,
-        y: position.y,
-        angle: Math.random() * Math.PI * 2,
-        health: mobStats.health,
-        maxHealth: mobStats.health,
-        speed: mobStats.speed,
-        damage: mobStats.damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: mobStats.ai_type,
-        range: mobStats.range,
-        spawnTime: currentTime
-    });
+    // The position is final from here on, so this is where the caller's veto runs.
+    if (acceptPosition && !acceptPosition(position.x, position.y)) {
+        return null;
+    }
+    // `bossWireShape` preserves the historical key set: special mobs omit
+    // `reversed` and `lastViewportCheck`, and undefined fields are dropped by
+    // JSON.stringify, so concrete defaults would add keys to every boss packet
+    // (see the makeEnemy docstring).
+    return (0, enemyRegistry_1.spawnEnemy)(mobType, tier, position.x, position.y, { bossWireShape: true });
 }
 /**
  * Function to update special mob counts
@@ -1085,7 +1085,6 @@ function spawnSpecialMobs(helpers, io) {
     if (gameState_1.ultraMobCount.value === 0) {
         const ultraMob = createSpecialMob('ultra', helpers);
         if (ultraMob) {
-            constants_1.enemies.push(ultraMob);
             gameState_1.ultraMobCount.value = 1;
             console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
         }
@@ -1093,20 +1092,18 @@ function spawnSpecialMobs(helpers, io) {
     // Spawn super mob in each section that doesn't have one. Supers land in
     // either ultra zones (75%) or mythic zones (25%); since ultra zones aren't
     // section-bound, an iteration's spawn may land in a different section than
-    // the one we're filling. We skip and discard if the destination section is
-    // already covered, which prevents many supers from piling into the same
+    // the one we're filling. The attempt is abandoned if the destination section
+    // is already covered, which prevents many supers from piling into the same
     // ultra zone when several sections happen to roll the ultra branch.
     for (let section = 0; section < 9; section++) {
         const existingSuperMobId = (0, gameState_1.getSuperMobInSection)(section);
         if (!existingSuperMobId) {
-            const superMob = createSpecialMob('super', helpers, section);
+            // The destination-section check is a veto on the POSITION, run
+            // before the mob is built — dropping an already-admitted boss would
+            // leave its entity behind.
+            const superMob = createSpecialMob('super', helpers, section, (x, y) => !(0, gameState_1.getSuperMobInSection)(getSectionAtPosition(x, y)));
             if (superMob) {
                 const mobSection = getSectionAtPosition(superMob.x, superMob.y);
-                if ((0, gameState_1.getSuperMobInSection)(mobSection)) {
-                    // Destination section already has a super; drop this spawn.
-                    continue;
-                }
-                constants_1.enemies.push(superMob);
                 gameState_1.superMobCount.value++;
                 (0, gameState_1.setSuperMobInSection)(mobSection, superMob.id);
                 // Don't send spawn notification for target dummies
@@ -1141,7 +1138,6 @@ function spawnSpecialMobs(helpers, io) {
     if (gameState_1.superMobCount.value > 0 && gameState_1.uniqueMobCount.value === 0 && Math.random() < 0.25) {
         const uniqueMob = createSpecialMob('unique', helpers);
         if (uniqueMob) {
-            constants_1.enemies.push(uniqueMob);
             gameState_1.uniqueMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (uniqueMob.type !== 'target_dummy') {

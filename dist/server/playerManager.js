@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RARITY_TP_COSTS = exports.createInitialInventory = exports.hasItem = exports.removeItem = exports.addItem = void 0;
+exports.RARITY_TP_COSTS = exports.calculatePlayerModifiers = exports.createInitialInventory = exports.hasItem = exports.removeItem = exports.addItem = void 0;
 exports.createInitialBasicPetals = createInitialBasicPetals;
 exports.enterPvpArena = enterPvpArena;
 exports.exitPvpArena = exitPvpArena;
@@ -32,13 +32,14 @@ exports.getAbsorbingTier = getAbsorbingTier;
 exports.calculateDamageFromLevel = calculateDamageFromLevel;
 exports.getSkillMultiplier = getSkillMultiplier;
 exports.applyPetalHealthBonus = applyPetalHealthBonus;
-exports.calculatePlayerModifiers = calculatePlayerModifiers;
 exports.recalculatePlayerStats = recalculatePlayerStats;
 exports.addXPToPlayer = addXPToPlayer;
 exports.addMazeXPToPlayer = addMazeXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
 const playerWire_1 = require("./playerWire");
 const petals_1 = require("../petals");
+const playerModifiers_1 = require("./shared/playerModifiers");
+Object.defineProperty(exports, "calculatePlayerModifiers", { enumerable: true, get: function () { return playerModifiers_1.calculatePlayerModifiers; } });
 const constants_1 = require("../constants");
 const maze_1 = require("../maze");
 const petals_2 = require("../petals");
@@ -858,77 +859,6 @@ function applyPetalHealthBonus(petal, player) {
     }
 }
 /**
- * Calculate combined player modifiers from all equipped petals
- */
-function calculatePlayerModifiers(player) {
-    const modifiers = {
-        damage: 1.0,
-        maxHealth: 1.0,
-        speed: 1.0,
-        range: 1.0,
-        rotationSpeed: 1.0,
-        playerRadius: 1.0,
-        magnetism: 0,
-        luck: 1.0,
-        petalAttractionRadius: 30,
-        aggroRadius: 0,
-        poisonArmor: 0
-    };
-    if (!player.loadout)
-        return modifiers;
-    // Sum up modifiers from all equipped petals.
-    // Secondary loadout (slots 10+) is storage only — its petals contribute no modifiers.
-    for (let i = 0; i < player.loadout.length; i++) {
-        if (i >= 10)
-            break;
-        const item = player.loadout[i];
-        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
-            continue;
-        const petalStats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
-        if (!petalStats || !petalStats.playerModifiers)
-            continue;
-        const petalModifiers = petalStats.playerModifiers;
-        // Multiplicative stacking: multiply all modifiers together
-        if (petalModifiers.damage !== undefined && modifiers.damage !== undefined) {
-            modifiers.damage *= petalModifiers.damage;
-        }
-        if (petalModifiers.maxHealth !== undefined && modifiers.maxHealth !== undefined) {
-            modifiers.maxHealth *= petalModifiers.maxHealth;
-        }
-        if (petalModifiers.speed !== undefined && modifiers.speed !== undefined) {
-            modifiers.speed *= petalModifiers.speed;
-        }
-        if (petalModifiers.range !== undefined && modifiers.range !== undefined) {
-            modifiers.range *= petalModifiers.range;
-        }
-        if (petalModifiers.rotationSpeed !== undefined && modifiers.rotationSpeed !== undefined) {
-            modifiers.rotationSpeed += petalModifiers.rotationSpeed - 1;
-        }
-        if (petalModifiers.playerRadius !== undefined && modifiers.playerRadius !== undefined) {
-            modifiers.playerRadius *= petalModifiers.playerRadius;
-        }
-        if (petalModifiers.magnetism !== undefined && modifiers.magnetism !== undefined) {
-            modifiers.magnetism += petalModifiers.magnetism;
-        }
-        if (petalModifiers.luck !== undefined && modifiers.luck !== undefined) {
-            modifiers.luck += petalModifiers.luck;
-        }
-        if (petalModifiers.petalAttractionRadius !== undefined && modifiers.petalAttractionRadius !== undefined) {
-            modifiers.petalAttractionRadius += petalModifiers.petalAttractionRadius;
-        }
-        if (petalModifiers.aggroRadius !== undefined && modifiers.aggroRadius !== undefined) {
-            modifiers.aggroRadius += petalModifiers.aggroRadius;
-        }
-        // Poison armor does NOT stack: gardn takes the strongest equipped lotus
-        // (`player.poison_armor = std::fmax(...)` in Process/Flower.cc), the same
-        // way salt's damage reflection is documented as not stacking with itself.
-        if (petalModifiers.poisonArmor !== undefined && modifiers.poisonArmor !== undefined) {
-            modifiers.poisonArmor = Math.max(modifiers.poisonArmor, petalModifiers.poisonArmor);
-        }
-    }
-    return modifiers;
-}
-/**
  * Recalculate and apply player stats based on level, skills, and equipped petal modifiers
  */
 function recalculatePlayerStats(player, io) {
@@ -939,7 +869,7 @@ function recalculatePlayerStats(player, io) {
     const healthMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.playerHealth);
     const damageMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.damage);
     // Get petal modifiers
-    const petalModifiers = calculatePlayerModifiers(player);
+    const petalModifiers = (0, playerModifiers_1.calculatePlayerModifiers)(player);
     // Store old maxHealth to calculate health percentage
     const oldMaxHealth = player.maxHealth || 0;
     // Apply all multipliers (use 1.0 as fallback if modifier is undefined).

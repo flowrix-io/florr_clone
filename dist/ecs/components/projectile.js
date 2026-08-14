@@ -9,7 +9,7 @@
  * flight integration and expiry sweep are written once.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IsProjectile = exports.FromPlayer = exports.ProjectileSync = exports.ProjectileOrigin = exports.Projectile = void 0;
+exports.IsProjectile = exports.FromPlayer = exports.NetId = exports.ProjectileSync = exports.ProjectileOrigin = exports.Projectile = void 0;
 const component_1 = require("../component");
 /**
  * Flight state.
@@ -54,6 +54,23 @@ exports.ProjectileOrigin = (0, component_1.defineComponent)('ProjectileOrigin', 
 exports.ProjectileSync = (0, component_1.defineComponent)('ProjectileSync', {
     spawnTime: 'f64',
     lastSyncTime: 'f64',
+});
+/**
+ * The small monotonic number this entity is known by ON THE WIRE.
+ *
+ * Entity handles can NEVER be used for this. They pack index+generation and the
+ * index is recycled the moment an entity dies, so a client holding a projectile
+ * id would eventually see it aliased onto a completely different projectile —
+ * and projectile churn recycles slots within seconds. The counters that mint
+ * these live in server/gameState.ts and are injected at spawn.
+ *
+ * Stored as f64 rather than u32 deliberately. The counter is monotonic for the
+ * life of the process, and a u32 wrap would silently collide with an id a client
+ * still has in its map; f64 holds every integer up to 2^53, which no amount of
+ * gas/rainbow volume reaches.
+ */
+exports.NetId = (0, component_1.defineComponent)('NetId', {
+    id: 'f64',
 });
 /**
  * Fired by a player rather than a mob. Splits the two damage rules (player

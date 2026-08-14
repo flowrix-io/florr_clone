@@ -42,7 +42,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_CONFIG = void 0;
+exports.TICK_BUDGET_MS = exports.DEFAULT_CONFIG = void 0;
+exports.assertNoServerBooted = assertNoServerBooted;
 exports.runTickHarness = runTickHarness;
 exports.main = main;
 const server_utils_1 = require("../../server_utils");
@@ -174,54 +175,104 @@ function assertNoServerBooted() {
             + 'port and opens the database at module scope. Break that import before running.');
     }
 }
+/** Stand-in for `(PLAYER_SIZE / 2) * sizeMultiplier`; the real one reads legacy state. */
+const PLAYER_HIT_RADIUS = 25;
+/** One tick at 30Hz. Every timing assertion below is against this and nothing else. */
+exports.TICK_BUDGET_MS = 1000 / 30;
+/**
+ * The `q`th percentile of `sorted` by nearest-rank, which is the conservative
+ * choice: with 2000 samples p99 is the 20th-worst tick, and no interpolation
+ * smooths a spike away.
+ */
+function percentile(sorted, q) {
+    if (sorted.length === 0)
+        return 0;
+    const rank = Math.ceil(q * sorted.length);
+    return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
+}
 function runTickHarness(config = exports.DEFAULT_CONFIG) {
     assertNoServerBooted();
     const { players, enemies } = buildLegacyWorld(config);
+    let netIdCounter = 0;
+    let playerHits = 0;
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
         lookupPlayer: () => undefined,
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },
+        // Mirrors the real near-a-player test closely enough to exercise the
+        // viewport pass: mobs within a viewport-ish radius of a player stay.
+        isNearAnyPlayer: (x, y) => {
+            for (let i = 0; i < players.length; i++) {
+                const dx = players[i].x - x;
+                const dy = players[i].y - y;
+                if (dx * dx + dy * dy < 2200 * 2200)
+                    return true;
+            }
+            return false;
+        },
+        // --- projectiles ---------------------------------------------------
+        // Wire ids and the player-side hooks are broadcast/legacy concerns; the
+        // harness only needs them to be callable, since what is under test here
+        // is that the systems compose without producing a bad coordinate.
+        allocateProjectileNetId: () => ++netIdCounter,
+        resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),
+        playerRadiusOf: () => PLAYER_HIT_RADIUS,
+        damageMultiplierOf: () => 1,
+        onPlayerHit: () => { playerHits++; return true; },
+        emitEnemyDamaged: () => { },
+        onProjectileKill: () => { },
     });
     const now0 = 1000000;
     (0, ecsBridge_1.importWorld)(runtime.world, players, enemies, now0);
     const world = runtime.world;
     const positioned = world.query([C.Position]);
-    // The viewport-status pass is NOT ported yet. Without it nothing refreshes
-    // ViewportTracked, so unseenDespawn reaps every mob at the 30-second mark
-    // and the rest of the run measures an almost-empty world. Standing in for
-    // it here keeps the population realistic; remove this once the real pass
-    // exists.
-    const tracked = world.query([C.ViewportTracked]);
-    const refreshViewport = (now) => {
-        tracked.chunks(chunk => {
-            const v = chunk.cols(C.ViewportTracked);
-            for (let i = 0; i < chunk.count; i++)
-                v.lastInViewport[i] = now;
-        });
-    };
+    const projectiles = world.query([C.IsProjectile]);
+    // The viewport-status pass is now a real system (systems/viewport.ts), so
+    // the harness no longer stands in for it. Mob lifetime here is whatever the
+    // real near-a-player test decides.
     let badCoordinates = 0;
     let firstBadTick = -1;
     let maxTickMs = 0;
+    let projectilesMid = 0;
+    // Every tick is kept, not just the worst: the distribution is the finding.
+    // The array is pre-sized so the sampling never itself allocates mid-run.
+    const tickMs = new Array(config.ticks).fill(0);
     runtime.scheduler.profiling = true;
+    // Projectiles and players run on their own schedulers; without these they
+    // are absent from the tick-budget report entirely.
+    runtime.projectileScheduler.profiling = true;
+    runtime.playerScheduler.profiling = true;
     const startingEntities = world.size();
     // Warm up the JIT before timing.
     for (let t = 0; t < 60; t++) {
         const now = now0 + t * (1000 / 30);
-        refreshViewport(now);
+        // Players first, matching runSimulationStep: the movement window opens
+        // before the mob tick, not inside it.
+        runtime.tickPlayers(1 / 30, 1000 / 30, now);
         runtime.tick(1 / 30, 1000 / 30, now);
+        runtime.tickProjectiles(1000 / 30, now);
     }
     runtime.scheduler.drainTimings();
+    runtime.projectileScheduler.drainTimings();
+    runtime.playerScheduler.drainTimings();
     const heapBefore = process.memoryUsage().heapUsed;
     const started = performance.now();
     for (let t = 0; t < config.ticks; t++) {
         const now = now0 + (60 + t) * (1000 / 30);
-        refreshViewport(now);
         const tickStart = performance.now();
+        runtime.tickPlayers(1 / 30, 1000 / 30, now);
         runtime.tick(1 / 30, 1000 / 30, now);
+        // Exactly once per simulation step, with the real elapsed time — the
+        // same split server.ts uses. Mob volleys leak entities forever without
+        // it, because flight is what retires a projectile.
+        runtime.tickProjectiles(1000 / 30, now);
         const elapsed = performance.now() - tickStart;
+        tickMs[t] = elapsed;
         if (elapsed > maxTickMs)
             maxTickMs = elapsed;
+        if (t === (config.ticks >> 1))
+            projectilesMid = projectiles.count();
         // The composition check: nothing may drift to a coordinate that breaks
         // the grid loops or renders as NaN.
         positioned.chunks(chunk => {
@@ -241,17 +292,38 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
     }
     const totalMs = performance.now() - started;
     const heapMB = (process.memoryUsage().heapUsed - heapBefore) / (1024 * 1024);
-    const timings = runtime.scheduler.drainTimings()
-        .map(t => ({ name: t.name, avgMs: t.avgMs, maxMs: t.maxMs }));
+    // Sorted after the run, never during it — sorting inside the loop would add
+    // its own cost to the very samples being measured.
+    const sortedTicks = tickMs.slice().sort((a, b) => a - b);
+    let overBudgetTicks = 0;
+    for (let i = sortedTicks.length - 1; i >= 0; i--) {
+        if (sortedTicks[i] <= exports.TICK_BUDGET_MS)
+            break;
+        overBudgetTicks++;
+    }
+    const timings = [
+        ...runtime.scheduler.drainTimings(),
+        ...runtime.projectileScheduler.drainTimings(),
+        ...runtime.playerScheduler.drainTimings(),
+    ]
+        .map(t => ({ name: t.name, avgMs: t.avgMs, maxMs: t.maxMs }))
+        .sort((a, b) => b.avgMs - a.avgMs);
     return {
         ticks: config.ticks,
         startingEntities,
         entities: world.size(),
         msPerTick: totalMs / config.ticks,
         maxTickMs,
+        p50TickMs: percentile(sortedTicks, 0.50),
+        p95TickMs: percentile(sortedTicks, 0.95),
+        p99TickMs: percentile(sortedTicks, 0.99),
+        overBudgetTicks,
         heapMB,
         badCoordinates,
         firstBadTick,
+        projectilesMid,
+        projectilesEnd: projectiles.count(),
+        playerHits,
         timings,
     };
 }
@@ -261,23 +333,75 @@ function main() {
     const result = runTickHarness();
     console.log(`entities:      ${result.startingEntities} at start -> ${result.entities} after the run`);
     console.log(`ticks:         ${result.ticks}`);
-    console.log(`mean tick:     ${result.msPerTick.toFixed(3)} ms   (budget 33.3 ms at 30Hz)`);
-    console.log(`worst tick:    ${result.maxTickMs.toFixed(3)} ms`);
+    console.log(`mean tick:     ${result.msPerTick.toFixed(3)} ms   (budget ${exports.TICK_BUDGET_MS.toFixed(1)} ms at 30Hz)`);
+    console.log(`tick p50/p95:  ${result.p50TickMs.toFixed(3)} / ${result.p95TickMs.toFixed(3)} ms`);
+    console.log(`tick p99:      ${result.p99TickMs.toFixed(3)} ms   <- asserted`);
+    console.log(`worst tick:    ${result.maxTickMs.toFixed(3)} ms   (reported, not asserted)`);
+    console.log(`over budget:   ${result.overBudgetTicks} of ${result.ticks} ticks `
+        + `(${(100 * result.overBudgetTicks / result.ticks).toFixed(2)}%)`);
     console.log(`heap growth:   ${result.heapMB.toFixed(1)} MB over the run`);
     console.log(`bad coords:    ${result.badCoordinates}${result.firstBadTick >= 0 ? ` (first at tick ${result.firstBadTick})` : ''}`);
+    console.log(`projectiles:   ${result.projectilesMid} at half-way -> ${result.projectilesEnd} at the end   (${result.playerHits} player hits)`);
     console.log('\nper-system (mean ms/call, slowest first):');
     for (const t of result.timings) {
         console.log(`  ${t.name.padEnd(22)} ${t.avgMs.toFixed(4)}   max ${t.maxMs.toFixed(3)}`);
     }
+    // Collected rather than returned on: a run that both spikes and leaks should
+    // report both, and stopping at the first finding is how the mean-only
+    // assertion managed to hide everything behind it for so long.
+    const failures = [];
     if (result.badCoordinates > 0) {
-        console.error('\nFAIL: entities reached non-finite or absurd coordinates.');
+        failures.push('entities reached non-finite or absurd coordinates.');
+    }
+    if (result.msPerTick > exports.TICK_BUDGET_MS) {
+        failures.push(`mean tick ${result.msPerTick.toFixed(3)} ms exceeds the `
+            + `${exports.TICK_BUDGET_MS.toFixed(1)} ms budget.`);
+    }
+    // The assertion the mean cannot make. p99 over budget means roughly one
+    // stuttering tick every three seconds of play, for every player on the box.
+    if (result.p99TickMs > exports.TICK_BUDGET_MS) {
+        failures.push(`p99 tick ${result.p99TickMs.toFixed(3)} ms exceeds the `
+            + `${exports.TICK_BUDGET_MS.toFixed(1)} ms budget — one tick in a hundred stutters.`);
+    }
+    // And the assertion p99 cannot make. 2000 ticks hide twenty spikes below
+    // p99, so a run can drop frames repeatedly with a healthy p99. There is no
+    // budget under which a 100ms tick is fine; if this fires, find the spike
+    // rather than raising the number.
+    //
+    // Reading the per-system table when it does fire: a spike belonging to ONE
+    // system shows up as that system's `max` accounting for the whole overshoot
+    // while every other system's max stays at its usual value — that is an
+    // algorithmic outlier and it is fixable in that system. A spike where the
+    // two heaviest systems are BOTH elevated and their maxes sum to roughly the
+    // whole tick is a process-wide stall (GC, compaction) that happened to
+    // straddle them; the lead there is the run's heap growth, not the systems.
+    // The worst tick is REPORTED, never asserted on.
+    //
+    // It was briefly a hard failure, and both reviewers rejected that for the
+    // right reason: the max is exactly the quantity that spikes, so asserting on
+    // it turns a required gate into a coin flip. A gate that fails at random is
+    // worse than one that is too lenient — it trains everyone to ignore the
+    // gate, and then it stops catching the thing it was added for. p99 above is
+    // the stable statistic and it is the one that fails the build.
+    if (result.maxTickMs > exports.TICK_BUDGET_MS) {
+        console.warn(`\n  NOTE: worst tick ${result.maxTickMs.toFixed(3)} ms exceeded the `
+            + `${exports.TICK_BUDGET_MS.toFixed(1)} ms budget (${result.overBudgetTicks} tick(s) over) — `
+            + Math.ceil(result.maxTickMs / exports.TICK_BUDGET_MS) + ' frame(s) dropped in one go.\n'
+            + '  Not a failure: single spikes are usually GC. If p99 is also near '
+            + 'budget, or the per-system maxes show ONE system elevated, it is '
+            + 'algorithmic and worth chasing.');
+    }
+    // Projectiles must reach a steady state. Unbounded growth means nothing is
+    // retiring them, which also grows grid.ensureStampCapacity every tick.
+    if (result.projectilesEnd > result.projectilesMid * 2 + 100) {
+        failures.push('projectile population is still growing — they are not being retired.');
+    }
+    if (failures.length > 0) {
+        console.error(`\n${failures.length} FAILURE(S):`);
+        for (const f of failures)
+            console.error('  FAIL: ' + f);
         process.exitCode = 1;
         return;
     }
-    if (result.msPerTick > 33.3) {
-        console.error('\nFAIL: mean tick exceeds the 30Hz budget.');
-        process.exitCode = 1;
-        return;
-    }
-    console.log('\nOK: simulation stable, within tick budget.');
+    console.log('\nOK: simulation stable, mean and p99 within budget.');
 }

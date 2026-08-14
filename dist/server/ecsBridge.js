@@ -3,14 +3,25 @@
  * Legacy <-> ECS entity bridge.
  *
  * Converts the game's existing `Enemy` and `ServerPlayer` objects into ECS
- * entities. This is what actually populates the world — until spawners write
- * through here, every system has nothing to iterate.
+ * entities.
  *
  * The important work is not copying fields, it is choosing the ARCHETYPE:
  * a plain mob must NOT carry Wander/Wobble/PassiveMotion/HoleTether, because
  * the AI and drift systems route on exactly those components. Getting it wrong
  * fails silently — a bee without Wobble runs the stop-and-go machine and simply
  * stops looking like a bee.
+ *
+ * Since the spawn cutover this file has two distinct users, and the difference
+ * matters:
+ *
+ *   - `attachMobBehaviour` / `linkEnemyReferences` are the ARCHETYPE DECISION,
+ *     shared with server/enemyRegistry.ts so a mob built at spawn time and a mob
+ *     adopted from a legacy snapshot end up with the same shape. There is one
+ *     decision per component, here.
+ *   - `importEnemy` / `importWorld` ADOPT an existing legacy object. That is now
+ *     only the harness (which builds a legacy world on purpose) and the
+ *     orphan-adoption safety net in ecsSync. The live game does not import mobs
+ *     any more — they are born as entities.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -36,7 +47,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.aiTypeOf = aiTypeOf;
 exports.radiusOf = radiusOf;
+exports.attachMobBehaviour = attachMobBehaviour;
 exports.importEnemy = importEnemy;
 exports.linkEnemyReferences = linkEnemyReferences;
 exports.importPlayer = importPlayer;
@@ -64,11 +77,47 @@ function radiusOf(enemy, stats) {
     return base * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier);
 }
 /**
- * Create an ECS entity mirroring `enemy`.
+ * Add the optional behaviour components a mob's TYPE and STATE call for.
  *
- * Optional behaviour components are added only for the mobs that use them, so
- * the common archetype stays narrow and the per-tick passes iterate the
- * smallest possible set.
+ * This is the archetype decision for everything `spawnMob` deliberately leaves
+ * out, and it is shared by both entity-creation paths (birth in
+ * enemyRegistry.spawnEnemy, adoption in importEnemy below). Keeping it in one
+ * place is what stops a spawned bee and an adopted bee from having different
+ * shapes — a difference that would show up as one of them silently running the
+ * wrong movement machine.
+ *
+ * Reference-typed relationships (owner, hole, chain) are NOT here: they need
+ * other entities to exist, so they go through `linkEnemyReferences`.
+ */
+function attachMobBehaviour(world, entity, enemy, now) {
+    // Passive drift: only mobs that can actually move idle-drift.
+    if (enemy.speed > 0) {
+        world.add(entity, C.PassiveMotion, {
+            state: enemy.passiveState === 'moving' ? 1 /* C.PassiveState.Moving */ : 0 /* C.PassiveState.Idle */,
+            stateStart: enemy.passiveStateStart ?? now,
+        });
+        world.add(entity, C.IsIdle);
+        world.write(entity, C.Velocity, { x: enemy.velX ?? 0, y: enemy.velY ?? 0 });
+    }
+    // The bee cruise machine is selected by the Wobble component.
+    if (BEE_FLIGHT_TYPES.has(enemy.type)) {
+        world.add(entity, C.Wobble, { phase: enemy.wobblePhase ?? Math.random() * Math.PI * 2 });
+    }
+    if (enemy.reversed !== undefined) {
+        world.add(entity, C.RenderFlip, { flipped: enemy.reversed ? 1 : 0 });
+    }
+    if (enemy.despawnAt) {
+        world.add(entity, C.Expires, { at: enemy.despawnAt });
+    }
+}
+/**
+ * Create an ECS entity mirroring an EXISTING legacy `enemy`.
+ *
+ * Adoption, not birth: it copies mid-life state (wander target, knockback,
+ * attack timers, DPS history) that a freshly spawned mob does not have. The
+ * live game spawns mobs through enemyRegistry.spawnEnemy instead; this remains
+ * for the tick harness's legacy-world import and for ecsSync's orphan-adoption
+ * safety net.
  */
 function importEnemy(world, enemy, now) {
     const stats = enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
@@ -98,19 +147,7 @@ function importEnemy(world, enemy, now) {
     if (enemy.slowUntil !== undefined) {
         world.add(entity, C.Slowed, { until: enemy.slowUntil });
     }
-    // Passive drift: only mobs that can actually move idle-drift.
-    if (enemy.speed > 0) {
-        world.add(entity, C.PassiveMotion, {
-            state: enemy.passiveState === 'moving' ? 1 /* C.PassiveState.Moving */ : 0 /* C.PassiveState.Idle */,
-            stateStart: enemy.passiveStateStart ?? now,
-        });
-        world.add(entity, C.IsIdle);
-        world.write(entity, C.Velocity, { x: enemy.velX ?? 0, y: enemy.velY ?? 0 });
-    }
-    // The bee cruise machine is selected by the Wobble component.
-    if (BEE_FLIGHT_TYPES.has(enemy.type)) {
-        world.add(entity, C.Wobble, { phase: enemy.wobblePhase ?? Math.random() * Math.PI * 2 });
-    }
+    attachMobBehaviour(world, entity, enemy, now);
     if (enemy.wanderTargetX !== undefined) {
         world.add(entity, C.Wander, {
             targetX: enemy.wanderTargetX,
@@ -127,14 +164,8 @@ function importEnemy(world, enemy, now) {
             lastMeleeAttackTime: enemy.lastMeleeAttackTime ?? 0,
         });
     }
-    if (enemy.reversed !== undefined) {
-        world.add(entity, C.RenderFlip, { flipped: enemy.reversed ? 1 : 0 });
-    }
     if (enemy.damageContributors) {
         world.add(entity, C.DamageContributors, { byPlayer: enemy.damageContributors });
-    }
-    if (enemy.despawnAt) {
-        world.add(entity, C.Expires, { at: enemy.despawnAt });
     }
     if (enemy.lastPeriodicSpawnTime !== undefined) {
         world.add(entity, C.PeriodicSpawner, { lastSpawnTime: enemy.lastPeriodicSpawnTime });
@@ -147,27 +178,30 @@ function importEnemy(world, enemy, now) {
             currentDPS: enemy.currentDPS ?? 0,
         });
     }
-    if (enemy.challengeOwnerId) {
-        world.add(entity, C.ChallengeMob, {
-            owner: ecs_1.NULL_ENTITY, // resolved by linkEnemyReferences
-            starsReward: enemy.challengeStarsReward ?? 0,
-        });
-    }
+    // ChallengeMob is added by linkEnemyReferences, which is where the buyer's
+    // entity can actually be resolved.
     return entity;
 }
 /**
  * Resolve the id-based cross-references an enemy carries into entity handles.
  *
- * Must run as a SECOND pass, after every enemy has an entity: a centipede
- * segment can reference a leader that has not been imported yet, and a pet's
- * owner may be imported after it.
+ * When ADOPTING a snapshot this must run as a SECOND pass, after every enemy
+ * has an entity: a centipede segment can reference a leader that has not been
+ * imported yet. At SPAWN time no second pass is needed — a chain's head is
+ * admitted before its segments and a hole before its guardians — so
+ * enemyRegistry calls this inline.
+ *
+ * `resolveOwner` exists because a pet's owner is a PLAYER, and a player who
+ * acted on their very first tick may not have been imported yet. Passing
+ * `ensurePlayerEntity` here imports them on demand; without it the pet would
+ * carry `owner: NULL_ENTITY` forever, since nothing re-links after spawn.
  */
-function linkEnemyReferences(world, enemy) {
+function linkEnemyReferences(world, enemy, resolveOwner) {
     const entity = world.lookup(enemy.id);
     if (entity === undefined)
         return;
     if (enemy.ownerId) {
-        const owner = world.lookup(enemy.ownerId);
+        const owner = resolveOwner ? resolveOwner(enemy.ownerId) : world.lookup(enemy.ownerId);
         world.add(entity, C.PetOwner, {
             owner: owner ?? ecs_1.NULL_ENTITY,
             image: enemy.petImage ?? '',
@@ -187,6 +221,16 @@ function linkEnemyReferences(world, enemy) {
             leader: enemy.leaderId ? (world.lookup(enemy.leaderId) ?? ecs_1.NULL_ENTITY) : ecs_1.NULL_ENTITY,
             head: enemy.headId ? (world.lookup(enemy.headId) ?? entity) : entity,
             segmentIndex: enemy.segmentIndex ?? 0,
+        });
+    }
+    if (enemy.challengeOwnerId) {
+        // Resolved here rather than in importEnemy for the same reason as the
+        // others: the buyer may not have an entity yet at construction time.
+        world.add(entity, C.ChallengeMob, {
+            owner: (resolveOwner
+                ? resolveOwner(enemy.challengeOwnerId)
+                : world.lookup(enemy.challengeOwnerId)) ?? ecs_1.NULL_ENTITY,
+            starsReward: enemy.challengeStarsReward ?? 0,
         });
     }
     if (enemy.targetPlayerId) {
@@ -227,6 +271,12 @@ function importPlayer(world, player, now, lobby = false) {
         inventory: player.inventory,
         loadout: player.loadout,
         lobby,
+        // The `bot_` id prefix is the de facto tag across the whole server
+        // (playerState's spawn-budget and streaming exclusions, the spawners,
+        // squads, chat), so it stays authoritative and this MIRRORS it rather
+        // than replacing it. Until it is set, every ECS-side bot query returns
+        // empty — which is a silent wrong answer, not an error.
+        bot: player.id.startsWith('bot_'),
         now,
     });
     world.write(entity, C.Velocity, { x: player.velocityX, y: player.velocityY });

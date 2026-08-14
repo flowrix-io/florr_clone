@@ -57,7 +57,6 @@ exports.runGridBench = runGridBench;
 const server_utils_1 = require("../../server_utils");
 const mobs_1 = require("../../mobs");
 const enemyGrid_1 = require("../../server/enemyGrid");
-const constants_1 = require("../../constants");
 const C = __importStar(require("../components"));
 const world_1 = require("../world");
 const prefabs_1 = require("../prefabs");
@@ -123,10 +122,14 @@ function buildQueries(count, extent, radius, seed) {
 }
 /** Baseline: the production grid over real Enemy objects. */
 function runBaseline(specs, queries, ticks) {
-    constants_1.enemies.length = 0;
+    // A LOCAL array, not the game's `enemies`: that one is `LiveEnemy[]` now
+    // (membership means "has an ECS entity"), and a benchmark has no business
+    // pushing statues into it. rebuildEnemyGrid takes the array as a parameter,
+    // so the measurement is identical.
+    const enemies = [];
     for (let i = 0; i < specs.length; i++) {
         const s = specs[i];
-        constants_1.enemies.push((0, server_utils_1.makeEnemy)({
+        enemies.push((0, server_utils_1.makeEnemy)({
             id: `bench-${i}`,
             type: s.type,
             tier: s.tier,
@@ -143,7 +146,7 @@ function runBaseline(specs, queries, ticks) {
     let hits = 0;
     // Warm up: JIT the loops and populate the lazy _radius/_mobStats caches.
     for (let t = 0; t < 20; t++) {
-        (0, enemyGrid_1.rebuildEnemyGrid)(constants_1.enemies);
+        (0, enemyGrid_1.rebuildEnemyGrid)(enemies);
         for (const q of queries)
             (0, enemyGrid_1.queryEnemiesNear)(q.x, q.y, q.radius, out);
     }
@@ -151,7 +154,7 @@ function runBaseline(specs, queries, ticks) {
     const heapBefore = process.memoryUsage().heapUsed;
     const start = performance.now();
     for (let t = 0; t < ticks; t++) {
-        (0, enemyGrid_1.rebuildEnemyGrid)(constants_1.enemies);
+        (0, enemyGrid_1.rebuildEnemyGrid)(enemies);
         for (const q of queries) {
             (0, enemyGrid_1.queryEnemiesNear)(q.x, q.y, q.radius, out);
             // Narrow phase, exactly as real callers do it.
@@ -167,7 +170,7 @@ function runBaseline(specs, queries, ticks) {
     }
     const elapsed = performance.now() - start;
     const heapGrowth = process.memoryUsage().heapUsed - heapBefore;
-    constants_1.enemies.length = 0;
+    enemies.length = 0;
     return {
         label: 'baseline (enemyGrid.ts + Enemy objects)',
         msPerTick: elapsed / ticks,

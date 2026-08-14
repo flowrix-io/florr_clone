@@ -16,6 +16,11 @@
  *   projectile    mob + player projectiles, unified
  *   player        the old ServerPlayer interface, decomposed
  *   world_objects drops, ground effects, scenery, walls
+ *   petal         the petal ring, which hangs off the player
+ *
+ * APPEND new groups at the END. Ids are positional, so inserting one in the
+ * middle renumbers every component after it — harmless for archetypes (they are
+ * rebuilt from the same ids) but not for anything that has cached an id.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -39,3 +44,4 @@ __exportStar(require("./mob"), exports);
 __exportStar(require("./projectile"), exports);
 __exportStar(require("./player"), exports);
 __exportStar(require("./world_objects"), exports);
+__exportStar(require("./petal"), exports);

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerProjectiles = exports.mobProjectiles = exports.playerUserIds = exports.lobbyPlayers = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
+exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerUserIds = exports.lobbyPlayers = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
 exports.setSuperMobInSection = setSuperMobInSection;
 exports.getSuperMobInSection = getSuperMobInSection;
 exports.clearSuperMobFromSection = clearSuperMobFromSection;
@@ -13,8 +13,6 @@ exports.initializeMapObstacles = initializeMapObstacles;
 exports.getPlayers = getPlayers;
 exports.getEnemies = getEnemies;
 exports.getItems = getItems;
-exports.getMobProjectiles = getMobProjectiles;
-exports.getPlayerProjectiles = getPlayerProjectiles;
 exports.setEnemyCount = setEnemyCount;
 exports.getEnemyCount = getEnemyCount;
 const constants_1 = require("../constants");
@@ -121,8 +119,6 @@ function hasCorruptedPlayers() {
     return corruptedPlayerIds.size > 0;
 }
 exports.playerUserIds = {}; // Maps player ID to user ID
-exports.mobProjectiles = []; // Track all active mob projectiles
-exports.playerProjectiles = []; // Track all active player projectiles
 exports.petalLastProjectileTime = new Map(); // Track last projectile time per petal instance
 exports.petalLastRadiationTime = new Map(); // Track last radiation pulse per petal instance (uranium)
 // Delta sync: for each player, the set of projectile IDs they currently "know about" (i.e. were
@@ -132,6 +128,11 @@ exports.knownMobProjectilesByPlayer = new Map();
 exports.knownPlayerProjectilesByPlayer = new Map();
 // Monotonic counters for projectile IDs. Numeric IDs encode as 1-5 bytes in the binary codec
 // versus ~52 bytes for a 50-char string ID — a huge win for high-volume petals (gas/rainbow).
+//
+// The projectiles themselves are ECS entities (src/ecs/systems/projectileCollision.ts); these
+// counters stay here because an ENTITY HANDLE can never be a wire id — handles pack
+// index+generation and the index is recycled within seconds under projectile churn, so a
+// client would eventually see one alias a different projectile. See components/projectile.ts.
 let _nextMobProjectileId = 1;
 let _nextPlayerProjectileId = 1;
 function allocateMobProjectileId() { return _nextMobProjectileId++; }
@@ -194,12 +195,6 @@ function getEnemies() {
 }
 function getItems() {
     return exports.items;
-}
-function getMobProjectiles() {
-    return exports.mobProjectiles;
-}
-function getPlayerProjectiles() {
-    return exports.playerProjectiles;
 }
 function setEnemyCount(count) {
     _ENEMY_COUNT = count;

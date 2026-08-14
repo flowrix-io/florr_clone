@@ -3,17 +3,42 @@
 // Bots are regular ServerPlayer objects inserted into the shared `players` dict,
 // so the existing tick, rendering, combat, and petal systems handle them with no
 // special-casing beyond skipping save/save-game paths (no socket/userId).
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_BOT_COUNT = void 0;
 exports.setTargetBotCount = setTargetBotCount;
 exports.getTargetBotCount = getTargetBotCount;
 exports.initializeBotGuilds = initializeBotGuilds;
 exports.isBot = isBot;
+exports.botRosterCounts = botRosterCounts;
 exports.getBotLevelForName = getBotLevelForName;
 exports.getBotLoadoutForName = getBotLoadoutForName;
 exports.removeAllBots = removeAllBots;
 exports.maintainBotCount = maintainBotCount;
 exports.triggerBotRaid = triggerBotRaid;
+exports.registerBotInputSystem = registerBotInputSystem;
 exports.updateBotAI = updateBotAI;
 const playerWire_1 = require("./playerWire");
 const constants_1 = require("../constants");
@@ -21,12 +46,42 @@ const map_data_1 = require("../map_data");
 const petals_1 = require("../petals");
 const mobs_1 = require("../mobs");
 const enemyGrid_1 = require("./enemyGrid");
-const playerManager_1 = require("./playerManager");
 const gameState_1 = require("./gameState");
 const squadManager_1 = require("./squadManager");
-const guildManager_1 = require("./guildManager");
-const petal_actions_1 = require("../petal_actions");
 const rarity_1 = require("./shared/rarity");
+const botReach_1 = require("./bots/botReach");
+const ecs_1 = require("../ecs");
+const C = __importStar(require("../ecs/components"));
+const ecsSync_1 = require("./ecsSync");
+// ---------------------------------------------------------------------------
+// The two imports that are deliberately LAZY
+// ---------------------------------------------------------------------------
+// `./playerManager` reaches server/utils.ts, which imports petal_actions.ts and
+// server/playerState.ts at module scope — and both of those bind port 3000 and
+// open the account database on require. `./guildManager` imports ../database
+// directly. Between them they made merely REQUIRING this file start a second
+// live game server on the port the real one is using, which is why no gate could
+// ever drive bot AI and why every claim about bot behaviour in this file was
+// unverifiable.
+//
+// Neither is needed by the per-tick decision path: both are reached only from
+// bot CREATION and RESPAWN (spawn positions, level curves, starting inventory,
+// guild names). Deferring them to those call sites makes `require('botManager')`
+// side-effect free, which is what `ecs/bench/bot_cutover_check.ts` relies on —
+// and that gate asserts it, so the edge cannot quietly come back.
+//
+// Deferring does NOT reorder anything inside the circular petal_actions <-> server
+// graph: by the time a bot is created the tick loop is running and server.ts has
+// long since pulled both modules into the require cache. The require order in the
+// live server is unchanged either way.
+function population() {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('./playerManager');
+}
+function guilds() {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('./guildManager');
+}
 const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
@@ -162,12 +217,12 @@ const BOT_GUILDS = [
     },
 ];
 function initializeBotGuilds() {
-    (0, guildManager_1.clearBotGuilds)();
+    guilds().clearBotGuilds();
     for (const def of BOT_GUILDS) {
         if (def.members.length === 0)
             continue;
         const [leader, ...rest] = def.members;
-        (0, guildManager_1.registerBotGuild)(def.name, leader, rest);
+        guilds().registerBotGuild(def.name, leader, rest);
     }
 }
 const botAIState = new Map();
@@ -252,6 +307,110 @@ const BOSS_SHOUT_TEMPLATES_UNIQUE = [
 ];
 function isBot(id) {
     return id.startsWith(BOT_ID_PREFIX);
+}
+// ---------------------------------------------------------------------------
+// The bot roster
+// ---------------------------------------------------------------------------
+/**
+ * This tick's bots, resolved from the ECS rather than by scanning `players`.
+ *
+ * `C.IsBot` existed before this change and was even set correctly, but NOTHING
+ * read it: every bot enumeration in this file was `for (const id in players)`
+ * plus a `bot_` prefix test. A tag nobody reads is a tag that can silently stop
+ * being set — the failure mode would be an empty ECS-side bot query and a wrong
+ * answer rather than an error. Driving the roster off the query makes the tag
+ * load-bearing, and `ecs/bench/bot_cutover_check.ts` pins the two definitions of
+ * "is a bot" to each other.
+ *
+ * The `bot_` prefix stays authoritative on the LEGACY side (playerState's
+ * spawn-budget and streaming exclusions, the spawners, squads, chat all test it,
+ * and none of them have a world handle). This is a second view of the same
+ * fact, kept honest by the check below rather than by hope.
+ *
+ * Rebuilt once per bot tick into a reused array. That is also strictly less work
+ * than what it replaces: `driveMove` alone re-scanned every key of `players` for
+ * every bot, every tick.
+ */
+const botRoster = [];
+let botQuery;
+let botQueryWorld;
+/** Rate limit for the roster-disagreement warning; it would otherwise be per tick. */
+let rosterMismatchLogged = 0;
+/**
+ * Refill `botRoster` from the ECS.
+ *
+ * Falls back to the prefix scan when the two disagree, and says so. A live game
+ * must not stop running bots because a tag regressed, but the disagreement has
+ * to be findable — and in the gate it is fatal, not a warning.
+ */
+function rebuildBotRoster(world) {
+    if (botQueryWorld !== world || botQuery === undefined) {
+        botQuery = world.query([C.IsPlayer, C.IsBot], [C.IsLobby]);
+        botQueryWorld = world;
+    }
+    botRoster.length = 0;
+    botQuery.chunks(chunk => {
+        const entities = chunk.entities;
+        for (let i = 0; i < chunk.count; i++) {
+            const id = world.externalIdOf(entities[i]);
+            if (id === undefined)
+                continue;
+            // A bot removed earlier this tick still has an entity until the mob
+            // window's syncToEcs reaps it. Its ServerPlayer is already gone, and
+            // it must not be driven.
+            const bot = constants_1.players[id];
+            if (bot !== undefined)
+                botRoster.push(bot);
+        }
+    });
+    let prefixCount = 0;
+    for (const id in constants_1.players)
+        if (isBot(id))
+            prefixCount++;
+    if (botRoster.length === prefixCount)
+        return;
+    if (rosterMismatchLogged < 5) {
+        rosterMismatchLogged++;
+        console.warn(`[bots] ECS roster (${botRoster.length}) disagrees with the bot_ prefix `
+            + `(${prefixCount}). C.IsBot is not being set for every bot — see `
+            + 'server/ecsBridge.importPlayer. Falling back to the prefix scan.');
+    }
+    botRoster.length = 0;
+    for (const id in constants_1.players) {
+        if (!isBot(id))
+            continue;
+        const bot = constants_1.players[id];
+        if (bot !== undefined)
+            botRoster.push(bot);
+    }
+}
+/**
+ * The two definitions of "is a bot", counted independently. For the gate.
+ *
+ * `ecs` is the C.IsBot query BEFORE the prefix fallback kicks in; `prefix` is
+ * the legacy `bot_` test. `ecs/bench/bot_cutover_check.ts` requires them equal,
+ * which is what makes the tag load-bearing: the fallback keeps a live server
+ * running when they diverge, and this makes CI refuse to ship the divergence.
+ */
+function botRosterCounts(world) {
+    if (botQueryWorld !== world || botQuery === undefined) {
+        botQuery = world.query([C.IsPlayer, C.IsBot], [C.IsLobby]);
+        botQueryWorld = world;
+    }
+    let ecs = 0;
+    botQuery.chunks(chunk => {
+        const entities = chunk.entities;
+        for (let i = 0; i < chunk.count; i++) {
+            const id = world.externalIdOf(entities[i]);
+            if (id !== undefined && constants_1.players[id] !== undefined)
+                ecs++;
+        }
+    });
+    let prefix = 0;
+    for (const id in constants_1.players)
+        if (isBot(id))
+            prefix++;
+    return { ecs, prefix };
 }
 function generateBotId() {
     return BOT_ID_PREFIX + Math.random().toString(36).substring(2, 10);
@@ -644,13 +803,11 @@ function unequipYggdrasilSlot(bot, state) {
 // carrying a revive petal when the bot is alone.
 function hasNearbyBotBuddy(bot, range = YGGDRASIL_BUDDY_RANGE) {
     const rSq = range * range;
-    for (const id in constants_1.players) {
-        if (id === bot.id)
+    for (let i = 0; i < botRoster.length; i++) {
+        const other = botRoster[i];
+        if (other.id === bot.id)
             continue;
-        if (!isBot(id))
-            continue;
-        const other = constants_1.players[id];
-        if (!other || other.isDead)
+        if (other.isDead)
             continue;
         const dx = other.x - bot.x;
         const dy = other.y - bot.y;
@@ -684,13 +841,11 @@ function findReviveTarget(bot, state) {
     const rSq = YGGDRASIL_REVIVE_SEEK_RANGE * YGGDRASIL_REVIVE_SEEK_RANGE;
     let best = null;
     let bestDistSq = Infinity;
-    for (const id in constants_1.players) {
-        if (id === bot.id)
+    for (let i = 0; i < botRoster.length; i++) {
+        const other = botRoster[i];
+        if (other.id === bot.id)
             continue;
-        if (!isBot(id))
-            continue;
-        const other = constants_1.players[id];
-        if (!other || !other.isDead)
+        if (!other.isDead)
             continue;
         const dx = other.x - bot.x;
         const dy = other.y - bot.y;
@@ -811,7 +966,7 @@ function pickBotSpawnPosition() {
             };
             // First try inside the zone itself
             if (baseArea.width > 0 && baseArea.height > 0) {
-                const inside = (0, playerManager_1.findSafeSpawnPosition)(baseArea, 10);
+                const inside = population().findSafeSpawnPosition(baseArea, 10);
                 if (inside)
                     return inside;
             }
@@ -828,7 +983,7 @@ function pickBotSpawnPosition() {
                     width: 120,
                     height: 120
                 };
-                const safe = (0, playerManager_1.findSafeSpawnPosition)(jitterArea, 4);
+                const safe = population().findSafeSpawnPosition(jitterArea, 4);
                 if (safe)
                     return safe;
             }
@@ -841,7 +996,7 @@ function pickBotSpawnPosition() {
         };
     }
     // No spawn zones configured — fall back to a world-wide safe spawn
-    const safe = (0, playerManager_1.findSafeSpawnPosition)({ x: 0, y: 0, width: constants_1.ACTUAL_WORLD_WIDTH, height: constants_1.ACTUAL_WORLD_HEIGHT }, 30);
+    const safe = population().findSafeSpawnPosition({ x: 0, y: 0, width: constants_1.ACTUAL_WORLD_WIDTH, height: constants_1.ACTUAL_WORLD_HEIGHT }, 30);
     if (safe)
         return safe;
     return {
@@ -853,7 +1008,7 @@ function pickBotName() {
     const base = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     return `${base}`;
 }
-function createBot(io) {
+function createBot(io, world) {
     const id = generateBotId();
     // Name-derived rng: bot level + full loadout are deterministic from the
     // name. Two bots that happen to roll the same name will have the same
@@ -861,10 +1016,10 @@ function createBot(io) {
     const name = pickBotName();
     const rng = seededRng(hashString(name));
     const level = rollBotLevel(rng);
-    const maxHealth = (0, playerManager_1.calculateMaxHealthFromLevel)(level);
-    const damage = (0, playerManager_1.calculateDamageFromLevel)(level);
+    const maxHealth = population().calculateMaxHealthFromLevel(level);
+    const damage = population().calculateDamageFromLevel(level);
     const pos = pickBotSpawnPosition();
-    const botGuildName = (0, guildManager_1.getBotGuildNameForBot)(name) || undefined;
+    const botGuildName = guilds().getBotGuildNameForBot(name) || undefined;
     const bot = {
         id,
         name,
@@ -877,12 +1032,12 @@ function createBot(io) {
         health: maxHealth,
         maxHealth,
         damage,
-        inventory: (0, playerManager_1.createInitialInventory)(),
+        inventory: population().createInitialInventory(),
         loadout: buildBotLoadout(level, rng),
         isInvulnerable: true,
         level,
         xp: 0,
-        xpToNextLevel: (0, playerManager_1.calculateXPRequirement)(level),
+        xpToNextLevel: population().calculateXPRequirement(level),
         knockbackX: 0,
         knockbackY: 0,
         inputs: { keys: [], petalExtension: 1.0 },
@@ -894,6 +1049,12 @@ function createBot(io) {
         guildName: botGuildName
     };
     constants_1.players[id] = bot;
+    // Give the bot its entity NOW rather than waiting for the movement window's
+    // `syncPlayersToEcs`. `maintainBotCount` runs earlier in the same tick than
+    // the input scheduler, so without this a bot spawned this tick would be
+    // missing from the ECS roster for its first tick — which the roster's
+    // consistency check would (correctly) report as C.IsBot having gone wrong.
+    (0, ecsSync_1.ensurePlayerEntity)(world, bot, Date.now());
     botAIState.set(id, {
         wanderTargetX: bot.x,
         wanderTargetY: bot.y,
@@ -934,7 +1095,28 @@ function removeBot(id, io) {
     botAIState.delete(id);
     botPersona.delete(id);
     botSquadNextTick.delete(id);
-    (0, petal_actions_1.cleanupPlayerPetalActionState)(id);
+    // Required LAZILY, and this is the only reason it is not a normal import.
+    // petal_actions.ts imports './server' at module scope, and server.ts binds
+    // port 3000 and opens the account database on require — so a top-level
+    // import here means that merely REQUIRING botManager starts a second live
+    // server on the port the real game is using, which is why nothing can drive
+    // this file from a harness today.
+    //
+    // Deferring this edge does NOT fix that on its own, and it is worth being
+    // precise about why rather than leaving a comment that overclaims: there is
+    // a SECOND module-scope path, botManager -> server/playerManager ->
+    // server/utils -> petal_actions -> server. Closing that one means deferring
+    // `splitPlayers`/`syncSplitStars` inside server/utils.ts, which reorders
+    // module initialisation inside a CIRCULAR graph (petal_actions and server.ts
+    // already require each other), and the failure mode for getting that wrong
+    // is a "Cannot access X before initialization" at boot that no gate here can
+    // catch, because no gate may start a server. So that half is deliberately
+    // left undone. This edge is closed because it is free — playerManager has
+    // already pulled petal_actions into the cache long before this line, so the
+    // require order is unchanged either way.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { cleanupPlayerPetalActionState } = require('../petal_actions');
+    cleanupPlayerPetalActionState(id);
     io.emit('playerDisconnected', id);
 }
 function removeAllBots(io) {
@@ -957,7 +1139,7 @@ function listBotIds() {
  * If there are no real (human) players, all bots are despawned to avoid wasted
  * simulation while nobody is watching.
  */
-function maintainBotCount(io, realPlayerCount) {
+function maintainBotCount(io, realPlayerCount, world) {
     const now = Date.now();
     if (realPlayerCount > 0) {
         lastActivePlayerTime = now;
@@ -992,7 +1174,7 @@ function maintainBotCount(io, realPlayerCount) {
         const deficit = desiredBots - currentBots;
         const toSpawn = Math.min(deficit, SPAWN_BURST_CAP);
         for (let i = 0; i < toSpawn; i++)
-            createBot(io);
+            createBot(io, world);
     }
     else if (currentBots > desiredBots) {
         const excess = currentBots - desiredBots;
@@ -1073,74 +1255,24 @@ function respawnBot(bot, io) {
 function clampToWorld(v, margin, max) {
     return Math.max(margin, Math.min(max - margin, v));
 }
-// Aggregate the multiplicative speed modifier from a bot's equipped petals.
-// Matches calculatePlayerModifiers in playerManager.ts: powder, etc. multiply
-// together. Used to keep per-tick combat motion consistent regardless of how
-// much speed gear the bot is wearing — without this, a bot wearing powder
-// runs every standoff band at 2× the intended pace and oscillates.
+// The petal/movement maths a bot needs is DERIVED, not mirrored.
+//
+// These three used to be hand-copies of `calculatePlayerModifiers` and of the
+// petal ring's orbit radius, living here because the real implementations were
+// unreachable: `calculatePlayerModifiers` sat in playerManager.ts (which boots a
+// server on require) and the orbit radius was inside the petal loop. Both now
+// have callable homes, so these are thin adapters over the real thing — see
+// server/bots/botReach.ts for what the copies were getting wrong and for the
+// gate that keeps them pinned.
 function getBotSpeedMod(bot) {
-    if (!bot.loadout)
-        return 1.0;
-    let mult = 1.0;
-    for (const item of bot.loadout) {
-        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
-            continue;
-        const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
-        const m = stats?.playerModifiers?.speed;
-        if (typeof m === 'number')
-            mult *= m;
-    }
-    return mult;
+    return (0, botReach_1.botSpeedModifier)(bot);
 }
-// Aggregate the multiplicative range modifier from a bot's equipped petals.
-// Mirrors calculatePlayerModifiers — petals like third_eye boost everyone's
-// orbit. The server's hit math multiplies each petal's stats.range by this
-// aggregate, so the standoff math has to as well or the bot parks at a
-// distance where its petals don't actually reach the target.
-function getBotRangeMod(bot) {
-    if (!bot.loadout)
-        return 1.0;
-    let mult = 1.0;
-    for (const item of bot.loadout) {
-        if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
-            continue;
-        const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
-        const m = stats?.playerModifiers?.range;
-        if (typeof m === 'number')
-            mult *= m;
-    }
-    return mult;
-}
-// Largest distance from bot center that a petal can still strike a target
-// at, given petalExtension and this bot's equipped petals' size/range.
+// Largest distance from bot center that a petal can still strike a target at,
+// given petalExtension and this bot's equipped petals' size/range. The safety
+// buffer is folded in here (and subtracted again by the standoff maths) exactly
+// as it always was.
 function computePetalReach(bot, petalExtension) {
-    const sizeMult = bot.sizeMultiplier ?? 1.0;
-    const baseRadius = (60 + (constants_1.PLAYER_SIZE / 2) * (sizeMult - 1)) * petalExtension;
-    const playerRangeMod = getBotRangeMod(bot);
-    let maxRangeMult = 1.0;
-    let maxPetalHalfSize = 0;
-    if (bot.loadout) {
-        for (const item of bot.loadout) {
-            if (!item || item.type !== 'petal' || !item.petalType || !item.rarity)
-                continue;
-            const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
-            if (!stats)
-                continue;
-            const effectiveSize = item.customSize ?? stats.size ?? 1.0;
-            maxPetalHalfSize = Math.max(maxPetalHalfSize, (40 * effectiveSize) / 2);
-            if (stats.range !== undefined) {
-                // Server-side reach folds in playerRangeMod (e.g. third_eye)
-                // for every petal. Match that or the standoff is wrong.
-                maxRangeMult = Math.max(maxRangeMult, stats.range * playerRangeMod);
-            }
-            else {
-                // Petals without an explicit range still sit at base orbit ×
-                // playerRangeMod, so the floor must include the modifier too.
-                maxRangeMult = Math.max(maxRangeMult, playerRangeMod);
-            }
-        }
-    }
-    return baseRadius * maxRangeMult + maxPetalHalfSize + STANDOFF_SAFETY_BUFFER;
+    return (0, botReach_1.botPetalReach)(bot, petalExtension, STANDOFF_SAFETY_BUFFER);
 }
 function getMobRadius(enemy) {
     const stats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
@@ -1803,18 +1935,16 @@ function announceNewBosses(io, now) {
             continue;
         let announcerId = null;
         let bestD = Infinity;
-        for (const pid in constants_1.players) {
-            if (!isBot(pid))
-                continue;
-            const b = constants_1.players[pid];
-            if (!b || b.isDead)
+        for (let i = 0; i < botRoster.length; i++) {
+            const b = botRoster[i];
+            if (b.isDead)
                 continue;
             const dx = b.x - enemy.x;
             const dy = b.y - enemy.y;
             const d = dx * dx + dy * dy;
             if (d < bestD) {
                 bestD = d;
-                announcerId = pid;
+                announcerId = b.id;
             }
         }
         if (!announcerId)
@@ -1933,12 +2063,11 @@ function hasHighRarityMobNearby(bot, range) {
 function computeRaidSlots() {
     const byAnchor = new Map();
     const forced = getActiveForcedRaidAnchor();
-    for (const id in constants_1.players) {
-        if (!isBot(id))
+    for (let i = 0; i < botRoster.length; i++) {
+        const b = botRoster[i];
+        if (b.isDead)
             continue;
-        const b = constants_1.players[id];
-        if (!b || b.isDead)
-            continue;
+        const id = b.id;
         let anchor = null;
         if (forced) {
             anchor = forced;
@@ -1972,13 +2101,11 @@ function computeRaidSlots() {
 }
 function computeBotGroups() {
     const botIds = [];
-    for (const id in constants_1.players) {
-        if (!isBot(id))
+    for (let i = 0; i < botRoster.length; i++) {
+        const b = botRoster[i];
+        if (b.isDead)
             continue;
-        const b = constants_1.players[id];
-        if (!b || b.isDead)
-            continue;
-        botIds.push(id);
+        botIds.push(b.id);
     }
     if (botIds.length === 0)
         return new Map();
@@ -2146,13 +2273,11 @@ function driveMove(bot, dirX, dirY, speedMult, petalExtension, agility = 1.0) {
     // neighbors. Keeps squads from collapsing to a single point.
     let sepX = 0;
     let sepY = 0;
-    for (const pid in constants_1.players) {
-        if (pid === bot.id)
+    for (let i = 0; i < botRoster.length; i++) {
+        const other = botRoster[i];
+        if (other.id === bot.id)
             continue;
-        if (!isBot(pid))
-            continue;
-        const other = constants_1.players[pid];
-        if (!other || other.isDead)
+        if (other.isDead)
             continue;
         const dx = bot.x - other.x;
         const dy = bot.y - other.y;
@@ -2234,12 +2359,11 @@ const BOT_SQUAD_CREATE_CHANCE = 0.03;
 const BOT_SQUAD_JOIN_CHANCE = 0.5;
 const botSquadNextTick = new Map();
 function updateBotSquadMembership(io, now) {
-    for (const id in constants_1.players) {
-        if (!isBot(id))
+    for (let i = 0; i < botRoster.length; i++) {
+        const bot = botRoster[i];
+        if (bot.isDead)
             continue;
-        const bot = constants_1.players[id];
-        if (!bot || bot.isDead)
-            continue;
+        const id = bot.id;
         const next = botSquadNextTick.get(id) || 0;
         if (now < next)
             continue;
@@ -2404,8 +2528,71 @@ const ORBIT_RADIAL_GAIN = 90;
 // re-engaging, and stay in flight at least this long once committed.
 const FLEE_RECOVER_RATIO = 2.0;
 const FLEE_MIN_MS = 1200;
-function updateBotAI(io) {
-    const now = Date.now();
+/**
+ * Register bot AI as a `Phase.Input` system.
+ *
+ * ---------------------------------------------------------------------------
+ * Why bot AI is a system, but NOT a system in `src/ecs`
+ * ---------------------------------------------------------------------------
+ * Two separate questions, with two different answers.
+ *
+ * SCHEDULING. `Phase.Input`'s doc comment has always said "sample player inputs
+ * and run bot AI into the same input fields", and this is that. Being scheduled
+ * means bot AI shows up in `Scheduler.drainTimings()` alongside every other
+ * system in the tick-budget report, can be toggled by the debug menu, and has
+ * ONE declared position in the tick order instead of a bare call in the middle
+ * of `start_loop`.
+ *
+ * But WHICH scheduler is the whole decision, and getting it wrong is invisible.
+ * The mob scheduler (`EcsRuntime.scheduler`) runs inside `moveEnemies()`, which
+ * is AFTER `updatePlayerState` in `runSimulationStep`. A `Phase.Input` system
+ * registered there would compute inputs that legacy had already consumed this
+ * tick, so every bot would act on a tick-old decision — and all four gates would
+ * pass, because nothing anywhere asserts that a bot's input was produced before
+ * it was read. The player scheduler is no better: it runs INSIDE the movement
+ * window, after `syncPlayersToEcs` has already pushed `player.inputs` into
+ * `C.PlayerInput`, so anything written there would be a second writer racing a
+ * push that already won.
+ *
+ * So this goes on `EcsRuntime.inputScheduler`, which `server.ts` ticks at
+ * exactly the point `updateBotAI(io)` used to be called: after the enemy grid is
+ * rebuilt (bot targeting queries it) and before `runSimulationStep`. The
+ * committed positions bots read are then, as they always were, the ones from the
+ * end of the previous tick — which is the behavioural contract, not an accident
+ * of where the call sat.
+ *
+ * OWNERSHIP. Bots stay PRODUCERS into `player.inputs` and write no ECS
+ * component. `syncPlayersToEcs` is the single writer of `C.PlayerInput`, and it
+ * runs after this. If bot AI wrote the component instead, that push would
+ * silently overwrite it with the stale legacy object every tick — the exact
+ * shape of the projectile-damage bug (a write outside the sync window that the
+ * next push reverts, with nothing failing). One writer, one direction.
+ *
+ * LOCATION. The decision code cannot move into `src/ecs`: it reads the wall tile
+ * grid and the world map for A* and teleporter routing, the world item list,
+ * squad and guild membership, and it emits chat. `src/ecs` may not import the
+ * map or constants.ts and is bundled into the browser by webpack, so moving bot
+ * AI there would either ship the pathfinder and the squad manager to every
+ * client or replace 3000 lines of logic with 30 injected dependencies. A system
+ * is a function; it does not have to live in the ECS to be scheduled by it.
+ */
+function registerBotInputSystem(scheduler, io) {
+    scheduler.add('botAI', ecs_1.Phase.Input, (ctx) => {
+        updateBotAI(io, ctx.world, ctx.now);
+    });
+}
+/**
+ * Update bot AI — decides movement + combat posture for every bot and writes
+ * into `player.inputs`, which the normal `updatePlayerState` pipeline consumes.
+ *
+ * `now` is the scheduler's once-per-tick clock sample rather than a fresh
+ * `Date.now()`, so every bot in a tick agrees on the time. Several of the
+ * hysteresis timers here (flee, unstick, target reaction, wander) compare
+ * against absolute deadlines and would behave subtly differently if each bot
+ * re-read the clock.
+ */
+function updateBotAI(io, world, now) {
+    rebuildBotRoster(world);
     rebuildBossIndex();
     updateBotSquadMembership(io, now);
     // Reset the per-tick A* budget so a single tick can't be dominated by
@@ -2419,12 +2606,9 @@ function updateBotAI(io) {
     const groups = computeBotGroups();
     // Angular slot assignments so raiding bots spread evenly around the boss.
     const raidSlots = computeRaidSlots();
-    for (const id in constants_1.players) {
-        if (!isBot(id))
-            continue;
-        const bot = constants_1.players[id];
-        if (!bot)
-            continue;
+    for (let botIndex = 0; botIndex < botRoster.length; botIndex++) {
+        const bot = botRoster[botIndex];
+        const id = bot.id;
         let state = botAIState.get(id);
         if (!state) {
             state = { wanderTargetX: bot.x, wanderTargetY: bot.y, nextWanderTime: 0 };

@@ -12,6 +12,10 @@ const mobs_1 = require("../../mobs");
 const playerRefs_1 = require("../playerRefs");
 const enemyIngest_1 = require("../enemyIngest");
 function registerGameStateHandlers(game) {
+    // `game` is untyped here (the handlers predate the split), but the world is
+    // not: naming it gives every ingestion call below a real signature to check
+    // against, which is the only compile-time safety this file has.
+    const cw = game.clientWorld;
     // Thin bindings over the shared ingestion helpers (see net/enemyIngest.ts),
     // so every call site below reads exactly as it did when they were local.
     const handleEnemyUpdate = (enemy, snapTimeMs) => (0, enemyIngest_1.applyEnemyUpdate)(game, enemy, snapTimeMs);
@@ -58,7 +62,7 @@ function registerGameStateHandlers(game) {
         if (serverPlayers) {
             for (const sp of serverPlayers) {
                 const id = sp.i;
-                const existing = game.players.get(id);
+                const existing = cw.player(id);
                 if (existing) {
                     // Players (self AND remote) only carry target*: game.ts eases
                     // every flower toward it with the same gardn exponential lerp,
@@ -67,12 +71,7 @@ function registerGameStateHandlers(game) {
                     // which replayed the server path at an 80ms render delay — a
                     // visibly different motion curve from the local flower's ease.
                     // Enemies still use snapshots (see the E-loop).
-                    if (sp.x !== undefined)
-                        existing.targetX = sp.x;
-                    if (sp.y !== undefined)
-                        existing.targetY = sp.y;
-                    if (sp.a !== undefined)
-                        existing.angle = sp.a;
+                    cw.movePlayer(id, sp.x, sp.y, sp.a);
                     if (sp.vx !== undefined)
                         existing.velocityX = sp.vx;
                     if (sp.vy !== undefined)
@@ -150,12 +149,11 @@ function registerGameStateHandlers(game) {
                 }
                 else {
                     // First sight: server omits fields equal to defaults. Apply matching defaults here.
+                    // Position/facing are NOT on this object — they go straight
+                    // into the entity below.
                     const newPlayer = {
                         id,
                         name: sp.n,
-                        x: sp.x,
-                        y: sp.y,
-                        angle: sp.a ?? 0,
                         health: sp.h,
                         maxHealth: sp.H,
                         level: sp.l ?? 1,
@@ -173,8 +171,6 @@ function registerGameStateHandlers(game) {
                         imageLoaded: true,
                         velocityX: 0,
                         velocityY: 0,
-                        targetX: sp.x,
-                        targetY: sp.y,
                         xp: 0,
                         xpToNextLevel: 100,
                     };
@@ -193,7 +189,7 @@ function registerGameStateHandlers(game) {
                             targetY: pos.y,
                         }));
                     }
-                    game.players.set(id, newPlayer);
+                    cw.upsertPlayer(id, sp.x, sp.y, sp.a ?? 0, newPlayer);
                 }
             }
         }
@@ -205,7 +201,7 @@ function registerGameStateHandlers(game) {
             for (const id of removedPlayerIds) {
                 if ((0, playerRefs_1.isOwnPlayerId)(game, id))
                     continue;
-                game.players.delete(id);
+                cw.removePlayer(id);
             }
         }
         // Explicit removes only: drop just the enemies the server told us to drop.
@@ -224,7 +220,7 @@ function registerGameStateHandlers(game) {
             if (serverEnemies)
                 for (const e of serverEnemies)
                     mentioned.add(e.i);
-            for (const id of Array.from(game.enemies.keys())) {
+            for (const id of cw.enemyIds()) {
                 if (!mentioned.has(id))
                     handleEnemyOutOfView(id);
             }
@@ -235,30 +231,30 @@ function registerGameStateHandlers(game) {
             if (serverPlayers)
                 for (const sp of serverPlayers)
                     mentionedPlayers.add(sp.i);
-            for (const id of Array.from(game.players.keys())) {
+            for (const id of cw.playerIds()) {
                 if (!mentionedPlayers.has(id) && !(0, playerRefs_1.isOwnPlayerId)(game, id))
-                    game.players.delete(id);
+                    cw.removePlayer(id);
             }
         }
         if (serverEnemies) {
             for (const e of serverEnemies) {
-                const existing = game.enemies.get(e.i);
-                if (existing && existing.type && existing.tier) {
+                const existing = cw.enemyEntity(e.i);
+                if (existing !== undefined) {
                     // Partial update - merge only fields that are present.
+                    // Every fallback reads the last AUTHORITATIVE value
+                    // (InterpTarget), never the render-mutated Position/Angle:
+                    // the interpolation systems move those every frame, so
+                    // feeding one back in as if it were fresh server data makes
+                    // the mob chase its own tail and wobble after a turn.
                     const merged = {
                         id: e.i,
-                        type: e.t !== undefined ? e.t : existing.type,
-                        tier: e.T !== undefined ? e.T : existing.tier,
-                        x: e.x !== undefined ? e.x : (existing.targetX ?? existing.x),
-                        y: e.y !== undefined ? e.y : (existing.targetY ?? existing.y),
-                        // Fall back to targetAngle (last authoritative server angle), NOT
-                        // existing.angle: the render loop mutates .angle mid-interpolation,
-                        // so using it here feeds the client's own lagging rendered angle
-                        // back into the snapshot buffer as if it were fresh server data —
-                        // the mob then chases its own tail and wobbles after finishing a turn.
-                        angle: e.a !== undefined ? e.a : (existing.targetAngle ?? existing.angle),
-                        health: e.h !== undefined ? e.h : existing.health,
-                        maxHealth: e.H !== undefined ? e.H : existing.maxHealth,
+                        type: e.t !== undefined ? e.t : cw.mobType(existing),
+                        tier: e.T !== undefined ? e.T : cw.mobTier(existing),
+                        x: e.x !== undefined ? e.x : cw.mobTargetX(existing),
+                        y: e.y !== undefined ? e.y : cw.mobTargetY(existing),
+                        angle: e.a !== undefined ? e.a : cw.mobTargetAngle(existing),
+                        health: e.h !== undefined ? e.h : cw.mobHealth(existing),
+                        maxHealth: e.H !== undefined ? e.H : cw.mobMaxHealth(existing),
                     };
                     handleEnemyUpdate(merged, snapTimeMs);
                 }
@@ -288,20 +284,20 @@ function registerGameStateHandlers(game) {
         }
     });
     game.socket.on('updatePlayers', (serverPlayers) => {
-        const serverPlayerIds = serverPlayers.map(p => p.id);
+        const serverPlayerIds = new Set(serverPlayers.map(p => p.id));
         // Remove players that are no longer sent by the server
-        game.players.forEach((player, playerId) => {
-            if (!serverPlayerIds.includes(playerId)) {
-                game.players.delete(playerId);
-            }
-        });
+        for (const playerId of cw.playerIds()) {
+            if (!serverPlayerIds.has(playerId))
+                cw.removePlayer(playerId);
+        }
         serverPlayers.forEach(serverPlayer => {
-            let player = game.players.get(serverPlayer.id);
+            let player = cw.player(serverPlayer.id);
             if (player) {
-                // Update existing player
-                player.x = serverPlayer.x;
-                player.y = serverPlayer.y;
-                player.angle = serverPlayer.angle;
+                // This is a bulk snapshot, not the per-tick delta: it carries an
+                // authoritative position, which becomes the ease target like any
+                // other. It must not be written as the drawn position or the
+                // flower jumps every time one of these arrives.
+                cw.movePlayer(serverPlayer.id, serverPlayer.x, serverPlayer.y, serverPlayer.angle);
                 player.score = serverPlayer.score;
                 player.health = serverPlayer.health;
                 player.maxHealth = serverPlayer.maxHealth;
@@ -343,7 +339,10 @@ function registerGameStateHandlers(game) {
                 player.xp = serverPlayer.xp;
                 player.xpToNextLevel = serverPlayer.xpToNextLevel;
                 player.lastDamageTime = serverPlayer.lastDamageTime;
-                player.speed_boost = serverPlayer.speed_boost;
+                // ServerPlayer stores this as a numeric multiplier and the
+                // client as a flag; the coercion used to be implicit because
+                // `player` came out of an untyped Map.
+                player.speed_boost = !!serverPlayer.speed_boost;
                 // Sync petal extension from server
                 player.petalExtension = serverPlayer.inputs?.petalExtension || 1.0;
                 // Update mobKills if it changed (use reference check - server sends new objects)
@@ -371,21 +370,19 @@ function registerGameStateHandlers(game) {
             }
             else {
                 // Add new player
-                player = (0, playerRefs_1.withoutRawPetalPositions)({
+                player = (0, playerRefs_1.toClientPlayer)((0, playerRefs_1.withoutRawPetalPositions)({
                     ...serverPlayer,
                     image: new Image(),
                     imageLoaded: false,
-                    targetX: serverPlayer.x,
-                    targetY: serverPlayer.y,
-                });
+                }));
                 player.loadout = (0, playerRefs_1.padLoadout)(serverPlayer.loadout, 20);
-                game.players.set(serverPlayer.id, player);
+                cw.upsertPlayer(serverPlayer.id, serverPlayer.x, serverPlayer.y, serverPlayer.angle, player);
             }
         });
     });
     game.socket.on('updateEnemies', (serverEnemies) => {
         // Clear all enemies first - full refresh, no death animation
-        for (const [enemyId] of game.enemies) {
+        for (const enemyId of cw.enemyIds()) {
             handleEnemyOutOfView(enemyId);
         }
         // Add all enemies - uses same path as all enemy updates
@@ -401,10 +398,12 @@ function registerGameStateHandlers(game) {
     });
     game.socket.on('playerDied', (data) => {
         // Update the player's state to mark them as dead
-        const player = game.players.get(data.playerId);
+        const player = cw.player(data.playerId);
         if (player) {
             player.isDead = true;
-            player.angle = data.angle; // Set the random rotation
+            // The corpse lies at a random rotation, and it is the entity's
+            // facing that draws it.
+            cw.movePlayer(data.playerId, undefined, undefined, data.angle);
         }
         if ((0, playerRefs_1.isLocalPlayerId)(game, data.playerId)) {
             game.isPlayerDead = true;
@@ -413,7 +412,7 @@ function registerGameStateHandlers(game) {
     });
     game.socket.on('playerRevived', (data) => {
         // Update the revived player's state
-        const revivedPlayer = game.players.get(data.revivedPlayerId);
+        const revivedPlayer = cw.player(data.revivedPlayerId);
         if (revivedPlayer) {
             revivedPlayer.isDead = false;
             revivedPlayer.health = revivedPlayer.maxHealth;

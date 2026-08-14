@@ -44,11 +44,23 @@ exports.PlayerInput = (0, component_1.defineComponent)('PlayerInput', {
     /** string[] of held keys. */
     keys: 'obj',
     useMouse: 'bool',
-    /** Normalised mouse direction, -1..1. */
-    mouseDirectionX: 'f32',
-    mouseDirectionY: 'f32',
+    /**
+     * Normalised mouse direction, -1..1.
+     *
+     * f64, not f32, even though the magnitudes are tiny. These three fields are
+     * multiplied by MAX_SPEED and the speed factor to produce the target
+     * velocity that the SHARED `stepPlayerMovement` integrates, and the legacy
+     * path this replaces did that arithmetic in doubles. Storing them narrower
+     * would make the ECS result differ from the legacy one in the low bits, and
+     * that difference is not observable in the game (petal positions are
+     * quantised to 3-6px before they are hashed for the broadcast) but it IS
+     * observable in the cutover check, which asserts exact equality against the
+     * legacy formula. Keeping the check exact is worth 12 bytes per player.
+     */
+    mouseDirectionX: 'f64',
+    mouseDirectionY: 'f64',
     /** Client-computed speed multiplier, 0.15..1.0. */
-    mouseSpeedMultiplier: 'f32',
+    mouseSpeedMultiplier: 'f64',
     petalExtension: 'f32',
 });
 /**
@@ -129,10 +141,17 @@ exports.Cosmetics = (0, component_1.defineComponent)('Cosmetics', {
  * client so client-side prediction moves at exactly the server's speed.
  */
 exports.PlayerModifiers = (0, component_1.defineComponent)('PlayerModifiers', {
-    speedBoost: 'f32',
-    speedFactor: 'f32',
+    /**
+     * The three fields movement consumes are f64 for the same reason
+     * PlayerInput's direction fields are: they feed the shared physics step, and
+     * the legacy code they replace computed them in doubles. `sizeMultiplier`
+     * additionally decides the substep count inside `stepPlayerMovement`, where
+     * a rounding difference can change how many substeps a wall contact gets.
+     */
+    speedBoost: 'f64',
+    speedFactor: 'f64',
     /** Multiplier on the flower's radius and hitbox. */
-    sizeMultiplier: 'f32',
+    sizeMultiplier: 'f64',
     /** Additive pixels on item pickup radius. */
     magnetism: 'f32',
     /** Additive pixels on the range at which mobs aggro this player. */
@@ -141,8 +160,21 @@ exports.PlayerModifiers = (0, component_1.defineComponent)('PlayerModifiers', {
      * Continuous integral of the rotation-speed modifier. Kept as an
      * accumulated phase so that changing rotation speed mid-flight bends the
      * orbit rate instead of snapping the angle.
+     *
+     * f64, and that is not a spare-bytes decision. This is an UNBOUNDED
+     * accumulator — it grows by `rotationSpeed * deltaTime` every tick for the
+     * whole of a session and is never wrapped, so a long-lived flower reaches
+     * ~1e5 after a day of play. It is then multiplied by up to the petal's speed
+     * multiplier and fed to cos/sin, and the result is the petal position that
+     * gets hashed for the broadcast change detector. In f32 the representable
+     * step at 1e5 is ~0.008 while a tick's increment is ~0.03, so the phase
+     * would quantise to a coarse ladder: the whole ring would visibly step
+     * rather than rotate, and — because the hash would change on a different
+     * schedule from the legacy value — the broadcast would churn. The legacy
+     * `ServerPlayer.petalOrbitPhase` this replaces was a plain JS double, and
+     * `ecs/bench/petal_cutover_check.ts` asserts exact equality against it.
      */
-    petalOrbitPhase: 'f32',
+    petalOrbitPhase: 'f64',
 });
 /** Server-computed absolute petal positions, broadcast for accurate rendering. */
 exports.PetalPositions = (0, component_1.defineComponent)('PetalPositions', {

@@ -47,6 +47,7 @@ exports.spawnObstacle = spawnObstacle;
 const C = __importStar(require("./components"));
 const entity_1 = require("./entity");
 const interning_1 = require("./interning");
+const petalRing_1 = require("./systems/petalRing");
 /**
  * A wild mob.
  *
@@ -123,6 +124,7 @@ function spawnProjectile(world, spec) {
         sourceTier: spec.sourceTier === undefined ? 0 : (0, interning_1.rarityToId)(spec.sourceTier),
     });
     world.add(e, C.ProjectileSync, { spawnTime: spec.now, lastSyncTime: spec.now });
+    world.add(e, C.NetId, { id: spec.netId });
     world.add(e, C.IsProjectile);
     if (spec.fromPlayer)
         world.add(e, C.FromPlayer);
@@ -166,6 +168,10 @@ function spawnPlayer(world, spec) {
     });
     world.add(e, C.Inventory, { items: spec.inventory });
     world.add(e, C.Loadout, { slots: spec.loadout });
+    // Given at birth rather than on the flower's first petal tick, so every
+    // player has ONE archetype instead of splitting into "has orbited" and
+    // "has not". A ring with no petals in it is an empty Map.
+    world.add(e, C.PetalRing, { state: new petalRing_1.PetalRingState(), slotCount: 0 });
     world.add(e, C.SpawnTime, { at: spec.now });
     world.add(e, C.IsPlayer);
     if (spec.lobby)

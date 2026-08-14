@@ -217,6 +217,10 @@ class Graphics {
         this.mazeMinimapStaticCache = null;
         // Boss-bar candidates (super/unique mobs), refreshed at 4Hz by drawBossBars
         // instead of scanning the whole enemies Map every frame.
+        // Entity HANDLES, not objects. A handle packs a generation, so a recycled
+        // slot can never silently alias the stale candidate to a different mob —
+        // which is the aliasing the "always re-resolve by id" comment used to guard
+        // against by hand.
         this._bossCandidates = [];
         this._bossCandidatesAt = 0;
         // World (camera) transform snapshot, refreshed by drawGameObjects each

@@ -110,6 +110,7 @@ function createFireVolley(world, deps) {
                 sourceType,
                 sourceTier: rarityName,
                 fromPlayer: false,
+                netId: deps.allocateNetId(),
                 now,
             });
         }

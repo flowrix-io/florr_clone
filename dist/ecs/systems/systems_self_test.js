@@ -62,7 +62,9 @@ function runSystemsSelfTest() {
     function makeHarness() {
         const world = new world_1.World();
         const scheduler = new system_1.Scheduler(world);
-        (0, movement_1.registerMovementSystems)(scheduler, (0, movement_1.createMovementQueries)(world));
+        // No walls in these worlds: the wall test is exercised by
+        // projectileCollision_self_test.ts, which stubs a real one.
+        (0, movement_1.registerMovementSystems)(scheduler, (0, movement_1.createMovementQueries)(world), { hitsWall: () => false });
         (0, afflictions_1.registerAfflictionSystems)(scheduler, (0, afflictions_1.createAfflictionQueries)(world));
         (0, lifetime_1.registerLifetimeSystems)(scheduler, (0, lifetime_1.createLifetimeQueries)(world));
         let now = 10000;
@@ -89,7 +91,7 @@ function runSystemsSelfTest() {
             x: 0, y: 0, angle: 0, speed: 1, maxDistance: 100,
             damage: 5, health: 1, size: 2,
             petalType: 'basic', petalRarity: 'common',
-            shooter, fromPlayer: true, now: h.now,
+            shooter, fromPlayer: true, netId: 1, now: h.now,
         });
         h.tick();
         checkClose('projectile advances speed*deltaMs', h.world.get(p, C.Position, 'x'), TICK_MS, 1e-3);
@@ -111,7 +113,7 @@ function runSystemsSelfTest() {
             x: 100, y: 100, angle: Math.PI / 2, speed: 0.5, maxDistance: 10000,
             damage: 1, health: 1, size: 1,
             petalType: 'basic', petalRarity: 'common',
-            shooter, fromPlayer: false, now: h.now,
+            shooter, fromPlayer: false, netId: 2, now: h.now,
         });
         h.tick();
         const expected = 0.5 * TICK_MS;
@@ -130,7 +132,7 @@ function runSystemsSelfTest() {
             damage: 5, health: 1, size: 2,
             petalType: 'stinger', petalRarity: 'rare',
             shooter, sourceType: 'hornet', sourceTier: 'rare',
-            fromPlayer: false, now: h.now,
+            fromPlayer: false, netId: 3, now: h.now,
         });
         h.world.destroy(shooter);
         h.tick();
