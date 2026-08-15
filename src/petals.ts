@@ -2393,7 +2393,6 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         name: "Egg",
         damage: 5,
         health: 5,
-        size: 1.0,
         cooldown: 1000,
         description: "Spawns a pet mob that fights alongside you",
         color: "#FFD700",
@@ -2406,17 +2405,17 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`,
         isAdminPetal: true
     },
-    glass: {
-        name: "Glass",
-        damage: 12,
+    glasss: {
+        name: "Glasss",
+        damage: 15,
         health: Infinity,
-        size: 1.0,
-        cooldown: 1000,
+        size: 1.1,
+        cooldown: 500,
         description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
-        color: "#B0E0E6",
+        color: "#808080",
         knockback: 0,
         count: 1,
-        damageCooldown: 1000,
+        damageCooldown: 1001,
         image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
   <path
     d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
@@ -2427,7 +2426,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
     stroke-linejoin="round"
   />
 </svg>`
-    },
+    },       size: 1.0,
+ 
     // ---------------------------------------------------------------------
     // The twelve petals below are ported from ~/rysteria_gardn. Each `image`
     // is a direct transcription of that petal's case in
