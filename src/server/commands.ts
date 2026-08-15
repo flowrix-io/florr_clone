@@ -23,6 +23,7 @@ import {
     MAX_GUILD_SIZE
 } from './guildManager';
 import { getOriginalSocketId } from './utils';
+import { grantTempAdmin, revokeTempAdmin, hasTempAdmin, listTempAdmins } from './tempAdmin';
 
 // AuthenticatedSocket interface (matches definition in server.ts)
 interface AuthenticatedSocket extends Socket {
@@ -455,6 +456,98 @@ export function executeServerCommand(
             + (halves.length > 1 ? ' and their splitter half' : ''),
             socketId, io
         );
+    } else if (trimmedCommand === 'grant_admin' || trimmedCommand.startsWith('grant_admin ')
+               || trimmedCommand === 'revoke_admin' || trimmedCommand.startsWith('revoke_admin ')) {
+        // grant_admin <playerId/username> — lend the admin console to another
+        // player for their current life. See server/tempAdmin.ts for what the
+        // grant does and does not unlock; it expires on respawn, on returning to
+        // the title screen, and on disconnect.
+        const parts = trimmedCommand.split(' ').filter(p => p.length > 0);
+        const granting = parts[0] === 'grant_admin';
+
+        // Only a real (database-flagged) admin may hand out or take back grants —
+        // otherwise a grantee could keep the chain alive past their own respawn.
+        // An `executor` of undefined means the server console, which is trusted.
+        if (executor && !database.isUserAdmin(executor)) {
+            sendOutput('Only a full admin can grant or revoke admin access.', socketId, io);
+            return;
+        }
+
+        if (parts.length !== 2) {
+            sendOutput(`Usage: ${parts[0]} <playerId/username>`, socketId, io);
+            return;
+        }
+
+        // Same resolution as corrupt/set_skin: socket id first, then username.
+        const playerIdentifier = parts[1];
+        let targetId: string | undefined;
+        let targetPlayer: ServerPlayer | undefined;
+        if (players[playerIdentifier]) {
+            targetId = playerIdentifier;
+            targetPlayer = players[playerIdentifier];
+        } else {
+            for (const [sid, player] of Object.entries(players)) {
+                const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
+                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
+                    targetId = sid;
+                    targetPlayer = player;
+                    break;
+                }
+            }
+        }
+
+        if (!targetId || !targetPlayer) {
+            sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
+            return;
+        }
+
+        // Grants live on the original socket, so a splitter's two halves share one.
+        const grantId = getOriginalSocketId(targetId);
+        const targetSocket = io.sockets.sockets.get(grantId) as AuthenticatedSocket;
+        const targetName = targetSocket?.username || targetPlayer.name;
+
+        const notifyTarget = (content: string) => {
+            io.to(grantId).emit('chatMessage', {
+                sender: 'System',
+                content,
+                timestamp: Date.now()
+            });
+        };
+
+        if (granting) {
+            if (targetSocket?.username && database.isUserAdmin(targetSocket.username)) {
+                sendOutput(`${targetName} is already a full admin.`, socketId, io);
+                return;
+            }
+            if (hasTempAdmin(grantId)) {
+                sendOutput(`${targetName} already has a temporary admin grant.`, socketId, io);
+                return;
+            }
+            grantTempAdmin(grantId, executor || 'console');
+            notifyTarget('<span style="color: #ffb74d;">You have been granted admin commands until you respawn. Use /admin &lt;command&gt; or /help.</span>');
+            sendOutput(`Granted temporary admin to ${targetName} (${grantId}) until they respawn.`, socketId, io);
+        } else {
+            if (!revokeTempAdmin(grantId)) {
+                sendOutput(`${targetName} has no temporary admin grant.`, socketId, io);
+                return;
+            }
+            notifyTarget('<span style="color: #ff8866;">Your temporary admin access has been revoked.</span>');
+            sendOutput(`Revoked temporary admin from ${targetName} (${grantId}).`, socketId, io);
+        }
+    } else if (trimmedCommand === 'list_admins') {
+        // Only the temporary grants are listed — permanent admins are in the DB.
+        const entries = listTempAdmins();
+        if (entries.length === 0) {
+            sendOutput('No temporary admin grants are active.', socketId, io);
+        } else {
+            sendOutput(`Temporary admins (${entries.length}):`, socketId, io);
+            for (const { socketId: grantId, grant } of entries) {
+                const s = io.sockets.sockets.get(grantId) as AuthenticatedSocket;
+                const name = s?.username || players[grantId]?.name || 'Unknown';
+                const ageSec = Math.round((Date.now() - grant.grantedAt) / 1000);
+                sendOutput(`${name} (${grantId}) — granted by ${grant.grantedBy}, ${ageSec}s ago`, socketId, io);
+            }
+        }
     } else if (trimmedCommand.startsWith('generate_code') || trimmedCommand.startsWith('gen_code')) {
         // generate_code <stars> [maxUses] (default maxUses is 1)
         const parts = trimmedCommand.split(' ');
@@ -979,9 +1072,11 @@ export function handleAdminCommand(
 ): boolean {
     if (!socket.username) return false;
 
-    // Check for admin commands (only admins can use /admin or /cmd)
+    // Check for admin commands (only admins can use /admin or /cmd). A player
+    // holding a temporary grant (see tempAdmin.ts) counts as admin here — and
+    // only here, plus the /help listing.
     if ((message.startsWith('/admin ') || message.startsWith('/cmd ')) && socket.username) {
-        const isAdmin = database.isUserAdmin(socket.username);
+        const isAdmin = database.isUserAdmin(socket.username) || hasTempAdmin(socket.id);
         if (isAdmin) {
             // Extract the command after /admin or /cmd
             const command = message.substring(message.indexOf(' ') + 1);
@@ -1018,6 +1113,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), grant_admin <playerId/username> (lend the admin console until they respawn), revoke_admin <playerId/username>, list_admins, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }
 

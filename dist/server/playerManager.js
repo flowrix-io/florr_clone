@@ -47,6 +47,7 @@ const inventoryCodec_1 = require("../inventoryCodec");
 const inventoryCodec_2 = require("../inventoryCodec");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
+const tempAdmin_1 = require("./tempAdmin");
 const map_data_1 = require("../map_data");
 const inventoryCodec_3 = require("../inventoryCodec");
 Object.defineProperty(exports, "addItem", { enumerable: true, get: function () { return inventoryCodec_3.addItem; } });
@@ -660,6 +661,15 @@ function respawnPlayer(player, io) {
     // Neither does a glitch mob's infection — this is the only thing that
     // clears it, so a corpse stays glitched until the player actually respawns.
     player.glitched = undefined;
+    // A `grant_admin` grant lasts exactly one life. Dying does not end it (the
+    // death screen is still the same session) — coming back does.
+    if ((0, tempAdmin_1.revokeTempAdmin)(player.id)) {
+        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('chatMessage', {
+            sender: 'System',
+            content: '<span style="color: #ff8866;">Your temporary admin access ended when you respawned.</span>',
+            timestamp: Date.now()
+        });
+    }
     setTimeout(() => {
         player.isInvulnerable = false;
         // Notify client that invulnerability has ended

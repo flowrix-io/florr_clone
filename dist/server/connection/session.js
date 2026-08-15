@@ -22,6 +22,7 @@ const playerManager_1 = require("../playerManager");
 const playerState_1 = require("../playerState");
 const playerWire_1 = require("../playerWire");
 const squadManager_1 = require("../squadManager");
+const tempAdmin_1 = require("../tempAdmin");
 const tickBroadcast_1 = require("../tickBroadcast");
 const utils_1 = require("../utils");
 const sessionGuard_1 = require("./sessionGuard");
@@ -470,6 +471,9 @@ function registerSessionHandlers(ctx) {
     // counted as disconnected.
     const endPlayerSession = (removeListeners) => {
         console.log('A user disconnected');
+        // A temporary admin grant is scoped to one life in one session — it must
+        // not survive a return to the title screen and a fresh spawn either.
+        (0, tempAdmin_1.revokeTempAdmin)(socket.id);
         // A title-screen session has no world state to tear down, but it does
         // hold account state (talent spends, shop buys) that the 60s autosave
         // never sees — it only walks `players`. Flush it before dropping it.

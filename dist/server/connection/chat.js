@@ -12,6 +12,7 @@ const constants_1 = require("../../constants");
 const database_1 = require("../../database");
 const botManager_1 = require("../botManager");
 const commands_1 = require("../commands");
+const tempAdmin_1 = require("../tempAdmin");
 const imageModeration_1 = require("../imageModeration");
 const guildManager_1 = require("../guildManager");
 const gameState_1 = require("../gameState");
@@ -532,7 +533,10 @@ function registerChatHandlers(ctx) {
         if (message.startsWith('/')) {
             const command = message.substring(1).toLowerCase();
             if (command === 'help') {
-                const isAdmin = socket.username ? database_1.database.isUserAdmin(socket.username) : false;
+                // A temporary grant unlocks the admin console, so /help must list
+                // it too — otherwise the grantee can't see what they can now run.
+                const isAdmin = (socket.username ? database_1.database.isUserAdmin(socket.username) : false)
+                    || (0, tempAdmin_1.hasTempAdmin)(socket.id);
                 let helpText = 'Available commands:\n';
                 helpText += '/list_ultra - List all ultra mobs <br/>';
                 helpText += '/list_super - List all super mobs <br/>';

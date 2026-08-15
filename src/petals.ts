@@ -2403,7 +2403,8 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 <ellipse cx="16" cy="16" rx="12" ry="14" fill="#FFD700" stroke="#FFA500" stroke-width="2"/>
 <ellipse cx="16" cy="14" rx="8" ry="10" fill="#FFF8DC"/>
 </svg>`,
-        isAdminPetal: true
+        isAdminPetal: true,
+        size: 1.0,
     },
     glasss: {
         name: "Glasss",
@@ -2426,7 +2427,29 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
     stroke-linejoin="round"
   />
 </svg>`
-    },       size: 1.0,
+    },
+    glass: {
+        name: "Glass",
+        damage: 12,
+        health: Infinity,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
+        color: "#B0E0E6",
+        knockback: 0,
+        count: 1,
+        damageCooldown: 1000,
+        image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
+    fill="rgba(255, 255, 255, 0.25)"
+    stroke="rgba(255, 255, 255, 0.75)"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>`
+    },
  
     // ---------------------------------------------------------------------
     // The twelve petals below are ported from ~/rysteria_gardn. Each `image`

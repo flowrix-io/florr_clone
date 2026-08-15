@@ -23,6 +23,7 @@ import { cleanupPetalPhysicsStates, getEnemiesInViewport200Percent } from '../pl
 import { sanitizePlayersForClient, sanitizePublicPlayerForClient } from '../playerWire';
 import { AuthenticatedSocket } from '../shared/socketTypes';
 import { handlePlayerDisconnect as handleSquadDisconnect } from '../squadManager';
+import { revokeTempAdmin } from '../tempAdmin';
 import { getEligibleItemsForSocket } from '../tickBroadcast';
 import { getActivePlayerForSocket } from '../utils';
 import { ConnectionContext } from './context';
@@ -504,6 +505,10 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
     // counted as disconnected.
     const endPlayerSession = (removeListeners: boolean) => {
         console.log('A user disconnected');
+
+        // A temporary admin grant is scoped to one life in one session — it must
+        // not survive a return to the title screen and a fresh spawn either.
+        revokeTempAdmin(socket.id);
 
         // A title-screen session has no world state to tear down, but it does
         // hold account state (talent spends, shop buys) that the 60s autosave

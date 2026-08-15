@@ -39,6 +39,7 @@ import { ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { playerUserIds } from './gameState';
 import { getOriginalSocketId } from './utils';
+import { revokeTempAdmin } from './tempAdmin';
 import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { MapElement } from '../constants';
 import {
@@ -696,6 +697,16 @@ export function respawnPlayer(player: ServerPlayer, io: SocketIOServer) {
     // Neither does a glitch mob's infection — this is the only thing that
     // clears it, so a corpse stays glitched until the player actually respawns.
     player.glitched = undefined;
+
+    // A `grant_admin` grant lasts exactly one life. Dying does not end it (the
+    // death screen is still the same session) — coming back does.
+    if (revokeTempAdmin(player.id)) {
+        io.to(getOriginalSocketId(player.id)).emit('chatMessage', {
+            sender: 'System',
+            content: '<span style="color: #ff8866;">Your temporary admin access ended when you respawned.</span>',
+            timestamp: Date.now()
+        });
+    }
 
     setTimeout(() => {
         player.isInvulnerable = false;

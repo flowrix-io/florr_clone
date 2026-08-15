@@ -10,6 +10,7 @@ import { SCALE_FACTOR, SECTION_CONFIGS, enemies, players } from '../../constants
 import { ApiKey, database } from '../../database';
 import { getBotLevelForName, getBotLoadoutForName, triggerBotRaid } from '../botManager';
 import { getAdminHelpText, handleAdminCommand } from '../commands';
+import { hasTempAdmin } from '../tempAdmin';
 import { filterChatImages, messageHasImage } from '../imageModeration';
 import { MAX_GUILD_SIZE, acceptGuildInvite, broadcastGuildUpdate, buildGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, listGuilds, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
 import { getSessionPlayer } from '../gameState';
@@ -488,7 +489,10 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
             const command = message.substring(1).toLowerCase();
 
             if (command === 'help') {
-                const isAdmin = socket.username ? database.isUserAdmin(socket.username) : false;
+                // A temporary grant unlocks the admin console, so /help must list
+                // it too — otherwise the grantee can't see what they can now run.
+                const isAdmin = (socket.username ? database.isUserAdmin(socket.username) : false)
+                    || hasTempAdmin(socket.id);
                 let helpText = 'Available commands:\n';
                 helpText += '/list_ultra - List all ultra mobs <br/>';
                 helpText += '/list_super - List all super mobs <br/>';
