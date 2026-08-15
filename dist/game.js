@@ -1910,6 +1910,21 @@ class Game {
         document.getElementById('titleScreen')?.classList.remove('hidden');
     }
     showSaveIndicator() { }
+    /**
+     * Drop the "Leave site?" warning.
+     *
+     * That prompt exists to stop someone closing the tab mid-run and losing the
+     * unsaved end of it. Once the session is over — the server took the account
+     * back, the socket is closed, progress was flushed server-side before the
+     * kick — there is nothing left to lose, and prompting would only make the
+     * player fight the browser to act on a page telling them to leave.
+     */
+    suppressUnloadWarning() {
+        if (!this.beforeUnloadHandler)
+            return;
+        window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+        this.beforeUnloadHandler = null;
+    }
     // UI methods for disconnect/reconnect
     showDisconnectMessage() {
         let disconnectDiv = document.getElementById('disconnect-message');

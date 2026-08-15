@@ -32,6 +32,10 @@ export function resetServerEventStats(): void { eventByteStats.clear(); }
 
 interface SocketUserData {
     socket: WSSocket | null;
+    /** Peer IP, captured at upgrade — see the `upgrade` handler below. */
+    remoteAddress: string;
+    /** Forwarding header the peer presented, if any — see WSSocket.proxiedFor. */
+    proxiedFor: string;
 }
 
 const SEND_BINARY = true;
@@ -52,13 +56,43 @@ export class WSSocket {
     // desyncs any stateful protocol (delta updates, one-shot spawns/removes).
     droppedEvents: Set<string> | null = null;
 
+    /**
+     * The peer's IP as uWS reported it on the accepted TCP connection — never a
+     * client-supplied header, so it cannot be spoofed. Always uWS' uncompressed
+     * IPv6 text form, e.g. `0000:0000:0000:0000:0000:ffff:7f00:0001` for an IPv4
+     * peer on a dual-stack listener. Used to decide whether a connection is
+     * loopback (see server/connection/sessionGuard.ts).
+     */
+    readonly remoteAddress: string;
+
+    /**
+     * The client IP a forwarding proxy claimed for this connection
+     * (`CF-Connecting-IP`, else the first `X-Forwarded-For` hop), or '' when the
+     * connection arrived direct.
+     *
+     * Unlike `remoteAddress` this IS client-supplied text and must never be
+     * trusted as an identity. Its one load-bearing use is the opposite: a
+     * connection that carries it came through a proxy, which means a loopback
+     * `remoteAddress` is that proxy on this host — Cloudflare Tunnel, say — and
+     * NOT a local player. See sessionGuard.isLocalSocket.
+     */
+    readonly proxiedFor: string;
+
     // Allow dynamic properties (userId, username, etc.)
     [key: string]: any;
 
-    constructor(ws: UWS_WebSocket<SocketUserData>, id: string, server: WSServer) {
+    constructor(
+        ws: UWS_WebSocket<SocketUserData>,
+        id: string,
+        server: WSServer,
+        remoteAddress: string,
+        proxiedFor: string,
+    ) {
         this.ws = ws;
         this.id = id;
         this.server = server;
+        this.remoteAddress = remoteAddress;
+        this.proxiedFor = proxiedFor;
     }
 
     /** @internal Called by WSServer when uWS delivers a message frame. */
@@ -190,12 +224,22 @@ export class WSSocket {
         return Array.from(this.handlers.get(event) || []);
     }
 
-    disconnect(): void {
+    /**
+     * @param graceful Close with a WebSocket close frame (`end`) instead of
+     * ripping the TCP connection down (`close`). A forceful close can discard
+     * frames that are still queued, so anything that emits a final message to
+     * the client — "you were signed in elsewhere" — must close gracefully or
+     * the client never sees why it was dropped.
+     */
+    disconnect(graceful: boolean = false): void {
         this._connected = false;
         const ws = this.ws;
         this.ws = null;
         if (ws) {
-            try { ws.close(); } catch { /* already closed */ }
+            try {
+                if (graceful) ws.end(1000);
+                else ws.close();
+            } catch { /* already closed */ }
         }
     }
 
@@ -245,9 +289,36 @@ export class WSServer {
             idleTimeout: 120,
             sendPingsAutomatically: true,
 
+            // The only reason this route defines `upgrade` at all: uWS exposes
+            // the peer address on the HTTP request, and an upgraded WebSocket
+            // reports an EMPTY one (getRemoteAddressAsText() → 0 bytes). So the
+            // address is read here and carried across in the socket's userData.
+            // Everything else below is uWS' own default upgrade, spelled out.
+            upgrade: (res, req, context) => {
+                let remoteAddress = '';
+                try {
+                    remoteAddress = Buffer.from(res.getRemoteAddressAsText()).toString();
+                } catch {
+                    // Leave it blank — blank reads as "not local" downstream.
+                }
+                // Forwarding headers are only readable here too (the request is
+                // gone by `open`). Cloudflare rewrites CF-Connecting-IP with the
+                // real client IP and does not pass a client's own copy through.
+                const proxiedFor = req.getHeader('cf-connecting-ip')
+                    || req.getHeader('x-forwarded-for').split(',')[0].trim();
+                res.upgrade<SocketUserData>(
+                    { socket: null, remoteAddress, proxiedFor },
+                    req.getHeader('sec-websocket-key'),
+                    req.getHeader('sec-websocket-protocol'),
+                    req.getHeader('sec-websocket-extensions'),
+                    context,
+                );
+            },
+
             open: (ws) => {
                 const id = randomUUID().replace(/-/g, '').slice(0, 20);
-                const socket = new WSSocket(ws, id, this);
+                const data = ws.getUserData();
+                const socket = new WSSocket(ws, id, this, data.remoteAddress || '', data.proxiedFor || '');
                 ws.getUserData().socket = socket;
                 this.sockets_map.set(id, socket);
 

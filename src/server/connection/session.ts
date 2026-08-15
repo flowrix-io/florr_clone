@@ -26,6 +26,7 @@ import { handlePlayerDisconnect as handleSquadDisconnect } from '../squadManager
 import { getEligibleItemsForSocket } from '../tickBroadcast';
 import { getActivePlayerForSocket } from '../utils';
 import { ConnectionContext } from './context';
+import { kickDuplicateSessions } from './sessionGuard';
 
 export function registerSessionHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -88,6 +89,11 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
         const spawnBiome = lobby ? 'default' : (credentials.spawnBiome || 'default');
 
         if (user) {
+            // One account, one connection (loopback excepted — see sessionGuard).
+            // This runs before the account is read back from disk below so that
+            // the kicked tab's progress is already flushed when we load it.
+            kickDuplicateSessions(io, socket, user.id, savePlayerProgressImmediate);
+
             // Any lobby session on this socket is being replaced — by the real
             // spawn below, or by a fresh lobby load. Flush it first: a talent
             // spend or shop purchase may still be sitting in a debounced save,

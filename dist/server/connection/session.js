@@ -24,6 +24,7 @@ const playerWire_1 = require("../playerWire");
 const squadManager_1 = require("../squadManager");
 const tickBroadcast_1 = require("../tickBroadcast");
 const utils_1 = require("../utils");
+const sessionGuard_1 = require("./sessionGuard");
 function registerSessionHandlers(ctx) {
     const { io, socket } = ctx;
     const { respawnPlayer, savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
@@ -81,6 +82,10 @@ function registerSessionHandlers(ctx) {
         // so a lobby auth can never put the account into maze or PVP state.
         const spawnBiome = lobby ? 'default' : (credentials.spawnBiome || 'default');
         if (user) {
+            // One account, one connection (loopback excepted — see sessionGuard).
+            // This runs before the account is read back from disk below so that
+            // the kicked tab's progress is already flushed when we load it.
+            (0, sessionGuard_1.kickDuplicateSessions)(io, socket, user.id, savePlayerProgressImmediate);
             // Any lobby session on this socket is being replaced — by the real
             // spawn below, or by a fresh lobby load. Flush it first: a talent
             // spend or shop purchase may still be sitting in a debounced save,

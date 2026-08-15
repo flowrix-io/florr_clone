@@ -13,6 +13,7 @@ import { getCurrentGame, setCurrentGame, setTitleScreen } from './app_refs';
 import { getPreconnectedSocket, getLivePreconnectedSocket, setPreconnectedSocket, setPreconnectHooks } from './net/preconnect';
 import { exposeDevGlobals } from './dev_expose';
 import { isLoggedIn, migrateLegacyCredentials } from './auth_session';
+import { attachSessionReplacedHandler } from './net/sessionReplaced';
 
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
@@ -166,6 +167,10 @@ function preconnectToServer() {
 // returns to the title screen (so the connection — and the player's loot — is
 // reused rather than dropped and recreated under a new socket id).
 function attachTitleScreenSocketListeners(sock: any) {
+    // The title screen holds a real authenticated session (inventory, crafting,
+    // talents), so it is kickable like an in-game one — see net/sessionReplaced.
+    attachSessionReplacedHandler(sock);
+
     // Daily maze descriptor — keeps the locally-generated maze in sync with
     // the server (matters across the UTC day boundary / client clock skew).
     sock.on('mazeInfo', (data: { day: number; biome?: string }) => {

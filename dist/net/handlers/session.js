@@ -13,6 +13,7 @@ const maze_1 = require("../../maze");
 const ws_client_1 = require("../../ws_client");
 const playerRefs_1 = require("../playerRefs");
 const app_refs_1 = require("../../app_refs");
+const sessionReplaced_1 = require("../sessionReplaced");
 /**
  * @param reRegisterAll Re-attaches every handler group to a fresh socket. A
  * cross-server transfer swaps game.socket wholesale, so the new socket needs
@@ -24,6 +25,9 @@ function registerSessionHandlers(game, reRegisterAll) {
     // Per-event wire-byte counters now live on the WSClientSocket wrapper (see
     // ws_client.ts getEventStats). The wrapper records true encoded byte sizes,
     // so we no longer need the old JSON-stringify estimator here.
+    // Another tab or device signed into this account: stop reconnecting and
+    // explain, instead of silently losing the world (see net/sessionReplaced).
+    (0, sessionReplaced_1.attachSessionReplacedHandler)(game.socket);
     game.socket.on('connect', () => {
         const connectTime = performance.now();
         console.log(`[CLIENT] Socket connected with ID ${game.socket.id} at ${connectTime.toFixed(0)}`);
@@ -390,8 +394,10 @@ function registerSessionHandlers(game, reRegisterAll) {
             clearInterval(game.heartbeatInterval);
             game.heartbeatInterval = null;
         }
-        // Show disconnect message (but not during intentional transfers)
-        if (!game.pendingTransfer) {
+        // Show disconnect message (but not during intentional transfers, and not
+        // when the session was taken over — that overlay already says why, and
+        // "Reconnecting..." would be a lie: reconnection is off).
+        if (!game.pendingTransfer && !(0, sessionReplaced_1.isSessionReplaced)()) {
             game.showDisconnectMessage();
         }
     });

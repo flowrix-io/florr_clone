@@ -19,6 +19,7 @@ import {
     withoutRawPetalPositions,
 } from '../playerRefs';
 import { getCurrentGame } from '../../app_refs';
+import { attachSessionReplacedHandler, isSessionReplaced } from '../sessionReplaced';
 
 /**
  * @param reRegisterAll Re-attaches every handler group to a fresh socket. A
@@ -32,6 +33,10 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
     // Per-event wire-byte counters now live on the WSClientSocket wrapper (see
     // ws_client.ts getEventStats). The wrapper records true encoded byte sizes,
     // so we no longer need the old JSON-stringify estimator here.
+
+    // Another tab or device signed into this account: stop reconnecting and
+    // explain, instead of silently losing the world (see net/sessionReplaced).
+    attachSessionReplacedHandler(game.socket);
 
     game.socket.on('connect', () => {
         const connectTime = performance.now();
@@ -441,8 +446,10 @@ export function registerSessionHandlers(game: any, reRegisterAll: (game: any) =>
             game.heartbeatInterval = null;
         }
 
-        // Show disconnect message (but not during intentional transfers)
-        if (!game.pendingTransfer) {
+        // Show disconnect message (but not during intentional transfers, and not
+        // when the session was taken over — that overlay already says why, and
+        // "Reconnecting..." would be a lie: reconnection is off).
+        if (!game.pendingTransfer && !isSessionReplaced()) {
             game.showDisconnectMessage();
         }
     });
