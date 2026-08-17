@@ -66,6 +66,13 @@ export function radiusOf(enemy: Enemy, stats: MobStats | null): number {
  * other entities to exist, so they go through `linkEnemyReferences`.
  */
 export function attachMobBehaviour(world: World, entity: Entity, enemy: Enemy, now: number): void {
+    // The entity -> shell link both bridge passes and the reconcile run on. It
+    // goes here rather than in `spawnMob` because the ECS layer must not know
+    // what an `Enemy` is, and here is the one place BOTH creation paths meet —
+    // a mob that missed it would silently stop being synced in either
+    // direction. See C.LegacyShell.
+    world.add(entity, C.LegacyShell, { ref: enemy });
+
     // Passive drift: only mobs that can actually move idle-drift.
     if (enemy.speed > 0) {
         world.add(entity, C.PassiveMotion, {

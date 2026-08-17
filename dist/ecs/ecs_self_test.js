@@ -449,6 +449,51 @@ function runEcsSelfTest() {
         });
         checkEqual('stacks detect their dead target', orphaned, 3);
     }
+    // -- entity cursors ------------------------------------------------------
+    {
+        const world = new world_1.World();
+        const cursor = new world_1.EntityCursor();
+        const e = world.create();
+        world.add(e, Position, { x: 3, y: 4 });
+        world.add(e, Health, { current: 50, max: 100 });
+        check('seek finds a live entity', world.seek(e, cursor));
+        checkEqual('cursor reads the same value as get', cursor.need(Position).x[cursor.row], world.get(e, Position, 'x'));
+        checkEqual('cursor sees a component the entity has', cursor.has(Health), true);
+        checkEqual('cursor sees the absence of one it lacks', cursor.has(Velocity), false);
+        checkEqual('cols returns undefined rather than throwing', cursor.cols(Velocity), undefined);
+        // A write through the cursor must be the same storage `get` reads.
+        cursor.need(Position).y[cursor.row] = 99;
+        checkEqual('a cursor write is visible to get', world.get(e, Position, 'y'), 99);
+        // `need` is the loud path: a wrong assumption must throw rather than
+        // index `undefined` (or, worse, read a neighbouring component's array).
+        let threw = false;
+        try {
+            cursor.need(Velocity);
+        }
+        catch {
+            threw = true;
+        }
+        check('need throws for a missing component', threw);
+        // The invalidation rule this API lives or dies by. Adding a component
+        // MOVES the entity to another archetype, so the pre-add cursor points
+        // at a row that now belongs to someone else (or to nothing).
+        const rowBefore = cursor.row;
+        const archetypeBefore = cursor.archetype;
+        world.add(e, Velocity, { x: 1, y: 2 });
+        const moved = cursor.archetype !== archetypeBefore || cursor.row !== rowBefore;
+        checkEqual('a stale cursor is NOT auto-updated by an add', moved, false);
+        world.seek(e, cursor);
+        check('re-seek picks up the new archetype', cursor.has(Velocity));
+        checkEqual('and the data survived the move', cursor.need(Position).y[cursor.row], 99);
+        checkEqual('re-seek reads the added component', cursor.need(Velocity).x[cursor.row], 1);
+        // Dead handles must unseat the cursor, not leave it on a recycled row.
+        world.destroy(e);
+        checkEqual('seek fails for a destroyed entity', world.seek(e, cursor), false);
+        checkEqual('and unseats the row', cursor.row, -1);
+        const stale = (0, entity_1.makeEntity)((0, entity_1.entityIndex)(e), (0, entity_1.entityGeneration)(e) + 1);
+        checkEqual('seek fails for a stale generation', world.seek(stale, cursor), false);
+        checkEqual('seek fails for NULL_ENTITY', world.seek(entity_1.NULL_ENTITY, cursor), false);
+    }
     // -- component masks survive the sign bit --------------------------------
     {
         // JS bitwise operators yield a SIGNED int32, so a mask word with bit 31

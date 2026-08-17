@@ -93,7 +93,7 @@ function byScore(a, b) {
     return a.score - b.score;
 }
 function enemyAISystem(queries, deps) {
-    const { hasLineOfSight, resolveWall, isBlocked, fireVolley, hasProjectile, isPlayerSpeedChaser, playerChaseStep, sandstormSuckTier, maxTargetDistance, } = deps;
+    const { hasLineOfSight, resolveWall, isBlocked, fireVolley, hasProjectile, isPlayerSpeedChaser, playerChaseStep, sandstormSuckTier, maxTargetDistance, activity, } = deps;
     // Scratch reused across mobs and ticks so a full tick allocates nothing.
     const candidates = [];
     const alivePlayers = [];
@@ -561,6 +561,12 @@ function enemyAISystem(queries, deps) {
             }
             const x = world.get(mob, C.Position, 'x');
             const y = world.get(mob, C.Position, 'y');
+            // Nowhere near a player: step at the reduced rate. Checked before
+            // anything else in the body because everything after it — above all
+            // the two target acquisitions and their raycasts — is the work this
+            // exists to skip.
+            if (!activity.shouldStep(mob, x, y, ctx.tick))
+                continue;
             const radius = world.get(mob, C.Radius, 'value');
             const mobTypeId = world.get(mob, C.MobKind, 'type');
             const aiType = world.get(mob, C.MobAI, 'aiType');

@@ -309,6 +309,9 @@ const DT = 1 / 30;
 function makeRuntime(): EcsRuntime {
     return createEcsRuntime({
         lookupPlayer: () => undefined,
+        // This bench drives the schedulers directly; the post-movement pipeline
+        // is the game\'s, not the bench\'s.
+        runPlayerPipeline: () => { /* not exercised here */ },
         creditDamage: () => { /* not reachable from the player scheduler */ },
         onEnemyDamaged: () => { /* ditto */ },
         onEnemyKilled: () => { /* ditto */ },

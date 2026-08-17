@@ -308,7 +308,7 @@ function clearMazeEnemies() {
         const enemy = constants_1.enemies[i];
         if ((0, maze_1.isInMazeRegion)(enemy.x, enemy.y)) {
             removed.push(enemy.id);
-            constants_1.enemies.splice(i, 1);
+            (0, enemyRegistry_1.removeEnemyAt)(i);
         }
     }
     return removed;

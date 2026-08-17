@@ -24,7 +24,7 @@
  *   });
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Phase = exports.Scheduler = exports.CommandBuffer = exports.Query = exports.World = exports.Archetype = exports.isNumericField = exports.allComponents = exports.componentById = exports.componentCount = exports.defineTag = exports.defineComponent = exports.entityToString = exports.entityGeneration = exports.entityIndex = exports.makeEntity = exports.ENTITY_MAX_GENERATION = exports.ENTITY_INDEX_COUNT = exports.NULL_ENTITY = void 0;
+exports.Phase = exports.Scheduler = exports.CommandBuffer = exports.EntityCursor = exports.Query = exports.World = exports.Archetype = exports.isNumericField = exports.allComponents = exports.componentById = exports.componentCount = exports.defineTag = exports.defineComponent = exports.entityToString = exports.entityGeneration = exports.entityIndex = exports.makeEntity = exports.ENTITY_MAX_GENERATION = exports.ENTITY_INDEX_COUNT = exports.NULL_ENTITY = void 0;
 var entity_1 = require("./entity");
 Object.defineProperty(exports, "NULL_ENTITY", { enumerable: true, get: function () { return entity_1.NULL_ENTITY; } });
 Object.defineProperty(exports, "ENTITY_INDEX_COUNT", { enumerable: true, get: function () { return entity_1.ENTITY_INDEX_COUNT; } });
@@ -45,6 +45,7 @@ Object.defineProperty(exports, "Archetype", { enumerable: true, get: function ()
 var world_1 = require("./world");
 Object.defineProperty(exports, "World", { enumerable: true, get: function () { return world_1.World; } });
 Object.defineProperty(exports, "Query", { enumerable: true, get: function () { return world_1.Query; } });
+Object.defineProperty(exports, "EntityCursor", { enumerable: true, get: function () { return world_1.EntityCursor; } });
 var commands_1 = require("./commands");
 Object.defineProperty(exports, "CommandBuffer", { enumerable: true, get: function () { return commands_1.CommandBuffer; } });
 var system_1 = require("./system");

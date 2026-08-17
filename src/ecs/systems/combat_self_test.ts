@@ -17,6 +17,7 @@ import {
     MobCollisionDeps,
     registerMobCollisionSystem,
 } from './mobCollision';
+import { MobActivityField } from './lod';
 
 const TICK_MS = 1000 / 30;
 const TICK_SECONDS = 1 / 30;
@@ -171,6 +172,9 @@ export function runCombatSelfTest(): string[] {
             creditDamage: (victim, player, amount) => { events.credits.push({ victim, player, amount }); },
             onDamaged: (victim) => { events.damaged.push(victim); },
             onKilled: (victim) => { events.killed.push(victim); },
+            // Empty = every mob active, so these cases test collision, not the
+            // LOD stride. See systems/lod.ts.
+            activity: new MobActivityField(),
         };
 
         registerMobCollisionSystem(scheduler, createMobCollisionQueries(world), deps);

@@ -66,7 +66,7 @@ function killEnemy(enemy, index, enemies, ctx, opts = {}) {
     if (!skipCleanup)
         ctx.cleanupEnemy(enemy);
     if (index >= 0 && index < enemies.length) {
-        enemies.splice(index, 1);
+        ctx.removeEnemyAt(index);
     }
     if (emitDestroyed)
         ctx.io.emit('enemyDestroyed', enemy.id);

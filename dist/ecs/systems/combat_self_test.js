@@ -38,6 +38,7 @@ const system_1 = require("../system");
 const world_1 = require("../world");
 const projectileFiring_1 = require("./projectileFiring");
 const mobCollision_1 = require("./mobCollision");
+const lod_1 = require("./lod");
 const TICK_MS = 1000 / 30;
 const TICK_SECONDS = 1 / 30;
 function runCombatSelfTest() {
@@ -157,6 +158,9 @@ function runCombatSelfTest() {
             creditDamage: (victim, player, amount) => { events.credits.push({ victim, player, amount }); },
             onDamaged: (victim) => { events.damaged.push(victim); },
             onKilled: (victim) => { events.killed.push(victim); },
+            // Empty = every mob active, so these cases test collision, not the
+            // LOD stride. See systems/lod.ts.
+            activity: new lod_1.MobActivityField(),
         };
         (0, mobCollision_1.registerMobCollisionSystem)(scheduler, (0, mobCollision_1.createMobCollisionQueries)(world), deps);
         let now = 20000;

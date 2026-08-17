@@ -16,7 +16,7 @@
  * *is* (a projectile, a pet, a centipede segment) are what tags are for.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.World = exports.Query = void 0;
+exports.World = exports.Query = exports.EntityCursor = void 0;
 const archetype_1 = require("./archetype");
 const component_1 = require("./component");
 const entity_1 = require("./entity");
@@ -38,6 +38,56 @@ class ChunkView {
         return col.arrays;
     }
 }
+/**
+ * One entity's storage location, resolved once.
+ *
+ * `get`/`set`/`write`/`has` each re-derive the same three things from the
+ * handle: liveness, archetype, row. That is the right trade for a handful of
+ * accesses, and the wrong one for the bridge passes in server/ecsSync.ts, which
+ * touch a dozen-odd fields on every mob every tick and were paying the
+ * resolution a dozen-odd times per mob. Seek once, then index the columns.
+ *
+ * Use it exactly like a Chunk's arrays, at `cursor.row`:
+ *
+ *   if (world.seek(entity, cursor)) {
+ *       const pos = cursor.cols(C.Position);
+ *       enemy.x = pos.x[cursor.row];
+ *   }
+ *
+ * ⚠️ A cursor is only valid until the next STRUCTURAL change to the world —
+ * `add`, `remove`, `destroy` or anything that moves an entity between
+ * archetypes, including on a DIFFERENT entity (rows are swap-removed, so
+ * another entity's destroy can relocate this row). Re-seek after any of those.
+ * Plain field writes never invalidate it.
+ */
+class EntityCursor {
+    constructor() {
+        /** The sought entity's row within `archetype`, or -1 when unseated. */
+        this.row = -1;
+    }
+    /** Whether the sought entity carries `type`. */
+    has(type) {
+        return this.archetype.columns[type.id] !== undefined;
+    }
+    /** The backing arrays for `type`, or undefined when the entity lacks it. */
+    cols(type) {
+        const col = this.archetype.columns[type.id];
+        return col === undefined ? undefined : col.arrays;
+    }
+    /**
+     * The backing arrays for `type`, which the caller knows is present.
+     * Throws otherwise, so a wrong assumption fails loudly instead of reading
+     * `undefined[row]`.
+     */
+    need(type) {
+        const col = this.archetype.columns[type.id];
+        if (col === undefined) {
+            throw new Error(`Cursor entity has no component "${type.name}"`);
+        }
+        return col.arrays;
+    }
+}
+exports.EntityCursor = EntityCursor;
 /**
  * A cached set of archetypes matching a component filter.
  *
@@ -221,6 +271,24 @@ class World {
         if (!this.isAlive(e))
             return false;
         return this.archetypes[this.archetypeOf[(0, entity_1.entityIndex)(e)]].has(type.id);
+    }
+    /**
+     * Point `cursor` at `e`'s storage. Returns false (leaving the cursor
+     * unseated) when the handle is dead or stale.
+     *
+     * For code that reads or writes several fields on one entity — see
+     * EntityCursor for the invalidation rule, which is the whole risk of using
+     * this instead of the scalar accessors.
+     */
+    seek(e, cursor) {
+        if (!this.isAlive(e)) {
+            cursor.row = -1;
+            return false;
+        }
+        const index = (0, entity_1.entityIndex)(e);
+        cursor.archetype = this.archetypes[this.archetypeOf[index]];
+        cursor.row = this.rowOf[index];
+        return true;
     }
     /**
      * Add `type` to `e`, initialising the given fields (others start zeroed).

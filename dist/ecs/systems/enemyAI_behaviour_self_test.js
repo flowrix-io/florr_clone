@@ -38,6 +38,7 @@ const prefabs_1 = require("../prefabs");
 const system_1 = require("../system");
 const world_1 = require("../world");
 const enemyAI_1 = require("./enemyAI");
+const lod_1 = require("./lod");
 const TICK_MS = 1000 / 30;
 const TICK_SECONDS = 1 / 30;
 const PLAYER_CHASE_STEP = 300 / 30;
@@ -69,6 +70,10 @@ function runEnemyAiBehaviourSelfTest() {
             playerChaseStep: PLAYER_CHASE_STEP,
             sandstormSuckTier: 7,
             maxTargetDistance: 6400,
+            // Left empty on purpose: an empty field treats every mob as active,
+            // so these cases exercise the AI itself rather than the LOD stride.
+            // systems/lod.ts has its own coverage.
+            activity: new lod_1.MobActivityField(),
         };
         (0, enemyAI_1.registerEnemyAISystem)(scheduler, (0, enemyAI_1.createEnemyAIQueries)(world), deps);
         let now = 50000;

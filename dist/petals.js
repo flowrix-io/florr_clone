@@ -11,9 +11,6 @@ exports.getAllPetalTypes = getAllPetalTypes;
 exports.isEggPetalType = isEggPetalType;
 exports.isUndroppableEggPetalType = isUndroppableEggPetalType;
 exports.getPetalRarities = getPetalRarities;
-exports.parsePetalActions = parsePetalActions;
-const test_action_1 = require("./petal_action/test.action");
-const blood_leaf_action_1 = require("./petal_action/blood_leaf.action");
 const mobs_1 = require("./mobs");
 const player_1 = require("./player");
 // Rarity levels in order from lowest to highest
@@ -832,7 +829,6 @@ const BASE_PETAL_CONFIGS = {
         description: "A petal that strikes lightning at multiple enemies in a radius",
         color: "#FFFFFF",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="310 300 400 400" version="1.1"><path d="M 500.045 396.029 L 488.590 435.045 487.913 436.141 L 487.235 437.237 454.557 412.013 L 421.878 386.789 421.416 387.251 L 420.955 387.712 434.610 426.390 L 448.264 465.069 447.732 465.602 L 447.199 466.134 408.850 464.961 L 370.500 463.789 367.532 464.144 L 364.563 464.500 398.782 487.979 L 433 511.457 433 512 L 433 512.543 398.782 536.021 L 364.563 559.500 367.532 559.856 L 370.500 560.211 408.850 559.039 L 447.199 557.866 447.732 558.398 L 448.264 558.931 434.610 597.610 L 420.955 636.288 421.413 636.746 L 421.871 637.204 454.543 611.967 L 487.215 586.730 487.945 587.912 L 488.676 589.093 500.088 628.043 L 511.500 666.992 512 666.992 L 512.500 666.992 523.912 628.043 L 535.324 589.093 536.055 587.912 L 536.785 586.730 569.457 611.967 L 602.129 637.204 602.587 636.746 L 603.045 636.288 589.390 597.610 L 575.736 558.931 576.268 558.398 L 576.801 557.866 615.150 559.039 L 653.500 560.211 656.468 559.856 L 659.437 559.500 625.218 536.021 L 591 512.543 591 512 L 591 511.457 625.218 487.979 L 659.437 464.500 656.468 464.144 L 653.500 463.789 615.150 464.961 L 576.801 466.134 576.268 465.602 L 575.736 465.069 589.390 426.390 L 603.045 387.712 602.584 387.251 L 602.122 386.789 569.443 412.013 L 536.765 437.237 536.087 436.141 L 535.410 435.045 523.955 396.029 L 512.500 357.013 512 357.013 L 511.500 357.013 500.045 396.029 M 503.500 432.502 L 495.500 460 495 459.988 L 494.500 459.976 472 442.628 L 449.500 425.281 449.147 425.577 L 448.794 425.873 458.026 451.687 L 467.259 477.500 467.783 478.873 L 468.308 480.245 438.904 479.540 L 409.500 478.835 411.500 480.291 L 413.500 481.746 435 496.430 L 456.500 511.113 456.770 511.867 L 457.040 512.621 440.433 523.925 L 423.826 535.230 416.663 540.223 L 409.500 545.215 438.893 544.515 L 468.285 543.814 467.799 545.157 L 467.312 546.500 458.057 572.317 L 448.802 598.135 449.151 598.452 L 449.500 598.769 472 581.396 L 494.500 564.023 495 564.021 L 495.500 564.018 503.500 591.507 L 511.500 618.996 512 618.996 L 512.500 618.996 520.500 591.507 L 528.500 564.018 529 564.021 L 529.500 564.023 552 581.396 L 574.500 598.769 574.849 598.452 L 575.198 598.135 565.943 572.317 L 556.688 546.500 556.201 545.157 L 555.715 543.814 585.107 544.521 L 614.500 545.228 590.750 528.987 L 567 512.747 567 512.055 L 567 511.363 576.750 504.748 L 586.500 498.133 600.500 488.480 L 614.500 478.828 585.096 479.537 L 555.692 480.245 556.217 478.873 L 556.741 477.500 565.974 451.687 L 575.206 425.873 574.853 425.577 L 574.500 425.281 552 442.628 L 529.500 459.976 529 459.988 L 528.500 460 520.500 432.502 L 512.500 405.005 512 405.005 L 511.500 405.005 503.500 432.502" stroke="none" fill="#24c4bc" fill-rule="evenodd"/><path d="M 503.500 432.502 L 495.500 460 495 459.988 L 494.500 459.976 472 442.628 L 449.500 425.281 449.147 425.577 L 448.794 425.873 458.026 451.687 L 467.259 477.500 467.783 478.873 L 468.308 480.245 438.904 479.540 L 409.500 478.835 411.500 480.291 L 413.500 481.746 435 496.430 L 456.500 511.113 456.770 511.867 L 457.040 512.621 440.433 523.925 L 423.826 535.230 416.663 540.223 L 409.500 545.215 438.893 544.515 L 468.285 543.814 467.799 545.157 L 467.312 546.500 458.057 572.317 L 448.802 598.135 449.151 598.452 L 449.500 598.769 472 581.396 L 494.500 564.023 495 564.021 L 495.500 564.018 503.500 591.507 L 511.500 618.996 512 618.996 L 512.500 618.996 520.500 591.507 L 528.500 564.018 529 564.021 L 529.500 564.023 552 581.396 L 574.500 598.769 574.849 598.452 L 575.198 598.135 565.943 572.317 L 556.688 546.500 556.201 545.157 L 555.715 543.814 585.107 544.521 L 614.500 545.228 590.750 528.987 L 567 512.747 567 512.055 L 567 511.363 576.750 504.748 L 586.500 498.133 600.500 488.480 L 614.500 478.828 585.096 479.537 L 555.692 480.245 556.217 478.873 L 556.741 477.500 565.974 451.687 L 575.206 425.873 574.853 425.577 L 574.500 425.281 552 442.628 L 529.500 459.976 529 459.988 L 528.500 460 520.500 432.502 L 512.500 405.005 512 405.005 L 511.500 405.005 503.500 432.502" stroke="none" fill="#2bf3e3" fill-rule="evenodd"/></svg>`,
-        actions: `wait_until_collision; lightning 1000;`
     },
     missile: {
         name: "Missile",
@@ -977,7 +973,6 @@ const BASE_PETAL_CONFIGS = {
         description: "It increases your body damage and has lightning",
         knockback: 5,
         color: "#000000",
-        actions: "lightning 1000; break;",
         speed: 2.0,
         count: 1,
         range: 0.0,
@@ -1068,7 +1063,6 @@ const BASE_PETAL_CONFIGS = {
         description: "Explodes and damages the player",
         color: "#000000",
         count: 1,
-        actions: blood_leaf_action_1.blood_leaf_action,
         image: `<svg width="32" height="32" viewBox="-21.5 -10.5 38 21" xmlns="http://www.w3.org/2000/svg">
   <path d="M -20 0 
            L -15 0 
@@ -1143,7 +1137,6 @@ const BASE_PETAL_CONFIGS = {
         description: "Heals if below 75% health",
         color: "#000000",
         count: 1,
-        actions: "if memory:player:health < 75; heal 25; endif;",
         image: `<?xml version="1.0" encoding="utf-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32px" height="32px">
   <path d="M 0.0 11.0 C 32.0 16.0 32.0 16.00 0.0 21" stroke="#ed5c79" stroke-width="3" fill="#fc6f8b"/>
@@ -1847,7 +1840,6 @@ const BASE_PETAL_CONFIGS = {
   <!-- Bottom shadow -->
   <rect x="10" y="30" width="12" height="2" fill="#00000033"/>
 </svg>`,
-        actions: "wait_until_collision; explode 30; break;",
         isAdminPetal: false,
     },
     flower: {
@@ -2033,7 +2025,6 @@ const BASE_PETAL_CONFIGS = {
         description: "A petal that heals the player when spawned",
         color: "#FF69B4",
         count: 1,
-        actions: "heal 20; delay 2000; restart;",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff94f4" stroke="#d17bc9" stroke-width="4"/>
 <path d="M16 8 L16 24 M8 16 L24 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
@@ -2049,7 +2040,6 @@ const BASE_PETAL_CONFIGS = {
         description: "A petal that explodes when it hits an enemy",
         color: "#FF4500",
         count: 1,
-        actions: "wait_until_collision; explode 30; break;",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff6b35" stroke="#d63031" stroke-width="4"/>
 <path d="M12 12 L20 20 M20 12 L12 20" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
@@ -2065,7 +2055,6 @@ const BASE_PETAL_CONFIGS = {
         description: "A test petal that explodes immediately",
         color: "#FF0000",
         count: 1,
-        actions: "explode 50; delay 3000; restart;",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#ff0000" stroke="#cc0000" stroke-width="4"/>
 <path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
@@ -2081,7 +2070,6 @@ const BASE_PETAL_CONFIGS = {
         description: "A petal that provides shield when spawned",
         color: "#4169E1",
         count: 1,
-        actions: "shield 50 10000; delay 10000; restart;",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#6495ed" stroke="#4169e1" stroke-width="4"/>
 <path d="M16 6 L20 12 L16 18 L12 12 Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" fill="none"/>
@@ -2162,7 +2150,6 @@ const BASE_PETAL_CONFIGS = {
         description: "A petal that tests actions",
         color: "#000000",
         count: 1,
-        actions: test_action_1.test_petal_action,
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
 <circle cx="16" cy="16" r="14" fill="#000000" stroke="#000000" stroke-width="4"/>
 <path d="M8 8 L24 24 M24 8 L8 24" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
@@ -2811,7 +2798,6 @@ function generatePetalStats(baseConfig, rarity, petalType) {
         color: RARITY_COLORS[rarity],
         image: overrides.image ?? baseConfig.image ?? findSvgFallback(petalType, rarity),
         count: overrides.count ?? baseConfig.count,
-        actions: overrides.actions ?? baseConfig.actions,
         passiveHeal: passiveHeal, // Scaled passive healing per second
         burstHeal: burstHeal, // Scaled one-shot heal delivered when the petal is consumed
         burstHealChargeMs: baseConfig.burstHealChargeMs,
@@ -2913,191 +2899,4 @@ function isUndroppableEggPetalType(petalType) {
 }
 function getPetalRarities(petalType) {
     return Object.keys(exports.PETAL_CONFIG[petalType] || {});
-}
-// Action parser function
-function parsePetalActions(actionString) {
-    if (!actionString || typeof actionString !== 'string') {
-        return [];
-    }
-    const actions = [];
-    const actionParts = actionString.split(';').map(part => part.trim()).filter(part => part.length > 0);
-    for (const part of actionParts) {
-        const [actionType, ...params] = part.split(' ').map(p => p.trim());
-        switch (actionType.toLowerCase()) {
-            case 'heal':
-                const healValue = params.length > 0 ? parseFloat(params[0]) : 10;
-                actions.push({ type: 'heal', value: healValue });
-                break;
-            case 'break':
-                actions.push({ type: 'break' });
-                break;
-            case 'damage_boost':
-                const damageValue = params.length > 0 ? parseFloat(params[0]) : 1.5;
-                const damageDuration = params.length > 1 ? parseFloat(params[1]) * 1000 : 5000; // Convert seconds to ms
-                actions.push({ type: 'damage_boost', value: damageValue, duration: damageDuration });
-                break;
-            case 'speed_boost':
-                const speedValue = params.length > 0 ? parseFloat(params[0]) : 1.5;
-                const speedDuration = params.length > 1 ? parseFloat(params[1]) * 1000 : 5000; // Convert seconds to ms
-                actions.push({ type: 'speed_boost', value: speedValue, duration: speedDuration });
-                break;
-            case 'shield':
-                const shieldValue = params.length > 0 ? parseFloat(params[0]) : 50;
-                const shieldDuration = params.length > 1 ? parseFloat(params[1]) * 1000 : 3000; // Convert seconds to ms
-                actions.push({ type: 'shield', value: shieldValue, duration: shieldDuration });
-                break;
-            case 'explode':
-                const explodeValue = params.length > 0 ? parseFloat(params[0]) : 30;
-                actions.push({ type: 'explode', value: explodeValue });
-                break;
-            case 'lightning':
-                const lightningValue = params.length > 0 ? parseFloat(params[0]) : 100;
-                actions.push({ type: 'lightning', value: lightningValue });
-                break;
-            case 'delay':
-                const delayValue = params.length > 0 ? parseFloat(params[0]) : 1000;
-                actions.push({ type: 'delay', value: delayValue });
-                break;
-            case 'restart':
-                actions.push({ type: 'restart' });
-                break;
-            case 'wait_until_collision':
-                actions.push({ type: 'wait_until_collision' });
-                break;
-            case 'if':
-                const condition = params.join(' ');
-                actions.push({ type: 'if', condition: condition });
-                break;
-            case 'else':
-                actions.push({ type: 'else' });
-                break;
-            case 'endif':
-                actions.push({ type: 'endif' });
-                break;
-            case 'loop':
-                const loopCount = params.length > 0 ? parseFloat(params[0]) : -1; // -1 means infinite
-                actions.push({ type: 'loop', value: loopCount });
-                break;
-            case 'endloop':
-                actions.push({ type: 'endloop' });
-                break;
-            case 'goto':
-                const labelName = params[0] || '';
-                actions.push({ type: 'goto', stringValue: labelName });
-                break;
-            case 'label':
-                const label = params[0] || '';
-                actions.push({ type: 'label', stringValue: label });
-                break;
-            case 'set_memory':
-                const memKey = params[0] || '';
-                const memValueParam = params.length > 1 ? params[1] : '0';
-                const memValue = parseFloat(memValueParam);
-                // If value is a memory reference, store it in a special format
-                if (memValueParam.startsWith('memory:')) {
-                    // Store as stringValue with special prefix to indicate it's a memory reference value
-                    actions.push({ type: 'set_memory', stringValue: memKey, value: NaN, condition: memValueParam });
-                }
-                else if (!isNaN(memValue)) {
-                    actions.push({ type: 'set_memory', stringValue: memKey, value: memValue });
-                }
-                else {
-                    actions.push({ type: 'set_memory', stringValue: memKey, value: 0 });
-                }
-                break;
-            case 'get_memory':
-                const getMemKey = params[0] || '';
-                actions.push({ type: 'get_memory', stringValue: getMemKey });
-                break;
-            case 'add_memory':
-                const addMemKey = params[0] || '';
-                const addMemValue = params.length > 1 ? parseFloat(params[1]) : 0;
-                actions.push({ type: 'add_memory', stringValue: addMemKey, value: addMemValue });
-                break;
-            case 'multiply_memory':
-                const multMemKey = params[0] || '';
-                const multMemValue = params.length > 1 ? parseFloat(params[1]) : 1;
-                actions.push({ type: 'multiply_memory', stringValue: multMemKey, value: multMemValue });
-                break;
-            case 'set_petal_damage':
-                const petalDmg = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'set_petal_damage', value: petalDmg });
-                break;
-            case 'set_petal_health':
-                const petalHp = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'set_petal_health', value: petalHp });
-                break;
-            case 'set_petal_size':
-                const petalSzParam = params.length > 0 ? params[0] : '1';
-                const petalSz = parseFloat(petalSzParam);
-                // If it's a memory reference, store in stringValue instead
-                if (petalSzParam.startsWith('memory:')) {
-                    actions.push({ type: 'set_petal_size', stringValue: petalSzParam });
-                }
-                else if (!isNaN(petalSz)) {
-                    actions.push({ type: 'set_petal_size', value: petalSz });
-                }
-                else {
-                    actions.push({ type: 'set_petal_size', value: 1 }); // Default
-                }
-                break;
-            case 'add_petal_damage':
-                const addPetalDmg = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'add_petal_damage', value: addPetalDmg });
-                break;
-            case 'add_petal_health':
-                const addPetalHp = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'add_petal_health', value: addPetalHp });
-                break;
-            case 'add_petal_size':
-                const addPetalSz = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'add_petal_size', value: addPetalSz });
-                break;
-            case 'set_player_damage':
-                const playerDmg = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'set_player_damage', value: playerDmg });
-                break;
-            case 'set_player_max_health':
-                const playerHp = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'set_player_max_health', value: playerHp });
-                break;
-            case 'set_player_speed':
-                const playerSpd = params.length > 0 ? parseFloat(params[0]) : 1;
-                actions.push({ type: 'set_player_speed', value: playerSpd });
-                break;
-            case 'add_player_damage':
-                const addPlayerDmg = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'add_player_damage', value: addPlayerDmg });
-                break;
-            case 'add_player_max_health':
-                const addPlayerHp = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'add_player_max_health', value: addPlayerHp });
-                break;
-            case 'add_player_speed':
-                const addPlayerSpd = params.length > 0 ? parseFloat(params[0]) : 0;
-                actions.push({ type: 'add_player_speed', value: addPlayerSpd });
-                break;
-            case 'compare':
-            case 'compare_gt':
-            case 'compare_lt':
-            case 'compare_gte':
-            case 'compare_lte':
-            case 'compare_eq':
-            case 'compare_neq':
-                const compareType = actionType.replace('compare_', '');
-                const compareLeft = params[0] || '';
-                const compareRight = params.length > 1 ? parseFloat(params[1]) : 0;
-                actions.push({ type: actionType, stringValue: compareLeft, value: compareRight, comparisonType: compareType });
-                break;
-            case 'split_player':
-                actions.push({ type: 'split_player' });
-                break;
-            case 'switch_player':
-                actions.push({ type: 'switch_player' });
-                break;
-            default:
-                console.warn(`Unknown petal action type: ${actionType}`);
-        }
-    }
-    return actions;
 }

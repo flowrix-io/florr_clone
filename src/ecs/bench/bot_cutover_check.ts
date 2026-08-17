@@ -183,6 +183,9 @@ function resetWorldSingletons(): void {
 function makeRuntime(): EcsRuntime {
     const runtime = createEcsRuntime({
         lookupPlayer: (socketId: string) => players[socketId],
+        // This bench drives the schedulers directly; the post-movement pipeline
+        // is the game\'s, not the bench\'s.
+        runPlayerPipeline: () => { /* not exercised here */ },
         creditDamage: () => { /* attribution is not under test here */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },

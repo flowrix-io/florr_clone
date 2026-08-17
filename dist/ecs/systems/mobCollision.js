@@ -76,7 +76,7 @@ function cellKey(cx, cy) {
     return ((cy + 1024) << 16) | ((cx + 1024) & 0xFFFF);
 }
 function mobCollisionSystem(queries, deps) {
-    const { resolveWall, noMobCollision, creditDamage, onDamaged, onKilled } = deps;
+    const { resolveWall, noMobCollision, creditDamage, onDamaged, onKilled, activity } = deps;
     // Reused across ticks so a normal tick allocates nothing.
     const entries = [];
     const grid = new Map();
@@ -124,6 +124,11 @@ function mobCollisionSystem(queries, deps) {
                 if (!Number.isFinite(x) || !Number.isFinite(y))
                     continue;
                 if (Math.abs(x) > MAX_SANE_WORLD_COORD || Math.abs(y) > MAX_SANE_WORLD_COORD)
+                    continue;
+                // Far from every player: sit this tick out, most ticks. Done
+                // here rather than in the narrow phase so a distant mob costs
+                // neither an Entry nor a bucket slot.
+                if (!activity.shouldStep(entity, x, y, ctx.tick))
                     continue;
                 const radius = rad.value[i];
                 if (radius > maxRadius)

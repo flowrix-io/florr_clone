@@ -16,6 +16,11 @@ exports.validatePlayerPositions = validatePlayerPositions;
 exports.trySecondChance = trySecondChance;
 exports.computeSpeedBoost = computeSpeedBoost;
 exports.updatePlayerPreMovement = updatePlayerPreMovement;
+exports.resolvePlayerMobContact = resolvePlayerMobContact;
+exports.resolvePlayerItemPickups = resolvePlayerItemPickups;
+exports.clampPlayerToRegion = clampPlayerToRegion;
+exports.resolvePlayerTeleporters = resolvePlayerTeleporters;
+exports.resolvePlayerPetals = resolvePlayerPetals;
 exports.updatePlayerState = updatePlayerState;
 const player_1 = require("../player");
 const petals_1 = require("../petals");
@@ -201,6 +206,7 @@ const playerManager_1 = require("./playerManager");
 const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
 const killHandler_1 = require("./shared/killHandler");
+const enemyRegistry_1 = require("./enemyRegistry");
 /**
  * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
  * context. The two share the same kill-related fields; this just projects them.
@@ -211,6 +217,7 @@ function killCtxFromDeps(deps) {
         players: constants_1.players,
         playerUserIds: gameState_1.playerUserIds,
         database: deps.database,
+        removeEnemyAt: enemyRegistry_1.removeEnemyAt,
         savePlayerProgress: deps.savePlayerProgress,
         addXPToPlayer: deps.addXPToPlayer,
         handleMobDrops: deps.handleMobDrops,
@@ -1236,7 +1243,7 @@ function buildPetalInstances(player, io) {
                 lastSizedPetal = petal;
             }
             // Execute petal actions immediately when spawned
-            if (petalStats.actions) {
+            if ((0, petal_actions_1.hasPetalBehaviour)(petal.petalType)) {
                 const petalId = `${player.id}_${i}_${j}`;
                 const effectiveSize = petal.customSize !== undefined ? petal.customSize : petalStats.size;
                 const actionContext = {
@@ -1251,7 +1258,7 @@ function buildPetalInstances(player, io) {
                     loadoutIndex: i,
                     instanceIndex: j
                 };
-                (0, petal_actions_1.executePetalActionsOnSpawn)(petalStats.actions, actionContext);
+                (0, petal_actions_1.armPetalBehaviour)(petal.petalType, actionContext);
             }
         }
     }
@@ -1321,39 +1328,32 @@ function dropFieldsOnExtension(opts) {
     }
 }
 /**
- * Update player state (movement, collisions, etc.)
- * This is the main function that handles all player state updates
+ * Player-vs-mob body contact: knockback, damage both ways, poison, and the kill.
+ *
+ * Lifted verbatim out of `updatePlayerState`, which is a ~1700-line sequential
+ * pipeline (contact -> petals -> pickups -> wall clamps -> teleporters -> commit)
+ * run one player at a time. That per-player sequencing is load-bearing and is
+ * why this is a FUNCTION rather than an ECS system: a system is a pass over all
+ * players, so promoting this block would resolve every player's contact before
+ * any player's petals, and one player could then no longer kill a mob out from
+ * under another's contact within the same tick. Extracting it behind a seam
+ * makes the block testable and gives the eventual ECS move somewhere to land,
+ * without changing the interleaving.
+ *
+ * Operates on the STAGED position (`startX`/`startY`, i.e. `player.movedX`)
+ * and returns where knockback left it; the caller keeps committing to
+ * `player.x`/`player.y` at the end of the pipeline, exactly as before.
+ *
+ * Only the FIRST colliding mob is processed — the original `break`s out of the
+ * candidate loop on contact, so a player wedged between two mobs takes one hit
+ * per tick, not one per mob.
  */
-function updatePlayerState(player, deltaTime, deps) {
-    if (!player || !player.inputs) {
-        return;
-    }
-    // Don't update movement for dead players
-    if (player.isDead) {
-        return;
-    }
-    const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
-    // The pre-movement half (effects, healing, aura and ring damage) ran in
-    // updatePlayerPreMovement, and INTEGRATION now happens on the ECS between
-    // the two — see runSimulationStep and server/ecsSync.syncPlayersToEcs.
-    //
-    // `movedX`/`movedY` are what `stepPlayerMovement` used to return straight
-    // into these locals, so newX/newY start in exactly the same place they
-    // always did, and everything below — knockback, wall repulsion, pickups,
-    // teleporters, the maze/arena clamps — is unchanged and still commits to
-    // player.x/y at the very end of the function.
-    //
-    // What matters just as much is what is NOT assigned yet: `player.x`/
-    // `player.y` still hold the PREVIOUS tick's committed position for the whole
-    // of this function, which is what the petal block below reads and what makes
-    // petals trail the flower. velocity, angle and speedFactor were all written
-    // up-front by the legacy code too, so the movement window writes those
-    // directly and they are already current here.
-    const effectivePlayerSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-    let newX = player.movedX ?? player.x;
-    let newY = player.movedY ?? player.y;
+function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, deps) {
+    const { io } = deps;
     // Spatial-grid broad-phase: only test enemies whose center is within
     // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
+    let newX = startX;
+    let newY = startY;
     const _playerRadius = effectivePlayerSize / 2;
     const _candidates = (0, enemyGrid_1.queryEnemiesNear)(newX, newY, _playerRadius, _enemyQueryBuffer);
     for (let _ci = 0; _ci < _candidates.length; _ci++) {
@@ -1474,6 +1474,313 @@ function updatePlayerState(player, deltaTime, deps) {
             break;
         }
     }
+    return { x: newX, y: newY };
+}
+/**
+ * Item pickups for one player, at their staged position.
+ *
+ * Second slice lifted out of `updatePlayerState` (see resolvePlayerMobContact
+ * for why these are functions rather than ECS systems). Reads and writes
+ * nothing positional — pickups do not move the player — so unlike contact it
+ * returns nothing and can be called with the staged coordinates directly.
+ *
+ * Kept verbatim, including the two lazy `require`s inside the loop: both reach
+ * back into modules that import this one, and hoisting them to the top would
+ * close a cycle.
+ */
+function resolvePlayerItemPickups(player, newX, newY, deps) {
+    // `savePlayerProgress` came from the enclosing function's destructure of
+    // `deps`; pulled in here for the same reason `io` is.
+    const { io, savePlayerProgress } = deps;
+    // Check for item collisions (independent of enemy collisions)
+    // Optimize: use squared distance comparison to avoid Math.sqrt
+    const pickupSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0) + (player.magnetism ?? 0);
+    const pickupRadiusSquared = pickupSize * pickupSize;
+    for (let i = gameState_1.items.length - 1; i >= 0; i--) {
+        const item = gameState_1.items[i];
+        const dx = newX - item.x;
+        const dy = newY - item.y;
+        const distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared < pickupRadiusSquared) {
+            // Check if player has already picked up this item
+            if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
+                continue; // Skip if already picked up by this player
+            }
+            // Check if player is eligible to pick up this item
+            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+                let isEligible = false;
+                // First, check if player ID is directly eligible
+                if (item.eligiblePlayers.includes(player.id)) {
+                    isEligible = true;
+                }
+                else {
+                    // Check if this player is part of a split pair
+                    const { splitPlayers } = require('../petal_actions');
+                    const originalId = player.id.replace('_split2', '').replace('_split1', '');
+                    const splitState = splitPlayers.get(originalId);
+                    if (splitState) {
+                        // Player is split - check if any of the split player IDs or original ID is eligible
+                        isEligible = item.eligiblePlayers.includes(splitState.player1.id) ||
+                            item.eligiblePlayers.includes(splitState.player2.id) ||
+                            item.eligiblePlayers.includes(originalId);
+                    }
+                    else {
+                        // Not split - check if original socket ID is eligible (for items created with original ID)
+                        const { getOriginalSocketId } = require('./utils');
+                        const originalSocketId = getOriginalSocketId(player.id);
+                        if (player.id !== originalSocketId) {
+                            isEligible = item.eligiblePlayers.includes(originalSocketId);
+                        }
+                    }
+                }
+                if (!isEligible) {
+                    // Player is not eligible - skip this item
+                    // Debug log to help diagnose pickup issues
+                    continue;
+                }
+            }
+            // Add item to player's inventory (which may be shared with split player).
+            // While inside the PVP arena, `inventory` IS the PVP-only inventory; on
+            // exit, 25% of it is transferred back into the regular inventory.
+            let rarity = item.rarity || 'common';
+            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+            // Maze drops gain a rarity the moment they enter the inventory:
+            // the inventory stays in regular-world terms inside the maze, so
+            // the +1 the maze promises is applied at pickup, not on exit.
+            if (player.inMaze && player.mazeRarityShifted) {
+                const rarityIdx = (0, petals_1.getRarityIndex)(rarity);
+                if (rarityIdx >= 0) {
+                    rarity = petals_1.RARITY_LEVELS[Math.min(rarityIdx + 1, petals_1.RARITY_LEVELS.length - 1)];
+                }
+            }
+            (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, 1);
+            // Mark as picked up by this player (don't remove from world)
+            if (!item.pickedUpBy) {
+                item.pickedUpBy = new Set();
+            }
+            item.pickedUpBy.add(player.id);
+            // console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
+            // Check if this player is split and update the other split player's inventory reference
+            const { splitPlayers } = require('../petal_actions');
+            const originalId = player.id.replace('_split2', '').replace('_split1', '');
+            const splitState = splitPlayers.get(originalId);
+            if (splitState) {
+                // Both players share the same inventory, so update the other player's reference
+                if (splitState.player1.id === player.id) {
+                    splitState.player2.inventory = player.inventory;
+                }
+                else if (splitState.player2.id === player.id) {
+                    splitState.player1.inventory = player.inventory;
+                }
+            }
+            // Emit events to update client
+            // Map split player IDs to original socket IDs for socket room targeting
+            const { getOriginalSocketId } = require('./utils');
+            const originalSocketId = getOriginalSocketId(player.id);
+            io.to(originalSocketId).emit('itemPickedUp', item.id);
+            io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
+            // Save player progress to persist inventory changes
+            const userId = gameState_1.playerUserIds[player.id];
+            if (userId) {
+                savePlayerProgress(player, userId);
+            }
+            // Remove item from world if all eligible players have picked it up
+            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+                const allPickedUp = item.eligiblePlayers.every(playerId => item.pickedUpBy && item.pickedUpBy.has(playerId));
+                if (allPickedUp) {
+                    // Clean up expiration timeout if item is removed early
+                    const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
+                    if (timeout) {
+                        clearTimeout(timeout);
+                        gameState_1.itemExpirationTimeouts.delete(item.id);
+                    }
+                    gameState_1.items.splice(i, 1);
+                    // Notify only eligible players that the item is gone
+                    for (const playerId of item.eligiblePlayers) {
+                        io.to(playerId).emit('itemRemoved', item.id);
+                    }
+                }
+            }
+        }
+    }
+}
+/**
+ * Keep a player inside the region they are supposed to be in.
+ *
+ * Third slice out of `updatePlayerState` (see resolvePlayerMobContact for why
+ * these are functions and not ECS systems). Pure position arithmetic: takes the
+ * staged position and returns the clamped one, touching nothing else.
+ *
+ * Both clamps are safety nets rather than the primary containment — the maze's
+ * border ring is solid wall and the arena is only leavable through its exit
+ * teleporter — so they exist to catch knockback and teleport edge cases that
+ * would otherwise strand someone outside the world.
+ */
+function clampPlayerToRegion(player, startX, startY) {
+    // Maze players stay inside the maze region. The maze's border ring is
+    // solid wall so collision already contains them — this is a safety net
+    // against knockback/teleport edge cases ejecting someone into the void.
+    let newX = startX;
+    let newY = startY;
+    if (player.inMaze) {
+        const mazeNow = (0, maze_1.getActiveMaze)();
+        if (mazeNow) {
+            const margin = constants_1.PLAYER_SIZE / 2;
+            newX = Math.max(maze_1.MAZE_ORIGIN_X + margin, Math.min(maze_1.MAZE_ORIGIN_X + mazeNow.worldSize - margin, newX));
+            newY = Math.max(maze_1.MAZE_ORIGIN_Y + margin, Math.min(maze_1.MAZE_ORIGIN_Y + mazeNow.worldSize - margin, newY));
+        }
+    }
+    // Clamp position to the PVP arena boundary if the player is currently inside it.
+    // Players can only leave via the central exit teleporter — never by walking out.
+    if (player.inPvpArena) {
+        const dxArena = newX - constants_1.PVP_ARENA_CENTER_X;
+        const dyArena = newY - constants_1.PVP_ARENA_CENTER_Y;
+        const distSqArena = dxArena * dxArena + dyArena * dyArena;
+        const maxR = constants_1.PVP_ARENA_RADIUS - constants_1.PLAYER_SIZE / 2;
+        if (distSqArena > maxR * maxR) {
+            const distArena = Math.sqrt(distSqArena) || 1;
+            newX = constants_1.PVP_ARENA_CENTER_X + (dxArena / distArena) * maxR;
+            newY = constants_1.PVP_ARENA_CENTER_Y + (dyArena / distArena) * maxR;
+        }
+    }
+    return { x: newX, y: newY };
+}
+/**
+ * Teleporter entry, the 1-second dwell, and the jump itself.
+ *
+ * Fourth slice out of `updatePlayerState` (see resolvePlayerMobContact for why
+ * these are functions and not ECS systems).
+ *
+ * `transferred` is the important part of the return: a teleporter pointing at
+ * ANOTHER server hands the player off asynchronously and the original code
+ * `return`ed straight out of `updatePlayerState`, skipping the arena
+ * enter/exit check and — critically — the final commit to `player.x`/`player.y`.
+ * A player mid-transfer must not have their position written, so the caller
+ * returns too rather than falling through.
+ */
+function resolvePlayerTeleporters(player, startX, startY, deltaTime, deps) {
+    const { io, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
+    let newX = startX;
+    let newY = startY;
+    // Check for teleporter interactions
+    let currentTeleporter = null;
+    const currentTime = Date.now();
+    const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
+    for (const element of map_data_1.WORLD_MAP.filter(constants_1.isTeleporter)) {
+        if (!element.properties?.teleportTo)
+            continue;
+        const teleporterId = `teleporter_${element.x}_${element.y}`;
+        const teleporterCX = (element.x + element.width / 2) * constants_1.SCALE_FACTOR;
+        const teleporterCY = (element.y + element.height / 2) * constants_1.SCALE_FACTOR;
+        const playerCX = newX + constants_1.PLAYER_SIZE / 2;
+        const playerCY = newY + constants_1.PLAYER_SIZE / 2;
+        const dx = playerCX - teleporterCX;
+        const dy = playerCY - teleporterCY;
+        const distSq = dx * dx + dy * dy;
+        const suctionRadius = constants_1.TELEPORTER_SUCTION_RADIUS * constants_1.SCALE_FACTOR;
+        const activationRadius = constants_1.TELEPORTER_RADIUS * constants_1.SCALE_FACTOR;
+        // Apply suction force if player is within suction radius and NOT on cooldown
+        if (distSq <= suctionRadius * suctionRadius && !isOnCooldown) {
+            const dist = Math.sqrt(distSq) || 1;
+            // Stronger pull as player gets closer
+            const pullStrength = constants_1.TELEPORTER_SUCTION_FORCE * (1 - dist / suctionRadius) * deltaTime;
+            newX -= (dx / dist) * pullStrength;
+            newY -= (dy / dist) * pullStrength;
+        }
+        // Check if player is within activation radius
+        if (distSq <= activationRadius * activationRadius) {
+            currentTeleporter = teleporterId;
+            // Check if player just entered this teleporter
+            if (player.currentTeleporter !== teleporterId) {
+                player.currentTeleporter = teleporterId;
+                player.teleporterEnterTime = currentTime;
+                // Teleporter feedback goes to the OWNING SOCKET, not the player
+                // id: a splitter half (`..._split2`) has no socket of its own, so
+                // addressing it dropped the event and the flower charged up with
+                // no spin animation and no iris transition.
+                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterEntered', {
+                    teleporterId,
+                    timeRequired: 1000,
+                    teleportTo: element.properties.teleportTo
+                });
+                if (!player.id.startsWith('bot_')) {
+                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
+                }
+            }
+            // Check if player has been in teleporter for 1 second and is not on cooldown
+            const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
+            if (timeInTeleporter >= 1000 && !isOnCooldown) {
+                const teleportTo = element.properties.teleportTo;
+                // Set 5 second player-based cooldown
+                player.teleportCooldown = currentTime + constants_1.TELEPORTER_COOLDOWN;
+                if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
+                    if (!player.id.startsWith('bot_')) {
+                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
+                    }
+                    player.currentTeleporter = undefined;
+                    player.teleporterEnterTime = undefined;
+                    transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_1.SCALE_FACTOR, teleportTo.y * constants_1.SCALE_FACTOR, io, database, useHttps, currentServerConfig, currentServerPort).catch(error => {
+                        console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
+                        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
+                        player.teleportCooldown = undefined;
+                    });
+                    return { x: newX, y: newY, transferred: true };
+                }
+                else {
+                    newX = teleportTo.x * constants_1.SCALE_FACTOR;
+                    newY = teleportTo.y * constants_1.SCALE_FACTOR;
+                    player.currentTeleporter = undefined;
+                    player.teleporterEnterTime = undefined;
+                    if (!player.id.startsWith('bot_')) {
+                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
+                    }
+                    io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTeleported', {
+                        newX,
+                        newY,
+                        playerId: player.id
+                    });
+                }
+            }
+            break;
+        }
+    }
+    // If player is no longer in any teleporter, reset teleporter state
+    if (!currentTeleporter && player.currentTeleporter) {
+        if (!player.id.startsWith('bot_')) {
+            console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
+        }
+        player.currentTeleporter = undefined;
+        player.teleporterEnterTime = undefined;
+        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterExited');
+    }
+    return { x: newX, y: newY, transferred: false };
+}
+/**
+ * The petal pass: ring kinematics, collisions, effects, breaking and reload.
+ *
+ * The last and largest slice out of `updatePlayerState` — about a thousand
+ * lines, and the one genuinely entangled piece: it drives the ECS petal-ring
+ * kinematics one instance at a time, applies petal damage and its effects,
+ * runs the break/cooldown/restore machine, and attributes kills for XP and
+ * drops. See resolvePlayerMobContact for why these are functions rather than
+ * ECS systems.
+ *
+ * It DOES move the player: wall collision during the pass pushes them, so the
+ * staged position goes in and comes back out, and the caller keeps committing
+ * at the end of the pipeline.
+ *
+ * Note the deliberate use of `player.x`/`player.y` (NOT the staged position)
+ * for the ring's centre — that is what makes petals trail the flower, and the
+ * comment inside says not to "fix" it. Preserved verbatim.
+ */
+function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
+    const { io, savePlayerProgress } = deps;
+    // Recomputed here rather than passed: it is the same one-line derivation the
+    // caller does, and threading it would make the seam's signature depend on
+    // the caller's locals.
+    const effectivePlayerSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    let newX = startX;
+    let newY = startY;
     // Check for petal-enemy collisions
     if (player.loadout) {
         const { petalInstances, nextSlotIndex } = buildPetalInstances(player, io);
@@ -1578,8 +1885,9 @@ function updatePlayerState(player, deltaTime, deps) {
             if (!currentInstanceHealth || currentInstanceHealth <= 0) {
                 const petalStats = instancePetalStats;
                 if (petalStats) {
-                    // Execute petal actions before breaking
-                    if (petalStats.actions) {
+                    // Scripted behaviour before breaking (unconditional — see
+                    // "immediate mode" in petal_actions.ts).
+                    if ((0, petal_actions_1.hasPetalBehaviour)(petal.petalType)) {
                         // NOTE: this reconstructs the orbit point with its OWN,
                         // different radius (`60 + level*2`) rather than the
                         // ring's. That is a pre-existing quirk of the on-break
@@ -1606,7 +1914,7 @@ function updatePlayerState(player, deltaTime, deps) {
                             enemies: constants_1.enemies,
                             io: io
                         };
-                        (0, petal_actions_1.executePetalActions)(petalStats.actions, actionContext, 'on_break');
+                        (0, petal_actions_1.runPetalBreakBehaviour)(petal.petalType, actionContext);
                     }
                     const cooldownTime = getEffectiveCooldown(petal, petalStats);
                     if (hasIndependentInstances(petalStats)) {
@@ -2216,11 +2524,11 @@ function updatePlayerState(player, deltaTime, deps) {
                         loadoutIndex: loadoutIndex,
                         instanceIndex: instanceIndex
                     };
-                    (0, petal_actions_1.handlePetalCollision)(petalId, collisionContext);
+                    (0, petal_actions_1.petalBehaviourCollision)(petalId, collisionContext);
                     // Check if petal breaks (per-instance for clumped)
                     if (getInstanceHealth(petal, instanceIndex, petalStats) <= 0) {
-                        // Execute petal actions before breaking
-                        if (petalStats.actions) {
+                        // Scripted behaviour before breaking (unconditional).
+                        if ((0, petal_actions_1.hasPetalBehaviour)(petal.petalType)) {
                             const actionContext = {
                                 player: player,
                                 petalX: petalX,
@@ -2230,7 +2538,7 @@ function updatePlayerState(player, deltaTime, deps) {
                                 enemies: constants_1.enemies,
                                 io: io
                             };
-                            (0, petal_actions_1.executePetalActions)(petalStats.actions, actionContext, 'on_break');
+                            (0, petal_actions_1.runPetalBreakBehaviour)(petal.petalType, actionContext);
                         }
                         const cooldownTime = getEffectiveCooldown(petal, petalStats);
                         // Absolute restore deadline alongside the setTimeout. Without it
@@ -2419,231 +2727,72 @@ function updatePlayerState(player, deltaTime, deps) {
             }
         }
     }
-    // Check for item collisions (independent of enemy collisions)
-    // Optimize: use squared distance comparison to avoid Math.sqrt
-    const pickupSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0) + (player.magnetism ?? 0);
-    const pickupRadiusSquared = pickupSize * pickupSize;
-    for (let i = gameState_1.items.length - 1; i >= 0; i--) {
-        const item = gameState_1.items[i];
-        const dx = newX - item.x;
-        const dy = newY - item.y;
-        const distanceSquared = dx * dx + dy * dy;
-        if (distanceSquared < pickupRadiusSquared) {
-            // Check if player has already picked up this item
-            if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
-                continue; // Skip if already picked up by this player
-            }
-            // Check if player is eligible to pick up this item
-            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                let isEligible = false;
-                // First, check if player ID is directly eligible
-                if (item.eligiblePlayers.includes(player.id)) {
-                    isEligible = true;
-                }
-                else {
-                    // Check if this player is part of a split pair
-                    const { splitPlayers } = require('../petal_actions');
-                    const originalId = player.id.replace('_split2', '').replace('_split1', '');
-                    const splitState = splitPlayers.get(originalId);
-                    if (splitState) {
-                        // Player is split - check if any of the split player IDs or original ID is eligible
-                        isEligible = item.eligiblePlayers.includes(splitState.player1.id) ||
-                            item.eligiblePlayers.includes(splitState.player2.id) ||
-                            item.eligiblePlayers.includes(originalId);
-                    }
-                    else {
-                        // Not split - check if original socket ID is eligible (for items created with original ID)
-                        const { getOriginalSocketId } = require('./utils');
-                        const originalSocketId = getOriginalSocketId(player.id);
-                        if (player.id !== originalSocketId) {
-                            isEligible = item.eligiblePlayers.includes(originalSocketId);
-                        }
-                    }
-                }
-                if (!isEligible) {
-                    // Player is not eligible - skip this item
-                    // Debug log to help diagnose pickup issues
-                    continue;
-                }
-            }
-            // Add item to player's inventory (which may be shared with split player).
-            // While inside the PVP arena, `inventory` IS the PVP-only inventory; on
-            // exit, 25% of it is transferred back into the regular inventory.
-            let rarity = item.rarity || 'common';
-            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
-            // Maze drops gain a rarity the moment they enter the inventory:
-            // the inventory stays in regular-world terms inside the maze, so
-            // the +1 the maze promises is applied at pickup, not on exit.
-            if (player.inMaze && player.mazeRarityShifted) {
-                const rarityIdx = (0, petals_1.getRarityIndex)(rarity);
-                if (rarityIdx >= 0) {
-                    rarity = petals_1.RARITY_LEVELS[Math.min(rarityIdx + 1, petals_1.RARITY_LEVELS.length - 1)];
-                }
-            }
-            (0, playerManager_1.addItem)(player.inventory, rarity, itemKey, 1);
-            // Mark as picked up by this player (don't remove from world)
-            if (!item.pickedUpBy) {
-                item.pickedUpBy = new Set();
-            }
-            item.pickedUpBy.add(player.id);
-            // console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
-            // Check if this player is split and update the other split player's inventory reference
-            const { splitPlayers } = require('../petal_actions');
-            const originalId = player.id.replace('_split2', '').replace('_split1', '');
-            const splitState = splitPlayers.get(originalId);
-            if (splitState) {
-                // Both players share the same inventory, so update the other player's reference
-                if (splitState.player1.id === player.id) {
-                    splitState.player2.inventory = player.inventory;
-                }
-                else if (splitState.player2.id === player.id) {
-                    splitState.player1.inventory = player.inventory;
-                }
-            }
-            // Emit events to update client
-            // Map split player IDs to original socket IDs for socket room targeting
-            const { getOriginalSocketId } = require('./utils');
-            const originalSocketId = getOriginalSocketId(player.id);
-            io.to(originalSocketId).emit('itemPickedUp', item.id);
-            io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
-            // Save player progress to persist inventory changes
-            const userId = gameState_1.playerUserIds[player.id];
-            if (userId) {
-                savePlayerProgress(player, userId);
-            }
-            // Remove item from world if all eligible players have picked it up
-            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                const allPickedUp = item.eligiblePlayers.every(playerId => item.pickedUpBy && item.pickedUpBy.has(playerId));
-                if (allPickedUp) {
-                    // Clean up expiration timeout if item is removed early
-                    const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
-                    if (timeout) {
-                        clearTimeout(timeout);
-                        gameState_1.itemExpirationTimeouts.delete(item.id);
-                    }
-                    gameState_1.items.splice(i, 1);
-                    // Notify only eligible players that the item is gone
-                    for (const playerId of item.eligiblePlayers) {
-                        io.to(playerId).emit('itemRemoved', item.id);
-                    }
-                }
-            }
-        }
+    return { x: newX, y: newY };
+}
+/**
+ * Update player state (movement, collisions, etc.)
+ * This is the main function that handles all player state updates
+ */
+function updatePlayerState(player, deltaTime, deps) {
+    if (!player || !player.inputs) {
+        return;
     }
-    // Maze players stay inside the maze region. The maze's border ring is
-    // solid wall so collision already contains them — this is a safety net
-    // against knockback/teleport edge cases ejecting someone into the void.
-    if (player.inMaze) {
-        const mazeNow = (0, maze_1.getActiveMaze)();
-        if (mazeNow) {
-            const margin = constants_1.PLAYER_SIZE / 2;
-            newX = Math.max(maze_1.MAZE_ORIGIN_X + margin, Math.min(maze_1.MAZE_ORIGIN_X + mazeNow.worldSize - margin, newX));
-            newY = Math.max(maze_1.MAZE_ORIGIN_Y + margin, Math.min(maze_1.MAZE_ORIGIN_Y + mazeNow.worldSize - margin, newY));
-        }
+    // Don't update movement for dead players
+    if (player.isDead) {
+        return;
     }
-    // Clamp position to the PVP arena boundary if the player is currently inside it.
-    // Players can only leave via the central exit teleporter — never by walking out.
-    if (player.inPvpArena) {
-        const dxArena = newX - constants_1.PVP_ARENA_CENTER_X;
-        const dyArena = newY - constants_1.PVP_ARENA_CENTER_Y;
-        const distSqArena = dxArena * dxArena + dyArena * dyArena;
-        const maxR = constants_1.PVP_ARENA_RADIUS - constants_1.PLAYER_SIZE / 2;
-        if (distSqArena > maxR * maxR) {
-            const distArena = Math.sqrt(distSqArena) || 1;
-            newX = constants_1.PVP_ARENA_CENTER_X + (dxArena / distArena) * maxR;
-            newY = constants_1.PVP_ARENA_CENTER_Y + (dyArena / distArena) * maxR;
-        }
+    const { io, savePlayerProgress } = deps;
+    // The pre-movement half (effects, healing, aura and ring damage) ran in
+    // updatePlayerPreMovement, and INTEGRATION now happens on the ECS between
+    // the two — see runSimulationStep and server/ecsSync.syncPlayersToEcs.
+    //
+    // `movedX`/`movedY` are what `stepPlayerMovement` used to return straight
+    // into these locals, so newX/newY start in exactly the same place they
+    // always did, and everything below — knockback, wall repulsion, pickups,
+    // teleporters, the maze/arena clamps — is unchanged and still commits to
+    // player.x/y at the very end of the function.
+    //
+    // What matters just as much is what is NOT assigned yet: `player.x`/
+    // `player.y` still hold the PREVIOUS tick's committed position for the whole
+    // of this function, which is what the petal block below reads and what makes
+    // petals trail the flower. velocity, angle and speedFactor were all written
+    // up-front by the legacy code too, so the movement window writes those
+    // directly and they are already current here.
+    const effectivePlayerSize = constants_1.PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    let newX = player.movedX ?? player.x;
+    let newY = player.movedY ?? player.y;
+    // Body contact with mobs. Extracted for testability; still called from
+    // exactly here so the per-player pipeline order is unchanged.
+    {
+        const contact = resolvePlayerMobContact(player, newX, newY, effectivePlayerSize, deps);
+        newX = contact.x;
+        newY = contact.y;
     }
-    // Check for teleporter interactions
-    let currentTeleporter = null;
-    const currentTime = Date.now();
-    const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
-    for (const element of map_data_1.WORLD_MAP.filter(constants_1.isTeleporter)) {
-        if (!element.properties?.teleportTo)
-            continue;
-        const teleporterId = `teleporter_${element.x}_${element.y}`;
-        const teleporterCX = (element.x + element.width / 2) * constants_1.SCALE_FACTOR;
-        const teleporterCY = (element.y + element.height / 2) * constants_1.SCALE_FACTOR;
-        const playerCX = newX + constants_1.PLAYER_SIZE / 2;
-        const playerCY = newY + constants_1.PLAYER_SIZE / 2;
-        const dx = playerCX - teleporterCX;
-        const dy = playerCY - teleporterCY;
-        const distSq = dx * dx + dy * dy;
-        const suctionRadius = constants_1.TELEPORTER_SUCTION_RADIUS * constants_1.SCALE_FACTOR;
-        const activationRadius = constants_1.TELEPORTER_RADIUS * constants_1.SCALE_FACTOR;
-        // Apply suction force if player is within suction radius and NOT on cooldown
-        if (distSq <= suctionRadius * suctionRadius && !isOnCooldown) {
-            const dist = Math.sqrt(distSq) || 1;
-            // Stronger pull as player gets closer
-            const pullStrength = constants_1.TELEPORTER_SUCTION_FORCE * (1 - dist / suctionRadius) * deltaTime;
-            newX -= (dx / dist) * pullStrength;
-            newY -= (dy / dist) * pullStrength;
-        }
-        // Check if player is within activation radius
-        if (distSq <= activationRadius * activationRadius) {
-            currentTeleporter = teleporterId;
-            // Check if player just entered this teleporter
-            if (player.currentTeleporter !== teleporterId) {
-                player.currentTeleporter = teleporterId;
-                player.teleporterEnterTime = currentTime;
-                // Teleporter feedback goes to the OWNING SOCKET, not the player
-                // id: a splitter half (`..._split2`) has no socket of its own, so
-                // addressing it dropped the event and the flower charged up with
-                // no spin animation and no iris transition.
-                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterEntered', {
-                    teleporterId,
-                    timeRequired: 1000,
-                    teleportTo: element.properties.teleportTo
-                });
-                if (!player.id.startsWith('bot_')) {
-                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
-                }
-            }
-            // Check if player has been in teleporter for 1 second and is not on cooldown
-            const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
-            if (timeInTeleporter >= 1000 && !isOnCooldown) {
-                const teleportTo = element.properties.teleportTo;
-                // Set 5 second player-based cooldown
-                player.teleportCooldown = currentTime + constants_1.TELEPORTER_COOLDOWN;
-                if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
-                    if (!player.id.startsWith('bot_')) {
-                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
-                    }
-                    player.currentTeleporter = undefined;
-                    player.teleporterEnterTime = undefined;
-                    transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_1.SCALE_FACTOR, teleportTo.y * constants_1.SCALE_FACTOR, io, database, useHttps, currentServerConfig, currentServerPort).catch(error => {
-                        console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
-                        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
-                        player.teleportCooldown = undefined;
-                    });
-                    return;
-                }
-                else {
-                    newX = teleportTo.x * constants_1.SCALE_FACTOR;
-                    newY = teleportTo.y * constants_1.SCALE_FACTOR;
-                    player.currentTeleporter = undefined;
-                    player.teleporterEnterTime = undefined;
-                    if (!player.id.startsWith('bot_')) {
-                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
-                    }
-                    io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTeleported', {
-                        newX,
-                        newY,
-                        playerId: player.id
-                    });
-                }
-            }
-            break;
-        }
+    // The petal pass. Extracted; call site unchanged so the per-player
+    // pipeline order is preserved.
+    {
+        const petals = resolvePlayerPetals(player, newX, newY, deltaTime, deps);
+        newX = petals.x;
+        newY = petals.y;
     }
-    // If player is no longer in any teleporter, reset teleporter state
-    if (!currentTeleporter && player.currentTeleporter) {
-        if (!player.id.startsWith('bot_')) {
-            console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
-        }
-        player.currentTeleporter = undefined;
-        player.teleporterEnterTime = undefined;
-        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterExited');
+    // Item pickups. Extracted for testability; call site unchanged so the
+    // per-player pipeline order is preserved.
+    resolvePlayerItemPickups(player, newX, newY, deps);
+    // Region containment (maze / PVP arena). Extracted; call site unchanged.
+    {
+        const clamped = clampPlayerToRegion(player, newX, newY);
+        newX = clamped.x;
+        newY = clamped.y;
+    }
+    // Teleporters. Extracted; call site unchanged. A cross-server transfer
+    // aborts the rest of the pipeline exactly as the inline `return` did — the
+    // position must NOT be committed while the handoff is in flight.
+    {
+        const tp = resolvePlayerTeleporters(player, newX, newY, deltaTime, deps);
+        if (tp.transferred)
+            return;
+        newX = tp.x;
+        newY = tp.y;
     }
     const wasInArena = !!player.inPvpArena;
     player.x = newX;

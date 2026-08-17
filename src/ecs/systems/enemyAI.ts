@@ -28,6 +28,7 @@ import { Entity, NULL_ENTITY } from '../entity';
 import { Phase, SystemContext } from '../system';
 import { Query, World } from '../world';
 import { ENEMY_SPEED_MULTIPLIER, MAX_WANDER_STEP, WANDER_REF_RADIUS } from './enemyPassive';
+import { MobActivityField } from './lod';
 
 /** Default aggro/chase range when a mob has no explicit one. */
 export const ENEMY_CHASE_RANGE = 500;
@@ -91,6 +92,12 @@ export interface EnemyAIDeps {
      * VIEWPORT_WIDTH * 5 in the original.
      */
     maxTargetDistance: number;
+    /**
+     * Which mobs are close enough to a player to be worth stepping this tick.
+     * See systems/lod.ts — the targeting scans below are the most expensive
+     * thing in the tick and the great majority of mobs are nowhere near anyone.
+     */
+    activity: MobActivityField;
 }
 
 export interface EnemyAIQueries {
@@ -134,7 +141,7 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
     const {
         hasLineOfSight, resolveWall, isBlocked,
         fireVolley, hasProjectile, isPlayerSpeedChaser, playerChaseStep, sandstormSuckTier,
-        maxTargetDistance,
+        maxTargetDistance, activity,
     } = deps;
 
     // Scratch reused across mobs and ticks so a full tick allocates nothing.
@@ -633,6 +640,13 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
 
             const x = world.get(mob, C.Position, 'x') as number;
             const y = world.get(mob, C.Position, 'y') as number;
+
+            // Nowhere near a player: step at the reduced rate. Checked before
+            // anything else in the body because everything after it — above all
+            // the two target acquisitions and their raycasts — is the work this
+            // exists to skip.
+            if (!activity.shouldStep(mob, x, y, ctx.tick)) continue;
+
             const radius = world.get(mob, C.Radius, 'value') as number;
             const mobTypeId = world.get(mob, C.MobKind, 'type') as number;
             const aiType = world.get(mob, C.MobAI, 'aiType') as number;

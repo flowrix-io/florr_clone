@@ -39,7 +39,7 @@ if (invalidEggTypes.size > 0) {
 
 import { ServerPlayer } from './player';
 import { getInventoryCodecSignature } from './inventoryCodec';
-import { getDamageMultiplier, updatePetalActions, despawnAllPlayerPets } from './petal_actions';
+import { getDamageMultiplier, updatePetalBehaviours, despawnAllPlayerPets } from './petal_actions';
 import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
 import { Enemy, LiveEnemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
@@ -159,7 +159,7 @@ import {
 import { spawnArenaMobs } from './server/pvpArenaSpawner';
 import { updateSpawnZones } from './server/spawnZoneManager';
 import { rebuildEnemyGrid, queryEnemiesNear } from './server/enemyGrid';
-import { bindEnemySpawnHost, spawnEnemy } from './server/enemyRegistry';
+import { bindEnemySpawnHost, spawnEnemy, removeEnemyAt } from './server/enemyRegistry';
 import { isInOutOfBoundsZone, clampToWorld, isWallAt, samplePointInViewport } from './server/shared/positions';
 import { killEnemy } from './server/shared/killHandler';
 import { downgradeRarity } from './server/shared/rarity';
@@ -606,7 +606,7 @@ function despawnDistantEnemies() {
         const enemy = enemies[index];
         // Clean up enemy data structures before removal to prevent memory leaks
         cleanupEnemy(enemy);
-        enemies.splice(index, 1);
+        removeEnemyAt(index);
         io.emit('enemyDestroyed', enemy.id);
         // console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
     }
@@ -634,7 +634,7 @@ function clearAllMobs(): number {
         const enemy = enemies[i];
         if (enemy.ownerId) continue; // keep player pets
         cleanupEnemy(enemy);
-        enemies.splice(i, 1);
+        removeEnemyAt(i);
         io.emit('enemyDestroyed', enemy.id);
         removed++;
     }
@@ -1140,6 +1140,7 @@ const killCtx: KillContext = {
     players,
     playerUserIds,
     database,
+    removeEnemyAt,
     savePlayerProgress,
     addXPToPlayer,
     handleMobDrops,
@@ -1240,7 +1241,7 @@ function updatePeriodicSpawns() {
         if (enemy.despawnAt !== undefined && currentTime >= enemy.despawnAt && !enemy.isDead) {
             enemy.isDead = true;
             cleanupEnemy(enemy);
-            enemies.splice(i, 1);
+            removeEnemyAt(i);
             io.emit('enemyDestroyed', enemy.id);
         }
     }
@@ -1358,7 +1359,7 @@ function updatePoisonEffects(deltaTime: number) {
                     sendBossMobDefeatedMessage(enemy, io, players);
                     // Clean up enemy data structures before removal to prevent memory leaks
                     cleanupEnemy(enemy);
-                    enemies.splice(index, 1);
+                    removeEnemyAt(index);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
 
@@ -1468,6 +1469,15 @@ function getEcsRuntime(): EcsRuntime {
     if (_ecsRuntime) return _ecsRuntime;
     _ecsRuntime = createEcsRuntime({
         lookupPlayer: (socketId: string) => players[socketId],
+        // The post-movement player pipeline. Iterates `players` in the same
+        // order the bare loop did, because that order decides who lands the
+        // killing blow when two players hit one mob on the same tick — see
+        // EcsRuntimeOptions.runPlayerPipeline.
+        runPlayerPipeline: (deltaTime) => {
+            for (const id in players) {
+                updatePlayerState(players[id], deltaTime, playerStateDeps);
+            }
+        },
         // Pet kills are credited to the owning PLAYER, matching trackDamage.
         creditDamage: (victim, ownerPlayer, amount) => {
             const world = _ecsRuntime!.world;
@@ -1668,7 +1678,7 @@ function reapDeadEnemies() {
 
         // Clean up enemy data structures before removal to prevent memory leaks
         cleanupEnemy(enemy);
-        enemies.splice(i, 1);
+        removeEnemyAt(i);
         updateSpecialMobCounts();
     }
 }
@@ -1905,11 +1915,13 @@ function runSimulationStep(deltaTime: number, deltaMs: number, mobCatchupCalls: 
     playerRuntime.tickPlayers(deltaTime, deltaMs, movementNow);
     syncPlayersFromEcs(playerRuntime.world, players);
 
-    for (const id in players) {
-        updatePlayerState(players[id], deltaTime, playerStateDeps);
-    }
+    // The player pipeline now runs as a scheduled system rather than a bare
+    // loop here, so it is phase-ordered and appears in the per-system timings.
+    // It still runs at exactly this point — after the movement window closed
+    // with syncPlayersFromEcs — and still iterates players in the same order.
+    playerRuntime.tickPlayerPipeline(deltaTime, deltaMs, movementNow);
 
-    updatePetalActions(deltaTime);
+    updatePetalBehaviours();
 
     updatePoisonEffects(deltaTime);
     updatePlayerPoison(deltaTime);

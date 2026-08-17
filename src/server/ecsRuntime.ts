@@ -63,6 +63,11 @@ import {
     registerEnemyAISystem,
 } from '../ecs/systems/enemyAI';
 import {
+    createMobActivityQueries,
+    MobActivityField,
+    registerMobActivitySystem,
+} from '../ecs/systems/lod';
+import {
     createEnemyPassiveQueries,
     registerEnemyPassiveSystems,
 } from '../ecs/systems/enemyPassive';
@@ -141,6 +146,8 @@ export interface EcsRuntime {
      * `scheduler` alone would omit it from the tick-budget report.
      */
     inputScheduler: Scheduler;
+    /** The post-movement player pipeline's scheduler; see tickPlayerPipeline. */
+    pipelineScheduler: Scheduler;
     grid: SpatialGrid;
     /** Reusable broad-phase result buffer. */
     gridResult: GridQueryResult;
@@ -163,6 +170,16 @@ export interface EcsRuntime {
      * catch-up.
      */
     tickPlayers(deltaTime: number, deltaMs: number, now: number): void;
+    /**
+     * The post-movement player pipeline: contact, petals, pickups, region
+     * clamps, teleporters, and the commit to `player.x`/`player.y`.
+     *
+     * Its OWN scheduler, for the same reason the player and input halves have
+     * theirs: it has to run after `syncPlayersFromEcs` has closed the movement
+     * window, and there is no phase on the existing schedulers that lands
+     * there. See EcsRuntimeOptions.runPlayerPipeline.
+     */
+    tickPlayerPipeline(deltaTime: number, deltaMs: number, now: number): void;
     /**
      * Sample this tick's inputs — today, run bot AI.
      *
@@ -232,6 +249,22 @@ export interface LegacyPlayerLookup {
 
 export interface EcsRuntimeOptions {
     lookupPlayer: LegacyPlayerLookup;
+    /**
+     * Run the post-movement pipeline for every player, in order.
+     *
+     * Injected, like every other hook here, because the pipeline reaches the
+     * whole legacy world — petals, drops, XP, teleporters, the socket server —
+     * and importing that from the ECS layer would close a cycle and drag the
+     * game into `npm run test:ecs`.
+     *
+     * It is ONE callback rather than a per-player one on purpose: the pipeline
+     * is sequential per player (see server/playerState.ts), and the iteration
+     * ORDER decides who lands the killing blow when two players hit the same mob
+     * on the same tick. Handing the loop over wholesale keeps that order the
+     * caller's business, so moving it under the scheduler changed nothing about
+     * what the game does.
+     */
+    runPlayerPipeline(deltaTime: number, deltaMs: number, now: number): void;
     /**
      * Credit pet-dealt damage to the pet's OWNER, for XP and drop attribution.
      *
@@ -316,6 +349,11 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
      * therefore before anything reads an input. See EcsRuntime.tickInput.
      */
     const inputScheduler = new Scheduler(world);
+    /**
+     * The post-movement player pipeline runs on its own scheduler so it can sit
+     * after the movement window closes. See EcsRuntime.tickPlayerPipeline.
+     */
+    const pipelineScheduler = new Scheduler(world);
     const grid = new SpatialGrid();
     const gridResult = new GridQueryResult(256);
 
@@ -329,10 +367,18 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         [C.IsDead, C.PetOwner],
     );
 
-    // Spatial index first: bot targeting queries it, exactly as before.
-    scheduler.add('rebuildSpatialGrid', Phase.SpatialIndex, () => {
-        grid.rebuild(world, gridSource);
-    });
+    // NO grid rebuild on the mob scheduler.
+    //
+    // There used to be one here, on the grounds that "bot targeting queries it".
+    // Bot targeting reads the LEGACY enemy grid (see tickInput), and a sweep of
+    // every `grid`/`gridResult` reference shows projectileCollision is the only
+    // consumer this object has — on the PROJECTILE scheduler, which rebuilds the
+    // grid itself in `tickProjectiles` immediately before ticking. So the
+    // rebuild here was a full fat-insertion pass over every mob, every tick,
+    // whose result was overwritten before anything read it.
+    //
+    // If a system on THIS scheduler ever needs the shared broad phase, put the
+    // rebuild back — in SpatialIndex, before that system's phase.
 
     // Derived modifiers are computed from the Loadout and PlayerEffects
     // COMPONENTS, closing the window where a player existed both as an entity
@@ -357,6 +403,13 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         // effect LIST itself is already a component, so this reads component
         // state through a config-only helper.
         effectSpeedMultiplier: () => 1,
+    });
+
+    // The legacy pipeline, under the scheduler. Registered as a system rather
+    // than called from server.ts so it is phase-ordered and shows up in the
+    // per-system timings alongside everything else.
+    pipelineScheduler.add('playerPipeline', Phase.Simulation, (ctx) => {
+        options.runPlayerPipeline(ctx.deltaTime, ctx.deltaMs, ctx.now);
     });
 
     registerPlayerMovementSystem(playerScheduler, createPlayerMovementQueries(world), {
@@ -427,6 +480,10 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         onProjectileKill: options.onProjectileKill,
     });
 
+    // Refreshed in Phase.SpatialIndex, i.e. before either consumer below runs.
+    const activity = new MobActivityField();
+    registerMobActivitySystem(scheduler, activity, createMobActivityQueries(world));
+
     registerEnemyAISystem(scheduler, createEnemyAIQueries(world), {
         hasLineOfSight,
         resolveWall: (x, y, halfSize) => resolveEntityWallCollisions(x, y, halfSize),
@@ -437,6 +494,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         playerChaseStep: MAX_SPEED / 30,
         sandstormSuckTier: getRarityIndex('super'),
         maxTargetDistance: VIEWPORT_WIDTH * 5,
+        activity,
     });
 
     registerMobCollisionSystem(scheduler, createMobCollisionQueries(world), {
@@ -445,6 +503,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         creditDamage,
         onDamaged: onEnemyDamaged,
         onKilled: onEnemyKilled,
+        activity,
     });
 
     registerEnemyPassiveSystems(scheduler, createEnemyPassiveQueries(world));
@@ -483,6 +542,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         projectileScheduler,
         playerScheduler,
         inputScheduler,
+        pipelineScheduler,
         grid,
         gridResult,
         projectileQueries: {
@@ -502,6 +562,10 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
             // index. Player-vs-mob contact is still resolved by the legacy
             // collision block in updatePlayerState, against the legacy grid.
             playerScheduler.tick(deltaTime, deltaMs, now);
+        },
+
+        tickPlayerPipeline(deltaTime: number, deltaMs: number, now: number): void {
+            pipelineScheduler.tick(deltaTime, deltaMs, now);
         },
 
         tickInput(deltaTime: number, deltaMs: number, now: number): void {

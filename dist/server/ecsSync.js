@@ -38,8 +38,10 @@
  * Spawning moved in the same style projectiles did: mobs are BORN as entities,
  * so there is no per-tick import pass any more. What is left of the mob half of
  * this file is (a) pushing in the handful of fields legacy still writes, and
- * (b) `reconcileEnemyEntities`, the removal half — because ~14 legacy sites
- * still splice `enemies[]` and lifecycle is not ported yet.
+ * (b) `maintainEnemyEntities`, which retires the entities of mobs that left —
+ * removal itself is now one operation in server/enemyRegistry.ts that takes
+ * both halves down together, so this is a drain plus a rare audit rather than
+ * the per-tick reconcile it replaced.
  *
  * Projectiles are worth calling out: they are ECS entities end to end, and
  * nothing about them is mirrored back into a legacy array. That is why there is
@@ -104,6 +106,7 @@ exports.resetSyncState = resetSyncState;
 const C = __importStar(require("../ecs/components"));
 const petalRing_1 = require("../ecs/systems/petalRing");
 const ecsBridge_1 = require("./ecsBridge");
+const enemyRegistry_1 = require("./enemyRegistry");
 /** Systems legacy still owns, disabled so the two do not both act. */
 const LEGACY_OWNED_SYSTEMS = [
     // `playerMovement` is NOT here any more — the ECS owns it. See
@@ -168,11 +171,36 @@ const seenPlayerIds = new Set();
  * so the reconcile asks it directly rather than keeping a mirror that could
  * drift out of step with it. The query is cached per world; the scratch
  * containers are reused so a 1400-mob tick allocates nothing.
+ *
+ * The live set holds the SHELL OBJECTS, not their ids. Both are one hash per
+ * mob per tick, but hashing a string means walking its characters while hashing
+ * an object is its identity — and it drops the `externalIdOf` call that getting
+ * the id required. See C.LegacyShell.
  */
 let enemyEntityQuery;
 let enemyEntityQueryWorld;
-const liveEnemyIds = new Set();
+const liveEnemyShells = new Set();
 const orphanEntities = [];
+/**
+ * Deferred structural changes from the push-in pass.
+ *
+ * `syncToEcs` iterates chunks, and adding or removing a component mid-iteration
+ * would move the entity to another archetype and swap an unvisited row into a
+ * slot the loop has already passed. So the pass RECORDS the toggles it wants
+ * and applies them after iteration finishes. They only fire on a state CHANGE
+ * (a slow landing or lapsing, a first knockback, a death), so these stay empty
+ * on a quiet tick. Parallel arrays rather than objects: this is per-mob and
+ * allocating a record per toggle is what the pass is trying to avoid.
+ */
+const pendingSlowAdd = [];
+const pendingSlowUntil = [];
+const pendingSlowRemove = [];
+const pendingKnockback = [];
+const pendingKnockbackX = [];
+const pendingKnockbackY = [];
+const pendingDead = [];
+/** Warn once if a mob turns up without MobAI; see the provocation push below. */
+let warnedMissingMobAI = false;
 /**
  * Mobs adopted because they turned up in `enemies[]` with no entity.
  *
@@ -183,6 +211,24 @@ const orphanEntities = [];
  * would otherwise present as "a few mobs are statues".
  */
 let orphanAdoptions = 0;
+/**
+ * The query both mob passes and the reconcile iterate.
+ *
+ * Every mob entity carries all of these — `spawnMob` is the only thing that
+ * tags `IsEnemy` and it adds the rest unconditionally, while `LegacyShell` is
+ * attached by the one function both creation paths call. Requiring them here
+ * rather than probing per chunk is what lets the row loops index the columns
+ * directly. Cached per world; rebuilt if the world is ever replaced.
+ */
+function enemySyncQuery(world) {
+    if (enemyEntityQuery === undefined || enemyEntityQueryWorld !== world) {
+        enemyEntityQuery = world.query([
+            C.IsEnemy, C.LegacyShell, C.Position, C.Angle, C.Health, C.Speed,
+        ]);
+        enemyEntityQueryWorld = world;
+    }
+    return enemyEntityQuery;
+}
 /** How many shells have been adopted for want of an entity. Should be 0. */
 function orphanAdoptionCount() {
     return orphanAdoptions;
@@ -474,46 +520,46 @@ function adoptOrphanShell(world, enemy, now) {
     return entity;
 }
 /**
- * Destroy mob entities whose legacy shell has left `enemies[]`.
+ * Keep the two representations honest, cheaply.
  *
- * The removal half of the bridge. Legacy still owns despawn and splices the
- * array from a dozen places (the reaper, killHandler, pet despawns, the maze
- * rotation, the distance despawner); rather than teach every one of them about
- * the ECS, the world is reconciled against the array once per tick. An entity
- * that outlived its shell would keep moving, keep shooting and keep taking up
- * grid space while being invisible to every client.
+ * There used to be a full RECONCILE here: a set of every live shell, a sweep of
+ * every mob entity, and a destroy for any entity whose shell had gone. It was
+ * O(all mobs) every tick to find the handful of removals a tick actually has,
+ * and it existed because removal was scattered across a dozen legacy splices
+ * that knew nothing about the ECS.
  *
- * Runs BEFORE the field push-in so a departed mob is not simulated for the tick
- * it left on.
+ * Removal is now a single operation that retires both halves together
+ * (`removeEnemy`/`removeEnemyAt` in server/enemyRegistry.ts), so the sweep has
+ * nothing left to discover. What remains is:
+ *
+ *   - `drainRemovedEnemies`, which retires the entities queued by those
+ *     removals — the deferral is what keeps a kill arriving from inside the
+ *     projectile or mob-collision sweep from pulling a row out from under it;
+ *   - a periodic AUDIT, because removal is a convention now and a convention
+ *     can be broken by a future splice site. It repairs and reports rather than
+ *     staying silent, which is what the reconcile bought at 300x the price.
+ *
+ * The adoption path stays on the same audit tick: a shell admitted by something
+ * other than `spawnEnemy` has no entity, is never simulated, and would sit in
+ * `enemies[]` as a statue that still deals contact damage.
  */
-function reconcileEnemyEntities(world, enemies) {
-    if (enemyEntityQuery === undefined || enemyEntityQueryWorld !== world) {
-        enemyEntityQuery = world.query([C.IsEnemy]);
-        enemyEntityQueryWorld = world;
-    }
-    liveEnemyIds.clear();
-    for (let i = 0; i < enemies.length; i++)
-        liveEnemyIds.add(enemies[i].id);
-    // Collected first: destroying during iteration would swap an unvisited row
-    // into the slot the loop just passed.
-    orphanEntities.length = 0;
-    enemyEntityQuery.chunks(chunk => {
-        const entities = chunk.entities;
-        for (let i = 0; i < chunk.count; i++) {
-            const entity = entities[i];
-            const id = world.externalIdOf(entity);
-            // An unbound mob entity cannot currently exist (spawnMob always
-            // binds one), and destroying it on a guess would eat any future
-            // entity-only mob, so leave it be.
-            if (id === undefined)
-                continue;
-            if (!liveEnemyIds.has(id))
-                orphanEntities.push(entity);
+const ENEMY_AUDIT_INTERVAL_TICKS = 300;
+let ticksSinceEnemyAudit = 0;
+function maintainEnemyEntities(world, enemies, now) {
+    (0, enemyRegistry_1.drainRemovedEnemies)(world);
+    if (++ticksSinceEnemyAudit < ENEMY_AUDIT_INTERVAL_TICKS)
+        return;
+    ticksSinceEnemyAudit = 0;
+    // Repairs orphan ENTITIES itself and reports the count; the shell half is
+    // repaired here because adoption needs the importer, which lives in this
+    // module's dependency graph rather than the registry's.
+    if ((0, enemyRegistry_1.auditEnemyEntities)(world, enemySyncQuery(world)) === 0)
+        return;
+    for (let i = 0; i < enemies.length; i++) {
+        if (world.lookup(enemies[i].id) === undefined) {
+            adoptOrphanShell(world, enemies[i], now);
         }
-    });
-    for (let i = 0; i < orphanEntities.length; i++)
-        world.destroy(orphanEntities[i]);
-    orphanEntities.length = 0;
+    }
 }
 /**
  * Push legacy state into the ECS.
@@ -564,44 +610,94 @@ function syncToEcs(world, enemies, players, now) {
         seenPlayerIds.delete(id);
     }
     // --- enemies ---------------------------------------------------------
-    reconcileEnemyEntities(world, enemies);
-    for (let i = 0; i < enemies.length; i++) {
-        const enemy = enemies[i];
-        const entity = world.lookup(enemy.id) ?? adoptOrphanShell(world, enemy, now);
-        // Fields LEGACY writes.
-        world.write(entity, C.Health, { current: enemy.health, max: enemy.maxHealth });
-        world.write(entity, C.Speed, {
-            current: enemy.speed,
-            base: enemy.baseSpeed ?? enemy.speed,
-        });
-        // A slow applied by legacy shows up as speed below base.
-        const slowed = enemy.slowUntil !== undefined && enemy.slowUntil > now;
-        if (slowed && !world.has(entity, C.Slowed)) {
-            world.add(entity, C.Slowed, { until: enemy.slowUntil });
-        }
-        else if (!slowed && world.has(entity, C.Slowed)) {
-            world.remove(entity, C.Slowed);
-        }
-        if (enemy.knockbackX || enemy.knockbackY) {
-            if (!world.has(entity, C.Knockback)) {
-                world.add(entity, C.Knockback, { x: 0, y: 0 });
+    maintainEnemyEntities(world, enemies, now);
+    // Driven by the WORLD, not by `enemies[]`. Each chunk shares one archetype,
+    // so every column lookup and every "does this mob have Knockback" test is
+    // hoisted above the row loop and the body is straight array indexing — no
+    // id lookup, no liveness check, no per-field archetype walk. The shell
+    // pointer is what makes that possible; see C.LegacyShell.
+    pendingSlowAdd.length = 0;
+    pendingSlowUntil.length = 0;
+    pendingSlowRemove.length = 0;
+    pendingKnockback.length = 0;
+    pendingKnockbackX.length = 0;
+    pendingKnockbackY.length = 0;
+    pendingDead.length = 0;
+    enemySyncQuery(world).chunks(chunk => {
+        const shells = chunk.cols(C.LegacyShell).ref;
+        const entities = chunk.entities;
+        const health = chunk.cols(C.Health);
+        const speed = chunk.cols(C.Speed);
+        // Archetype-wide, so these are decided once per chunk rather than once
+        // per mob — which is the whole reason to iterate this way.
+        const hasSlowed = chunk.has(C.Slowed);
+        const hasDead = chunk.has(C.IsDead);
+        const knock = chunk.has(C.Knockback) ? chunk.cols(C.Knockback) : undefined;
+        const ai = chunk.has(C.MobAI) ? chunk.cols(C.MobAI) : undefined;
+        for (let i = 0; i < chunk.count; i++) {
+            const enemy = shells[i];
+            // Fields LEGACY writes.
+            health.current[i] = enemy.health;
+            health.max[i] = enemy.maxHealth;
+            speed.current[i] = enemy.speed;
+            speed.base[i] = enemy.baseSpeed ?? enemy.speed;
+            // A slow applied by legacy shows up as speed below base.
+            const slowed = enemy.slowUntil !== undefined && enemy.slowUntil > now;
+            if (slowed !== hasSlowed) {
+                if (slowed) {
+                    pendingSlowAdd.push(entities[i]);
+                    pendingSlowUntil.push(enemy.slowUntil);
+                }
+                else {
+                    pendingSlowRemove.push(entities[i]);
+                }
             }
-            world.write(entity, C.Knockback, {
-                x: enemy.knockbackX ?? 0,
-                y: enemy.knockbackY ?? 0,
-            });
+            if (enemy.knockbackX || enemy.knockbackY) {
+                if (knock !== undefined) {
+                    knock.x[i] = enemy.knockbackX ?? 0;
+                    knock.y[i] = enemy.knockbackY ?? 0;
+                }
+                else {
+                    pendingKnockback.push(entities[i]);
+                    pendingKnockbackX.push(enemy.knockbackX ?? 0);
+                    pendingKnockbackY.push(enemy.knockbackY ?? 0);
+                }
+            }
+            // Legacy marks kills; the ECS must stop simulating them at once.
+            const isDead = !!enemy.isDead || enemy.health <= 0;
+            if (isDead && !hasDead)
+                pendingDead.push(entities[i]);
+            // Provocation: legacy damage handlers set targetPlayerId directly,
+            // and that is how a neutral mob becomes hostile.
+            if (enemy.targetPlayerId !== undefined && ai !== undefined) {
+                const target = world.lookup(enemy.targetPlayerId);
+                if (target !== undefined)
+                    ai.targetPlayer[i] = target;
+            }
+            else if (enemy.targetPlayerId !== undefined && !warnedMissingMobAI) {
+                // `spawnMob` gives every mob MobAI, so this is unreachable; the
+                // scalar version threw here, which would take the tick down.
+                warnedMissingMobAI = true;
+                console.warn(`[ECS] provoked mob ${enemy.type} has no MobAI; provocation dropped`);
+            }
         }
-        // Legacy marks kills; the ECS must stop simulating them at once.
-        const isDead = !!enemy.isDead || enemy.health <= 0;
-        if (isDead && !world.has(entity, C.IsDead))
-            world.add(entity, C.IsDead);
-        // Provocation: legacy damage handlers set targetPlayerId directly, and
-        // that is how a neutral mob becomes hostile.
-        if (enemy.targetPlayerId) {
-            const target = world.lookup(enemy.targetPlayerId);
-            if (target !== undefined)
-                world.set(entity, C.MobAI, 'targetPlayer', target);
-        }
+    });
+    // Structural changes, now that no query is iterating. See the pending*
+    // declarations for why they cannot happen inline.
+    for (let i = 0; i < pendingSlowAdd.length; i++) {
+        world.add(pendingSlowAdd[i], C.Slowed, { until: pendingSlowUntil[i] });
+    }
+    for (let i = 0; i < pendingSlowRemove.length; i++) {
+        world.remove(pendingSlowRemove[i], C.Slowed);
+    }
+    for (let i = 0; i < pendingKnockback.length; i++) {
+        world.add(pendingKnockback[i], C.Knockback, {
+            x: pendingKnockbackX[i],
+            y: pendingKnockbackY[i],
+        });
+    }
+    for (let i = 0; i < pendingDead.length; i++) {
+        world.add(pendingDead[i], C.IsDead);
     }
 }
 /**
@@ -614,74 +710,93 @@ function syncToEcs(world, enemies, players, now) {
  * overwritten.
  */
 function syncFromEcs(world, enemies) {
-    for (let i = 0; i < enemies.length; i++) {
-        const enemy = enemies[i];
-        const entity = world.lookup(enemy.id);
-        if (entity === undefined)
-            continue;
-        enemy.x = world.get(entity, C.Position, 'x');
-        enemy.y = world.get(entity, C.Position, 'y');
-        enemy.angle = world.get(entity, C.Angle, 'value');
-        if (world.has(entity, C.Velocity)) {
-            enemy.velX = world.get(entity, C.Velocity, 'x');
-            enemy.velY = world.get(entity, C.Velocity, 'y');
-        }
-        if (world.has(entity, C.MobAI)) {
-            enemy.isChasing = !!world.get(entity, C.MobAI, 'isChasing');
-        }
-        if (world.has(entity, C.Knockback)) {
-            enemy.knockbackX = world.get(entity, C.Knockback, 'x');
-            enemy.knockbackY = world.get(entity, C.Knockback, 'y');
-        }
-        // Pet melee is simulated by the ECS, so damage it dealt has to come
-        // back. Taking the MINIMUM merges it with any legacy damage applied
-        // this tick instead of overwriting one with the other.
-        const ecsHealth = world.get(entity, C.Health, 'current');
-        if (ecsHealth < enemy.health)
-            enemy.health = ecsHealth;
-        if (world.has(entity, C.IsDead) && enemy.health > 0) {
-            // The ECS killed it (pet melee); let legacy's reaper award the drop.
-            enemy.health = 0;
-        }
-        // Targeting must round-trip. Legacy code still reads targetPlayerId —
-        // trackDamage gates provocation on it (`!enemy.targetPlayerId`), a
-        // splitting centipede copies it to its children, and item drops use it
-        // for eligibility. Writing only INTO the ECS left those readers looking
-        // at a field the simulation no longer maintained, so a mob the ECS had
-        // acquired or dropped looked un-aggroed to every legacy consumer.
-        if (world.has(entity, C.MobAI)) {
-            const target = world.get(entity, C.MobAI, 'targetPlayer');
-            if (world.isAlive(target)) {
-                enemy.targetPlayerId = world.externalIdOf(target);
+    // Chunk-driven, like the push-in half, and for the same reason: the columns
+    // and the has-this-component tests are hoisted above the row loop, and the
+    // shell pointer removes the id lookup that walking `enemies[]` needed. This
+    // pass makes NO structural change, so unlike syncToEcs it needs no deferral.
+    //
+    // `enemies` is unused now — the world is the source of truth for what to
+    // write back, and the reconcile has already made the two agree. It stays in
+    // the signature because every caller has the array to hand and the day
+    // legacy stops owning lifecycle this whole function disappears.
+    void enemies;
+    enemySyncQuery(world).chunks(chunk => {
+        const shells = chunk.cols(C.LegacyShell).ref;
+        const pos = chunk.cols(C.Position);
+        const ang = chunk.cols(C.Angle);
+        const health = chunk.cols(C.Health);
+        const vel = chunk.has(C.Velocity) ? chunk.cols(C.Velocity) : undefined;
+        const ai = chunk.has(C.MobAI) ? chunk.cols(C.MobAI) : undefined;
+        const knock = chunk.has(C.Knockback) ? chunk.cols(C.Knockback) : undefined;
+        const seg = chunk.has(C.CentipedeSegment) ? chunk.cols(C.CentipedeSegment) : undefined;
+        const isDead = chunk.has(C.IsDead);
+        for (let i = 0; i < chunk.count; i++) {
+            const enemy = shells[i];
+            enemy.x = pos.x[i];
+            enemy.y = pos.y[i];
+            enemy.angle = ang.value[i];
+            if (vel !== undefined) {
+                enemy.velX = vel.x[i];
+                enemy.velY = vel.y[i];
             }
-            else if (enemy.targetPlayerId !== undefined) {
-                // Only clear once the ECS has genuinely dropped it, so a
-                // provocation applied by legacy later this tick survives.
-                enemy.targetPlayerId = undefined;
+            if (ai !== undefined) {
+                enemy.isChasing = !!ai.isChasing[i];
             }
-            const targetEnemy = world.get(entity, C.MobAI, 'targetEnemy');
-            enemy.targetEnemyId = world.isAlive(targetEnemy)
-                ? world.externalIdOf(targetEnemy) : undefined;
-            const targetPet = world.get(entity, C.MobAI, 'targetPet');
-            enemy.targetPetId = world.isAlive(targetPet)
-                ? world.externalIdOf(targetPet) : undefined;
+            if (knock !== undefined) {
+                enemy.knockbackX = knock.x[i];
+                enemy.knockbackY = knock.y[i];
+            }
+            // Pet melee is simulated by the ECS, so damage it dealt has to come
+            // back. Taking the MINIMUM merges it with any legacy damage applied
+            // this tick instead of overwriting one with the other.
+            const ecsHealth = health.current[i];
+            if (ecsHealth < enemy.health)
+                enemy.health = ecsHealth;
+            if (isDead && enemy.health > 0) {
+                // The ECS killed it (pet melee); let legacy's reaper award the drop.
+                enemy.health = 0;
+            }
+            // Targeting must round-trip. Legacy code still reads targetPlayerId
+            // — trackDamage gates provocation on it (`!enemy.targetPlayerId`), a
+            // splitting centipede copies it to its children, and item drops use
+            // it for eligibility. Writing only INTO the ECS left those readers
+            // looking at a field the simulation no longer maintained, so a mob
+            // the ECS had acquired or dropped looked un-aggroed to every legacy
+            // consumer.
+            if (ai !== undefined) {
+                const target = ai.targetPlayer[i];
+                if (world.isAlive(target)) {
+                    enemy.targetPlayerId = world.externalIdOf(target);
+                }
+                else if (enemy.targetPlayerId !== undefined) {
+                    // Only clear once the ECS has genuinely dropped it, so a
+                    // provocation applied by legacy later this tick survives.
+                    enemy.targetPlayerId = undefined;
+                }
+                const targetEnemy = ai.targetEnemy[i];
+                enemy.targetEnemyId = world.isAlive(targetEnemy)
+                    ? world.externalIdOf(targetEnemy) : undefined;
+                const targetPet = ai.targetPet[i];
+                enemy.targetPetId = world.isAlive(targetPet)
+                    ? world.externalIdOf(targetPet) : undefined;
+            }
+            // Centipede chain links can be re-headed by the repair pass.
+            if (seg !== undefined) {
+                const leader = seg.leader[i];
+                const head = seg.head[i];
+                enemy.leaderId = world.isAlive(leader) ? world.externalIdOf(leader) : undefined;
+                enemy.headId = world.isAlive(head) ? world.externalIdOf(head) : undefined;
+                enemy.segmentIndex = seg.segmentIndex[i];
+            }
         }
-        // Centipede chain links can be re-headed by the repair pass.
-        if (world.has(entity, C.CentipedeSegment)) {
-            const leader = world.get(entity, C.CentipedeSegment, 'leader');
-            const head = world.get(entity, C.CentipedeSegment, 'head');
-            enemy.leaderId = world.isAlive(leader) ? world.externalIdOf(leader) : undefined;
-            enemy.headId = world.isAlive(head) ? world.externalIdOf(head) : undefined;
-            enemy.segmentIndex = world.get(entity, C.CentipedeSegment, 'segmentIndex');
-        }
-    }
+    });
 }
 /** Reset cross-tick tracking. For tests and for a clean world rebuild. */
 function resetSyncState() {
     seenPlayerIds.clear();
     enemyEntityQuery = undefined;
     enemyEntityQueryWorld = undefined;
-    liveEnemyIds.clear();
+    liveEnemyShells.clear();
     orphanEntities.length = 0;
     orphanAdoptions = 0;
 }

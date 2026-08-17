@@ -197,6 +197,8 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
     let playerHits = 0;
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
         lookupPlayer: () => undefined,
+        // Harness drives the schedulers directly; the pipeline is the game\'s.
+        runPlayerPipeline: () => { },
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },

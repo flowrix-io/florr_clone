@@ -173,6 +173,34 @@ export const GridStamps = defineComponent('GridStamps', {
 });
 
 /**
+ * The legacy `Enemy` object this entity mirrors, for as long as one exists.
+ *
+ * ---------------------------------------------------------------------------
+ * This component is scaffolding, and is meant to be deleted
+ * ---------------------------------------------------------------------------
+ * While the cutover is unfinished a mob exists TWICE — as an entity here and as
+ * an `Enemy` in the legacy `enemies[]` array — and the two have to be related
+ * once per tick, in both directions, for every mob. That relation used to be
+ * the string id: `world.lookup(enemy.id)` in each bridge pass plus a
+ * `Set<string>` of live ids in the reconcile, which is three-odd string hashes
+ * per mob per tick and measured as the single largest remaining item in the
+ * bridge. Holding the pointer instead makes the relation free, and lets both
+ * passes iterate ECS CHUNKS (hoisting every column lookup above the row loop)
+ * rather than walking `enemies[]` and resolving each handle.
+ *
+ * It is deliberately one-directional: the entity knows its shell, the shell
+ * does not know its entity. `Enemy` is built by a single factory whose key set
+ * is load-bearing (see server_utils.makeEnemy) and is JSON-encoded onto the
+ * wire, so the pointer lives on the side that can absorb it.
+ *
+ * When legacy stops owning mob lifecycle, this component and both sync passes
+ * go away together — nothing else should ever read it.
+ */
+export const LegacyShell = defineComponent('LegacyShell', {
+    ref: 'obj',
+});
+
+/**
  * The mob is idling this tick — not chasing, not walking home, not a sandstorm.
  *
  * This tag exists because the passive-drift machine (systems/enemyPassive.ts)

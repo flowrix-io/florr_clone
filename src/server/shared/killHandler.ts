@@ -42,6 +42,16 @@ export interface KillContext {
     sendBossMobDefeatedMessage: (enemy: Enemy, io: any, players: Record<string, any>) => void;
     updateSpecialMobCounts: () => void;
     cleanupEnemy: (enemy: Enemy) => void;
+    /**
+     * Remove the mob at `index` from `enemies[]` AND retire its ECS entity.
+     *
+     * Injected rather than imported for the same reason everything else here
+     * is: this module is reached from petal_actions and playerState, and a
+     * direct import of the registry would drag the ECS world into both. It
+     * replaces a bare `enemies.splice(index, 1)`, which left the entity behind
+     * for a per-tick reconcile to find. See server/enemyRegistry.ts.
+     */
+    removeEnemyAt: (index: number) => Enemy | undefined;
     trackMobKill: (
         enemy: Enemy,
         players: Record<string, any>,
@@ -130,7 +140,7 @@ export function killEnemy(
 
     if (!skipCleanup) ctx.cleanupEnemy(enemy);
     if (index >= 0 && index < enemies.length) {
-        enemies.splice(index, 1);
+        ctx.removeEnemyAt(index);
     }
     if (emitDestroyed) ctx.io.emit('enemyDestroyed', enemy.id);
 

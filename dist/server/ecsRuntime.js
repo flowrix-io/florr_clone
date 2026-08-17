@@ -58,6 +58,7 @@ const afflictions_1 = require("../ecs/systems/afflictions");
 const lifetime_1 = require("../ecs/systems/lifetime");
 const centipede_1 = require("../ecs/systems/centipede");
 const enemyAI_1 = require("../ecs/systems/enemyAI");
+const lod_1 = require("../ecs/systems/lod");
 const enemyPassive_1 = require("../ecs/systems/enemyPassive");
 const movement_1 = require("../ecs/systems/movement");
 const viewport_1 = require("../ecs/systems/viewport");
@@ -87,6 +88,11 @@ function createEcsRuntime(options) {
      * therefore before anything reads an input. See EcsRuntime.tickInput.
      */
     const inputScheduler = new ecs_1.Scheduler(world);
+    /**
+     * The post-movement player pipeline runs on its own scheduler so it can sit
+     * after the movement window closes. See EcsRuntime.tickPlayerPipeline.
+     */
+    const pipelineScheduler = new ecs_1.Scheduler(world);
     const grid = new grid_1.SpatialGrid();
     const gridResult = new grid_1.GridQueryResult(256);
     /**
@@ -95,10 +101,18 @@ function createEcsRuntime(options) {
      * to have to filter them, and the dead because they are pending reaping.
      */
     const gridSource = world.query([C.Position, C.Radius, C.IsEnemy], [C.IsDead, C.PetOwner]);
-    // Spatial index first: bot targeting queries it, exactly as before.
-    scheduler.add('rebuildSpatialGrid', ecs_1.Phase.SpatialIndex, () => {
-        grid.rebuild(world, gridSource);
-    });
+    // NO grid rebuild on the mob scheduler.
+    //
+    // There used to be one here, on the grounds that "bot targeting queries it".
+    // Bot targeting reads the LEGACY enemy grid (see tickInput), and a sweep of
+    // every `grid`/`gridResult` reference shows projectileCollision is the only
+    // consumer this object has — on the PROJECTILE scheduler, which rebuilds the
+    // grid itself in `tickProjectiles` immediately before ticking. So the
+    // rebuild here was a full fat-insertion pass over every mob, every tick,
+    // whose result was overwritten before anything read it.
+    //
+    // If a system on THIS scheduler ever needs the shared broad phase, put the
+    // rebuild back — in SpatialIndex, before that system's phase.
     // Derived modifiers are computed from the Loadout and PlayerEffects
     // COMPONENTS, closing the window where a player existed both as an entity
     // and as a ServerPlayer read for modifier maths. Only the petal stat table
@@ -124,6 +138,12 @@ function createEcsRuntime(options) {
         // effect LIST itself is already a component, so this reads component
         // state through a config-only helper.
         effectSpeedMultiplier: () => 1,
+    });
+    // The legacy pipeline, under the scheduler. Registered as a system rather
+    // than called from server.ts so it is phase-ordered and shows up in the
+    // per-system timings alongside everything else.
+    pipelineScheduler.add('playerPipeline', ecs_1.Phase.Simulation, (ctx) => {
+        options.runPlayerPipeline(ctx.deltaTime, ctx.deltaMs, ctx.now);
     });
     (0, playerMovement_1.registerPlayerMovementSystem)(playerScheduler, (0, playerMovement_1.createPlayerMovementQueries)(world), {
         maxSpeed: constants_1.MAX_SPEED,
@@ -184,6 +204,9 @@ function createEcsRuntime(options) {
         markEnemyDamaged: onEnemyDamaged,
         onProjectileKill: options.onProjectileKill,
     });
+    // Refreshed in Phase.SpatialIndex, i.e. before either consumer below runs.
+    const activity = new lod_1.MobActivityField();
+    (0, lod_1.registerMobActivitySystem)(scheduler, activity, (0, lod_1.createMobActivityQueries)(world));
     (0, enemyAI_1.registerEnemyAISystem)(scheduler, (0, enemyAI_1.createEnemyAIQueries)(world), {
         hasLineOfSight: lineOfSight_1.hasLineOfSight,
         resolveWall: (x, y, halfSize) => (0, constants_1.resolveEntityWallCollisions)(x, y, halfSize),
@@ -194,6 +217,7 @@ function createEcsRuntime(options) {
         playerChaseStep: constants_1.MAX_SPEED / 30,
         sandstormSuckTier: (0, petals_1.getRarityIndex)('super'),
         maxTargetDistance: constants_1.VIEWPORT_WIDTH * 5,
+        activity,
     });
     (0, mobCollision_1.registerMobCollisionSystem)(scheduler, (0, mobCollision_1.createMobCollisionQueries)(world), {
         resolveWall: (x, y, halfSize) => (0, constants_1.resolveEntityWallCollisions)(x, y, halfSize),
@@ -201,6 +225,7 @@ function createEcsRuntime(options) {
         creditDamage,
         onDamaged: onEnemyDamaged,
         onKilled: onEnemyKilled,
+        activity,
     });
     (0, enemyPassive_1.registerEnemyPassiveSystems)(scheduler, (0, enemyPassive_1.createEnemyPassiveQueries)(world));
     // The centipede passes take the real tile-grid resolver, so a chain pushed
@@ -229,6 +254,7 @@ function createEcsRuntime(options) {
         projectileScheduler,
         playerScheduler,
         inputScheduler,
+        pipelineScheduler,
         grid,
         gridResult,
         projectileQueries: {
@@ -246,6 +272,9 @@ function createEcsRuntime(options) {
             // index. Player-vs-mob contact is still resolved by the legacy
             // collision block in updatePlayerState, against the legacy grid.
             playerScheduler.tick(deltaTime, deltaMs, now);
+        },
+        tickPlayerPipeline(deltaTime, deltaMs, now) {
+            pipelineScheduler.tick(deltaTime, deltaMs, now);
         },
         tickInput(deltaTime, deltaMs, now) {
             // No grid work: the systems here read the LEGACY enemy grid, which

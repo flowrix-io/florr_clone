@@ -245,6 +245,8 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
 
     const runtime = createEcsRuntime({
         lookupPlayer: () => undefined,
+        // Harness drives the schedulers directly; the pipeline is the game\'s.
+        runPlayerPipeline: () => { /* not exercised here */ },
         creditDamage: () => { /* attribution is exercised elsewhere */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },

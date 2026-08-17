@@ -52,7 +52,7 @@ export {
 
 export { Archetype, ComponentMask } from './archetype';
 
-export { World, Query, Chunk, ComponentInit } from './world';
+export { World, Query, Chunk, ComponentInit, EntityCursor } from './world';
 
 export { CommandBuffer } from './commands';
 

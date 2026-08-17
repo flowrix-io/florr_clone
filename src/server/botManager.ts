@@ -1574,37 +1574,113 @@ function tileCenter(tx: number, ty: number): Waypoint {
     };
 }
 
-// Min-heap keyed by `f`. Inline for speed (no allocation of wrapper methods).
-interface HeapItem { f: number; tx: number; ty: number }
-function heapPush(h: HeapItem[], item: HeapItem): void {
-    h.push(item);
-    let i = h.length - 1;
+/**
+ * Min-heap keyed by `f`, in parallel typed arrays.
+ *
+ * Was an array of `{f, tx, ty}` object literals. A* pushes once per improved
+ * neighbour — up to eight per expansion, so a 4000-node search allocated on the
+ * order of 32,000 short-lived objects, and the pop path chased three pointers
+ * per comparison. Profiling put heapPop+heapPush at ~13% of all bot CPU and the
+ * whole A* at ~23% of the server.
+ *
+ * The arrays are module-scope and reused across calls (A* is single-threaded
+ * and non-reentrant), and they GROW rather than being capped, so search
+ * behaviour is unchanged — a cap would silently drop nodes and change paths.
+ *
+ * Comparisons are `<` and `<=` exactly where the object version had them: the
+ * sift order decides which of two equal-`f` nodes is expanded first, and that
+ * decides which of several equal-length paths is returned.
+ */
+let heapF = new Float64Array(1024);
+let heapTx = new Int32Array(1024);
+let heapTy = new Int32Array(1024);
+let heapSize = 0;
+
+function heapGrow(): void {
+    const bigF = new Float64Array(heapF.length * 2);
+    bigF.set(heapF); heapF = bigF;
+    const bigX = new Int32Array(heapTx.length * 2);
+    bigX.set(heapTx); heapTx = bigX;
+    const bigY = new Int32Array(heapTy.length * 2);
+    bigY.set(heapTy); heapTy = bigY;
+}
+
+function heapPush(f: number, tx: number, ty: number): void {
+    if (heapSize === heapF.length) heapGrow();
+    let i = heapSize++;
+    heapF[i] = f; heapTx[i] = tx; heapTy[i] = ty;
     while (i > 0) {
         const p = (i - 1) >> 1;
-        if (h[p].f <= h[i].f) break;
-        const tmp = h[p]; h[p] = h[i]; h[i] = tmp;
+        if (heapF[p] <= heapF[i]) break;
+        const tf = heapF[p]; heapF[p] = heapF[i]; heapF[i] = tf;
+        const tx2 = heapTx[p]; heapTx[p] = heapTx[i]; heapTx[i] = tx2;
+        const ty2 = heapTy[p]; heapTy[p] = heapTy[i]; heapTy[i] = ty2;
         i = p;
     }
 }
-function heapPop(h: HeapItem[]): HeapItem | undefined {
-    if (h.length === 0) return undefined;
-    const top = h[0];
-    const last = h.pop() as HeapItem;
-    if (h.length === 0) return top;
-    h[0] = last;
+
+/** Pops into these three, so the caller needs no object either. */
+let popF = 0, popTx = 0, popTy = 0;
+
+function heapPop(): boolean {
+    if (heapSize === 0) return false;
+    popF = heapF[0]; popTx = heapTx[0]; popTy = heapTy[0];
+    heapSize--;
+    if (heapSize === 0) return true;
+    heapF[0] = heapF[heapSize]; heapTx[0] = heapTx[heapSize]; heapTy[0] = heapTy[heapSize];
     let i = 0;
-    const n = h.length;
+    const n = heapSize;
     while (true) {
         const l = 2 * i + 1;
         const r = 2 * i + 2;
-        let s = i;
-        if (l < n && h[l].f < h[s].f) s = l;
-        if (r < n && h[r].f < h[s].f) s = r;
-        if (s === i) break;
-        const tmp = h[i]; h[i] = h[s]; h[s] = tmp;
-        i = s;
+        let sm = i;
+        if (l < n && heapF[l] < heapF[sm]) sm = l;
+        if (r < n && heapF[r] < heapF[sm]) sm = r;
+        if (sm === i) break;
+        const tf = heapF[i]; heapF[i] = heapF[sm]; heapF[sm] = tf;
+        const tx2 = heapTx[i]; heapTx[i] = heapTx[sm]; heapTx[sm] = tx2;
+        const ty2 = heapTy[i]; heapTy[i] = heapTy[sm]; heapTy[sm] = ty2;
+        i = sm;
     }
-    return top;
+    return true;
+}
+
+/**
+ * Per-tile search scratch, replacing two `Map<number, number>`.
+ *
+ * The maps were rebuilt every call and hashed on every read and write — eight
+ * `get` plus up to eight `set` per expansion, ~32,000 hash operations for a
+ * full 4000-node search, which is what made findPathAStar itself the single
+ * hottest function on the server.
+ *
+ * Flat arrays indexed by tile can't be cleared per call (40,000 entries), so
+ * `searchStamp` marks which entries belong to the CURRENT search: a tile counts
+ * as unvisited unless its stamp matches. That is the exact equivalent of
+ * `map.get(idx) === undefined`, without the clear and without the hashing.
+ */
+let searchGScore = new Float64Array(0);
+let searchCameFrom = new Int32Array(0);
+let searchStamp = new Uint32Array(0);
+let searchStampValue = 0;
+let searchCells = 0;
+
+function ensureSearchScratch(cells: number): void {
+    if (searchCells === cells) return;
+    searchGScore = new Float64Array(cells);
+    searchCameFrom = new Int32Array(cells);
+    searchStamp = new Uint32Array(cells);
+    searchStampValue = 0;
+    searchCells = cells;
+}
+
+function beginSearch(): void {
+    searchStampValue++;
+    // Uint32 wrap: every stamp would suddenly "match" stale entries, so clear
+    // once in the ~4-billionth search rather than compare against a live set.
+    if (searchStampValue === 0xFFFFFFFF) {
+        searchStamp.fill(0);
+        searchStampValue = 1;
+    }
 }
 
 // Snap a blocked goal tile to the nearest walkable tile within `maxR` rings.
@@ -1624,7 +1700,12 @@ function snapGoalToWalkable(gx: number, gy: number, maxR: number = 4): { gx: num
     return null;
 }
 
-function findPathAStar(startX: number, startY: number, goalX: number, goalY: number): Waypoint[] | null {
+/**
+ * Exported as a TEST SEAM, not as API: scripts/astar-equivalence.js drives it
+ * against a pre-optimisation build to prove the two return identical paths.
+ * Nothing outside this module should call it.
+ */
+export function findPathAStar(startX: number, startY: number, goalX: number, goalY: number): Waypoint[] | null {
     const gridW = (WALL_GRID[0]?.length ?? 0);
     if (gridW === 0 || WALL_GRID.length === 0) return null;
 
@@ -1639,60 +1720,69 @@ function findPathAStar(startX: number, startY: number, goalX: number, goalY: num
 
     if (sx === gx && sy === gy) return [];
 
-    const idxOf = (tx: number, ty: number) => ty * gridW + tx;
+    ensureSearchScratch(gridW * WALL_GRID.length);
+    beginSearch();
+    const stamp = searchStampValue;
+    const startIdx = sy * gridW + sx;
 
-    const gScore = new Map<number, number>();
-    const cameFrom = new Map<number, number>();
-    const open: HeapItem[] = [];
-    const startIdx = idxOf(sx, sy);
+    searchGScore[startIdx] = 0;
+    searchCameFrom[startIdx] = -1;
+    searchStamp[startIdx] = stamp;
 
-    gScore.set(startIdx, 0);
-    heapPush(open, { f: octileHeuristic(sx, sy, gx, gy), tx: sx, ty: sy });
+    heapSize = 0;
+    heapPush(octileHeuristic(sx, sy, gx, gy), sx, sy);
 
     let expanded = 0;
-    while (open.length > 0 && expanded < PATH_MAX_NODES) {
-        const cur = heapPop(open) as HeapItem;
-        if (cur.tx === gx && cur.ty === gy) {
+    while (heapSize > 0 && expanded < PATH_MAX_NODES) {
+        heapPop();
+        const curF = popF, curTx = popTx, curTy = popTy;
+
+        if (curTx === gx && curTy === gy) {
             // Reconstruct from goal back to start (exclusive)
             const path: Waypoint[] = [];
-            let idx = idxOf(cur.tx, cur.ty);
+            let idx = curTy * gridW + curTx;
             while (idx !== startIdx) {
                 const tx = idx % gridW;
                 const ty = (idx - tx) / gridW;
                 path.unshift(tileCenter(tx, ty));
-                const prev = cameFrom.get(idx);
-                if (prev === undefined) break;
+                // Stamp gate is the equivalent of the old `cameFrom.get(idx)`
+                // returning undefined: an entry from an earlier search is not
+                // ours to follow.
+                if (searchStamp[idx] !== stamp) break;
+                const prev = searchCameFrom[idx];
+                if (prev < 0) break;
                 idx = prev;
             }
             return path;
         }
         expanded++;
-        const curIdx = idxOf(cur.tx, cur.ty);
+        const curIdx = curTy * gridW + curTx;
         // Skip stale heap entries (node was re-pushed with lower f)
-        const curG = gScore.get(curIdx);
-        if (curG === undefined) continue;
+        if (searchStamp[curIdx] !== stamp) continue;
+        const curG = searchGScore[curIdx];
         // Heuristic admissible, so if we already popped this node via a lower f we can skip now
-        if (cur.f > curG + octileHeuristic(cur.tx, cur.ty, gx, gy) + 1e-9) continue;
+        if (curF > curG + octileHeuristic(curTx, curTy, gx, gy) + 1e-9) continue;
 
-        for (const [dx, dy, stepCost] of A_STAR_NEIGHBORS) {
-            const nx = cur.tx + dx;
-            const ny = cur.ty + dy;
+        for (let n = 0; n < A_STAR_NEIGHBORS.length; n++) {
+            const dx = A_STAR_NEIGHBORS[n][0];
+            const dy = A_STAR_NEIGHBORS[n][1];
+            const stepCost = A_STAR_NEIGHBORS[n][2];
+            const nx = curTx + dx;
+            const ny = curTy + dy;
             if (tileBlocked(nx, ny)) continue;
             // Disallow corner cutting: both orthogonals must be clear for diagonals
             if (dx !== 0 && dy !== 0) {
-                if (tileBlocked(cur.tx + dx, cur.ty)) continue;
-                if (tileBlocked(cur.tx, cur.ty + dy)) continue;
+                if (tileBlocked(curTx + dx, curTy)) continue;
+                if (tileBlocked(curTx, curTy + dy)) continue;
             }
             const tentativeG = curG + stepCost;
-            const nIdx = idxOf(nx, ny);
-            const existingG = gScore.get(nIdx);
-            if (existingG === undefined || tentativeG < existingG) {
-                gScore.set(nIdx, tentativeG);
-                cameFrom.set(nIdx, curIdx);
-                heapPush(open, {
-                    f: tentativeG + octileHeuristic(nx, ny, gx, gy),
-                    tx: nx, ty: ny
-                });
+            const nIdx = ny * gridW + nx;
+            const seen = searchStamp[nIdx] === stamp;
+            if (!seen || tentativeG < searchGScore[nIdx]) {
+                searchStamp[nIdx] = stamp;
+                searchGScore[nIdx] = tentativeG;
+                searchCameFrom[nIdx] = curIdx;
+                heapPush(tentativeG + octileHeuristic(nx, ny, gx, gy), nx, ny);
             }
         }
     }

@@ -172,6 +172,9 @@ function resetWorldSingletons() {
 function makeRuntime() {
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
         lookupPlayer: (socketId) => constants_1.players[socketId],
+        // This bench drives the schedulers directly; the post-movement pipeline
+        // is the game\'s, not the bench\'s.
+        runPlayerPipeline: () => { },
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },

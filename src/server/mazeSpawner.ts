@@ -17,7 +17,7 @@ import {
 } from '../maze';
 import { RARITY_ORDER as TIER_ORDER } from './shared/rarity';
 import { pickWeighted } from './shared/weighted';
-import { spawnEnemy } from './enemyRegistry';
+import { spawnEnemy, removeEnemyAt } from './enemyRegistry';
 
 // Population control. Unlike the open world (which only populates viewports),
 // the maze is a bounded dungeon populated rrolf-style: mobs spawn across ALL
@@ -294,7 +294,7 @@ export function clearMazeEnemies(): string[] {
         const enemy = enemies[i];
         if (isInMazeRegion(enemy.x, enemy.y)) {
             removed.push(enemy.id);
-            enemies.splice(i, 1);
+            removeEnemyAt(i);
         }
     }
     return removed;

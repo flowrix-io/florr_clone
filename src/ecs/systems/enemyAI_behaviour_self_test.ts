@@ -13,6 +13,7 @@ import { spawnMob, spawnPlayer, makePet } from '../prefabs';
 import { Scheduler } from '../system';
 import { World } from '../world';
 import { createEnemyAIQueries, EnemyAIDeps, registerEnemyAISystem } from './enemyAI';
+import { MobActivityField } from './lod';
 
 const TICK_MS = 1000 / 30;
 const TICK_SECONDS = 1 / 30;
@@ -52,6 +53,10 @@ export function runEnemyAiBehaviourSelfTest(): string[] {
             playerChaseStep: PLAYER_CHASE_STEP,
             sandstormSuckTier: 7,
             maxTargetDistance: 6400,
+            // Left empty on purpose: an empty field treats every mob as active,
+            // so these cases exercise the AI itself rather than the LOD stride.
+            // systems/lod.ts has its own coverage.
+            activity: new MobActivityField(),
         };
 
         registerEnemyAISystem(scheduler, createEnemyAIQueries(world), deps);

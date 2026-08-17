@@ -22,6 +22,7 @@ import * as C from '../components';
 import { Entity, entityIndex, NULL_ENTITY } from '../entity';
 import { Phase, SystemContext } from '../system';
 import { Query, World } from '../world';
+import { MobActivityField } from './lod';
 
 /** Gap maintained between mobs, on top of their radii. */
 const MOB_COLLISION_BUFFER = 5;
@@ -62,6 +63,13 @@ export interface MobCollisionDeps {
     onDamaged(victim: Entity): void;
     /** The victim's health reached zero. Awards XP/drops and emits. */
     onKilled(victim: Entity): void;
+    /**
+     * Which mobs are near enough to a player to be worth colliding this tick.
+     * See systems/lod.ts. A mob left out of the broad phase is also excluded as
+     * a PAIR TARGET, so a distant shove is missed entirely rather than applied
+     * one-sided — which is the honest behaviour, and unobservable at that range.
+     */
+    activity: MobActivityField;
 }
 
 export interface MobCollisionQueries {
@@ -96,7 +104,7 @@ interface Entry {
 }
 
 export function mobCollisionSystem(queries: MobCollisionQueries, deps: MobCollisionDeps) {
-    const { resolveWall, noMobCollision, creditDamage, onDamaged, onKilled } = deps;
+    const { resolveWall, noMobCollision, creditDamage, onDamaged, onKilled, activity } = deps;
 
     // Reused across ticks so a normal tick allocates nothing.
     const entries: Entry[] = [];
@@ -151,6 +159,11 @@ export function mobCollisionSystem(queries: MobCollisionQueries, deps: MobCollis
                 // excluded as a pair target.
                 if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
                 if (Math.abs(x) > MAX_SANE_WORLD_COORD || Math.abs(y) > MAX_SANE_WORLD_COORD) continue;
+
+                // Far from every player: sit this tick out, most ticks. Done
+                // here rather than in the narrow phase so a distant mob costs
+                // neither an Entry nor a bucket slot.
+                if (!activity.shouldStep(entity, x, y, ctx.tick)) continue;
 
                 const radius = rad.value[i];
                 if (radius > maxRadius) maxRadius = radius;

@@ -56,10 +56,11 @@ import {
     getSpeedMultiplier,
     getShieldAmount,
     grantShield,
-    executePetalActionsOnSpawn,
-    handlePetalCollision,
+    armPetalBehaviour,
+    petalBehaviourCollision,
     updatePetalPosition,
-    executePetalActions,
+    runPetalBreakBehaviour,
+    hasPetalBehaviour,
     despawnAllPlayerPets,
     spawnPet,
     splitPlayers
@@ -263,6 +264,7 @@ import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, cleanupEnemy, markEnemyDamaged, getOriginalSocketId } from './utils';
 import { killEnemy, type KillContext } from './shared/killHandler';
+import { removeEnemyAt } from './enemyRegistry';
 
 /**
  * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
@@ -274,6 +276,7 @@ function killCtxFromDeps(deps: PlayerStateDependencies): KillContext {
         players,
         playerUserIds,
         database: deps.database,
+        removeEnemyAt,
         savePlayerProgress: deps.savePlayerProgress,
         addXPToPlayer: deps.addXPToPlayer,
         handleMobDrops: deps.handleMobDrops,
@@ -1496,7 +1499,7 @@ function buildPetalInstances(
             }
 
             // Execute petal actions immediately when spawned
-            if (petalStats.actions) {
+            if (hasPetalBehaviour(petal.petalType)) {
                 const petalId = `${player.id}_${i}_${j}`;
                 const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
                 const actionContext = {
@@ -1511,7 +1514,7 @@ function buildPetalInstances(
                     loadoutIndex: i,
                     instanceIndex: j
                 };
-                executePetalActionsOnSpawn(petalStats.actions, actionContext);
+                armPetalBehaviour(petal.petalType, actionContext);
             }
         }
     } catch (error) {
@@ -1585,349 +1588,1416 @@ function dropFieldsOnExtension(opts: {
 }
 
 /**
- * Update player state (movement, collisions, etc.)
- * This is the main function that handles all player state updates
+ * Player-vs-mob body contact: knockback, damage both ways, poison, and the kill.
+ *
+ * Lifted verbatim out of `updatePlayerState`, which is a ~1700-line sequential
+ * pipeline (contact -> petals -> pickups -> wall clamps -> teleporters -> commit)
+ * run one player at a time. That per-player sequencing is load-bearing and is
+ * why this is a FUNCTION rather than an ECS system: a system is a pass over all
+ * players, so promoting this block would resolve every player's contact before
+ * any player's petals, and one player could then no longer kill a mob out from
+ * under another's contact within the same tick. Extracting it behind a seam
+ * makes the block testable and gives the eventual ECS move somewhere to land,
+ * without changing the interleaving.
+ *
+ * Operates on the STAGED position (`startX`/`startY`, i.e. `player.movedX`)
+ * and returns where knockback left it; the caller keeps committing to
+ * `player.x`/`player.y` at the end of the pipeline, exactly as before.
+ *
+ * Only the FIRST colliding mob is processed — the original `break`s out of the
+ * candidate loop on contact, so a player wedged between two mobs takes one hit
+ * per tick, not one per mob.
  */
-export function updatePlayerState(
-    player: ServerPlayer, 
-    deltaTime: number,
-    deps: PlayerStateDependencies
-): void {
-    if (!player || !player.inputs) {
-        return;
-    }
-
-    // Don't update movement for dead players
-    if (player.isDead) {
-        return;
-    }
-
-    const { io, savePlayerProgress, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
-
-    // The pre-movement half (effects, healing, aura and ring damage) ran in
-    // updatePlayerPreMovement, and INTEGRATION now happens on the ECS between
-    // the two — see runSimulationStep and server/ecsSync.syncPlayersToEcs.
-    //
-    // `movedX`/`movedY` are what `stepPlayerMovement` used to return straight
-    // into these locals, so newX/newY start in exactly the same place they
-    // always did, and everything below — knockback, wall repulsion, pickups,
-    // teleporters, the maze/arena clamps — is unchanged and still commits to
-    // player.x/y at the very end of the function.
-    //
-    // What matters just as much is what is NOT assigned yet: `player.x`/
-    // `player.y` still hold the PREVIOUS tick's committed position for the whole
-    // of this function, which is what the petal block below reads and what makes
-    // petals trail the flower. velocity, angle and speedFactor were all written
-    // up-front by the legacy code too, so the movement window writes those
-    // directly and they are already current here.
-    const effectivePlayerSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
-    let newX = player.movedX ?? player.x;
-    let newY = player.movedY ?? player.y;
-
-    // Spatial-grid broad-phase: only test enemies whose center is within
-    // (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
+export function resolvePlayerMobContact(
+    player: ServerPlayer,
+    startX: number,
+    startY: number,
+    effectivePlayerSize: number,
+    deps: PlayerStateDependencies,
+): { x: number; y: number } {
+    const { io } = deps;
+// Spatial-grid broad-phase: only test enemies whose center is within
+// (playerRadius + maxEnemyRadius). Pets and dead enemies are excluded by the grid.
+let newX = startX;
+    let newY = startY;
     const _playerRadius = effectivePlayerSize / 2;
-    const _candidates = queryEnemiesNear(newX, newY, _playerRadius, _enemyQueryBuffer);
-    for (let _ci = 0; _ci < _candidates.length; _ci++) {
-        const enemy = _candidates[_ci];
-        const collisionInfo = checkPlayerEnemyCollision(newX, newY, effectivePlayerSize, enemy);
+const _candidates = queryEnemiesNear(newX, newY, _playerRadius, _enemyQueryBuffer);
+for (let _ci = 0; _ci < _candidates.length; _ci++) {
+    const enemy = _candidates[_ci];
+    const collisionInfo = checkPlayerEnemyCollision(newX, newY, effectivePlayerSize, enemy);
 
-        if (collisionInfo.collided) {
+    if (collisionInfo.collided) {
 
-            // Don't interact with dead players (corpses)
-            if (!player.isDead) {
-                // Calculate knockback direction
-                const dx = enemy.x - newX;
-                const dy = enemy.y - newY;
-                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-                const normalizedDx = dx / distance;
-                const normalizedDy = dy / distance;
+        // Don't interact with dead players (corpses)
+        if (!player.isDead) {
+            // Calculate knockback direction
+            const dx = enemy.x - newX;
+            const dy = enemy.y - newY;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+            const normalizedDx = dx / distance;
+            const normalizedDy = dy / distance;
 
-                const knockbackDistance = 25;
-                const knockbackX = -normalizedDx * knockbackDistance;
-                const knockbackY = -normalizedDy * knockbackDistance;
+            const knockbackDistance = 25;
+            const knockbackX = -normalizedDx * knockbackDistance;
+            const knockbackY = -normalizedDy * knockbackDistance;
 
-                // Apply knockback to player position (always, even when invulnerable)
-                newX -= normalizedDx * knockbackDistance;
-                newY -= normalizedDy * knockbackDistance;
+            // Apply knockback to player position (always, even when invulnerable)
+            newX -= normalizedDx * knockbackDistance;
+            newY -= normalizedDy * knockbackDistance;
 
-                // Glitch mobs infect on TOUCH, so this sits outside the damage
-                // branch below: bouncing off one while invulnerable still counts.
-                // Lasts until the player respawns (cleared in respawnPlayer).
-                if (isGlitchInfectingType(enemy.type)) player.glitched = true;
+            // Glitch mobs infect on TOUCH, so this sits outside the damage
+            // branch below: bouncing off one while invulnerable still counts.
+            // Lasts until the player respawns (cleared in respawnPlayer).
+            if (isGlitchInfectingType(enemy.type)) player.glitched = true;
 
-                // Only apply damage when not invulnerable
-                if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
-                    const shieldAmount = getShieldAmount(player);
-                    const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
-                    const spongeDuration = getSpongeAbsorbDuration(player);
+            // Only apply damage when not invulnerable
+            if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
+                const shieldAmount = getShieldAmount(player);
+                const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+                const spongeDuration = getSpongeAbsorbDuration(player);
 
-                    if (damageToPlayer > 0 && spongeDuration > 0) {
-                        queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
+                if (damageToPlayer > 0 && spongeDuration > 0) {
+                    queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
+                    player.isInvulnerable = true;
+                    setTimeout(() => {
+                        if (players[player.id]) {
+                            players[player.id].isInvulnerable = false;
+                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                        }
+                    }, 50);
+                } else {
+                    player.health -= damageToPlayer;
+                    player.lastDamageTime = Date.now();
+
+                    // Second Chance: if health dropped to 0 or below, try to save the player
+                    const secondChanceTriggered = player.health <= 0 && trySecondChance(player, io);
+
+                    if (!secondChanceTriggered) {
+                        // Track which enemy dealt the killing blow
+                        if (player.health <= 0) {
+                            player.killedBy = { type: enemy.type, tier: enemy.tier };
+                        }
+
                         player.isInvulnerable = true;
+                        // Set invulnerability timer (50ms after taking damage)
                         setTimeout(() => {
                             if (players[player.id]) {
                                 players[player.id].isInvulnerable = false;
+                                // Notify client that invulnerability has ended
                                 io.emit('playerInvulnerabilityEnded', { playerId: player.id });
                             }
                         }, 50);
-                    } else {
-                        player.health -= damageToPlayer;
-                        player.lastDamageTime = Date.now();
-
-                        // Second Chance: if health dropped to 0 or below, try to save the player
-                        const secondChanceTriggered = player.health <= 0 && trySecondChance(player, io);
-
-                        if (!secondChanceTriggered) {
-                            // Track which enemy dealt the killing blow
-                            if (player.health <= 0) {
-                                player.killedBy = { type: enemy.type, tier: enemy.tier };
-                            }
-
-                            player.isInvulnerable = true;
-                            // Set invulnerability timer (50ms after taking damage)
-                            setTimeout(() => {
-                                if (players[player.id]) {
-                                    players[player.id].isInvulnerable = false;
-                                    // Notify client that invulnerability has ended
-                                    io.emit('playerInvulnerabilityEnded', { playerId: player.id });
-                                }
-                            }, 50);
-                        }
-                    }
-
-                    // Poisonous mobs (evil centipede) leave poison on contact.
-                    // One stack: a fresh bite replaces whatever was ticking.
-                    const mobStats = enemy._mobStats ?? getMobStats(enemy.type, enemy.tier);
-                    if (mobStats?.poison && mobStats.poisonDuration) {
-                        player.poisonDamage = mobStats.poison * 1000; // per-ms -> per-second
-                        player.poisonUntil = Date.now() + mobStats.poisonDuration;
-                        player.poisonSource = { type: enemy.type, tier: enemy.tier };
                     }
                 }
 
-                // Always emit knockback (and current health state)
+                // Poisonous mobs (evil centipede) leave poison on contact.
+                // One stack: a fresh bite replaces whatever was ticking.
+                const mobStats = enemy._mobStats ?? getMobStats(enemy.type, enemy.tier);
+                if (mobStats?.poison && mobStats.poisonDuration) {
+                    player.poisonDamage = mobStats.poison * 1000; // per-ms -> per-second
+                    player.poisonUntil = Date.now() + mobStats.poisonDuration;
+                    player.poisonSource = { type: enemy.type, tier: enemy.tier };
+                }
+            }
+
+            // Always emit knockback (and current health state)
+            io.emit('playerDamaged', {
+                playerId: player.id,
+                health: player.health,
+                maxHealth: player.maxHealth,
+                isInvulnerable: player.isInvulnerable,
+                knockbackX: knockbackX,
+                knockbackY: knockbackY
+            });
+            
+            // Track damage dealt by this player (always track, even if enemy is dead)
+            trackDamage(enemy, player.id, player.damage);
+            // if (enemy.health - player.damage <= 0) {
+            //     console.log('[Server] About to kill enemy with petal', {
+            //         enemyId: enemy.id,
+            //         enemyType: enemy.type,
+            //         currentHealth: enemy.health,
+            //         damage: player.damage,
+            //         playerId: player.id,
+            //         hasDamageContributors: !!enemy.damageContributors,
+            //         damageContributorsSize: enemy.damageContributors?.size || 0
+            //     });
+            // }
+            
+            // Skip further processing if enemy is already dead (being processed)
+            if ((enemy as any).isDead) {
+                continue;
+            }
+            
+            enemy.health = Math.max(0, enemy.health - player.damage);
+            // Mark enemy for batched damage update at end of frame
+            markEnemyDamaged(enemy);
+
+            if (enemy.health <= 0 && !(enemy as any).isDead) {
+                const index = enemies.findIndex(e => e.id === enemy.id);
+                // Original gated the entire death sequence on the enemy still
+                // being in the array (it can already be gone if another damage
+                // source finished it this tick). killEnemy handles a -1 index
+                // by skipping just the splice, so preserve the gate here.
+                if (index !== -1) {
+                    killEnemy(enemy, index, enemies, killCtxFromDeps(deps), {
+                        killerPlayerId: player.id,
+                        trackMobKillTiming: 'sync-snapshot',
+                        requireNonEmptyContributors: true,
+                    });
+                }
+            }
+
+            if (player.health <= 0) {
+                break;
+            }
+        }
+        break;
+    }
+}
+
+
+    return { x: newX, y: newY };
+}
+
+/**
+ * Item pickups for one player, at their staged position.
+ *
+ * Second slice lifted out of `updatePlayerState` (see resolvePlayerMobContact
+ * for why these are functions rather than ECS systems). Reads and writes
+ * nothing positional — pickups do not move the player — so unlike contact it
+ * returns nothing and can be called with the staged coordinates directly.
+ *
+ * Kept verbatim, including the two lazy `require`s inside the loop: both reach
+ * back into modules that import this one, and hoisting them to the top would
+ * close a cycle.
+ */
+export function resolvePlayerItemPickups(
+    player: ServerPlayer,
+    newX: number,
+    newY: number,
+    deps: PlayerStateDependencies,
+): void {
+    // `savePlayerProgress` came from the enclosing function's destructure of
+    // `deps`; pulled in here for the same reason `io` is.
+    const { io, savePlayerProgress } = deps;
+// Check for item collisions (independent of enemy collisions)
+// Optimize: use squared distance comparison to avoid Math.sqrt
+const pickupSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0) + (player.magnetism ?? 0);
+const pickupRadiusSquared = pickupSize * pickupSize;
+for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    const dx = newX - item.x;
+    const dy = newY - item.y;
+    const distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared < pickupRadiusSquared) {
+        // Check if player has already picked up this item
+        if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
+            continue; // Skip if already picked up by this player
+        }
+        
+        // Check if player is eligible to pick up this item
+        if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+            let isEligible = false;
+            
+            // First, check if player ID is directly eligible
+            if (item.eligiblePlayers.includes(player.id)) {
+                isEligible = true;
+            } else {
+                // Check if this player is part of a split pair
+                const { splitPlayers } = require('../petal_actions');
+                const originalId = player.id.replace('_split2', '').replace('_split1', '');
+                const splitState = splitPlayers.get(originalId);
+                
+                if (splitState) {
+                    // Player is split - check if any of the split player IDs or original ID is eligible
+                    isEligible = item.eligiblePlayers.includes(splitState.player1.id) || 
+                                 item.eligiblePlayers.includes(splitState.player2.id) ||
+                                 item.eligiblePlayers.includes(originalId);
+                } else {
+                    // Not split - check if original socket ID is eligible (for items created with original ID)
+                    const { getOriginalSocketId } = require('./utils');
+                    const originalSocketId = getOriginalSocketId(player.id);
+                    if (player.id !== originalSocketId) {
+                        isEligible = item.eligiblePlayers.includes(originalSocketId);
+                    }
+                }
+            }
+            
+            if (!isEligible) {
+                // Player is not eligible - skip this item
+                // Debug log to help diagnose pickup issues
+                continue;
+            }
+        }
+        
+        // Add item to player's inventory (which may be shared with split player).
+        // While inside the PVP arena, `inventory` IS the PVP-only inventory; on
+        // exit, 25% of it is transferred back into the regular inventory.
+        let rarity = item.rarity || 'common';
+        const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
+        // Maze drops gain a rarity the moment they enter the inventory:
+        // the inventory stays in regular-world terms inside the maze, so
+        // the +1 the maze promises is applied at pickup, not on exit.
+        if (player.inMaze && player.mazeRarityShifted) {
+            const rarityIdx = getRarityIndex(rarity);
+            if (rarityIdx >= 0) {
+                rarity = RARITY_LEVELS[Math.min(rarityIdx + 1, RARITY_LEVELS.length - 1)];
+            }
+        }
+        addItem(player.inventory, rarity, itemKey, 1);
+        
+        // Mark as picked up by this player (don't remove from world)
+        if (!item.pickedUpBy) {
+            item.pickedUpBy = new Set();
+        }
+        item.pickedUpBy.add(player.id);
+        
+        // console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
+        
+        // Check if this player is split and update the other split player's inventory reference
+        const { splitPlayers } = require('../petal_actions');
+        const originalId = player.id.replace('_split2', '').replace('_split1', '');
+        const splitState = splitPlayers.get(originalId);
+        if (splitState) {
+            // Both players share the same inventory, so update the other player's reference
+            if (splitState.player1.id === player.id) {
+                splitState.player2.inventory = player.inventory;
+            } else if (splitState.player2.id === player.id) {
+                splitState.player1.inventory = player.inventory;
+            }
+        }
+        
+        // Emit events to update client
+        // Map split player IDs to original socket IDs for socket room targeting
+        const { getOriginalSocketId } = require('./utils');
+        const originalSocketId = getOriginalSocketId(player.id);
+        io.to(originalSocketId).emit('itemPickedUp', item.id);
+        io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
+        
+        // Save player progress to persist inventory changes
+        const userId = playerUserIds[player.id];
+        if (userId) {
+            savePlayerProgress(player, userId);
+        }
+        
+        // Remove item from world if all eligible players have picked it up
+        if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+            const allPickedUp = item.eligiblePlayers.every(playerId => 
+                item.pickedUpBy && item.pickedUpBy.has(playerId)
+            );
+            if (allPickedUp) {
+                // Clean up expiration timeout if item is removed early
+                const timeout = itemExpirationTimeouts.get(item.id);
+                if (timeout) {
+                    clearTimeout(timeout);
+                    itemExpirationTimeouts.delete(item.id);
+                }
+                items.splice(i, 1);
+                // Notify only eligible players that the item is gone
+                for (const playerId of item.eligiblePlayers) {
+                    io.to(playerId).emit('itemRemoved', item.id);
+                }
+            }
+        }
+    }
+}
+
+
+}
+
+/**
+ * Keep a player inside the region they are supposed to be in.
+ *
+ * Third slice out of `updatePlayerState` (see resolvePlayerMobContact for why
+ * these are functions and not ECS systems). Pure position arithmetic: takes the
+ * staged position and returns the clamped one, touching nothing else.
+ *
+ * Both clamps are safety nets rather than the primary containment — the maze's
+ * border ring is solid wall and the arena is only leavable through its exit
+ * teleporter — so they exist to catch knockback and teleport edge cases that
+ * would otherwise strand someone outside the world.
+ */
+export function clampPlayerToRegion(
+    player: ServerPlayer,
+    startX: number,
+    startY: number,
+): { x: number; y: number } {
+// Maze players stay inside the maze region. The maze's border ring is
+// solid wall so collision already contains them — this is a safety net
+// against knockback/teleport edge cases ejecting someone into the void.
+let newX = startX;
+    let newY = startY;
+
+    if (player.inMaze) {
+    const mazeNow = getActiveMaze();
+    if (mazeNow) {
+        const margin = PLAYER_SIZE / 2;
+        newX = Math.max(MAZE_ORIGIN_X + margin, Math.min(MAZE_ORIGIN_X + mazeNow.worldSize - margin, newX));
+        newY = Math.max(MAZE_ORIGIN_Y + margin, Math.min(MAZE_ORIGIN_Y + mazeNow.worldSize - margin, newY));
+    }
+}
+
+// Clamp position to the PVP arena boundary if the player is currently inside it.
+// Players can only leave via the central exit teleporter — never by walking out.
+if (player.inPvpArena) {
+    const dxArena = newX - PVP_ARENA_CENTER_X;
+    const dyArena = newY - PVP_ARENA_CENTER_Y;
+    const distSqArena = dxArena * dxArena + dyArena * dyArena;
+    const maxR = PVP_ARENA_RADIUS - PLAYER_SIZE / 2;
+    if (distSqArena > maxR * maxR) {
+        const distArena = Math.sqrt(distSqArena) || 1;
+        newX = PVP_ARENA_CENTER_X + (dxArena / distArena) * maxR;
+        newY = PVP_ARENA_CENTER_Y + (dyArena / distArena) * maxR;
+    }
+}
+
+
+    return { x: newX, y: newY };
+}
+
+/**
+ * Teleporter entry, the 1-second dwell, and the jump itself.
+ *
+ * Fourth slice out of `updatePlayerState` (see resolvePlayerMobContact for why
+ * these are functions and not ECS systems).
+ *
+ * `transferred` is the important part of the return: a teleporter pointing at
+ * ANOTHER server hands the player off asynchronously and the original code
+ * `return`ed straight out of `updatePlayerState`, skipping the arena
+ * enter/exit check and — critically — the final commit to `player.x`/`player.y`.
+ * A player mid-transfer must not have their position written, so the caller
+ * returns too rather than falling through.
+ */
+export function resolvePlayerTeleporters(
+    player: ServerPlayer,
+    startX: number,
+    startY: number,
+    deltaTime: number,
+    deps: PlayerStateDependencies,
+): { x: number; y: number; transferred: boolean } {
+    const { io, transferPlayerToServer, currentServerConfig, currentServerPort, useHttps, database } = deps;
+let newX = startX;
+    let newY = startY;
+
+    // Check for teleporter interactions
+let currentTeleporter: string | null = null;
+const currentTime = Date.now();
+const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
+
+for (const element of WORLD_MAP.filter(isTeleporter)) {
+    if (!element.properties?.teleportTo) continue;
+
+    const teleporterId = `teleporter_${element.x}_${element.y}`;
+    const teleporterCX = (element.x + element.width / 2) * SCALE_FACTOR;
+    const teleporterCY = (element.y + element.height / 2) * SCALE_FACTOR;
+    const playerCX = newX + PLAYER_SIZE / 2;
+    const playerCY = newY + PLAYER_SIZE / 2;
+    const dx = playerCX - teleporterCX;
+    const dy = playerCY - teleporterCY;
+    const distSq = dx * dx + dy * dy;
+    const suctionRadius = TELEPORTER_SUCTION_RADIUS * SCALE_FACTOR;
+    const activationRadius = TELEPORTER_RADIUS * SCALE_FACTOR;
+
+    // Apply suction force if player is within suction radius and NOT on cooldown
+    if (distSq <= suctionRadius * suctionRadius && !isOnCooldown) {
+        const dist = Math.sqrt(distSq) || 1;
+        // Stronger pull as player gets closer
+        const pullStrength = TELEPORTER_SUCTION_FORCE * (1 - dist / suctionRadius) * deltaTime;
+        newX -= (dx / dist) * pullStrength;
+        newY -= (dy / dist) * pullStrength;
+    }
+
+    // Check if player is within activation radius
+    if (distSq <= activationRadius * activationRadius) {
+        currentTeleporter = teleporterId;
+
+        // Check if player just entered this teleporter
+        if (player.currentTeleporter !== teleporterId) {
+            player.currentTeleporter = teleporterId;
+            player.teleporterEnterTime = currentTime;
+
+            // Teleporter feedback goes to the OWNING SOCKET, not the player
+            // id: a splitter half (`..._split2`) has no socket of its own, so
+            // addressing it dropped the event and the flower charged up with
+            // no spin animation and no iris transition.
+            io.to(getOriginalSocketId(player.id)).emit('teleporterEntered', {
+                teleporterId,
+                timeRequired: 1000,
+                teleportTo: element.properties.teleportTo
+            });
+
+            if (!player.id.startsWith('bot_')) {
+                console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
+            }
+        }
+
+        // Check if player has been in teleporter for 1 second and is not on cooldown
+        const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
+
+        if (timeInTeleporter >= 1000 && !isOnCooldown) {
+            const teleportTo = element.properties.teleportTo;
+
+            // Set 5 second player-based cooldown
+            player.teleportCooldown = currentTime + TELEPORTER_COOLDOWN;
+
+            if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
+                if (!player.id.startsWith('bot_')) {
+                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
+                }
+
+                player.currentTeleporter = undefined;
+                player.teleporterEnterTime = undefined;
+
+                transferPlayerToServer(
+                    player,
+                    teleportTo.serverPort,
+                    teleportTo.x * SCALE_FACTOR,
+                    teleportTo.y * SCALE_FACTOR,
+                    io,
+                    database,
+                    useHttps,
+                    currentServerConfig,
+                    currentServerPort
+                ).catch(error => {
+                    console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
+                    io.to(getOriginalSocketId(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
+                    player.teleportCooldown = undefined;
+                });
+
+                return { x: newX, y: newY, transferred: true };
+            } else {
+                newX = teleportTo.x * SCALE_FACTOR;
+                newY = teleportTo.y * SCALE_FACTOR;
+
+                player.currentTeleporter = undefined;
+                player.teleporterEnterTime = undefined;
+
+                if (!player.id.startsWith('bot_')) {
+                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
+                }
+
+                io.to(getOriginalSocketId(player.id)).emit('playerTeleported', {
+                    newX,
+                    newY,
+                    playerId: player.id
+                });
+            }
+        }
+
+        break;
+    }
+}
+
+// If player is no longer in any teleporter, reset teleporter state
+if (!currentTeleporter && player.currentTeleporter) {
+    if (!player.id.startsWith('bot_')) {
+        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
+    }
+    player.currentTeleporter = undefined;
+    player.teleporterEnterTime = undefined;
+
+    io.to(getOriginalSocketId(player.id)).emit('teleporterExited');
+}
+
+
+    return { x: newX, y: newY, transferred: false };
+}
+
+/**
+ * The petal pass: ring kinematics, collisions, effects, breaking and reload.
+ *
+ * The last and largest slice out of `updatePlayerState` — about a thousand
+ * lines, and the one genuinely entangled piece: it drives the ECS petal-ring
+ * kinematics one instance at a time, applies petal damage and its effects,
+ * runs the break/cooldown/restore machine, and attributes kills for XP and
+ * drops. See resolvePlayerMobContact for why these are functions rather than
+ * ECS systems.
+ *
+ * It DOES move the player: wall collision during the pass pushes them, so the
+ * staged position goes in and comes back out, and the caller keeps committing
+ * at the end of the pipeline.
+ *
+ * Note the deliberate use of `player.x`/`player.y` (NOT the staged position)
+ * for the ring's centre — that is what makes petals trail the flower, and the
+ * comment inside says not to "fix" it. Preserved verbatim.
+ */
+export function resolvePlayerPetals(
+    player: ServerPlayer,
+    startX: number,
+    startY: number,
+    deltaTime: number,
+    deps: PlayerStateDependencies,
+): { x: number; y: number } {
+    const { io, savePlayerProgress } = deps;
+    // Recomputed here rather than passed: it is the same one-line derivation the
+    // caller does, and threading it would make the seam's signature depend on
+    // the caller's locals.
+    const effectivePlayerSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+let newX = startX;
+    let newY = startY;
+
+    // Check for petal-enemy collisions
+if (player.loadout) {
+    const { petalInstances, nextSlotIndex } = buildPetalInstances(player, io);
+
+    const currentTime = Date.now();
+    const petalExtension = player.inputs.petalExtension || 1.0;
+    const playerSizeMult = player.sizeMultiplier ?? 1.0;
+    const totalSlots = nextSlotIndex;
+    const playerModifiers = calculatePlayerModifiers(player);
+    const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
+
+    // Open the ECS-owned ring for this tick. This is the only stateful step:
+    // it records the slot count and advances the orbit phase (an integral, so
+    // exactly once per player per tick — see PetalRingBridge).
+    const ring = deps.petalRing.open(
+        player, totalSlots, playerRotationSpeedModifier, deltaTime, currentTime,
+    );
+
+    // The ring's per-tick constants. `player.x`/`player.y` here are the
+    // PREVIOUS tick's committed position — the integrated one is parked in
+    // movedX/movedY and is not committed until the end of this function —
+    // and that is exactly what makes petals trail the flower rather than
+    // orbit its live centre. Do not "fix" this to newX/newY.
+    const geom = computeRingGeometry({
+        playerX: player.x,
+        playerY: player.y,
+        orbitPhase: ring.orbitPhase,
+        slotCount: totalSlots,
+        petalExtension,
+        sizeMultiplier: playerSizeMult,
+        playerSize: PLAYER_SIZE,
+        rangeModifier: playerModifiers.range ?? 1.0,
+        rotationSpeedModifier: playerRotationSpeedModifier,
+        attractionRadius: playerModifiers.petalAttractionRadius ?? 0,
+        deltaTime,
+        now: currentTime,
+    });
+
+    // Per-petal attraction eligibility (a mob within the attraction radius of
+    // the petal's own orbit position) is resolved inside the ring step, via
+    // the grid broad-phase injected below, so each petal only considers mobs
+    // actually near where *it* will swing past.
+    const ringDeps = makePetalRingDeps(player);
+
+    // Initialize petal positions array
+    player.petalPositions = [];
+
+    dropFieldsOnExtension({ player, io, petalInstances, geom });
+
+    // Resolved once per player-tick: the petal-vs-player pass below walks
+    // every other player, so outside the PVP arena it must stay behind a
+    // cheap "is anyone corrupted at all" check rather than run for free.
+    const anyCorruptedPlayers = hasCorruptedPlayers();
+
+    for (let idx = 0; idx < petalInstances.length; idx++) {
+        const {petal, instanceIndex, loadoutIndex, slotIndex} = petalInstances[idx];
+
+        if (!petal) {
+            continue;
+        }
+
+        const instancePetalStats = getPetalStats(petal.petalType, petal.rarity);
+
+        // Skip petals that are on cooldown (per-instance for clumped, slot-wide otherwise).
+        // Restore backstop: breaking schedules a setTimeout to end the cooldown, but
+        // that timer only lives in this process — a loadout that crosses a
+        // cross-server portal (or is otherwise imported) arrives with
+        // onCooldown: true and no timer, so without this the petal never comes
+        // back (e.g. a rose consumed by its burst heal right before the portal).
+        // Breaks stamp cooldownEndTime/instanceCooldownEndTime (absolute ms)
+        // alongside the timer; once the stamp passes, restore here in the tick.
+        // Double-firing with a live timer is safe: the timer's callback bails
+        // when onCooldown is already false.
+        //
+        // A MISSING stamp must never mean "expired". Plenty of paths put a
+        // petal on cooldown with a timer but no stamp (equipping a new petal,
+        // the spawn-in reload, on_break actions, and — until this was fixed —
+        // the collision break below), and treating undefined as expired
+        // restored every one of them on the very next tick: petals broke and
+        // came back ~50ms later at full health, with no reload at all. Adopt a
+        // deadline instead, so an unstamped cooldown still runs its full
+        // length and an imported one recovers a cooldown after arrival.
+        if (isInstanceOnCooldown(petal, instanceIndex, instancePetalStats)) {
+            if (hasIndependentInstances(instancePetalStats)) {
+                if (cooldownDeadlinePassed(petal, instanceIndex, instancePetalStats, currentTime)) {
+                    restoreIndependentPetalInstance(
+                        player.id, loadoutIndex, instanceIndex,
+                        petal.petalType, petal.rarity, petal.maxHealth, io
+                    );
+                }
+            } else if (player.loadout[loadoutIndex] === petal &&
+                       cooldownDeadlinePassed(petal, instanceIndex, instancePetalStats, currentTime)) {
+                // (identity check: with count > 1 the slot appears once per
+                // instance; only the first hit restores/emits.)
+                const restoredPetal = {
+                    type: petal.type,
+                    petalType: petal.petalType,
+                    rarity: petal.rarity,
+                    maxHealth: petal.maxHealth,
+                    health: petal.maxHealth,
+                    onCooldown: false
+                };
+                applyPetalHealthBonus(restoredPetal, player);
+                player.loadout[loadoutIndex] = restoredPetal;
+                io.emit('petalRestored', {
+                    playerId: player.id,
+                    slotIndex: loadoutIndex,
+                    petal: player.loadout[loadoutIndex]
+                });
+            }
+            // Restored or not, this instance sits this tick out; a restored
+            // petal starts orbiting on the next tick like a timer restore.
+            continue;
+        }
+
+        // If this instance has 0 health but isn't on cooldown, break it immediately
+        const currentInstanceHealth = getInstanceHealth(petal, instanceIndex, instancePetalStats);
+        if (!currentInstanceHealth || currentInstanceHealth <= 0) {
+            const petalStats = instancePetalStats;
+            if (petalStats) {
+                // Scripted behaviour before breaking (unconditional — see
+                // "immediate mode" in petal_actions.ts).
+                if (hasPetalBehaviour(petal.petalType)) {
+                    // NOTE: this reconstructs the orbit point with its OWN,
+                    // different radius (`60 + level*2`) rather than the
+                    // ring's. That is a pre-existing quirk of the on-break
+                    // action context and it is preserved verbatim: routing it
+                    // through `petalOrbitTarget` would move where an
+                    // on_break explosion or lightning strike lands.
+                    const baseRadius = 60 + (player.level * 2);
+                    const breakAngleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
+                    const baseAngle = slotIndex * breakAngleStep;
+                    const rotationAngle = ((petalStats.speed ?? 1.0) * geom.orbitPhase * 2) % (Math.PI * 2);
+                    const totalAngle = baseAngle + rotationAngle;
+                    const petalRange = (petalStats.range ?? 1.0) * geom.rangeModifier;
+                    const petalRadius = baseRadius * petalRange;
+                    const petalX = player.x + Math.cos(totalAngle) * petalRadius;
+                    const petalY = player.y + Math.sin(totalAngle) * petalRadius;
+                    const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
+                    const petalSize = 40 * effectiveSize;
+
+                    const actionContext = {
+                        player: player,
+                        petalX: petalX,
+                        petalY: petalY,
+                        petalSize: petalSize,
+                        petalDamage: petalStats.damage,
+                        enemies: enemies,
+                        io: io
+                    };
+                    runPetalBreakBehaviour(petal.petalType, actionContext);
+                }
+
+                const cooldownTime = getEffectiveCooldown(petal, petalStats);
+
+                if (hasIndependentInstances(petalStats)) {
+                    // Per-instance: only this instance breaks; other instances keep working
+                    ensureInstanceArrays(petal, petalStats);
+                    petal.instanceOnCooldown![instanceIndex] = true;
+                    // Absolute restore deadline alongside the setTimeout — the timer
+                    // dies with this process (cross-server portal transfer), the
+                    // stamp travels with the loadout. See the tick-loop backstop.
+                    const cdCount = petalStats.count ?? 1;
+                    if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
+                        petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
+                    }
+                    petal.instanceCooldownEndTime[instanceIndex] = currentTime + cooldownTime;
+                    ring.state.dropInstance(loadoutIndex, instanceIndex);
+                    const snapshotPetalType = petal.petalType;
+                    const snapshotRarity = petal.rarity;
+                    const snapshotMaxHealth = petal.maxHealth;
+                    const snapshotPlayerId = player.id;
+                    setTimeout(() => {
+                        restoreIndependentPetalInstance(
+                            snapshotPlayerId,
+                            loadoutIndex,
+                            instanceIndex,
+                            snapshotPetalType,
+                            snapshotRarity,
+                            snapshotMaxHealth,
+                            io
+                        );
+                    }, cooldownTime);
+
+                    // Slot shows cooldown only when every instance is on cooldown
+                    if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
+                        petal.onCooldown = true;
+                        // Tell clients too, or the loadout slot never draws its
+                        // reload: nothing else pushes the slot-level flag out
+                        // (petalRestored is the only other carrier, and that's
+                        // the end of the reload, not the start).
+                        io.emit('petalBroken', {
+                            playerId: player.id,
+                            slotIndex: loadoutIndex,
+                            petalType: petal.petalType,
+                            rarity: petal.rarity
+                        });
+                    }
+                } else {
+                    // Non-clumped: whole slot breaks (legacy behavior)
+                    petal.onCooldown = true;
+                    // Absolute restore deadline — survives process handoff where the
+                    // setTimeout below does not. See the tick-loop backstop.
+                    petal.cooldownEndTime = currentTime + cooldownTime;
+                    ring.state.dropSlot(loadoutIndex);
+                    const originalPetal = {
+                        type: petal.type,
+                        petalType: petal.petalType,
+                        rarity: petal.rarity,
+                        maxHealth: petal.maxHealth
+                    };
+                    const snapshotPetalType = originalPetal.petalType;
+                    const snapshotRarity = originalPetal.rarity;
+                    setTimeout(() => {
+                        const current = players[player.id]?.loadout?.[loadoutIndex];
+                        if (!players[player.id] || !current || !current.onCooldown) return;
+                        if (current.type !== 'petal' ||
+                            current.petalType !== snapshotPetalType ||
+                            current.rarity !== snapshotRarity) return;
+                        {
+                            const restoredPetal = {
+                                ...originalPetal,
+                                health: originalPetal.maxHealth,
+                                onCooldown: false
+                            };
+                            applyPetalHealthBonus(restoredPetal, player);
+                            player.loadout[loadoutIndex] = restoredPetal;
+
+                            io.emit('petalRestored', {
+                                playerId: player.id,
+                                slotIndex: loadoutIndex,
+                                petal: player.loadout[loadoutIndex]
+                            });
+                        }
+                    }, cooldownTime);
+
+                    io.emit('petalBroken', {
+                        playerId: player.id,
+                        slotIndex: loadoutIndex,
+                        petalType: petal.petalType,
+                        rarity: petal.rarity
+                    });
+                }
+            }
+            continue;
+        }
+
+        const petalStats = instancePetalStats;
+        if (!petalStats) continue;
+        
+        // Get effective size (custom size if set, otherwise base stats)
+        const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
+
+        // Petal ID is needed for actions, projectiles and damage cooldowns
+        // regardless of physics. The ECS ring keys the same instance by the
+        // integer pair (loadoutIndex, instanceIndex) instead; this string
+        // form survives because the legacy tables it indexes
+        // (petalLastProjectileTime, petalLastRadiationTime,
+        // petalLastDamageTime, the action VM) are all still legacy.
+        const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+
+        // ---- kinematics: ECS-owned -------------------------------------
+        // Everything from the orbit angle to the wall push-out now lives in
+        // ecs/systems/petalRing.ts, against per-instance state held in the
+        // `PetalRing` component on this flower's entity. It is stepped HERE,
+        // one instance at a time in ring order, rather than batched ahead of
+        // the loop — see the ring header for why: the effects below change
+        // the next instance's kinematics (a kill removes an attraction
+        // target; damage to a shared-health slot makes the next instance
+        // take the break path above and emit no position at all), so
+        // batching would change both the values and the LENGTH of
+        // petalPositions, which the broadcast hashes.
+        stepPetalKinematics(
+            ring.state,
+            geom,
+            petalStats as PetalRingStats,
+            loadoutIndex,
+            instanceIndex,
+            slotIndex,
+            effectiveSize,
+            ringDeps,
+            _ringStepResult,
+        );
+        const petalX = _ringStepResult.x;
+        const petalY = _ringStepResult.y;
+        const petalOrbitAngle = _ringStepResult.angle;
+
+        // Rose-style burst heal (rysteria_gardn): once the petal has been in
+        // orbit past its charge time and the flower is below max health, it
+        // detaches, homes to the flower, heals a burst and is consumed.
+        // Shell works the same way but lays a shield instead, and waits for
+        // the current shield to lapse rather than for missing health.
+        //
+        // The ring decides WHETHER a petal is homing (it needs the spawn
+        // time, which is ring state) by calling `ringDeps.isHoming`; that
+        // callback records which of the two fired into the pair below, which
+        // the delivery block further down consumes. `_ringHoming*` are module
+        // scratch, valid only until the next `stepPetalKinematics` call.
+        const burstHealHoming = _ringStepResult.homing && _ringHomingWasHeal;
+        const burstShieldHoming = _ringStepResult.homing && _ringHomingWasShield;
+
+        // Update petal position in action context
+        updatePetalPosition(petalId, petalX, petalY);
+
+        // Store petal position for client synchronization
+        player.petalPositions!.push({
+            loadoutIndex,
+            instanceIndex,
+            x: petalX,
+            y: petalY,
+            noPhysics: petalStats.noPhysics || false
+        });
+
+        // Burst-heal delivery: when the homing petal touches the flower it heals
+        // and is consumed — zeroing the instance sends it through the normal
+        // break/cooldown/reload flow on the next tick.
+        if (burstHealHoming || burstShieldHoming) {
+            const healDx = player.x - petalX;
+            const healDy = player.y - petalY;
+            const contactDist = effectivePlayerSize / 2;
+            if (healDx * healDx + healDy * healDy <= contactDist * contactDist) {
+                if (burstHealHoming) {
+                    player.health = Math.min(player.maxHealth,
+                        player.health + petalStats.burstHeal! * getHealingSkillMultiplier(player));
+                } else {
+                    grantShield(player, petalStats.burstShield!, BURST_SHIELD_DURATION_MS);
+                }
+                setInstanceHealth(petal, instanceIndex, petalStats, 0);
+                continue;
+            }
+        }
+
+        // Bubble pops in defensive position and propels the player away from where it was.
+        // Boost magnitude scales up with rarity; the slot's cooldown also scales down (handled in the break flow).
+        // Note: push newX/newY (the post-movement position that will be written back to player at the end
+        // of updatePlayerState) — modifying player.x/player.y directly here gets clobbered.
+        if (petal.petalType === 'bubble' && petalExtension < 1.0) {
+            const dx = player.x - petalX;
+            const dy = player.y - petalY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 0) {
+                const rarityIdx = Math.max(0, getRarityIndex(petal.rarity ?? 'common'));
+                const boostMagnitude = 60 * (1 + rarityIdx * 0.6);
+                // Substep so a high-rarity boost can't tunnel through walls; on each blocked
+                // step, reflect the remaining boost across the wall normal so the player bounces.
+                let vx = (dx / dist) * boostMagnitude;
+                let vy = (dy / dist) * boostMagnitude;
+                const BOUNCE_DAMPING = 0.7;
+                let appliedX = 0;
+                let appliedY = 0;
+                let remaining = boostMagnitude;
+                let safetyIterations = 32;
+                while (remaining > 0.5 && safetyIterations-- > 0) {
+                    const stepLen = Math.min(effectivePlayerSize / 2, remaining);
+                    const speed = Math.sqrt(vx * vx + vy * vy) || 1;
+                    const stepX = (vx / speed) * stepLen;
+                    const stepY = (vy / speed) * stepLen;
+                    const trialX = newX + stepX;
+                    const trialY = newY + stepY;
+                    const wallCollision = checkPlayerWallCollisions(trialX, trialY, effectivePlayerSize);
+                    const dxStep = wallCollision.x - newX;
+                    const dyStep = wallCollision.y - newY;
+                    newX = wallCollision.x;
+                    newY = wallCollision.y;
+                    appliedX += dxStep;
+                    appliedY += dyStep;
+                    remaining -= stepLen;
+                    // If the resolver clipped this step, infer the wall normal from which axis
+                    // shrank the most and reflect the corresponding velocity component.
+                    const clipX = stepX - dxStep;
+                    const clipY = stepY - dyStep;
+                    const blockedX = Math.abs(clipX) > Math.abs(stepX) * 0.5;
+                    const blockedY = Math.abs(clipY) > Math.abs(stepY) * 0.5;
+                    if (blockedX || blockedY) {
+                        if (blockedX) vx = -vx * BOUNCE_DAMPING;
+                        if (blockedY) vy = -vy * BOUNCE_DAMPING;
+                        // If both axes blocked (wedged in a corner), bail rather than spin.
+                        if (blockedX && blockedY) break;
+                    }
+                }
                 io.emit('playerDamaged', {
                     playerId: player.id,
                     health: player.health,
                     maxHealth: player.maxHealth,
                     isInvulnerable: player.isInvulnerable,
-                    knockbackX: knockbackX,
-                    knockbackY: knockbackY
+                    knockbackX: appliedX,
+                    knockbackY: appliedY,
+                    damageDealt: 0
                 });
-                
+            }
+            setInstanceHealth(petal, instanceIndex, instancePetalStats!, 0);
+            continue;
+        }
+
+        // Check if petal can shoot projectiles (only when extended)
+        if (petalExtension > 1.0 && petalStats.projectile) {
+            const projectileConfig = petalStats.projectile;
+            const lastShotTime = petalLastProjectileTime.get(petalId) || 0;
+            const cooldown = petalStats.cooldown || 2000;
+
+            // Check if cooldown has passed
+            if (currentTime - lastShotTime >= cooldown) {
+                // Calculate projectile angle - shoot in the direction the petal is facing (tangent to rotation)
+                // The petal is at its orbit bearing, so the projectile goes
+                // that way. Reported by the ring step rather than recomputed,
+                // so the two cannot drift apart.
+                let projectileAngle = petalOrbitAngle;
+
+                // Guided shots re-aim at the nearest mob inside a cone around
+                // the firing direction (gardn find_nearest_enemy_within_angle).
+                // Done once, at launch — the shot still flies straight, so the
+                // client's dead-reckoning stays exact.
+                if (projectileConfig.seekRange) {
+                    const cone = projectileConfig.seekCone ?? Math.PI / 4;
+                    const seekCandidates = queryEnemiesNear(petalX, petalY, projectileConfig.seekRange, _seekQueryBuffer);
+                    let bestDistSq = Infinity;
+                    let bestAngle: number | null = null;
+                    for (let _si = 0; _si < seekCandidates.length; _si++) {
+                        const candidate = seekCandidates[_si];
+                        if (candidate.isDead) continue;
+                        const sdx = candidate.x - petalX;
+                        const sdy = candidate.y - petalY;
+                        const sDistSq = sdx * sdx + sdy * sdy;
+                        if (sDistSq > projectileConfig.seekRange * projectileConfig.seekRange) continue;
+                        if (sDistSq >= bestDistSq) continue;
+                        let delta = Math.atan2(sdy, sdx) - projectileAngle;
+                        while (delta > Math.PI) delta -= Math.PI * 2;
+                        while (delta < -Math.PI) delta += Math.PI * 2;
+                        if (Math.abs(delta) > cone) continue;
+                        bestDistSq = sDistSq;
+                        bestAngle = Math.atan2(sdy, sdx);
+                    }
+                    if (bestAngle !== null) projectileAngle = bestAngle;
+                }
+
+                const projectileSpeed = projectileConfig.speed || 200; // pixels per second
+                const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
+                const projectileCount = projectileConfig.count || 1;
+
+                // Create projectiles
+                for (let i = 0; i < projectileCount; i++) {
+                    // Calculate spread angle for multiple projectiles
+                    let finalAngle = projectileAngle;
+                    if (projectileCount > 1) {
+                        const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
+                        finalAngle = projectileAngle + spreadOffset;
+                    }
+
+                    // NOTE: a player projectile does NOT get the rarity
+                    // distance/size scaling a mob volley gets (see
+                    // ecs/systems/projectileFiring.ts) — it inherits the
+                    // petal's own size and the config's flat distance.
+                    deps.projectiles.spawn({
+                        playerId: player.id,
+                        x: petalX,
+                        y: petalY,
+                        angle: finalAngle,
+                        speed: projectileSpeed / 1000, // Convert to pixels per millisecond
+                        maxDistance: projectileConfig.distance,
+                        petalType: petal.petalType,
+                        petalRarity: petal.rarity,
+                        damage: petalStats.damage,
+                        size: effectiveSize,
+                        health: petalStats.health,
+                        now: currentTime,
+                    });
+                }
+
+                // Update last shot time for this petal instance
+                // delete-then-set so the key moves to the end of insertion order;
+                // server.ts evicts from the front of the map as an O(1) LRU.
+                petalLastProjectileTime.delete(petalId);
+                petalLastProjectileTime.set(petalId, currentTime);
+            }
+        }
+
+        // Uranium: a damage pulse over everything in a wide radius, on its own
+        // timer. Reuses petalLastRadiationTime (an LRU map like the projectile
+        // one) so each petal instance pulses independently of its neighbours.
+        if (petalStats.radiation) {
+            const lastPulse = petalLastRadiationTime.get(petalId) || 0;
+            if (currentTime - lastPulse >= petalStats.radiation.intervalMs) {
+                petalLastRadiationTime.delete(petalId);
+                petalLastRadiationTime.set(petalId, currentTime);
+
+                const pulseRadius = petalStats.radiation.radius;
+                const pulseDamage =
+                    petalStats.damage * (petalStats.radiation.damageFactor ?? 1) * getDamageMultiplier(player);
+                const irradiated = queryEnemiesNear(petalX, petalY, pulseRadius, _radiationQueryBuffer);
+                for (let _ri = 0; _ri < irradiated.length; _ri++) {
+                    const target = irradiated[_ri];
+                    if (target.isDead) continue;
+                    const rdx = target.x - petalX;
+                    const rdy = target.y - petalY;
+                    const reach = pulseRadius + (target._radius ?? ENEMY_SIZE / 2);
+                    if (rdx * rdx + rdy * rdy > reach * reach) continue;
+
+                    trackDamage(target, player.id, pulseDamage);
+                    target.health = Math.max(0, target.health - pulseDamage);
+                    markEnemyDamaged(target);
+
+                    if (target.health <= 0 && !target.isDead) {
+                        const index = enemies.findIndex(e => e.id === target.id);
+                        if (index !== -1) {
+                            killEnemy(target, index, enemies, killCtxFromDeps(deps), {
+                                killerPlayerId: player.id,
+                                trackMobKillTiming: 'sync-snapshot',
+                                requireNonEmptyContributors: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check collision with enemies — broad-phase via spatial grid (built
+        // once per tick in start_loop), then precise per-enemy distance test.
+        // Pets and dead enemies are excluded by the grid.
+        const _petalSize = 40 * effectiveSize;
+        const _petalRadius = _petalSize / 2;
+        const candidates = queryEnemiesNear(petalX, petalY, _petalRadius, _enemyQueryBuffer);
+        for (let _ei = 0; _ei < candidates.length; _ei++) {
+            const enemy = candidates[_ei];
+
+            // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
+            const mobStats = enemy._mobStats || getMobStats(enemy.type, enemy.tier);
+            const enemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+            const petalSize = _petalSize;
+            const petalRadius = _petalRadius;
+
+            const dx = enemy.x - petalX;
+            const dy = enemy.y - petalY;
+            const distSq = dx * dx + dy * dy;
+            const minDistance = enemyRadius + petalRadius;
+            const minDistSq = minDistance * minDistance;
+
+            if (distSq < minDistSq && distSq > 0) {
+                // Check if petal has a damage cooldown and is still on cooldown
+                const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+                if (petalStats.damageCooldown) {
+                    const lastDmgTime = petalLastDamageTime.get(damageCooldownKey) || 0;
+                    if (currentTime - lastDmgTime < petalStats.damageCooldown) {
+                        continue; // Skip damage, petal stays active
+                    }
+                }
+
+                // Petal hits enemy - deal damage to both
+                const damageMultiplier = getDamageMultiplier(player);
+                const finalDamage = petalStats.damage * damageMultiplier;
+
+                // console.log('[Server] Petal collision detected', {
+                //     enemyId: enemy.id,
+                //     enemyType: enemy.type,
+                //     enemyHealth: enemy.health,
+                //     finalDamage,
+                //     playerId: player.id,
+                //     petalType: petal.petalType
+                // });
+
                 // Track damage dealt by this player (always track, even if enemy is dead)
-                trackDamage(enemy, player.id, player.damage);
-                // if (enemy.health - player.damage <= 0) {
-                //     console.log('[Server] About to kill enemy with petal', {
-                //         enemyId: enemy.id,
-                //         enemyType: enemy.type,
-                //         currentHealth: enemy.health,
-                //         damage: player.damage,
-                //         playerId: player.id,
-                //         hasDamageContributors: !!enemy.damageContributors,
-                //         damageContributorsSize: enemy.damageContributors?.size || 0
-                //     });
-                // }
-                
+                trackDamage(enemy, player.id, finalDamage);
+
                 // Skip further processing if enemy is already dead (being processed)
                 if ((enemy as any).isDead) {
                     continue;
                 }
-                
-                enemy.health = Math.max(0, enemy.health - player.damage);
-                // Mark enemy for batched damage update at end of frame
-                markEnemyDamaged(enemy);
 
-                if (enemy.health <= 0 && !(enemy as any).isDead) {
-                    const index = enemies.findIndex(e => e.id === enemy.id);
-                    // Original gated the entire death sequence on the enemy still
-                    // being in the array (it can already be gone if another damage
-                    // source finished it this tick). killEnemy handles a -1 index
-                    // by skipping just the splice, so preserve the gate here.
-                    if (index !== -1) {
-                        killEnemy(enemy, index, enemies, killCtxFromDeps(deps), {
-                            killerPlayerId: player.id,
-                            trackMobKillTiming: 'sync-snapshot',
-                            requireNonEmptyContributors: true,
+                enemy.health = Math.max(0, enemy.health - finalDamage);
+
+                // Petals with damageCooldown don't take damage from mobs (they can't break)
+                if (petalStats.damageCooldown) {
+                    petalLastDamageTime.set(damageCooldownKey, currentTime);
+                } else {
+                    const mobDamage = mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
+                    const prevInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                    setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevInstanceHealth - mobDamage));
+                }
+
+                // Apply poison effect if the petal has poison
+                if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
+                    if (!enemy.poisonEffects) {
+                        enemy.poisonEffects = [];
+                    }
+                    
+                    // Add or refresh poison effect
+                    const currentTime = Date.now();
+                    const endTime = currentTime + petalStats.poisonDuration;
+                    
+                    // Check if there's already a poison effect from this player
+                    const existingPoisonIndex = enemy.poisonEffects.findIndex(p => p.playerId === player.id);
+                    if (existingPoisonIndex >= 0) {
+                        // gardn's rule (Damage.cc): a fresh bite only takes over
+                        // when it would outlast what is already ticking —
+                        // `if (defender.poison_ticks < attacker.poison_damage.time * TPS)`.
+                        // Without the guard, a short weak poison stomps a long
+                        // strong one: pincer (1s) landing after iris (6s) used to
+                        // wipe the iris poison and leave 1s of 5dps in its place.
+                        if (enemy.poisonEffects[existingPoisonIndex].endTime < endTime) {
+                            enemy.poisonEffects[existingPoisonIndex] = {
+                                damage: petalStats.poison,
+                                endTime: endTime,
+                                playerId: player.id
+                            };
+                        }
+                    } else {
+                        // Add a new poison effect
+                        enemy.poisonEffects.push({
+                            damage: petalStats.poison,
+                            endTime: endTime,
+                            playerId: player.id
                         });
                     }
                 }
 
-                if (player.health <= 0) {
+                // Sticky petals (honey / pincer) slow what they touch. How
+                // much of it lands depends on the petal's rarity against the
+                // mob's — see stallPower.
+                if (petalStats.slowFactor && petalStats.slowDuration) {
+                    applySlow(enemy, petalStats.slowFactor, currentTime + petalStats.slowDuration,
+                              petal.rarity ?? 'common');
+                }
+
+                // Apply knockback to enemy
+                const knockbackForce = petalStats.knockback || 0;
+                if (knockbackForce > 0) {
+                    // Calculate knockback direction from petal to enemy
+                    const dx = enemy.x - petalX;
+                    const dy = enemy.y - petalY;
+                    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+
+                    // Apply knockback to enemy, accounting for mass (heavier mobs are harder to knock back)
+                    // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
+                    const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
+                    const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
+                    enemy.knockbackX = normalizedDx * effectiveKnockback;
+                    enemy.knockbackY = normalizedDy * effectiveKnockback;
+                }
+
+                // Mark enemy for batched damage update at end of frame
+                markEnemyDamaged(enemy);
+
+                // The flower petal cracks open on the mob it touches, whatever
+                // the mob's damage was: zeroing this instance's health makes the
+                // next tick's petal loop run the normal break + reload path, so
+                // it comes back on its cooldown like any other spent petal. The
+                // squad spawns at the petal, not the player, so it lands on the
+                // mob that broke it. Pass the petal's own rarity through — a
+                // rarer flower opens onto rarer glitch flowers.
+                if (petal.petalType === 'flower') {
+                    setInstanceHealth(petal, instanceIndex, petalStats, 0);
+                    if (Math.random() < FLOWER_PETAL_CORRUPT_CHANCE) {
+                        corruptFlowerAndSplitHalf(player);
+                    } else {
+                        // spawnPet's apex rule turns one summon into three unique
+                        // pets, which would make an apex flower open onto nine.
+                        // Clamp so the squad is always the three this petal promises.
+                        const petRarity = (petal.rarity ?? 'common') === 'apex' ? 'unique' : (petal.rarity ?? 'common');
+                        spawnPet(FLOWER_PETAL_PET_TYPE, petRarity, petalX, petalY, player.id, io, false, FLOWER_PETAL_PET_COUNT);
+                    }
+                    // Broken petals don't hit anything else this tick.
                     break;
                 }
-            }
-            break;
-        }
-    }
 
-    // Check for petal-enemy collisions
-    if (player.loadout) {
-        const { petalInstances, nextSlotIndex } = buildPetalInstances(player, io);
-
-        const currentTime = Date.now();
-        const petalExtension = player.inputs.petalExtension || 1.0;
-        const playerSizeMult = player.sizeMultiplier ?? 1.0;
-        const totalSlots = nextSlotIndex;
-        const playerModifiers = calculatePlayerModifiers(player);
-        const playerRotationSpeedModifier = playerModifiers.rotationSpeed ?? 1.0;
-
-        // Open the ECS-owned ring for this tick. This is the only stateful step:
-        // it records the slot count and advances the orbit phase (an integral, so
-        // exactly once per player per tick — see PetalRingBridge).
-        const ring = deps.petalRing.open(
-            player, totalSlots, playerRotationSpeedModifier, deltaTime, currentTime,
-        );
-
-        // The ring's per-tick constants. `player.x`/`player.y` here are the
-        // PREVIOUS tick's committed position — the integrated one is parked in
-        // movedX/movedY and is not committed until the end of this function —
-        // and that is exactly what makes petals trail the flower rather than
-        // orbit its live centre. Do not "fix" this to newX/newY.
-        const geom = computeRingGeometry({
-            playerX: player.x,
-            playerY: player.y,
-            orbitPhase: ring.orbitPhase,
-            slotCount: totalSlots,
-            petalExtension,
-            sizeMultiplier: playerSizeMult,
-            playerSize: PLAYER_SIZE,
-            rangeModifier: playerModifiers.range ?? 1.0,
-            rotationSpeedModifier: playerRotationSpeedModifier,
-            attractionRadius: playerModifiers.petalAttractionRadius ?? 0,
-            deltaTime,
-            now: currentTime,
-        });
-
-        // Per-petal attraction eligibility (a mob within the attraction radius of
-        // the petal's own orbit position) is resolved inside the ring step, via
-        // the grid broad-phase injected below, so each petal only considers mobs
-        // actually near where *it* will swing past.
-        const ringDeps = makePetalRingDeps(player);
-
-        // Initialize petal positions array
-        player.petalPositions = [];
-
-        dropFieldsOnExtension({ player, io, petalInstances, geom });
-
-        // Resolved once per player-tick: the petal-vs-player pass below walks
-        // every other player, so outside the PVP arena it must stay behind a
-        // cheap "is anyone corrupted at all" check rather than run for free.
-        const anyCorruptedPlayers = hasCorruptedPlayers();
-
-        for (let idx = 0; idx < petalInstances.length; idx++) {
-            const {petal, instanceIndex, loadoutIndex, slotIndex} = petalInstances[idx];
-
-            if (!petal) {
-                continue;
-            }
-
-            const instancePetalStats = getPetalStats(petal.petalType, petal.rarity);
-
-            // Skip petals that are on cooldown (per-instance for clumped, slot-wide otherwise).
-            // Restore backstop: breaking schedules a setTimeout to end the cooldown, but
-            // that timer only lives in this process — a loadout that crosses a
-            // cross-server portal (or is otherwise imported) arrives with
-            // onCooldown: true and no timer, so without this the petal never comes
-            // back (e.g. a rose consumed by its burst heal right before the portal).
-            // Breaks stamp cooldownEndTime/instanceCooldownEndTime (absolute ms)
-            // alongside the timer; once the stamp passes, restore here in the tick.
-            // Double-firing with a live timer is safe: the timer's callback bails
-            // when onCooldown is already false.
-            //
-            // A MISSING stamp must never mean "expired". Plenty of paths put a
-            // petal on cooldown with a timer but no stamp (equipping a new petal,
-            // the spawn-in reload, on_break actions, and — until this was fixed —
-            // the collision break below), and treating undefined as expired
-            // restored every one of them on the very next tick: petals broke and
-            // came back ~50ms later at full health, with no reload at all. Adopt a
-            // deadline instead, so an unstamped cooldown still runs its full
-            // length and an imported one recovers a cooldown after arrival.
-            if (isInstanceOnCooldown(petal, instanceIndex, instancePetalStats)) {
-                if (hasIndependentInstances(instancePetalStats)) {
-                    if (cooldownDeadlinePassed(petal, instanceIndex, instancePetalStats, currentTime)) {
-                        restoreIndependentPetalInstance(
-                            player.id, loadoutIndex, instanceIndex,
-                            petal.petalType, petal.rarity, petal.maxHealth, io
-                        );
-                    }
-                } else if (player.loadout[loadoutIndex] === petal &&
-                           cooldownDeadlinePassed(petal, instanceIndex, instancePetalStats, currentTime)) {
-                    // (identity check: with count > 1 the slot appears once per
-                    // instance; only the first hit restores/emits.)
-                    const restoredPetal = {
-                        type: petal.type,
-                        petalType: petal.petalType,
-                        rarity: petal.rarity,
-                        maxHealth: petal.maxHealth,
-                        health: petal.maxHealth,
-                        onCooldown: false
-                    };
-                    applyPetalHealthBonus(restoredPetal, player);
-                    player.loadout[loadoutIndex] = restoredPetal;
-                    io.emit('petalRestored', {
-                        playerId: player.id,
-                        slotIndex: loadoutIndex,
-                        petal: player.loadout[loadoutIndex]
+                // Check if item spawner was hit and has 1% chance to spawn a random petal
+                if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
+                    // Get all petal types and filter out admin petals
+                    const allPetalTypes = getAllPetalTypes();
+                    const nonAdminPetalTypes = allPetalTypes.filter(petalType => {
+                        // Check if the petal is an admin petal by checking any rarity
+                        const commonStats = getPetalStats(petalType, 'common');
+                        return !commonStats?.isAdminPetal;
                     });
+
+                    if (nonAdminPetalTypes.length > 0) {
+                        // Pick a random petal type
+                        const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
+                        
+                        // Pick a random rarity with weighted probabilities (rarer items are much rarer)
+                        // Weighted distribution: common is most common, rarer items are exponentially rarer
+                        const rarityWeights: { [key: string]: number } = {
+                            'common': 30.0,      // 50%
+                            'uncommon': 10.0,    // 20%
+                            'rare': 10.0,        // 12%
+                            'epic': 5.0,         // 8%
+                            'legendary': 5.0,    // 5%
+                            'mythic': 5.0,       // 3%
+                            'ultra': 5.0,        // 1.5%
+                            'super': 5.0,        // 0.4%
+                            'unique': 0.05        // 0.1%
+                        };
+                        
+                        // Calculate total weight
+                        const totalWeight = RARITY_LEVELS.reduce((sum, rarity) => sum + (rarityWeights[rarity] || 0), 0);
+                        
+                        // Pick a rarity based on weighted probability
+                        let randomRarity: Rarity = 'common'; // Default fallback
+                        const random = Math.random() * totalWeight;
+                        let cumulativeWeight = 0;
+                        
+                        for (const rarity of RARITY_LEVELS) {
+                            cumulativeWeight += rarityWeights[rarity] || 0;
+                            if (random <= cumulativeWeight) {
+                                randomRarity = rarity;
+                                break;
+                            }
+                        }
+                        
+                        // Calculate spawner's hitbox radius to ensure items spawn outside it
+                        const spawnerMobStats = getMobStats(enemy.type, enemy.tier);
+                        const spawnerSize = spawnerMobStats ? spawnerMobStats.size * 40 : ENEMY_SIZE;
+                        const spawnerRadius = spawnerSize / 2;
+                        const minSpawnDistance = spawnerRadius + 30; // Spawn at least 30px outside the hitbox
+                        const maxSpawnDistance = spawnerRadius + 100; // Spawn up to 100px away
+                        
+                        // Spawn item at a random angle and distance outside the spawner's hitbox
+                        const spawnAngle = Math.random() * Math.PI * 2;
+                        const spawnDistance = minSpawnDistance + Math.random() * (maxSpawnDistance - minSpawnDistance);
+                        const offsetX = Math.cos(spawnAngle) * spawnDistance;
+                        const offsetY = Math.sin(spawnAngle) * spawnDistance;
+                        
+                        const itemId = Math.random().toString(36).substr(2, 9);
+                        const spawnTime = Date.now();
+                        
+                        // Determine eligible players - include split player IDs if player is split
+                        let eligiblePlayersForItem = [player.id];
+                        const { splitPlayers } = require('../petal_actions');
+                        const originalId = player.id.replace('_split2', '').replace('_split1', '');
+                        const splitState = splitPlayers.get(originalId);
+                        if (splitState) {
+                            // Player is split - include both split player IDs
+                            eligiblePlayersForItem = [splitState.player1.id, splitState.player2.id, originalId];
+                        }
+                        
+                        const newItem: WorldItem = {
+                            id: itemId,
+                            type: 'petal',
+                            x: enemy.x + offsetX,
+                            y: enemy.y + offsetY,
+                            rarity: randomRarity,
+                            petalType: randomPetalType,
+                            eligiblePlayers: eligiblePlayersForItem, // Include all split player IDs
+                            pickedUpBy: new Set(),
+                            spawnTime: spawnTime
+                        };
+                        
+                        // Check and fix wall collisions before adding item
+                        checkItemWallCollisions(newItem);
+                        
+                        items.push(newItem);
+                        
+                        // Send itemSpawned event to eligible players (map split player IDs to original socket IDs)
+                        const { getOriginalSocketId } = require('./utils');
+                        for (const eligiblePlayerId of eligiblePlayersForItem) {
+                            const originalSocketId = getOriginalSocketId(eligiblePlayerId);
+                            io.to(originalSocketId).emit('itemSpawned', newItem);
+                        }
+                        
+                        // Schedule automatic removal after expiration time
+                        const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
+                        const timeout = setTimeout(() => {
+                            itemExpirationTimeouts.delete(itemId);
+                            const itemIndex = items.findIndex(item => item.id === itemId);
+                            if (itemIndex !== -1) {
+                                const expiredItem = items[itemIndex];
+                                items.splice(itemIndex, 1);
+                                
+                                // Notify eligible players that item expired
+                                const { getOriginalSocketId } = require('./utils');
+                                if (expiredItem.eligiblePlayers) {
+                                    for (const playerId of expiredItem.eligiblePlayers) {
+                                        const originalSocketId = getOriginalSocketId(playerId);
+                                        io.to(originalSocketId).emit('itemRemoved', itemId);
+                                    }
+                                }
+                                
+                                if (!player.id.startsWith('bot_')) {
+                                    console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
+                                }
+                            }
+                        }, expirationTime);
+                        itemExpirationTimeouts.set(itemId, timeout);
+                        
+                        if (!player.id.startsWith('bot_')) {
+                            console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
+                        }
+                    }
                 }
-                // Restored or not, this instance sits this tick out; a restored
-                // petal starts orbiting on the next tick like a timer restore.
-                continue;
-            }
 
-            // If this instance has 0 health but isn't on cooldown, break it immediately
-            const currentInstanceHealth = getInstanceHealth(petal, instanceIndex, instancePetalStats);
-            if (!currentInstanceHealth || currentInstanceHealth <= 0) {
-                const petalStats = instancePetalStats;
-                if (petalStats) {
-                    // Execute petal actions before breaking
-                    if (petalStats.actions) {
-                        // NOTE: this reconstructs the orbit point with its OWN,
-                        // different radius (`60 + level*2`) rather than the
-                        // ring's. That is a pre-existing quirk of the on-break
-                        // action context and it is preserved verbatim: routing it
-                        // through `petalOrbitTarget` would move where an
-                        // on_break explosion or lightning strike lands.
-                        const baseRadius = 60 + (player.level * 2);
-                        const breakAngleStep = totalSlots > 0 ? (Math.PI * 2) / totalSlots : 0;
-                        const baseAngle = slotIndex * breakAngleStep;
-                        const rotationAngle = ((petalStats.speed ?? 1.0) * geom.orbitPhase * 2) % (Math.PI * 2);
-                        const totalAngle = baseAngle + rotationAngle;
-                        const petalRange = (petalStats.range ?? 1.0) * geom.rangeModifier;
-                        const petalRadius = baseRadius * petalRange;
-                        const petalX = player.x + Math.cos(totalAngle) * petalRadius;
-                        const petalY = player.y + Math.sin(totalAngle) * petalRadius;
-                        const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
-                        const petalSize = 40 * effectiveSize;
+        // Petals block mob projectiles: each side damages the other, exactly
+        // as if the projectile were an enemy petal. The projectile lives in
+        // the ECS now, so the bridge does the overlap test and applies the
+        // damage this callback returns; the petal side stays here because
+        // petal instance health is legacy state.
+        {
+            // Resolved lazily: the callback fires only on an actual block,
+            // and this runs for every petal instance of every player.
+            let projectileDamageMultiplier = -1;
+            const petalBlockRadius = (40 * effectiveSize) / 2;
+            deps.projectiles.forEachBlocking(petalX, petalY, petalBlockRadius, (mobProjectile) => {
+                if (projectileDamageMultiplier < 0) {
+                    projectileDamageMultiplier = getDamageMultiplier(player);
+                }
+                const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                setInstanceHealth(
+                    petal, instanceIndex, petalStats,
+                    Math.max(0, prevProjInstanceHealth - mobProjectile.damage),
+                );
+                return petalStats.damage * projectileDamageMultiplier;
+            });
+        }
 
+                // Handle petal collision for wait_until_collision actions
+                const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
+                const collisionContext = {
+                    player: player,
+                    petalX: petalX,
+                    petalY: petalY,
+                    petalSize: petalSize,
+                    petalDamage: petalStats.damage, // Include petal damage for rarity scaling
+                    enemies: enemies,
+                    io: io,
+                    petalId: petalId,
+                    loadoutIndex: loadoutIndex,
+                    instanceIndex: instanceIndex
+                };
+                petalBehaviourCollision(petalId, collisionContext);
+
+                // Check if petal breaks (per-instance for clumped)
+                if (getInstanceHealth(petal, instanceIndex, petalStats) <= 0) {
+                    // Scripted behaviour before breaking (unconditional).
+                    if (hasPetalBehaviour(petal.petalType)) {
                         const actionContext = {
                             player: player,
                             petalX: petalX,
                             petalY: petalY,
                             petalSize: petalSize,
-                            petalDamage: petalStats.damage,
+                            petalDamage: petalStats.damage, // Include petal damage for rarity scaling
                             enemies: enemies,
                             io: io
                         };
-                        executePetalActions(petalStats.actions, actionContext, 'on_break');
+                        runPetalBreakBehaviour(petal.petalType, actionContext);
                     }
 
                     const cooldownTime = getEffectiveCooldown(petal, petalStats);
+                    // Absolute restore deadline alongside the setTimeout. Without it
+                    // the tick-loop backstop has no idea when this cooldown is meant
+                    // to end — and this is the path petals normally break on, so a
+                    // missing stamp meant every petal reloaded instantly.
+                    const cooldownEndsAt = Date.now() + cooldownTime;
 
                     if (hasIndependentInstances(petalStats)) {
                         // Per-instance: only this instance breaks; other instances keep working
                         ensureInstanceArrays(petal, petalStats);
                         petal.instanceOnCooldown![instanceIndex] = true;
-                        // Absolute restore deadline alongside the setTimeout — the timer
-                        // dies with this process (cross-server portal transfer), the
-                        // stamp travels with the loadout. See the tick-loop backstop.
                         const cdCount = petalStats.count ?? 1;
                         if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
                             petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
                         }
-                        petal.instanceCooldownEndTime[instanceIndex] = currentTime + cooldownTime;
+                        petal.instanceCooldownEndTime[instanceIndex] = cooldownEndsAt;
                         ring.state.dropInstance(loadoutIndex, instanceIndex);
                         const snapshotPetalType = petal.petalType;
                         const snapshotRarity = petal.rarity;
@@ -1945,13 +3015,9 @@ export function updatePlayerState(
                             );
                         }, cooldownTime);
 
-                        // Slot shows cooldown only when every instance is on cooldown
                         if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
                             petal.onCooldown = true;
-                            // Tell clients too, or the loadout slot never draws its
-                            // reload: nothing else pushes the slot-level flag out
-                            // (petalRestored is the only other carrier, and that's
-                            // the end of the reload, not the start).
+                            // See the matching emit in the tick-loop break above.
                             io.emit('petalBroken', {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
@@ -1962,9 +3028,7 @@ export function updatePlayerState(
                     } else {
                         // Non-clumped: whole slot breaks (legacy behavior)
                         petal.onCooldown = true;
-                        // Absolute restore deadline — survives process handoff where the
-                        // setTimeout below does not. See the tick-loop backstop.
-                        petal.cooldownEndTime = currentTime + cooldownTime;
+                        petal.cooldownEndTime = cooldownEndsAt;
                         ring.state.dropSlot(loadoutIndex);
                         const originalPetal = {
                             type: petal.type,
@@ -2005,1082 +3069,207 @@ export function updatePlayerState(
                         });
                     }
                 }
-                continue;
-            }
 
-            const petalStats = instancePetalStats;
-            if (!petalStats) continue;
-            
-            // Get effective size (custom size if set, otherwise base stats)
-            const effectiveSize = (petal as any).customSize !== undefined ? (petal as any).customSize : petalStats.size;
-
-            // Petal ID is needed for actions, projectiles and damage cooldowns
-            // regardless of physics. The ECS ring keys the same instance by the
-            // integer pair (loadoutIndex, instanceIndex) instead; this string
-            // form survives because the legacy tables it indexes
-            // (petalLastProjectileTime, petalLastRadiationTime,
-            // petalLastDamageTime, the action VM) are all still legacy.
-            const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-
-            // ---- kinematics: ECS-owned -------------------------------------
-            // Everything from the orbit angle to the wall push-out now lives in
-            // ecs/systems/petalRing.ts, against per-instance state held in the
-            // `PetalRing` component on this flower's entity. It is stepped HERE,
-            // one instance at a time in ring order, rather than batched ahead of
-            // the loop — see the ring header for why: the effects below change
-            // the next instance's kinematics (a kill removes an attraction
-            // target; damage to a shared-health slot makes the next instance
-            // take the break path above and emit no position at all), so
-            // batching would change both the values and the LENGTH of
-            // petalPositions, which the broadcast hashes.
-            stepPetalKinematics(
-                ring.state,
-                geom,
-                petalStats as PetalRingStats,
-                loadoutIndex,
-                instanceIndex,
-                slotIndex,
-                effectiveSize,
-                ringDeps,
-                _ringStepResult,
-            );
-            const petalX = _ringStepResult.x;
-            const petalY = _ringStepResult.y;
-            const petalOrbitAngle = _ringStepResult.angle;
-
-            // Rose-style burst heal (rysteria_gardn): once the petal has been in
-            // orbit past its charge time and the flower is below max health, it
-            // detaches, homes to the flower, heals a burst and is consumed.
-            // Shell works the same way but lays a shield instead, and waits for
-            // the current shield to lapse rather than for missing health.
-            //
-            // The ring decides WHETHER a petal is homing (it needs the spawn
-            // time, which is ring state) by calling `ringDeps.isHoming`; that
-            // callback records which of the two fired into the pair below, which
-            // the delivery block further down consumes. `_ringHoming*` are module
-            // scratch, valid only until the next `stepPetalKinematics` call.
-            const burstHealHoming = _ringStepResult.homing && _ringHomingWasHeal;
-            const burstShieldHoming = _ringStepResult.homing && _ringHomingWasShield;
-
-            // Update petal position in action context
-            updatePetalPosition(petalId, petalX, petalY);
-
-            // Store petal position for client synchronization
-            player.petalPositions!.push({
-                loadoutIndex,
-                instanceIndex,
-                x: petalX,
-                y: petalY,
-                noPhysics: petalStats.noPhysics || false
-            });
-
-            // Burst-heal delivery: when the homing petal touches the flower it heals
-            // and is consumed — zeroing the instance sends it through the normal
-            // break/cooldown/reload flow on the next tick.
-            if (burstHealHoming || burstShieldHoming) {
-                const healDx = player.x - petalX;
-                const healDy = player.y - petalY;
-                const contactDist = effectivePlayerSize / 2;
-                if (healDx * healDx + healDy * healDy <= contactDist * contactDist) {
-                    if (burstHealHoming) {
-                        player.health = Math.min(player.maxHealth,
-                            player.health + petalStats.burstHeal! * getHealingSkillMultiplier(player));
-                    } else {
-                        grantShield(player, petalStats.burstShield!, BURST_SHIELD_DURATION_MS);
-                    }
-                    setInstanceHealth(petal, instanceIndex, petalStats, 0);
-                    continue;
-                }
-            }
-
-            // Bubble pops in defensive position and propels the player away from where it was.
-            // Boost magnitude scales up with rarity; the slot's cooldown also scales down (handled in the break flow).
-            // Note: push newX/newY (the post-movement position that will be written back to player at the end
-            // of updatePlayerState) — modifying player.x/player.y directly here gets clobbered.
-            if (petal.petalType === 'bubble' && petalExtension < 1.0) {
-                const dx = player.x - petalX;
-                const dy = player.y - petalY;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 0) {
-                    const rarityIdx = Math.max(0, getRarityIndex(petal.rarity ?? 'common'));
-                    const boostMagnitude = 60 * (1 + rarityIdx * 0.6);
-                    // Substep so a high-rarity boost can't tunnel through walls; on each blocked
-                    // step, reflect the remaining boost across the wall normal so the player bounces.
-                    let vx = (dx / dist) * boostMagnitude;
-                    let vy = (dy / dist) * boostMagnitude;
-                    const BOUNCE_DAMPING = 0.7;
-                    let appliedX = 0;
-                    let appliedY = 0;
-                    let remaining = boostMagnitude;
-                    let safetyIterations = 32;
-                    while (remaining > 0.5 && safetyIterations-- > 0) {
-                        const stepLen = Math.min(effectivePlayerSize / 2, remaining);
-                        const speed = Math.sqrt(vx * vx + vy * vy) || 1;
-                        const stepX = (vx / speed) * stepLen;
-                        const stepY = (vy / speed) * stepLen;
-                        const trialX = newX + stepX;
-                        const trialY = newY + stepY;
-                        const wallCollision = checkPlayerWallCollisions(trialX, trialY, effectivePlayerSize);
-                        const dxStep = wallCollision.x - newX;
-                        const dyStep = wallCollision.y - newY;
-                        newX = wallCollision.x;
-                        newY = wallCollision.y;
-                        appliedX += dxStep;
-                        appliedY += dyStep;
-                        remaining -= stepLen;
-                        // If the resolver clipped this step, infer the wall normal from which axis
-                        // shrank the most and reflect the corresponding velocity component.
-                        const clipX = stepX - dxStep;
-                        const clipY = stepY - dyStep;
-                        const blockedX = Math.abs(clipX) > Math.abs(stepX) * 0.5;
-                        const blockedY = Math.abs(clipY) > Math.abs(stepY) * 0.5;
-                        if (blockedX || blockedY) {
-                            if (blockedX) vx = -vx * BOUNCE_DAMPING;
-                            if (blockedY) vy = -vy * BOUNCE_DAMPING;
-                            // If both axes blocked (wedged in a corner), bail rather than spin.
-                            if (blockedX && blockedY) break;
-                        }
-                    }
-                    io.emit('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: appliedX,
-                        knockbackY: appliedY,
-                        damageDealt: 0
-                    });
-                }
-                setInstanceHealth(petal, instanceIndex, instancePetalStats!, 0);
-                continue;
-            }
-
-            // Check if petal can shoot projectiles (only when extended)
-            if (petalExtension > 1.0 && petalStats.projectile) {
-                const projectileConfig = petalStats.projectile;
-                const lastShotTime = petalLastProjectileTime.get(petalId) || 0;
-                const cooldown = petalStats.cooldown || 2000;
-
-                // Check if cooldown has passed
-                if (currentTime - lastShotTime >= cooldown) {
-                    // Calculate projectile angle - shoot in the direction the petal is facing (tangent to rotation)
-                    // The petal is at its orbit bearing, so the projectile goes
-                    // that way. Reported by the ring step rather than recomputed,
-                    // so the two cannot drift apart.
-                    let projectileAngle = petalOrbitAngle;
-
-                    // Guided shots re-aim at the nearest mob inside a cone around
-                    // the firing direction (gardn find_nearest_enemy_within_angle).
-                    // Done once, at launch — the shot still flies straight, so the
-                    // client's dead-reckoning stays exact.
-                    if (projectileConfig.seekRange) {
-                        const cone = projectileConfig.seekCone ?? Math.PI / 4;
-                        const seekCandidates = queryEnemiesNear(petalX, petalY, projectileConfig.seekRange, _seekQueryBuffer);
-                        let bestDistSq = Infinity;
-                        let bestAngle: number | null = null;
-                        for (let _si = 0; _si < seekCandidates.length; _si++) {
-                            const candidate = seekCandidates[_si];
-                            if (candidate.isDead) continue;
-                            const sdx = candidate.x - petalX;
-                            const sdy = candidate.y - petalY;
-                            const sDistSq = sdx * sdx + sdy * sdy;
-                            if (sDistSq > projectileConfig.seekRange * projectileConfig.seekRange) continue;
-                            if (sDistSq >= bestDistSq) continue;
-                            let delta = Math.atan2(sdy, sdx) - projectileAngle;
-                            while (delta > Math.PI) delta -= Math.PI * 2;
-                            while (delta < -Math.PI) delta += Math.PI * 2;
-                            if (Math.abs(delta) > cone) continue;
-                            bestDistSq = sDistSq;
-                            bestAngle = Math.atan2(sdy, sdx);
-                        }
-                        if (bestAngle !== null) projectileAngle = bestAngle;
-                    }
-
-                    const projectileSpeed = projectileConfig.speed || 200; // pixels per second
-                    const spreadAngle = projectileConfig.spreadAngle || 0.2; // radians
-                    const projectileCount = projectileConfig.count || 1;
-
-                    // Create projectiles
-                    for (let i = 0; i < projectileCount; i++) {
-                        // Calculate spread angle for multiple projectiles
-                        let finalAngle = projectileAngle;
-                        if (projectileCount > 1) {
-                            const spreadOffset = (i - (projectileCount - 1) / 2) * spreadAngle;
-                            finalAngle = projectileAngle + spreadOffset;
-                        }
-
-                        // NOTE: a player projectile does NOT get the rarity
-                        // distance/size scaling a mob volley gets (see
-                        // ecs/systems/projectileFiring.ts) — it inherits the
-                        // petal's own size and the config's flat distance.
-                        deps.projectiles.spawn({
-                            playerId: player.id,
-                            x: petalX,
-                            y: petalY,
-                            angle: finalAngle,
-                            speed: projectileSpeed / 1000, // Convert to pixels per millisecond
-                            maxDistance: projectileConfig.distance,
-                            petalType: petal.petalType,
-                            petalRarity: petal.rarity,
-                            damage: petalStats.damage,
-                            size: effectiveSize,
-                            health: petalStats.health,
-                            now: currentTime,
+                // Check if enemy dies (only process once per enemy)
+                if (enemy.health <= 0 && !(enemy as any).isDead) {
+                    const index = enemies.findIndex(e => e.id === enemy.id);
+                    if (index !== -1) {
+                        killEnemy(enemy, index, enemies, killCtxFromDeps(deps), {
+                            killerPlayerId: player.id,
+                            trackMobKillTiming: 'sync-snapshot',
                         });
                     }
-
-                    // Update last shot time for this petal instance
-                    // delete-then-set so the key moves to the end of insertion order;
-                    // server.ts evicts from the front of the map as an O(1) LRU.
-                    petalLastProjectileTime.delete(petalId);
-                    petalLastProjectileTime.set(petalId, currentTime);
                 }
             }
+        }
 
-            // Uranium: a damage pulse over everything in a wide radius, on its own
-            // timer. Reuses petalLastRadiationTime (an LRU map like the projectile
-            // one) so each petal instance pulses independently of its neighbours.
-            if (petalStats.radiation) {
-                const lastPulse = petalLastRadiationTime.get(petalId) || 0;
-                if (currentTime - lastPulse >= petalStats.radiation.intervalMs) {
-                    petalLastRadiationTime.delete(petalId);
-                    petalLastRadiationTime.set(petalId, currentTime);
+        // Petal-vs-player collision: a petal swing on contact deals damage and
+        // knocks the victim back. Only runs between players who are allowed to
+        // fight — both inside the PVP arena, or either one corrupted, which makes
+        // a corrupted flower hostile to everyone anywhere in the world. The
+        // `player.corrupted` term is redundant with the registry check beside it
+        // and stays as a backstop: an attacker whose flag was set without
+        // setPlayerCorrupted() still swings.
+        if (player.inPvpArena || player.corrupted || anyCorruptedPlayers) {
+            const petalSizePx = 40 * effectiveSize;
+            const petalRadius = petalSizePx / 2;
+            // A splitter half is the SAME person as its other half — they must
+            // never damage each other, corrupted or not.
+            const ownerSocketId = getOriginalSocketId(player.id);
 
-                    const pulseRadius = petalStats.radiation.radius;
-                    const pulseDamage =
-                        petalStats.damage * (petalStats.radiation.damageFactor ?? 1) * getDamageMultiplier(player);
-                    const irradiated = queryEnemiesNear(petalX, petalY, pulseRadius, _radiationQueryBuffer);
-                    for (let _ri = 0; _ri < irradiated.length; _ri++) {
-                        const target = irradiated[_ri];
-                        if (target.isDead) continue;
-                        const rdx = target.x - petalX;
-                        const rdy = target.y - petalY;
-                        const reach = pulseRadius + (target._radius ?? ENEMY_SIZE / 2);
-                        if (rdx * rdx + rdy * rdy > reach * reach) continue;
+            for (const otherId in players) {
+                if (otherId === player.id) continue;
+                const other = players[otherId];
+                if (!other || other.isDead) continue;
+                if (!canPetalsDamagePlayer(player, other)) continue;
+                if (getOriginalSocketId(otherId) === ownerSocketId) continue;
 
-                        trackDamage(target, player.id, pulseDamage);
-                        target.health = Math.max(0, target.health - pulseDamage);
-                        markEnemyDamaged(target);
+                const otherPlayerRadius = (PLAYER_SIZE / 2) * (other.sizeMultiplier ?? 1.0);
+                const minDist = petalRadius + otherPlayerRadius;
+                const minDistSq = minDist * minDist;
 
-                        if (target.health <= 0 && !target.isDead) {
-                            const index = enemies.findIndex(e => e.id === target.id);
-                            if (index !== -1) {
-                                killEnemy(target, index, enemies, killCtxFromDeps(deps), {
-                                    killerPlayerId: player.id,
-                                    trackMobKillTiming: 'sync-snapshot',
-                                    requireNonEmptyContributors: true,
-                                });
-                            }
-                        }
-                    }
+                const dxp = other.x - petalX;
+                const dyp = other.y - petalY;
+                const distSqP = dxp * dxp + dyp * dyp;
+                if (distSqP >= minDistSq || distSqP <= 0) continue;
+
+                // Per-victim cooldown so a single petal can't deal damage every tick
+                const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}_pvp_${otherId}`;
+                const PVP_PETAL_COOLDOWN = petalStats.damageCooldown || 250; // ms between hits on same victim
+                const lastDmgTime = petalLastDamageTime.get(damageCooldownKey) || 0;
+                if (currentTime - lastDmgTime < PVP_PETAL_COOLDOWN) continue;
+                petalLastDamageTime.set(damageCooldownKey, currentTime);
+
+                const damageMultiplier = getDamageMultiplier(player);
+                const finalDamage = petalStats.damage * damageMultiplier;
+                applyPvpDamage(player, other, finalDamage, io, savePlayerProgress);
+
+                // The attacking petal also takes damage from the hit and may break.
+                if (!petalStats.damageCooldown) {
+                    const prevHealth = getInstanceHealth(petal, instanceIndex, petalStats);
+                    // Use a fixed self-damage so PVP doesn't trivially destroy petals on the first hit.
+                    setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevHealth - 1));
                 }
             }
+        }
 
-            // Check collision with enemies — broad-phase via spatial grid (built
-            // once per tick in start_loop), then precise per-enemy distance test.
-            // Pets and dead enemies are excluded by the grid.
-            const _petalSize = 40 * effectiveSize;
-            const _petalRadius = _petalSize / 2;
-            const candidates = queryEnemiesNear(petalX, petalY, _petalRadius, _enemyQueryBuffer);
-            for (let _ei = 0; _ei < candidates.length; _ei++) {
-                const enemy = candidates[_ei];
-
-                // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
-                const mobStats = enemy._mobStats || getMobStats(enemy.type, enemy.tier);
-                const enemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
-                const petalSize = _petalSize;
-                const petalRadius = _petalRadius;
-
-                const dx = enemy.x - petalX;
-                const dy = enemy.y - petalY;
-                const distSq = dx * dx + dy * dy;
-                const minDistance = enemyRadius + petalRadius;
-                const minDistSq = minDistance * minDistance;
-
-                if (distSq < minDistSq && distSq > 0) {
-                    // Check if petal has a damage cooldown and is still on cooldown
-                    const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-                    if (petalStats.damageCooldown) {
-                        const lastDmgTime = petalLastDamageTime.get(damageCooldownKey) || 0;
-                        if (currentTime - lastDmgTime < petalStats.damageCooldown) {
-                            continue; // Skip damage, petal stays active
-                        }
-                    }
-
-                    // Petal hits enemy - deal damage to both
-                    const damageMultiplier = getDamageMultiplier(player);
-                    const finalDamage = petalStats.damage * damageMultiplier;
-
-                    // console.log('[Server] Petal collision detected', {
-                    //     enemyId: enemy.id,
-                    //     enemyType: enemy.type,
-                    //     enemyHealth: enemy.health,
-                    //     finalDamage,
-                    //     playerId: player.id,
-                    //     petalType: petal.petalType
-                    // });
-
-                    // Track damage dealt by this player (always track, even if enemy is dead)
-                    trackDamage(enemy, player.id, finalDamage);
-
-                    // Skip further processing if enemy is already dead (being processed)
-                    if ((enemy as any).isDead) {
-                        continue;
-                    }
-
-                    enemy.health = Math.max(0, enemy.health - finalDamage);
-
-                    // Petals with damageCooldown don't take damage from mobs (they can't break)
-                    if (petalStats.damageCooldown) {
-                        petalLastDamageTime.set(damageCooldownKey, currentTime);
-                    } else {
-                        const mobDamage = mobStats ? mobStats.damage : 1; // Petal loses health equal to mob damage, fallback to 1 if mobStats is null
-                        const prevInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
-                        setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevInstanceHealth - mobDamage));
-                    }
-
-                    // Apply poison effect if the petal has poison
-                    if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
-                        if (!enemy.poisonEffects) {
-                            enemy.poisonEffects = [];
-                        }
+        // Check for corpse revival if this is a yggdrasil petal (always active)
+        if (petal.petalType === 'yggdrasil') {
+            const revivalRange = 80; // Range for automatic revival
+            
+            for (const [otherPlayerId, otherPlayer] of Object.entries(players)) {
+                if (otherPlayerId !== player.id && otherPlayer.isDead) {
+                    const distance = Math.sqrt(
+                        (petalX - otherPlayer.x) ** 2 + (petalY - otherPlayer.y) ** 2
+                    );
+                    
+                    if (distance <= revivalRange) {
+                        // Break the yggdrasil petal when it revives someone
+                        petal.health = 0; // This will trigger the petal breaking logic below
                         
-                        // Add or refresh poison effect
-                        const currentTime = Date.now();
-                        const endTime = currentTime + petalStats.poisonDuration;
+                        // Revive the target player.
+                        //
+                        // This lands inside the REVIVER's updatePlayerState,
+                        // so the revived flower may still have its own
+                        // updatePlayerState to run in this same loop — it
+                        // will, from here on, seed newX from movedX/movedY
+                        // and commit. That is safe only because
+                        // syncPlayersToEcs keeps the staging pair pinned to a
+                        // corpse's real position; see the comment there. Do
+                        // not move the seed back below the dead-player skip.
+                        otherPlayer.isDead = false;
+                        otherPlayer.health = otherPlayer.maxHealth;
+                        otherPlayer.isInvulnerable = true;
+                        otherPlayer.lastDamageTime = 0;
                         
-                        // Check if there's already a poison effect from this player
-                        const existingPoisonIndex = enemy.poisonEffects.findIndex(p => p.playerId === player.id);
-                        if (existingPoisonIndex >= 0) {
-                            // gardn's rule (Damage.cc): a fresh bite only takes over
-                            // when it would outlast what is already ticking —
-                            // `if (defender.poison_ticks < attacker.poison_damage.time * TPS)`.
-                            // Without the guard, a short weak poison stomps a long
-                            // strong one: pincer (1s) landing after iris (6s) used to
-                            // wipe the iris poison and leave 1s of 5dps in its place.
-                            if (enemy.poisonEffects[existingPoisonIndex].endTime < endTime) {
-                                enemy.poisonEffects[existingPoisonIndex] = {
-                                    damage: petalStats.poison,
-                                    endTime: endTime,
-                                    playerId: player.id
-                                };
+                        // Notify all clients about the revival
+                        io.emit('playerRevived', {
+                            revivedPlayerId: otherPlayerId,
+                            revivingPlayerId: player.id,
+                            revivedPlayerName: otherPlayer.name,
+                            revivingPlayerName: player.name
+                        });
+                        
+                        // Give revived player temporary invulnerability
+                        setTimeout(() => {
+                            if (players[otherPlayerId]) {
+                                players[otherPlayerId].isInvulnerable = false;
+                                io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
                             }
-                        } else {
-                            // Add a new poison effect
-                            enemy.poisonEffects.push({
-                                damage: petalStats.poison,
-                                endTime: endTime,
-                                playerId: player.id
-                            });
+                        }, RESPAWN_INVULNERABILITY_TIME);
+                        
+                        if (!player.id.startsWith('bot_') && !otherPlayerId.startsWith('bot_')) {
+                            console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
                         }
-                    }
-
-                    // Sticky petals (honey / pincer) slow what they touch. How
-                    // much of it lands depends on the petal's rarity against the
-                    // mob's — see stallPower.
-                    if (petalStats.slowFactor && petalStats.slowDuration) {
-                        applySlow(enemy, petalStats.slowFactor, currentTime + petalStats.slowDuration,
-                                  petal.rarity ?? 'common');
-                    }
-
-                    // Apply knockback to enemy
-                    const knockbackForce = petalStats.knockback || 0;
-                    if (knockbackForce > 0) {
-                        // Calculate knockback direction from petal to enemy
-                        const dx = enemy.x - petalX;
-                        const dy = enemy.y - petalY;
-                        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-                        const normalizedDx = dx / distance;
-                        const normalizedDy = dy / distance;
-
-                        // Apply knockback to enemy, accounting for mass (heavier mobs are harder to knock back)
-                        // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
-                        const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
-                        const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
-                        enemy.knockbackX = normalizedDx * effectiveKnockback;
-                        enemy.knockbackY = normalizedDy * effectiveKnockback;
-                    }
-
-                    // Mark enemy for batched damage update at end of frame
-                    markEnemyDamaged(enemy);
-
-                    // The flower petal cracks open on the mob it touches, whatever
-                    // the mob's damage was: zeroing this instance's health makes the
-                    // next tick's petal loop run the normal break + reload path, so
-                    // it comes back on its cooldown like any other spent petal. The
-                    // squad spawns at the petal, not the player, so it lands on the
-                    // mob that broke it. Pass the petal's own rarity through — a
-                    // rarer flower opens onto rarer glitch flowers.
-                    if (petal.petalType === 'flower') {
-                        setInstanceHealth(petal, instanceIndex, petalStats, 0);
-                        if (Math.random() < FLOWER_PETAL_CORRUPT_CHANCE) {
-                            corruptFlowerAndSplitHalf(player);
-                        } else {
-                            // spawnPet's apex rule turns one summon into three unique
-                            // pets, which would make an apex flower open onto nine.
-                            // Clamp so the squad is always the three this petal promises.
-                            const petRarity = (petal.rarity ?? 'common') === 'apex' ? 'unique' : (petal.rarity ?? 'common');
-                            spawnPet(FLOWER_PETAL_PET_TYPE, petRarity, petalX, petalY, player.id, io, false, FLOWER_PETAL_PET_COUNT);
-                        }
-                        // Broken petals don't hit anything else this tick.
+                        
+                        // Break out of the loop since we've used the petal
                         break;
                     }
-
-                    // Check if item spawner was hit and has 1% chance to spawn a random petal
-                    if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
-                        // Get all petal types and filter out admin petals
-                        const allPetalTypes = getAllPetalTypes();
-                        const nonAdminPetalTypes = allPetalTypes.filter(petalType => {
-                            // Check if the petal is an admin petal by checking any rarity
-                            const commonStats = getPetalStats(petalType, 'common');
-                            return !commonStats?.isAdminPetal;
-                        });
-
-                        if (nonAdminPetalTypes.length > 0) {
-                            // Pick a random petal type
-                            const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
-                            
-                            // Pick a random rarity with weighted probabilities (rarer items are much rarer)
-                            // Weighted distribution: common is most common, rarer items are exponentially rarer
-                            const rarityWeights: { [key: string]: number } = {
-                                'common': 30.0,      // 50%
-                                'uncommon': 10.0,    // 20%
-                                'rare': 10.0,        // 12%
-                                'epic': 5.0,         // 8%
-                                'legendary': 5.0,    // 5%
-                                'mythic': 5.0,       // 3%
-                                'ultra': 5.0,        // 1.5%
-                                'super': 5.0,        // 0.4%
-                                'unique': 0.05        // 0.1%
-                            };
-                            
-                            // Calculate total weight
-                            const totalWeight = RARITY_LEVELS.reduce((sum, rarity) => sum + (rarityWeights[rarity] || 0), 0);
-                            
-                            // Pick a rarity based on weighted probability
-                            let randomRarity: Rarity = 'common'; // Default fallback
-                            const random = Math.random() * totalWeight;
-                            let cumulativeWeight = 0;
-                            
-                            for (const rarity of RARITY_LEVELS) {
-                                cumulativeWeight += rarityWeights[rarity] || 0;
-                                if (random <= cumulativeWeight) {
-                                    randomRarity = rarity;
-                                    break;
-                                }
-                            }
-                            
-                            // Calculate spawner's hitbox radius to ensure items spawn outside it
-                            const spawnerMobStats = getMobStats(enemy.type, enemy.tier);
-                            const spawnerSize = spawnerMobStats ? spawnerMobStats.size * 40 : ENEMY_SIZE;
-                            const spawnerRadius = spawnerSize / 2;
-                            const minSpawnDistance = spawnerRadius + 30; // Spawn at least 30px outside the hitbox
-                            const maxSpawnDistance = spawnerRadius + 100; // Spawn up to 100px away
-                            
-                            // Spawn item at a random angle and distance outside the spawner's hitbox
-                            const spawnAngle = Math.random() * Math.PI * 2;
-                            const spawnDistance = minSpawnDistance + Math.random() * (maxSpawnDistance - minSpawnDistance);
-                            const offsetX = Math.cos(spawnAngle) * spawnDistance;
-                            const offsetY = Math.sin(spawnAngle) * spawnDistance;
-                            
-                            const itemId = Math.random().toString(36).substr(2, 9);
-                            const spawnTime = Date.now();
-                            
-                            // Determine eligible players - include split player IDs if player is split
-                            let eligiblePlayersForItem = [player.id];
-                            const { splitPlayers } = require('../petal_actions');
-                            const originalId = player.id.replace('_split2', '').replace('_split1', '');
-                            const splitState = splitPlayers.get(originalId);
-                            if (splitState) {
-                                // Player is split - include both split player IDs
-                                eligiblePlayersForItem = [splitState.player1.id, splitState.player2.id, originalId];
-                            }
-                            
-                            const newItem: WorldItem = {
-                                id: itemId,
-                                type: 'petal',
-                                x: enemy.x + offsetX,
-                                y: enemy.y + offsetY,
-                                rarity: randomRarity,
-                                petalType: randomPetalType,
-                                eligiblePlayers: eligiblePlayersForItem, // Include all split player IDs
-                                pickedUpBy: new Set(),
-                                spawnTime: spawnTime
-                            };
-                            
-                            // Check and fix wall collisions before adding item
-                            checkItemWallCollisions(newItem);
-                            
-                            items.push(newItem);
-                            
-                            // Send itemSpawned event to eligible players (map split player IDs to original socket IDs)
-                            const { getOriginalSocketId } = require('./utils');
-                            for (const eligiblePlayerId of eligiblePlayersForItem) {
-                                const originalSocketId = getOriginalSocketId(eligiblePlayerId);
-                                io.to(originalSocketId).emit('itemSpawned', newItem);
-                            }
-                            
-                            // Schedule automatic removal after expiration time
-                            const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
-                            const timeout = setTimeout(() => {
-                                itemExpirationTimeouts.delete(itemId);
-                                const itemIndex = items.findIndex(item => item.id === itemId);
-                                if (itemIndex !== -1) {
-                                    const expiredItem = items[itemIndex];
-                                    items.splice(itemIndex, 1);
-                                    
-                                    // Notify eligible players that item expired
-                                    const { getOriginalSocketId } = require('./utils');
-                                    if (expiredItem.eligiblePlayers) {
-                                        for (const playerId of expiredItem.eligiblePlayers) {
-                                            const originalSocketId = getOriginalSocketId(playerId);
-                                            io.to(originalSocketId).emit('itemRemoved', itemId);
-                                        }
-                                    }
-                                    
-                                    if (!player.id.startsWith('bot_')) {
-                                        console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
-                                    }
-                                }
-                            }, expirationTime);
-                            itemExpirationTimeouts.set(itemId, timeout);
-                            
-                            if (!player.id.startsWith('bot_')) {
-                                console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
-                            }
-                        }
-                    }
-
-            // Petals block mob projectiles: each side damages the other, exactly
-            // as if the projectile were an enemy petal. The projectile lives in
-            // the ECS now, so the bridge does the overlap test and applies the
-            // damage this callback returns; the petal side stays here because
-            // petal instance health is legacy state.
-            {
-                // Resolved lazily: the callback fires only on an actual block,
-                // and this runs for every petal instance of every player.
-                let projectileDamageMultiplier = -1;
-                const petalBlockRadius = (40 * effectiveSize) / 2;
-                deps.projectiles.forEachBlocking(petalX, petalY, petalBlockRadius, (mobProjectile) => {
-                    if (projectileDamageMultiplier < 0) {
-                        projectileDamageMultiplier = getDamageMultiplier(player);
-                    }
-                    const prevProjInstanceHealth = getInstanceHealth(petal, instanceIndex, petalStats);
-                    setInstanceHealth(
-                        petal, instanceIndex, petalStats,
-                        Math.max(0, prevProjInstanceHealth - mobProjectile.damage),
-                    );
-                    return petalStats.damage * projectileDamageMultiplier;
-                });
-            }
-
-                    // Handle petal collision for wait_until_collision actions
-                    const petalId = `${player.id}_${loadoutIndex}_${instanceIndex}`;
-                    const collisionContext = {
-                        player: player,
-                        petalX: petalX,
-                        petalY: petalY,
-                        petalSize: petalSize,
-                        petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                        enemies: enemies,
-                        io: io,
-                        petalId: petalId,
-                        loadoutIndex: loadoutIndex,
-                        instanceIndex: instanceIndex
-                    };
-                    handlePetalCollision(petalId, collisionContext);
-
-                    // Check if petal breaks (per-instance for clumped)
-                    if (getInstanceHealth(petal, instanceIndex, petalStats) <= 0) {
-                        // Execute petal actions before breaking
-                        if (petalStats.actions) {
-                            const actionContext = {
-                                player: player,
-                                petalX: petalX,
-                                petalY: petalY,
-                                petalSize: petalSize,
-                                petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                                enemies: enemies,
-                                io: io
-                            };
-                            executePetalActions(petalStats.actions, actionContext, 'on_break');
-                        }
-
-                        const cooldownTime = getEffectiveCooldown(petal, petalStats);
-                        // Absolute restore deadline alongside the setTimeout. Without it
-                        // the tick-loop backstop has no idea when this cooldown is meant
-                        // to end — and this is the path petals normally break on, so a
-                        // missing stamp meant every petal reloaded instantly.
-                        const cooldownEndsAt = Date.now() + cooldownTime;
-
-                        if (hasIndependentInstances(petalStats)) {
-                            // Per-instance: only this instance breaks; other instances keep working
-                            ensureInstanceArrays(petal, petalStats);
-                            petal.instanceOnCooldown![instanceIndex] = true;
-                            const cdCount = petalStats.count ?? 1;
-                            if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
-                                petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
-                            }
-                            petal.instanceCooldownEndTime[instanceIndex] = cooldownEndsAt;
-                            ring.state.dropInstance(loadoutIndex, instanceIndex);
-                            const snapshotPetalType = petal.petalType;
-                            const snapshotRarity = petal.rarity;
-                            const snapshotMaxHealth = petal.maxHealth;
-                            const snapshotPlayerId = player.id;
-                            setTimeout(() => {
-                                restoreIndependentPetalInstance(
-                                    snapshotPlayerId,
-                                    loadoutIndex,
-                                    instanceIndex,
-                                    snapshotPetalType,
-                                    snapshotRarity,
-                                    snapshotMaxHealth,
-                                    io
-                                );
-                            }, cooldownTime);
-
-                            if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
-                                petal.onCooldown = true;
-                                // See the matching emit in the tick-loop break above.
-                                io.emit('petalBroken', {
-                                    playerId: player.id,
-                                    slotIndex: loadoutIndex,
-                                    petalType: petal.petalType,
-                                    rarity: petal.rarity
-                                });
-                            }
-                        } else {
-                            // Non-clumped: whole slot breaks (legacy behavior)
-                            petal.onCooldown = true;
-                            petal.cooldownEndTime = cooldownEndsAt;
-                            ring.state.dropSlot(loadoutIndex);
-                            const originalPetal = {
-                                type: petal.type,
-                                petalType: petal.petalType,
-                                rarity: petal.rarity,
-                                maxHealth: petal.maxHealth
-                            };
-                            const snapshotPetalType = originalPetal.petalType;
-                            const snapshotRarity = originalPetal.rarity;
-                            setTimeout(() => {
-                                const current = players[player.id]?.loadout?.[loadoutIndex];
-                                if (!players[player.id] || !current || !current.onCooldown) return;
-                                if (current.type !== 'petal' ||
-                                    current.petalType !== snapshotPetalType ||
-                                    current.rarity !== snapshotRarity) return;
-                                {
-                                    const restoredPetal = {
-                                        ...originalPetal,
-                                        health: originalPetal.maxHealth,
-                                        onCooldown: false
-                                    };
-                                    applyPetalHealthBonus(restoredPetal, player);
-                                    player.loadout[loadoutIndex] = restoredPetal;
-
-                                    io.emit('petalRestored', {
-                                        playerId: player.id,
-                                        slotIndex: loadoutIndex,
-                                        petal: player.loadout[loadoutIndex]
-                                    });
-                                }
-                            }, cooldownTime);
-
-                            io.emit('petalBroken', {
-                                playerId: player.id,
-                                slotIndex: loadoutIndex,
-                                petalType: petal.petalType,
-                                rarity: petal.rarity
-                            });
-                        }
-                    }
-
-                    // Check if enemy dies (only process once per enemy)
-                    if (enemy.health <= 0 && !(enemy as any).isDead) {
-                        const index = enemies.findIndex(e => e.id === enemy.id);
-                        if (index !== -1) {
-                            killEnemy(enemy, index, enemies, killCtxFromDeps(deps), {
-                                killerPlayerId: player.id,
-                                trackMobKillTiming: 'sync-snapshot',
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Petal-vs-player collision: a petal swing on contact deals damage and
-            // knocks the victim back. Only runs between players who are allowed to
-            // fight — both inside the PVP arena, or either one corrupted, which makes
-            // a corrupted flower hostile to everyone anywhere in the world. The
-            // `player.corrupted` term is redundant with the registry check beside it
-            // and stays as a backstop: an attacker whose flag was set without
-            // setPlayerCorrupted() still swings.
-            if (player.inPvpArena || player.corrupted || anyCorruptedPlayers) {
-                const petalSizePx = 40 * effectiveSize;
-                const petalRadius = petalSizePx / 2;
-                // A splitter half is the SAME person as its other half — they must
-                // never damage each other, corrupted or not.
-                const ownerSocketId = getOriginalSocketId(player.id);
-
-                for (const otherId in players) {
-                    if (otherId === player.id) continue;
-                    const other = players[otherId];
-                    if (!other || other.isDead) continue;
-                    if (!canPetalsDamagePlayer(player, other)) continue;
-                    if (getOriginalSocketId(otherId) === ownerSocketId) continue;
-
-                    const otherPlayerRadius = (PLAYER_SIZE / 2) * (other.sizeMultiplier ?? 1.0);
-                    const minDist = petalRadius + otherPlayerRadius;
-                    const minDistSq = minDist * minDist;
-
-                    const dxp = other.x - petalX;
-                    const dyp = other.y - petalY;
-                    const distSqP = dxp * dxp + dyp * dyp;
-                    if (distSqP >= minDistSq || distSqP <= 0) continue;
-
-                    // Per-victim cooldown so a single petal can't deal damage every tick
-                    const damageCooldownKey = `${player.id}_${loadoutIndex}_${instanceIndex}_pvp_${otherId}`;
-                    const PVP_PETAL_COOLDOWN = petalStats.damageCooldown || 250; // ms between hits on same victim
-                    const lastDmgTime = petalLastDamageTime.get(damageCooldownKey) || 0;
-                    if (currentTime - lastDmgTime < PVP_PETAL_COOLDOWN) continue;
-                    petalLastDamageTime.set(damageCooldownKey, currentTime);
-
-                    const damageMultiplier = getDamageMultiplier(player);
-                    const finalDamage = petalStats.damage * damageMultiplier;
-                    applyPvpDamage(player, other, finalDamage, io, savePlayerProgress);
-
-                    // The attacking petal also takes damage from the hit and may break.
-                    if (!petalStats.damageCooldown) {
-                        const prevHealth = getInstanceHealth(petal, instanceIndex, petalStats);
-                        // Use a fixed self-damage so PVP doesn't trivially destroy petals on the first hit.
-                        setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevHealth - 1));
-                    }
-                }
-            }
-
-            // Check for corpse revival if this is a yggdrasil petal (always active)
-            if (petal.petalType === 'yggdrasil') {
-                const revivalRange = 80; // Range for automatic revival
-                
-                for (const [otherPlayerId, otherPlayer] of Object.entries(players)) {
-                    if (otherPlayerId !== player.id && otherPlayer.isDead) {
-                        const distance = Math.sqrt(
-                            (petalX - otherPlayer.x) ** 2 + (petalY - otherPlayer.y) ** 2
-                        );
-                        
-                        if (distance <= revivalRange) {
-                            // Break the yggdrasil petal when it revives someone
-                            petal.health = 0; // This will trigger the petal breaking logic below
-                            
-                            // Revive the target player.
-                            //
-                            // This lands inside the REVIVER's updatePlayerState,
-                            // so the revived flower may still have its own
-                            // updatePlayerState to run in this same loop — it
-                            // will, from here on, seed newX from movedX/movedY
-                            // and commit. That is safe only because
-                            // syncPlayersToEcs keeps the staging pair pinned to a
-                            // corpse's real position; see the comment there. Do
-                            // not move the seed back below the dead-player skip.
-                            otherPlayer.isDead = false;
-                            otherPlayer.health = otherPlayer.maxHealth;
-                            otherPlayer.isInvulnerable = true;
-                            otherPlayer.lastDamageTime = 0;
-                            
-                            // Notify all clients about the revival
-                            io.emit('playerRevived', {
-                                revivedPlayerId: otherPlayerId,
-                                revivingPlayerId: player.id,
-                                revivedPlayerName: otherPlayer.name,
-                                revivingPlayerName: player.name
-                            });
-                            
-                            // Give revived player temporary invulnerability
-                            setTimeout(() => {
-                                if (players[otherPlayerId]) {
-                                    players[otherPlayerId].isInvulnerable = false;
-                                    io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
-                                }
-                            }, RESPAWN_INVULNERABILITY_TIME);
-                            
-                            if (!player.id.startsWith('bot_') && !otherPlayerId.startsWith('bot_')) {
-                                console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
-                            }
-                            
-                            // Break out of the loop since we've used the petal
-                            break;
-                        }
-                    }
                 }
             }
         }
     }
+}
 
-    // Check for item collisions (independent of enemy collisions)
-    // Optimize: use squared distance comparison to avoid Math.sqrt
-    const pickupSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0) + (player.magnetism ?? 0);
-    const pickupRadiusSquared = pickupSize * pickupSize;
-    for (let i = items.length - 1; i >= 0; i--) {
-        const item = items[i];
-        const dx = newX - item.x;
-        const dy = newY - item.y;
-        const distanceSquared = dx * dx + dy * dy;
-        if (distanceSquared < pickupRadiusSquared) {
-            // Check if player has already picked up this item
-            if (item.pickedUpBy && item.pickedUpBy.has(player.id)) {
-                continue; // Skip if already picked up by this player
-            }
-            
-            // Check if player is eligible to pick up this item
-            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                let isEligible = false;
-                
-                // First, check if player ID is directly eligible
-                if (item.eligiblePlayers.includes(player.id)) {
-                    isEligible = true;
-                } else {
-                    // Check if this player is part of a split pair
-                    const { splitPlayers } = require('../petal_actions');
-                    const originalId = player.id.replace('_split2', '').replace('_split1', '');
-                    const splitState = splitPlayers.get(originalId);
-                    
-                    if (splitState) {
-                        // Player is split - check if any of the split player IDs or original ID is eligible
-                        isEligible = item.eligiblePlayers.includes(splitState.player1.id) || 
-                                     item.eligiblePlayers.includes(splitState.player2.id) ||
-                                     item.eligiblePlayers.includes(originalId);
-                    } else {
-                        // Not split - check if original socket ID is eligible (for items created with original ID)
-                        const { getOriginalSocketId } = require('./utils');
-                        const originalSocketId = getOriginalSocketId(player.id);
-                        if (player.id !== originalSocketId) {
-                            isEligible = item.eligiblePlayers.includes(originalSocketId);
-                        }
-                    }
-                }
-                
-                if (!isEligible) {
-                    // Player is not eligible - skip this item
-                    // Debug log to help diagnose pickup issues
-                    continue;
-                }
-            }
-            
-            // Add item to player's inventory (which may be shared with split player).
-            // While inside the PVP arena, `inventory` IS the PVP-only inventory; on
-            // exit, 25% of it is transferred back into the regular inventory.
-            let rarity = item.rarity || 'common';
-            const itemKey = item.type === 'petal' ? `${item.type}_${item.petalType}` : item.type;
-            // Maze drops gain a rarity the moment they enter the inventory:
-            // the inventory stays in regular-world terms inside the maze, so
-            // the +1 the maze promises is applied at pickup, not on exit.
-            if (player.inMaze && player.mazeRarityShifted) {
-                const rarityIdx = getRarityIndex(rarity);
-                if (rarityIdx >= 0) {
-                    rarity = RARITY_LEVELS[Math.min(rarityIdx + 1, RARITY_LEVELS.length - 1)];
-                }
-            }
-            addItem(player.inventory, rarity, itemKey, 1);
-            
-            // Mark as picked up by this player (don't remove from world)
-            if (!item.pickedUpBy) {
-                item.pickedUpBy = new Set();
-            }
-            item.pickedUpBy.add(player.id);
-            
-            // console.log(`[PICKUP] Player ${player.id} (${player.name}) picked up item ${item.id} (${itemKey}, ${rarity})`);
-            
-            // Check if this player is split and update the other split player's inventory reference
-            const { splitPlayers } = require('../petal_actions');
-            const originalId = player.id.replace('_split2', '').replace('_split1', '');
-            const splitState = splitPlayers.get(originalId);
-            if (splitState) {
-                // Both players share the same inventory, so update the other player's reference
-                if (splitState.player1.id === player.id) {
-                    splitState.player2.inventory = player.inventory;
-                } else if (splitState.player2.id === player.id) {
-                    splitState.player1.inventory = player.inventory;
-                }
-            }
-            
-            // Emit events to update client
-            // Map split player IDs to original socket IDs for socket room targeting
-            const { getOriginalSocketId } = require('./utils');
-            const originalSocketId = getOriginalSocketId(player.id);
-            io.to(originalSocketId).emit('itemPickedUp', item.id);
-            io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
-            
-            // Save player progress to persist inventory changes
-            const userId = playerUserIds[player.id];
-            if (userId) {
-                savePlayerProgress(player, userId);
-            }
-            
-            // Remove item from world if all eligible players have picked it up
-            if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-                const allPickedUp = item.eligiblePlayers.every(playerId => 
-                    item.pickedUpBy && item.pickedUpBy.has(playerId)
-                );
-                if (allPickedUp) {
-                    // Clean up expiration timeout if item is removed early
-                    const timeout = itemExpirationTimeouts.get(item.id);
-                    if (timeout) {
-                        clearTimeout(timeout);
-                        itemExpirationTimeouts.delete(item.id);
-                    }
-                    items.splice(i, 1);
-                    // Notify only eligible players that the item is gone
-                    for (const playerId of item.eligiblePlayers) {
-                        io.to(playerId).emit('itemRemoved', item.id);
-                    }
-                }
-            }
-        }
+
+    return { x: newX, y: newY };
+}
+
+/**
+ * Update player state (movement, collisions, etc.)
+ * This is the main function that handles all player state updates
+ */
+export function updatePlayerState(
+    player: ServerPlayer, 
+    deltaTime: number,
+    deps: PlayerStateDependencies
+): void {
+    if (!player || !player.inputs) {
+        return;
     }
 
-    // Maze players stay inside the maze region. The maze's border ring is
-    // solid wall so collision already contains them — this is a safety net
-    // against knockback/teleport edge cases ejecting someone into the void.
-    if (player.inMaze) {
-        const mazeNow = getActiveMaze();
-        if (mazeNow) {
-            const margin = PLAYER_SIZE / 2;
-            newX = Math.max(MAZE_ORIGIN_X + margin, Math.min(MAZE_ORIGIN_X + mazeNow.worldSize - margin, newX));
-            newY = Math.max(MAZE_ORIGIN_Y + margin, Math.min(MAZE_ORIGIN_Y + mazeNow.worldSize - margin, newY));
-        }
+    // Don't update movement for dead players
+    if (player.isDead) {
+        return;
     }
 
-    // Clamp position to the PVP arena boundary if the player is currently inside it.
-    // Players can only leave via the central exit teleporter — never by walking out.
-    if (player.inPvpArena) {
-        const dxArena = newX - PVP_ARENA_CENTER_X;
-        const dyArena = newY - PVP_ARENA_CENTER_Y;
-        const distSqArena = dxArena * dxArena + dyArena * dyArena;
-        const maxR = PVP_ARENA_RADIUS - PLAYER_SIZE / 2;
-        if (distSqArena > maxR * maxR) {
-            const distArena = Math.sqrt(distSqArena) || 1;
-            newX = PVP_ARENA_CENTER_X + (dxArena / distArena) * maxR;
-            newY = PVP_ARENA_CENTER_Y + (dyArena / distArena) * maxR;
-        }
+    const { io, savePlayerProgress } = deps;
+
+    // The pre-movement half (effects, healing, aura and ring damage) ran in
+    // updatePlayerPreMovement, and INTEGRATION now happens on the ECS between
+    // the two — see runSimulationStep and server/ecsSync.syncPlayersToEcs.
+    //
+    // `movedX`/`movedY` are what `stepPlayerMovement` used to return straight
+    // into these locals, so newX/newY start in exactly the same place they
+    // always did, and everything below — knockback, wall repulsion, pickups,
+    // teleporters, the maze/arena clamps — is unchanged and still commits to
+    // player.x/y at the very end of the function.
+    //
+    // What matters just as much is what is NOT assigned yet: `player.x`/
+    // `player.y` still hold the PREVIOUS tick's committed position for the whole
+    // of this function, which is what the petal block below reads and what makes
+    // petals trail the flower. velocity, angle and speedFactor were all written
+    // up-front by the legacy code too, so the movement window writes those
+    // directly and they are already current here.
+    const effectivePlayerSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0);
+    let newX = player.movedX ?? player.x;
+    let newY = player.movedY ?? player.y;
+
+    // Body contact with mobs. Extracted for testability; still called from
+    // exactly here so the per-player pipeline order is unchanged.
+    {
+        const contact = resolvePlayerMobContact(player, newX, newY, effectivePlayerSize, deps);
+        newX = contact.x;
+        newY = contact.y;
     }
 
-    // Check for teleporter interactions
-    let currentTeleporter: string | null = null;
-    const currentTime = Date.now();
-    const isOnCooldown = player.teleportCooldown && currentTime < player.teleportCooldown;
-
-    for (const element of WORLD_MAP.filter(isTeleporter)) {
-        if (!element.properties?.teleportTo) continue;
-
-        const teleporterId = `teleporter_${element.x}_${element.y}`;
-        const teleporterCX = (element.x + element.width / 2) * SCALE_FACTOR;
-        const teleporterCY = (element.y + element.height / 2) * SCALE_FACTOR;
-        const playerCX = newX + PLAYER_SIZE / 2;
-        const playerCY = newY + PLAYER_SIZE / 2;
-        const dx = playerCX - teleporterCX;
-        const dy = playerCY - teleporterCY;
-        const distSq = dx * dx + dy * dy;
-        const suctionRadius = TELEPORTER_SUCTION_RADIUS * SCALE_FACTOR;
-        const activationRadius = TELEPORTER_RADIUS * SCALE_FACTOR;
-
-        // Apply suction force if player is within suction radius and NOT on cooldown
-        if (distSq <= suctionRadius * suctionRadius && !isOnCooldown) {
-            const dist = Math.sqrt(distSq) || 1;
-            // Stronger pull as player gets closer
-            const pullStrength = TELEPORTER_SUCTION_FORCE * (1 - dist / suctionRadius) * deltaTime;
-            newX -= (dx / dist) * pullStrength;
-            newY -= (dy / dist) * pullStrength;
-        }
-
-        // Check if player is within activation radius
-        if (distSq <= activationRadius * activationRadius) {
-            currentTeleporter = teleporterId;
-
-            // Check if player just entered this teleporter
-            if (player.currentTeleporter !== teleporterId) {
-                player.currentTeleporter = teleporterId;
-                player.teleporterEnterTime = currentTime;
-
-                // Teleporter feedback goes to the OWNING SOCKET, not the player
-                // id: a splitter half (`..._split2`) has no socket of its own, so
-                // addressing it dropped the event and the flower charged up with
-                // no spin animation and no iris transition.
-                io.to(getOriginalSocketId(player.id)).emit('teleporterEntered', {
-                    teleporterId,
-                    timeRequired: 1000,
-                    teleportTo: element.properties.teleportTo
-                });
-
-                if (!player.id.startsWith('bot_')) {
-                    console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} entered teleporter, waiting 1 second...`);
-                }
-            }
-
-            // Check if player has been in teleporter for 1 second and is not on cooldown
-            const timeInTeleporter = currentTime - (player.teleporterEnterTime || currentTime);
-
-            if (timeInTeleporter >= 1000 && !isOnCooldown) {
-                const teleportTo = element.properties.teleportTo;
-
-                // Set 5 second player-based cooldown
-                player.teleportCooldown = currentTime + TELEPORTER_COOLDOWN;
-
-                if (teleportTo.serverPort && teleportTo.serverPort !== currentServerPort) {
-                    if (!player.id.startsWith('bot_')) {
-                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleporting to server port ${teleportTo.serverPort} after 1 second delay`);
-                    }
-
-                    player.currentTeleporter = undefined;
-                    player.teleporterEnterTime = undefined;
-
-                    transferPlayerToServer(
-                        player,
-                        teleportTo.serverPort,
-                        teleportTo.x * SCALE_FACTOR,
-                        teleportTo.y * SCALE_FACTOR,
-                        io,
-                        database,
-                        useHttps,
-                        currentServerConfig,
-                        currentServerPort
-                    ).catch(error => {
-                        console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
-                        io.to(getOriginalSocketId(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
-                        player.teleportCooldown = undefined;
-                    });
-
-                    return;
-                } else {
-                    newX = teleportTo.x * SCALE_FACTOR;
-                    newY = teleportTo.y * SCALE_FACTOR;
-
-                    player.currentTeleporter = undefined;
-                    player.teleporterEnterTime = undefined;
-
-                    if (!player.id.startsWith('bot_')) {
-                        console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
-                    }
-
-                    io.to(getOriginalSocketId(player.id)).emit('playerTeleported', {
-                        newX,
-                        newY,
-                        playerId: player.id
-                    });
-                }
-            }
-
-            break;
-        }
+    // The petal pass. Extracted; call site unchanged so the per-player
+    // pipeline order is preserved.
+    {
+        const petals = resolvePlayerPetals(player, newX, newY, deltaTime, deps);
+        newX = petals.x;
+        newY = petals.y;
     }
 
-    // If player is no longer in any teleporter, reset teleporter state
-    if (!currentTeleporter && player.currentTeleporter) {
-        if (!player.id.startsWith('bot_')) {
-            console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} left teleporter`);
-        }
-        player.currentTeleporter = undefined;
-        player.teleporterEnterTime = undefined;
+    // Item pickups. Extracted for testability; call site unchanged so the
+    // per-player pipeline order is preserved.
+    resolvePlayerItemPickups(player, newX, newY, deps);
 
-        io.to(getOriginalSocketId(player.id)).emit('teleporterExited');
+    // Region containment (maze / PVP arena). Extracted; call site unchanged.
+    {
+        const clamped = clampPlayerToRegion(player, newX, newY);
+        newX = clamped.x;
+        newY = clamped.y;
+    }
+
+    // Teleporters. Extracted; call site unchanged. A cross-server transfer
+    // aborts the rest of the pipeline exactly as the inline `return` did — the
+    // position must NOT be committed while the handoff is in flight.
+    {
+        const tp = resolvePlayerTeleporters(player, newX, newY, deltaTime, deps);
+        if (tp.transferred) return;
+        newX = tp.x;
+        newY = tp.y;
     }
 
     const wasInArena = !!player.inPvpArena;

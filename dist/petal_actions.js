@@ -1,19 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.splitPlayers = exports.globalPetalMemory = void 0;
-exports.executePetalActions = executePetalActions;
+exports.PETAL_BEHAVIOURS = exports.splitPlayers = void 0;
 exports.grantShield = grantShield;
 exports.despawnPet = despawnPet;
 exports.despawnAllPlayerPets = despawnAllPlayerPets;
 exports.spawnPet = spawnPet;
+exports.hasPetalBehaviour = hasPetalBehaviour;
+exports.armPetalBehaviour = armPetalBehaviour;
+exports.petalBehaviourCollision = petalBehaviourCollision;
+exports.runPetalBreakBehaviour = runPetalBreakBehaviour;
+exports.updatePetalBehaviours = updatePetalBehaviours;
+exports.cleanupPetalBehaviour = cleanupPetalBehaviour;
+exports.cleanupPlayerPetalBehaviours = cleanupPlayerPetalBehaviours;
 exports.updatePlayerEffects = updatePlayerEffects;
 exports.getDamageMultiplier = getDamageMultiplier;
 exports.getSpeedMultiplier = getSpeedMultiplier;
 exports.getShieldAmount = getShieldAmount;
-exports.executePetalActionsOnSpawn = executePetalActionsOnSpawn;
-exports.updatePetalActions = updatePetalActions;
-exports.handlePetalCollision = handlePetalCollision;
-exports.cleanupPetalActions = cleanupPetalActions;
 exports.cleanupPlayerPetalActionState = cleanupPlayerPetalActionState;
 exports.splitPlayer = splitPlayer;
 exports.switchPlayer = switchPlayer;
@@ -45,6 +47,7 @@ function makePetalKillCtx(io) {
         players: constants_1.players,
         playerUserIds: gameState_1.playerUserIds,
         database: database_1.database,
+        removeEnemyAt: enemyRegistry_1.removeEnemyAt,
         // Stubs — only reachable when trackMobKillTiming !== 'none', which
         // explodePetal/strikeLightning never pass.
         savePlayerProgress: undefined,
@@ -57,10 +60,6 @@ function makePetalKillCtx(io) {
         updateSpecialMobCounts: server_1.updateSpecialMobCounts,
     };
 }
-// Global state for tracking petal actions
-const petalActionStates = new Map();
-// Global memory for petal actions (shared across all petals)
-exports.globalPetalMemory = new Map();
 exports.splitPlayers = new Map();
 // Track which petals have already executed split_player to prevent re-execution
 const splitExecutedPetalIds = new Set();
@@ -71,95 +70,6 @@ const EXPLOSION_THROTTLE_MS = 20;
 const lightningCutterStrikeTimes = new Map(); // playerId -> array of strike times
 const LIGHTNING_CUTTER_RATE_LIMIT_MS = 500; // Minimum 500ms between strikes (2 per second)
 const LIGHTNING_CUTTER_MAX_STRIKES = 2; // Maximum 2 strikes per second
-// Execute petal actions
-function executePetalActions(actionString, context, trigger = 'on_break') {
-    if (!actionString)
-        return;
-    const actions = (0, petals_1.parsePetalActions)(actionString);
-    for (const action of actions) {
-        executeAction(action, context, trigger);
-    }
-}
-// Execute a single action (legacy function for immediate execution like on_break)
-// Note: Control flow actions (if/else/endif, loop/endloop, delay, etc.) are not supported here
-// They should use the state-based execution system via executePetalActionsOnSpawn
-function executeAction(action, context, trigger) {
-    const { player, petalX, petalY, petalSize, enemies, io } = context;
-    switch (action.type) {
-        case 'heal':
-            healPlayer(player, action.value || 10, io, context);
-            break;
-        case 'break':
-            // This action is handled by the petal breaking logic in the server
-            // We don't need to do anything here as the petal will be marked as broken
-            break;
-        case 'damage_boost':
-            applyPlayerEffect(player, 'damage_boost', action.value || 1.5, action.duration || 5000);
-            break;
-        case 'speed_boost':
-            applyPlayerEffect(player, 'speed_boost', action.value || 1.5, action.duration || 5000);
-            break;
-        case 'shield':
-            applyPlayerEffect(player, 'shield', action.value || 50, action.duration || 3000);
-            break;
-        case 'explode':
-            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
-            break;
-        case 'lightning':
-            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, context.petalDamage, context);
-            break;
-        // Control flow and state-based actions are not supported in immediate execution
-        // These should use executePetalActionsOnSpawn instead
-        case 'delay':
-        case 'restart':
-        case 'wait_until_collision':
-        case 'if':
-        case 'else':
-        case 'endif':
-        case 'loop':
-        case 'endloop':
-        case 'goto':
-        case 'label':
-        case 'set_memory':
-        case 'get_memory':
-        case 'add_memory':
-        case 'multiply_memory':
-        case 'set_petal_damage':
-        case 'set_petal_health':
-        case 'set_petal_size':
-        case 'add_petal_damage':
-        case 'add_petal_health':
-        case 'add_petal_size':
-        case 'set_player_damage':
-        case 'set_player_max_health':
-        case 'set_player_speed':
-        case 'add_player_damage':
-        case 'add_player_max_health':
-        case 'add_player_speed':
-        case 'compare':
-        case 'compare_gt':
-        case 'compare_lt':
-        case 'compare_gte':
-        case 'compare_lte':
-        case 'compare_eq':
-        case 'compare_neq':
-            // These actions require state-based execution and are not supported in immediate mode
-            // Silently skip them to avoid console spam
-            break;
-        default:
-            // Only warn about truly unknown action types
-            if (!['heal', 'break', 'damage_boost', 'speed_boost', 'shield', 'explode', 'lightning',
-                'delay', 'restart', 'wait_until_collision', 'if', 'else', 'endif', 'loop', 'endloop',
-                'goto', 'label', 'set_memory', 'get_memory', 'add_memory', 'multiply_memory',
-                'set_petal_damage', 'set_petal_health', 'set_petal_size', 'add_petal_damage',
-                'add_petal_health', 'add_petal_size', 'set_player_damage', 'set_player_max_health',
-                'set_player_speed', 'add_player_damage', 'add_player_max_health', 'add_player_speed',
-                'compare', 'compare_gt', 'compare_lt', 'compare_gte', 'compare_lte', 'compare_eq', 'compare_neq'].includes(action.type)) {
-                console.warn(`Unknown action type: ${action.type}`);
-            }
-            break;
-    }
-}
 // Skill multipliers based on rarity tier
 const SKILL_MULTIPLIERS = {
     common: 1.0,
@@ -367,7 +277,7 @@ function despawnPet(pet, io) {
         for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
             const e = constants_1.enemies[i];
             if (e.id === pet.id || ((0, server_utils_1.isCentipedeBodyType)(e.type) && e.headId === pet.id)) {
-                constants_1.enemies.splice(i, 1);
+                (0, enemyRegistry_1.removeEnemyAt)(i);
                 io.emit('enemyDestroyed', e.id);
             }
         }
@@ -375,7 +285,7 @@ function despawnPet(pet, io) {
     }
     const index = constants_1.enemies.findIndex(e => e.id === pet.id);
     if (index !== -1) {
-        constants_1.enemies.splice(index, 1);
+        (0, enemyRegistry_1.removeEnemyAt)(index);
         io.emit('enemyDestroyed', pet.id);
         // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
     }
@@ -385,7 +295,7 @@ function despawnAllPlayerPets(playerId, io) {
     for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
         if (constants_1.enemies[i].ownerId === playerId) {
             io.emit('enemyDestroyed', constants_1.enemies[i].id);
-            constants_1.enemies.splice(i, 1);
+            (0, enemyRegistry_1.removeEnemyAt)(i);
         }
     }
 }
@@ -562,14 +472,174 @@ function markPetalForBreak(petalId, context) {
                 loadoutIndex: loadoutIndex,
                 petal: player.loadout[loadoutIndex]
             });
-            // Clean up action state
-            cleanupPetalActions(petalId);
+            // Clean up behaviour state, which re-arms a one-shot effect.
+            cleanupPetalBehaviour(petalId);
         }, cooldownTime);
-        // Deactivate action state
-        const actionState = petalActionStates.get(petalId);
-        if (actionState) {
-            actionState.isActive = false;
-        }
+        // The instance stops running until the restore above re-arms it.
+        petalBehaviourStates.delete(petalId);
+    }
+}
+/** `if memory:player:extended == 1` — petals held out rather than orbiting. */
+function petalsExtended(player) {
+    return (player.inputs?.petalExtension || 1.0) > 1.0;
+}
+const strike1000 = (c) => strikeLightning(c.petalX, c.petalY, 1000, c.enemies, c.io, c.player, c.petalDamage, c);
+const explode = (damage) => (c) => explodePetal(c.petalX, c.petalY, c.petalSize, damage, c.enemies, c.io, c.player);
+const heal = (amount) => (c) => healPlayer(c.player, amount, c.io, c);
+const breakSelf = (c) => {
+    if (c.petalId)
+        markPetalForBreak(c.petalId, c);
+};
+/**
+ * Petal type -> behaviour. The scripts each entry replaces are quoted so the
+ * two can be diffed by eye; the `actions` field they came from is gone.
+ */
+exports.PETAL_BEHAVIOURS = {
+    // `wait_until_collision; lightning 1000;`
+    lightning: {
+        waitsForCollision: true,
+        onCollision: strike1000,
+        onBreak: strike1000,
+    },
+    // `lightning 1000; break;`
+    lightning_cutter: {
+        onSpawn: (c) => { strike1000(c); breakSelf(c); },
+        // `break` does nothing in immediate mode; only the strike replays.
+        onBreak: strike1000,
+    },
+    // `if memory:player:extended == 1; explode 100; heal -1; endif;`
+    blood_leaf: {
+        onSpawn: (c) => {
+            if (!petalsExtended(c.player))
+                return;
+            explode(100)(c);
+            heal(-1)(c);
+        },
+        onBreak: (c) => { explode(100)(c); heal(-1)(c); },
+    },
+    // `if memory:player:health < 75; heal 25; endif;`
+    starfish: {
+        onSpawn: (c) => { if (c.player.health < 75)
+            heal(25)(c); },
+        // Unguarded on break — quirk (2).
+        onBreak: heal(25),
+    },
+    // `wait_until_collision; explode 30; break;`
+    bomb: {
+        waitsForCollision: true,
+        onCollision: (c) => { explode(30)(c); breakSelf(c); },
+        onBreak: explode(30),
+    },
+    // `shield 50 10000; delay 10000; restart;`
+    shield: {
+        onSpawn: (c) => applyPlayerEffect(c.player, 'shield', 50, 10000),
+        intervalMs: 10000,
+        onInterval: (c) => applyPlayerEffect(c.player, 'shield', 50, 10000),
+        onBreak: (c) => applyPlayerEffect(c.player, 'shield', 50, 10000),
+    },
+    // --- test petals (not obtainable in normal play) ----------------------
+    // `heal 20; delay 2000; restart;`
+    healing: {
+        onSpawn: heal(20),
+        intervalMs: 2000,
+        onInterval: heal(20),
+        onBreak: heal(20),
+    },
+    // `wait_until_collision; explode 30; break;`
+    explosive: {
+        waitsForCollision: true,
+        onCollision: (c) => { explode(30)(c); breakSelf(c); },
+        onBreak: explode(30),
+    },
+    // `explode 50; delay 3000; restart;`
+    test_explosive: {
+        onSpawn: explode(50),
+        intervalMs: 3000,
+        onInterval: explode(50),
+        onBreak: explode(50),
+    },
+    // NOTE: `action_test` had no behaviour of its own — its script exercised
+    // interpreter features (goto, loops, memory cells, nested ifs) that had no
+    // gameplay meaning. With the interpreter gone the petal has nothing to test,
+    // so it is left with no behaviour rather than given a fabricated one.
+};
+/** Whether this petal type runs anything at all. */
+function hasPetalBehaviour(petalType) {
+    return petalType !== undefined
+        && Object.prototype.hasOwnProperty.call(exports.PETAL_BEHAVIOURS, petalType);
+}
+const petalBehaviourStates = new Map();
+/**
+ * Arm (or refresh) an instance's behaviour. Called every tick while the petal
+ * exists, exactly as `executePetalActionsOnSpawn` was.
+ *
+ * The refresh matters: the context carries the petal's LIVE position, and the
+ * interval effects below fire from wherever the petal currently is. First call
+ * runs the spawn effect; later calls only update the context.
+ */
+function armPetalBehaviour(petalType, context) {
+    if (petalType === undefined || !context.petalId)
+        return;
+    const behaviour = exports.PETAL_BEHAVIOURS[petalType];
+    if (behaviour === undefined)
+        return;
+    const existing = petalBehaviourStates.get(context.petalId);
+    if (existing !== undefined) {
+        existing.context = context;
+        return;
+    }
+    petalBehaviourStates.set(context.petalId, {
+        petalType,
+        context,
+        waitingForCollision: !!behaviour.waitsForCollision,
+        nextFireAt: behaviour.intervalMs !== undefined ? Date.now() + behaviour.intervalMs : 0,
+    });
+    // A petal that parks for a collision runs nothing at spawn.
+    if (!behaviour.waitsForCollision)
+        behaviour.onSpawn?.(context);
+}
+/** A parked instance hit something. Replaces `handlePetalCollision`. */
+function petalBehaviourCollision(petalId, context) {
+    const state = petalBehaviourStates.get(petalId);
+    if (state === undefined || !state.waitingForCollision)
+        return;
+    state.waitingForCollision = false;
+    state.context = context;
+    exports.PETAL_BEHAVIOURS[state.petalType]?.onCollision?.(context);
+}
+/** The break effect — unconditional, see "immediate mode" in the header. */
+function runPetalBreakBehaviour(petalType, context) {
+    if (petalType === undefined)
+        return;
+    exports.PETAL_BEHAVIOURS[petalType]?.onBreak?.(context);
+}
+/** Step the repeating effects. Replaces `updatePetalActions`. */
+function updatePetalBehaviours() {
+    if (petalBehaviourStates.size === 0)
+        return;
+    const now = Date.now();
+    for (const state of petalBehaviourStates.values()) {
+        if (state.waitingForCollision)
+            continue;
+        const behaviour = exports.PETAL_BEHAVIOURS[state.petalType];
+        if (behaviour?.onInterval === undefined || behaviour.intervalMs === undefined)
+            continue;
+        if (now < state.nextFireAt)
+            continue;
+        state.nextFireAt = now + behaviour.intervalMs;
+        behaviour.onInterval(state.context);
+    }
+}
+/** Drop an instance's state, re-arming it. Replaces `cleanupPetalActions`. */
+function cleanupPetalBehaviour(petalId) {
+    petalBehaviourStates.delete(petalId);
+}
+/** Drop every instance belonging to a player, on disconnect / bot removal. */
+function cleanupPlayerPetalBehaviours(playerId) {
+    const prefix = `${playerId}_`;
+    for (const petalId of petalBehaviourStates.keys()) {
+        if (petalId.startsWith(prefix))
+            petalBehaviourStates.delete(petalId);
     }
 }
 // Update player effects (call this in the game loop)
@@ -640,819 +710,6 @@ function getShieldAmount(player) {
     }
     return shield;
 }
-// Get memory value, handling special keys for player stats, loadout, and petal counts
-// Special memory keys:
-//   player:health - Player's current health
-//   player:maxHealth - Player's maximum health
-//   player:damage - Player's damage stat
-//   player:speed - Player's speed multiplier
-//   player:extended - 1 if petals are extended (petalExtension > 1.0), 0 otherwise
-//   loadout:<slot>:exists - 1 if slot has a petal, 0 otherwise
-//   loadout:<slot>:health - Health of petal in slot
-//   loadout:<slot>:maxHealth - Maximum health of petal in slot
-//   loadout:<slot>:damage - Damage of petal in slot
-//   loadout:<slot>:size - Size of petal in slot
-//   loadout:<slot>:onCooldown - 1 if petal is on cooldown, 0 otherwise
-//   petal:count:<petalType> - Total count of that petal type equipped globally across all players
-function getMemoryValue(key, context) {
-    // Handle special memory keys
-    if (key.startsWith('player:')) {
-        const playerKey = key.substring(7);
-        switch (playerKey) {
-            case 'health':
-                return context.player.health;
-            case 'maxHealth':
-                return context.player.maxHealth;
-            case 'damage':
-                return context.player.damage;
-            case 'speed':
-                return context.player.speed_boost || 1.0;
-            case 'extended':
-                // Returns 1 if petals are extended (petalExtension > 1.0), 0 otherwise
-                const petalExtension = context.player.inputs?.petalExtension || 1.0;
-                return petalExtension > 1.0 ? 1 : 0;
-            default:
-                return 0;
-        }
-    }
-    // Handle loadout keys: loadout:<slot>:<property>
-    if (key.startsWith('loadout:')) {
-        const parts = key.substring(8).split(':');
-        if (parts.length >= 2) {
-            const slotIndex = parseInt(parts[0]);
-            const property = parts[1];
-            if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < context.player.loadout.length) {
-                const petal = context.player.loadout[slotIndex];
-                if (!petal || petal.type !== 'petal') {
-                    return property === 'exists' ? 0 : 0;
-                }
-                switch (property) {
-                    case 'exists':
-                        return 1;
-                    case 'health':
-                        return petal.health || 0;
-                    case 'maxHealth':
-                        return petal.maxHealth || 0;
-                    case 'onCooldown':
-                        return petal.onCooldown ? 1 : 0;
-                    case 'damage':
-                        // Get petal damage - check custom value first, then base stats
-                        if (petal.customDamage !== undefined) {
-                            return petal.customDamage;
-                        }
-                        if (petal.petalType && petal.rarity) {
-                            const { getPetalStats } = require('./petals');
-                            const petalStats = getPetalStats(petal.petalType, petal.rarity);
-                            return petalStats?.damage || 0;
-                        }
-                        return 0;
-                    case 'size':
-                        // Get petal size - check custom value first, then base stats
-                        if (petal.customSize !== undefined) {
-                            return petal.customSize;
-                        }
-                        if (petal.petalType && petal.rarity) {
-                            const { getPetalStats } = require('./petals');
-                            const petalStats = getPetalStats(petal.petalType, petal.rarity);
-                            return petalStats?.size || 0;
-                        }
-                        return 0;
-                    default:
-                        return 0;
-                }
-            }
-        }
-        return 0;
-    }
-    // Handle petal count keys: petal:count:<petalType>
-    if (key.startsWith('petal:count:')) {
-        const petalType = key.substring(13);
-        let totalCount = 0;
-        // Count across all players.
-        // Secondary loadout (slots 10+) is storage only — its petals are not in orbit and don't count.
-        for (const playerId in constants_1.players) {
-            const player = constants_1.players[playerId];
-            if (!player || !player.loadout)
-                continue;
-            for (let i = 0; i < player.loadout.length && i < 10; i++) {
-                const item = player.loadout[i];
-                if (item && item.type === 'petal' && item.petalType === petalType) {
-                    const { getPetalStats } = require('./petals');
-                    if (item.rarity) {
-                        const petalStats = getPetalStats(item.petalType, item.rarity);
-                        if (petalStats) {
-                            const count = petalStats.count || 1;
-                            totalCount += count;
-                        }
-                        else {
-                            // If no stats found, count as 1
-                            totalCount += 1;
-                        }
-                    }
-                    else {
-                        // If no rarity, count as 1
-                        totalCount += 1;
-                    }
-                }
-            }
-        }
-        return totalCount;
-    }
-    // Regular memory key
-    return exports.globalPetalMemory.get(key) || 0;
-}
-// Evaluate a condition expression
-function evaluateCondition(condition, context, state) {
-    if (!condition)
-        return false;
-    // Parse condition: supports comparisons like "health < 50", "memory:count > 5", etc.
-    // Handle both "memory:key operator value" and "memory:key==value" formats
-    let parts = [];
-    // Try to split by spaces first
-    const spaceSplit = condition.trim().split(/\s+/);
-    if (spaceSplit.length >= 3) {
-        parts = spaceSplit;
-    }
-    else {
-        // Try to parse operators without spaces: ==, !=, <=, >=, <, >
-        const operatorMatch = condition.match(/(==|!=|<=|>=|<|>)/);
-        if (operatorMatch) {
-            const operator = operatorMatch[0];
-            const operatorIndex = condition.indexOf(operator);
-            parts = [
-                condition.substring(0, operatorIndex).trim(),
-                operator,
-                condition.substring(operatorIndex + operator.length).trim()
-            ];
-        }
-        else {
-            return false;
-        }
-    }
-    if (parts.length < 3) {
-        console.warn(`[CONDITION] Invalid condition format: ${condition}`);
-        return false;
-    }
-    const left = parts[0];
-    const operator = parts[1];
-    const right = parseFloat(parts[2]);
-    if (isNaN(right)) {
-        console.warn(`[CONDITION] Invalid right side (not a number): ${parts[2]}`);
-        return false;
-    }
-    let leftValue = 0;
-    // Check if it's a memory reference
-    if (left.startsWith('memory:')) {
-        const memKey = left.substring(7);
-        leftValue = getMemoryValue(memKey, context);
-    }
-    else {
-        // Check player/petal properties (backward compatibility)
-        switch (left.toLowerCase()) {
-            case 'health':
-                leftValue = context.player.health;
-                break;
-            case 'maxhealth':
-                leftValue = context.player.maxHealth;
-                break;
-            case 'damage':
-                leftValue = context.player.damage;
-                break;
-            case 'petalhealth':
-                if (context.loadoutIndex !== undefined && context.player.loadout[context.loadoutIndex]) {
-                    leftValue = context.player.loadout[context.loadoutIndex].health || 0;
-                }
-                break;
-            case 'petaldamage':
-                leftValue = context.petalDamage;
-                break;
-            default:
-                console.warn(`[CONDITION] Unknown left side: ${left}`);
-                return false;
-        }
-    }
-    // Perform comparison
-    const result = (() => {
-        switch (operator) {
-            case '>':
-                return leftValue > right;
-            case '<':
-                return leftValue < right;
-            case '>=':
-                return leftValue >= right;
-            case '<=':
-                return leftValue <= right;
-            case '==':
-            case '=':
-                return Math.abs(leftValue - right) < 0.001; // Float comparison
-            case '!=':
-                return Math.abs(leftValue - right) >= 0.001;
-            default:
-                console.warn(`[CONDITION] Unknown operator: ${operator}`);
-                return false;
-        }
-    })();
-    // Only log condition errors, not successful evaluations
-    // (removed verbose logging to reduce console spam)
-    return result;
-}
-// Build label map for goto support
-function buildLabelMap(actions) {
-    const labels = new Map();
-    for (let i = 0; i < actions.length; i++) {
-        const action = actions[i];
-        if (action.type === 'label' && action.stringValue) {
-            labels.set(action.stringValue, i);
-        }
-    }
-    return labels;
-}
-// Execute petal actions immediately when spawned
-function executePetalActionsOnSpawn(actionString, context) {
-    if (!actionString || !context.petalId) {
-        return '';
-    }
-    const petalId = context.petalId;
-    // Check if action state already exists - if so, just update the context
-    const existingState = petalActionStates.get(petalId);
-    if (existingState) {
-        // If action state exists but is inactive (completed), don't re-execute
-        if (!existingState.isActive) {
-            return petalId;
-        }
-        // Update context with new position and other dynamic values
-        existingState.context.petalX = context.petalX;
-        existingState.context.petalY = context.petalY;
-        existingState.context.petalSize = context.petalSize;
-        existingState.context.petalDamage = context.petalDamage;
-        existingState.context.enemies = context.enemies;
-        return petalId;
-    }
-    // Check if this petal has already executed split_player - if so, don't create new action state
-    if (splitExecutedPetalIds.has(petalId)) {
-        return petalId;
-    }
-    const actions = (0, petals_1.parsePetalActions)(actionString);
-    // Build label map
-    const labels = buildLabelMap(actions);
-    // Create action state for this petal
-    const actionState = {
-        petalId,
-        playerId: context.player.id,
-        loadoutIndex: context.loadoutIndex || 0,
-        instanceIndex: context.instanceIndex || 0,
-        actions,
-        currentActionIndex: 0,
-        isWaitingForCollision: false,
-        isActive: true,
-        context: context,
-        delayRemaining: 0,
-        controlFlow: {
-            ifStack: [],
-            loopStack: [],
-            labels: labels
-        },
-        lastUpdateTime: Date.now()
-    };
-    petalActionStates.set(petalId, actionState);
-    return petalId;
-}
-// Execute the next action in the sequence (called from update loop)
-function executeNextAction(petalId, deltaTime) {
-    const actionState = petalActionStates.get(petalId);
-    if (!actionState || !actionState.isActive) {
-        return;
-    }
-    // Don't execute if we're waiting for collision
-    if (actionState.isWaitingForCollision) {
-        return;
-    }
-    // Handle delay (consistent rate)
-    if (actionState.delayRemaining > 0) {
-        actionState.delayRemaining -= deltaTime;
-        if (actionState.delayRemaining > 0) {
-            return; // Still waiting
-        }
-        // Delay complete, advance to next action and continue execution
-        actionState.currentActionIndex++;
-        // Continue to execute the next action immediately
-    }
-    const { actions, currentActionIndex, controlFlow } = actionState;
-    // Skip to end of current if block if we're in a false if
-    if (controlFlow.ifStack.length > 0 && !controlFlow.ifStack[controlFlow.ifStack.length - 1]) {
-        // We're in a false if block, skip until we find else or endif
-        let depth = 1;
-        let i = currentActionIndex;
-        while (i < actions.length && depth > 0) {
-            const action = actions[i];
-            if (action.type === 'if')
-                depth++;
-            else if (action.type === 'endif') {
-                depth--;
-                if (depth === 0) {
-                    // Found matching endif, skip the entire if block
-                    actionState.currentActionIndex = i + 1;
-                    controlFlow.ifStack.pop();
-                    return;
-                }
-            }
-            else if (action.type === 'else' && depth === 1) {
-                // Found else, execute else block
-                controlFlow.ifStack[controlFlow.ifStack.length - 1] = true;
-                actionState.currentActionIndex = i + 1;
-                return;
-            }
-            i++;
-        }
-        // If we get here, we didn't find a matching endif (shouldn't happen with valid code)
-        if (depth > 0) {
-            console.warn(`Unmatched if statement in petal actions for ${petalId}`);
-            actionState.currentActionIndex = actions.length; // Skip to end
-            return;
-        }
-    }
-    if (currentActionIndex >= actions.length) {
-        // Actions completed - mark as inactive but don't delete state
-        // This prevents re-execution on next frame
-        const actionState = petalActionStates.get(petalId);
-        if (actionState) {
-            actionState.isActive = false;
-        }
-        return;
-    }
-    const action = actions[currentActionIndex];
-    const { player, petalX, petalY, petalSize, enemies, io } = actionState.context;
-    // Removed verbose action logging to reduce console spam
-    // Debug: log action type if it's not recognized
-    if (!['heal', 'damage_boost', 'speed_boost', 'shield', 'explode', 'lightning', 'break', 'delay', 'restart', 'wait_until_collision', 'if', 'else', 'endif', 'loop', 'endloop', 'goto', 'label', 'set_memory', 'get_memory', 'add_memory', 'multiply_memory', 'set_petal_damage', 'set_petal_health', 'set_petal_size', 'add_petal_damage', 'add_petal_health', 'add_petal_size', 'set_player_damage', 'set_player_max_health', 'set_player_speed', 'add_player_damage', 'add_player_max_health', 'add_player_speed', 'compare', 'compare_gt', 'compare_lt', 'compare_gte', 'compare_lte', 'compare_eq', 'compare_neq'].includes(action.type)) {
-        console.warn(`[DEBUG] Unrecognized action type: "${action.type}" (typeof: ${typeof action.type})`);
-    }
-    switch (action.type) {
-        case 'heal':
-            healPlayer(player, action.value || 10, io, actionState.context);
-            actionState.currentActionIndex++;
-            break;
-        case 'damage_boost':
-            applyPlayerEffect(player, 'damage_boost', action.value || 1.5, action.duration || 5000);
-            actionState.currentActionIndex++;
-            break;
-        case 'speed_boost':
-            applyPlayerEffect(player, 'speed_boost', action.value || 1.5, action.duration || 5000);
-            actionState.currentActionIndex++;
-            break;
-        case 'shield':
-            applyPlayerEffect(player, 'shield', action.value || 50, action.duration || 3000);
-            actionState.currentActionIndex++;
-            break;
-        case 'explode':
-            explodePetal(petalX, petalY, petalSize, action.value || 30, enemies, io, player);
-            actionState.currentActionIndex++;
-            break;
-        case 'lightning':
-            strikeLightning(petalX, petalY, action.value || 100, enemies, io, player, actionState.context.petalDamage, actionState.context);
-            actionState.currentActionIndex++;
-            break;
-        case 'break':
-            markPetalForBreak(petalId, actionState.context);
-            actionState.currentActionIndex++;
-            break;
-        case 'delay':
-            // Set delay in seconds (consistent rate)
-            actionState.delayRemaining = (action.value || 1000) / 1000; // Convert ms to seconds
-            // Don't increment index yet, will be handled next frame
-            break;
-        case 'restart':
-            // Restart from beginning
-            actionState.currentActionIndex = 0;
-            controlFlow.ifStack = [];
-            controlFlow.loopStack = [];
-            break;
-        case 'wait_until_collision':
-            // Set waiting state
-            actionState.isWaitingForCollision = true;
-            // Don't advance action yet, it will be handled when collision occurs
-            break;
-        case 'if':
-            // Evaluate condition
-            const conditionStr = action.condition || '';
-            const conditionResult = evaluateCondition(conditionStr, actionState.context, actionState);
-            controlFlow.ifStack.push(conditionResult);
-            actionState.currentActionIndex++;
-            break;
-        case 'else':
-            // If we're here and the if was true, skip to endif
-            if (controlFlow.ifStack.length > 0 && controlFlow.ifStack[controlFlow.ifStack.length - 1]) {
-                // If was true, skip else block
-                let depth = 1;
-                let i = currentActionIndex + 1;
-                while (i < actions.length && depth > 0) {
-                    const action = actions[i];
-                    if (action.type === 'if')
-                        depth++;
-                    else if (action.type === 'endif') {
-                        depth--;
-                        if (depth === 0) {
-                            actionState.currentActionIndex = i + 1;
-                            controlFlow.ifStack.pop();
-                            return;
-                        }
-                    }
-                    i++;
-                }
-            }
-            else {
-                // If was false, execute else block
-                if (controlFlow.ifStack.length > 0) {
-                    controlFlow.ifStack[controlFlow.ifStack.length - 1] = true;
-                }
-                actionState.currentActionIndex++;
-            }
-            break;
-        case 'endif':
-            // End if block
-            if (controlFlow.ifStack.length > 0) {
-                controlFlow.ifStack.pop();
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'loop':
-            // Start loop
-            const loopCount = action.value || -1; // -1 means infinite
-            controlFlow.loopStack.push({
-                startIndex: currentActionIndex,
-                count: loopCount,
-                currentIteration: 0
-            });
-            actionState.currentActionIndex++;
-            break;
-        case 'endloop':
-            // End loop - check if we should continue
-            if (controlFlow.loopStack.length > 0) {
-                const loop = controlFlow.loopStack[controlFlow.loopStack.length - 1];
-                loop.currentIteration++;
-                if (loop.count === -1 || loop.currentIteration < loop.count) {
-                    // Continue loop
-                    actionState.currentActionIndex = loop.startIndex + 1; // +1 to skip the loop action itself
-                }
-                else {
-                    // Loop complete
-                    controlFlow.loopStack.pop();
-                    actionState.currentActionIndex++;
-                }
-            }
-            else {
-                actionState.currentActionIndex++;
-            }
-            break;
-        case 'goto':
-            // Jump to label
-            const labelName = action.stringValue || '';
-            const labelIndex = controlFlow.labels.get(labelName);
-            if (labelIndex !== undefined) {
-                actionState.currentActionIndex = labelIndex + 1; // +1 to skip the label action itself
-            }
-            else {
-                console.warn(`Label not found: ${labelName}`);
-                actionState.currentActionIndex++;
-            }
-            break;
-        case 'label':
-            // Label marker - just skip it
-            actionState.currentActionIndex++;
-            break;
-        case 'set_memory':
-            // Set global memory value or writable petal stats
-            const memKey = action.stringValue || '';
-            // Check if value is a memory reference (stored in condition field as a workaround)
-            let memValue = action.value || 0;
-            if (isNaN(memValue) && action.condition && action.condition.startsWith('memory:')) {
-                // Resolve memory reference
-                const memRefKey = action.condition.substring(7);
-                memValue = getMemoryValue(memRefKey, actionState.context);
-            }
-            // Handle writable loadout stats: loadout:<slot>:damage, loadout:<slot>:size
-            if (memKey.startsWith('loadout:')) {
-                const parts = memKey.substring(8).split(':');
-                if (parts.length >= 2) {
-                    const slotIndex = parseInt(parts[0]);
-                    const property = parts[1];
-                    if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < player.loadout.length) {
-                        const petal = player.loadout[slotIndex];
-                        if (petal && petal.type === 'petal') {
-                            if (property === 'damage') {
-                                petal.customDamage = memValue;
-                            }
-                            else if (property === 'size') {
-                                petal.customSize = memValue;
-                            }
-                            else {
-                                console.warn(`Cannot set loadout property: ${property} (only damage and size are writable)`);
-                            }
-                        }
-                    }
-                }
-            }
-            else if (!memKey.startsWith('player:') && !memKey.startsWith('petal:count:')) {
-                // Regular memory key
-                exports.globalPetalMemory.set(memKey, memValue);
-            }
-            else {
-                console.warn(`Cannot set special memory key: ${memKey}`);
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'get_memory':
-            // Get memory value (can be used in conditions via memory:key syntax)
-            // This action doesn't do anything by itself, but values can be accessed via memory:key in conditions
-            actionState.currentActionIndex++;
-            break;
-        case 'add_memory':
-            // Add to global memory value or writable petal stats
-            const addMemKey = action.stringValue || '';
-            const addMemValue = action.value || 0;
-            // Handle writable loadout stats: loadout:<slot>:damage, loadout:<slot>:size
-            if (addMemKey.startsWith('loadout:')) {
-                const parts = addMemKey.substring(8).split(':');
-                if (parts.length >= 2) {
-                    const slotIndex = parseInt(parts[0]);
-                    const property = parts[1];
-                    if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < player.loadout.length) {
-                        const petal = player.loadout[slotIndex];
-                        if (petal && petal.type === 'petal') {
-                            if (property === 'damage') {
-                                const currentValue = getMemoryValue(`loadout:${slotIndex}:damage`, actionState.context);
-                                petal.customDamage = currentValue + addMemValue;
-                            }
-                            else if (property === 'size') {
-                                const currentValue = getMemoryValue(`loadout:${slotIndex}:size`, actionState.context);
-                                petal.customSize = currentValue + addMemValue;
-                            }
-                            else {
-                                console.warn(`Cannot modify loadout property: ${property} (only damage and size are writable)`);
-                            }
-                        }
-                    }
-                }
-            }
-            else if (!addMemKey.startsWith('player:') && !addMemKey.startsWith('petal:count:')) {
-                // Regular memory key
-                const currentMemValue = exports.globalPetalMemory.get(addMemKey) || 0;
-                exports.globalPetalMemory.set(addMemKey, currentMemValue + addMemValue);
-            }
-            else {
-                console.warn(`Cannot modify special memory key: ${addMemKey}`);
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'multiply_memory':
-            // Multiply global memory value or writable petal stats
-            const multMemKey = action.stringValue || '';
-            const multMemValue = action.value || 1;
-            // Handle writable loadout stats: loadout:<slot>:damage, loadout:<slot>:size
-            if (multMemKey.startsWith('loadout:')) {
-                const parts = multMemKey.substring(8).split(':');
-                if (parts.length >= 2) {
-                    const slotIndex = parseInt(parts[0]);
-                    const property = parts[1];
-                    if (!isNaN(slotIndex) && slotIndex >= 0 && slotIndex < player.loadout.length) {
-                        const petal = player.loadout[slotIndex];
-                        if (petal && petal.type === 'petal') {
-                            if (property === 'damage') {
-                                const currentValue = getMemoryValue(`loadout:${slotIndex}:damage`, actionState.context);
-                                petal.customDamage = currentValue * multMemValue;
-                            }
-                            else if (property === 'size') {
-                                const currentValue = getMemoryValue(`loadout:${slotIndex}:size`, actionState.context);
-                                petal.customSize = currentValue * multMemValue;
-                            }
-                            else {
-                                console.warn(`Cannot modify loadout property: ${property} (only damage and size are writable)`);
-                            }
-                        }
-                    }
-                }
-            }
-            else if (!multMemKey.startsWith('player:') && !multMemKey.startsWith('petal:count:')) {
-                // Regular memory key
-                const currentMultMemValue = exports.globalPetalMemory.get(multMemKey) || 0;
-                exports.globalPetalMemory.set(multMemKey, currentMultMemValue * multMemValue);
-            }
-            else {
-                console.warn(`Cannot modify special memory key: ${multMemKey}`);
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'set_petal_damage':
-            // Set petal damage (modifies context and petal object)
-            actionState.context.petalDamage = action.value || 0;
-            // Also store on petal object for memory access
-            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
-                const petal = player.loadout[actionState.loadoutIndex];
-                if (petal && petal.type === 'petal') {
-                    petal.customDamage = action.value || 0;
-                }
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'set_petal_health':
-            // Set petal health
-            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
-                const petal = player.loadout[actionState.loadoutIndex];
-                if (petal) {
-                    petal.health = action.value || 0;
-                    petal.maxHealth = Math.max(petal.maxHealth || 0, petal.health);
-                }
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'set_petal_size':
-            // Set petal size (modifies context and petal object)
-            // Support memory references in stringValue if value is not provided
-            let sizeValue = action.value;
-            if (sizeValue === undefined || sizeValue === null || isNaN(sizeValue)) {
-                // Try to get from stringValue if it's a memory reference
-                if (action.stringValue && action.stringValue.startsWith('memory:')) {
-                    const memKey = action.stringValue.substring(7);
-                    sizeValue = getMemoryValue(memKey, actionState.context);
-                }
-                else {
-                    sizeValue = 1; // Default
-                }
-            }
-            actionState.context.petalSize = sizeValue;
-            // Also store on petal object for memory access
-            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
-                const petal = player.loadout[actionState.loadoutIndex];
-                if (petal && petal.type === 'petal') {
-                    petal.customSize = sizeValue;
-                }
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'add_petal_damage':
-            // Add to petal damage (modifies context and petal object)
-            actionState.context.petalDamage += action.value || 0;
-            // Also update petal object
-            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
-                const petal = player.loadout[actionState.loadoutIndex];
-                if (petal && petal.type === 'petal') {
-                    const currentValue = getMemoryValue(`loadout:${actionState.loadoutIndex}:damage`, actionState.context);
-                    petal.customDamage = currentValue + (action.value || 0);
-                }
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'add_petal_health':
-            // Add to petal health
-            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
-                const petal = player.loadout[actionState.loadoutIndex];
-                if (petal) {
-                    petal.health = Math.min((petal.health || 0) + (action.value || 0), petal.maxHealth || Infinity);
-                }
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'add_petal_size':
-            // Add to petal size (modifies context and petal object)
-            actionState.context.petalSize += action.value || 0;
-            // Also update petal object
-            if (actionState.loadoutIndex !== undefined && player.loadout[actionState.loadoutIndex]) {
-                const petal = player.loadout[actionState.loadoutIndex];
-                if (petal && petal.type === 'petal') {
-                    const currentValue = getMemoryValue(`loadout:${actionState.loadoutIndex}:size`, actionState.context);
-                    petal.customSize = currentValue + (action.value || 0);
-                }
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'set_player_damage':
-            // Set player damage
-            player.damage = action.value || 0;
-            actionState.currentActionIndex++;
-            break;
-        case 'set_player_max_health':
-            // Set player max health
-            const newMaxHealth = action.value || 0;
-            player.maxHealth = newMaxHealth;
-            player.health = Math.min(player.health, newMaxHealth);
-            actionState.currentActionIndex++;
-            break;
-        case 'set_player_speed':
-            // Set player speed boost (modifies speed_boost property)
-            player.speed_boost = action.value || 1;
-            actionState.currentActionIndex++;
-            break;
-        case 'add_player_damage':
-            // Add to player damage
-            player.damage += action.value || 0;
-            actionState.currentActionIndex++;
-            break;
-        case 'add_player_max_health':
-            // Add to player max health
-            const addedMaxHealth = action.value || 0;
-            player.maxHealth += addedMaxHealth;
-            player.health += addedMaxHealth; // Also add to current health
-            actionState.currentActionIndex++;
-            break;
-        case 'add_player_speed':
-            // Add to player speed boost
-            player.speed_boost += action.value || 0;
-            actionState.currentActionIndex++;
-            break;
-        case 'compare':
-        case 'compare_gt':
-        case 'compare_lt':
-        case 'compare_gte':
-        case 'compare_lte':
-        case 'compare_eq':
-        case 'compare_neq':
-            // Comparison actions - store result in memory
-            // Format: compare <left_key> <right_value> [result_key]
-            // left_key can be a memory key (including special keys like player:health, loadout:0:health, etc.)
-            const compareParts = (action.stringValue || '').split(' ');
-            const compareLeftKey = compareParts[0] || 'compare_result';
-            const compareRight = action.value || 0;
-            const compareResultKey = compareParts[1] || 'compare_result';
-            // Get left value using getMemoryValue (handles special keys)
-            let compareLeft = 0;
-            if (compareLeftKey.startsWith('memory:')) {
-                const memKey = compareLeftKey.substring(7);
-                compareLeft = getMemoryValue(memKey, actionState.context);
-            }
-            else {
-                // Direct memory key
-                compareLeft = getMemoryValue(compareLeftKey, actionState.context);
-            }
-            const compType = action.comparisonType || 'eq';
-            let compareResult = 0;
-            switch (compType) {
-                case 'gt':
-                    compareResult = compareLeft > compareRight ? 1 : 0;
-                    break;
-                case 'lt':
-                    compareResult = compareLeft < compareRight ? 1 : 0;
-                    break;
-                case 'gte':
-                    compareResult = compareLeft >= compareRight ? 1 : 0;
-                    break;
-                case 'lte':
-                    compareResult = compareLeft <= compareRight ? 1 : 0;
-                    break;
-                case 'eq':
-                    compareResult = Math.abs(compareLeft - compareRight) < 0.001 ? 1 : 0;
-                    break;
-                case 'neq':
-                    compareResult = Math.abs(compareLeft - compareRight) >= 0.001 ? 1 : 0;
-                    break;
-            }
-            // Store result in memory (only if it's a regular key)
-            if (!compareResultKey.startsWith('player:') && !compareResultKey.startsWith('loadout:') && !compareResultKey.startsWith('petal:count:')) {
-                exports.globalPetalMemory.set(compareResultKey, compareResult);
-            }
-            actionState.currentActionIndex++;
-            break;
-        case 'split_player':
-            // Check if this petal has already executed split_player
-            if (splitExecutedPetalIds.has(petalId)) {
-                console.log(`[PetalActions] Petal ${petalId} already executed split_player, skipping`);
-                actionState.currentActionIndex++;
-                break;
-            }
-            splitPlayer(player, io);
-            splitExecutedPetalIds.add(petalId);
-            actionState.currentActionIndex++;
-            break;
-        case 'switch_player':
-            switchPlayer(player, io);
-            actionState.currentActionIndex++;
-            break;
-        default:
-            console.warn(`Unknown action type: ${action.type}`, action);
-            actionState.currentActionIndex++;
-    }
-}
-// Update all active petal actions (call this in game loop with consistent rate)
-function updatePetalActions(deltaTime) {
-    // Update all active petal actions
-    for (const [petalId, actionState] of petalActionStates.entries()) {
-        if (!actionState.isActive)
-            continue;
-        // Execute next action (this will handle delays and progress through actions)
-        executeNextAction(petalId, deltaTime);
-    }
-}
-// Handle petal collision for wait_until_collision actions
-function handlePetalCollision(petalId, context) {
-    const actionState = petalActionStates.get(petalId);
-    if (!actionState || !actionState.isWaitingForCollision)
-        return;
-    actionState.isWaitingForCollision = false;
-    actionState.currentActionIndex++;
-}
-// Clean up petal action state
-function cleanupPetalActions(petalId) {
-    petalActionStates.delete(petalId);
-}
 // Drop per-player entries from the module-level petal-action tracking maps so
 // they don't accumulate for the whole server lifetime. lightningCutterStrikeTimes
 // is keyed by playerId (a fresh socket id every reconnect) and splitExecutedPetalIds
@@ -1460,6 +717,7 @@ function cleanupPetalActions(petalId) {
 // every player/bot churn over a long session. Called on disconnect and bot removal.
 function cleanupPlayerPetalActionState(playerId) {
     lightningCutterStrikeTimes.delete(playerId);
+    cleanupPlayerPetalBehaviours(playerId);
     const prefix = `${playerId}_`;
     for (const petalId of splitExecutedPetalIds) {
         if (petalId.startsWith(prefix))
@@ -1634,11 +892,13 @@ function syncSplitStars(player) {
             half.stars = player.stars;
     }
 }
-// Update petal position in action context
+// Keep a live instance's behaviour context on the petal's real position, so an
+// interval effect (shield, the test heal/explode petals) fires from where the
+// petal actually is rather than from wherever it was built.
 function updatePetalPosition(petalId, x, y) {
-    const actionState = petalActionStates.get(petalId);
-    if (actionState) {
-        actionState.context.petalX = x;
-        actionState.context.petalY = y;
+    const state = petalBehaviourStates.get(petalId);
+    if (state) {
+        state.context.petalX = x;
+        state.context.petalY = y;
     }
 }

@@ -86,6 +86,9 @@ function makePlayer(id, x, y) {
 function makeRuntime() {
     return (0, ecsRuntime_1.createEcsRuntime)({
         lookupPlayer: () => undefined,
+        // This bench drives the schedulers directly; the post-movement pipeline
+        // is the game\'s, not the bench\'s.
+        runPlayerPipeline: () => { },
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },

@@ -471,7 +471,7 @@ function despawnDistantEnemies() {
         const enemy = constants_2.enemies[index];
         // Clean up enemy data structures before removal to prevent memory leaks
         (0, utils_1.cleanupEnemy)(enemy);
-        constants_2.enemies.splice(index, 1);
+        (0, enemyRegistry_1.removeEnemyAt)(index);
         io.emit('enemyDestroyed', enemy.id);
         // console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
     }
@@ -496,7 +496,7 @@ function clearAllMobs() {
         if (enemy.ownerId)
             continue; // keep player pets
         (0, utils_1.cleanupEnemy)(enemy);
-        constants_2.enemies.splice(i, 1);
+        (0, enemyRegistry_1.removeEnemyAt)(i);
         io.emit('enemyDestroyed', enemy.id);
         removed++;
     }
@@ -939,6 +939,7 @@ const killCtx = {
     players: constants_2.players,
     playerUserIds: gameState_1.playerUserIds,
     database: database_1.database,
+    removeEnemyAt: enemyRegistry_1.removeEnemyAt,
     savePlayerProgress,
     addXPToPlayer,
     handleMobDrops,
@@ -1036,7 +1037,7 @@ function updatePeriodicSpawns() {
         if (enemy.despawnAt !== undefined && currentTime >= enemy.despawnAt && !enemy.isDead) {
             enemy.isDead = true;
             (0, utils_1.cleanupEnemy)(enemy);
-            constants_2.enemies.splice(i, 1);
+            (0, enemyRegistry_1.removeEnemyAt)(i);
             io.emit('enemyDestroyed', enemy.id);
         }
     }
@@ -1141,7 +1142,7 @@ function updatePoisonEffects(deltaTime) {
                     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
                     // Clean up enemy data structures before removal to prevent memory leaks
                     (0, utils_1.cleanupEnemy)(enemy);
-                    constants_2.enemies.splice(index, 1);
+                    (0, enemyRegistry_1.removeEnemyAt)(index);
                     updateSpecialMobCounts();
                     io.emit('enemyDestroyed', enemy.id);
                     // Try to spawn a new enemy (admits itself)
@@ -1235,6 +1236,15 @@ function getEcsRuntime() {
         return _ecsRuntime;
     _ecsRuntime = (0, ecsRuntime_1.createEcsRuntime)({
         lookupPlayer: (socketId) => constants_2.players[socketId],
+        // The post-movement player pipeline. Iterates `players` in the same
+        // order the bare loop did, because that order decides who lands the
+        // killing blow when two players hit one mob on the same tick — see
+        // EcsRuntimeOptions.runPlayerPipeline.
+        runPlayerPipeline: (deltaTime) => {
+            for (const id in constants_2.players) {
+                (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
+            }
+        },
         // Pet kills are credited to the owning PLAYER, matching trackDamage.
         creditDamage: (victim, ownerPlayer, amount) => {
             const world = _ecsRuntime.world;
@@ -1425,7 +1435,7 @@ function reapDeadEnemies() {
         }
         // Clean up enemy data structures before removal to prevent memory leaks
         (0, utils_1.cleanupEnemy)(enemy);
-        constants_2.enemies.splice(i, 1);
+        (0, enemyRegistry_1.removeEnemyAt)(i);
         updateSpecialMobCounts();
     }
 }
@@ -1643,10 +1653,12 @@ function runSimulationStep(deltaTime, deltaMs, mobCatchupCalls) {
     // flower mobCatchupCalls times its distance.
     playerRuntime.tickPlayers(deltaTime, deltaMs, movementNow);
     (0, ecsSync_1.syncPlayersFromEcs)(playerRuntime.world, constants_2.players);
-    for (const id in constants_2.players) {
-        (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
-    }
-    (0, petal_actions_1.updatePetalActions)(deltaTime);
+    // The player pipeline now runs as a scheduled system rather than a bare
+    // loop here, so it is phase-ordered and appears in the per-system timings.
+    // It still runs at exactly this point — after the movement window closed
+    // with syncPlayersFromEcs — and still iterates players in the same order.
+    playerRuntime.tickPlayerPipeline(deltaTime, deltaMs, movementNow);
+    (0, petal_actions_1.updatePetalBehaviours)();
     updatePoisonEffects(deltaTime);
     updatePlayerPoison(deltaTime);
     // Expire mob slows before movement runs so a lapsed slow doesn't cost the

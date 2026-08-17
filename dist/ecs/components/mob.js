@@ -13,7 +13,7 @@
  * pass touches the fewest columns possible.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IsObstacle = exports.IsEnemy = exports.IsIdle = exports.GridStamps = exports.MobStats = exports.RenderFlip = exports.ChallengeMob = exports.DpsTracker = exports.CentipedeSegment = exports.PetOwner = exports.SpawnWaveState = exports.PeriodicSpawner = exports.HoleTether = exports.Wobble = exports.PassiveMotion = exports.Wander = exports.MobAI = exports.MobKind = void 0;
+exports.IsObstacle = exports.IsEnemy = exports.IsIdle = exports.LegacyShell = exports.GridStamps = exports.MobStats = exports.RenderFlip = exports.ChallengeMob = exports.DpsTracker = exports.CentipedeSegment = exports.PetOwner = exports.SpawnWaveState = exports.PeriodicSpawner = exports.HoleTether = exports.Wobble = exports.PassiveMotion = exports.Wander = exports.MobAI = exports.MobKind = void 0;
 const component_1 = require("../component");
 /**
  * What kind of mob this is.
@@ -143,6 +143,33 @@ exports.MobStats = (0, component_1.defineComponent)('MobStats', {
 exports.GridStamps = (0, component_1.defineComponent)('GridStamps', {
     collisionStamp: 'u32',
     queryStamp: 'u32',
+});
+/**
+ * The legacy `Enemy` object this entity mirrors, for as long as one exists.
+ *
+ * ---------------------------------------------------------------------------
+ * This component is scaffolding, and is meant to be deleted
+ * ---------------------------------------------------------------------------
+ * While the cutover is unfinished a mob exists TWICE — as an entity here and as
+ * an `Enemy` in the legacy `enemies[]` array — and the two have to be related
+ * once per tick, in both directions, for every mob. That relation used to be
+ * the string id: `world.lookup(enemy.id)` in each bridge pass plus a
+ * `Set<string>` of live ids in the reconcile, which is three-odd string hashes
+ * per mob per tick and measured as the single largest remaining item in the
+ * bridge. Holding the pointer instead makes the relation free, and lets both
+ * passes iterate ECS CHUNKS (hoisting every column lookup above the row loop)
+ * rather than walking `enemies[]` and resolving each handle.
+ *
+ * It is deliberately one-directional: the entity knows its shell, the shell
+ * does not know its entity. `Enemy` is built by a single factory whose key set
+ * is load-bearing (see server_utils.makeEnemy) and is JSON-encoded onto the
+ * wire, so the pointer lives on the side that can absorb it.
+ *
+ * When legacy stops owning mob lifecycle, this component and both sync passes
+ * go away together — nothing else should ever read it.
+ */
+exports.LegacyShell = (0, component_1.defineComponent)('LegacyShell', {
+    ref: 'obj',
 });
 /**
  * The mob is idling this tick — not chasing, not walking home, not a sandstorm.
