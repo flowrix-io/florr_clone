@@ -13,6 +13,7 @@ const database_1 = require("../../database");
 const botManager_1 = require("../botManager");
 const commands_1 = require("../commands");
 const tempAdmin_1 = require("../tempAdmin");
+const chatMute_1 = require("../chatMute");
 const imageModeration_1 = require("../imageModeration");
 const guildManager_1 = require("../guildManager");
 const gameState_1 = require("../gameState");
@@ -499,6 +500,8 @@ function registerChatHandlers(ctx) {
                 return;
             const guildMsg = message.substring(3).trim();
             if (guildMsg) {
+                if ((0, chatMute_1.rejectIfMuted)(io, socket.id, socket.username))
+                    return;
                 const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
                 if (!guild) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
@@ -516,6 +519,8 @@ function registerChatHandlers(ctx) {
         if (message.startsWith('/s ')) {
             const squadMsg = message.substring(3).trim();
             if (squadMsg) {
+                if ((0, chatMute_1.rejectIfMuted)(io, socket.id, socket.username))
+                    return;
                 const squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
                 if (!squad) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
@@ -849,6 +854,10 @@ function registerChatHandlers(ctx) {
             });
             return;
         }
+        // Everything above this point is a command; from here the message is
+        // broadcast to other players, which is exactly what a mute blocks.
+        if ((0, chatMute_1.rejectIfMuted)(io, socket.id, socket.username))
+            return;
         const player = (0, gameState_1.getSessionPlayer)(socket.id);
         const username = socket.username;
         const playerName = player ? player.name : username;

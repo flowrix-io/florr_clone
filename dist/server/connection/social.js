@@ -10,6 +10,7 @@ exports.registerSocialHandlers = registerSocialHandlers;
 const guildManager_1 = require("../guildManager");
 const gameState_1 = require("../gameState");
 const squadManager_1 = require("../squadManager");
+const chatMute_1 = require("../chatMute");
 function registerSocialHandlers(ctx) {
     const { io, socket } = ctx;
     socket.on('squadCreate', () => {
@@ -256,6 +257,8 @@ function registerSocialHandlers(ctx) {
     socket.on('guildChat', (message) => {
         if (!socket.username || typeof message !== 'string')
             return;
+        if ((0, chatMute_1.rejectIfMuted)(io, socket.id, socket.username))
+            return;
         const guild = (0, guildManager_1.getGuildForUsername)(socket.username);
         if (!guild) {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
@@ -267,6 +270,8 @@ function registerSocialHandlers(ctx) {
     });
     socket.on('squadChat', (message) => {
         if (!socket.username)
+            return;
+        if ((0, chatMute_1.rejectIfMuted)(io, socket.id, socket.username))
             return;
         const squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
         if (!squad) {

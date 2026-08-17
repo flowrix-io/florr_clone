@@ -81,6 +81,12 @@ interface User {
     isPlainText?: boolean; // Flag to track if password needs migration
     admin?: boolean; // Admin flag for server command access
     lastActiveAt?: number; // Timestamp of last successful authentication, used for DAU tracking
+    // Chat mute (`/admin mute`). Stored on the account, not the socket, so it
+    // survives a reconnect, a second tab and a server restart — unlike the
+    // deliberately session-scoped admin grants in server/tempAdmin.ts.
+    muted?: boolean;
+    mutedAt?: number;
+    mutedBy?: string; // Username of the admin who muted them ('console' for stdin)
 }
 
 /**
@@ -261,6 +267,20 @@ let cachedTopRankUserIds: { top10: Set<string>; top20: Set<string> } | null = nu
 let cachedTopRankUserIdsAt = 0;
 const TOP_RANK_CACHE_MS = 15000;
 
+/**
+ * Resolve `username` to the key it is actually stored under — accounts keep the
+ * casing they registered with, but admins type names as they see them in chat.
+ */
+function findUsernameKey(username: string): string | null {
+    if (!username) return null;
+    if (db.users[username]) return username;
+    const key = username.toLowerCase();
+    for (const name in db.users) {
+        if (name.toLowerCase() === key) return name;
+    }
+    return null;
+}
+
 export const database = {
     // User-related functions
     createUser: (username: string, password: string): User | null => {
@@ -382,6 +402,40 @@ export const database = {
     isUserAdmin: (username: string): boolean => {
         const user = db.users[username];
         return user?.admin === true;
+    },
+
+    /** The stored spelling of `username`, or null if no such account exists. */
+    getCanonicalUsername: (username: string): string | null => findUsernameKey(username),
+
+    // Is this account barred from chat? Consulted on every chat send, so it stays
+    // a plain map lookup — the case-insensitive walk is only the fallback for the
+    // rare caller that doesn't already hold the canonical username.
+    isUserMuted: (username: string): boolean => {
+        if (!username) return false;
+        const user = db.users[username] || db.users[findUsernameKey(username) || ''];
+        return user?.muted === true;
+    },
+
+    /**
+     * Mute or unmute an account for chat. Works on offline accounts too, since
+     * the flag lives on the user record. Returns the canonical username on
+     * success, or null if no such account exists.
+     */
+    setUserMuted: (username: string, muted: boolean, mutedBy?: string): string | null => {
+        const key = db.users[username] ? username : findUsernameKey(username);
+        if (!key) return null;
+        const user = db.users[key];
+        if (muted) {
+            user.muted = true;
+            user.mutedAt = Date.now();
+            user.mutedBy = mutedBy || 'console';
+        } else {
+            delete user.muted;
+            delete user.mutedAt;
+            delete user.mutedBy;
+        }
+        writeDatabase();
+        return key;
     },
 
     // Case-insensitive lookup of registered users, used to validate guild targets

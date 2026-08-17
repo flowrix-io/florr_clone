@@ -9,6 +9,7 @@ import { acceptGuildInvite, broadcastGuildUpdate, createGuild, declineGuildInvit
 import { getSessionPlayer } from '../gameState';
 import { MAX_SQUAD_SIZE, acceptInvite, createSquad, declineInvite, findPlayerByUsername, getSquadForPlayer, inviteToSquad, leaveSquad as leaveSquadFn, sendSquadChatMessage, sendSquadSystemMessage } from '../squadManager';
 import { ConnectionContext } from './context';
+import { rejectIfMuted } from '../chatMute';
 
 export function registerSocialHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -249,6 +250,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
 
     socket.on('guildChat', (message: string) => {
         if (!socket.username || typeof message !== 'string') return;
+        if (rejectIfMuted(io, socket.id, socket.username)) return;
         const guild = getGuildForUsername(socket.username);
         if (!guild) {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
@@ -261,6 +263,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
 
     socket.on('squadChat', (message: string) => {
         if (!socket.username) return;
+        if (rejectIfMuted(io, socket.id, socket.username)) return;
         const squad = getSquadForPlayer(socket.id);
         if (!squad) {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });

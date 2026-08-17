@@ -11,6 +11,7 @@ import { ApiKey, database } from '../../database';
 import { getBotLevelForName, getBotLoadoutForName, triggerBotRaid } from '../botManager';
 import { getAdminHelpText, handleAdminCommand } from '../commands';
 import { hasTempAdmin } from '../tempAdmin';
+import { rejectIfMuted } from '../chatMute';
 import { filterChatImages, messageHasImage } from '../imageModeration';
 import { MAX_GUILD_SIZE, acceptGuildInvite, broadcastGuildUpdate, buildGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, listGuilds, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
 import { getSessionPlayer } from '../gameState';
@@ -452,6 +453,7 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
             if (!socket.username) return;
             const guildMsg = message.substring(3).trim();
             if (guildMsg) {
+                if (rejectIfMuted(io, socket.id, socket.username)) return;
                 const guild = getGuildForUsername(socket.username);
                 if (!guild) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
@@ -470,6 +472,7 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
         if (message.startsWith('/s ')) {
             const squadMsg = message.substring(3).trim();
             if (squadMsg) {
+                if (rejectIfMuted(io, socket.id, socket.username)) return;
                 const squad = getSquadForPlayer(socket.id);
                 if (!squad) {
                     io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a squad.', timestamp: Date.now() });
@@ -815,6 +818,10 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
             });
             return;
         }
+
+        // Everything above this point is a command; from here the message is
+        // broadcast to other players, which is exactly what a mute blocks.
+        if (rejectIfMuted(io, socket.id, socket.username)) return;
 
         const player = getSessionPlayer(socket.id);
         const username = socket.username;

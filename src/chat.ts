@@ -58,6 +58,8 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/admin grant_admin', description: 'Lend a player the admin console until they respawn: /admin grant_admin <player>', isAdmin: true },
     { command: '/admin revoke_admin', description: 'Take back a temporary admin grant: /admin revoke_admin <player>', isAdmin: true },
     { command: '/admin list_admins', description: 'List active temporary admin grants', isAdmin: true },
+    { command: '/admin mute', description: 'Bar a player from chat until unmuted: /admin mute <player>', isAdmin: true },
+    { command: '/admin unmute', description: 'Let a muted player chat again: /admin unmute <player>', isAdmin: true },
     { command: '/admin delete_guests', description: 'Delete default guest accounts', isAdmin: true },
     { command: '/admin list_today_logins', description: 'List accounts active in last 24h', isAdmin: true },
     { command: '/admin list_active', description: 'List accounts active in last 24h (shorthand)', isAdmin: true },

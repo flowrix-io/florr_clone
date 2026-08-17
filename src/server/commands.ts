@@ -548,6 +548,82 @@ export function executeServerCommand(
                 sendOutput(`${name} (${grantId}) — granted by ${grant.grantedBy}, ${ageSec}s ago`, socketId, io);
             }
         }
+    } else if (trimmedCommand === 'mute' || trimmedCommand.startsWith('mute ')
+               || trimmedCommand === 'unmute' || trimmedCommand.startsWith('unmute ')) {
+        // mute/unmute <playerId/username> — bar an account from chat. The flag is
+        // persisted on the user record (see server/chatMute.ts), so it outlives
+        // the session and works on players who are currently offline.
+        const parts = trimmedCommand.split(' ').filter(p => p.length > 0);
+        const muting = parts[0] === 'mute';
+
+        if (parts.length !== 2) {
+            sendOutput(`Usage: ${parts[0]} <playerId/username>`, socketId, io);
+            return;
+        }
+
+        // Same resolution as corrupt/grant_admin: socket id first, then the
+        // username of an online player. An offline account still resolves below,
+        // straight out of the database.
+        const playerIdentifier = parts[1];
+        let targetSocketId: string | undefined;
+        let targetUsername: string | undefined;
+        if (players[playerIdentifier]) {
+            targetSocketId = playerIdentifier;
+            targetUsername = (io.sockets.sockets.get(getOriginalSocketId(playerIdentifier)) as AuthenticatedSocket)?.username;
+        } else {
+            for (const sid of Object.keys(players)) {
+                const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
+                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
+                    targetSocketId = sid;
+                    targetUsername = s.username;
+                    break;
+                }
+            }
+            if (!targetUsername) targetUsername = playerIdentifier;
+        }
+
+        if (!targetUsername) {
+            sendOutput(`Could not resolve an account for "${playerIdentifier}" (bots have no account and cannot chat).`, socketId, io);
+            return;
+        }
+
+        // Everything below keys off the stored spelling, so a name typed with the
+        // wrong casing can't slip past the admin check or split the flag across
+        // two spellings.
+        const canonical = database.getCanonicalUsername(targetUsername);
+        if (!canonical) {
+            sendOutput(`No account named "${targetUsername}" exists. Use list-players to see online players.`, socketId, io);
+            return;
+        }
+
+        // Muting a full admin is refused so a temporary grantee can't silence the
+        // admin who lent them the console.
+        if (muting && database.isUserAdmin(canonical)) {
+            sendOutput(`${canonical} is a full admin and cannot be muted.`, socketId, io);
+            return;
+        }
+
+        if (muting === database.isUserMuted(canonical)) {
+            sendOutput(`${canonical} is already ${muting ? 'muted' : 'not muted'}.`, socketId, io);
+            return;
+        }
+
+        database.setUserMuted(canonical, muting, executor || 'console');
+
+        if (targetSocketId) {
+            io.to(getOriginalSocketId(targetSocketId)).emit('chatMessage', {
+                sender: 'System',
+                content: muting
+                    ? '<span style="color: #ff8866;">You have been muted by an admin and can no longer send chat messages.</span>'
+                    : '<span style="color: #6eff6e;">You have been unmuted and can send chat messages again.</span>',
+                timestamp: Date.now()
+            });
+        }
+
+        sendOutput(
+            `${muting ? 'Muted' : 'Unmuted'} ${canonical}${targetSocketId ? '' : ' (offline)'}.`,
+            socketId, io
+        );
     } else if (trimmedCommand.startsWith('generate_code') || trimmedCommand.startsWith('gen_code')) {
         // generate_code <stars> [maxUses] (default maxUses is 1)
         const parts = trimmedCommand.split(' ');
@@ -1113,6 +1189,6 @@ export function getAdminHelpText(): string {
     return '<br/><br/>Admin commands:<br/>' +
            '/admin <command> - Execute server command<br/>' +
            '/cmd <command> - Execute server command (alternative)<br/>' +
-           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), grant_admin <playerId/username> (lend the admin console until they respawn), revoke_admin <playerId/username>, list_admins, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
+           'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), grant_admin <playerId/username> (lend the admin console until they respawn), revoke_admin <playerId/username>, list_admins, mute <playerId/username> (bar an account from chat, persists across sessions), unmute <playerId/username>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }
 
