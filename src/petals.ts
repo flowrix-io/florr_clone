@@ -2399,13 +2399,13 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
 </svg>`
     },
     glass: {
-        name: "Glass",
-        damage: 12,
+        name: "Glasss",
+        damage: 11,
         health: Infinity,
-        size: 1.0,
+        size: 1.2,
         cooldown: 1000,
         description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
-        color: "#B0E0E6",
+        color: "#B0J0E6",
         knockback: 0,
         count: 1,
         damageCooldown: 1000,
