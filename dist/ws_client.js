@@ -1,10 +1,14 @@
 "use strict";
 /**
- * Lightweight WebSocket client wrapper that provides a socket.io-compatible API.
- * Uses browser-native WebSocket for minimal overhead.
+ * Lightweight socket client wrapper that provides a socket.io-compatible API.
+ *
+ * The underlying connection is a `ClientTransport` (see net/transport.ts),
+ * which picks WebTransport or WebSocket automatically per connection attempt
+ * and falls back to WebSocket whenever WebTransport is unavailable. Everything
+ * below is transport-agnostic: it deals in whole binary messages.
  *
  * Wire format: custom tag-based binary encoding of [eventName, ...args] arrays
- * (see binary_codec.ts). Frames are sent as binary WebSocket messages.
+ * (see binary_codec.ts), sent as one binary message per array.
  * System events: ["__sys", type, data] for connection handshake.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -12,6 +16,7 @@ exports.WSClientSocket = void 0;
 exports.io = io;
 const binary_codec_1 = require("./binary_codec");
 const inventoryCodec_1 = require("./inventoryCodec");
+const transport_1 = require("./net/transport");
 /**
  * Guards against a client whose wire format no longer matches the server's.
  *
@@ -62,6 +67,14 @@ function verifyProtocol(serverSig) {
     return false;
 }
 class WSClientSocket {
+    /**
+     * Which transport the live connection actually negotiated, or null while
+     * disconnected. Surfaced for diagnostics (the debug overlay) — nothing in
+     * the game logic should branch on it.
+     */
+    get transportKind() {
+        return this.transport ? this.transport.kind : null;
+    }
     /** Return a snapshot of per-event byte counts since last reset. */
     getEventStats() {
         return this.eventBytes;
@@ -87,7 +100,7 @@ class WSClientSocket {
     constructor(url, _options) {
         this.id = null;
         this.connected = false;
-        this.ws = null;
+        this.transport = null;
         this.handlers = new Map();
         this.onceHandlers = new Map();
         this.anyHandlers = new Set();
@@ -99,102 +112,106 @@ class WSClientSocket {
         this.pendingMessages = [];
         /** Cleared only if the server's handshake signature is incompatible with ours. */
         this.protocolOk = true;
+        /**
+         * Bumped on every connect attempt. A transport that finishes handshaking
+         * after its attempt was superseded — the socket was disconnected, or a
+         * reconnect already started — sees a stale sequence number and closes
+         * itself instead of installing over the live connection.
+         */
+        this.connectSeq = 0;
         this.eventBytes = new Map();
         this.url = url;
         this.connect();
     }
     connect() {
+        const attempt = ++this.connectSeq;
+        (0, transport_1.connectTransport)(this.url).then(transport => this.adoptTransport(attempt, transport), err => {
+            if (attempt !== this.connectSeq)
+                return;
+            this.fireEvent('connect_error', err instanceof Error ? err : new Error(String(err)));
+            this.scheduleReconnect();
+        });
+    }
+    /** Install a freshly-opened transport, unless its attempt was superseded. */
+    adoptTransport(attempt, transport) {
+        if (attempt !== this.connectSeq || !this.shouldReconnect) {
+            // Disconnected (or reconnected) while this handshake was in flight.
+            transport.close();
+            return;
+        }
+        this.transport = transport;
+        // Reaching an open transport is the success signal the backoff resets
+        // on; 'connect' itself waits for the __sys id handshake below.
+        this.currentReconnectDelay = this.reconnectDelay;
+        transport.onmessage = (data) => this.handleMessage(data);
+        transport.onclose = () => {
+            if (this.transport !== transport)
+                return;
+            this.transport = null;
+            const wasConnected = this.connected;
+            this.connected = false;
+            if (wasConnected) {
+                this.fireEvent('disconnect');
+            }
+            this.scheduleReconnect();
+        };
+    }
+    scheduleReconnect() {
+        if (!this.shouldReconnect || this.reconnectTimer)
+            return;
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 1.5, this.maxReconnectDelay);
+            this.connect();
+        }, this.currentReconnectDelay);
+    }
+    handleMessage(data) {
         try {
-            // Convert http(s) to ws(s)
-            const wsUrl = this.url.replace(/^http/, 'ws') + '/ws';
-            this.ws = new WebSocket(wsUrl);
-            // Receive binary frames as ArrayBuffer rather than Blob (Blob would force
-            // an async decode path); msgpack accepts Uint8Array views.
-            this.ws.binaryType = 'arraybuffer';
-            this.ws.onopen = () => {
-                // Wait for __sys id message before firing 'connect'
-                this.currentReconnectDelay = this.reconnectDelay;
-            };
-            this.ws.onmessage = (event) => {
-                try {
-                    // Binary frames arrive as ArrayBuffer (binaryType set above).
-                    let msg;
-                    let wireBytes = 0;
-                    if (event.data instanceof ArrayBuffer) {
-                        wireBytes = event.data.byteLength;
-                        msg = (0, binary_codec_1.decode)(new Uint8Array(event.data));
+            const wireBytes = data.byteLength;
+            const msg = (0, binary_codec_1.decode)(data);
+            if (!Array.isArray(msg) || msg.length < 1)
+                return;
+            const [eventName, ...args] = msg;
+            if (typeof eventName === 'string') {
+                this.recordBytes(eventName, wireBytes, 'in');
+            }
+            // Handle system events
+            if (eventName === '__sys') {
+                const [type, payload] = args;
+                if (type === 'proto') {
+                    // Arrives ahead of 'id'. A mismatch reloads the page,
+                    // so latch it and never fire 'connect' — the game must
+                    // not authenticate against a server it cannot decode.
+                    this.protocolOk = verifyProtocol(payload);
+                    if (!this.protocolOk) {
+                        this.shouldReconnect = false;
+                        this.transport?.close();
                     }
-                    else {
+                    return;
+                }
+                if (type === 'id') {
+                    if (!this.protocolOk)
                         return;
+                    this.id = payload;
+                    this.connected = true;
+                    // Send any pending messages
+                    for (const pending of this.pendingMessages) {
+                        this.transport?.send(pending);
                     }
-                    if (!Array.isArray(msg) || msg.length < 1)
-                        return;
-                    const [eventName, ...args] = msg;
-                    if (typeof eventName === 'string') {
-                        this.recordBytes(eventName, wireBytes, 'in');
-                    }
-                    // Handle system events
-                    if (eventName === '__sys') {
-                        const [type, data] = args;
-                        if (type === 'proto') {
-                            // Arrives ahead of 'id'. A mismatch reloads the page,
-                            // so latch it and never fire 'connect' — the game must
-                            // not authenticate against a server it cannot decode.
-                            this.protocolOk = verifyProtocol(data);
-                            if (!this.protocolOk) {
-                                this.shouldReconnect = false;
-                                try {
-                                    this.ws?.close();
-                                }
-                                catch { }
-                            }
-                            return;
-                        }
-                        if (type === 'id') {
-                            if (!this.protocolOk)
-                                return;
-                            this.id = data;
-                            this.connected = true;
-                            // Send any pending messages
-                            for (const pending of this.pendingMessages) {
-                                this.ws?.send(pending);
-                            }
-                            this.pendingMessages = [];
-                            this.fireEvent('connect');
-                        }
-                        return;
-                    }
-                    // Fire onAny handlers
-                    for (const handler of this.anyHandlers) {
-                        handler(eventName, ...args);
-                    }
-                    // Fire event-specific handlers
-                    this.fireEvent(eventName, ...args);
+                    this.pendingMessages = [];
+                    this.fireEvent('connect');
                 }
-                catch (e) {
-                    // Ignore malformed messages
-                }
-            };
-            this.ws.onclose = () => {
-                const wasConnected = this.connected;
-                this.connected = false;
-                if (wasConnected) {
-                    this.fireEvent('disconnect');
-                }
-                // Auto-reconnect with exponential backoff
-                if (this.shouldReconnect) {
-                    this.reconnectTimer = setTimeout(() => {
-                        this.currentReconnectDelay = Math.min(this.currentReconnectDelay * 1.5, this.maxReconnectDelay);
-                        this.connect();
-                    }, this.currentReconnectDelay);
-                }
-            };
-            this.ws.onerror = () => {
-                this.fireEvent('connect_error', new Error('WebSocket connection failed'));
-            };
+                return;
+            }
+            // Fire onAny handlers
+            for (const handler of this.anyHandlers) {
+                handler(eventName, ...args);
+            }
+            // Fire event-specific handlers
+            this.fireEvent(eventName, ...args);
         }
         catch (e) {
-            this.fireEvent('connect_error', e);
+            // Ignore malformed messages
         }
     }
     fireEvent(event, ...args) {
@@ -242,13 +259,14 @@ class WSClientSocket {
         return this;
     }
     emit(event, ...args) {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.isVolatile(event) &&
-            this.ws.bufferedAmount > WSClientSocket.MAX_VOLATILE_BUFFERED_BYTES) {
+        const transport = this.transport;
+        if (transport && transport.open && this.isVolatile(event) &&
+            transport.bufferedAmount > WSClientSocket.MAX_VOLATILE_BUFFERED_BYTES) {
             return this;
         }
         const msg = (0, binary_codec_1.encode)([event, ...args]);
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(msg);
+        if (transport && transport.open) {
+            transport.send(msg);
             this.recordBytes(event, msg.byteLength, 'out');
         }
         else if (!this.isVolatile(event)) {
@@ -280,13 +298,17 @@ class WSClientSocket {
     }
     disconnect() {
         this.shouldReconnect = false;
+        // Invalidate any handshake still in flight, so a transport that opens
+        // after this call closes itself instead of reviving the socket.
+        this.connectSeq++;
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        if (this.transport) {
+            this.transport.onclose = null;
+            this.transport.close();
+            this.transport = null;
         }
         this.connected = false;
     }

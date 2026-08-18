@@ -15,6 +15,7 @@ const preconnect_1 = require("./net/preconnect");
 const dev_expose_1 = require("./dev_expose");
 const auth_session_1 = require("./auth_session");
 const sessionReplaced_1 = require("./net/sessionReplaced");
+const transport_1 = require("./net/transport");
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
 // overrides this if the days ever disagree, but the local fallback guarantees
@@ -22,6 +23,11 @@ const sessionReplaced_1 = require("./net/sessionReplaced");
 // listener is attached — otherwise maze walls would render (and predict) as
 // empty space.
 (0, maze_1.setActiveMazeDay)((0, maze_1.getCurrentMazeDay)());
+// Ask the origin which transports it supports before anything wants to connect,
+// so the first socket can go straight to WebTransport (or straight to WebSocket)
+// without the capability probe sitting in front of it. Purely a warm-up —
+// connectTransport() does the same fetch itself if this never lands.
+(0, transport_1.prefetchTransportInfo)(window.location.origin);
 let isConnecting = false; // Flag to prevent multiple connection attempts
 // The client's singletons (Game, TitleScreen, the preconnected socket, the
 // preloaded assets) live in module scope — app_refs.ts, net/preconnect.ts and

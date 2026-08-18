@@ -7,6 +7,7 @@
     "svg2skin": "node scripts/svg-to-skin.js",
     "build": "node scripts/encodeMap.js && webpack --mode production && cp src/styles.css dist/styles.css && cp src/favicon.ico dist/favicon.ico && cp src/land.svg dist/land.svg && cp src/index.html dist/index.html && node scripts/compressbundle.js",
     "build:server": "tsc -p tsconfig.server.json",
+    "dev:cert": "node scripts/gen-dev-cert.js",
     "test:ecs": "node scripts/ecs-selftest.js",
     "bench:grid": "node scripts/grid-bench.js",
     "build:client": "tsc -p tsconfig.client.json",
@@ -32,5 +33,9 @@
     "typescript": "^5.6.3",
     "webpack": "^5.95.0",
     "webpack-cli": "^5.1.4"
+  },
+  "optionalDependencies": {
+    "@fails-components/webtransport": "^1.6.7",
+    "@fails-components/webtransport-transport-http3-quiche": "^1.6.7"
   }
 }

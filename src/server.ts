@@ -1,8 +1,9 @@
 import { Server } from './ws_server';
 import { createApp, UApp, staticFiles, jsonParser } from './server/uws_app';
+import { startWebTransportServer, getWebTransportAdvertisement } from './server/webtransport_server';
+import { resolveTlsPaths } from './server/devCert';
 import path from 'path';
 import v8 from 'v8';
-import fs from 'fs';
 import { database, Notification } from './database';
 import { USE_HTTPS, SERVER_PROTOCOL } from './constants';
 
@@ -179,13 +180,22 @@ initializeBotGuilds();
 // Build the uWebSockets.js-backed app. SSL is configured later (before listen)
 // because the SSL/non-SSL choice depends on cert files we don't want to read twice.
 let app: UApp;
+/** The TLS material the server is actually serving with, or null on plain HTTP. */
+let tlsPaths: { keyPath: string; certPath: string } | null = null;
 {
     const certDir = path.resolve(__dirname, '..');
-    const keyPath = path.join(certDir, 'cert.key');
-    const certPath = path.join(certDir, 'cert.crt');
-    if (USE_HTTPS && fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-        app = createApp({ ssl: { keyPath, certPath } });
-        console.log(`[SERVER] Using HTTPS protocol`);
+    // resolveTlsPaths regenerates the committed localhost certificate once it
+    // expires, so `npm start` on a dev box never serves a dead one. A real
+    // certificate for a real hostname is always left exactly as it is.
+    tlsPaths = USE_HTTPS
+        ? resolveTlsPaths(
+            { certPath: path.join(certDir, 'cert.crt'), keyPath: path.join(certDir, 'cert.key') },
+            { certPath: path.join(certDir, 'dev-cert.crt'), keyPath: path.join(certDir, 'dev-cert.key') },
+        )
+        : null;
+    if (tlsPaths) {
+        app = createApp({ ssl: tlsPaths });
+        console.log(`[SERVER] Using HTTPS protocol (${path.basename(tlsPaths.certPath)})`);
     } else {
         if (USE_HTTPS) console.warn(`[SERVER] HTTPS certificates not found, falling back to HTTP`);
         app = createApp();
@@ -429,6 +439,50 @@ ioInstance = io;
 const PORT = process.env.PORT || 3000;
 const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
 const CURRENT_SERVER_CONFIG = getServerConfigByPort(CURRENT_SERVER_PORT) || { port: CURRENT_SERVER_PORT, host: 'localhost', name: `Server${CURRENT_SERVER_PORT}` };
+
+// Bring up the WebTransport (HTTP/3) listener next to the WebSocket one, so
+// clients that can speak QUIC get it and everyone else keeps using WebSockets.
+// It shares the port number over UDP, needs TLS, and is entirely optional —
+// startWebTransportServer resolves to null instead of throwing when anything
+// is missing. Started before listen() so /transport-info can answer
+// definitively from the first request.
+const WT_PORT = process.env.WT_PORT ? parseInt(process.env.WT_PORT, 10) : CURRENT_SERVER_PORT;
+// WT_CERT_PATH/WT_KEY_PATH let WebTransport use a certificate of its own. That
+// matters in development: browsers only accept the certificate-hash shortcut
+// for a short-lived ECDSA certificate (see scripts/gen-wt-cert.js), which is not
+// what you want the HTTPS listener serving.
+const WT_CERT_PATH = process.env.WT_CERT_PATH || tlsPaths?.certPath;
+const WT_KEY_PATH = process.env.WT_KEY_PATH || tlsPaths?.keyPath;
+const webTransportReady: Promise<unknown> = (WT_CERT_PATH && WT_KEY_PATH)
+    ? startWebTransportServer(io, {
+        port: WT_PORT,
+        certPath: path.resolve(WT_CERT_PATH),
+        keyPath: path.resolve(WT_KEY_PATH),
+        host: process.env.WT_HOST,
+    }).catch(e => { console.warn('[WT] Startup failed:', e); return null; })
+    : Promise.resolve(null);
+if (!WT_CERT_PATH) console.log('[SERVER] No TLS certificate — WebTransport disabled, WebSocket only');
+
+/**
+ * Transport capability probe. The client hits this before connecting and picks
+ * WebTransport only if this says the server has it (see net/transport.ts);
+ * anything else — a 404 from an older server, a timeout — means WebSocket.
+ * Deliberately unauthenticated: it exposes nothing a connection attempt would
+ * not, and it has to work before a session exists.
+ */
+app.get('/transport-info', async (_req, res) => {
+    await webTransportReady;
+    const advertisement = getWebTransportAdvertisement();
+    res.setHeader('Cache-Control', 'no-store');
+    if (!advertisement) {
+        res.json({ webtransport: false });
+        return;
+    }
+    // WT_PUBLIC_HOST covers deployments where the QUIC listener is not reachable
+    // at the same hostname the page was served from.
+    const host = process.env.WT_PUBLIC_HOST;
+    res.json(host ? { ...advertisement, host } : advertisement);
+});
 
 // Setup cross-server transfer endpoints
 setupTransferEndpoints(app, io, CURRENT_SERVER_CONFIG, CURRENT_SERVER_PORT);

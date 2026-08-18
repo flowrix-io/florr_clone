@@ -66,7 +66,13 @@ shapes when the artwork exceeds the 24-shape limit.
 - **Map editor** (`MapEditor.html`) for authoring biome layouts
 - **SVG → skin converter** (`SvgToSkin.html`, `scripts/svg-to-skin.js`) for turning artwork into custom-skin commands
 - **Persistence** via custom JSON database
-- **HTTPS** support (drop `cert.crt` / `cert.key` at the project root)
+- **HTTPS** support (drop `cert.crt` / `cert.key` at the project root). If that
+  certificate is a localhost one and has expired, the server generates a fresh
+  short-lived `dev-cert.crt` at boot so `npm start` always serves a live
+  certificate; a real certificate for a real hostname is never touched.
+- **WebTransport (HTTP/3)** alongside WebSocket — the client probes
+  `/transport-info` and picks one automatically, falling back to WebSocket
+  whenever QUIC is unavailable. Each connection logs which it chose and why.
 
 ## Chat commands
 

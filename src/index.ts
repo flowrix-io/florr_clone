@@ -14,6 +14,7 @@ import { getPreconnectedSocket, getLivePreconnectedSocket, setPreconnectedSocket
 import { exposeDevGlobals } from './dev_expose';
 import { isLoggedIn, migrateLegacyCredentials } from './auth_session';
 import { attachSessionReplacedHandler } from './net/sessionReplaced';
+import { prefetchTransportInfo } from './net/transport';
 
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
@@ -22,6 +23,12 @@ import { attachSessionReplacedHandler } from './net/sessionReplaced';
 // listener is attached — otherwise maze walls would render (and predict) as
 // empty space.
 setActiveMazeDay(getCurrentMazeDay());
+
+// Ask the origin which transports it supports before anything wants to connect,
+// so the first socket can go straight to WebTransport (or straight to WebSocket)
+// without the capability probe sitting in front of it. Purely a warm-up —
+// connectTransport() does the same fetch itself if this never lands.
+prefetchTransportInfo(window.location.origin);
 
 let isConnecting = false; // Flag to prevent multiple connection attempts
 
