@@ -31,7 +31,7 @@ sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/privkey.pem cert.key
 sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/fullchain.pem cert.crt
 sudo chown $(id -u):$(id -g) cert.key cert.crt
 cd dist
-npm install bcrypt github:uNetworking/uWebSockets.js#v20.67.0
+npm install bcrypt github:uNetworking/uWebSockets.js#v20.67.0 fails-components/webtransport
 rm inventory.json
 cp ~/inventory.json inventory.json
 rm ~/inventory.json
