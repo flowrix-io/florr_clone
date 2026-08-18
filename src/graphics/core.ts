@@ -1,4 +1,3 @@
-import { Enemy } from '../enemy';
 import { Entity } from '../ecs';
 import { MapElement, getDisableUltraParticles, getGpuAcceleration } from '../constants';
 import { ITEM_RARITY_COLORS } from '../petals';
@@ -87,42 +86,9 @@ export class Graphics {
         teleporter: 'rgba(33, 150, 243, 0.0)',
         biome: 'rgba(128, 64, 192, 0.0)'
     };
-    public readonly ENEMY_COLORS = {
-        common: '#7eef6d',
-        uncommon: '#ffe65d',
-        rare: '#4d52e3',
-        epic: '#861fde',
-        legendary: '#de1f1f',
-        mythic: '#1fdbde',
-        ultra: '#de1f65',
-        super: '#2bffa4',
-        unique: '#ffffff',
-        apex: '#ff00ff'
-    };
-    public readonly ENEMY_SIZE_MULTIPLIERS: Record<Enemy['tier'], number> = {
-        common: 1.0,
-        uncommon: 1.2,
-        rare: 1.4,
-        epic: 1.6,
-        legendary: 1.8,
-        mythic: 2.0,
-        ultra: 2.5,
-        super: 3.0,
-        unique: 3.5,
-        apex: 4.0
-    };
-    public readonly ENEMY_MAX_HEALTH: Record<Enemy['tier'], number> = {
-        common: 20,
-        uncommon: 40,
-        rare: 60,
-        epic: 80,
-        legendary: 100,
-        mythic: 150,
-        ultra: 450,
-        super: 1350,
-        unique: 4050,
-        apex: 12150
-    };
+    // Mob rarity colors are the same canonical table the UI uses; keeping a
+    // second copy here is how the server/client tier colors drifted apart before.
+    public readonly ENEMY_COLORS: Record<string, string> = ITEM_RARITY_COLORS;
     public readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
     // Track invulnerability fade-out per player: maps playerId -> timestamp when invulnerability ended
     public invulFadeStates: Map<string, { endTime: number, wasInvulnerable: boolean }> = new Map();

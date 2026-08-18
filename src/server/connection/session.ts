@@ -16,7 +16,7 @@ import { getActiveMaze } from '../../maze';
 import { cleanupPlayerPetalActionState, despawnAllPlayerPets, spawnPet } from '../../petal_actions';
 import { getEffectivePetalCooldown, getPetalStats } from '../../petals';
 import { PlayerSkills, ServerPlayer } from '../../player';
-import { decorations, knownMobProjectilesByPlayer, knownPlayerProjectilesByPlayer, lobbyPlayers, petalCooldownTimeouts, petalLastProjectileTime, petalLastRadiationTime, playerUserIds, sands } from '../gameState';
+import { knownMobProjectilesByPlayer, knownPlayerProjectilesByPlayer, lobbyPlayers, petalCooldownTimeouts, petalLastProjectileTime, petalLastRadiationTime, playerUserIds } from '../gameState';
 import { broadcastGuildUpdate, getGuildForUsername, syncGuildToOnlineMembers } from '../guildManager';
 import { applyPetalHealthBonus, calculateCurrentLevelXP, calculateDamageFromLevel, calculateLevelFromTotalXP, calculateMaxHealthFromLevel, calculateXPRequirement, createInitialBasicPetals, createInitialInventory, enterMazeState, enterPvpArena, findSafeSpawnPosition, getMazeSpawnPosition, getSkillMultiplier, getSpawnPositionInBiome, recalculatePlayerStats, reconcileTP } from '../playerManager';
 import { cleanupPetalPhysicsStates, getEnemiesInViewport200Percent } from '../playerState';
@@ -483,9 +483,6 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
 
                 // Filter items to only send ones this player is eligible for and hasn't picked up yet
                 socket.emit('itemsUpdate', getEligibleItemsForSocket(socket.id));
-
-                socket.emit('decorationsUpdate', decorations);
-                socket.emit('sandsUpdate', sands);
 
                 // Notify other players
                 socket.broadcast.emit('newPlayer', sanitizePublicPlayerForClient(sessionPlayer));

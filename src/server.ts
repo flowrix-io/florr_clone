@@ -41,9 +41,9 @@ if (invalidEggTypes.size > 0) {
 import { ServerPlayer } from './player';
 import { getInventoryCodecSignature } from './inventoryCodec';
 import { getDamageMultiplier, updatePetalBehaviours, despawnAllPlayerPets } from './petal_actions';
-import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, SAND_COUNT, DECORATION_COUNT, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
+import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
-import { Enemy, LiveEnemy, createDecoration, createSand, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
+import { Enemy, LiveEnemy, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
 import { WorldItem } from './item';
 import { getMobStats, getAllMobTypes, getEnemySizeScale } from './mobs';
 
@@ -108,8 +108,6 @@ import {
 import {
     items,
     superMobCount,
-    decorations,
-    sands,
     ENEMY_COUNT,
     playerUserIds,
     petalLastProjectileTime,
@@ -937,16 +935,6 @@ console.log(`[SERVER] Density Configuration:`);
 console.log(`  Original Density: ${ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
 console.log(`  Target: Maintain same density as ${ORIGINAL_ENEMY_COUNT} enemies across entire world (9x density)`);
 console.log(`  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn`);
-
-// Initialize decorations
-for (let i = 0; i < DECORATION_COUNT; i++) {
-    decorations.push(createDecoration());
-}
-
-// Initialize sands
-for (let i = 0; i < SAND_COUNT; i++) {
-    sands.push(createSand());
-}
 
 // TP costs for each rarity tier (total = 100 TP for full tree)
 const RARITY_TP_COSTS: Record<string, number> = {

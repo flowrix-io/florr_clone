@@ -567,8 +567,10 @@ export const database = {
                 const level = player.level || 1;
                 const currentLevelXP = player.xp || 0;
                 
-                // Calculate total XP using same formula as server
-                // BASE_XP_REQUIREMENT = 100, XP_MULTIPLIER = 1.25
+                // Historical curve: these records were written before the
+                // 2025-11 XP rework, so they must be converted with the
+                // multiplier that was live then (1.25), NOT the current
+                // XP_MULTIPLIER in constants.ts.
                 const BASE_XP_REQUIREMENT = 100;
                 const XP_MULTIPLIER = 1.25;
                 

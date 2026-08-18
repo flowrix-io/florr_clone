@@ -765,14 +765,6 @@ console.log(`[SERVER] Density Configuration:`);
 console.log(`  Original Density: ${constants_2.ORIGINAL_ENEMY_DENSITY.toFixed(8)} enemies/pixel²`);
 console.log(`  Target: Maintain same density as ${constants_2.ORIGINAL_ENEMY_COUNT} enemies across entire world (9x density)`);
 console.log(`  Despawn Rule: Enemies outside viewport for 30+ seconds will despawn`);
-// Initialize decorations
-for (let i = 0; i < constants_2.DECORATION_COUNT; i++) {
-    gameState_1.decorations.push((0, server_utils_1.createDecoration)());
-}
-// Initialize sands
-for (let i = 0; i < constants_2.SAND_COUNT; i++) {
-    gameState_1.sands.push((0, server_utils_1.createSand)());
-}
 // TP costs for each rarity tier (total = 100 TP for full tree)
 const RARITY_TP_COSTS = {
     common: 1,

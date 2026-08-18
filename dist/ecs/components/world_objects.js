@@ -8,7 +8,7 @@
  * owner — that as components they reuse the same expiry and spatial systems.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IsScenery = exports.IsGroundEffect = exports.IsDroppedItem = exports.SandBlob = exports.Decoration = exports.Box = exports.WebField = exports.GroundPollen = exports.DroppedItem = void 0;
+exports.IsGroundEffect = exports.IsDroppedItem = exports.Box = exports.WebField = exports.GroundPollen = exports.DroppedItem = void 0;
 const component_1 = require("../component");
 /**
  * A dropped petal or pickup lying on the ground (`WorldItem`).
@@ -58,14 +58,5 @@ exports.Box = (0, component_1.defineComponent)('Box', {
     width: 'f32',
     height: 'f32',
 });
-/** Purely visual scenery with a random size (`Decoration`). */
-exports.Decoration = (0, component_1.defineComponent)('Decoration', {
-    scale: 'f32',
-});
-/** A desert sand blob (`Sand`): random radius plus a rotation for shape variety. */
-exports.SandBlob = (0, component_1.defineComponent)('SandBlob', {
-    rotation: 'f32',
-});
 exports.IsDroppedItem = (0, component_1.defineTag)('IsDroppedItem');
 exports.IsGroundEffect = (0, component_1.defineTag)('IsGroundEffect');
-exports.IsScenery = (0, component_1.defineTag)('IsScenery');

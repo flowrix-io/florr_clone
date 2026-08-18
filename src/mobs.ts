@@ -150,7 +150,7 @@ const HEALTH_SCALING = {
     ultra: 126830,
     super: 2374000,
     unique: 10000000,
-    apex: 30000000
+    apex: 1000000000
 };
 
 const DAMAGE_SCALING = {
@@ -163,7 +163,7 @@ const DAMAGE_SCALING = {
     ultra: 729,
     super: 2187,
     unique: 6561,
-    apex: 19683
+    apex: 1968300
 };
 
 export const SIZE_SCALING: { [key: string]: number } = {

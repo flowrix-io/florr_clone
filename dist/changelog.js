@@ -514,6 +514,13 @@ exports.CHANGELOG = [
             'Added corruption',
             'New admin command: /corrupt',
         ]
+    },
+    {
+        date: 'August 17, 2026',
+        changes: [
+            'Apex mobs now have 100x HP and XP',
+            'Server optimizations'
+        ]
     }
 ];
 class ChangelogManager {

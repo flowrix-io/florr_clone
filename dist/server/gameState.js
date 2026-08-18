@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerUserIds = exports.lobbyPlayers = exports.ENEMY_COUNT = exports.sands = exports.decorations = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
+exports.ITEM_EXPIRATION_TIMES = exports.petalCooldownTimeouts = exports.itemExpirationTimeouts = exports.WEB_THROW_DISTANCE = exports.WEB_SLOW_LINGER_MS = exports.WEB_SLOW_FACTOR = exports.WEB_LIFETIME_MS = exports.webFields = exports.GROUND_POLLEN_DAMAGE_INTERVAL_MS = exports.GROUND_POLLEN_LIFETIME_MS = exports.groundPollens = exports.knownPlayerProjectilesByPlayer = exports.knownMobProjectilesByPlayer = exports.petalLastRadiationTime = exports.petalLastProjectileTime = exports.playerUserIds = exports.lobbyPlayers = exports.ENEMY_COUNT = exports.superMobPerSection = exports.uniqueMobCount = exports.superMobCount = exports.ultraMobCount = exports.items = void 0;
 exports.setSuperMobInSection = setSuperMobInSection;
 exports.getSuperMobInSection = getSuperMobInSection;
 exports.clearSuperMobFromSection = clearSuperMobFromSection;
@@ -54,8 +54,6 @@ exports.superMobPerSection = {
     get value() { return _superMobPerSection; },
     set value(v) { _superMobPerSection = v; }
 };
-exports.decorations = [];
-exports.sands = [];
 exports.ENEMY_COUNT = { get value() { return _ENEMY_COUNT; }, set value(v) { _ENEMY_COUNT = v; } };
 /**
  * Accounts that are authenticated but still sitting on the title screen.

@@ -65,12 +65,6 @@ function registerProgressionHandlers(game) {
             }
         }
     });
-    game.socket.on('decorationsUpdate', (decorations) => {
-        game.decorations = decorations;
-    });
-    game.socket.on('sandsUpdate', (sands) => {
-        game.sands = sands;
-    });
     // Debounce mob gallery updates to prevent lag when multiple mobs die
     let mobGalleryUpdateTimeout = null;
     game.socket.on('playerUpdated', (updatedPlayer) => {

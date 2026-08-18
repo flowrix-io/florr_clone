@@ -451,8 +451,6 @@ function registerSessionHandlers(ctx) {
                 socket.emit('obstaclesUpdate', constants_1.obstacles);
                 // Filter items to only send ones this player is eligible for and hasn't picked up yet
                 socket.emit('itemsUpdate', (0, tickBroadcast_1.getEligibleItemsForSocket)(socket.id));
-                socket.emit('decorationsUpdate', gameState_1.decorations);
-                socket.emit('sandsUpdate', gameState_1.sands);
                 // Notify other players
                 socket.broadcast.emit('newPlayer', (0, playerWire_1.sanitizePublicPlayerForClient)(sessionPlayer));
             }

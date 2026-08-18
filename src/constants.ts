@@ -73,12 +73,11 @@ export const SERVER_PROTOCOL = USE_HTTPS ? 'https' : 'http';
 
 // Viewport optimization constants
 export const VIEWPORT_BUFFER = 500;  // Extra distance beyond viewport to keep enemies active
-export const ENEMY_DESPAWN_TIME = 30000;  // 30 seconds in milliseconds
 
-// Viewport dimensions
+// Fallback viewport dimensions. Real clients report their own canvas size
+// (player.viewportWidth/Height); these are only used until that arrives.
 export const VIEWPORT_WIDTH = 1920;
 export const VIEWPORT_HEIGHT = 1080;
-export const VIEWPORT_AREA = VIEWPORT_WIDTH * VIEWPORT_HEIGHT;  // 2,073,600 pixels²
 
 export const players: Record<string, ServerPlayer> = {};
 export const dots: Dot[] = [];
@@ -244,42 +243,38 @@ export function isTileIdBlocking(id: number): boolean {
 }
 
 // Density calculation constants (defined after world dimensions)
-export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 400,000,000 pixels²
+export const TOTAL_WORLD_AREA = ACTUAL_WORLD_WIDTH * ACTUAL_WORLD_HEIGHT;  // 3,600,000,000 pixels²
 export const ORIGINAL_ENEMY_COUNT = 9000;
-export const ORIGINAL_ENEMY_DENSITY = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;  // 0.0000225 enemies per pixel² (9x density)
+export const ORIGINAL_ENEMY_DENSITY = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;  // 0.0000025 enemies per pixel²
 export const VIEWPORT_WITH_BUFFER_AREA = (VIEWPORT_WIDTH + VIEWPORT_BUFFER * 2) * (VIEWPORT_HEIGHT + VIEWPORT_BUFFER * 2);  // 6,073,600 pixels²
-export const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA);  // ~135 enemies per viewport (9x density)
-export const OLD_WORLD_WIDTH = 10000;
-export const OLD_WORLD_HEIGHT = 2000;
-export const PVP_WORLD_WIDTH = 30000;
-export const PVP_WORLD_HEIGHT = 30000;
+export const ENEMIES_PER_VIEWPORT = Math.ceil(ORIGINAL_ENEMY_DENSITY * VIEWPORT_WITH_BUFFER_AREA);  // ~16 enemies per viewport
 export const SCALE_FACTOR = 1;
-//export let ENEMY_COUNT = 200;
-export const OBSTACLE_COUNT = 20;
 
+// Base values for the level curves in server/playerManager.ts:
+//   maxHealth = PLAYER_MAX_HEALTH + ceil(level^1.5 * HEALTH_PER_LEVEL)
+//   damage    = PLAYER_DAMAGE     + ceil(level^1.5 * DAMAGE_PER_LEVEL)
 export const PLAYER_MAX_HEALTH = 100;
-export const ENEMY_MAX_HEALTH = 50;
 export const PLAYER_DAMAGE = 5;
-export const ENEMY_DAMAGE = 20;
-export const DECORATION_COUNT = 100;
-export const SAND_COUNT = 50;  // Reduced from 200 to 50
-export const MIN_SAND_RADIUS = 50;  // Increased from 30 to 50
-export const MAX_SAND_RADIUS = 120; // Increased from 80 to 120
 
+// Per-tier natural spawn weights (must sum to 1) and the rarity color used by
+// server-side chat announcements. Colors MUST match ITEM_RARITY_COLORS in
+// petals.ts — the canonical table the client renders mobs and UI with.
+// Tiers above mythic never spawn naturally (probability 0); they are produced
+// by tier upgrades, spawn zones, and boss logic in server/enemySpawner.ts.
+// Health/speed/damage are NOT here: per-mob, per-tier stats come from
+// getMobStats() in mobs.ts.
 export const ENEMY_TIERS = {
-  common: { health: 5, speed: 0.5, damage: 5, probability: 0.4, color: '#7eef6d' },
-  uncommon: { health: 40, speed: 0.75, damage: 10, probability: 0.3, color: '#ffe65d' },
-  rare: { health: 60, speed: 1, damage: 15, probability: 0.15, color: '#4d52e3' },
-  epic: { health: 80, speed: 1.25, damage: 20, probability: 0.1, color: '#861fde' },
-  legendary: { health: 100, speed: 1.5, damage: 25, probability: 0.04, color: '#1fdbde' },
-  mythic: { health: 150, speed: 2, damage: 30, probability: 0.01, color: '#de1f65' },
-  ultra: { health: 450, speed: 2, damage: 90, probability: 0.0, color: '#de1f65' },
-  super: { health: 1350, speed: 3, damage: 270, probability: 0.0, color: '#2bffa4' },
-  unique: { health: 4050, speed: 4, damage: 810, probability: 0.0, color: '#ffffff' },
-  apex: { health: 12150, speed: 5, damage: 2430, probability: 0.0, color: '#ff00ff' }
+  common:    { probability: 0.4,  color: '#7eef6d' },
+  uncommon:  { probability: 0.3,  color: '#ffe65d' },
+  rare:      { probability: 0.15, color: '#4d52e3' },
+  epic:      { probability: 0.1,  color: '#861fde' },
+  legendary: { probability: 0.04, color: '#de1f1f' },
+  mythic:    { probability: 0.01, color: '#1fdbde' },
+  ultra:     { probability: 0.0,  color: '#de1f65' },
+  super:     { probability: 0.0,  color: '#2bffa4' },
+  unique:    { probability: 0.0,  color: '#ffffff' },
+  apex:      { probability: 0.0,  color: '#ff00ff' }
 };
-
-export const MAX_INVENTORY_SIZE = 5;
 
 export const RESPAWN_INVULNERABILITY_TIME = 3000; // 3 seconds of invulnerability after respawn
 
@@ -300,16 +295,11 @@ export const MAX_SPEED = 300;
 // floor — near the flower the speed eases to 0 for precise positioning, exactly
 // like gardn (which has no floor).
 export const MOUSE_FULL_SPEED_DISTANCE = 200;
-// Legacy nonlinear params — no longer used by mouse/joystick control (kept for
-// any external importers). See MOUSE_FULL_SPEED_DISTANCE above.
-export const MOUSE_NONLINEAR_SCALE = 200;
-export const MOUSE_NONLINEAR_EXPONENT = 0.6;
 
-// Add knockback constants at the top with other constants
-export const KNOCKBACK_FORCE = 5; // Reduced for faster movement with many enemies
-export const KNOCKBACK_RECOVERY_SPEED = 0.7; // Faster decay to reduce movement resistance
-
-// Add XP-related constants
+// XP / level curve (server/playerManager.ts, leaderboard.ts).
+// NOTE: database.ts's one-time old-format migration deliberately uses the
+// pre-2025-11 multiplier (1.25) because that is the curve those records were
+// written under — it is not a copy of this value.
 export const BASE_XP_REQUIREMENT = 100;
 export const XP_MULTIPLIER = 1.08;
 export const HEALTH_PER_LEVEL = 10;
@@ -332,9 +322,6 @@ export const PVP_ARENA_RADIUS = 2500;
 // Spawn point inside the arena (offset from center so players don't sit on the exit teleporter)
 export const PVP_ARENA_SPAWN_X = PVP_ARENA_CENTER_X + 1500;
 export const PVP_ARENA_SPAWN_Y = PVP_ARENA_CENTER_Y;
-// Where the exit teleporter drops players when they leave the arena.
-export const PVP_EXIT_RETURN_X = 19000;
-export const PVP_EXIT_RETURN_Y = 17400;
 // Fraction of petals gained inside PVP that survive the trip back to the regular inventory.
 export const PVP_INVENTORY_KEEP_RATIO = 0.25;
 // All players in the PVP arena share the same fixed max health regardless of level/petals.
@@ -345,16 +332,6 @@ export function isInPvpArena(x: number, y: number): boolean {
     const dy = y - PVP_ARENA_CENTER_Y;
     return dx * dx + dy * dy <= PVP_ARENA_RADIUS * PVP_ARENA_RADIUS;
 }
-
-// Define zone boundaries for different tiers
-export const ZONE_BOUNDARIES = {
-    common: { start: 0, end: 12000 },
-    uncommon: { start: 12000, end: 24000 },
-    rare: { start: 24000, end: 36000 },
-    epic: { start: 36000, end: 48000 },
-    legendary: { start: 48000, end: 54000 },
-    mythic: { start: 54000, end: WORLD_WIDTH }
-};
 
 // Section configuration for the 3x3 map grid (9 sections total)
 // Each section is 20000x20000 pixels
@@ -376,34 +353,6 @@ export const SECTION_CONFIGS: SectionConfig[] = [
     { name: 'Computer', background: '#000000' },        // Section 8 (bottom-center)
     { name: 'Unknown', background: '#000000' },            // Section 9 (bottom-right)
 ];
-
-// Add enemy size multipliers like in singleplayer
-export const ENEMY_SIZE_MULTIPLIERS = {
-    common: 1.0,
-    uncommon: 1.2,
-    rare: 1.4,
-    epic: 1.6,
-    legendary: 1.8,
-    mythic: 2.0,
-    ultra: 2.5,
-    super: 3.0,
-    unique: 3.5,
-    apex: 4.0
-};
-
-// Add drop chances like in singleplayer
-export const DROP_CHANCES = {
-    common: 0.1,      // 10% chance
-    uncommon: 0.2,    // 20% chance
-    rare: 0.3,        // 30% chance
-    epic: 0.4,        // 40% chance
-    legendary: 0.5,   // 50% chance
-    mythic: 0.75,     // 75% chance
-    ultra: 0.9,       // 90% chance
-    super: 0.95,      // 95% chance
-    unique: 1.0,      // 100% chance
-    apex: 1.0         // 100% chance
-};
 
 // Add map configuration
 

@@ -69,16 +69,5 @@ export const Box = defineComponent('Box', {
     height: 'f32',
 });
 
-/** Purely visual scenery with a random size (`Decoration`). */
-export const Decoration = defineComponent('Decoration', {
-    scale: 'f32',
-});
-
-/** A desert sand blob (`Sand`): random radius plus a rotation for shape variety. */
-export const SandBlob = defineComponent('SandBlob', {
-    rotation: 'f32',
-});
-
 export const IsDroppedItem = defineTag('IsDroppedItem');
 export const IsGroundEffect = defineTag('IsGroundEffect');
-export const IsScenery = defineTag('IsScenery');

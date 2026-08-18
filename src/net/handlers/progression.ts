@@ -96,23 +96,6 @@ export function registerProgressionHandlers(game: any): void {
         }
     });
 
-    game.socket.on('decorationsUpdate', (decorations: Array<{
-        x: number;
-        y: number;
-        scale: number;
-    }>) => {
-        game.decorations = decorations;
-    });
-
-    game.socket.on('sandsUpdate', (sands: Array<{
-        x: number;
-        y: number;
-        radius: number;
-        rotation: number;
-    }>) => {
-        game.sands = sands;
-    });
-
     // Debounce mob gallery updates to prevent lag when multiple mobs die
     let mobGalleryUpdateTimeout: NodeJS.Timeout | null = null;
 

@@ -1,5 +1,4 @@
 import { WorldItem } from '../item';
-import { Decoration, Sand } from '../server_utils';
 import { ServerPlayer } from '../player';
 import { Enemy, Obstacle } from '../server_utils';
 import {
@@ -52,8 +51,6 @@ export const superMobPerSection = {
     set value(v: (string | null)[]) { _superMobPerSection = v; }
 };
 
-export const decorations: Decoration[] = [];
-export const sands: Sand[] = [];
 export const ENEMY_COUNT = { get value() { return _ENEMY_COUNT; }, set value(v: number) { _ENEMY_COUNT = v; } };
 
 /**
