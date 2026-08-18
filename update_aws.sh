@@ -31,7 +31,18 @@ sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/privkey.pem cert.key
 sudo cp /etc/letsencrypt/live/florrclone.cryodome.com/fullchain.pem cert.crt
 sudo chown $(id -u):$(id -g) cert.key cert.crt
 cd dist
-npm install bcrypt github:uNetworking/uWebSockets.js#v20.67.0 fails-components/webtransport
+# WebTransport needs BOTH scoped packages: the JS API and the native QUIC
+# backend it loads at runtime. `fails-components/webtransport` (unscoped) is a
+# GitHub shorthand that resolves to the monorepo *root* package
+# (@fails-components/webtransport-workspace) — it provides neither, which is why
+# the server logged "@fails-components/webtransport not installed" and served
+# WebSocket only.
+#
+# Note: UDP must also be open on the game port in the EC2 security group. QUIC
+# is UDP-only, so with TCP 3000 open and UDP 3000 closed the listener starts,
+# advertises itself, and every handshake times out into the WebSocket fallback.
+npm install bcrypt github:uNetworking/uWebSockets.js#v20.67.0 \
+    @fails-components/webtransport @fails-components/webtransport-transport-http3-quiche
 rm inventory.json
 cp ~/inventory.json inventory.json
 rm ~/inventory.json
