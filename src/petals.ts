@@ -107,6 +107,7 @@ export const RARITY_LEVELS = [
     'super',
     'unique',
     'apex'
+    'titan'
 ] as const;
 
 export type Rarity = typeof RARITY_LEVELS[number];
@@ -148,6 +149,7 @@ export const ABSORB_XP: Record<string, number> = {
     super: 10935,
     unique: 32805,
     apex: 98415
+    titan: 139245
 };
 
 // Per-tier multiplier for the "Absorption" skill talent, applied to ABSORB_XP
@@ -164,6 +166,7 @@ export const ABSORBING_SKILL_MULTIPLIERS: Record<string, number> = {
     super: 5.04,
     unique: 6.35,
     apex: 8.0
+    titan: 13.55
 };
 
 // Canonical UI rarity colors — single source of truth for all panels/UI
@@ -178,6 +181,7 @@ export const ITEM_RARITY_COLORS: Record<string, string> = {
     super: '#2bffa4',
     unique: '#ffffff',
     apex: '#ff00ff'
+    titan: '#ffd700'
 };
 
 
@@ -386,6 +390,8 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         apex: {
             count: 5
+        titan: {
+            count: 6
         }
     },
     yggdrasil: {
@@ -418,6 +424,8 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         apex: {
             cooldown: 1000
+        titan: {
+            cooldown: 500
         }
     },
     lightning: {
@@ -447,6 +455,9 @@ const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverrid
         },
         apex: {
             health: 10
+        titan: {
+            health: 10
+            
         }
     },
     jelly: {
