@@ -13,6 +13,7 @@ import { getMobStats } from '../../mobs';
 import { Player, ServerPlayer } from '../../player';
 import { isLocalPlayerId, isOwnPlayerId, padLoadout, toClientPlayer, withoutRawPetalPositions } from '../playerRefs';
 import { applyEnemyUpdate, forgetEnemy } from '../enemyIngest';
+import { ENEMY_FIELDS, PETAL_FIELDS, PLAYER_FIELDS, unpackFields, unpackId } from '../../wire_fields';
 
 export function registerGameStateHandlers(game: any): void {
     // `game` is untyped here (the handlers predate the split), but the world is
@@ -34,14 +35,30 @@ export function registerGameStateHandlers(game: any): void {
     //   F = 1 marks a full-resync snapshot (server detected a dropped frame):
     //       E lists every viewport enemy, so unmentioned enemies are stale.
     // Otherwise, unmentioned entities keep their current state.
-    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,r,k,m,v,V,z, p (petalPositions array).
+    // Per-player keys: i,n,x,y,a,h,H,l,s,e,f,q,r,k,m,v,V,z,c (cooldown bitmask), p (petalPositions array).
     // Per-petal keys: L=loadoutIndex,I=instanceIndex,x,y,N=noPhysics.
     // Per-enemy keys: i,t=type,T=tier,x,y,a,h,H. Missing fields = unchanged.
     game.socket.on('gameStateUpdate', (data: any) => {
-        const serverPlayers: any[] | undefined = data.P;
-        const serverEnemies: any[] | undefined = data.E;
-        const removedEnemyIds: string[] | undefined = data.R;
-        const removedPlayerIds: string[] | undefined = data.D;
+        // Entries arrive as `[mask, ...values]` (see wire_fields.ts, which exists
+        // because map KEYS were 37.3% of every frame). Rehydrate them into the
+        // objects the rest of this handler has always read, so the packing is
+        // invisible past this point. Non-arrays pass through, so a server still
+        // sending maps keeps working.
+        const serverPlayers: any[] | undefined = Array.isArray(data.P)
+            ? data.P.map((e: any) => {
+                const o = unpackFields(e, PLAYER_FIELDS);
+                if (Array.isArray(o.p)) o.p = o.p.map((q: any) => unpackFields(q, PETAL_FIELDS));
+                return o;
+            })
+            : data.P;
+        const serverEnemies: any[] | undefined = Array.isArray(data.E)
+            ? data.E.map((e: any) => unpackFields(e, ENEMY_FIELDS))
+            : data.E;
+        // Removal lists are bare id arrays; ids ride as integers (wire_fields.ts).
+        const removedEnemyIds: string[] | undefined = Array.isArray(data.R)
+            ? data.R.map(unpackId) : data.R;
+        const removedPlayerIds: string[] | undefined = Array.isArray(data.D)
+            ? data.D.map(unpackId) : data.D;
 
         // De-jittered snapshot timeline. Stamping snapshots with *arrival* time
         // lets network jitter distort the timeline: under latency, TCP delivers
@@ -99,6 +116,20 @@ export function registerGameStateHandlers(game: any): void {
                     if (sp.s !== undefined) (existing as any).score = sp.s;
                     if (sp.sm !== undefined) existing.speedFactor = sp.sm;
                     if (sp.e !== undefined) existing.petalExtension = sp.e || 1.0;
+                    // Reload state for OTHER flowers. petalBroken/petalRestored
+                    // are owner-only (server/petalEvents.ts), so without this a
+                    // remote loadout's onCooldown would stick at its first value
+                    // — and for flowers past the petal-detail budget, which send
+                    // no positions, that flag is what decides whether the
+                    // renderer draws the petal at all. Self is skipped: the
+                    // owner gets exact events, and overwriting here would fight
+                    // the loadout bar's local reload animation.
+                    if (sp.c !== undefined && !isLocalPlayerId(game, id) && existing.loadout) {
+                        for (let li = 0; li < existing.loadout.length && li < 10; li++) {
+                            const item: any = existing.loadout[li];
+                            if (item) item.onCooldown = (sp.c & (1 << li)) !== 0;
+                        }
+                    }
                     if (Array.isArray(sp.p)) {
                         const serverPetalPositions = sp.p;
                         if (!existing.petalPositions) {

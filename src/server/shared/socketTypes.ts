@@ -26,6 +26,18 @@ export interface SentPlayerState {
     n: string;
     sm: number;
     u: number;
+    /**
+     * Bitmask of loadout slots (0-9) currently on cooldown.
+     *
+     * petalBroken/petalRestored are owner-only (see server/petalEvents.ts), so
+     * this is the ONLY carrier of reload state for other players' flowers. It
+     * has to ride the snapshot rather than an event because petal POSITIONS are
+     * budgeted (PETAL_DETAIL_MAX_PLAYERS): a flower past that budget sends no
+     * positions, and the client's renderer then falls back to this flag to
+     * decide whether a petal is out. Delta-encoded like every other field, so
+     * it costs one small int only on the ticks a slot actually breaks or heals.
+     */
+    c: number;
     petalsSig: number;
 }
 

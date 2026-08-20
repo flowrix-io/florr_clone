@@ -18,6 +18,7 @@ import { getSessionPlayer, playerUserIds } from '../gameState';
 import { addItem, applyPetalHealthBonus, buildCollection, capLoadoutToCollection, getAbsorbingTier, getMazeAbsorbableCount, hasItem, recalculatePlayerStats, removeItem } from '../playerManager';
 import { sanitizePlayerForClient } from '../playerWire';
 import { ConnectionContext } from './context';
+import { emitPetalRestored } from '../petalEvents';
 
 export function registerInventoryHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -423,7 +424,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                                     applyPetalHealthBonus(restoredPetal, players[targetId]);
                                     players[targetId].loadout[index] = restoredPetal;
 
-                                    io.emit('petalRestored', {
+                                    emitPetalRestored(io, players[targetId].id, {
                                         playerId: players[targetId].id,
                                         slotIndex: index,
                                         petal: players[targetId].loadout[index]

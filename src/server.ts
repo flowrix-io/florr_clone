@@ -40,6 +40,8 @@ if (invalidEggTypes.size > 0) {
 
 import { ServerPlayer } from './player';
 import { getInventoryCodecSignature } from './inventoryCodec';
+import { wireEventsSignature } from './wire_events';
+import { wireFieldsSignature } from './wire_fields';
 import { getDamageMultiplier, updatePetalBehaviours, despawnAllPlayerPets } from './petal_actions';
 import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, enemies, players, obstacles, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
@@ -425,7 +427,7 @@ app.get('/api/leaderboard', (req, res) => {
 // Publish the inventory wire-format fingerprint before any client can connect,
 // so a client running a build with a different petal→id table is told to reload
 // instead of silently decoding every inventory entry as the wrong petal.
-Server.protocolSignature = getInventoryCodecSignature();
+Server.protocolSignature = `${getInventoryCodecSignature()}.${wireEventsSignature()}.${wireFieldsSignature()}`;
 console.log(`[SERVER] Inventory codec signature: ${Server.protocolSignature}`);
 
 const io = new Server(app);
@@ -2151,6 +2153,12 @@ function start_loop() {
     const authenticatedPlayerIds: string[] = [];
     const authenticatedSockets: AuthenticatedSocket[] = [];
 
+    // Same pair for the broadcast loop below. Kept separate from the tick's so
+    // the two timers, which fire at different rates, never clobber each other's
+    // list mid-pass.
+    const broadcastPlayerIds: string[] = [];
+    const broadcastSockets: AuthenticatedSocket[] = [];
+
     setInterval(() => {
         tickCounter++;
         // Smoothed real elapsed time since the previous tick (seconds). Computed
@@ -2265,8 +2273,9 @@ function start_loop() {
 
         evictStalePetalTimers();
 
-        // Encode and send this tick's gameStateUpdate to every client.
-        broadcastGameState(authenticatedPlayerIds, authenticatedSockets, buildPlayerSnapshots());
+        // NOTE: the gameStateUpdate broadcast no longer runs here — it is on its
+        // own BROADCAST_INTERVAL timer below, so simulation rate and send rate
+        // are independent. tickDurMs therefore now measures simulation only.
 
         // Record how long this tick's work actually took (idle early-return
         // ticks never reach here, so they don't dilute the average).
@@ -2275,6 +2284,45 @@ function start_loop() {
         debugTickSamples++;
         if (tickDurMs > debugTickMaxMs) debugTickMaxMs = tickDurMs;
     }, TICK_INTERVAL);
+
+    // -----------------------------------------------------------------------
+    // Broadcast loop — decoupled from the simulation tick.
+    //
+    // Simulation runs at TICK_RATE (30Hz) because physics and combat want the
+    // resolution; the wire does not. Sending every tick meant the per-recipient
+    // encode+cull+delta pass (O(recipients × entities)) ran 30 times a second
+    // and its socket writes landed inside the tick's 33.3ms budget. At 20Hz
+    // that work happens 1/3 less often and, being a separate macrotask, no
+    // longer inflates tickDurMs.
+    //
+    // Firing on its own timer is safe despite reading live world state: Node is
+    // single-threaded and the tick callback runs to completion, so this can only
+    // ever land BETWEEN ticks — never on a half-updated world.
+    //
+    // The client already interpolates between snapshots (see the render-ref
+    // easing in graphics/player-drawing.ts), so a lower snapshot rate costs
+    // smoothness only if it drops below the interpolation window.
+    // -----------------------------------------------------------------------
+    const BROADCAST_RATE = 20;
+    const BROADCAST_INTERVAL = 1000 / BROADCAST_RATE;
+
+    setInterval(() => {
+        // Rebuilt here rather than reused from the tick: at 20Hz vs 30Hz the
+        // two loops interleave unevenly, and a socket that dropped in between
+        // would otherwise still be in the list.
+        broadcastPlayerIds.length = 0;
+        broadcastSockets.length = 0;
+        for (const id in players) {
+            const socket = io.sockets.sockets.get(id) as AuthenticatedSocket | undefined;
+            if (socket && socket.userId) {
+                broadcastPlayerIds.push(id);
+                broadcastSockets.push(socket);
+            }
+        }
+        if (broadcastPlayerIds.length === 0) return;
+
+        broadcastGameState(broadcastPlayerIds, broadcastSockets, buildPlayerSnapshots());
+    }, BROADCAST_INTERVAL);
 
     // Once per second, ship memory + tick-time stats to clients for the debug
     // menu graphs (~100 bytes per emit; skipped entirely while idle).

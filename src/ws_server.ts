@@ -22,8 +22,9 @@
 
 import uWS, { WebSocket as UWS_WebSocket } from 'uWebSockets.js';
 import type { UApp } from './server/uws_app';
-import { randomUUID } from 'crypto';
+import { nextEntityId } from './entity_ids';
 import { encode, decode } from './binary_codec';
+import { WIRE_EVENTS, WIRE_EVENT_IDS } from './wire_events';
 
 // Per-event bandwidth profiling. Aggregated across all sockets; reset by the periodic
 // logger in server.ts. The numbers reflect actual wire bytes (encoded length).
@@ -254,6 +255,9 @@ export class WSSocket {
             const bytes = message instanceof Uint8Array ? message : new Uint8Array(message);
             const msg = decode(bytes) as any;
             if (!Array.isArray(msg) || msg.length < 1) return;
+            // Event names travel as opcodes when they are in the shared table
+            // (see wire_events.ts); anything else is still a plain string.
+            if (typeof msg[0] === 'number') msg[0] = WIRE_EVENTS[msg[0]] ?? msg[0];
             if (typeof msg[0] === 'string') recordBytes(msg[0], bytes.byteLength, 'in');
             const [event, ...args] = msg;
 
@@ -334,7 +338,8 @@ export class WSSocket {
      */
     emitWithStatus(event: string, ...args: any[]): number {
         if (!this.transport || !this._connected) return -1;
-        const payload = encode([event, ...args]);
+        // `?? event` not `|| event`: opcode 0 is a valid, falsy opcode.
+        const payload = encode([WIRE_EVENT_IDS.get(event) ?? event, ...args]);
         recordBytes(event, payload.byteLength, 'out');
         const status = this.transport.send(payload);
         if (status === 2) (this.droppedEvents ??= new Set()).add(event);
@@ -496,7 +501,9 @@ export class WSServer {
      * would never reach `_handleClose` and the socket would leak.
      */
     attachTransport(transport: ServerTransport, onRegistered?: (socket: WSSocket) => void): WSSocket {
-        const id = randomUUID().replace(/-/g, '').slice(0, 20);
+        // Integer-valued (see entity_ids.ts): 20 chars of hex per entity delta
+        // was 17.6% of every frame.
+        const id = nextEntityId();
         const socket = new WSSocket(transport, id, this);
         this.sockets_map.set(id, socket);
         onRegistered?.(socket);
@@ -529,7 +536,7 @@ export class WSServer {
     emit(event: string, ...args: any[]): void {
         // Encode once, send to all peers. WSSocket.emit would re-encode per peer; here
         // we send the shared buffer directly to avoid N redundant encodes for broadcasts.
-        const payload = encode([event, ...args]);
+        const payload = encode([WIRE_EVENT_IDS.get(event) ?? event, ...args]);
         for (const [, socket] of this.sockets_map) {
             if (socket.connected) {
                 try {

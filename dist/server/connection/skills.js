@@ -8,6 +8,7 @@ const petals_1 = require("../../petals");
 const gameState_1 = require("../gameState");
 const playerManager_1 = require("../playerManager");
 const playerWire_1 = require("../playerWire");
+const petalEvents_1 = require("../petalEvents");
 function registerSkillHandlers(ctx) {
     const { io, socket } = ctx;
     const { RARITY_TP_COSTS, savePlayerProgress } = ctx.deps;
@@ -92,7 +93,7 @@ function registerSkillHandlers(ctx) {
                         petal.health = petal.maxHealth;
                         petal.onCooldown = false;
                         // Emit petal restored event for each petal
-                        io.emit('petalRestored', {
+                        (0, petalEvents_1.emitPetalRestored)(io, player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal
@@ -137,7 +138,7 @@ function registerSkillHandlers(ctx) {
                         petal.health = petal.maxHealth;
                         petal.onCooldown = false;
                         // Emit petal restored event for each petal
-                        io.emit('petalRestored', {
+                        (0, petalEvents_1.emitPetalRestored)(io, player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal

@@ -27,13 +27,33 @@ const RAINDROP_RARITY_INDEX: Record<string, number> = {
 const RAINDROP_AURA_BASE_RADIUS = 180;
 const RAINDROP_AURA_RADIUS_PER_RARITY = 18;
 
+/**
+ * Is this loadout slot currently orbiting, judged by the server's petal
+ * position stream? Returns false when the stream carries no petals for this
+ * flower at all, so callers fall back to the (owner-only) cooldown flag.
+ */
+function hasLivePetalPosition(player: Player, loadoutIndex: number): boolean {
+    const positions: any[] | undefined = (player as any).petalPositions;
+    if (!positions || positions.length === 0) return false;
+    for (let j = 0; j < positions.length; j++) {
+        if (positions[j].loadoutIndex === loadoutIndex) return true;
+    }
+    return false;
+}
+
 function getRaindropAuraRadiusFromLoadout(player: Player): number {
     if (!player.loadout) return 0;
     let best = 0;
     for (let i = 0; i < player.loadout.length && i < 10; i++) {
         const item: any = player.loadout[i];
         if (!item || item.type !== 'petal' || item.petalType !== 'raindrop' || !item.rarity) continue;
-        if (item.onCooldown) continue;
+        // `onCooldown` is only pushed to the petal's OWNER now (see
+        // server/petalEvents.ts), so on a remote flower this flag sticks at
+        // true after the first break. The position stream is the live signal:
+        // the server omits a broken instance from petalPositions. Trust the
+        // flag only when there are no positions to check it against — petal
+        // detail is budgeted per recipient, so they can be absent entirely.
+        if (item.onCooldown && !hasLivePetalPosition(player, i)) continue;
         const idx = RAINDROP_RARITY_INDEX[item.rarity] ?? 0;
         const r = RAINDROP_AURA_BASE_RADIUS + idx * RAINDROP_AURA_RADIUS_PER_RARITY;
         if (r > best) best = r;

@@ -265,28 +265,98 @@ function getRandomPositionInZoneType(zoneType) {
  * bookkeeping the caller still owns (the ambient-super announcement, spawn
  * counters).
  */
+/**
+ * Loop-invariant spawn-budget cache.
+ *
+ * createEnemy is called in BURSTS — the density-maintenance pass runs it up to
+ * `3 × playerCount` times (~189 at 63 players), the join pass `5 × playerCount`
+ * — and every call used to recompute all three budget inputs from scratch:
+ * the viewport list, the target count, and a full `getEnemiesInViewportCount()`
+ * scan over every mob in the world. At ~1600 mobs that is ~300k viewport tests
+ * per pass to spawn at most 189 mobs, and a CPU profile at 63 players put
+ * createEnemy at 4.2% of wall — the largest non-idle cost on the server.
+ *
+ * None of those inputs can move faster than the viewport cache they are derived
+ * from, so they share its TTL. Mobs spawned inside the window are counted in
+ * `_spawnedSinceRefresh` so the "already at target" guard still converges
+ * mid-burst instead of overshooting to the full requested count.
+ */
+/**
+ * Scratch buffers for the mob-spacing rejection test.
+ *
+ * `_spacingR2[i]` is the SQUARED rejection radius for `enemies[i]` — squared so
+ * the test is a plain compare against dx²+dy² with no Math.sqrt. Positions are
+ * copied in alongside it so the hot loop touches two flat Float64Arrays instead
+ * of chasing 1600 object pointers per attempt.
+ *
+ * Rebuilt once per createEnemy call; the retry loop reuses it across all 50
+ * position attempts, which is where the saving is.
+ */
+let _spacingR2 = new Float64Array(0);
+let _spacingX = new Float64Array(0);
+let _spacingY = new Float64Array(0);
+let _spacingCount = 0;
+function buildSpacingRadii(baseRadius) {
+    const n = constants_1.enemies.length;
+    if (_spacingR2.length < n) {
+        const cap = n + 256;
+        _spacingR2 = new Float64Array(cap);
+        _spacingX = new Float64Array(cap);
+        _spacingY = new Float64Array(cap);
+    }
+    for (let i = 0; i < n; i++) {
+        const e = constants_1.enemies[i];
+        const stats = (0, mobs_1.getMobStats)(e.type, e.tier);
+        const otherHalfSize = (stats ? stats.size * 40 : 40) / 2;
+        const r = baseRadius + otherHalfSize;
+        _spacingR2[i] = r * r;
+        _spacingX[i] = e.x;
+        _spacingY[i] = e.y;
+    }
+    _spacingCount = n;
+}
+/** Squared-distance form of the original `distance < halfPrelim + otherHalf + MIN` test. */
+function isTooCloseToMob(x, y) {
+    for (let i = 0; i < _spacingCount; i++) {
+        const dx = _spacingX[i] - x;
+        const dy = _spacingY[i] - y;
+        if (dx * dx + dy * dy < _spacingR2[i])
+            return true;
+    }
+    return false;
+}
+const SPAWN_BUDGET_TTL_MS = 16;
+let _spawnBudgetAt = -1;
+let _cachedTargetEnemyCount = 0;
+let _cachedViewportEnemies = 0;
+let _spawnedSinceRefresh = 0;
 function createEnemy(helpers) {
     const playerCount = Object.keys(constants_1.players).length;
     // Don't spawn if no players are connected
     if (playerCount === 0) {
         return null;
     }
-    // Calculate target enemy count based on viewport density
-    const viewports = helpers.getPlayerViewports();
-    const totalViewportArea = viewports.reduce((total, viewport) => {
-        const extendedViewport = {
-            x: viewport.x - constants_2.VIEWPORT_BUFFER,
-            y: viewport.y - constants_2.VIEWPORT_BUFFER,
-            width: viewport.width + (constants_2.VIEWPORT_BUFFER * 2),
-            height: viewport.height + (constants_2.VIEWPORT_BUFFER * 2)
-        };
-        return total + (extendedViewport.width * extendedViewport.height);
-    }, 0);
-    // Calculate target density: same as 9000 enemies across the whole world (9x density)
-    const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
-    const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
+    const nowMs = Date.now();
+    if (nowMs - _spawnBudgetAt >= SPAWN_BUDGET_TTL_MS) {
+        _spawnBudgetAt = nowMs;
+        // Plain loop, not reduce with an object literal per viewport: the
+        // extended box was only ever used for its area, so the intermediate
+        // allocation was pure garbage (23 objects × 189 calls per pass).
+        const viewports = helpers.getPlayerViewports();
+        let totalViewportArea = 0;
+        for (let i = 0; i < viewports.length; i++) {
+            const v = viewports[i];
+            totalViewportArea +=
+                (v.width + constants_2.VIEWPORT_BUFFER * 2) * (v.height + constants_2.VIEWPORT_BUFFER * 2);
+        }
+        // Target density: same as 9000 enemies across the whole world (9x density)
+        const targetDensity = constants_2.ORIGINAL_ENEMY_COUNT / constants_2.TOTAL_WORLD_AREA;
+        _cachedTargetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
+        _cachedViewportEnemies = helpers.getEnemiesInViewportCount();
+        _spawnedSinceRefresh = 0;
+    }
     // Don't spawn if we already have enough enemies in viewport
-    if (helpers.getEnemiesInViewportCount() >= targetEnemyCount) {
+    if (_cachedViewportEnemies + _spawnedSinceRefresh >= _cachedTargetEnemyCount) {
         return null;
     }
     // Pick the player with the fewest enemies in their viewport to balance density.
@@ -391,15 +461,14 @@ function createEnemy(helpers) {
     // Check if spawn position is too close to other mobs
     const MIN_MOB_SPAWN_DISTANCE = 80;
     const halfPrelimSize = PRELIMINARY_MOB_SIZE / 2;
-    const tooCloseToOtherMob = constants_1.enemies.some((otherEnemy) => {
-        const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
-        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-        const otherHalfSize = otherMobSize / 2;
-        const dx = otherEnemy.x - x;
-        const dy = otherEnemy.y - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-    });
+    // Rejection radii for every live mob, computed ONCE for this spawn. The
+    // retry loop below re-tests up to 50 fresh positions against the same mob
+    // set, and the previous form re-derived all ~1600 radii through getMobStats
+    // (a dictionary lookup) on every one of those attempts — up to ~81k lookups
+    // and ~81k sqrt calls for a single spawn. Profiled at 63 players this was
+    // the bulk of createEnemy's 4.2% self time.
+    buildSpacingRadii(halfPrelimSize + MIN_MOB_SPAWN_DISTANCE);
+    const tooCloseToOtherMob = isTooCloseToMob(x, y);
     if (tooCloseToOtherMob) {
         let newValidPosition = false;
         let newAttempts = 0;
@@ -425,15 +494,8 @@ function createEnemy(helpers) {
             const collidesWithWall = (0, constants_2.isTileIdBlocking)(tileState);
             const inPetalRange = helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE);
             const inSpawnZone = isPositionInAnySpawnZone(x, y);
-            const tooClose = constants_1.enemies.some((otherEnemy) => {
-                const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
-                const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-                const otherHalfSize = otherMobSize / 2;
-                const dx = otherEnemy.x - x;
-                const dy = otherEnemy.y - y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-            });
+            // Radii were built before the retry loop — same mob set, same values.
+            const tooClose = isTooCloseToMob(x, y);
             if (!collidesWithWall && !inPetalRange && !inSpawnZone && !tooClose) {
                 newValidPosition = true;
             }
@@ -604,6 +666,9 @@ function createEnemy(helpers) {
     const enemy = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, x, y, { reversed });
     if (!enemy)
         return null;
+    // Counted against the cached budget above so a burst of calls inside one
+    // TTL window stops at the target instead of spawning the full request.
+    _spawnedSinceRefresh++;
     // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
     // Chain and cluster spawns come AFTER the parent is admitted, so their
     // leader/hole references resolve to a live entity on the spot instead of

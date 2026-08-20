@@ -11,6 +11,7 @@ import { database } from './database';
 import { playerUserIds } from './server/gameState';
 import { getMobStats, getAllMobTypes } from './mobs';
 import { spawnCentipedeBodySegments } from './server/enemySpawner';
+import { emitPetalRestored, emitPetalBroken } from './server/petalEvents';
 
 // Action execution context
 export interface ActionContext {
@@ -520,11 +521,11 @@ function markPetalForBreak(petalId: string, context: ActionContext): void {
         };
         
         // Emit petal broken event to clients
-        io.emit('petalBroken', {
+        emitPetalBroken(io, player.id, {
             playerId: player.id,
             loadoutIndex: loadoutIndex,
             petalType: petal.petalType
-        });
+        }, player.x, player.y);
         
         // Get cooldown time from petal stats
         const cooldownTime = getEffectivePetalCooldown(petal.petalType, petal.rarity);
@@ -550,7 +551,7 @@ function markPetalForBreak(petalId: string, context: ActionContext): void {
             };
 
             // Emit restoration event
-            io.emit('petalRestored', {
+            emitPetalRestored(io, player.id, {
                 playerId: player.id,
                 loadoutIndex: loadoutIndex,
                 petal: player.loadout[loadoutIndex]

@@ -30,6 +30,7 @@ const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
 const squadManager_1 = require("./squadManager");
 const utils_1 = require("./utils");
+const wire_fields_1 = require("../wire_fields");
 /**
  * Item wire events whose loss desyncs the client's item map. A dropped spawn
  * leaves loot the client never renders; a dropped remove/pickup leaves a
@@ -93,12 +94,18 @@ function buildPlayerSnapshots() {
         if (p.corrupted)
             faceFlags |= player_1.FaceFlags.HasCorruption;
         let equipFlags = 0;
+        // Bit i set = loadout slot i is fully on cooldown. For a clumped petal
+        // the slot only counts as down when EVERY instance is down, matching
+        // the slot-level `onCooldown` the client's renderer tests.
+        let cooldownMask = 0;
         if (p.loadout) {
             const loadoutLen = Math.min(p.loadout.length, 10);
             for (let i = 0; i < loadoutLen; i++) {
                 const item = p.loadout[i];
                 if (!item || item.type !== 'petal' || !item.petalType)
                     continue;
+                if (item.onCooldown)
+                    cooldownMask |= (1 << i);
                 const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity ?? 'common');
                 if (stats?.equipFlags)
                     equipFlags |= stats.equipFlags;
@@ -115,6 +122,7 @@ function buildPlayerSnapshots() {
             equippedSkinId: p.equippedSkinId ?? '',
             mouth,
             petalExtension,
+            cooldownMask,
             petalsRaw: p.petalPositions || [],
         });
     }
@@ -243,7 +251,7 @@ function encodePetals(view, snap, wantPetals) {
         const petal = { L: pos.loadoutIndex, I: pos.instanceIndex, x: px, y: py };
         if (np)
             petal.N = 1;
-        petalsOut.push(petal);
+        petalsOut.push((0, wire_fields_1.packFields)(petal, wire_fields_1.PETAL_FIELDS));
     }
     // Never let a mixed hash land on the "no detail" sentinel.
     if (petalsSig === 0)
@@ -317,6 +325,7 @@ function collectPlayerDeltas(view, snapshots) {
             // Effective speed multiplier, sent to the owning client for prediction.
             sm: quantize(p.speedFactor ?? 1, 0.01),
             u: isSelf ? (p.lastProcessedInputSeq ?? 0) : 0,
+            c: snap.cooldownMask,
             petalsSig,
         };
         const delta = encodePlayerDelta(p.id, next, lastPlayers.get(p.id), isSelf, petalsOut);
@@ -379,6 +388,7 @@ function encodePlayerDelta(id, next, prev, isSelf, petalsOut) {
     put('M', next.M, prev?.M, 0);
     put('V', next.V, prev?.V, 0);
     put('z', next.z, prev?.z, 1.0);
+    put('c', next.c, prev?.c, 0);
     putAlways('n', next.n, prev?.n);
     // Only the owning client predicts, so only it needs the speed factor.
     if (isSelf)
@@ -393,7 +403,7 @@ function encodePlayerDelta(id, next, prev, isSelf, petalsOut) {
         delta.p = petalsOut;
         changed = true;
     }
-    return changed ? delta : null;
+    return changed ? (0, wire_fields_1.packFields)(delta, wire_fields_1.PLAYER_FIELDS) : null;
 }
 // ---------------------------------------------------------------------------
 // Enemy deltas
@@ -473,7 +483,7 @@ function encodeEnemyDelta(e, prev, precision) {
         // changes, so it only needs to ride the first-sight record.
         if (e.ownerId)
             wire.o = 1;
-        return { wire, next };
+        return { wire: (0, wire_fields_1.packFields)(wire, wire_fields_1.ENEMY_FIELDS), next };
     }
     if (prev.x === next.x && prev.y === next.y && prev.a === next.a &&
         prev.h === next.h && prev.H === next.H && prev.t === next.t && prev.T === next.T) {
@@ -494,7 +504,7 @@ function encodeEnemyDelta(e, prev, precision) {
         wire.t = next.t;
     if (prev.T !== next.T)
         wire.T = next.T;
-    return { wire, next };
+    return { wire: (0, wire_fields_1.packFields)(wire, wire_fields_1.ENEMY_FIELDS), next };
 }
 // ---------------------------------------------------------------------------
 // Entry point
@@ -539,9 +549,9 @@ function sendGameStateTo(view, snapshots) {
     if (enemyDeltas.changed.length > 0)
         gameState.E = enemyDeltas.changed;
     if (enemyDeltas.removed.length > 0)
-        gameState.R = enemyDeltas.removed;
+        gameState.R = enemyDeltas.removed.map(wire_fields_1.packId);
     if (playerDeltas.removed.length > 0)
-        gameState.D = playerDeltas.removed;
+        gameState.D = playerDeltas.removed.map(wire_fields_1.packId);
     if (fullResync)
         gameState.F = 1;
     socket.lastUpdateTime = now;

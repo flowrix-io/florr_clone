@@ -34,6 +34,7 @@ import { Enemy } from '../server_utils';
 import { items } from './gameState';
 import { getSquadForPlayer } from './squadManager';
 import { getActivePlayerForSocket, getOriginalSocketId } from './utils';
+import { ENEMY_FIELDS, PETAL_FIELDS, PLAYER_FIELDS, packFields, packId } from '../wire_fields';
 import {
     AuthenticatedSocket,
     ConnectionQuality,
@@ -108,6 +109,8 @@ export interface PlayerSnapshot {
     equippedSkinId: string;
     mouth: number;
     petalExtension: number;
+    /** Bitmask of loadout slots on cooldown; see SentPlayerState.c. */
+    cooldownMask: number;
     petalsRaw: any[];
 }
 
@@ -128,11 +131,16 @@ export function buildPlayerSnapshots(): PlayerSnapshot[] {
         if (p.corrupted) faceFlags |= FaceFlags.HasCorruption;
 
         let equipFlags = 0;
+        // Bit i set = loadout slot i is fully on cooldown. For a clumped petal
+        // the slot only counts as down when EVERY instance is down, matching
+        // the slot-level `onCooldown` the client's renderer tests.
+        let cooldownMask = 0;
         if (p.loadout) {
             const loadoutLen = Math.min(p.loadout.length, 10);
             for (let i = 0; i < loadoutLen; i++) {
                 const item = p.loadout[i];
                 if (!item || item.type !== 'petal' || !item.petalType) continue;
+                if (item.onCooldown) cooldownMask |= (1 << i);
                 const stats = getPetalStats(item.petalType, item.rarity ?? 'common');
                 if (stats?.equipFlags) equipFlags |= stats.equipFlags;
                 if (stats?.faceFlags) faceFlags |= stats.faceFlags;
@@ -148,6 +156,7 @@ export function buildPlayerSnapshots(): PlayerSnapshot[] {
             equippedSkinId: p.equippedSkinId ?? '',
             mouth,
             petalExtension,
+            cooldownMask,
             petalsRaw: p.petalPositions || [],
         });
     }
@@ -315,7 +324,7 @@ function encodePetals(view: RecipientView, snap: PlayerSnapshot, wantPetals: boo
         petalsSig = Math.imul(petalsSig ^ np, 16777619);
         const petal: any = { L: pos.loadoutIndex, I: pos.instanceIndex, x: px, y: py };
         if (np) petal.N = 1;
-        petalsOut.push(petal);
+        petalsOut.push(packFields(petal, PETAL_FIELDS));
     }
 
     // Never let a mixed hash land on the "no detail" sentinel.
@@ -396,6 +405,7 @@ function collectPlayerDeltas(view: RecipientView, snapshots: PlayerSnapshot[]): 
             // Effective speed multiplier, sent to the owning client for prediction.
             sm: quantize(p.speedFactor ?? 1, 0.01),
             u: isSelf ? (p.lastProcessedInputSeq ?? 0) : 0,
+            c: snap.cooldownMask,
             petalsSig,
         };
 
@@ -468,6 +478,7 @@ function encodePlayerDelta(
     put('M', next.M, prev?.M, 0);
     put('V', next.V, prev?.V, 0);
     put('z', next.z, prev?.z, 1.0);
+    put('c', next.c, prev?.c, 0);
     putAlways('n', next.n, prev?.n);
     // Only the owning client predicts, so only it needs the speed factor.
     if (isSelf) put('sm', next.sm, prev?.sm, 1);
@@ -482,7 +493,7 @@ function encodePlayerDelta(
         changed = true;
     }
 
-    return changed ? delta : null;
+    return changed ? packFields(delta, PLAYER_FIELDS) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +579,7 @@ function encodeEnemyDelta(e: Enemy, prev: SentEnemyState | undefined, precision:
         // wire, and the client suppresses boss bars for them. Ownership never
         // changes, so it only needs to ride the first-sight record.
         if (e.ownerId) wire.o = 1;
-        return { wire, next };
+        return { wire: packFields(wire, ENEMY_FIELDS), next };
     }
 
     if (prev.x === next.x && prev.y === next.y && prev.a === next.a &&
@@ -584,7 +595,7 @@ function encodeEnemyDelta(e: Enemy, prev: SentEnemyState | undefined, precision:
     if (prev.H !== next.H) wire.H = next.H;
     if (prev.t !== next.t) wire.t = next.t;
     if (prev.T !== next.T) wire.T = next.T;
-    return { wire, next };
+    return { wire: packFields(wire, ENEMY_FIELDS), next };
 }
 
 // ---------------------------------------------------------------------------
@@ -636,8 +647,8 @@ function sendGameStateTo(view: RecipientView, snapshots: PlayerSnapshot[]): void
     const gameState: any = { T: now };
     if (playerDeltas.changed.length > 0) gameState.P = playerDeltas.changed;
     if (enemyDeltas.changed.length > 0) gameState.E = enemyDeltas.changed;
-    if (enemyDeltas.removed.length > 0) gameState.R = enemyDeltas.removed;
-    if (playerDeltas.removed.length > 0) gameState.D = playerDeltas.removed;
+    if (enemyDeltas.removed.length > 0) gameState.R = enemyDeltas.removed.map(packId);
+    if (playerDeltas.removed.length > 0) gameState.D = playerDeltas.removed.map(packId);
     if (fullResync) gameState.F = 1;
 
     socket.lastUpdateTime = now;

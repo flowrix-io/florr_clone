@@ -83,6 +83,7 @@ exports.auditEnemyEntities = auditEnemyEntities;
 exports.markCentipedeHead = markCentipedeHead;
 const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
+const entity_ids_1 = require("../entity_ids");
 const mobs_1 = require("../mobs");
 const ecs_1 = require("../ecs");
 const C = __importStar(require("../ecs/components"));
@@ -120,7 +121,7 @@ function spawnEnemy(type, tier, x, y, opts) {
     const activeHost = requireHost();
     const world = activeHost.getWorld();
     const now = Date.now();
-    const id = Math.random().toString(36).slice(2, 11);
+    const id = (0, entity_ids_1.nextEntityId)();
     const angle = opts?.angle ?? Math.random() * Math.PI * 2;
     const maxHealth = opts?.maxHealth ?? stats.health;
     const health = opts?.health ?? maxHealth;

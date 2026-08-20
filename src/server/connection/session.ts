@@ -28,6 +28,7 @@ import { getEligibleItemsForSocket } from '../tickBroadcast';
 import { getActivePlayerForSocket } from '../utils';
 import { ConnectionContext } from './context';
 import { kickDuplicateSessions } from './sessionGuard';
+import { emitPetalRestored } from '../petalEvents';
 
 export function registerSessionHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -371,7 +372,7 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
                                     applyPetalHealthBonus(restoredPetal, players[socket.id]);
                                     players[socket.id].loadout[i] = restoredPetal;
 
-                                    io.emit('petalRestored', {
+                                    emitPetalRestored(io, players[socket.id].id, {
                                         playerId: players[socket.id].id,
                                         slotIndex: i,
                                         petal: players[socket.id].loadout[i]

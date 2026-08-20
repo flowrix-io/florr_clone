@@ -39,6 +39,7 @@ const ecsSync_1 = require("./ecsSync");
 // tree is isomorphic and side-effect free. The banned direction is the reverse —
 // this module binds a port at import, so nothing under src/ecs may import it.
 const petalRing_1 = require("../ecs/systems/petalRing");
+const petalEvents_1 = require("./petalEvents");
 // Reusable per-call buffers for enemy grid queries; avoids per-petal array allocs.
 // Two separate buffers because queryEnemiesNear() clears the one it is handed:
 // the petal-attraction query and the petal-collision query run in the same petal
@@ -378,7 +379,7 @@ function restoreIndependentPetalInstance(playerId, loadoutIndex, instanceIndex, 
     current.instanceHealth[instanceIndex] = restoredHealth;
     current.health = Math.max(0, ...current.instanceHealth);
     current.onCooldown = current.instanceOnCooldown.every((c) => c);
-    io.emit('petalRestored', {
+    (0, petalEvents_1.emitPetalRestored)(io, playerId, {
         playerId,
         slotIndex: loadoutIndex,
         instanceIndex,
@@ -830,45 +831,88 @@ function isPositionNearAnyPlayer(x, y) {
 /**
  * Check if a position is in any player's viewport
  */
-function isPositionInAnyViewport(x, y) {
-    const viewports = getPlayerViewports();
-    // If no players are connected, allow spawning anywhere (for initial server startup)
-    if (viewports.length === 0) {
-        return true;
+/**
+ * Flat box cache backing both viewport tests — same rationale (and shape) as
+ * `_nearBoxes` above, which already took this treatment after the dictionary
+ * walk measured ~6% of server CPU.
+ *
+ * These two tests had been left on the object-array path: every call re-entered
+ * getPlayerViewports() for a Date.now() + TTL check, then walked an array of
+ * `{x,y,width,height}` objects re-deriving `x - BUFFER` / `x + width + BUFFER`
+ * per box. Called per enemy per pass (~1600 enemies × 30Hz), a CPU profile at
+ * 63 players put the pair at 4.7% of wall — ~19% of all non-idle time, second
+ * only to enemy spawning.
+ *
+ * The box is symmetric around the player once expanded (minX = px - vw/2 - BUF,
+ * maxX = px + vw/2 + BUF), so it stores as centre + half-extent and the test is
+ * two abs-compares against precomputed numbers. Stride 6: cx, cy, then the 100%
+ * and 200% half-extents, so one rebuild serves both callers.
+ */
+const _vpBoxes = [];
+let _vpBoxesAt = -1;
+let _vpSawPlayer = false;
+function refreshViewportBoxes() {
+    const now = Date.now();
+    if (now - _vpBoxesAt < VIEWPORT_CACHE_TTL_MS)
+        return;
+    _vpBoxesAt = now;
+    _vpBoxes.length = 0;
+    _vpSawPlayer = false;
+    // Filtering MUST match getPlayerViewports exactly — bots excluded (they
+    // must not inflate the spawn budget) and world-rect clamped.
+    for (const playerId in constants_1.players) {
+        if (playerId.startsWith('bot_'))
+            continue;
+        const player = constants_1.players[playerId];
+        if (!player || player.x === undefined || player.y === undefined ||
+            isNaN(player.x) || isNaN(player.y) ||
+            player.x < 0 || player.x > constants_1.ACTUAL_WORLD_WIDTH ||
+            player.y < 0 || player.y > constants_1.ACTUAL_WORLD_HEIGHT)
+            continue;
+        _vpSawPlayer = true;
+        const halfW = (player.viewportWidth || constants_1.VIEWPORT_WIDTH) / 2;
+        const halfH = (player.viewportHeight || constants_1.VIEWPORT_HEIGHT) / 2;
+        _vpBoxes.push(player.x, player.y, halfW + constants_1.VIEWPORT_BUFFER, halfH + constants_1.VIEWPORT_BUFFER, halfW + constants_1.VIEWPORT_BUFFER * 2, halfH + constants_1.VIEWPORT_BUFFER * 2);
     }
-    // Pure arithmetic — this runs per enemy from the viewport-count pass.
-    for (const viewport of viewports) {
-        if (x >= viewport.x - constants_1.VIEWPORT_BUFFER && x <= viewport.x + viewport.width + constants_1.VIEWPORT_BUFFER &&
-            y >= viewport.y - constants_1.VIEWPORT_BUFFER && y <= viewport.y + viewport.height + constants_1.VIEWPORT_BUFFER) {
+}
+/** @internal Shared by both viewport tests; `o` picks the 100% (2) or 200% (4) half-extent pair. */
+function inAnyViewportBox(x, y, o) {
+    for (let i = 0; i < _vpBoxes.length; i += 6) {
+        const dx = x - _vpBoxes[i];
+        const dy = y - _vpBoxes[i + 1];
+        if ((dx < 0 ? -dx : dx) <= _vpBoxes[i + o] && (dy < 0 ? -dy : dy) <= _vpBoxes[i + o + 1]) {
             return true;
         }
     }
-    return false;
+    // No players connected: allow spawning anywhere (initial server startup).
+    return !_vpSawPlayer;
+}
+function isPositionInAnyViewport(x, y) {
+    refreshViewportBoxes();
+    return inAnyViewportBox(x, y, 2);
 }
 /**
  * Check if a position is in any player's viewport with 200% buffer (for websocket optimization)
  */
 function isPositionInAnyViewport200Percent(x, y) {
-    const viewports = getPlayerViewports();
-    // If no players are connected, allow spawning anywhere (for initial server startup)
-    if (viewports.length === 0) {
-        return true;
-    }
-    // Use 200% of VIEWPORT_BUFFER (2x). Pure arithmetic — this runs per enemy.
-    const buffer200Percent = constants_1.VIEWPORT_BUFFER * 2;
-    for (const viewport of viewports) {
-        if (x >= viewport.x - buffer200Percent && x <= viewport.x + viewport.width + buffer200Percent &&
-            y >= viewport.y - buffer200Percent && y <= viewport.y + viewport.height + buffer200Percent) {
-            return true;
-        }
-    }
-    return false;
+    refreshViewportBoxes();
+    return inAnyViewportBox(x, y, 4);
 }
 /**
  * Filter enemies to only include those in any player's viewport with 200% buffer
  */
 function getEnemiesInViewport200Percent() {
-    return constants_1.enemies.filter(enemy => isPositionInAnyViewport200Percent(enemy.x, enemy.y));
+    // Same hoist as getEnemiesInViewportCount — one TTL check for the pass.
+    refreshViewportBoxes();
+    if (!_vpSawPlayer)
+        return constants_1.enemies.slice();
+    const out = [];
+    for (let i = 0; i < constants_1.enemies.length; i++) {
+        const e = constants_1.enemies[i];
+        if (inAnyViewportBox(e.x, e.y, 4))
+            out.push(e);
+    }
+    return out;
 }
 /**
  * Check if a position is within any player's petal range
@@ -919,16 +963,17 @@ function isPositionInPlayerPetalRange(x, y, mobSize) {
  * Get count of enemies in viewport
  */
 function getEnemiesInViewportCount() {
-    const viewports = getPlayerViewports();
-    // If no players are connected, count all enemies (for initial server startup)
-    if (viewports.length === 0) {
+    // Refresh once for the whole pass rather than per enemy: the per-call
+    // variant re-checks Date.now() against the cache TTL every time, which at
+    // ~1600 enemies is 1600 clock reads for one pass.
+    refreshViewportBoxes();
+    // If no players are connected, count all enemies (initial server startup).
+    if (!_vpSawPlayer)
         return constants_1.enemies.length;
-    }
     let count = 0;
-    for (const enemy of constants_1.enemies) {
-        if (isPositionInAnyViewport(enemy.x, enemy.y)) {
+    for (let i = 0; i < constants_1.enemies.length; i++) {
+        if (inAnyViewportBox(constants_1.enemies[i].x, constants_1.enemies[i].y, 2))
             count++;
-        }
     }
     return count;
 }
@@ -1870,7 +1915,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                     };
                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
                     player.loadout[loadoutIndex] = restoredPetal;
-                    io.emit('petalRestored', {
+                    (0, petalEvents_1.emitPetalRestored)(io, player.id, {
                         playerId: player.id,
                         slotIndex: loadoutIndex,
                         petal: player.loadout[loadoutIndex]
@@ -1944,12 +1989,12 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             // reload: nothing else pushes the slot-level flag out
                             // (petalRestored is the only other carrier, and that's
                             // the end of the reload, not the start).
-                            io.emit('petalBroken', {
+                            (0, petalEvents_1.emitPetalBroken)(io, player.id, {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petalType: petal.petalType,
                                 rarity: petal.rarity
-                            });
+                            }, player.x, player.y);
                         }
                     }
                     else {
@@ -1983,19 +2028,19 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                 };
                                 (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
                                 player.loadout[loadoutIndex] = restoredPetal;
-                                io.emit('petalRestored', {
+                                (0, petalEvents_1.emitPetalRestored)(io, player.id, {
                                     playerId: player.id,
                                     slotIndex: loadoutIndex,
                                     petal: player.loadout[loadoutIndex]
                                 });
                             }
                         }, cooldownTime);
-                        io.emit('petalBroken', {
+                        (0, petalEvents_1.emitPetalBroken)(io, player.id, {
                             playerId: player.id,
                             slotIndex: loadoutIndex,
                             petalType: petal.petalType,
                             rarity: petal.rarity
-                        });
+                        }, player.x, player.y);
                     }
                 }
                 continue;
@@ -2566,12 +2611,12 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             if (petal.instanceOnCooldown.every((c) => c)) {
                                 petal.onCooldown = true;
                                 // See the matching emit in the tick-loop break above.
-                                io.emit('petalBroken', {
+                                (0, petalEvents_1.emitPetalBroken)(io, player.id, {
                                     playerId: player.id,
                                     slotIndex: loadoutIndex,
                                     petalType: petal.petalType,
                                     rarity: petal.rarity
-                                });
+                                }, player.x, player.y);
                             }
                         }
                         else {
@@ -2603,19 +2648,19 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                     };
                                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
                                     player.loadout[loadoutIndex] = restoredPetal;
-                                    io.emit('petalRestored', {
+                                    (0, petalEvents_1.emitPetalRestored)(io, player.id, {
                                         playerId: player.id,
                                         slotIndex: loadoutIndex,
                                         petal: player.loadout[loadoutIndex]
                                     });
                                 }
                             }, cooldownTime);
-                            io.emit('petalBroken', {
+                            (0, petalEvents_1.emitPetalBroken)(io, player.id, {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petalType: petal.petalType,
                                 rarity: petal.rarity
-                            });
+                            }, player.x, player.y);
                         }
                     }
                     // Check if enemy dies (only process once per enemy)

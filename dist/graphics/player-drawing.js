@@ -210,11 +210,24 @@ core_1.Graphics.prototype.drawPlayerPetals = function (world, entity, petalExten
     const rawServerPositions = player.petalPositions;
     const serverPositions = rawServerPositions && rawServerPositions.length > 0 ? rawServerPositions : undefined;
     const petalCache = this.petalImageCache;
+    const isLocalFlower = currentPlayerId !== undefined && player.id === currentPlayerId;
     for (let idx = 0, n = petalInstances.length; idx < n; idx++) {
         const inst = petalInstances[idx];
         const petal = inst.petal;
         const stats = inst.stats;
-        if (petal.onCooldown)
+        // Reload state (petalBroken/petalRestored) is pushed to the OWNER only
+        // now — see server/petalEvents.ts for why — so a REMOTE flower's copy
+        // of this flag goes stale the moment one of its petals breaks. For
+        // remote flowers the authoritative signal is the position stream: the
+        // server simply omits a broken instance, and the
+        // `else if (serverPositions) continue` branch below hides it.
+        //
+        // The fallback still needs the flag though. Petal detail is budgeted
+        // per recipient (petalDetailBudget in server/tickBroadcast.ts), so a
+        // visible remote flower can arrive with NO positions at all, and the
+        // canonical orbit fallback would then draw its broken petals. Keep the
+        // early-out whenever positions aren't available to say otherwise.
+        if (petal.onCooldown && (isLocalFlower || !serverPositions))
             continue;
         const slotIndex = inst.slotIndex;
         const loadoutIndex = inst.loadoutIndex;

@@ -26,6 +26,7 @@ const tempAdmin_1 = require("../tempAdmin");
 const tickBroadcast_1 = require("../tickBroadcast");
 const utils_1 = require("../utils");
 const sessionGuard_1 = require("./sessionGuard");
+const petalEvents_1 = require("../petalEvents");
 function registerSessionHandlers(ctx) {
     const { io, socket } = ctx;
     const { respawnPlayer, savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
@@ -350,7 +351,7 @@ function registerSessionHandlers(ctx) {
                                     // Apply petal health bonus
                                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_1.players[socket.id]);
                                     constants_1.players[socket.id].loadout[i] = restoredPetal;
-                                    io.emit('petalRestored', {
+                                    (0, petalEvents_1.emitPetalRestored)(io, constants_1.players[socket.id].id, {
                                         playerId: constants_1.players[socket.id].id,
                                         slotIndex: i,
                                         petal: constants_1.players[socket.id].loadout[i]

@@ -12,6 +12,8 @@
  */
 
 import { encode, decode } from './binary_codec';
+import { WIRE_EVENTS, WIRE_EVENT_IDS, wireEventsSignature } from './wire_events';
+import { wireFieldsSignature } from './wire_fields';
 import { getInventoryCodecSignature } from './inventoryCodec';
 import { connectTransport, ClientTransport, TransportKind } from './net/transport';
 
@@ -30,7 +32,9 @@ import { connectTransport, ClientTransport, TransportKind } from './net/transpor
  */
 const PROTO_RELOAD_KEY = 'protoMismatchReloadAt';
 function verifyProtocol(serverSig: string): boolean {
-    const ourSig = getInventoryCodecSignature();
+    // Must mirror how the server assembles it (see server.ts): inventory codec
+    // AND the wire-event opcode table, since a stale table decodes opcodes wrong.
+    const ourSig = `${getInventoryCodecSignature()}.${wireEventsSignature()}.${wireFieldsSignature()}`;
     if (!serverSig || !ourSig || serverSig === ourSig) {
         try { sessionStorage.removeItem(PROTO_RELOAD_KEY); } catch {}
         return true;
@@ -190,6 +194,8 @@ export class WSClientSocket {
             const msg: any = decode(data);
             if (!Array.isArray(msg) || msg.length < 1) return;
 
+            // Opcode -> name for events in the shared table (wire_events.ts).
+            if (typeof msg[0] === 'number') msg[0] = WIRE_EVENTS[msg[0]] ?? msg[0];
             const [eventName, ...args] = msg;
             if (typeof eventName === 'string') {
                 this.recordBytes(eventName, wireBytes, 'in');
@@ -293,7 +299,8 @@ export class WSClientSocket {
             return this;
         }
 
-        const msg = encode([event, ...args]);
+        // `?? event` not `|| event`: opcode 0 is valid and falsy.
+        const msg = encode([WIRE_EVENT_IDS.get(event) ?? event, ...args]);
         if (transport && transport.open) {
             transport.send(msg);
             this.recordBytes(event, msg.byteLength, 'out');

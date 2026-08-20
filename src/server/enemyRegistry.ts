@@ -52,6 +52,7 @@
 
 import { Enemy, LiveEnemy, makeEnemy } from '../server_utils';
 import { enemies } from '../constants';
+import { nextEntityId } from '../entity_ids';
 import { getMobStats } from '../mobs';
 import { Entity, NULL_ENTITY, Query, World } from '../ecs';
 import * as C from '../ecs/components';
@@ -139,6 +140,7 @@ export interface SpawnEnemyOptions {
     bossWireShape?: boolean;
 }
 
+
 /**
  * Create a mob. Returns null when the (type, tier) pair has no stats.
  *
@@ -165,7 +167,7 @@ export function spawnEnemy(
     const world = activeHost.getWorld();
     const now = Date.now();
 
-    const id = Math.random().toString(36).slice(2, 11);
+    const id = nextEntityId();
     const angle = opts?.angle ?? Math.random() * Math.PI * 2;
     const maxHealth = opts?.maxHealth ?? stats.health;
     const health = opts?.health ?? maxHealth;

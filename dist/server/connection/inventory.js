@@ -17,6 +17,7 @@ const petals_1 = require("../../petals");
 const gameState_1 = require("../gameState");
 const playerManager_1 = require("../playerManager");
 const playerWire_1 = require("../playerWire");
+const petalEvents_1 = require("../petalEvents");
 function registerInventoryHandlers(ctx) {
     const { io, socket } = ctx;
     const { addMazeXPToPlayer, addXPToPlayer, deleteCodeFromDatabase, redeemedCodes, saveCodeToDatabase, savePlayerProgress, savePlayerProgressImmediate } = ctx.deps;
@@ -400,7 +401,7 @@ function registerInventoryHandlers(ctx) {
                                     // Apply petal health bonus
                                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_1.players[targetId]);
                                     constants_1.players[targetId].loadout[index] = restoredPetal;
-                                    io.emit('petalRestored', {
+                                    (0, petalEvents_1.emitPetalRestored)(io, constants_1.players[targetId].id, {
                                         playerId: constants_1.players[targetId].id,
                                         slotIndex: index,
                                         petal: constants_1.players[targetId].loadout[index]

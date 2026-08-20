@@ -32,6 +32,7 @@ const database_1 = require("./database");
 const gameState_1 = require("./server/gameState");
 const mobs_1 = require("./mobs");
 const enemySpawner_1 = require("./server/enemySpawner");
+const petalEvents_1 = require("./server/petalEvents");
 /**
  * Build a kill context for the partial death handlers in explodePetal /
  * strikeLightning. Those paths never call trackMobKill or cleanupEnemy
@@ -438,11 +439,11 @@ function markPetalForBreak(petalId, context) {
             maxHealth: petal.maxHealth
         };
         // Emit petal broken event to clients
-        io.emit('petalBroken', {
+        (0, petalEvents_1.emitPetalBroken)(io, player.id, {
             playerId: player.id,
             loadoutIndex: loadoutIndex,
             petalType: petal.petalType
-        });
+        }, player.x, player.y);
         // Get cooldown time from petal stats
         const cooldownTime = (0, petals_1.getEffectivePetalCooldown)(petal.petalType, petal.rarity);
         // Deadline for the tick-loop restore backstop in playerState — a break
@@ -467,7 +468,7 @@ function markPetalForBreak(petalId, context) {
                 onCooldown: false
             };
             // Emit restoration event
-            io.emit('petalRestored', {
+            (0, petalEvents_1.emitPetalRestored)(io, player.id, {
                 playerId: player.id,
                 loadoutIndex: loadoutIndex,
                 petal: player.loadout[loadoutIndex]

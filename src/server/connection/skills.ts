@@ -7,6 +7,7 @@ import { getSessionPlayer } from '../gameState';
 import { applyPetalHealthBonus, isMazeTrackLive, recalculatePlayerStats } from '../playerManager';
 import { sanitizePlayerForClient } from '../playerWire';
 import { ConnectionContext } from './context';
+import { emitPetalRestored } from '../petalEvents';
 
 export function registerSkillHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -107,7 +108,7 @@ export function registerSkillHandlers(ctx: ConnectionContext): void {
                         petal.onCooldown = false;
 
                         // Emit petal restored event for each petal
-                        io.emit('petalRestored', {
+                        emitPetalRestored(io, player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal
@@ -161,7 +162,7 @@ export function registerSkillHandlers(ctx: ConnectionContext): void {
                         petal.onCooldown = false;
 
                         // Emit petal restored event for each petal
-                        io.emit('petalRestored', {
+                        emitPetalRestored(io, player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal

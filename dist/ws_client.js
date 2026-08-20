@@ -15,6 +15,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WSClientSocket = void 0;
 exports.io = io;
 const binary_codec_1 = require("./binary_codec");
+const wire_events_1 = require("./wire_events");
+const wire_fields_1 = require("./wire_fields");
 const inventoryCodec_1 = require("./inventoryCodec");
 const transport_1 = require("./net/transport");
 /**
@@ -32,7 +34,9 @@ const transport_1 = require("./net/transport");
  */
 const PROTO_RELOAD_KEY = 'protoMismatchReloadAt';
 function verifyProtocol(serverSig) {
-    const ourSig = (0, inventoryCodec_1.getInventoryCodecSignature)();
+    // Must mirror how the server assembles it (see server.ts): inventory codec
+    // AND the wire-event opcode table, since a stale table decodes opcodes wrong.
+    const ourSig = `${(0, inventoryCodec_1.getInventoryCodecSignature)()}.${(0, wire_events_1.wireEventsSignature)()}.${(0, wire_fields_1.wireFieldsSignature)()}`;
     if (!serverSig || !ourSig || serverSig === ourSig) {
         try {
             sessionStorage.removeItem(PROTO_RELOAD_KEY);
@@ -171,6 +175,9 @@ class WSClientSocket {
             const msg = (0, binary_codec_1.decode)(data);
             if (!Array.isArray(msg) || msg.length < 1)
                 return;
+            // Opcode -> name for events in the shared table (wire_events.ts).
+            if (typeof msg[0] === 'number')
+                msg[0] = wire_events_1.WIRE_EVENTS[msg[0]] ?? msg[0];
             const [eventName, ...args] = msg;
             if (typeof eventName === 'string') {
                 this.recordBytes(eventName, wireBytes, 'in');
@@ -264,7 +271,8 @@ class WSClientSocket {
             transport.bufferedAmount > WSClientSocket.MAX_VOLATILE_BUFFERED_BYTES) {
             return this;
         }
-        const msg = (0, binary_codec_1.encode)([event, ...args]);
+        // `?? event` not `|| event`: opcode 0 is valid and falsy.
+        const msg = (0, binary_codec_1.encode)([wire_events_1.WIRE_EVENT_IDS.get(event) ?? event, ...args]);
         if (transport && transport.open) {
             transport.send(msg);
             this.recordBytes(event, msg.byteLength, 'out');
