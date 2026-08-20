@@ -2398,14 +2398,14 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
   />
 </svg>`
     },
-    glass: {
-        name: "Glass",
-        damage: 12,
+    infinity: {
+        name: "Infinity",
+        damage: Infinity,
         health: Infinity,
-        size: 1.0,
+        size: 3.0,
         cooldown: 1000,
-        description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
-        color: "#B0E0E6",
+        description: "Just A Infinity Petal Common Or Not?",
+        color: "#2bffa3",
         knockback: 0,
         count: 1,
         damageCooldown: 1000,
