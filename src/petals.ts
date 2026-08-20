@@ -2376,6 +2376,28 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
         isAdminPetal: true,
         size: 1.0,
     },
+    glass: {
+        name: "Glass",
+        damage: 12,
+        health: Infinity,
+        size: 1.0,
+        cooldown: 1000,
+        description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
+        color: "#B0E0E6",
+        knockback: 0,
+        count: 1,
+        damageCooldown: 1000,
+        image: `<svg width="20" height="20" viewBox="-10 -10 20 20" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M 7 0 L 3.5 6.062 L -3.5 6.062 L -7 0 L -3.5 -6.062 L 3.5 -6.062 Z"
+    fill="rgba(255, 255, 255, 0.25)"
+    stroke="rgba(255, 255, 255, 0.75)"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>`
+    },
     glasss: {
         name: "Glasss",
         damage: 15,
@@ -2398,14 +2420,14 @@ const BASE_PETAL_CONFIGS: { [petalType: string]: BasePetalConfig } = {
   />
 </svg>`
     },
-    glass: {
-        name: "Glass",
-        damage: 12,
+    infinity: {
+        name: "Infinity",
+        damage: Infinity,
         health: Infinity,
-        size: 1.0,
+        size: 3.0,
         cooldown: 1000,
-        description: "Fragile-looking but unbreakable. Hits hard but needs time between strikes",
-        color: "#B0E0E6",
+        description: "Just A Infinity Petal Common Or Not?",
+        color: "#2bffa3",
         knockback: 0,
         count: 1,
         damageCooldown: 1000,
