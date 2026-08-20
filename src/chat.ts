@@ -96,6 +96,7 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/admin change-maze', description: 'Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]', isAdmin: true },
     { command: '/level-from-string', description: 'Show what level a player named &lt;name&gt; would roll', isAdmin: false },
     { command: '/loadout-from-string', description: 'Show the loadout a player named &lt;name&gt; would roll', isAdmin: false },
+    { command: '/admin remove_petal ', description  'remove petal from a player', isAdmin: true },
 ];
 
 export class Chat {
