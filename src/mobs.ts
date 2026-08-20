@@ -468,15 +468,15 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         unique: 6800000
     },
     target_dummy: {
-        common: 100,
-        uncommon: 100,
-        rare: 100,
-        epic: 100,
-        legendary: 100,
-        mythic: 100,
-        ultra: 100,
-        super: 100,
-        unique: 100
+        common: Infinity,
+        uncommon: Infinity,
+        rare: Infinity,
+        epic: Infinity,
+        legendary: Infinity,
+        mythic: Infinity,
+        ultra: Infinity,
+        super: Infinity,
+        unique: Infinity
     },
     fly: {
         common: 1,
