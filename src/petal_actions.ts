@@ -3,10 +3,12 @@ import { ServerPlayer } from './player';
 import { sanitizePlayerForClient } from './server/playerWire';
 import { Item } from './item';
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
-import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage } from './server';
+import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage, trackDamage } from './server';
 import { spawnEnemy, removeEnemyAt } from './server/enemyRegistry';
 import { killEnemy, type KillContext } from './server/shared/killHandler';
 import { players, enemies } from './constants';
+import { queryEnemiesNear } from './server/enemyGrid';
+import { markEnemyDamaged } from './server/utils';
 import { database } from './database';
 import { playerUserIds } from './server/gameState';
 import { getMobStats, getAllMobTypes } from './mobs';
@@ -156,6 +158,11 @@ export function grantShield(player: ServerPlayer, amount: number, durationMs: nu
     applyPlayerEffect(player, 'shield', amount, durationMs);
 }
 
+/** Reused across explosions so the grid query allocates nothing per call. */
+const _explodeScratch: Enemy[] = [];
+/** Same, for lightning strikes. */
+const _lightningScratch: Enemy[] = [];
+
 // Explode petal and deal area damage
 function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any, player?: ServerPlayer): void {
     // Throttle explosions to 1 per 20ms
@@ -166,22 +173,34 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
     lastExplosionTime = currentTime;
     
     const explosionRadius = petalSize * 40 * 3; // Convert petal size to pixels and make explosion 3x larger
-    
-    // Process enemies in reverse order to avoid index issues when removing
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        const enemy = enemies[i];
-        
+
+    // Grid query, not a scan of every mob in the world. An explosion only ever
+    // reaches explosionRadius, but this used to walk all ~1600 enemies and take
+    // a Math.sqrt for each — per explosion, and explosions come in bursts. That
+    // full sweep (plus a per-hit `require`, plus a per-hit broadcast) is what
+    // made a single petal detonation stall the tick.
+    const hits = queryEnemiesNear(x, y, explosionRadius, _explodeScratch);
+    const radiusSq = explosionRadius * explosionRadius;
+
+    // Reverse order: killEnemy splices `enemies`, and indices are resolved
+    // against that array below.
+    for (let qi = hits.length - 1; qi >= 0; qi--) {
+        const enemy = hits[qi];
+
         // Skip all pets (pets should not be damaged by any player's explosions)
         if (enemy.ownerId) {
             continue;
         }
-        
-        const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-        
-        if (distance <= explosionRadius) {
+
+        // The grid returns a cell-aligned superset, so the exact radius test
+        // still has to run — squared, to keep the sqrt out of the hot path.
+        const ddx = enemy.x - x;
+        const ddy = enemy.y - y;
+
+        if (ddx * ddx + ddy * ddy <= radiusSq) {
+            const distance = Math.sqrt(ddx * ddx + ddy * ddy);
             // Track damage if player is provided
             if (player) {
-                const { trackDamage } = require('./server');
                 trackDamage(enemy, player.id, damage);
             }
             
@@ -197,10 +216,15 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
             enemy.knockbackX = normalizedDx * knockbackForce;
             enemy.knockbackY = normalizedDy * knockbackForce;
             
-            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            markEnemyDamaged(enemy);
             
             // Check if enemy dies
             if (enemy.health <= 0) {
+                // Resolved here, not carried from the loop: the grid result is
+                // not `enemies`, and earlier kills in this same explosion have
+                // already shifted it. Only paid on an actual kill.
+                const i = enemies.indexOf(enemy);
+                if (i < 0) continue;
                 // Explode/lightning never ran cleanupEnemy or trackMobKill
                 // historically (skipCleanup + timing 'none' preserve that).
                 killEnemy(enemy, i, enemies, makePetalKillCtx(io), {
@@ -272,18 +296,25 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
     
     const targets: { x: number; y: number; enemyId: string }[] = [];
     
-    // Find all enemies within the lightning radius
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        const enemy = enemies[i];
-        
+    // Grid query rather than a sweep of every mob in the world — same reason as
+    // explodePetal above, and lightning fires on an interval.
+    const struck = queryEnemiesNear(x, y, radius, _lightningScratch);
+    const radiusSq = radius * radius;
+
+    // Reverse: killEnemy splices `enemies`, and the index is resolved below.
+    for (let qi = struck.length - 1; qi >= 0; qi--) {
+        const enemy = struck[qi];
+
         // Skip all pets (pets should not be damaged by any player's lightning)
         if (enemy.ownerId) {
             continue;
         }
-        
-        const distance = Math.sqrt((enemy.x - x) ** 2 + (enemy.y - y) ** 2);
-        
-        if (distance <= radius) {
+
+        // The grid returns a cell-aligned superset; exact test, squared.
+        const ldx = enemy.x - x;
+        const ldy = enemy.y - y;
+
+        if (ldx * ldx + ldy * ldy <= radiusSq) {
             targets.push({
                 x: enemy.x,
                 y: enemy.y,
@@ -295,16 +326,18 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
             
             // Track damage if player is provided
             if (player) {
-                const { trackDamage } = require('./server');
                 trackDamage(enemy, player.id, damage);
             }
             
             enemy.health = Math.max(0, enemy.health - damage);
             
-            io.emit('enemyDamaged', { enemyId: enemy.id, health: enemy.health });
+            markEnemyDamaged(enemy);
             
             // Check if enemy dies
             if (enemy.health <= 0) {
+                // Live index; see the matching note in explodePetal.
+                const i = enemies.indexOf(enemy);
+                if (i < 0) continue;
                 killEnemy(enemy, i, enemies, makePetalKillCtx(io), {
                     killerPlayerId: player?.id,
                     skipCleanup: true,

@@ -60,7 +60,8 @@ import {
     markEnemyPoisonDamaged,
     pendingEnemyDamageUpdates,
     getActivePlayerForSocket,
-    getOriginalSocketId
+    getOriginalSocketId,
+    markEnemyDamagedById,
 } from './server/utils';
 import {
     loadGuildsFromDatabase,
@@ -1564,7 +1565,11 @@ function getEcsRuntime(): EcsRuntime {
         onPlayerHit: applyProjectileHitToPlayer,
         emitEnemyDamaged: (victim, health) => {
             const enemyId = _ecsRuntime!.world.externalIdOf(victim);
-            if (enemyId) io.emit('enemyDamaged', { enemyId, health });
+            // Batched into the tick's single `enemiesDamaged`, not broadcast per
+            // hit. Per-hit this was one full fan-out to EVERY socket for every
+            // projectile that connected — measured on prod at 8,912 msg/s and
+            // 391 KB/s, the third-largest event on the wire.
+            if (enemyId) markEnemyDamagedById(enemyId, health);
         },
         onProjectileKill: (victim, killer, timing) => {
             const world = _ecsRuntime!.world;

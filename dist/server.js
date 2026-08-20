@@ -1334,8 +1334,12 @@ function getEcsRuntime() {
         onPlayerHit: applyProjectileHitToPlayer,
         emitEnemyDamaged: (victim, health) => {
             const enemyId = _ecsRuntime.world.externalIdOf(victim);
+            // Batched into the tick's single `enemiesDamaged`, not broadcast per
+            // hit. Per-hit this was one full fan-out to EVERY socket for every
+            // projectile that connected — measured on prod at 8,912 msg/s and
+            // 391 KB/s, the third-largest event on the wire.
             if (enemyId)
-                io.emit('enemyDamaged', { enemyId, health });
+                (0, utils_1.markEnemyDamagedById)(enemyId, health);
         },
         onProjectileKill: (victim, killer, timing) => {
             const world = _ecsRuntime.world;

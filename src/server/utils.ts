@@ -35,6 +35,21 @@ export function markEnemyDamaged(enemy: Enemy): void {
     }
 }
 
+/**
+ * As markEnemyDamaged, for callers that hold the id and post-damage health but
+ * not the shell — the ECS projectile-collision hook works in entities and only
+ * resolves an external id.
+ */
+export function markEnemyDamagedById(enemyId: string, health: number): void {
+    const pending = pendingEnemyDamageUpdates.get(enemyId);
+    if (pending) {
+        pending.health = health;
+        pending.poisonOnly = false;
+    } else {
+        pendingEnemyDamageUpdates.set(enemyId, { health, poisonOnly: false });
+    }
+}
+
 /** As markEnemyDamaged, but the damage came from a poison tick. */
 export function markEnemyPoisonDamaged(enemy: Enemy): void {
     const pending = pendingEnemyDamageUpdates.get(enemy.id);
