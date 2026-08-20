@@ -10,6 +10,7 @@ exports.getEffectivePetalCooldown = getEffectivePetalCooldown;
 exports.getAllPetalTypes = getAllPetalTypes;
 exports.isEggPetalType = isEggPetalType;
 exports.isUndroppableEggPetalType = isUndroppableEggPetalType;
+exports.getDroppablePetalTypes = getDroppablePetalTypes;
 exports.getPetalRarities = getPetalRarities;
 const mobs_1 = require("./mobs");
 const player_1 = require("./player");
@@ -2215,7 +2216,8 @@ const BASE_PETAL_CONFIGS = {
     stroke-linecap="round"
     stroke-linejoin="round"
   />
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     infinity: {
         name: "Infinity",
@@ -2237,7 +2239,8 @@ const BASE_PETAL_CONFIGS = {
     stroke-linecap="round"
     stroke-linejoin="round"
   />
-</svg>`
+</svg>`,
+        isAdminPetal: true
     },
     // ---------------------------------------------------------------------
     // The twelve petals below are ported from ~/rysteria_gardn. Each `image`
@@ -2918,6 +2921,34 @@ function isUndroppableEggPetalType(petalType) {
         return false;
     const mobType = petalType.slice(0, -'_egg'.length);
     return mobs_1.BASE_MOB_CONFIGS[mobType]?.noEggDrop === true;
+}
+/**
+ * The petal types a random roll is allowed to hand out — mob drops, the item
+ * spawner, and the ring of petals the spawner renders all draw from this ONE
+ * list. Excluded: admin/test petals, eggs for mobs marked `noEggDrop`, and the
+ * cutters (body-damage petals that were never meant to drop). Keeping the rule
+ * in one place is the point: the item spawner used to re-derive it and only
+ * checked `isAdminPetal`, so it happily spawned no-egg eggs and cutters that
+ * nothing else in the game would ever give out.
+ */
+let cachedDroppablePetalTypes = null;
+function getDroppablePetalTypes() {
+    if (cachedDroppablePetalTypes === null) {
+        cachedDroppablePetalTypes = getAllPetalTypes().filter(petalType => {
+            if (isUndroppableEggPetalType(petalType))
+                return false;
+            if (petalType === 'cutter' || petalType === 'lightning_cutter')
+                return false;
+            // A petal is admin-only if ANY of its rarities says so — checking
+            // just 'common' would miss a type whose common tier is absent or
+            // left unflagged.
+            const rarities = exports.PETAL_CONFIG[petalType];
+            if (!rarities)
+                return false;
+            return !Object.values(rarities).some(stats => stats?.isAdminPetal);
+        });
+    }
+    return cachedDroppablePetalTypes;
 }
 function getPetalRarities(petalType) {
     return Object.keys(exports.PETAL_CONFIG[petalType] || {});

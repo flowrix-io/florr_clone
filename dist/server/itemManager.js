@@ -4,17 +4,10 @@ exports.handleMobDrops = handleMobDrops;
 const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
-// Cache eligible petal types to avoid expensive filtering on every drop
-let cachedEligiblePetalTypes = null;
+// Shared with the item spawner and the spawner's rendered petal ring — see
+// getDroppablePetalTypes() in petals.ts. It caches, so this stays cheap per drop.
 function getEligiblePetalTypes() {
-    if (cachedEligiblePetalTypes === null) {
-        const allPetalTypes = (0, petals_1.getAllPetalTypes)();
-        cachedEligiblePetalTypes = allPetalTypes.filter(type => {
-            const stats = (0, petals_1.getPetalStats)(type, 'common');
-            return stats && !stats.isAdminPetal && !(0, petals_1.isUndroppableEggPetalType)(type) && type !== 'cutter' && type !== 'lightning_cutter';
-        });
-    }
-    return cachedEligiblePetalTypes;
+    return (0, petals_1.getDroppablePetalTypes)();
 }
 const physics_1 = require("./physics");
 const petals_1 = require("../petals");

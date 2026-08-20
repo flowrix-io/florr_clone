@@ -5,20 +5,13 @@ import { calculateMobDrops } from '../mobs';
 import { items, ITEM_EXPIRATION_TIMES, itemExpirationTimeouts } from './gameState';
 import { getEligiblePlayers, getOriginalSocketId } from './utils';
 
-// Cache eligible petal types to avoid expensive filtering on every drop
-let cachedEligiblePetalTypes: string[] | null = null;
+// Shared with the item spawner and the spawner's rendered petal ring — see
+// getDroppablePetalTypes() in petals.ts. It caches, so this stays cheap per drop.
 function getEligiblePetalTypes(): string[] {
-    if (cachedEligiblePetalTypes === null) {
-        const allPetalTypes = getAllPetalTypes();
-        cachedEligiblePetalTypes = allPetalTypes.filter(type => {
-            const stats = getPetalStats(type, 'common');
-            return stats && !stats.isAdminPetal && !isUndroppableEggPetalType(type) && type !== 'cutter' && type !== 'lightning_cutter';
-        });
-    }
-    return cachedEligiblePetalTypes;
+    return getDroppablePetalTypes();
 }
 import { checkItemWallCollisions } from './physics';
-import { getAllPetalTypes, getPetalStats, isUndroppableEggPetalType } from '../petals';
+import { getDroppablePetalTypes } from '../petals';
 import {
     RARITY_ORDER,
     Rarity,

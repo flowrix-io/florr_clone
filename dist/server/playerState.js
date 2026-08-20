@@ -2431,16 +2431,12 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                     }
                     // Check if item spawner was hit and has 1% chance to spawn a random petal
                     if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
-                        // Get all petal types and filter out admin petals
-                        const allPetalTypes = (0, petals_1.getAllPetalTypes)();
-                        const nonAdminPetalTypes = allPetalTypes.filter(petalType => {
-                            // Check if the petal is an admin petal by checking any rarity
-                            const commonStats = (0, petals_1.getPetalStats)(petalType, 'common');
-                            return !commonStats?.isAdminPetal;
-                        });
-                        if (nonAdminPetalTypes.length > 0) {
+                        // Same eligibility list mob drops use: no admin/test petals,
+                        // no eggs for mobs marked noEggDrop, no cutters.
+                        const eligiblePetalTypes = (0, petals_1.getDroppablePetalTypes)();
+                        if (eligiblePetalTypes.length > 0) {
                             // Pick a random petal type
-                            const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
+                            const randomPetalType = eligiblePetalTypes[Math.floor(Math.random() * eligiblePetalTypes.length)];
                             // Pick a random rarity with weighted probabilities (rarer items are much rarer)
                             // Weighted distribution: common is most common, rarer items are exponentially rarer
                             const rarityWeights = {

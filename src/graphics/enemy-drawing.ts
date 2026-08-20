@@ -1,6 +1,6 @@
 import {
-    Graphics, FaceFlags, getPetalStats, getAllPetalTypes, getMobStats, getEnemySizeScale,
-    isUndroppableEggPetalType, PETAL_RING_ORBIT_SCALE, PETAL_RING_PETAL_SCALE, PETAL_RING_ROTATION_SPEED,
+    Graphics, FaceFlags, getPetalStats, getMobStats, getEnemySizeScale,
+    getDroppablePetalTypes, PETAL_RING_ORBIT_SCALE, PETAL_RING_PETAL_SCALE, PETAL_RING_ROTATION_SPEED,
 } from './core';
 import { ClientWorld } from '../client_world';
 import { Entity } from '../ecs';
@@ -496,11 +496,9 @@ Graphics.prototype.drawPetalRingFlower = function(this: Graphics, world: ClientW
 
 Graphics.prototype.getEligiblePetalTypes = function(this: Graphics): string[] {
     if (!this.cachedEligiblePetalTypes) {
-        const allPetalTypes = getAllPetalTypes();
-        this.cachedEligiblePetalTypes = allPetalTypes.filter(petalType => {
-            const stats = getPetalStats(petalType, 'common');
-            return stats && !stats.isAdminPetal && !isUndroppableEggPetalType(petalType) && petalType !== 'cutter' && petalType !== 'lightning_cutter';
-        });
+        // Must match what the server can actually spawn (petals.ts), or the ring
+        // advertises petals the spawner never gives out.
+        this.cachedEligiblePetalTypes = getDroppablePetalTypes();
     }
     return this.cachedEligiblePetalTypes;
 };

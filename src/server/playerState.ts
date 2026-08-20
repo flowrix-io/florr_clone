@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from '../ws_server';
 import { ServerPlayer, canPetalsDamagePlayer } from '../player';
 import { Enemy } from '../server_utils';
 import { WorldItem } from '../item';
-import { RARITY_LEVELS, getRarityIndex, Rarity, getAllPetalTypes, getPetalStats, getEffectivePetalCooldown } from '../petals';
+import { RARITY_LEVELS, getRarityIndex, Rarity, getDroppablePetalTypes, getPetalStats, getEffectivePetalCooldown } from '../petals';
 import {
     players,
     enemies,
@@ -2845,17 +2845,13 @@ if (player.loadout) {
 
                 // Check if item spawner was hit and has 1% chance to spawn a random petal
                 if (enemy.type === 'item_spawner' && Math.random() < 0.01) {
-                    // Get all petal types and filter out admin petals
-                    const allPetalTypes = getAllPetalTypes();
-                    const nonAdminPetalTypes = allPetalTypes.filter(petalType => {
-                        // Check if the petal is an admin petal by checking any rarity
-                        const commonStats = getPetalStats(petalType, 'common');
-                        return !commonStats?.isAdminPetal;
-                    });
+                    // Same eligibility list mob drops use: no admin/test petals,
+                    // no eggs for mobs marked noEggDrop, no cutters.
+                    const eligiblePetalTypes = getDroppablePetalTypes();
 
-                    if (nonAdminPetalTypes.length > 0) {
+                    if (eligiblePetalTypes.length > 0) {
                         // Pick a random petal type
-                        const randomPetalType = nonAdminPetalTypes[Math.floor(Math.random() * nonAdminPetalTypes.length)];
+                        const randomPetalType = eligiblePetalTypes[Math.floor(Math.random() * eligiblePetalTypes.length)];
                         
                         // Pick a random rarity with weighted probabilities (rarer items are much rarer)
                         // Weighted distribution: common is most common, rarer items are exponentially rarer

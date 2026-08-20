@@ -421,11 +421,9 @@ core_1.Graphics.prototype.drawPetalRingFlower = function (world, enemy, enemySiz
 };
 core_1.Graphics.prototype.getEligiblePetalTypes = function () {
     if (!this.cachedEligiblePetalTypes) {
-        const allPetalTypes = (0, core_1.getAllPetalTypes)();
-        this.cachedEligiblePetalTypes = allPetalTypes.filter(petalType => {
-            const stats = (0, core_1.getPetalStats)(petalType, 'common');
-            return stats && !stats.isAdminPetal && !(0, core_1.isUndroppableEggPetalType)(petalType) && petalType !== 'cutter' && petalType !== 'lightning_cutter';
-        });
+        // Must match what the server can actually spawn (petals.ts), or the ring
+        // advertises petals the spawner never gives out.
+        this.cachedEligiblePetalTypes = (0, core_1.getDroppablePetalTypes)();
     }
     return this.cachedEligiblePetalTypes;
 };
