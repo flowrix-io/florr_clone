@@ -356,6 +356,11 @@ core_1.Graphics.prototype.drawPetalBreakEffects = function () {
         return progress < 1;
     });
 };
+/**
+ * Above this many struck mobs the all-pairs web is skipped — see the note in
+ * drawLightningEffects. 8 targets is 28 segments, which still reads as a mesh.
+ */
+const LIGHTNING_WEB_MAX_TARGETS = 8;
 core_1.Graphics.prototype.drawLightningEffects = function () {
     this.lightningEffects = this.lightningEffects.filter(effect => {
         const elapsed = Date.now() - effect.startTime;
@@ -368,36 +373,51 @@ core_1.Graphics.prototype.drawLightningEffects = function () {
         this.ctx.strokeStyle = '#FFFFFF';
         this.ctx.lineWidth = 2;
         this.ctx.lineCap = 'round';
-        // Draw lines from origin to each target
-        effect.targets.forEach(target => {
-            this.ctx.beginPath();
+        const targets = effect.targets;
+        const n = targets.length;
+        // ONE path for every bolt, not one per line. These all share a style,
+        // so a single beginPath/stroke draws them in one go; the previous form
+        // paid full canvas stroke overhead per segment.
+        this.ctx.beginPath();
+        // Origin -> each target. Linear in the number of targets.
+        for (let i = 0; i < n; i++) {
             this.ctx.moveTo(effect.x, effect.y);
-            this.ctx.lineTo(target.x, target.y);
-            this.ctx.stroke();
-        });
-        // Draw lines between targets to create a web effect
-        for (let i = 0; i < effect.targets.length; i++) {
-            for (let j = i + 1; j < effect.targets.length; j++) {
-                const target1 = effect.targets[i];
-                const target2 = effect.targets[j];
-                this.ctx.beginPath();
-                this.ctx.moveTo(target1.x, target1.y);
-                this.ctx.lineTo(target2.x, target2.y);
-                this.ctx.stroke();
+            this.ctx.lineTo(targets[i].x, targets[i].y);
+        }
+        // The target-to-target "web" is all-pairs, which is O(n²) SEGMENTS PER
+        // FRAME and redrawn for the effect's whole 500ms lifetime. A strike into
+        // a dense mob pile made that ~4,950 segments/frame at 100 targets and
+        // froze the client outright.
+        //
+        // It is capped rather than reworked because the cap costs nothing
+        // visually: at these sizes the web reads as the intended mesh, and past
+        // it the lines overlap into a solid blob that looked like a white
+        // rectangle anyway. Normal strikes hit a handful of mobs and are
+        // unaffected.
+        if (n <= LIGHTNING_WEB_MAX_TARGETS) {
+            for (let i = 0; i < n; i++) {
+                const t1 = targets[i];
+                for (let j = i + 1; j < n; j++) {
+                    const t2 = targets[j];
+                    this.ctx.moveTo(t1.x, t1.y);
+                    this.ctx.lineTo(t2.x, t2.y);
+                }
             }
         }
-        // Draw bright center point
+        this.ctx.stroke();
+        // Center point + target dots: also one path, one fill.
         this.ctx.fillStyle = '#FFFFFF';
         this.ctx.beginPath();
+        this.ctx.moveTo(effect.x + 5, effect.y);
         this.ctx.arc(effect.x, effect.y, 5, 0, Math.PI * 2);
+        for (let i = 0; i < n; i++) {
+            const t = targets[i];
+            // moveTo before each arc, or the subpaths chain together with a
+            // connecting line from the previous dot.
+            this.ctx.moveTo(t.x + 3, t.y);
+            this.ctx.arc(t.x, t.y, 3, 0, Math.PI * 2);
+        }
         this.ctx.fill();
-        // Draw target points
-        effect.targets.forEach(target => {
-            this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.beginPath();
-            this.ctx.arc(target.x, target.y, 3, 0, Math.PI * 2);
-            this.ctx.fill();
-        });
         this.ctx.restore();
         return true;
     });

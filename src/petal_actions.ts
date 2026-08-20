@@ -1,4 +1,6 @@
 import { getRarityIndex, getEffectivePetalCooldown } from './petals';
+import { emitToViewers } from './server/scopedEmit';
+import { enemySpawnPayload } from './server/enemyWire';
 import { ServerPlayer } from './player';
 import { sanitizePlayerForClient } from './server/playerWire';
 import { Item } from './item';
@@ -156,6 +158,43 @@ function applyPlayerEffect(player: ServerPlayer, type: PlayerEffect['type'], val
  */
 export function grantShield(player: ServerPlayer, amount: number, durationMs: number): void {
     applyPlayerEffect(player, 'shield', amount, durationMs);
+}
+
+/**
+ * Cap on how many struck mobs ride the lightningStrike VFX payload. Prod
+ * measured this event at 1.0 KB average / 302 KB/s, and a strike into a dense
+ * mob pile made `targets` as long as the pile.
+ */
+const LIGHTNING_VFX_MAX_TARGETS = 24;
+
+/**
+ * Trim the VFX target list to the cap, NEAREST FIRST.
+ *
+ * It must not be a plain `slice`. queryEnemiesNear walks its cell range as
+ * `for cy { for cx { ... } }`, so the result is ordered by increasing y — and
+ * the strike loop consumes it in reverse. Taking the first N off that array
+ * therefore selected the N mobs furthest down the screen, and every bolt in a
+ * dense pile fanned downward and never up.
+ *
+ * Distance from the strike origin has no directional bias: the chosen set is a
+ * disc around the origin, which is also what the effect should look like.
+ */
+function pickVfxTargets(
+    targets: { x: number; y: number; enemyId: string }[],
+    originX: number,
+    originY: number,
+): { x: number; y: number; enemyId: string }[] {
+    if (targets.length <= LIGHTNING_VFX_MAX_TARGETS) return targets;
+    // Copy before sorting: `targets` order is not otherwise meaningful, but the
+    // caller still owns it.
+    return targets
+        .slice()
+        .sort((a, b) => {
+            const adx = a.x - originX, ady = a.y - originY;
+            const bdx = b.x - originX, bdy = b.y - originY;
+            return (adx * adx + ady * ady) - (bdx * bdx + bdy * bdy);
+        })
+        .slice(0, LIGHTNING_VFX_MAX_TARGETS);
 }
 
 /** Reused across explosions so the grid query allocates nothing per call. */
@@ -348,12 +387,19 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
     }
 
     // Emit lightning effect to clients
-    io.emit('lightningStrike', {
+    // VFX: only clients who can see the strike. This was a full fan-out
+    // carrying every struck mob — prod measured 1.0 KB average at 297 msg/s
+    // (302 KB/s), and a lightning petal fired into an admin-spawned mob pile
+    // makes `targets` as long as the pile.
+    emitToViewers(io, x, y, 'lightningStrike', {
         x: x,
         y: y,
-        targets: targets,
+        // VFX only — damage above already applied to every struck mob. Past a
+        // couple of dozen the bolts overlap into a solid blob, so sending more
+        // buys nothing visible and costs payload plus client draw work.
+        targets: pickVfxTargets(targets, x, y),
         damage: petalDamage || 25
-    });
+    }, player?.id);
 }
 
 // Helper function to find a player's pet by mob type
@@ -517,7 +563,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     })!; // mobStats validated above
 
     // Notify all clients
-    io.emit('enemySpawned', pet);
+    emitToViewers(io, pet.x, pet.y, 'enemySpawned', enemySpawnPayload(pet));
 
     // Centipede pets need their trailing body chain too, with ownerId propagated
     // to each segment so they follow the owner alongside the head.
@@ -525,7 +571,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
         const beforeCount = enemies.length;
         spawnCentipedeBodySegments(pet);
         for (let i = beforeCount; i < enemies.length; i++) {
-            io.emit('enemySpawned', enemies[i]);
+            emitToViewers(io, enemies[i].x, enemies[i].y, 'enemySpawned', enemySpawnPayload(enemies[i]));
         }
     }
 

@@ -1,4 +1,6 @@
 import { Server } from './ws_server';
+import { emitToViewers } from './server/scopedEmit';
+import { enemySpawnPayload } from './server/enemyWire';
 import { createApp, UApp, staticFiles, jsonParser } from './server/uws_app';
 import { startWebTransportServer, getWebTransportAdvertisement } from './server/webtransport_server';
 import { resolveTlsPaths } from './server/devCert';
@@ -893,7 +895,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
         // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
         // Notify all clients
-        io.emit('enemySpawned', enemy);
+        emitToViewers(io, enemy.x, enemy.y, 'enemySpawned', enemySpawnPayload(enemy));
 
         // Boss-tier mobs normally announce themselves via spawnSpecialMobs()/
         // announceAmbientSuper(), neither of which runs for an admin-triggered
@@ -909,7 +911,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
             const beforeCount = enemies.length;
             spawnCentipedeBodySegments(enemy);
             for (let i = beforeCount; i < enemies.length; i++) {
-                io.emit('enemySpawned', enemies[i]);
+                emitToViewers(io, enemies[i].x, enemies[i].y, 'enemySpawned', enemySpawnPayload(enemies[i]));
             }
         }
 
@@ -918,7 +920,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
             const beforeCount = enemies.length;
             spawnInitialSpawns(enemy);
             for (let j = beforeCount; j < enemies.length; j++) {
-                io.emit('enemySpawned', enemies[j]);
+                emitToViewers(io, enemies[j].x, enemies[j].y, 'enemySpawned', enemySpawnPayload(enemies[j]));
             }
         }
     }
@@ -1325,7 +1327,7 @@ function updatePeriodicSpawns() {
             targetPlayerId: enemy.targetPlayerId,
         });
         if (!child) continue;
-        io.emit('enemySpawned', child);
+        emitToViewers(io, child.x, child.y, 'enemySpawned', enemySpawnPayload(child));
     }
 }
 
@@ -1470,7 +1472,7 @@ function spawnWaveMobs() {
                     { parentHoleId: enemy.id },
                 );
                 if (!child) continue;
-                io.emit('enemySpawned', child);
+                emitToViewers(io, child.x, child.y, 'enemySpawned', enemySpawnPayload(child));
             }
         }
 
@@ -1722,7 +1724,7 @@ function reapDeadEnemies() {
         // (and it spawns at full health, so it wouldn't be reaped anyway).
         if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
             const digger = spawnEnemy('digger', enemy.tier, enemy.x, enemy.y);
-            if (digger) io.emit('enemySpawned', digger);
+            if (digger) emitToViewers(io, digger.x, digger.y, 'enemySpawned', enemySpawnPayload(digger));
         }
 
         // Clean up enemy data structures before removal to prevent memory leaks

@@ -22,6 +22,8 @@ exports.switchPlayer = switchPlayer;
 exports.syncSplitStars = syncSplitStars;
 exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
+const scopedEmit_1 = require("./server/scopedEmit");
+const enemyWire_1 = require("./server/enemyWire");
 const playerWire_1 = require("./server/playerWire");
 const server_utils_1 = require("./server_utils");
 const server_1 = require("./server");
@@ -130,6 +132,38 @@ function applyPlayerEffect(player, type, value, duration) {
  */
 function grantShield(player, amount, durationMs) {
     applyPlayerEffect(player, 'shield', amount, durationMs);
+}
+/**
+ * Cap on how many struck mobs ride the lightningStrike VFX payload. Prod
+ * measured this event at 1.0 KB average / 302 KB/s, and a strike into a dense
+ * mob pile made `targets` as long as the pile.
+ */
+const LIGHTNING_VFX_MAX_TARGETS = 24;
+/**
+ * Trim the VFX target list to the cap, NEAREST FIRST.
+ *
+ * It must not be a plain `slice`. queryEnemiesNear walks its cell range as
+ * `for cy { for cx { ... } }`, so the result is ordered by increasing y — and
+ * the strike loop consumes it in reverse. Taking the first N off that array
+ * therefore selected the N mobs furthest down the screen, and every bolt in a
+ * dense pile fanned downward and never up.
+ *
+ * Distance from the strike origin has no directional bias: the chosen set is a
+ * disc around the origin, which is also what the effect should look like.
+ */
+function pickVfxTargets(targets, originX, originY) {
+    if (targets.length <= LIGHTNING_VFX_MAX_TARGETS)
+        return targets;
+    // Copy before sorting: `targets` order is not otherwise meaningful, but the
+    // caller still owns it.
+    return targets
+        .slice()
+        .sort((a, b) => {
+        const adx = a.x - originX, ady = a.y - originY;
+        const bdx = b.x - originX, bdy = b.y - originY;
+        return (adx * adx + ady * ady) - (bdx * bdx + bdy * bdy);
+    })
+        .slice(0, LIGHTNING_VFX_MAX_TARGETS);
 }
 /** Reused across explosions so the grid query allocates nothing per call. */
 const _explodeScratch = [];
@@ -290,12 +324,19 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage, context
         }
     }
     // Emit lightning effect to clients
-    io.emit('lightningStrike', {
+    // VFX: only clients who can see the strike. This was a full fan-out
+    // carrying every struck mob — prod measured 1.0 KB average at 297 msg/s
+    // (302 KB/s), and a lightning petal fired into an admin-spawned mob pile
+    // makes `targets` as long as the pile.
+    (0, scopedEmit_1.emitToViewers)(io, x, y, 'lightningStrike', {
         x: x,
         y: y,
-        targets: targets,
+        // VFX only — damage above already applied to every struck mob. Past a
+        // couple of dozen the bolts overlap into a solid blob, so sending more
+        // buys nothing visible and costs payload plus client draw work.
+        targets: pickVfxTargets(targets, x, y),
         damage: petalDamage || 25
-    });
+    }, player?.id);
 }
 // Helper function to find a player's pet by mob type
 function findPlayerPetByMobType(ownerId, mobType) {
@@ -440,14 +481,14 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
         damage: statMods ? mobStats.damage * statMods.damage : undefined,
     }); // mobStats validated above
     // Notify all clients
-    io.emit('enemySpawned', pet);
+    (0, scopedEmit_1.emitToViewers)(io, pet.x, pet.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(pet));
     // Centipede pets need their trailing body chain too, with ownerId propagated
     // to each segment so they follow the owner alongside the head.
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         const beforeCount = constants_1.enemies.length;
         (0, enemySpawner_1.spawnCentipedeBodySegments)(pet);
         for (let i = beforeCount; i < constants_1.enemies.length; i++) {
-            io.emit('enemySpawned', constants_1.enemies[i]);
+            (0, scopedEmit_1.emitToViewers)(io, constants_1.enemies[i].x, constants_1.enemies[i].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_1.enemies[i]));
         }
     }
     // console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);

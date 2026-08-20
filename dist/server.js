@@ -19,6 +19,8 @@ exports.getScheduledRestartInfo = getScheduledRestartInfo;
 exports.rotateMazeToDay = rotateMazeToDay;
 exports.adminChangeMaze = adminChangeMaze;
 const ws_server_1 = require("./ws_server");
+const scopedEmit_1 = require("./server/scopedEmit");
+const enemyWire_1 = require("./server/enemyWire");
 const uws_app_1 = require("./server/uws_app");
 const webtransport_server_1 = require("./server/webtransport_server");
 const devCert_1 = require("./server/devCert");
@@ -730,7 +732,7 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
             continue;
         // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
         // Notify all clients
-        io.emit('enemySpawned', enemy);
+        (0, scopedEmit_1.emitToViewers)(io, enemy.x, enemy.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(enemy));
         // Boss-tier mobs normally announce themselves via spawnSpecialMobs()/
         // announceAmbientSuper(), neither of which runs for an admin-triggered
         // spawn — fire the same chat banner + boss-event log here.
@@ -744,7 +746,7 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
             const beforeCount = constants_2.enemies.length;
             (0, enemySpawner_1.spawnCentipedeBodySegments)(enemy);
             for (let i = beforeCount; i < constants_2.enemies.length; i++) {
-                io.emit('enemySpawned', constants_2.enemies[i]);
+                (0, scopedEmit_1.emitToViewers)(io, constants_2.enemies[i].x, constants_2.enemies[i].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_2.enemies[i]));
             }
         }
         // Mobs with initial_spawns (e.g. ant holes) arrive with a pre-spawned cluster.
@@ -752,7 +754,7 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
             const beforeCount = constants_2.enemies.length;
             (0, enemySpawner_1.spawnInitialSpawns)(enemy);
             for (let j = beforeCount; j < constants_2.enemies.length; j++) {
-                io.emit('enemySpawned', constants_2.enemies[j]);
+                (0, scopedEmit_1.emitToViewers)(io, constants_2.enemies[j].x, constants_2.enemies[j].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_2.enemies[j]));
             }
         }
     }
@@ -1122,7 +1124,7 @@ function updatePeriodicSpawns() {
         });
         if (!child)
             continue;
-        io.emit('enemySpawned', child);
+        (0, scopedEmit_1.emitToViewers)(io, child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
     }
 }
 function updatePoisonEffects(deltaTime) {
@@ -1241,7 +1243,7 @@ function spawnWaveMobs() {
                 const child = (0, enemyRegistry_1.spawnEnemy)(childType, enemy.tier, enemy.x + Math.cos(angle) * dist, enemy.y + Math.sin(angle) * dist, { parentHoleId: enemy.id });
                 if (!child)
                     continue;
-                io.emit('enemySpawned', child);
+                (0, scopedEmit_1.emitToViewers)(io, child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
             }
         }
         enemy._spawnWavePrevHealth = enemy.health;
@@ -1479,7 +1481,7 @@ function reapDeadEnemies() {
         if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
             const digger = (0, enemyRegistry_1.spawnEnemy)('digger', enemy.tier, enemy.x, enemy.y);
             if (digger)
-                io.emit('enemySpawned', digger);
+                (0, scopedEmit_1.emitToViewers)(io, digger.x, digger.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(digger));
         }
         // Clean up enemy data structures before removal to prevent memory leaks
         (0, utils_1.cleanupEnemy)(enemy);
