@@ -174,7 +174,7 @@ Graphics.prototype.drawEnemy = function(this: Graphics, world: ClientWorld, enem
     // hitbox, so the sprite and what it collides with stay the same circle.
     const mobStats = getMobStats(enemyType, enemyTier);
     // Use visual_scale for rendering (affects visual only, not hitbox)
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), enemyTier);
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), enemyTier, enemyType);
     const visualScale = mobStats?.visual_scale ?? 1.0;
     let enemySize = baseSize * visualScale;
 
@@ -507,7 +507,7 @@ Graphics.prototype.drawGarbagePile = function(this: Graphics, world: ClientWorld
     // Get base size for hitbox calculation
     const tier = world.mobTier(enemy);
     const mobStats = getMobStats(world.mobType(enemy), tier);
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier);
+    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier, world.mobType(enemy));
 
     // Use enemy position as seed for deterministic random petal selection
     const seed = Math.floor(world.mobX(enemy) * 1000 + world.mobY(enemy) * 1000);

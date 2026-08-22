@@ -522,7 +522,7 @@ function isOverlappingMob(x: number, y: number, playerSize: number = PLAYER_SIZE
     for (const enemy of enemies) {
         const mobStats = getMobStats(enemy.type, enemy.tier);
         const mobRadius = (mobStats ? (mobStats.size * 40) / 2 : 20)
-            * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
+            * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
         const dx = enemy.x - x;
         const dy = enemy.y - y;
         const distSq = dx * dx + dy * dy;

@@ -43,7 +43,7 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, world: ClientWorld
         // health-bar pass below sizes bars against.
         const tier = world.mobTier(enemy);
         const mobStats = getMobStats(world.mobType(enemy), tier);
-        const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier);
+        const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier, world.mobType(enemy));
         const visualScale = mobStats?.visual_scale ?? 1.0;
         const enemySize = baseSize * visualScale;
 

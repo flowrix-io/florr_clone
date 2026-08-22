@@ -78,7 +78,7 @@ export function checkPlayerWallCollisions(
 export function checkEnemyWallCollisions(enemy: Enemy): void {
     const mobStats = getMobStats(enemy.type, enemy.tier);
     const enemySize = (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
-        * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
     const resolved = resolveEntityWallCollisions(enemy.x, enemy.y, enemySize / 2);
     // gardn Motion.cc: zero the velocity component along whatever axis the wall
     // pushed, so the mob actually stops at the wall instead of re-entering every
@@ -123,7 +123,7 @@ export function applyEnemyKnockback(enemy: Enemy): void {
 
     const mobStats = getMobStats(enemy.type, enemy.tier);
     const halfSize = Math.max(1, (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
-        * getEnemySizeScale(!!enemy.ownerId, enemy.tier) / 2);
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type) / 2);
 
     // A displacement within one substep can't skip a tile: take it in one
     // jump (the pre-substep behavior) and let the end-of-tick wall pass
@@ -191,7 +191,7 @@ export function checkPlayerEnemyCollision(
 ): { collided: boolean; distance: number; dx: number; dy: number } {
     const mobStats = getMobStats(enemy.type, enemy.tier);
     const enemySize = (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
-        * getEnemySizeScale(!!enemy.ownerId, enemy.tier);
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
     const enemyRadius = enemySize / 2;
     const playerRadius = playerSize / 2;
 

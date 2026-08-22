@@ -95,7 +95,7 @@ function pickMob(rng) {
 function radiusFor(type, tier) {
     const stats = (0, mobs_1.getMobStats)(type, tier);
     const base = stats ? (stats.size * 40) / 2 : 20;
-    return base * (0, mobs_1.getEnemySizeScale)(false, tier);
+    return base * (0, mobs_1.getEnemySizeScale)(false, tier, type);
 }
 function buildSpecs(count, extent, seed) {
     const rng = mulberry32(seed);

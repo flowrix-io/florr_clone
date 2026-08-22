@@ -72,7 +72,7 @@ function pickMob(rng: () => number) {
 function radiusFor(type: string, tier: string): number {
     const stats = getMobStats(type as never, tier as never);
     const base = stats ? (stats.size * 40) / 2 : 20;
-    return base * getEnemySizeScale(false, tier as never);
+    return base * getEnemySizeScale(false, tier as never, type);
 }
 
 interface Spec {

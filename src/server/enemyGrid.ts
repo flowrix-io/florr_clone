@@ -80,7 +80,7 @@ export function rebuildEnemyGrid(enemies: Enemy[]): void {
             // initialisers — this one and the collision pass in physics.ts —
             // must stay the same formula, since whichever runs first wins.
             e._radius = (mobStats ? (mobStats.size * 40) / 2 : ENEMY_SIZE / 2)
-                * getEnemySizeScale(!!e.ownerId, e.tier);
+                * getEnemySizeScale(!!e.ownerId, e.tier, e.type);
             e._mobStats = mobStats;
         }
         let r = e._radius as number;
