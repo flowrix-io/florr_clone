@@ -1453,12 +1453,10 @@ function getEcsRuntime(): EcsRuntime {
             cleanupEnemy(enemy);
             if (removeEnemy(enemy)) io.emit('enemyDestroyed', enemy.id);
         },
-        // The reaper's death sequence — verbatim the body of the old
-        // reapDeadEnemies loop, per victim. XP to the top damage contributor
-        // (a pet kill credits its owner: contributors are keyed by player),
-        // then the digger roll, then removal. No `enemyDestroyed` emit here,
-        // as ever: clients learn of reaped deaths from the broadcast's removal
-        // list.
+        // The reaper's death sequence — the body of the old reapDeadEnemies
+        // loop, per victim. XP to the top damage contributor (a pet kill
+        // credits its owner: contributors are keyed by player), then the
+        // digger roll, then removal.
         onReapEnemy: (victim) => {
             const world = _ecsRuntime!.world;
             if (!world.has(victim, EC.LegacyShell)) return;
@@ -1498,6 +1496,13 @@ function getEcsRuntime(): EcsRuntime {
             cleanupEnemy(enemy);
             removeEnemyAt(index);
             updateSpecialMobCounts();
+            // Emit like every OTHER death path does. The legacy reaper relied
+            // on the broadcast's R list alone, and that leaks: the join
+            // snapshot preloads mobs from a 4x-viewport halo around EVERY
+            // player, while the delta broadcast tracks only a ~2x box around
+            // this client — a preloaded mob reaped outside that box gets no R
+            // and, without this, no event either: a permanent client ghost.
+            io.emit('enemyDestroyed', enemy.id);
         },
         // Queen-ant escorts: the summon half of the legacy updatePeriodicSpawns
         // (the interval clock lives on the PeriodicSpawner component now).

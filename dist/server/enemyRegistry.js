@@ -76,6 +76,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bindEnemySpawnHost = bindEnemySpawnHost;
 exports.spawnEnemy = spawnEnemy;
+exports.isPendingEntityRemoval = isPendingEntityRemoval;
 exports.removeEnemyAt = removeEnemyAt;
 exports.removeEnemy = removeEnemy;
 exports.drainRemovedEnemies = drainRemovedEnemies;
@@ -188,8 +189,17 @@ function spawnEnemy(type, tier, x, y, opts) {
  * Entities whose shell has left `enemies[]` and which are waiting to be retired.
  *
  * Reused across ticks; see the header for why destruction is deferred at all.
+ * The parallel Set answers "is this mob already gone?" for readers that see
+ * the world between the removal and the drain — chiefly the broadcast, which
+ * fires between ticks and must not put a mob back on the wire after the
+ * client was told it died.
  */
 const pendingEntityRemovals = [];
+const pendingEntityRemovalSet = new Set();
+/** Whether this mob's shell has been removed and its entity awaits the drain. */
+function isPendingEntityRemoval(entity) {
+    return pendingEntityRemovalSet.has(entity);
+}
 /**
  * Remove the mob at `index` — the destruction counterpart to `spawnEnemy`.
  *
@@ -208,8 +218,10 @@ function removeEnemyAt(index) {
     constants_1.enemies.splice(index, 1);
     const world = requireHost().getWorld();
     const entity = world.lookup(enemy.id);
-    if (entity !== undefined)
+    if (entity !== undefined) {
         pendingEntityRemovals.push(entity);
+        pendingEntityRemovalSet.add(entity);
+    }
     return enemy;
 }
 /**
@@ -240,6 +252,7 @@ function drainRemovedEnemies(world) {
         world.destroy(pendingEntityRemovals[i]);
     }
     pendingEntityRemovals.length = 0;
+    pendingEntityRemovalSet.clear();
 }
 /**
  * Check that every shell has an entity and every mob entity has a live shell.

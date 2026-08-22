@@ -139,11 +139,24 @@ export function queueItemSpawnEmission(item: WorldItem, socketIds: string[]): vo
     pendingSpawnRecipients.push(socketIds);
 }
 
-/** Drain the queue, invoking `visit` once per (item, recipients) pair. */
+/**
+ * Drain the queue, invoking `visit` once per (item, recipients) pair.
+ *
+ * Items that have ALREADY left the world are skipped, and this is
+ * load-bearing, not tidiness: a drop can be spawned and fully picked up (or
+ * bounds-culled) within one tick — your own petal kills a mob inside pickup
+ * range every few seconds of normal play. The pickup emits `itemRemoved`
+ * mid-tick; emitting the queued spawn at end of tick would then arrive AFTER
+ * the removal and plant a permanent ghost item on the client. The legacy
+ * flush got this for free by iterating the live `items[]` array, which no
+ * longer held the item; the queue has to reproduce that rule explicitly.
+ */
 export function drainItemSpawnEmissions(
     visit: (item: WorldItem, socketIds: string[]) => void,
 ): void {
+    const world = requireHost().getWorld();
     for (let i = 0; i < pendingSpawnItems.length; i++) {
+        if (world.lookup(pendingSpawnItems[i].id) === undefined) continue;
         visit(pendingSpawnItems[i], pendingSpawnRecipients[i]);
     }
     pendingSpawnItems.length = 0;

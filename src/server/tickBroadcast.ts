@@ -41,6 +41,7 @@ import {
 import { Entity, Query, World } from '../ecs';
 import * as C from '../ecs/components';
 import { encodeEnemyDelta } from '../ecs/net/enemyEncoder';
+import { isPendingEntityRemoval } from './enemyRegistry';
 
 // ---------------------------------------------------------------------------
 // The world, injected
@@ -588,6 +589,12 @@ function collectEnemyDeltas(view: RecipientView): { changed: any[]; removed: str
             if ((dx < 0 ? -dx : dx) >= view.vw || (dy < 0 ? -dy : dy) >= view.vh) continue;
 
             const entity = entities[i] as Entity;
+            // An off-tick removal (admin command, a disconnecting owner's
+            // pets) leaves the entity alive until the next tick's drain; the
+            // client has already been told this mob died, so it must not go
+            // back on the wire. Skipping it also puts it straight on this
+            // frame's removal list, exactly as if the drain had run.
+            if (isPendingEntityRemoval(entity)) continue;
             const id = world.externalIdOf(entity);
             if (id === undefined) continue;
 
