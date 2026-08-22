@@ -49,6 +49,12 @@ export interface PlayerModifierDeps {
      * Injected for the same reason.
      */
     effectSpeedMultiplier(effects: unknown): number;
+    /**
+     * Slots beyond this index are storage and contribute no modifiers —
+     * shared/playerModifiers.ts's PRIMARY_LOADOUT_SLOTS, injected because it
+     * is loadout config.
+     */
+    primarySlotCount: number;
 }
 
 /**
@@ -77,7 +83,7 @@ export function createPlayerModifierQueries(world: World): PlayerModifierQueries
  * fresh for the tick that consumes them.
  */
 export function playerModifierSystem(queries: PlayerModifierQueries, deps: PlayerModifierDeps) {
-    const { petalModifiersOf, effectSpeedMultiplier } = deps;
+    const { petalModifiersOf, effectSpeedMultiplier, primarySlotCount } = deps;
 
     return (ctx: SystemContext): void => {
         const world = ctx.world;
@@ -95,10 +101,15 @@ export function playerModifierSystem(queries: PlayerModifierQueries, deps: Playe
                 let size = 1;
                 let magnetism = 0;
                 let aggro = 0;
-                let rotation = 1;
 
                 if (slots) {
-                    for (let s = 0; s < slots.length; s++) {
+                    // Primary slots only — slots 10+ are storage and have never
+                    // contributed, exactly as shared/playerModifiers.ts folds.
+                    // (rotationSpeed is deliberately NOT folded here: the ring
+                    // still reads the legacy additive aggregation; see the
+                    // petalOrbitPhase note below.)
+                    const limit = Math.min(slots.length, primarySlotCount);
+                    for (let s = 0; s < limit; s++) {
                         const slot = slots[s];
                         if (!slot) continue;
                         const m = petalModifiersOf(slot);
@@ -107,7 +118,6 @@ export function playerModifierSystem(queries: PlayerModifierQueries, deps: Playe
                         if (m.playerRadius !== undefined) size *= m.playerRadius;
                         if (m.magnetism !== undefined) magnetism += m.magnetism;
                         if (m.aggroRadius !== undefined) aggro += m.aggroRadius;
-                        if (m.rotationSpeed !== undefined) rotation *= m.rotationSpeed;
                     }
                 }
 
@@ -116,18 +126,23 @@ export function playerModifierSystem(queries: PlayerModifierQueries, deps: Playe
                 }
 
                 // Guard the degenerate cases at the point of derivation rather
-                // than in each consumer. A NaN or negative size makes the
-                // movement substep count blow up and spin the loop.
+                // than in each consumer, with EXACTLY the legacy semantics:
+                // a non-finite or non-positive size collapses to 1 (not to the
+                // clamp), because applyPetalHealthBonus did — a NaN or negative
+                // size makes the movement substep count blow up and spin the
+                // loop.
                 if (!(speed >= 0)) speed = 1;
-                if (!(size > 0)) size = 1;
-                if (size > MAX_SIZE_MULTIPLIER) size = MAX_SIZE_MULTIPLIER;
+                if (!(Number.isFinite(size) && size > 0)) size = 1;
+                else if (size > MAX_SIZE_MULTIPLIER) size = MAX_SIZE_MULTIPLIER;
                 if (!(magnetism >= 0)) magnetism = 0;
                 if (!(aggro >= 0)) aggro = 0;
-                if (!(rotation >= 0)) rotation = 1;
 
-                // `speedBoost` is the multiplier movement combines with the
-                // base speed; movement applies its own 8x clamp on the product.
-                mods.speedBoost[i] = speed;
+                // `speedBoost` is the full multiplier movement combines with
+                // the base speed (movement applies its own 8x clamp on the
+                // product): the consumable's base times the loadout and effect
+                // folds — `player.speed_boost * getSpeedMultiplier(player)`,
+                // derived from components.
+                mods.speedBoost[i] = mods.speedBoostBase[i] * speed;
                 mods.sizeMultiplier[i] = size;
                 mods.magnetism[i] = magnetism;
                 mods.aggroRadiusBonus[i] = aggro;

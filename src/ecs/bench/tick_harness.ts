@@ -247,6 +247,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         lookupPlayer: () => undefined,
         // Harness drives the schedulers directly; the pipeline is the game\'s.
         runPlayerPipeline: () => { /* not exercised here */ },
+        runPetalBehaviours: () => { /* not exercised here */ },
         creditDamage: () => { /* attribution is exercised elsewhere */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },
@@ -272,6 +273,18 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         onPlayerHit: () => { playerHits++; return true; },
         emitEnemyDamaged: () => { /* broadcast is not under test here */ },
         onProjectileKill: () => { /* drops/XP are not under test here */ },
+        onGroundEffectExpired: () => { /* wire is not under test here */ },
+        onEnemyPoisonDamaged: () => { /* wire is not under test here */ },
+        onPoisonKill: () => { /* drops/XP are not under test here */ },
+        tickPlayerPoison: () => { /* player poison is not under test here */ },
+        onPlayerPoisonLapsed: () => { /* ditto */ },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { /* spawners are not under test here */ },
+        onSpawnWaves: () => { /* ditto */ },
+        onWorldItemRemoved: () => { /* items are not under test here */ },
+        onMobDespawn: () => { /* despawn is not under test here */ },
+        onReapEnemy: () => { /* drops/XP are not under test here */ },
     });
 
     const now0 = 1_000_000;

@@ -11,10 +11,12 @@ import * as C from '../components';
 import { Entity } from '../entity';
 import { Phase, Scheduler } from '../system';
 import { World } from '../world';
-import { spawnGroundPollen, spawnMob, spawnPlayer, spawnProjectile, spawnWebField } from '../prefabs';
+import { spawnDroppedItem, spawnGroundPollen, spawnMob, spawnPlayer, spawnProjectile, spawnWebField } from '../prefabs';
+import { createDroppedItemQueries, registerDroppedItemSystems } from './droppedItems';
 import { createMovementQueries, registerMovementSystems } from './movement';
-import { createAfflictionQueries, registerAfflictionSystems } from './afflictions';
+import { applyPoisonStack, createAfflictionQueries, registerAfflictionSystems } from './afflictions';
 import { createLifetimeQueries, registerLifetimeSystems, UNSEEN_DESPAWN_MS } from './lifetime';
+import { rarityToId } from '../interning';
 
 const TICK_SECONDS = 1 / 30;
 const TICK_MS = 1000 / 30;
@@ -38,15 +40,41 @@ export function runSystemsSelfTest(): string[] {
     function makeHarness() {
         const world = new World();
         const scheduler = new Scheduler(world);
+        /** Hook-call log: [kind, entity] pairs the tests assert against. */
+        const hookCalls: Array<{ kind: string; entity: Entity }> = [];
         // No walls in these worlds: the wall test is exercised by
         // projectileCollision_self_test.ts, which stubs a real one.
         registerMovementSystems(scheduler, createMovementQueries(world), { hitsWall: () => false });
-        registerAfflictionSystems(scheduler, createAfflictionQueries(world));
-        registerLifetimeSystems(scheduler, createLifetimeQueries(world));
+        registerAfflictionSystems(scheduler, createAfflictionQueries(world), {
+            mobPoison: {
+                creditDamage: (victim) => { hookCalls.push({ kind: 'credit', entity: victim }); },
+                markPoisonDamaged: (victim) => { hookCalls.push({ kind: 'poisonDamaged', entity: victim }); },
+                // What the live hook achieves through the legacy shell splice +
+                // registry drain: the victim stops existing to the simulation.
+                onPoisonKill: (victim) => {
+                    hookCalls.push({ kind: 'poisonKill', entity: victim });
+                    if (!world.has(victim, C.IsDead)) world.add(victim, C.IsDead);
+                },
+            },
+            playerPoison: {
+                tickPoison: (player) => { hookCalls.push({ kind: 'tickPoison', entity: player }); },
+                onPoisonLapsed: (player) => { hookCalls.push({ kind: 'poisonLapsed', entity: player }); },
+            },
+        });
+        registerLifetimeSystems(scheduler, createLifetimeQueries(world), {
+            // No exemptions and no legacy shells in these worlds: despawn and
+            // reap are plain entity destruction, which is what the live hooks'
+            // registry drain amounts to once the shell is gone.
+            neverDespawns: () => false,
+            isProtectedAt: () => false,
+            despawn: (entity) => { world.destroy(entity); },
+            reap: (entity) => { world.destroy(entity); },
+        });
         let now = 10_000;
         return {
             world,
             scheduler,
+            hookCalls,
             get now() { return now; },
             tick(times = 1) {
                 for (let i = 0; i < times; i++) {
@@ -187,6 +215,44 @@ export function runSystemsSelfTest(): string[] {
         checkEqual('orphaned stack is destroyed', h.world.query([C.PoisonStack]).count(), 0);
     }
 
+    // -- poison application: one stack per pair, outlast rule -----------------
+    {
+        const h = makeHarness();
+        const stacks = h.world.query([C.PoisonStack]);
+        const victim = spawnMob(h.world, {
+            id: 'v3', type: 'bee', tier: 'common', x: 0, y: 0,
+            health: 100, maxHealth: 100, speed: 0, damage: 1, radius: 10, now: h.now,
+        });
+        const biterA = h.world.create();
+        const biterB = h.world.create();
+
+        applyPoisonStack(h.world, stacks, victim, biterA, 0.005, h.now + 6000);
+        applyPoisonStack(h.world, stacks, victim, biterB, 0.001, h.now + 1000);
+        checkEqual('one stack per (victim, source) pair', stacks.count(), 2);
+
+        // gardn's rule: a short weak poison must NOT stomp a long strong one...
+        applyPoisonStack(h.world, stacks, victim, biterA, 0.001, h.now + 1000);
+        let strong = 0;
+        stacks.chunks(chunk => {
+            const s = chunk.cols(C.PoisonStack);
+            for (let i = 0; i < chunk.count; i++) {
+                if ((s.source[i] as Entity) === biterA) strong = s.damagePerMs[i];
+            }
+        });
+        checkClose('a shorter bite does not replace a longer one', strong, 0.005, 1e-6);
+
+        // ...but a bite that outlasts the ticking one takes over.
+        applyPoisonStack(h.world, stacks, victim, biterA, 0.002, h.now + 60_000);
+        stacks.chunks(chunk => {
+            const s = chunk.cols(C.PoisonStack);
+            for (let i = 0; i < chunk.count; i++) {
+                if ((s.source[i] as Entity) === biterA) strong = s.damagePerMs[i];
+            }
+        });
+        checkClose('an outlasting bite takes over', strong, 0.002, 1e-6);
+        checkEqual('refreshing never duplicates the stack', stacks.count(), 2);
+    }
+
     // -- poison kills and the reaper ------------------------------------------
     {
         const h = makeHarness();
@@ -215,10 +281,19 @@ export function runSystemsSelfTest(): string[] {
     }
 
     // -- player poison --------------------------------------------------------
+    // The per-tick body (armor, the health write, death) is a legacy hook —
+    // player health is still shell-owned. What the ECS owns, and what is
+    // pinned here, is the visit set (only poisoned, living flowers) and the
+    // expiry that removes the component and fires the lapse hook once.
     {
         const h = makeHarness();
         const player = spawnPlayer(h.world, {
             socketId: 'sock-1', name: 'p', x: 0, y: 0,
+            health: 100, maxHealth: 100, damage: 10, radius: 25,
+            inventory: [], loadout: [], now: h.now,
+        });
+        const bystander = spawnPlayer(h.world, {
+            socketId: 'sock-2', name: 'b', x: 0, y: 0,
             health: 100, maxHealth: 100, damage: 10, radius: 25,
             inventory: [], loadout: [], now: h.now,
         });
@@ -228,12 +303,17 @@ export function runSystemsSelfTest(): string[] {
         });
 
         h.tick();
-        // Player poison is per SECOND, unlike mob stacks' per-millisecond.
-        checkClose('player poison ticks per second',
-            h.world.get(player, C.Health, 'current') as number, 100 - 30 * TICK_SECONDS, 0.01);
+        checkEqual('poisoned flower is ticked',
+            h.hookCalls.filter(c => c.kind === 'tickPoison' && c.entity === player).length, 1);
+        check('unpoisoned flower is not visited',
+            !h.hookCalls.some(c => c.kind === 'tickPoison' && c.entity === bystander));
 
         h.tick(3);
         check('lapsed player poison is removed', !h.world.has(player, C.Poisoned));
+        checkEqual('lapse hook fires exactly once',
+            h.hookCalls.filter(c => c.kind === 'poisonLapsed').length, 1);
+        checkEqual('a lapsed poison stops ticking',
+            h.hookCalls.filter(c => c.kind === 'tickPoison').length, 1);
         check('player survived', h.world.isAlive(player));
     }
 
@@ -258,25 +338,74 @@ export function runSystemsSelfTest(): string[] {
         check('slow component removed', !h.world.has(mob, C.Slowed));
     }
 
-    // -- ground effects expire ------------------------------------------------
+    // -- mob timed despawn (despawnAt escorts) --------------------------------
+    // Ground-effect and item expiry are pinned by their own suites; the mob
+    // sweep is the one registered here, and it must NOT touch non-mob Expires
+    // carriers — their removal emits belong to their own systems.
     {
         const h = makeHarness();
+        const escort = spawnMob(h.world, {
+            id: 'escort', type: 'worker_ant', tier: 'common', x: 0, y: 0,
+            health: 10, maxHealth: 10, speed: 0, damage: 1, radius: 10, now: h.now,
+        });
+        h.world.add(escort, C.Expires, { at: h.now + TICK_MS * 2 });
         const owner = h.world.create();
         const pollen = spawnGroundPollen(h.world, {
-            x: 0, y: 0, owner, damage: 10, radius: 50,
+            id: 'pollen_t', x: 0, y: 0, owner, damage: 10, radius: 50,
             rarity: 'rare', expiresAt: h.now + TICK_MS * 2,
         });
         const web = spawnWebField(h.world, {
-            x: 0, y: 0, owner, radius: 60,
-            rarity: 'rare', expiresAt: h.now + 100_000,
+            id: 'web_t', x: 0, y: 0, owner, radius: 60,
+            rarity: 'rare', expiresAt: h.now + TICK_MS * 2,
         });
 
         h.tick();
-        check('pollen alive before deadline', h.world.isAlive(pollen));
+        check('escort alive before its deadline', h.world.isAlive(escort));
 
         h.tick(3);
-        check('pollen expires on deadline', !h.world.isAlive(pollen));
-        check('web with a later deadline survives', h.world.isAlive(web));
+        check('escort despawns on its deadline', !h.world.isAlive(escort));
+        check('mob expiry leaves expired pollen to its own system', h.world.isAlive(pollen));
+        check('mob expiry leaves expired webs to their own system', h.world.isAlive(web));
+    }
+
+    // -- dropped items: wall push, bounds, expiry -----------------------------
+    {
+        const world = new World();
+        const scheduler = new Scheduler(world);
+        const removed: Entity[] = [];
+        registerDroppedItemSystems(scheduler, createDroppedItemQueries(world), {
+            // Stand-in tile grid: nothing may sit left of x=10.
+            resolveWall: (x, y) => ({ x: Math.max(x, 10), y }),
+            isOutOfBounds: (x) => x > 1000,
+            onRemoved: (e) => { removed.push(e); },
+        });
+
+        let now = 10_000;
+        const spawn = (id: string, x: number, expiresAt: number) => {
+            const payload = { id, x, y: 0 };
+            return spawnDroppedItem(world, {
+                id, x, y: 0, petalType: 0xffff, rarity: 'common',
+                kind: 0, eligiblePlayers: undefined, pickedUpBy: undefined,
+                payload, spawnTime: now, expiresAt,
+            });
+        };
+        const walled = spawn('walled', 4, now + 100_000);
+        const oob = spawn('oob', 2000, now + 100_000);
+        const expiring = spawn('expiring', 500, now + TICK_MS * 2);
+        const keeper = spawn('keeper', 500, now + 100_000);
+
+        for (let i = 0; i < 3; i++) {
+            now += TICK_MS;
+            scheduler.tick(TICK_SECONDS, TICK_MS, now);
+        }
+
+        checkEqual('item is pushed out of the wall', world.get(walled, C.Position, 'x'), 10);
+        checkEqual('wall push mirrors onto the payload',
+            (world.get(walled, C.DroppedItem, 'payload') as { x: number }).x, 10);
+        check('out-of-bounds item is removed', !world.isAlive(oob));
+        check('expired item is removed', !world.isAlive(expiring));
+        check('a live in-bounds item survives', world.isAlive(keeper));
+        checkEqual('each removal fires the emit hook once', removed.length, 2);
     }
 
     // -- unseen despawn -------------------------------------------------------
@@ -297,6 +426,44 @@ export function runSystemsSelfTest(): string[] {
         h.tick(6);
         check('unseen mob despawns', !h.world.isAlive(unseen));
         check('recently seen mob survives', h.world.isAlive(seen));
+    }
+
+    // -- unseen despawn: exemptions and maze protection -----------------------
+    {
+        const world = new World();
+        const scheduler = new Scheduler(world);
+        const despawned: Entity[] = [];
+        registerLifetimeSystems(scheduler, createLifetimeQueries(world), {
+            // Stand-in for the boss-tier / target-dummy check.
+            neverDespawns: (e) => world.get(e, C.MobKind, 'tier') === rarityToId('ultra'),
+            // Stand-in for "occupied maze": everything left of x=0 is protected.
+            isProtectedAt: (x) => x < 0,
+            despawn: (e) => { despawned.push(e); world.destroy(e); },
+            reap: (e) => { world.destroy(e); },
+        });
+
+        let now = 10_000;
+        const spec = (id: string, x: number, tier: string) => ({
+            id, type: 'bee', tier, x, y: 0,
+            health: 10, maxHealth: 10, speed: 0, damage: 1, radius: 10, now,
+        });
+        const boss = spawnMob(world, spec('boss', 10, 'ultra'));
+        const protectedMob = spawnMob(world, spec('mazemob', -10, 'common'));
+        const plain = spawnMob(world, spec('plain', 10, 'common'));
+        for (const e of [boss, protectedMob, plain]) {
+            world.set(e, C.ViewportTracked, 'lastInViewport', now - UNSEEN_DESPAWN_MS - 1000);
+        }
+
+        for (let i = 0; i < 6; i++) {
+            now += TICK_MS;
+            scheduler.tick(TICK_SECONDS, TICK_MS, now);
+        }
+        check('exempt mob never despawns', world.isAlive(boss));
+        check('protected mob is spared', world.isAlive(protectedMob));
+        check('protection refreshes the timer, not just skips',
+            (world.get(protectedMob, C.ViewportTracked, 'lastInViewport') as number) > now - 1000);
+        check('plain unseen mob goes through the despawn hook',
+            !world.isAlive(plain) && despawned.length === 1 && despawned[0] === plain);
     }
 
     // -- prefab archetypes ----------------------------------------------------
@@ -344,9 +511,9 @@ export function runSystemsSelfTest(): string[] {
         const indexOf = (n: string) => names.indexOf(n);
 
         check('movement runs before combat', indexOf('projectileFlight') < indexOf('poisonStacks'));
-        check('combat runs before lifetime', indexOf('poisonStacks') < indexOf('expiry'));
+        check('combat runs before lifetime', indexOf('poisonStacks') < indexOf('mobExpiry'));
         check('reaper runs last in lifetime', indexOf('reaper') > indexOf('unseenDespawn'));
-        check('reaper runs after expiry', indexOf('reaper') > indexOf('expiry'));
+        check('reaper runs after mob expiry', indexOf('reaper') > indexOf('mobExpiry'));
     }
 
     return failures;

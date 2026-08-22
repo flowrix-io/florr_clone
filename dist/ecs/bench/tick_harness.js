@@ -199,6 +199,7 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
         lookupPlayer: () => undefined,
         // Harness drives the schedulers directly; the pipeline is the game\'s.
         runPlayerPipeline: () => { },
+        runPetalBehaviours: () => { },
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },
@@ -224,6 +225,18 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
         onPlayerHit: () => { playerHits++; return true; },
         emitEnemyDamaged: () => { },
         onProjectileKill: () => { },
+        onGroundEffectExpired: () => { },
+        onEnemyPoisonDamaged: () => { },
+        onPoisonKill: () => { },
+        tickPlayerPoison: () => { },
+        onPlayerPoisonLapsed: () => { },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { },
+        onSpawnWaves: () => { },
+        onWorldItemRemoved: () => { },
+        onMobDespawn: () => { },
+        onReapEnemy: () => { },
     });
     const now0 = 1000000;
     (0, ecsBridge_1.importWorld)(runtime.world, players, enemies, now0);

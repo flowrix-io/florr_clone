@@ -29,20 +29,17 @@ import {
 import { isInMazeRegion, getActiveMaze, MAZE_ORIGIN_X, MAZE_ORIGIN_Y } from '../maze';
 import { WORLD_MAP } from '../map_data';
 import {
-    items,
     playerUserIds,
     petalLastProjectileTime,
     petalLastRadiationTime,
-    itemExpirationTimeouts,
     ITEM_EXPIRATION_TIMES,
-    groundPollens,
     GROUND_POLLEN_LIFETIME_MS,
-    webFields,
     WEB_LIFETIME_MS,
     WEB_THROW_DISTANCE,
     hasCorruptedPlayers,
     setPlayerCorrupted
 } from './gameState';
+import { collectWorldItems, removeWorldItem, spawnWorldItem } from './itemRegistry';
 import {
     checkPlayerWallCollisions,
     checkPlayerEnemyCollision
@@ -218,49 +215,11 @@ function makePetalRingDeps(player: ServerPlayer): PetalRingDeps {
     return _petalRingDeps;
 }
 
-/**
- * How much of a stall lands on this mob, in [0, 1].
- *
- * A stall is a contest between the rarity of whatever inflicted it and the
- * rarity of the mob resisting it, fought on the same x3-per-tier ladder that
- * damage and health climb. Matched rarities give the source its full designed
- * slow; every tier the mob has on the source divides what gets through by
- * three, so a common pincer barely tickles a mythic mob. A source ABOVE the
- * mob's tier is already at full effect, hence the clamp at 1 — rarity buys you
- * reliability against tougher mobs, never a slow stronger than the petal's own
- * design value.
- */
-export function stallPower(sourceRarity: string, mobTier: string): number {
-    const src = getRarityIndex(sourceRarity);
-    const mob = getRarityIndex(mobTier);
-    if (src < 0 || mob < 0) return 1;
-    return Math.min(1, Math.pow(3, src - mob));
-}
-
-/**
- * Slow a mob down for a while. `speed` is what every movement branch in
- * moveEnemies() reads, so a slow is a scale-down of that field with the
- * pre-slow value parked in `baseSpeed`; server.ts's updateSlowEffects restores
- * it when the timer lapses. Re-applying picks the stronger of the two slows and
- * always extends the timer, so standing in a web keeps the mob crawling.
- *
- * `baseFactor` is the source's design value (0.5 for web/pincer, 0.8 for
- * honey); what actually lands is that value pulled back toward "no slow" by the
- * mob's resistance — see stallPower.
- */
-export function applySlow(enemy: Enemy, baseFactor: number, until: number, sourceRarity: string): void {
-    const factor = 1 - (1 - baseFactor) * stallPower(sourceRarity, enemy.tier);
-    // Nothing worth applying: leave baseSpeed/slowUntil untouched so a
-    // negligible stall can't extend the timer on a real one.
-    if (factor >= 0.999) return;
-
-    if (enemy.baseSpeed === undefined) enemy.baseSpeed = enemy.speed;
-    const slowed = enemy.baseSpeed * factor;
-    if (enemy.slowUntil === undefined || enemy.slowUntil <= Date.now() || slowed < enemy.speed) {
-        enemy.speed = slowed;
-    }
-    enemy.slowUntil = Math.max(enemy.slowUntil ?? 0, until);
-}
+// Mob slows (web/honey/pincer) are ECS-owned now: application goes through the
+// `slows` bridge in PlayerStateDependencies (EcsRuntime.slowEnemy runs the
+// stallPower rarity contest and writes the Speed/Slowed pair), and the
+// slowExpiry system restores the speed when the timer lapses. The shell-side
+// applySlow that lived here is gone; stallPower moved to server/shared/rarity.ts.
 import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena, exitPvpArena } from './playerManager';
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, cleanupEnemy, markEnemyDamaged, getOriginalSocketId } from './utils';
@@ -368,11 +327,13 @@ export function forgetEnemyFromRaindropAura(enemyId: string): void {
 
 // Drop a damaging pollen puff at the given position. Pollen petals call this
 // when they break so the petal still goes through the normal cooldown/reload
-// cycle while leaving a short-lived AoE behind.
-function spawnGroundPollen(io: any, player: ServerPlayer, petalStats: any, petal: any, petalX: number, petalY: number, petalSize: number) {
+// cycle while leaving a short-lived AoE behind. The puff itself is an ECS
+// entity (ecs/systems/groundEffects.ts); this module only mints the wire id,
+// hands the spec across the bridge and emits the spawn event.
+function spawnGroundPollen(io: any, groundEffects: GroundEffectsBridge, player: ServerPlayer, petalStats: any, petal: any, petalX: number, petalY: number, petalSize: number) {
     const now = Date.now();
     const id = `pollen_${player.id}_${now}_${Math.random().toString(36).slice(2, 7)}`;
-    groundPollens.push({
+    groundEffects.spawnPollen({
         id,
         playerId: player.id,
         x: petalX,
@@ -381,7 +342,6 @@ function spawnGroundPollen(io: any, player: ServerPlayer, petalStats: any, petal
         radius: petalSize / 2,
         rarity: petal.rarity,
         expiresAt: now + GROUND_POLLEN_LIFETIME_MS,
-        lastDamageByEnemy: new Map<string, number>()
     });
     io.emit('groundPollenSpawned', {
         id,
@@ -397,11 +357,20 @@ function spawnGroundPollen(io: any, player: ServerPlayer, petalStats: any, petal
 // Leave a web field where a thrown web petal came to rest. gardn's web petal is
 // launched outward while attacking (or dropped where it sits while defending)
 // and spawns the field from alloc_web() when it despawns 0.6s later; the petal
-// itself is consumed either way and reloads normally.
-function spawnWebField(io: any, player: ServerPlayer, radius: number, rarity: string, x: number, y: number) {
+// itself is consumed either way and reloads normally. Like pollen, the field is
+// an ECS entity now.
+function spawnWebField(io: any, groundEffects: GroundEffectsBridge, player: ServerPlayer, radius: number, rarity: string, x: number, y: number) {
     const now = Date.now();
     const id = `web_${player.id}_${now}_${Math.random().toString(36).slice(2, 7)}`;
-    webFields.push({ id, playerId: player.id, x, y, radius, rarity, expiresAt: now + WEB_LIFETIME_MS });
+    groundEffects.spawnWeb({
+        id,
+        playerId: player.id,
+        x,
+        y,
+        radius,
+        rarity,
+        expiresAt: now + WEB_LIFETIME_MS,
+    });
     io.emit('webSpawned', { id, x, y, radius, rarity, lifetime: WEB_LIFETIME_MS });
 }
 
@@ -881,6 +850,70 @@ export interface PlayerStateDependencies {
      * bit that needs the world comes through here.
      */
     petalRing: PetalRingBridge;
+    /**
+     * Ground pollen and web fields are ECS entities now
+     * (ecs/systems/groundEffects.ts); breaking petals spawn them through here.
+     * Injected for the same reason the other two bridges are.
+     */
+    groundEffects: GroundEffectsBridge;
+    /**
+     * Mob slows are ECS-owned (Speed/Slowed + the slowExpiry system); sticky
+     * petals apply theirs through here. Injected for the same reason the
+     * other bridges are.
+     */
+    slows: SlowBridge;
+    /**
+     * Mob poison is ECS-owned (PoisonStack entities + the poisonStacks
+     * system); poisonous petals apply theirs through here.
+     */
+    poisons: PoisonBridge;
+}
+
+/** The mob-poison boundary. Implemented in server.ts via EcsRuntime.poisonEnemy. */
+export interface PoisonBridge {
+    /**
+     * Poison the mob with this id from `playerId`'s petal. `damagePerMs`
+     * matches the legacy PoisonEffect.damage unit. One stack per
+     * (mob, player); a fresh bite only takes over when it outlasts the one
+     * already ticking. No-op if either side has left the world.
+     */
+    apply(enemyId: string, playerId: string, damagePerMs: number, endTime: number): void;
+}
+
+/** The mob-slow boundary. Implemented in server.ts via EcsRuntime.slowEnemy. */
+export interface SlowBridge {
+    /**
+     * Slow the mob with this id. `baseFactor` is the source's design value
+     * (0.5 for web/pincer, 0.8 for honey); what actually lands is pulled back
+     * toward "no slow" by the mob's tier — see stallPower in shared/rarity.ts.
+     * No-op if the mob has already left the world.
+     */
+    apply(enemyId: string, baseFactor: number, until: number, sourceRarity: string): void;
+}
+
+/** The ground-effect boundary. Implemented in server.ts on the live world. */
+export interface GroundEffectsBridge {
+    /** Drop a pollen puff. `id` is the wire id the spawn event carries. */
+    spawnPollen(spec: {
+        id: string;
+        playerId: string;
+        x: number;
+        y: number;
+        damage: number;
+        radius: number;
+        rarity: string;
+        expiresAt: number;
+    }): void;
+    /** Plant a web field. */
+    spawnWeb(spec: {
+        id: string;
+        playerId: string;
+        x: number;
+        y: number;
+        radius: number;
+        rarity: string;
+        expiresAt: number;
+    }): void;
 }
 
 /** The petal-ring boundary. Implemented in server.ts. */
@@ -1579,10 +1612,11 @@ function buildPetalInstances(
 function dropFieldsOnExtension(opts: {
     player: ServerPlayer;
     io: SocketIOServer;
+    groundEffects: GroundEffectsBridge;
     petalInstances: Array<RingInstance<any>>;
     geom: PetalRingGeometry;
 }): void {
-    const { player, io, petalInstances, geom } = opts;
+    const { player, io, groundEffects, petalInstances, geom } = opts;
 
     const playerExt = player.inputs?.petalExtension || 1.0;
     if (playerExt !== 1.0) {
@@ -1616,9 +1650,9 @@ function dropFieldsOnExtension(opts: {
                     dropX += Math.cos(totalAngle) * WEB_THROW_DISTANCE;
                     dropY += Math.sin(totalAngle) * WEB_THROW_DISTANCE;
                 }
-                spawnWebField(io, player, stats.webRadius!, petal.rarity ?? 'common', dropX, dropY);
+                spawnWebField(io, groundEffects, player, stats.webRadius!, petal.rarity ?? 'common', dropX, dropY);
             } else {
-                spawnGroundPollen(io, player, stats, petal, dropX, dropY, 12 * eSize);
+                spawnGroundPollen(io, groundEffects, player, stats, petal, dropX, dropY, 12 * eSize);
             }
             dropsToBreak.push({petal, instanceIndex, stats});
         }
@@ -1813,6 +1847,9 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
  * back into modules that import this one, and hoisting them to the top would
  * close a cycle.
  */
+/** Reused payload buffer for the pickup pass; see collectWorldItems. */
+const _pickupItemScratch: WorldItem[] = [];
+
 export function resolvePlayerItemPickups(
     player: ServerPlayer,
     newX: number,
@@ -1826,8 +1863,11 @@ export function resolvePlayerItemPickups(
 // Optimize: use squared distance comparison to avoid Math.sqrt
 const pickupSize = PLAYER_SIZE * (player.sizeMultiplier ?? 1.0) + (player.magnetism ?? 0);
 const pickupRadiusSquared = pickupSize * pickupSize;
-for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i];
+// Items are ECS entities; the payloads are collected into a reused buffer so
+// removing one mid-loop can never disturb the iteration.
+const pickupItems = collectWorldItems(_pickupItemScratch);
+for (let i = pickupItems.length - 1; i >= 0; i--) {
+    const item = pickupItems[i];
     const dx = newX - item.x;
     const dy = newY - item.y;
     const distanceSquared = dx * dx + dy * dy;
@@ -1928,13 +1968,9 @@ for (let i = items.length - 1; i >= 0; i--) {
                 item.pickedUpBy && item.pickedUpBy.has(playerId)
             );
             if (allPickedUp) {
-                // Clean up expiration timeout if item is removed early
-                const timeout = itemExpirationTimeouts.get(item.id);
-                if (timeout) {
-                    clearTimeout(timeout);
-                    itemExpirationTimeouts.delete(item.id);
-                }
-                items.splice(i, 1);
+                // No expiry timer to clear any more: the deadline lives on the
+                // entity, and destroying it retires deadline and item together.
+                removeWorldItem(item);
                 // Notify only eligible players that the item is gone
                 for (const playerId of item.eligiblePlayers) {
                     io.to(playerId).emit('itemRemoved', item.id);
@@ -2225,7 +2261,7 @@ if (player.loadout) {
     // Initialize petal positions array
     player.petalPositions = [];
 
-    dropFieldsOnExtension({ player, io, petalInstances, geom });
+    dropFieldsOnExtension({ player, io, groundEffects: deps.groundEffects, petalInstances, geom });
 
     // Resolved once per player-tick: the petal-vs-player pass below walks
     // every other player, so outside the PVP arena it must stay behind a
@@ -2756,48 +2792,20 @@ if (player.loadout) {
                     setInstanceHealth(petal, instanceIndex, petalStats, Math.max(0, prevInstanceHealth - mobDamage));
                 }
 
-                // Apply poison effect if the petal has poison
+                // Apply poison effect if the petal has poison. The stack lives
+                // in the ECS now (one per mob+player, gardn's outlast rule) —
+                // see applyPoisonStack in ecs/systems/afflictions.ts.
                 if (petalStats.poison && petalStats.poison > 0 && petalStats.poisonDuration && petalStats.poisonDuration > 0) {
-                    if (!enemy.poisonEffects) {
-                        enemy.poisonEffects = [];
-                    }
-                    
-                    // Add or refresh poison effect
-                    const currentTime = Date.now();
-                    const endTime = currentTime + petalStats.poisonDuration;
-                    
-                    // Check if there's already a poison effect from this player
-                    const existingPoisonIndex = enemy.poisonEffects.findIndex(p => p.playerId === player.id);
-                    if (existingPoisonIndex >= 0) {
-                        // gardn's rule (Damage.cc): a fresh bite only takes over
-                        // when it would outlast what is already ticking —
-                        // `if (defender.poison_ticks < attacker.poison_damage.time * TPS)`.
-                        // Without the guard, a short weak poison stomps a long
-                        // strong one: pincer (1s) landing after iris (6s) used to
-                        // wipe the iris poison and leave 1s of 5dps in its place.
-                        if (enemy.poisonEffects[existingPoisonIndex].endTime < endTime) {
-                            enemy.poisonEffects[existingPoisonIndex] = {
-                                damage: petalStats.poison,
-                                endTime: endTime,
-                                playerId: player.id
-                            };
-                        }
-                    } else {
-                        // Add a new poison effect
-                        enemy.poisonEffects.push({
-                            damage: petalStats.poison,
-                            endTime: endTime,
-                            playerId: player.id
-                        });
-                    }
+                    deps.poisons.apply(enemy.id, player.id, petalStats.poison,
+                        Date.now() + petalStats.poisonDuration);
                 }
 
                 // Sticky petals (honey / pincer) slow what they touch. How
                 // much of it lands depends on the petal's rarity against the
-                // mob's — see stallPower.
+                // mob's — see stallPower in shared/rarity.ts.
                 if (petalStats.slowFactor && petalStats.slowDuration) {
-                    applySlow(enemy, petalStats.slowFactor, currentTime + petalStats.slowDuration,
-                              petal.rarity ?? 'common');
+                    deps.slows.apply(enemy.id, petalStats.slowFactor,
+                        currentTime + petalStats.slowDuration, petal.rarity ?? 'common');
                 }
 
                 // Apply knockback to enemy
@@ -2923,41 +2931,20 @@ if (player.loadout) {
                         
                         // Check and fix wall collisions before adding item
                         checkItemWallCollisions(newItem);
-                        
-                        items.push(newItem);
-                        
+
+                        // Admit the drop as an entity; the Expires deadline
+                        // replaces the per-item removal setTimeout, and the
+                        // droppedItems system emits `itemRemoved` on expiry.
+                        const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
+                        spawnWorldItem(newItem, spawnTime + expirationTime);
+
                         // Send itemSpawned event to eligible players (map split player IDs to original socket IDs)
                         const { getOriginalSocketId } = require('./utils');
                         for (const eligiblePlayerId of eligiblePlayersForItem) {
                             const originalSocketId = getOriginalSocketId(eligiblePlayerId);
                             io.to(originalSocketId).emit('itemSpawned', newItem);
                         }
-                        
-                        // Schedule automatic removal after expiration time
-                        const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
-                        const timeout = setTimeout(() => {
-                            itemExpirationTimeouts.delete(itemId);
-                            const itemIndex = items.findIndex(item => item.id === itemId);
-                            if (itemIndex !== -1) {
-                                const expiredItem = items[itemIndex];
-                                items.splice(itemIndex, 1);
-                                
-                                // Notify eligible players that item expired
-                                const { getOriginalSocketId } = require('./utils');
-                                if (expiredItem.eligiblePlayers) {
-                                    for (const playerId of expiredItem.eligiblePlayers) {
-                                        const originalSocketId = getOriginalSocketId(playerId);
-                                        io.to(originalSocketId).emit('itemRemoved', itemId);
-                                    }
-                                }
-                                
-                                if (!player.id.startsWith('bot_')) {
-                                    console.log(`[ITEM_SPAWNER] Petal ${randomPetalType} (${randomRarity}) expired after ${expirationTime}ms`);
-                                }
-                            }
-                        }, expirationTime);
-                        itemExpirationTimeouts.set(itemId, timeout);
-                        
+
                         if (!player.id.startsWith('bot_')) {
                             console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
                         }

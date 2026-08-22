@@ -1,4 +1,27 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -71,7 +94,8 @@ const utils_1 = require("./server/utils");
 Object.defineProperty(exports, "trackDamage", { enumerable: true, get: function () { return utils_1.trackDamage; } });
 Object.defineProperty(exports, "sendBossMobDefeatedMessage", { enumerable: true, get: function () { return utils_1.sendBossMobDefeatedMessage; } });
 const guildManager_1 = require("./server/guildManager");
-const physics_1 = require("./server/physics");
+// (checkItemWallCollisions is no longer imported here: the droppedItems ECS
+// system resolves item-wall overlap through the runtime's injected resolver.)
 const ecsRuntime_1 = require("./server/ecsRuntime");
 const ecsSync_1 = require("./server/ecsSync");
 const projectileEncoder_1 = require("./ecs/net/projectileEncoder");
@@ -79,6 +103,9 @@ const tickBroadcast_1 = require("./server/tickBroadcast");
 const connection_1 = require("./server/connection");
 const playerState_1 = require("./server/playerState");
 const gameState_1 = require("./server/gameState");
+const prefabs_1 = require("./ecs/prefabs");
+const EC = __importStar(require("./ecs/components"));
+const itemRegistry_1 = require("./server/itemRegistry");
 const itemManager_1 = require("./server/itemManager");
 const botManager_1 = require("./server/botManager");
 const playerManager_1 = require("./server/playerManager");
@@ -396,18 +423,12 @@ const gameState_3 = require("./server/gameState");
 // Replace the old obstacle initialization with:
 constants_2.obstacles.push(...(0, gameState_3.initializeMapObstacles)());
 // Viewport optimization functions moved to playerState module
-function updateEnemyViewportStatus() {
-    const currentTime = Date.now();
-    for (const enemy of constants_2.enemies) {
-        // isPositionNearAnyPlayer (not isPositionInAnyViewport): maze/PVP
-        // players sit outside the world rectangle and are excluded from the
-        // world-clamped viewport list, which made every maze mob look
-        // permanently out-of-view and churn through 30s despawns.
-        if ((0, playerState_1.isPositionNearAnyPlayer)(enemy.x, enemy.y)) {
-            enemy.lastViewportCheck = currentTime;
-        }
-    }
-}
+// updateEnemyViewportStatus / despawnDistantEnemies are gone: viewport
+// tracking and distance-despawn are ECS-owned now (ecs/systems/viewport.ts
+// refreshes ViewportTracked; the unseenDespawn sweep in ecs/systems/lifetime.ts
+// removes 30s-unseen mobs through the onMobDespawn hook, with the same
+// boss/target-dummy/occupied-maze exemptions). Both run strided on the mob
+// scheduler, exactly as the legacy passes were.
 function calculateCurrentDensity() {
     const playerCount = Object.keys(constants_2.players).length;
     const totalEnemies = constants_2.enemies.length;
@@ -437,10 +458,10 @@ function triggerViewportUpdate() {
     // console.log(`[SERVER] Triggering viewport update for ${Object.keys(players).length} players`);
     // Validate and fix any invalid player positions first
     (0, playerState_1.validatePlayerPositions)(io);
-    // Force update all enemy viewport statuses
-    updateEnemyViewportStatus();
-    // Despawn any enemies that have been outside viewport for too long
-    despawnDistantEnemies();
+    // No forced viewport/despawn pass here any more: both are strided ECS
+    // systems (~6Hz), so they run within 166ms of this call anyway — and the
+    // despawn timer is 30 seconds, so "immediately" and "next stride" are the
+    // same outcome.
     // Log current enemy distribution and density analysis
     const densityInfo = calculateCurrentDensity();
     if (densityInfo) {
@@ -476,58 +497,6 @@ function triggerViewportUpdate() {
                 console.log(`[SERVER] Player join spawn: ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
             }
         }
-    }
-}
-function despawnDistantEnemies() {
-    const currentTime = Date.now();
-    const enemiesToRemove = [];
-    // The maze is a bounded, persistently-populated dungeon (rrolf-style):
-    // its mobs are capped by mazeSpawner and spawned across ALL corridors, so
-    // while anyone is inside, none of them distance-despawn — otherwise the
-    // deep zones would always be empty except a bubble around each player.
-    // Once the maze has no players left, the normal 30s timer cleans it up.
-    const mazeOccupied = (0, mazeSpawner_1.hasMazePlayers)();
-    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
-        const enemy = constants_2.enemies[i];
-        // Special mobs (ultra, super, unique, apex) never despawn
-        if (enemy.tier === 'ultra' || enemy.tier === 'super' || enemy.tier === 'unique' || enemy.tier === 'apex') {
-            continue;
-        }
-        // Target dummies never despawn
-        if (enemy.type === 'target_dummy') {
-            continue;
-        }
-        if (mazeOccupied && (0, maze_1.isInMazeRegion)(enemy.x, enemy.y)) {
-            enemy.lastViewportCheck = undefined;
-            continue;
-        }
-        // Check if enemy is currently outside any player's viewport (the
-        // near-player check includes maze/PVP players, whose out-of-world
-        // coordinates are invisible to the world-clamped viewport list).
-        const inViewport = (0, playerState_1.isPositionNearAnyPlayer)(enemy.x, enemy.y);
-        if (!inViewport) {
-            // If enemy is outside viewport, update or set the last viewport check time
-            if (!enemy.lastViewportCheck) {
-                enemy.lastViewportCheck = currentTime;
-            }
-            // Despawn if enemy has been outside viewport for more than 30 seconds
-            if (currentTime - enemy.lastViewportCheck > 30000) { // 30 seconds
-                enemiesToRemove.push(i);
-            }
-        }
-        else {
-            // Enemy is in viewport, reset the last viewport check
-            enemy.lastViewportCheck = undefined;
-        }
-    }
-    // Remove enemies and notify clients
-    for (const index of enemiesToRemove) {
-        const enemy = constants_2.enemies[index];
-        // Clean up enemy data structures before removal to prevent memory leaks
-        (0, utils_1.cleanupEnemy)(enemy);
-        (0, enemyRegistry_1.removeEnemyAt)(index);
-        io.emit('enemyDestroyed', enemy.id);
-        // console.log(`[SERVER] Despawned enemy ${enemy.id} (${enemy.type} ${enemy.tier}) - outside viewport for 30+ seconds`);
     }
 }
 // createSpecialMob moved to enemySpawner module
@@ -966,18 +935,71 @@ const playerStateDeps = {
     petalRing: {
         open: (player, slotCount, rotationSpeedModifier, deltaTime, now) => (0, ecsSync_1.openPetalRing)(getEcsRuntime().world, player, now, slotCount, rotationSpeedModifier, deltaTime),
     },
+    // Ground pollen and web fields live in the ECS; breaking petals spawn them
+    // through here. `ensurePlayerEntity` rather than a bare lookup: a flower can
+    // break a petal on its very first tick, before syncToEcs has imported it.
+    groundEffects: {
+        spawnPollen: (spec) => {
+            const player = constants_2.players[spec.playerId];
+            if (!player)
+                return;
+            const world = getEcsRuntime().world;
+            (0, prefabs_1.spawnGroundPollen)(world, {
+                id: spec.id,
+                x: spec.x,
+                y: spec.y,
+                owner: (0, ecsSync_1.ensurePlayerEntity)(world, player, Date.now()),
+                damage: spec.damage,
+                radius: spec.radius,
+                rarity: spec.rarity,
+                expiresAt: spec.expiresAt,
+            });
+        },
+        spawnWeb: (spec) => {
+            const player = constants_2.players[spec.playerId];
+            if (!player)
+                return;
+            const world = getEcsRuntime().world;
+            (0, prefabs_1.spawnWebField)(world, {
+                id: spec.id,
+                x: spec.x,
+                y: spec.y,
+                owner: (0, ecsSync_1.ensurePlayerEntity)(world, player, Date.now()),
+                radius: spec.radius,
+                rarity: spec.rarity,
+                expiresAt: spec.expiresAt,
+            });
+        },
+    },
+    // Mob slows are ECS-owned; sticky petals apply theirs through the runtime,
+    // which runs the rarity contest and writes the Speed/Slowed pair.
+    slows: {
+        apply: (enemyId, baseFactor, until, sourceRarity) => {
+            const runtime = getEcsRuntime();
+            const victim = runtime.world.lookup(enemyId);
+            if (victim === undefined)
+                return;
+            runtime.slowEnemy(victim, baseFactor, until, sourceRarity, Date.now());
+        },
+    },
+    // Mob poison is ECS-owned; poisonous petals apply their stacks through the
+    // runtime (one per mob+player, gardn's outlast rule).
+    poisons: {
+        apply: (enemyId, playerId, damagePerMs, endTime) => {
+            const runtime = getEcsRuntime();
+            const victim = runtime.world.lookup(enemyId);
+            const player = constants_2.players[playerId];
+            if (victim === undefined || !player)
+                return;
+            const source = (0, ecsSync_1.ensurePlayerEntity)(runtime.world, player, Date.now());
+            runtime.poisonEnemy(victim, source, damagePerMs, endTime);
+        },
+    },
 };
-/**
- * What the ECS player-movement window needs from the legacy modifier pipeline.
- *
- * One function, and it is injected rather than imported by ecsSync because
- * `getSpeedMultiplier` lives in petal_actions.ts, which pulls in this module at
- * module scope and binds port 3000 on require. server.ts is already the place
- * that owns both halves, so the edge lives here.
- */
-const playerSyncDeps = {
-    speedBoostOf: playerState_1.computeSpeedBoost,
-};
+// There is no playerSyncDeps any more: the playerModifiers system derives the
+// speed/size/magnetism/aggro values from the Loadout component, the mirrored
+// effect list and the mirrored speed_boost base — syncPlayersToEcs pushes only
+// inputs legacy still writes.
 // Kill-handler context for the consolidated death sequence (see shared/killHandler).
 // Mirrors the kill-related subset of playerStateDeps; built once at boot.
 const killCtx = {
@@ -1009,246 +1031,67 @@ io.on('connection', (socket) => {
         commandDeps,
     });
 });
+// updateSlowEffects is gone: slows are ECS-owned end to end. Application goes
+// through EcsRuntime.slowEnemy (petal contacts, web fields), and the ECS
+// slowExpiry system — registered in Phase.Input so a lapsed slow is restored
+// BEFORE the AI and movement read speed, exactly where this function ran —
+// restores Speed.current from Speed.base when the timer lapses.
+// updatePlayerPoison is gone: the ECS playerPoison system (Phase.Combat on the
+// mob scheduler) visits exactly the poisoned flowers — the Poisoned component
+// is mirrored from the shell in syncToEcs — and runs the legacy per-tick body
+// through the tickPlayerPoison / onPlayerPoisonLapsed hooks above.
+// updatePeriodicSpawns is gone: its two halves are ECS systems. The timed
+// despawn of escorts is `mobExpiry` (ecs/systems/lifetime.ts, through the
+// onMobDespawn hook), and the interval summon is `periodicSpawns`
+// (ecs/systems/spawning.ts, through the onSpawnEscort hook above).
 /**
- * Restore the speed of mobs whose slow (web/honey/pincer) has lapsed. Slows are
- * applied by scaling `enemy.speed` down and parking the original in `baseSpeed`
- * (see applySlow in playerState.ts), so every movement branch respects them
- * without knowing they exist — this is the only place that undoes one.
+ * A mob just died to poison: the death sequence the poison pass has always
+ * run, now invoked from the ECS poisonStacks system's kill hook. Differs from
+ * killEnemy in three ways it always has: XP goes to the TOP CONTRIBUTOR (there
+ * is no single "killer" for a bleed), the kill emits `enemyDestroyed` itself,
+ * and a replacement mob is spawned immediately.
  */
-function updateSlowEffects() {
-    const currentTime = Date.now();
-    for (const enemy of constants_2.enemies) {
-        if (enemy.slowUntil === undefined)
-            continue;
-        if (currentTime < enemy.slowUntil)
-            continue;
-        if (enemy.baseSpeed !== undefined)
-            enemy.speed = enemy.baseSpeed;
-        enemy.slowUntil = undefined;
-    }
-}
-/**
- * Tick the poison a mob's bite left on a flower (evil centipede). Lotus's
- * poisonArmor is subtracted from the per-second rate, so enough of it makes the
- * flower immune outright rather than merely slowing the bleed.
- */
-function updatePlayerPoison(deltaTime) {
-    const currentTime = Date.now();
-    for (const id in constants_2.players) {
-        const player = constants_2.players[id];
-        if (!player.poisonUntil)
-            continue;
-        if (player.isDead || currentTime >= player.poisonUntil) {
-            player.poisonUntil = undefined;
-            player.poisonDamage = undefined;
-            player.poisonSource = undefined;
-            continue;
-        }
-        if (player.isInvulnerable)
-            continue;
-        const armor = (0, playerManager_1.calculatePlayerModifiers)(player).poisonArmor ?? 0;
-        const dps = Math.max(0, (player.poisonDamage ?? 0) - armor);
-        if (dps <= 0)
-            continue;
-        player.health -= dps * deltaTime;
-        player.lastDamageTime = currentTime;
-        if (player.health <= 0 && !(0, playerState_1.trySecondChance)(player, io)) {
-            player.health = 0;
-            player.isDead = true;
-            if (player.poisonSource)
-                player.killedBy = player.poisonSource;
-            (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
-            io.emit('playerDied', { playerId: player.id });
-        }
-        io.emit('playerDamaged', {
-            playerId: player.id,
-            health: player.health,
-            maxHealth: player.maxHealth,
-            isInvulnerable: player.isInvulnerable,
-            knockbackX: 0,
-            knockbackY: 0,
-            damageDealt: dps * deltaTime
-        });
-    }
-}
-/**
- * Mobs that summon escorts on a timer while they live (queen ant), plus the
- * expiry of what they summoned. The escort is capped and time-limited so a
- * long-lived queen can't flood the section.
- */
-function updatePeriodicSpawns() {
-    const currentTime = Date.now();
-    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
-        const enemy = constants_2.enemies[i];
-        if (enemy.despawnAt !== undefined && currentTime >= enemy.despawnAt && !enemy.isDead) {
-            enemy.isDead = true;
-            (0, utils_1.cleanupEnemy)(enemy);
-            (0, enemyRegistry_1.removeEnemyAt)(i);
-            io.emit('enemyDestroyed', enemy.id);
-        }
-    }
-    for (const enemy of constants_2.enemies) {
-        if (enemy.isDead)
-            continue;
-        const stats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
-        const spawnCfg = stats?.periodic_spawn;
-        if (!spawnCfg)
-            continue;
-        const last = enemy.lastPeriodicSpawnTime ?? 0;
-        if (currentTime - last < spawnCfg.intervalMs)
-            continue;
-        enemy.lastPeriodicSpawnTime = currentTime;
-        let alive = 0;
-        for (const other of constants_2.enemies) {
-            if (other.parentHoleId === enemy.id && other.type === spawnCfg.mobType)
-                alive++;
-        }
-        if (alive >= spawnCfg.maxAlive)
-            continue;
-        // Behind the summoner, like gardn's queen ant.
-        const radius = (stats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, spawnCfg.mobType);
-        const behindX = enemy.x - Math.cos(enemy.angle) * radius;
-        const behindY = enemy.y - Math.sin(enemy.angle) * radius;
-        let spawnTier = enemy.tier;
-        for (let step = 0; step < -(spawnCfg.spawnRarityOffset ?? 0); step++) {
-            spawnTier = (0, rarity_1.downgradeRarity)(spawnTier);
-        }
-        // despawnAt and the inherited target are constructor arguments, not
-        // post-spawn patches: both reach ECS components (Expires, MobAI.target)
-        // at construction and nothing re-reads the legacy fields afterwards.
-        const child = (0, enemyRegistry_1.spawnEnemy)(spawnCfg.mobType, spawnTier, behindX, behindY, {
-            parentHoleId: enemy.id,
-            ownerId: enemy.ownerId,
-            despawnAt: currentTime + spawnCfg.lifetimeMs,
-            targetPlayerId: enemy.targetPlayerId,
-        });
-        if (!child)
-            continue;
-        (0, scopedEmit_1.emitToViewers)(io, child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
-    }
-}
-function updatePoisonEffects(deltaTime) {
-    const currentTime = Date.now();
-    constants_2.enemies.forEach(enemy => {
-        if (!enemy.poisonEffects || enemy.poisonEffects.length === 0) {
-            return;
-        }
-        // Calculate total poison damage from all active effects
-        let totalPoisonDamage = 0;
-        const activePoisons = [];
-        enemy.poisonEffects.forEach(poison => {
-            if (currentTime < poison.endTime) {
-                // Poison is still active
-                totalPoisonDamage += poison.damage;
-                activePoisons.push(poison);
+function handlePoisonDeath(enemy) {
+    if (enemy.isDead)
+        return;
+    enemy.isDead = true;
+    const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
+    if (index === -1)
+        return;
+    const baseXpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
+    // Find the player who dealt the most damage (including poison)
+    let topContributor;
+    let maxDamage = 0;
+    if (enemy.damageContributors) {
+        enemy.damageContributors.forEach((damage, playerId) => {
+            if (damage > maxDamage) {
+                maxDamage = damage;
+                topContributor = playerId;
             }
         });
-        // Update the enemy's poison effects list to only include active ones
-        enemy.poisonEffects = activePoisons;
-        // Apply poison damage
-        if (totalPoisonDamage > 0) {
-            const poisonDamageThisTick = totalPoisonDamage * deltaTime * 1000; // Convert deltaTime (seconds) to milliseconds
-            enemy.health = Math.max(0, enemy.health - poisonDamageThisTick);
-            // Track poison damage for all contributing players
-            activePoisons.forEach(poison => {
-                (0, utils_1.trackDamage)(enemy, poison.playerId, poison.damage * deltaTime * 1000);
-            });
-            // Mark enemy for batched damage update at end of frame
-            (0, utils_1.markEnemyPoisonDamaged)(enemy);
-            // Check if enemy dies from poison (only process once per enemy)
-            if (enemy.health <= 0 && !enemy.isDead) {
-                // Mark enemy as dead to prevent multiple death handlers
-                enemy.isDead = true;
-                const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
-                if (index !== -1) {
-                    // Award XP to all players who contributed poison damage
-                    const baseXpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
-                    // Find the player who dealt the most damage (including poison)
-                    let topContributor;
-                    let maxDamage = 0;
-                    if (enemy.damageContributors) {
-                        enemy.damageContributors.forEach((damage, playerId) => {
-                            if (damage > maxDamage) {
-                                maxDamage = damage;
-                                topContributor = playerId;
-                            }
-                        });
-                    }
-                    const { xpMultiplier, dropMultiplier } = topContributor
-                        ? getLeaderboardRewardMultipliers(topContributor)
-                        : { xpMultiplier: 1, dropMultiplier: 1 };
-                    // Award XP to the top contributor
-                    if (topContributor && constants_2.players[topContributor]) {
-                        addXPToPlayer(constants_2.players[topContributor], Math.round(baseXpGained * xpMultiplier), topContributor);
-                    }
-                    // Track mob kill for eligible players (use debounced save to prevent lag)
-                    (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
-                    // Handle mob drops (includes all eligible players)
-                    handleMobDrops(enemy, dropMultiplier);
-                    (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
-                    // Clean up enemy data structures before removal to prevent memory leaks
-                    (0, utils_1.cleanupEnemy)(enemy);
-                    (0, enemyRegistry_1.removeEnemyAt)(index);
-                    updateSpecialMobCounts();
-                    io.emit('enemyDestroyed', enemy.id);
-                    // Try to spawn a new enemy (admits itself)
-                    createEnemy();
-                }
-            }
-        }
-    });
-}
-/**
- * Spawn child waves from any mob with `spawn_waves` whose health dropped this
- * tick. Each wave is tied to an HP threshold; every wave crossed on the way
- * down spawns its listed mobs, so multiple waves can fire on a single big hit.
- * Mirrors the kAntHole damage behavior from the gardn reference project.
- */
-function spawnWaveMobs() {
-    for (const enemy of constants_2.enemies) {
-        if (enemy.isDead)
-            continue;
-        // _mobStats is cached on grid insertion; only hole-type mobs have
-        // spawn_waves, so this skips ~all 1400 enemies without a stats lookup.
-        const parentStats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
-        if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0)
-            continue;
-        const waves = parentStats.spawn_waves;
-        const numWaves = waves.length - 1;
-        const prev = enemy._spawnWavePrevHealth;
-        if (prev === undefined) {
-            enemy._spawnWavePrevHealth = enemy.health;
-            continue;
-        }
-        if (enemy.health >= prev) {
-            enemy._spawnWavePrevHealth = enemy.health;
-            continue;
-        }
-        const maxHp = enemy.maxHealth || 1;
-        // Clamp to the valid wave range [0, numWaves]. Without this, a large overkill
-        // drives enemy.health far negative, so endWave becomes a huge negative number
-        // and the loop spins from startWave down to it — millions of iterations that all
-        // just `continue` (out-of-range waveIndex): a tight, flat-heap 100% CPU hang.
-        const startWave = Math.min(numWaves, Math.floor((prev / maxHp) * numWaves));
-        const endWave = Math.max(0, Math.ceil((enemy.health / maxHp) * numWaves));
-        const parentRadius = (parentStats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type);
-        for (let i = startWave; i >= endWave; i--) {
-            const waveIndex = numWaves - i;
-            if (waveIndex < 0 || waveIndex >= waves.length)
-                continue;
-            const wave = waves[waveIndex];
-            for (const childType of wave) {
-                const angle = Math.random() * Math.PI * 2;
-                const dist = parentRadius + 10 + Math.random() * parentRadius;
-                const child = (0, enemyRegistry_1.spawnEnemy)(childType, enemy.tier, enemy.x + Math.cos(angle) * dist, enemy.y + Math.sin(angle) * dist, { parentHoleId: enemy.id });
-                if (!child)
-                    continue;
-                (0, scopedEmit_1.emitToViewers)(io, child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
-            }
-        }
-        enemy._spawnWavePrevHealth = enemy.health;
     }
+    const { xpMultiplier, dropMultiplier } = topContributor
+        ? getLeaderboardRewardMultipliers(topContributor)
+        : { xpMultiplier: 1, dropMultiplier: 1 };
+    if (topContributor && constants_2.players[topContributor]) {
+        addXPToPlayer(constants_2.players[topContributor], Math.round(baseXpGained * xpMultiplier), topContributor);
+    }
+    // Track mob kill for eligible players (use debounced save to prevent lag)
+    (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+    handleMobDrops(enemy, dropMultiplier);
+    (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+    // Clean up enemy data structures before removal to prevent memory leaks
+    (0, utils_1.cleanupEnemy)(enemy);
+    (0, enemyRegistry_1.removeEnemyAt)(index);
+    updateSpecialMobCounts();
+    io.emit('enemyDestroyed', enemy.id);
+    // Try to spawn a new enemy (admits itself)
+    createEnemy();
 }
+// spawnWaveMobs is gone: the health-threshold bookkeeping is the ECS
+// `spawnWaves` system (ecs/systems/spawning.ts, on SpawnWaveState), and the
+// actual wave contents spawn through the onSpawnWaves hook above. The overkill
+// clamp that fixed the 100% CPU hang lives in the system.
 /**
  * Advance every enemy by one tick, on the ECS.
  *
@@ -1265,11 +1108,12 @@ function moveEnemies() {
     // deltaTime is nominal here on purpose: the ported mob step is a FIXED
     // per-call step, exactly as the legacy one was, and moveEnemies is called
     // mobCatchupCalls times rather than being handed a larger dt.
+    //
+    // Reaping happens inside this tick now — the reaper system is the last
+    // thing in the Lifetime phase, driving the onReapEnemy hook (XP, drops and
+    // the database stay behind that hook, unported).
     runtime.tick(1 / 30, 1000 / 30, now);
     (0, ecsSync_1.syncFromEcs)(runtime.world, constants_2.enemies);
-    // Reaping stays here: it awards XP, rolls drops and touches the database,
-    // none of which is ported.
-    reapDeadEnemies();
     // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
 }
 /**
@@ -1291,6 +1135,7 @@ function getEcsRuntime() {
                 (0, playerState_1.updatePlayerState)(constants_2.players[id], deltaTime, playerStateDeps);
             }
         },
+        runPetalBehaviours: () => (0, petal_actions_1.updatePetalBehaviours)(),
         // Pet kills are credited to the owning PLAYER, matching trackDamage.
         creditDamage: (victim, ownerPlayer, amount) => {
             const world = _ecsRuntime.world;
@@ -1356,6 +1201,222 @@ function getEcsRuntime() {
                 trackMobKillTiming: timing,
             });
         },
+        onGroundEffectExpired: (kind, id) => {
+            io.emit(kind === 'pollen' ? 'groundPollenRemoved' : 'webRemoved', id);
+        },
+        // The PVP arena and the maze live well outside the regular world
+        // rectangle, so items inside them are exempt from the bounds check.
+        isItemOutOfBounds: (x, y) => {
+            const outOfBounds = x < 0 || x >= constants_2.ACTUAL_WORLD_WIDTH || y < 0 || y >= constants_2.ACTUAL_WORLD_HEIGHT;
+            return outOfBounds && !(0, constants_2.isInPvpArena)(x, y) && !(0, maze_1.isInMazeRegion)(x, y);
+        },
+        onWorldItemRemoved: (victim) => {
+            const world = _ecsRuntime.world;
+            const item = world.get(victim, EC.DroppedItem, 'payload');
+            if (!item?.eligiblePlayers)
+                return;
+            // Split halves are addressed by their original socket, the same
+            // mapping every other item event uses.
+            for (const playerId of item.eligiblePlayers) {
+                io.to((0, utils_1.getOriginalSocketId)(playerId)).emit('itemRemoved', item.id);
+            }
+        },
+        onEnemyPoisonDamaged: (victim) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(victim, EC.LegacyShell))
+                return;
+            const enemy = world.get(victim, EC.LegacyShell, 'ref');
+            if (enemy)
+                (0, utils_1.markEnemyPoisonDamaged)(enemy);
+        },
+        onPoisonKill: (victim) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(victim, EC.LegacyShell))
+                return;
+            const enemy = world.get(victim, EC.LegacyShell, 'ref');
+            if (enemy)
+                handlePoisonDeath(enemy);
+        },
+        // The whole body is legacy player state on purpose: armor comes from
+        // the modifier pipeline, the health write lands on the ServerPlayer,
+        // and death runs second-chance, pet despawn and two emits. What the
+        // ECS owns is the query (only poisoned flowers are visited) and the
+        // expiry.
+        tickPlayerPoison: (victim, deltaTime) => {
+            const player = playerFromEntity(victim);
+            if (!player || player.isDead || player.isInvulnerable)
+                return;
+            const armor = (0, playerManager_1.calculatePlayerModifiers)(player).poisonArmor ?? 0;
+            const dps = Math.max(0, (player.poisonDamage ?? 0) - armor);
+            if (dps <= 0)
+                return;
+            player.health -= dps * deltaTime;
+            player.lastDamageTime = Date.now();
+            if (player.health <= 0 && !(0, playerState_1.trySecondChance)(player, io)) {
+                player.health = 0;
+                player.isDead = true;
+                if (player.poisonSource)
+                    player.killedBy = player.poisonSource;
+                (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
+                io.emit('playerDied', { playerId: player.id });
+            }
+            io.emit('playerDamaged', {
+                playerId: player.id,
+                health: player.health,
+                maxHealth: player.maxHealth,
+                isInvulnerable: player.isInvulnerable,
+                knockbackX: 0,
+                knockbackY: 0,
+                damageDealt: dps * deltaTime
+            });
+        },
+        onPlayerPoisonLapsed: (victim) => {
+            const player = playerFromEntity(victim);
+            if (!player)
+                return;
+            player.poisonUntil = undefined;
+            player.poisonDamage = undefined;
+            player.poisonSource = undefined;
+        },
+        // The maze is a bounded, persistently-populated dungeon (rrolf-style):
+        // while anyone is inside, none of its mobs distance-despawn — otherwise
+        // the deep zones would always be empty except a bubble around each
+        // player. Once it empties, the normal 30s timer cleans it up.
+        isDespawnProtectedAt: (x, y) => (0, mazeSpawner_1.hasMazePlayers)() && (0, maze_1.isInMazeRegion)(x, y),
+        onMobDespawn: (victim) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(victim, EC.LegacyShell))
+                return;
+            const enemy = world.get(victim, EC.LegacyShell, 'ref');
+            if (!enemy)
+                return;
+            // Mark dead first so any legacy pass still holding the shell this
+            // tick skips it (the timed-despawn path always did this), then
+            // clean up + splice + emit — the sequence both legacy despawn
+            // passes ran.
+            enemy.isDead = true;
+            (0, utils_1.cleanupEnemy)(enemy);
+            if ((0, enemyRegistry_1.removeEnemy)(enemy))
+                io.emit('enemyDestroyed', enemy.id);
+        },
+        // The reaper's death sequence — verbatim the body of the old
+        // reapDeadEnemies loop, per victim. XP to the top damage contributor
+        // (a pet kill credits its owner: contributors are keyed by player),
+        // then the digger roll, then removal. No `enemyDestroyed` emit here,
+        // as ever: clients learn of reaped deaths from the broadcast's removal
+        // list.
+        onReapEnemy: (victim) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(victim, EC.LegacyShell))
+                return;
+            const enemy = world.get(victim, EC.LegacyShell, 'ref');
+            if (!enemy)
+                return;
+            const index = constants_2.enemies.indexOf(enemy);
+            if (index < 0)
+                return; // a direct kill path already removed it
+            if (enemy.damageContributors && enemy.damageContributors.size > 0) {
+                let topContributor;
+                let maxDamage = 0;
+                enemy.damageContributors.forEach((damage, playerId) => {
+                    if (damage > maxDamage) {
+                        maxDamage = damage;
+                        topContributor = playerId;
+                    }
+                });
+                if (topContributor && constants_2.players[topContributor]) {
+                    const { xpMultiplier, dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
+                    addXPToPlayer(constants_2.players[topContributor], Math.round((0, server_utils_1.getXPFromEnemy)(enemy) * xpMultiplier), topContributor);
+                    (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
+                    handleMobDrops(enemy, dropMultiplier);
+                    (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
+                }
+            }
+            // A wild hole can leave a digger behind. Pet holes are excluded — a
+            // player's own summon shouldn't hatch a hostile. The digger spawns
+            // at full health, so it cannot be reaped by this same pass.
+            if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
+                const digger = (0, enemyRegistry_1.spawnEnemy)('digger', enemy.tier, enemy.x, enemy.y);
+                if (digger)
+                    (0, scopedEmit_1.emitToViewers)(io, digger.x, digger.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(digger));
+            }
+            // Clean up enemy data structures before removal to prevent memory leaks
+            (0, utils_1.cleanupEnemy)(enemy);
+            (0, enemyRegistry_1.removeEnemyAt)(index);
+            updateSpecialMobCounts();
+        },
+        // Queen-ant escorts: the summon half of the legacy updatePeriodicSpawns
+        // (the interval clock lives on the PeriodicSpawner component now).
+        onSpawnEscort: (summoner) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(summoner, EC.LegacyShell))
+                return;
+            const enemy = world.get(summoner, EC.LegacyShell, 'ref');
+            if (!enemy || enemy.isDead)
+                return;
+            const stats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+            const spawnCfg = stats?.periodic_spawn;
+            if (!spawnCfg)
+                return;
+            let alive = 0;
+            for (const other of constants_2.enemies) {
+                if (other.parentHoleId === enemy.id && other.type === spawnCfg.mobType)
+                    alive++;
+            }
+            if (alive >= spawnCfg.maxAlive)
+                return;
+            // Behind the summoner, like gardn's queen ant.
+            const radius = (stats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, spawnCfg.mobType);
+            const behindX = enemy.x - Math.cos(enemy.angle) * radius;
+            const behindY = enemy.y - Math.sin(enemy.angle) * radius;
+            let spawnTier = enemy.tier;
+            for (let step = 0; step < -(spawnCfg.spawnRarityOffset ?? 0); step++) {
+                spawnTier = (0, rarity_1.downgradeRarity)(spawnTier);
+            }
+            // despawnAt and the inherited target are constructor arguments, not
+            // post-spawn patches: both reach ECS components (Expires,
+            // MobAI.target) at construction and nothing re-reads the legacy
+            // fields afterwards.
+            const child = (0, enemyRegistry_1.spawnEnemy)(spawnCfg.mobType, spawnTier, behindX, behindY, {
+                parentHoleId: enemy.id,
+                ownerId: enemy.ownerId,
+                despawnAt: Date.now() + spawnCfg.lifetimeMs,
+                targetPlayerId: enemy.targetPlayerId,
+            });
+            if (!child)
+                return;
+            (0, scopedEmit_1.emitToViewers)(io, child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
+        },
+        // Ant-hole waves: the spawn half of the legacy spawnWaveMobs (the
+        // health-threshold bookkeeping lives on SpawnWaveState now).
+        onSpawnWaves: (parent, startWave, endWave) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(parent, EC.LegacyShell))
+                return;
+            const enemy = world.get(parent, EC.LegacyShell, 'ref');
+            if (!enemy || enemy.isDead)
+                return;
+            const parentStats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+            if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0)
+                return;
+            const waves = parentStats.spawn_waves;
+            const numWaves = waves.length - 1;
+            const parentRadius = (parentStats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type);
+            for (let i = startWave; i >= endWave; i--) {
+                const waveIndex = numWaves - i;
+                if (waveIndex < 0 || waveIndex >= waves.length)
+                    continue;
+                const wave = waves[waveIndex];
+                for (const childType of wave) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = parentRadius + 10 + Math.random() * parentRadius;
+                    const child = (0, enemyRegistry_1.spawnEnemy)(childType, enemy.tier, enemy.x + Math.cos(angle) * dist, enemy.y + Math.sin(angle) * dist, { parentHoleId: enemy.id });
+                    if (!child)
+                        continue;
+                    (0, scopedEmit_1.emitToViewers)(io, child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
+                }
+            }
+        },
     });
     (0, ecsSync_1.configureCutover)(_ecsRuntime);
     // Bot AI is a Phase.Input system, registered from HERE rather than from
@@ -1391,6 +1452,11 @@ function getEcsRuntime() {
         return (0, ecsSync_1.ensurePlayerEntity)(getEcsRuntime().world, player, Date.now());
     },
 });
+// The item registry gets its world the same way, for the same reason: a drop
+// can happen before the first tick, and the thunk keeps the runtime lazy.
+(0, itemRegistry_1.bindItemHost)({ getWorld: () => getEcsRuntime().world });
+// The broadcast encodes enemies straight from component columns now.
+(0, tickBroadcast_1.bindBroadcastWorld)(() => getEcsRuntime().world);
 /** The ServerPlayer behind an ECS entity, if it is still in the world. */
 function playerFromEntity(entity) {
     const id = _ecsRuntime.world.externalIdOf(entity);
@@ -1451,44 +1517,12 @@ const DIGGER_SPAWNING_HOLES = new Set(['ant_hole', 'fire_ant_hole']);
  * dealt the most damage. Runs after melee combat so mob-vs-mob kills are
  * collected in the same pass.
  */
-function reapDeadEnemies() {
-    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
-        const enemy = constants_2.enemies[i];
-        if (!enemy.isDead && enemy.health > 0)
-            continue;
-        // A pet kill is credited to its owner: contributors are keyed by player.
-        if (enemy.damageContributors && enemy.damageContributors.size > 0) {
-            let topContributor;
-            let maxDamage = 0;
-            enemy.damageContributors.forEach((damage, playerId) => {
-                if (damage > maxDamage) {
-                    maxDamage = damage;
-                    topContributor = playerId;
-                }
-            });
-            if (topContributor && constants_2.players[topContributor]) {
-                const { xpMultiplier, dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
-                addXPToPlayer(constants_2.players[topContributor], Math.round((0, server_utils_1.getXPFromEnemy)(enemy) * xpMultiplier), topContributor);
-                (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
-                handleMobDrops(enemy, dropMultiplier);
-                (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
-            }
-        }
-        // A wild hole can leave a digger behind. Pet holes are excluded — a
-        // player's own summon shouldn't hatch a hostile. Appending is safe here:
-        // the loop walks backwards, so the new mob is never visited this pass
-        // (and it spawns at full health, so it wouldn't be reaped anyway).
-        if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
-            const digger = (0, enemyRegistry_1.spawnEnemy)('digger', enemy.tier, enemy.x, enemy.y);
-            if (digger)
-                (0, scopedEmit_1.emitToViewers)(io, digger.x, digger.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(digger));
-        }
-        // Clean up enemy data structures before removal to prevent memory leaks
-        (0, utils_1.cleanupEnemy)(enemy);
-        (0, enemyRegistry_1.removeEnemyAt)(i);
-        updateSpecialMobCounts();
-    }
-}
+// reapDeadEnemies is gone: the ECS reaper (last system in the mob scheduler's
+// Lifetime phase) sweeps [IsDead, IsEnemy] and runs the death sequence through
+// the onReapEnemy hook above. IsDead reaches the entity from every damage
+// path: syncToEcs marks it for legacy petal damage, mobCollision and the
+// poison stacks mark it themselves, and the direct kill paths (projectiles,
+// pollen) remove the shell before the reaper ever sees the mob.
 /**
  * Delta-sync projectiles to every client that can see them.
  *
@@ -1543,85 +1577,10 @@ function broadcastProjectiles() {
         }
     }
 }
-// Tick ground pollen drops: deal damage to enemies in radius (rate-limited per
-// enemy so a mob standing on it takes recurring chip damage rather than a
-// single hit), expire after lifetime, and emit state to nearby players.
-function updateGroundPollens() {
-    const currentTime = Date.now();
-    for (let i = gameState_1.groundPollens.length - 1; i >= 0; i--) {
-        const pollen = gameState_1.groundPollens[i];
-        if (currentTime >= pollen.expiresAt) {
-            gameState_1.groundPollens.splice(i, 1);
-            io.emit('groundPollenRemoved', pollen.id);
-            continue;
-        }
-        const player = constants_2.players[pollen.playerId];
-        const damageMultiplier = player ? (0, petal_actions_1.getDamageMultiplier)(player) : 1;
-        const finalDamage = pollen.damage * damageMultiplier;
-        for (let j = constants_2.enemies.length - 1; j >= 0; j--) {
-            const enemy = constants_2.enemies[j];
-            if (enemy.ownerId)
-                continue;
-            if (enemy.isDead)
-                continue;
-            const dx = enemy.x - pollen.x;
-            const dy = enemy.y - pollen.y;
-            const mobStats = (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
-            const enemyRadius = mobStats ? (mobStats.size * 40) / 2 : constants_2.ENEMY_SIZE / 2;
-            const minDistance = pollen.radius + enemyRadius;
-            if (dx * dx + dy * dy >= minDistance * minDistance)
-                continue;
-            const lastDmg = pollen.lastDamageByEnemy.get(enemy.id) || 0;
-            if (currentTime - lastDmg < gameState_1.GROUND_POLLEN_DAMAGE_INTERVAL_MS)
-                continue;
-            pollen.lastDamageByEnemy.set(enemy.id, currentTime);
-            if (player)
-                (0, utils_1.trackDamage)(enemy, pollen.playerId, finalDamage);
-            enemy.health = Math.max(0, enemy.health - finalDamage);
-            (0, utils_1.markEnemyDamaged)(enemy);
-            if (enemy.health <= 0 && !enemy.isDead) {
-                (0, killHandler_1.killEnemy)(enemy, j, constants_2.enemies, killCtx, {
-                    killerPlayerId: pollen.playerId,
-                    trackMobKillTiming: 'sync-snapshot',
-                });
-            }
-        }
-    }
-}
-// Reusable buffer for the web-field enemy-grid query (see updateWebFields).
-const _webQueryBuffer = [];
-/**
- * Web fields left behind by thrown web petals: expire them, and halve the speed
- * of everything standing in one. gardn does this in Collision.cc by clamping
- * `speed_ratio` for any entity overlapping a kWeb entity, which it recomputes
- * from scratch each tick; here the field keeps refreshing a short timed slow, so
- * a mob that walks out is back to full speed a fraction of a second later.
- */
-function updateWebFields() {
-    const currentTime = Date.now();
-    for (let i = gameState_1.webFields.length - 1; i >= 0; i--) {
-        const web = gameState_1.webFields[i];
-        if (currentTime >= web.expiresAt) {
-            gameState_1.webFields.splice(i, 1);
-            io.emit('webRemoved', web.id);
-            continue;
-        }
-        const caught = (0, enemyGrid_1.queryEnemiesNear)(web.x, web.y, web.radius, _webQueryBuffer);
-        for (let j = 0; j < caught.length; j++) {
-            const enemy = caught[j];
-            if (enemy.isDead)
-                continue;
-            const dx = enemy.x - web.x;
-            const dy = enemy.y - web.y;
-            const reach = web.radius + (enemy._radius ?? constants_2.ENEMY_SIZE / 2);
-            if (dx * dx + dy * dy >= reach * reach)
-                continue;
-            // The field carries the rarity of the petal that was thrown, so a
-            // high-rarity web still bites on mobs that shrug off a common one.
-            (0, playerState_1.applySlow)(enemy, gameState_1.WEB_SLOW_FACTOR, currentTime + gameState_1.WEB_SLOW_LINGER_MS, web.rarity);
-        }
-    }
-}
+// updateGroundPollens / updateWebFields are gone: pollen puffs and web fields
+// are ECS entities now (ecs/systems/groundEffects.ts), ticked by
+// runtime.tickWorld inside runSimulationStep. Their expiry emits and the web
+// slow still land on the legacy side through the runtime's injected hooks.
 // updatePlayerState moved to playerState module - using imported function
 // Admin test hook: force every tick's `deltaTime` to a fixed value for a
 // window, so a slow/GC-stalled tick (real load, e.g. a mob-dense maze) can be
@@ -1697,7 +1656,7 @@ function runSimulationStep(deltaTime, deltaMs, mobCatchupCalls) {
         (0, playerState_1.updatePlayerPreMovement)(constants_2.players[id], deltaTime, playerStateDeps);
     }
     const movementNow = Date.now();
-    (0, ecsSync_1.syncPlayersToEcs)(playerRuntime.world, constants_2.players, movementNow, playerSyncDeps);
+    (0, ecsSync_1.syncPlayersToEcs)(playerRuntime.world, constants_2.players, movementNow);
     // dt-SCALED, so exactly once per simulation step — never replayed for
     // catch-up the way the fixed-step mob tick is. Replaying it would move every
     // flower mobCatchupCalls times its distance.
@@ -1707,15 +1666,17 @@ function runSimulationStep(deltaTime, deltaMs, mobCatchupCalls) {
     // loop here, so it is phase-ordered and appears in the per-system timings.
     // It still runs at exactly this point — after the movement window closed
     // with syncPlayersFromEcs — and still iterates players in the same order.
+    // The pipeline scheduler runs updatePlayerState for every player AND the
+    // petal interval behaviours, in that order, as phase-ordered systems.
     playerRuntime.tickPlayerPipeline(deltaTime, deltaMs, movementNow);
-    (0, petal_actions_1.updatePetalBehaviours)();
-    updatePoisonEffects(deltaTime);
-    updatePlayerPoison(deltaTime);
-    // Expire mob slows before movement runs so a lapsed slow doesn't cost the
-    // mob a tick of speed.
-    updateSlowEffects();
-    // Queen-ant style escorts (and their despawn timers)
-    updatePeriodicSpawns();
+    // Mob and player poison tick as ECS systems now (poisonStacks /
+    // playerPoison, Phase.Combat on the mob scheduler — registered ahead of
+    // mobCollision, matching the legacy poison-before-melee order). Mob slow
+    // expiry is the ECS slowExpiry system, in Phase.Input — still before
+    // movement reads speed.
+    // Queen-ant escorts, their despawn timers and ant-hole waves are ECS
+    // systems now (spawning.ts on the world scheduler; mobExpiry on the mob
+    // scheduler's Lifetime phase).
     for (let i = 0; i < mobCatchupCalls; i++) {
         moveEnemies();
     }
@@ -1724,15 +1685,31 @@ function runSimulationStep(deltaTime, deltaMs, mobCatchupCalls) {
     // replayed would fly every shot mobCatchupCalls times its distance.
     const projectileRuntime = getEcsRuntime();
     projectileRuntime.tickProjectiles(deltaMs, Date.now());
-    // Projectile damage lands on ECS components, but this runs OUTSIDE the
-    // syncToEcs/syncFromEcs window inside moveEnemies. Without a second
-    // write-back, next tick's syncToEcs would push the legacy (undamaged)
-    // enemy.health straight back over C.Health and every projectile hit on a
-    // mob would be silently discarded — mobs unkillable by ranged attacks.
-    // syncFromEcs already merges health with MIN and carries knockback, so it
-    // is exactly the right pass to repeat here.
+    // Ground effects (pollen damage, web slows, their expiry) tick right after
+    // projectiles: they reuse the grid tickProjectiles just rebuilt, and their
+    // health writes ride the same write-back below. Note they used to run
+    // OUTSIDE the runSimTick gate (after runSimulationStep in the loop), so
+    // under an admin-simulated tick spike they now advance per simulated tick
+    // like everything else instead of per real tick — which is how a genuinely
+    // slow server always behaved.
+    projectileRuntime.tickWorld(deltaMs, Date.now());
+    // Projectile and ground-effect damage lands on ECS components, but this
+    // runs OUTSIDE the syncToEcs/syncFromEcs window inside moveEnemies. Without
+    // a second write-back, next tick's syncToEcs would push the legacy
+    // (undamaged) enemy.health straight back over C.Health and every projectile
+    // or pollen hit on a mob would be silently discarded — mobs unkillable by
+    // ranged attacks. syncFromEcs already merges health with MIN and carries
+    // knockback, so it is exactly the right pass to repeat here.
     (0, ecsSync_1.syncFromEcs)(projectileRuntime.world, constants_2.enemies);
     broadcastProjectiles();
+    // Retire the entities of every mob removed THIS step (kills, despawns,
+    // expiries) before the tick ends. The broadcast timer fires between ticks
+    // and reads the WORLD now, so an entity that outlived its shell until the
+    // next tick's drain would go back on the wire for a frame right after the
+    // client was told it died. Nothing is iterating entity handles here — this
+    // is the same safe point the per-tick drain in maintainEnemyEntities uses,
+    // which stays as the safety net for off-tick removals.
+    (0, enemyRegistry_1.drainRemovedEnemies)(projectileRuntime.world);
 }
 /**
  * Emit this tick's enemy damage as one batched event.
@@ -1759,10 +1736,8 @@ function flushEnemyDamageBatch() {
 /** Emit items that spawned this tick, batched into one event per recipient. */
 function flushItemSpawnBatch() {
     const itemsByPlayer = new Map();
-    for (const item of gameState_1.items) {
-        if (!item.pendingSpawnEmission || !item.eligibleSocketIds)
-            continue;
-        for (const socketId of item.eligibleSocketIds) {
+    (0, itemRegistry_1.drainItemSpawnEmissions)((item, socketIds) => {
+        for (const socketId of socketIds) {
             let list = itemsByPlayer.get(socketId);
             if (!list) {
                 list = [];
@@ -1770,57 +1745,19 @@ function flushItemSpawnBatch() {
             }
             list.push(item);
         }
-        delete item.pendingSpawnEmission;
-        delete item.eligibleSocketIds;
-    }
+    });
     for (const [socketId, itemsToSend] of itemsByPlayer) {
         if (itemsToSend.length > 0) {
             io.to(socketId).emit('itemsSpawned', itemsToSend);
         }
     }
 }
-/** Drop `items[index]`, clearing its expiry timer and telling eligible clients. */
-function removeWorldItem(index, item) {
-    const timeout = gameState_1.itemExpirationTimeouts.get(item.id);
-    if (timeout) {
-        clearTimeout(timeout);
-        gameState_1.itemExpirationTimeouts.delete(item.id);
-    }
-    if (item.eligiblePlayers) {
-        for (const playerId of item.eligiblePlayers) {
-            io.to(playerId).emit('itemRemoved', item.id);
-        }
-    }
-    gameState_1.items.splice(index, 1);
-}
-/**
- * Per-tick world-item maintenance: push items out of walls, then drop the ones
- * that left the world or outlived their rarity's expiration time.
- */
-function updateWorldItems() {
-    for (const item of gameState_1.items) {
-        (0, physics_1.checkItemWallCollisions)(item);
-    }
-    // The PVP arena and the maze live well outside the regular world rectangle,
-    // so items inside them are exempt from the bounds check.
-    for (let i = gameState_1.items.length - 1; i >= 0; i--) {
-        const item = gameState_1.items[i];
-        const outOfBounds = item.x < 0 || item.x >= constants_2.ACTUAL_WORLD_WIDTH || item.y < 0 || item.y >= constants_2.ACTUAL_WORLD_HEIGHT;
-        if (outOfBounds && !(0, constants_2.isInPvpArena)(item.x, item.y) && !(0, maze_1.isInMazeRegion)(item.x, item.y)) {
-            removeWorldItem(i, item);
-        }
-    }
-    const currentTime = Date.now();
-    for (let i = gameState_1.items.length - 1; i >= 0; i--) {
-        const item = gameState_1.items[i];
-        if (!item.spawnTime || !item.rarity)
-            continue;
-        const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[item.rarity] || 10000;
-        if (currentTime - item.spawnTime >= expirationTime) {
-            removeWorldItem(i, item);
-        }
-    }
-}
+// updateWorldItems / removeWorldItem are gone: dropped items are ECS entities
+// (server/itemRegistry.ts admits them; ecs/systems/droppedItems.ts does the
+// per-tick wall push, bounds check and expiry through the isItemOutOfBounds /
+// onWorldItemRemoved hooks). The per-item removal setTimeout — and the
+// itemExpirationTimeouts map that tracked it — no longer exist: the deadline
+// is an Expires component swept with everything else.
 /**
  * Cap the petal cooldown-tracking maps at 1000 entries each.
  *
@@ -1969,25 +1906,16 @@ function start_loop() {
         getEcsRuntime().tickInput(deltaTime, deltaMs, Date.now());
         if (runSimTick)
             runSimulationStep(deltaTime, deltaMs, mobCatchupCalls);
-        // Update ground pollen drops (damage zones from broken pollen petals)
-        updateGroundPollens();
-        // Update web fields (slow zones from thrown web petals)
-        updateWebFields();
-        // Update viewport status for all enemies. Strided: this pass exists to
-        // feed a 30-second despawn timer, so a ~166 ms cadence is equivalent —
-        // no need to box-test all ~1400 enemies every tick.
-        if (tickCounter % 5 === 0)
-            updateEnemyViewportStatus();
-        // Spawn wave mobs from damaged spawners (e.g. ant holes) before emitting damage batch
-        spawnWaveMobs();
+        // Ground pollen and web fields tick inside runSimulationStep now
+        // (runtime.tickWorld) — they are ECS entities. Viewport tracking and
+        // the 30s distance-despawn are ECS systems too (viewportStatus /
+        // unseenDespawn on the mob scheduler), strided at the same ~6Hz with
+        // the same offset the legacy passes used.
+        // Wave mobs from damaged spawners (e.g. ant holes) spawn inside
+        // runSimulationStep now (the spawnWaves system on the world
+        // scheduler), still before the damage batch below is emitted.
         flushEnemyDamageBatch();
         flushItemSpawnBatch();
-        // Despawn enemies that have been outside viewport for too long.
-        // Strided like updateEnemyViewportStatus (offset so the two 1400-enemy
-        // passes never land on the same tick): the despawn threshold is 30 s.
-        if (tickCounter % 5 === 2)
-            despawnDistantEnemies();
-        updateWorldItems();
         evictStalePetalTimers();
         // NOTE: the gameStateUpdate broadcast no longer runs here — it is on its
         // own BROADCAST_INTERVAL timer below, so simulation rate and send rate

@@ -1,4 +1,3 @@
-import { WorldItem } from '../item';
 import { ServerPlayer } from '../player';
 import { Enemy, Obstacle } from '../server_utils';
 import {
@@ -9,8 +8,9 @@ import {
 } from '../constants';
 import { WORLD_MAP } from '../map_data';
 
-// Game state variables
-export const items: WorldItem[] = [];
+// World items are ECS entities now — see server/itemRegistry.ts (admission,
+// payload collection, the spawn batch) and ecs/systems/droppedItems.ts (wall
+// push, bounds, expiry). Only the rarity->lifetime table remains here.
 
 // Special mob tracking - using getters/setters for mutability
 let _ultraMobCount = 0;
@@ -137,50 +137,18 @@ let _nextPlayerProjectileId = 1;
 export function allocateMobProjectileId(): number { return _nextMobProjectileId++; }
 export function allocatePlayerProjectileId(): number { return _nextPlayerProjectileId++; }
 
-// Pollen petals leave a damaging puff on the ground when they break.
-export interface GroundPollen {
-    id: string;
-    playerId: string;
-    x: number;
-    y: number;
-    damage: number;
-    radius: number;       // pixel radius for collision + render
-    rarity: string;
-    expiresAt: number;
-    lastDamageByEnemy: Map<string, number>;
-}
-export const groundPollens: GroundPollen[] = [];
+// Ground pollen puffs and web fields are ECS entities now — see
+// ecs/systems/groundEffects.ts for the per-tick behaviour (and the constants
+// the tick owns: damage interval, slow factor, slow linger). What stays here
+// are the SPAWN-side constants the legacy petal loop stamps into each entity
+// and into the spawn events it emits.
 export const GROUND_POLLEN_LIFETIME_MS = 5000;
-export const GROUND_POLLEN_DAMAGE_INTERVAL_MS = 500;
-
-// A thrown web petal leaves one of these behind: a stationary field that halves
-// the speed of everything standing in it. Mirrors gardn's kWeb entity — spawned
-// by alloc_web() when the petal despawns, 10s lifetime, and Collision.cc clamps
-// the speed_ratio of anything overlapping it to 0.5.
-export interface WebField {
-    id: string;
-    playerId: string;
-    x: number;
-    y: number;
-    radius: number;
-    rarity: string;
-    expiresAt: number;
-}
-export const webFields: WebField[] = [];
 export const WEB_LIFETIME_MS = 10000;       // gardn: entity_set_despawn_tick(web, 10 * TPS)
-export const WEB_SLOW_FACTOR = 0.5;         // gardn: speed_ratio = min(speed_ratio, 0.5)
-// gardn re-evaluates the overlap every tick and resets speed_ratio afterwards.
-// Here the slow is a short timed one that the field keeps refreshing, so a mob
-// walking out of a web is back to full speed within this long.
-export const WEB_SLOW_LINGER_MS = 250;
 // How far an attacking throw carries the web out from the petal's orbit. gardn
 // accelerates the petal at 30x PLAYER_ACCELERATION for its 0.6s despawn window,
 // which carries it several screens; that is unreadable at florr's zoom, so the
 // throw is shortened to land just inside the viewport.
 export const WEB_THROW_DISTANCE = 620;
-
-// Track item expiration timeouts for cleanup
-export const itemExpirationTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
 // Track petal cooldown timeouts for cleanup (key: `${socketId}-${loadoutIndex}`)
 export const petalCooldownTimeouts: Map<string, NodeJS.Timeout> = new Map();
@@ -226,10 +194,6 @@ export function getPlayers(): Record<string, ServerPlayer> {
 
 export function getEnemies(): Enemy[] {
     return enemies;
-}
-
-export function getItems(): WorldItem[] {
-    return items;
 }
 
 export function setEnemyCount(count: number) {

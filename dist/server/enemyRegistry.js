@@ -179,7 +179,7 @@ function spawnEnemy(type, tier, x, y, opts) {
         stats,
         now,
     });
-    (0, ecsBridge_1.attachMobBehaviour)(world, entity, enemy, now);
+    (0, ecsBridge_1.attachMobBehaviour)(world, entity, enemy, now, stats);
     (0, ecsBridge_1.linkEnemyReferences)(world, enemy, activeHost.resolvePlayer);
     constants_1.enemies.push(enemy);
     return enemy;

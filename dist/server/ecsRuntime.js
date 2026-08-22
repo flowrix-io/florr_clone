@@ -55,6 +55,8 @@ const projectileFiring_1 = require("../ecs/systems/projectileFiring");
 const projectileCollision_1 = require("../ecs/systems/projectileCollision");
 const mobCollision_1 = require("../ecs/systems/mobCollision");
 const afflictions_1 = require("../ecs/systems/afflictions");
+const rarity_1 = require("./shared/rarity");
+const playerModifiers_1 = require("./shared/playerModifiers");
 const lifetime_1 = require("../ecs/systems/lifetime");
 const centipede_1 = require("../ecs/systems/centipede");
 const enemyAI_1 = require("../ecs/systems/enemyAI");
@@ -63,7 +65,10 @@ const enemyPassive_1 = require("../ecs/systems/enemyPassive");
 const movement_1 = require("../ecs/systems/movement");
 const viewport_1 = require("../ecs/systems/viewport");
 const playerMovement_1 = require("../ecs/systems/playerMovement");
-const playerModifiers_1 = require("../ecs/systems/playerModifiers");
+const playerModifiers_2 = require("../ecs/systems/playerModifiers");
+const groundEffects_1 = require("../ecs/systems/groundEffects");
+const droppedItems_1 = require("../ecs/systems/droppedItems");
+const spawning_1 = require("../ecs/systems/spawning");
 function createEcsRuntime(options) {
     const { creditDamage, onEnemyDamaged, onEnemyKilled, isNearAnyPlayer } = options;
     const world = new ecs_1.World();
@@ -93,6 +98,13 @@ function createEcsRuntime(options) {
      * after the movement window closes. See EcsRuntime.tickPlayerPipeline.
      */
     const pipelineScheduler = new ecs_1.Scheduler(world);
+    /**
+     * Ground effects run on their OWN scheduler, ticked right after the
+     * projectile one, so they see the same freshly-rebuilt grid and their
+     * damage rides the caller's post-projectile write-back. See
+     * EcsRuntime.tickWorld.
+     */
+    const worldScheduler = new ecs_1.Scheduler(world);
     const grid = new grid_1.SpatialGrid();
     const gridResult = new grid_1.GridQueryResult(256);
     /**
@@ -117,12 +129,15 @@ function createEcsRuntime(options) {
     // COMPONENTS, closing the window where a player existed both as an entity
     // and as a ServerPlayer read for modifier maths. Only the petal stat table
     // is still injected, and that is config, not state.
-    (0, playerModifiers_1.registerPlayerModifierSystem)(playerScheduler, (0, playerModifiers_1.createPlayerModifierQueries)(world), {
+    (0, playerModifiers_2.registerPlayerModifierSystem)(playerScheduler, (0, playerModifiers_2.createPlayerModifierQueries)(world), {
         petalModifiersOf: (slot) => {
+            // The gates match shared/playerModifiers.ts exactly: a slot only
+            // contributes when it is a petal WITH a rarity — the legacy fold
+            // skipped rarity-less items rather than defaulting to common.
             const item = slot;
-            if (!item?.petalType)
+            if (!item?.petalType || !item.rarity || item.type !== 'petal')
                 return undefined;
-            const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity ?? 'common');
+            const stats = (0, petals_1.getPetalStats)(item.petalType, item.rarity);
             const modifiers = stats?.playerModifiers;
             if (!modifiers)
                 return undefined;
@@ -134,16 +149,33 @@ function createEcsRuntime(options) {
                 rotationSpeed: modifiers.rotationSpeed,
             };
         },
-        // Active speed effects still come from the legacy effect pipeline; the
-        // effect LIST itself is already a component, so this reads component
-        // state through a config-only helper.
-        effectSpeedMultiplier: () => 1,
+        // The `speed_boost` effect fold from getSpeedMultiplier, over the
+        // mirrored effect list. Multiplicative, speed_boost entries only.
+        effectSpeedMultiplier: (effects) => {
+            const list = effects;
+            if (!list)
+                return 1;
+            let multiplier = 1;
+            for (const effect of list) {
+                if (effect.type === 'speed_boost' && effect.value !== undefined) {
+                    multiplier *= effect.value;
+                }
+            }
+            return multiplier;
+        },
+        primarySlotCount: playerModifiers_1.PRIMARY_LOADOUT_SLOTS,
     });
     // The legacy pipeline, under the scheduler. Registered as a system rather
     // than called from server.ts so it is phase-ordered and shows up in the
     // per-system timings alongside everything else.
     pipelineScheduler.add('playerPipeline', ecs_1.Phase.Simulation, (ctx) => {
         options.runPlayerPipeline(ctx.deltaTime, ctx.deltaMs, ctx.now);
+    });
+    // Petal interval behaviours (the PETAL_BEHAVIOURS table's onInterval
+    // hooks) run right after the pipeline, exactly where the bare
+    // updatePetalBehaviours() call sat in runSimulationStep.
+    pipelineScheduler.add('petalBehaviours', ecs_1.Phase.Simulation, () => {
+        options.runPetalBehaviours();
     });
     (0, playerMovement_1.registerPlayerMovementSystem)(playerScheduler, (0, playerMovement_1.createPlayerMovementQueries)(world), {
         maxSpeed: constants_1.MAX_SPEED,
@@ -171,6 +203,17 @@ function createEcsRuntime(options) {
         const typeName = interning_1.mobTypes.nameOf(world.get(mob, C.MobKind, 'type'));
         const rarityName = (0, interning_1.idToRarity)(world.get(mob, C.MobKind, 'tier'));
         return rarityName ? (0, mobs_1.getMobStats)(typeName, rarityName) : null;
+    };
+    /**
+     * Slow a mob: rarity contest against its tier, then the ECS write. The
+     * legacy applySlow's two halves, with the config half kept here.
+     */
+    const applyMobSlow = (victim, baseFactor, until, sourceRarity, now) => {
+        if (!world.has(victim, C.MobKind))
+            return;
+        const tierName = (0, interning_1.idToRarity)(world.get(victim, C.MobKind, 'tier')) ?? 'common';
+        const factor = 1 - (1 - baseFactor) * (0, rarity_1.stallPower)(sourceRarity, tierName);
+        (0, afflictions_1.applySlowToEntity)(world, victim, factor, until, now);
     };
     const fireVolley = (0, projectileFiring_1.createFireVolley)(world, {
         projectileConfigOf: (shooter) => statsOf(shooter)?.projectile,
@@ -207,6 +250,23 @@ function createEcsRuntime(options) {
     // Refreshed in Phase.SpatialIndex, i.e. before either consumer below runs.
     const activity = new lod_1.MobActivityField();
     (0, lod_1.registerMobActivitySystem)(scheduler, activity, (0, lod_1.createMobActivityQueries)(world));
+    // Registered BEFORE the AI so slowExpiry (Phase.Input) restores a lapsed
+    // slow before the chase logic reads Speed.current — the order the legacy
+    // tick had (updateSlowEffects ran before moveEnemies). The poison systems
+    // land in Phase.Combat ahead of mobCollision for the same reason: legacy
+    // ticked poison before the melee pass.
+    const afflictionQueries = (0, afflictions_1.createAfflictionQueries)(world);
+    (0, afflictions_1.registerAfflictionSystems)(scheduler, afflictionQueries, {
+        mobPoison: {
+            creditDamage,
+            markPoisonDamaged: options.onEnemyPoisonDamaged,
+            onPoisonKill: options.onPoisonKill,
+        },
+        playerPoison: {
+            tickPoison: options.tickPlayerPoison,
+            onPoisonLapsed: options.onPlayerPoisonLapsed,
+        },
+    });
     (0, enemyAI_1.registerEnemyAISystem)(scheduler, (0, enemyAI_1.createEnemyAIQueries)(world), {
         hasLineOfSight: lineOfSight_1.hasLineOfSight,
         resolveWall: (x, y, halfSize) => (0, constants_1.resolveEntityWallCollisions)(x, y, halfSize),
@@ -236,8 +296,56 @@ function createEcsRuntime(options) {
     (0, viewport_1.registerViewportSystem)(scheduler, (0, viewport_1.createViewportQueries)(world), {
         isNearAnyPlayer,
     });
-    (0, afflictions_1.registerAfflictionSystems)(scheduler, (0, afflictions_1.createAfflictionQueries)(world));
-    (0, lifetime_1.registerLifetimeSystems)(scheduler, (0, lifetime_1.createLifetimeQueries)(world));
+    (0, lifetime_1.registerLifetimeSystems)(scheduler, (0, lifetime_1.createLifetimeQueries)(world), {
+        // The exemptions despawnDistantEnemies used to check inline. Tier and
+        // type are config knowledge, so the answer is composed here rather
+        // than inside the ECS.
+        neverDespawns: (mob) => {
+            const tierName = (0, interning_1.idToRarity)(world.get(mob, C.MobKind, 'tier'));
+            if (tierName === 'ultra' || tierName === 'super' || tierName === 'unique' || tierName === 'apex') {
+                return true;
+            }
+            return interning_1.mobTypes.nameOf(world.get(mob, C.MobKind, 'type')) === 'target_dummy';
+        },
+        isProtectedAt: options.isDespawnProtectedAt,
+        despawn: options.onMobDespawn,
+        reap: options.onReapEnemy,
+    });
+    // Ground effects: pollen chip damage and web slows. On the world scheduler,
+    // which the caller ticks straight after tickProjectiles so the grid rebuilt
+    // there is current — see EcsRuntime.tickWorld for the ordering contract.
+    (0, groundEffects_1.registerGroundEffectSystems)(worldScheduler, (0, groundEffects_1.createGroundEffectQueries)(world), grid, gridResult, {
+        damageMultiplierOf: options.damageMultiplierOf,
+        creditDamage,
+        markEnemyDamaged: onEnemyDamaged,
+        // Same legacy kill sequence projectiles use, with the same timing
+        // the legacy pollen loop passed to killEnemy.
+        onKill: (victim, killer) => options.onProjectileKill(victim, killer, 'sync-snapshot'),
+        applySlow: (victim, baseFactor, until, rarityId, now) => applyMobSlow(victim, baseFactor, until, (0, interning_1.idToRarity)(rarityId) ?? 'common', now),
+        emitExpired: options.onGroundEffectExpired,
+        // The legacy pollen loop tested the mob's UNSCALED config radius,
+        // not the tier-scaled entity radius; preserved exactly.
+        pollenTargetRadiusOf: (victim) => {
+            const stats = statsOf(victim);
+            return stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
+        },
+    });
+    // Dropped items: wall push, bounds and expiry — the port of the legacy
+    // updateWorldItems pass plus every per-item removal setTimeout.
+    (0, droppedItems_1.registerDroppedItemSystems)(worldScheduler, (0, droppedItems_1.createDroppedItemQueries)(world), {
+        resolveWall: (x, y) => (0, constants_1.resolveEntityWallCollisions)(x, y, droppedItems_1.DROPPED_ITEM_RADIUS),
+        isOutOfBounds: options.isItemOutOfBounds,
+        onRemoved: options.onWorldItemRemoved,
+    });
+    // Spawner triggers (queen-ant escorts, ant-hole waves). Phase.Spawning on
+    // the world scheduler puts them after this tick's damage — projectile and
+    // pollen included — exactly where the legacy spawnWaveMobs call sat.
+    (0, spawning_1.registerSpawningSystems)(worldScheduler, (0, spawning_1.createSpawningQueries)(world), {
+        spawnIntervalOf: (summoner) => statsOf(summoner)?.periodic_spawn?.intervalMs,
+        spawnEscort: options.onSpawnEscort,
+        waveCountOf: (parent) => (statsOf(parent)?.spawn_waves?.length ?? 0),
+        spawnWaves: options.onSpawnWaves,
+    });
     // ---------------------------------------------------------------------
     // The petal bridge
     // ---------------------------------------------------------------------
@@ -255,6 +363,7 @@ function createEcsRuntime(options) {
         playerScheduler,
         inputScheduler,
         pipelineScheduler,
+        worldScheduler,
         grid,
         gridResult,
         projectileQueries: {
@@ -292,6 +401,18 @@ function createEcsRuntime(options) {
             // the mobs actually are this tick.
             grid.rebuild(world, gridSource);
             projectileScheduler.tick(deltaMs / 1000, deltaMs, now);
+        },
+        tickWorld(deltaMs, now) {
+            // No grid rebuild: the contract is that this runs straight after
+            // tickProjectiles, whose rebuild is still current. A mob killed by
+            // a projectile in between is still in the grid; the systems skip
+            // it by its zeroed Health/IsDead, and the legacy-side hooks no-op
+            // on a shell that has already left `enemies[]`.
+            worldScheduler.tick(deltaMs / 1000, deltaMs, now);
+        },
+        slowEnemy: applyMobSlow,
+        poisonEnemy(victim, source, damagePerMs, endTime) {
+            (0, afflictions_1.applyPoisonStack)(world, afflictionQueries.poisonStacks, victim, source, damagePerMs, endTime);
         },
         spawnPlayerProjectile(spec) {
             const shooter = options.resolvePlayerEntity(spec.playerId);

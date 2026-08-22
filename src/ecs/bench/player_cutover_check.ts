@@ -312,6 +312,7 @@ function makeRuntime(): EcsRuntime {
         // This bench drives the schedulers directly; the post-movement pipeline
         // is the game\'s, not the bench\'s.
         runPlayerPipeline: () => { /* not exercised here */ },
+        runPetalBehaviours: () => { /* not exercised here */ },
         creditDamage: () => { /* not reachable from the player scheduler */ },
         onEnemyDamaged: () => { /* ditto */ },
         onEnemyKilled: () => { /* ditto */ },
@@ -323,6 +324,18 @@ function makeRuntime(): EcsRuntime {
         onPlayerHit: () => true,
         emitEnemyDamaged: () => { /* ditto */ },
         onProjectileKill: () => { /* ditto */ },
+        onGroundEffectExpired: () => { /* ditto */ },
+        onEnemyPoisonDamaged: () => { /* ditto */ },
+        onPoisonKill: () => { /* ditto */ },
+        tickPlayerPoison: () => { /* ditto */ },
+        onPlayerPoisonLapsed: () => { /* ditto */ },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { /* ditto */ },
+        onSpawnWaves: () => { /* ditto */ },
+        onWorldItemRemoved: () => { /* ditto */ },
+        onMobDespawn: () => { /* ditto */ },
+        onReapEnemy: () => { /* ditto */ },
     });
 }
 
@@ -355,6 +368,15 @@ export function runPlayerCutoverCheck(): string[] {
     if (!runtime.playerScheduler.setEnabled('playerMovement', true)) {
         fail('playerMovement could not be re-enabled — it is gone');
     }
+    // MOVEMENT is what is under test here, for arbitrary modifier values —
+    // this oracle sweeps continuous random speed/size multipliers that no real
+    // loadout can produce. So the modifier DERIVATION system is switched off
+    // and the component is driven directly below, exactly the role the old
+    // speedBoostOf push played. The derivation itself is exercised by the live
+    // game and the self-tests.
+    if (!runtime.playerScheduler.setEnabled('playerModifiers', false)) {
+        fail('playerModifiers is gone from the player scheduler');
+    }
 
     const subjects = buildSubjects();
     const players: Record<string, ServerPlayer> = {};
@@ -363,12 +385,21 @@ export function runPlayerCutoverCheck(): string[] {
     const multiplierOf = new Map<string, number>();
     for (const s of subjects) multiplierOf.set(s.player.id, s.multiplier);
 
-    // Stands in for `player.speed_boost * getSpeedMultiplier(player)`. The real
-    // one cannot be imported here (petal_actions.ts binds port 3000 on require),
-    // and it is untouched legacy anyway — what is under test is that the value
-    // reaches the system unchanged and on the right tick.
+    // Stands in for `player.speed_boost * getSpeedMultiplier(player)`. The
+    // derivation system is disabled above, so the bench writes this straight
+    // into PlayerModifiers each tick — the modifier CHANNEL, with arbitrary
+    // values the derivation could never produce from real config.
     const speedBoostOf = (player: ServerPlayer) =>
         player.speed_boost * (multiplierOf.get(player.id) ?? 1);
+    const writeModifiers = (now: number) => {
+        void now;
+        for (const s of subjects) {
+            const entity = runtime.world.lookup(s.player.id);
+            if (entity === undefined) continue;
+            runtime.world.set(entity, C.PlayerModifiers, 'speedBoost', speedBoostOf(s.player));
+            runtime.world.set(entity, C.PlayerModifiers, 'sizeMultiplier', s.sizeMultiplier);
+        }
+    };
 
     const rng = mulberry32(0xBEEF01);
     const now0 = 1_000_000;
@@ -387,8 +418,10 @@ export function runPlayerCutoverCheck(): string[] {
             previousY.set(s.player.id, s.player.y);
         }
 
-        // The real window, in the real order.
-        syncPlayersToEcs(runtime.world, players, now, { speedBoostOf });
+        // The real window, in the real order (modifiers driven directly; see
+        // writeModifiers above).
+        syncPlayersToEcs(runtime.world, players, now);
+        writeModifiers(now);
         runtime.tickPlayers(DT, DT * 1000, now);
         syncPlayersFromEcs(runtime.world, players);
 
@@ -506,7 +539,8 @@ export function runPlayerCutoverCheck(): string[] {
     const beforeX = frozen.map(s => s.player.x);
     for (let tick = 0; tick < 20; tick++) {
         const now = now0 + (TICKS + tick) * (1000 / 30);
-        syncPlayersToEcs(runtime.world, players, now, { speedBoostOf });
+        syncPlayersToEcs(runtime.world, players, now);
+        writeModifiers(now);
         runtime.tickPlayers(DT, DT * 1000, now);
         syncPlayersFromEcs(runtime.world, players);
         for (const s of frozen) {

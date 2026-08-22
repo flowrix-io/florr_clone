@@ -47,6 +47,8 @@ function main() {
     const { runProjectileCollisionSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'projectileCollision_self_test.js'));
     const { runPetalRingSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'petalRing_self_test.js'));
     const { runLodSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'lod_self_test.js'));
+    const { runGroundEffectsSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'groundEffects_self_test.js'));
+    const { runEnemyEncoderSelfTest } = require(path.join(outDir, 'ecs', 'net', 'enemyEncoder_self_test.js'));
     const { runClientSelfTest } = require(path.join(outDir, 'ecs', 'client', 'client_self_test.js'));
     const failures = [
         ...runEcsSelfTest(),
@@ -59,6 +61,8 @@ function main() {
         ...runProjectileCollisionSelfTest(),
         ...runPetalRingSelfTest(),
         ...runLodSelfTest(),
+        ...runGroundEffectsSelfTest(),
+        ...runEnemyEncoderSelfTest(),
         ...runClientSelfTest(),
     ];
 

@@ -48,8 +48,9 @@
  * `updateBotAI` including targeting, the oscillation watchdog, squad membership
  * and the loadout swaps; `rebuildEnemyGrid`/`queryEnemiesNear`; `syncPlayersToEcs`,
  * `runtime.tickPlayers`, `syncPlayersFromEcs`; `botPetalReach` and the petal ring.
- * The legacy `players`, `enemies` and `items` singletons are the actual module
- * singletons botManager reads.
+ * The legacy `players` and `enemies` singletons are the actual module
+ * singletons botManager reads; drops are read from this bench's world through
+ * the item registry.
  *
  * STAND-IN: the socket server (a recording stub — bots emit chat and squad
  * updates), and the one line of `updatePlayerState` that commits the staging
@@ -87,7 +88,7 @@ exports.runBotCutoverCheck = runBotCutoverCheck;
 exports.main = main;
 const constants_1 = require("../../constants");
 const petals_1 = require("../../petals");
-const gameState_1 = require("../../server/gameState");
+const itemRegistry_1 = require("../../server/itemRegistry");
 const enemyGrid_1 = require("../../server/enemyGrid");
 const ecsRuntime_1 = require("../../server/ecsRuntime");
 const ecsSync_1 = require("../../server/ecsSync");
@@ -167,7 +168,8 @@ function resetWorldSingletons() {
     for (const id in constants_1.players)
         delete constants_1.players[id];
     constants_1.enemies.length = 0;
-    gameState_1.items.length = 0;
+    // Items live in the WORLD now; each makeRuntime() starts an empty one, so
+    // there is no item singleton left to clear.
 }
 function makeRuntime() {
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
@@ -175,6 +177,7 @@ function makeRuntime() {
         // This bench drives the schedulers directly; the post-movement pipeline
         // is the game\'s, not the bench\'s.
         runPlayerPipeline: () => { },
+        runPetalBehaviours: () => { },
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },
@@ -186,11 +189,28 @@ function makeRuntime() {
         onPlayerHit: () => true,
         emitEnemyDamaged: () => { },
         onProjectileKill: () => { },
+        onGroundEffectExpired: () => { },
+        onEnemyPoisonDamaged: () => { },
+        onPoisonKill: () => { },
+        tickPlayerPoison: () => { },
+        onPlayerPoisonLapsed: () => { },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { },
+        onSpawnWaves: () => { },
+        onWorldItemRemoved: () => { },
+        onMobDespawn: () => { },
+        onReapEnemy: () => { },
     });
     (0, ecsSync_1.configureCutover)(runtime);
+    // Bot pickup targeting reads drops through the item registry; point it at
+    // this bench's world (re-bound per runtime, exactly like server.ts does).
+    (0, itemRegistry_1.bindItemHost)({ getWorld: () => runtime.world });
     return runtime;
 }
-const speedBoostOf = (player) => player.speed_boost || 1;
+// (speedBoost is derived by the live playerModifiers system now: with the
+// bots' loadouts carrying no speed-modifier petals and no active effects, it
+// resolves to the same `player.speed_boost || 1` the old push injected.)
 /** The one line of updatePlayerState that matters here: commit the staging pair. */
 function commitStagedPositions() {
     for (const id in constants_1.players) {
@@ -262,7 +282,7 @@ function runOrderedTicks(runtime, io, tickCount, misplaceInput) {
             for (const id in constants_1.players)
                 decided[id] = snapshotInputs(constants_1.players[id]);
         }
-        (0, ecsSync_1.syncPlayersToEcs)(runtime.world, constants_1.players, now, { speedBoostOf });
+        (0, ecsSync_1.syncPlayersToEcs)(runtime.world, constants_1.players, now);
         if (misplaceInput) {
             // The mis-placement: the AI runs after the push that was supposed to
             // carry its output, so the component still holds last tick's values.

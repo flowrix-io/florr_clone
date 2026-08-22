@@ -19,7 +19,31 @@
  *   - everything is culled to the recipient's 200%-viewport box;
  *   - unchanged entities are simply not mentioned.
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.bindBroadcastWorld = bindBroadcastWorld;
 exports.getEligibleItemsForSocket = getEligibleItemsForSocket;
 exports.buildPlayerSnapshots = buildPlayerSnapshots;
 exports.broadcastGameState = broadcastGameState;
@@ -27,10 +51,52 @@ const constants_1 = require("../constants");
 const player_1 = require("../player");
 const petals_1 = require("../petals");
 const mobs_1 = require("../mobs");
-const gameState_1 = require("./gameState");
+const itemRegistry_1 = require("./itemRegistry");
 const squadManager_1 = require("./squadManager");
 const utils_1 = require("./utils");
 const wire_fields_1 = require("../wire_fields");
+const C = __importStar(require("../ecs/components"));
+const enemyEncoder_1 = require("../ecs/net/enemyEncoder");
+// ---------------------------------------------------------------------------
+// The world, injected
+// ---------------------------------------------------------------------------
+// Enemy deltas are encoded straight from component columns
+// (ecs/net/enemyEncoder.ts) — there is no shell array to iterate any more.
+// The world arrives through a thunk bound by server.ts, the same shape the
+// enemy and item registries use, because importing the runtime from here
+// would close a cycle.
+let broadcastWorldThunk;
+/** Install the ECS world source. Called once, from the composition root. */
+function bindBroadcastWorld(getWorld) {
+    broadcastWorldThunk = getWorld;
+}
+function requireBroadcastWorld() {
+    if (!broadcastWorldThunk) {
+        throw new Error('tickBroadcast: no ECS world installed. server.ts must call '
+            + 'bindBroadcastWorld() at startup — without it no enemy can reach the wire.');
+    }
+    return broadcastWorldThunk();
+}
+let enemyWireQuery;
+let enemyWireQueryWorld;
+/**
+ * Every live, visible mob. IsDead is excluded even though the same-tick reap
+ * normally retires dead entities before a broadcast fires: an off-tick kill
+ * (an admin command between ticks) marks the shell dead while the entity waits
+ * for the end-of-step drain, and a client that was just told `enemyDestroyed`
+ * must not receive fresh deltas for the same id.
+ */
+function enemyWireEntities(world) {
+    if (enemyWireQuery === undefined || enemyWireQueryWorld !== world) {
+        enemyWireQuery = world.query([C.IsEnemy, C.Position, C.MobKind, C.Health], [C.IsDead]);
+        enemyWireQueryWorld = world;
+    }
+    return enemyWireQuery;
+}
+/** Mob-config lookup for the encoder's "omit default maxHealth" rule. */
+const enemyEncoderDeps = {
+    defaultMaxHealthOf: (typeName, rarityName) => (0, mobs_1.getMobStats)(typeName, rarityName)?.health,
+};
 /**
  * Item wire events whose loss desyncs the client's item map. A dropped spawn
  * leaves loot the client never renders; a dropped remove/pickup leaves a
@@ -49,6 +115,8 @@ const PETAL_DETAIL_MAX_PLAYERS = 12;
 function quantize(value, precision) {
     return Math.round(value / precision) * precision;
 }
+/** Reused payload buffer for the eligible-items builder; see collectWorldItems. */
+const _resyncItemScratch = [];
 /**
  * All world items this socket's player (including split-screen halves) can
  * currently see: eligibility-listed for them and not yet picked up by them.
@@ -60,7 +128,7 @@ function getEligibleItemsForSocket(socketId) {
     const originalId = socketId.replace('_split2', '').replace('_split1', '');
     const splitState = splitPlayers.get(originalId);
     const playerIds = splitState ? [splitState.player1.id, splitState.player2.id, originalId] : [socketId];
-    return gameState_1.items.filter(item => {
+    return (0, itemRegistry_1.collectWorldItems)(_resyncItemScratch).filter(item => {
         if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
             if (!playerIds.some(playerId => item.eligiblePlayers.includes(playerId))) {
                 return false; // Not eligible
@@ -427,19 +495,37 @@ function collectEnemyDeltas(view) {
     // like they're not facing the way they're going. Never coarser than the old
     // 1 unit, so weak connections aren't regressed.
     const enemyPrecision = view.quality === 'slow' ? 1 : 0.5;
-    for (let ei = 0; ei < constants_1.enemies.length; ei++) {
-        const e = constants_1.enemies[ei];
-        const dx = e.x - view.px0;
-        const dy = e.y - view.py0;
-        if ((dx < 0 ? -dx : dx) >= view.vw || (dy < 0 ? -dy : dy) >= view.vh)
-            continue;
-        currentEnemyIds.add(e.id);
-        const delta = encodeEnemyDelta(e, lastEnemies.get(e.id), enemyPrecision);
-        if (delta) {
-            changed.push(delta.wire);
-            lastEnemies.set(e.id, delta.next);
+    // Straight off the component columns: the viewport cull reads the Position
+    // chunks, and only mobs inside the box pay the encode. The encoder
+    // (ecs/net/enemyEncoder.ts) converts interned type/tier ids back to wire
+    // strings — the one place that conversion is allowed to happen.
+    const world = requireBroadcastWorld();
+    enemyWireEntities(world).chunks(chunk => {
+        const pos = chunk.cols(C.Position);
+        const entities = chunk.entities;
+        for (let i = 0; i < chunk.count; i++) {
+            const dx = pos.x[i] - view.px0;
+            const dy = pos.y[i] - view.py0;
+            if ((dx < 0 ? -dx : dx) >= view.vw || (dy < 0 ? -dy : dy) >= view.vh)
+                continue;
+            const entity = entities[i];
+            const id = world.externalIdOf(entity);
+            if (id === undefined)
+                continue;
+            currentEnemyIds.add(id);
+            const delta = (0, enemyEncoder_1.encodeEnemyDelta)(world, entity, lastEnemies.get(id), enemyPrecision, enemyEncoderDeps);
+            if (delta) {
+                changed.push((0, wire_fields_1.packFields)(delta.wire, wire_fields_1.ENEMY_FIELDS));
+                lastEnemies.set(id, delta.next);
+            }
         }
-    }
+    });
+    // Removals: anything this client knew that is no longer in its viewport
+    // box (left it, or left the world). Kept as the exact legacy rule rather
+    // than pruneSentState's alive-check variant, so a client with an empty
+    // viewport still forgets mobs that walked away. The sent-state stays
+    // authoritative, so a removal lost to backpressure is regenerated the
+    // next time this loop runs — the ghost-entity guard.
     const removed = [];
     for (const id of lastEnemies.keys()) {
         if (!currentEnemyIds.has(id)) {
@@ -448,63 +534,6 @@ function collectEnemyDeltas(view) {
         }
     }
     return { changed, removed };
-}
-/**
- * Diff one enemy against what this client last received.
- *
- * On first sight the full record is sent, minus anything the client can derive:
- * the default maxHealth comes from the mob config for (type, tier), and the
- * default tier is 'common'. `_mobStats` is the same object, cached on the enemy
- * by the collision grids.
- */
-function encodeEnemyDelta(e, prev, precision) {
-    const next = {
-        x: quantize(e.x, precision),
-        y: quantize(e.y, precision),
-        a: quantize(e.angle, 0.05),
-        h: Math.round(e.health),
-        H: Math.round(e.maxHealth),
-        t: e.type,
-        T: e.tier,
-    };
-    if (!prev) {
-        const defaultStats = e._mobStats ?? (0, mobs_1.getMobStats)(e.type, e.tier);
-        const defaultMaxH = defaultStats ? Math.round(defaultStats.health) : next.H;
-        const wire = { i: e.id, t: e.type, x: next.x, y: next.y };
-        if (e.tier !== 'common')
-            wire.T = e.tier;
-        if (next.a !== 0)
-            wire.a = next.a;
-        wire.h = next.h;
-        if (next.H !== defaultMaxH)
-            wire.H = next.H;
-        // Pet marker: pets are otherwise indistinguishable from wild mobs on the
-        // wire, and the client suppresses boss bars for them. Ownership never
-        // changes, so it only needs to ride the first-sight record.
-        if (e.ownerId)
-            wire.o = 1;
-        return { wire: (0, wire_fields_1.packFields)(wire, wire_fields_1.ENEMY_FIELDS), next };
-    }
-    if (prev.x === next.x && prev.y === next.y && prev.a === next.a &&
-        prev.h === next.h && prev.H === next.H && prev.t === next.t && prev.T === next.T) {
-        return null;
-    }
-    const wire = { i: e.id };
-    if (prev.x !== next.x)
-        wire.x = next.x;
-    if (prev.y !== next.y)
-        wire.y = next.y;
-    if (prev.a !== next.a)
-        wire.a = next.a;
-    if (prev.h !== next.h)
-        wire.h = next.h;
-    if (prev.H !== next.H)
-        wire.H = next.H;
-    if (prev.t !== next.t)
-        wire.t = next.t;
-    if (prev.T !== next.T)
-        wire.T = next.T;
-    return { wire: (0, wire_fields_1.packFields)(wire, wire_fields_1.ENEMY_FIELDS), next };
 }
 // ---------------------------------------------------------------------------
 // Entry point

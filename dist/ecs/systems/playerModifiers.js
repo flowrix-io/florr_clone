@@ -69,7 +69,7 @@ function createPlayerModifierQueries(world) {
  * fresh for the tick that consumes them.
  */
 function playerModifierSystem(queries, deps) {
-    const { petalModifiersOf, effectSpeedMultiplier } = deps;
+    const { petalModifiersOf, effectSpeedMultiplier, primarySlotCount } = deps;
     return (ctx) => {
         const world = ctx.world;
         queries.players.chunks(chunk => {
@@ -83,9 +83,14 @@ function playerModifierSystem(queries, deps) {
                 let size = 1;
                 let magnetism = 0;
                 let aggro = 0;
-                let rotation = 1;
                 if (slots) {
-                    for (let s = 0; s < slots.length; s++) {
+                    // Primary slots only — slots 10+ are storage and have never
+                    // contributed, exactly as shared/playerModifiers.ts folds.
+                    // (rotationSpeed is deliberately NOT folded here: the ring
+                    // still reads the legacy additive aggregation; see the
+                    // petalOrbitPhase note below.)
+                    const limit = Math.min(slots.length, primarySlotCount);
+                    for (let s = 0; s < limit; s++) {
                         const slot = slots[s];
                         if (!slot)
                             continue;
@@ -100,31 +105,33 @@ function playerModifierSystem(queries, deps) {
                             magnetism += m.magnetism;
                         if (m.aggroRadius !== undefined)
                             aggro += m.aggroRadius;
-                        if (m.rotationSpeed !== undefined)
-                            rotation *= m.rotationSpeed;
                     }
                 }
                 if (world.has(entity, C.PlayerEffects)) {
                     speed *= effectSpeedMultiplier(world.get(entity, C.PlayerEffects, 'list'));
                 }
                 // Guard the degenerate cases at the point of derivation rather
-                // than in each consumer. A NaN or negative size makes the
-                // movement substep count blow up and spin the loop.
+                // than in each consumer, with EXACTLY the legacy semantics:
+                // a non-finite or non-positive size collapses to 1 (not to the
+                // clamp), because applyPetalHealthBonus did — a NaN or negative
+                // size makes the movement substep count blow up and spin the
+                // loop.
                 if (!(speed >= 0))
                     speed = 1;
-                if (!(size > 0))
+                if (!(Number.isFinite(size) && size > 0))
                     size = 1;
-                if (size > exports.MAX_SIZE_MULTIPLIER)
+                else if (size > exports.MAX_SIZE_MULTIPLIER)
                     size = exports.MAX_SIZE_MULTIPLIER;
                 if (!(magnetism >= 0))
                     magnetism = 0;
                 if (!(aggro >= 0))
                     aggro = 0;
-                if (!(rotation >= 0))
-                    rotation = 1;
-                // `speedBoost` is the multiplier movement combines with the
-                // base speed; movement applies its own 8x clamp on the product.
-                mods.speedBoost[i] = speed;
+                // `speedBoost` is the full multiplier movement combines with
+                // the base speed (movement applies its own 8x clamp on the
+                // product): the consumable's base times the loadout and effect
+                // folds — `player.speed_boost * getSpeedMultiplier(player)`,
+                // derived from components.
+                mods.speedBoost[i] = mods.speedBoostBase[i] * speed;
                 mods.sizeMultiplier[i] = size;
                 mods.magnetism[i] = magnetism;
                 mods.aggroRadiusBonus[i] = aggro;

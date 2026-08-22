@@ -12,12 +12,20 @@
  *   ECS owns   mob CREATION (see server/enemyRegistry.ts), movement, AI,
  *              targeting, passive drift, centipede chains, mob-vs-mob
  *              collision, pet melee, projectile flight/collision/damage,
- *              PLAYER MOVEMENT INTEGRATION, and PETAL RING KINEMATICS.
- *   LEGACY owns despawning, everything else about players (collision, pickups,
- *              teleporters, respawn), the rest of petals — per-instance health,
- *              the break/cooldown/reload machine, combat, fields and auras, the
- *              action VM — damage attribution, drops, XP, persistence and the
- *              broadcast.
+ *              PLAYER MOVEMENT INTEGRATION, PETAL RING KINEMATICS, the
+ *              player-modifier derivation, mob DESPAWN and the REAPER (both
+ *              through removal hooks), SLOWS end to end, mob POISON stacks,
+ *              the player-poison loop, ground pollen and web fields, DROPPED
+ *              ITEMS (see server/itemRegistry.ts), the spawner triggers
+ *              (queen-ant escorts, ant-hole waves), and the broadcast's ENEMY
+ *              wire encoding (ecs/net/enemyEncoder.ts, from component columns).
+ *   LEGACY owns the player pipeline's interiors (contact, petal combat and
+ *              the break/cooldown/reload machine, pickups' inventory half,
+ *              teleporters, respawn) — scheduled under the ECS but reading
+ *              ServerPlayer — plus damage attribution, the XP/drop/kill
+ *              SEQUENCES the reap/kill hooks invoke, persistence, and the
+ *              broadcast's player half. Mob CONFIG and the DATABASE FORMAT
+ *              stay outside the ECS by design; the hooks are that boundary.
  *
  * "Petal ring kinematics" means the orbit-slot layout, the orbit point, the
  * spring/glide integrator and the per-instance state behind it (ecs/systems/
@@ -48,12 +56,12 @@
  * no projectile handling in this file at all — a projectile never needs syncing
  * because legacy never writes one.
  *
- * Despawn deliberately stays with legacy. The viewport-status pass IS ported
- * (systems/viewport.ts), so ViewportTracked is accurate; what still blocks the
- * ECS despawn/reaper is the REMOVAL side. Destroying the entity would leave the
- * mob in legacy `enemies[]` forever and clients would never receive
- * enemyDestroyed, so moving it needs a despawn hook that splices the array and
- * emits — the same shape as the creditDamage/onEnemyDamaged hooks.
+ * Despawn is ECS-owned now: the viewport pass (systems/viewport.ts) keeps
+ * ViewportTracked accurate, and both sweeps (mobExpiry, unseenDespawn) remove
+ * through EcsRuntimeOptions.onMobDespawn, which splices the legacy shell,
+ * runs cleanupEnemy and emits enemyDestroyed — the entity itself is retired
+ * by the registry's deferred drain. Only the REAPER stays legacy: a combat
+ * death awards XP and drops, and those stay with reapDeadEnemies.
  *
  * ---------------------------------------------------------------------------
  * The sync contract
@@ -63,8 +71,9 @@
  * already read. Nothing downstream needs to know the simulation moved.
  *
  * Fields are split by writer to avoid the two sides fighting:
- *   pushed IN  — health, speed, knockback (legacy damage/effects write these)
- *   pushed OUT — x, y, angle, isChasing, velX/velY (the ECS decides motion)
+ *   pushed IN  — health, knockback (legacy damage/effects write these)
+ *   pushed OUT — x, y, angle, speed, isChasing, velX/velY (the ECS decides
+ *                motion, and owns slows end to end)
  *
  * Pushing a field both ways would let one side's stale value overwrite the
  * other's fresh one, which is exactly how a dual-representation bug looks.
@@ -104,35 +113,24 @@ exports.syncToEcs = syncToEcs;
 exports.syncFromEcs = syncFromEcs;
 exports.resetSyncState = resetSyncState;
 const C = __importStar(require("../ecs/components"));
+const interning_1 = require("../ecs/interning");
 const petalRing_1 = require("../ecs/systems/petalRing");
 const ecsBridge_1 = require("./ecsBridge");
 const enemyRegistry_1 = require("./enemyRegistry");
-/** Systems legacy still owns, disabled so the two do not both act. */
-const LEGACY_OWNED_SYSTEMS = [
-    // `playerMovement` is NOT here any more — the ECS owns it. See
-    // syncPlayersToEcs/syncPlayersFromEcs below for the window it runs in.
-    //
-    // `playerModifiers` still is. It derives speedBoost/sizeMultiplier from the
-    // Loadout and PlayerEffects COMPONENTS, and two things are wrong with that
-    // today: it does not include `player.speed_boost` (the base multiplier the
-    // legacy formula starts from), and the legacy skill/effect pipeline is still
-    // the writer of the effect list. So the values are pushed IN from
-    // `getSpeedMultiplier` instead, which keeps ECS movement bit-identical to
-    // the code it replaced. Enabling this system is the NEXT step, and it must
-    // be done together with removing those fields from the push.
-    'playerModifiers',
-    'expiry', // legacy timers
-    // The viewport pass IS ported now (systems/viewport.ts), so ViewportTracked
-    // is accurate. What still blocks this is the removal side: the ECS reaper
-    // destroys the entity, but legacy enemies[] would keep the mob forever and
-    // clients would never get enemyDestroyed. Moving it needs a despawn hook
-    // that splices the legacy array and emits.
-    'unseenDespawn',
-    'reaper', // legacy reapDeadEnemies awards XP and drops
-    'poisonStacks', // legacy updatePoisonEffects
-    'playerPoison', // legacy updatePlayerPoison
-    'slowExpiry', // legacy updateSlowEffects
-];
+/**
+ * Systems legacy still owns, disabled so the two do not both act.
+ *
+ * EMPTY as of the 2026-08 conversion: every registered system is live. The
+ * mechanism stays because it is the safety net the next cutover will want —
+ * a name listed here that matches no scheduler is fatal at boot.
+ *
+ * `playerModifiers` was the last entry. It now derives speedBoost /
+ * sizeMultiplier / magnetism / aggro from the Loadout component, the mirrored
+ * effect list and the mirrored `speed_boost` base (see syncPlayersToEcs), with
+ * the fold matched to shared/playerModifiers.ts (primary ten slots only,
+ * legacy clamp semantics).
+ */
+const LEGACY_OWNED_SYSTEMS = [];
 /**
  * Disable everything legacy still owns. Call once, after runtime creation.
  *
@@ -192,9 +190,6 @@ const orphanEntities = [];
  * on a quiet tick. Parallel arrays rather than objects: this is per-mob and
  * allocating a record per toggle is what the pass is trying to avoid.
  */
-const pendingSlowAdd = [];
-const pendingSlowUntil = [];
-const pendingSlowRemove = [];
 const pendingKnockback = [];
 const pendingKnockbackX = [];
 const pendingKnockbackY = [];
@@ -252,6 +247,14 @@ function ensurePlayerEntity(world, player, now) {
     seenPlayerIds.add(player.id);
     return entity;
 }
+// ---------------------------------------------------------------------------
+// The player movement window
+// ---------------------------------------------------------------------------
+// There is no PlayerSyncDeps any more: the derived modifiers (speedBoost,
+// sizeMultiplier, magnetism, aggro) are computed by the ECS playerModifiers
+// system from the Loadout, the mirrored effect list and the mirrored
+// speed_boost base — the push below carries only the INPUTS legacy still
+// writes, never a derived value.
 /**
  * Push each player's transform, motion, input and modifiers INTO the ECS.
  *
@@ -282,7 +285,7 @@ function ensurePlayerEntity(world, player, now) {
  * same reason: by then updatePlayerState has run and moved the flower again, and
  * mobs must chase where it actually is.
  */
-function syncPlayersToEcs(world, players, now, deps) {
+function syncPlayersToEcs(world, players, now) {
     for (const id in players) {
         const player = players[id];
         // `inputs` is declared non-optional on ServerPlayer but updatePlayerState
@@ -353,14 +356,26 @@ function syncPlayersToEcs(world, players, now, deps) {
             mouseSpeedMultiplier: inputs.mouseSpeedMultiplier ?? 1,
             petalExtension: inputs.petalExtension ?? 0,
         });
-        // --- derived modifiers ----------------------------------------------
-        // The `playerModifiers` SYSTEM is disabled (see LEGACY_OWNED_SYSTEMS):
-        // it does not fold in `player.speed_boost` and the effect pipeline that
-        // feeds it is still legacy. Pushing the legacy values keeps movement
-        // arithmetically identical to `computeTargetVelocity`. The 8x clamp and
-        // the NaN guard stay in the system, exactly where they were.
-        world.set(entity, C.PlayerModifiers, 'speedBoost', deps.speedBoostOf(player));
-        world.set(entity, C.PlayerModifiers, 'sizeMultiplier', player.sizeMultiplier ?? 1.0);
+        // --- modifier INPUTS -------------------------------------------------
+        // The playerModifiers system derives speedBoost/sizeMultiplier/
+        // magnetism/aggro from the Loadout each tick (Phase.Input, before
+        // movement reads them). What legacy still writes — the speed-boost
+        // consumable's base multiplier and the active effect LIST — is
+        // mirrored in here, exactly like Poisoned: legacy stays the writer of
+        // WHAT is active, the ECS derives what it means.
+        world.set(entity, C.PlayerModifiers, 'speedBoostBase', player.speed_boost || 1);
+        const effects = player.effects;
+        if (effects && effects.length > 0) {
+            if (world.has(entity, C.PlayerEffects)) {
+                world.set(entity, C.PlayerEffects, 'list', effects);
+            }
+            else {
+                world.add(entity, C.PlayerEffects, { list: effects });
+            }
+        }
+        else if (world.has(entity, C.PlayerEffects)) {
+            world.remove(entity, C.PlayerEffects);
+        }
         // The loadout is LEGACY-owned, so it is pushed in every tick like health
         // and speed — not captured once at import.
         //
@@ -590,16 +605,47 @@ function syncToEcs(world, enemies, players, now) {
         world.write(entity, C.Position, { x: player.x, y: player.y });
         world.set(entity, C.Angle, 'value', player.angle);
         world.write(entity, C.Health, { current: player.health, max: player.maxHealth });
-        // Mob aggro reads this; it is derived by legacy petal code for now.
-        if (world.has(entity, C.PlayerModifiers)) {
-            world.set(entity, C.PlayerModifiers, 'aggroRadiusBonus', player.aggroRadiusBonus ?? 0);
-        }
+        // aggroRadiusBonus is no longer pushed here: the playerModifiers
+        // system derives it from the Loadout during the player tick, which
+        // runs earlier in this same simulation step.
         // A dead player must be invisible to targeting immediately.
         const isDead = !!player.isDead;
         if (isDead && !world.has(entity, C.IsDead))
             world.add(entity, C.IsDead);
         else if (!isDead && world.has(entity, C.IsDead))
             world.remove(entity, C.IsDead);
+        // Poison mirrors the shell: legacy is still the authority for WHO is
+        // poisoned (the bite site and respawn both write ServerPlayer fields),
+        // while the ECS playerPoison system runs the per-tick effect. This runs
+        // AFTER the player pipeline within the tick, so a bite lands on the
+        // component before the poison system ticks — no one-tick lag.
+        const poisoned = !isDead
+            && player.poisonUntil !== undefined && player.poisonDamage !== undefined;
+        if (poisoned) {
+            if (world.has(entity, C.Poisoned)) {
+                world.write(entity, C.Poisoned, {
+                    damagePerSecond: player.poisonDamage,
+                    until: player.poisonUntil,
+                });
+            }
+            else {
+                world.add(entity, C.Poisoned, {
+                    damagePerSecond: player.poisonDamage,
+                    until: player.poisonUntil,
+                    sourceType: player.poisonSource ? interning_1.mobTypes.intern(player.poisonSource.type) : 0,
+                    sourceTier: player.poisonSource ? (0, interning_1.rarityToId)(player.poisonSource.tier) : 0,
+                });
+            }
+        }
+        else if (world.has(entity, C.Poisoned)) {
+            world.remove(entity, C.Poisoned);
+        }
+        if (isDead && player.poisonUntil !== undefined) {
+            // Legacy cleared the fields the tick a poisoned flower died.
+            player.poisonUntil = undefined;
+            player.poisonDamage = undefined;
+            player.poisonSource = undefined;
+        }
     }
     for (const id of seenPlayerIds) {
         if (livePlayerIds.has(id))
@@ -616,9 +662,6 @@ function syncToEcs(world, enemies, players, now) {
     // hoisted above the row loop and the body is straight array indexing — no
     // id lookup, no liveness check, no per-field archetype walk. The shell
     // pointer is what makes that possible; see C.LegacyShell.
-    pendingSlowAdd.length = 0;
-    pendingSlowUntil.length = 0;
-    pendingSlowRemove.length = 0;
     pendingKnockback.length = 0;
     pendingKnockbackX.length = 0;
     pendingKnockbackY.length = 0;
@@ -627,31 +670,18 @@ function syncToEcs(world, enemies, players, now) {
         const shells = chunk.cols(C.LegacyShell).ref;
         const entities = chunk.entities;
         const health = chunk.cols(C.Health);
-        const speed = chunk.cols(C.Speed);
         // Archetype-wide, so these are decided once per chunk rather than once
         // per mob — which is the whole reason to iterate this way.
-        const hasSlowed = chunk.has(C.Slowed);
         const hasDead = chunk.has(C.IsDead);
         const knock = chunk.has(C.Knockback) ? chunk.cols(C.Knockback) : undefined;
         const ai = chunk.has(C.MobAI) ? chunk.cols(C.MobAI) : undefined;
         for (let i = 0; i < chunk.count; i++) {
             const enemy = shells[i];
-            // Fields LEGACY writes.
+            // Fields LEGACY writes. Speed is NOT pushed any more: slows are
+            // ECS-owned (EcsRuntime.slowEnemy + the slowExpiry system), and
+            // syncFromEcs mirrors the resulting speed out to the shell.
             health.current[i] = enemy.health;
             health.max[i] = enemy.maxHealth;
-            speed.current[i] = enemy.speed;
-            speed.base[i] = enemy.baseSpeed ?? enemy.speed;
-            // A slow applied by legacy shows up as speed below base.
-            const slowed = enemy.slowUntil !== undefined && enemy.slowUntil > now;
-            if (slowed !== hasSlowed) {
-                if (slowed) {
-                    pendingSlowAdd.push(entities[i]);
-                    pendingSlowUntil.push(enemy.slowUntil);
-                }
-                else {
-                    pendingSlowRemove.push(entities[i]);
-                }
-            }
             if (enemy.knockbackX || enemy.knockbackY) {
                 if (knock !== undefined) {
                     knock.x[i] = enemy.knockbackX ?? 0;
@@ -684,12 +714,6 @@ function syncToEcs(world, enemies, players, now) {
     });
     // Structural changes, now that no query is iterating. See the pending*
     // declarations for why they cannot happen inline.
-    for (let i = 0; i < pendingSlowAdd.length; i++) {
-        world.add(pendingSlowAdd[i], C.Slowed, { until: pendingSlowUntil[i] });
-    }
-    for (let i = 0; i < pendingSlowRemove.length; i++) {
-        world.remove(pendingSlowRemove[i], C.Slowed);
-    }
     for (let i = 0; i < pendingKnockback.length; i++) {
         world.add(pendingKnockback[i], C.Knockback, {
             x: pendingKnockbackX[i],
@@ -725,6 +749,7 @@ function syncFromEcs(world, enemies) {
         const pos = chunk.cols(C.Position);
         const ang = chunk.cols(C.Angle);
         const health = chunk.cols(C.Health);
+        const speed = chunk.cols(C.Speed);
         const vel = chunk.has(C.Velocity) ? chunk.cols(C.Velocity) : undefined;
         const ai = chunk.has(C.MobAI) ? chunk.cols(C.MobAI) : undefined;
         const knock = chunk.has(C.Knockback) ? chunk.cols(C.Knockback) : undefined;
@@ -735,6 +760,9 @@ function syncFromEcs(world, enemies) {
             enemy.x = pos.x[i];
             enemy.y = pos.y[i];
             enemy.angle = ang.value[i];
+            // Slows are ECS-owned, so speed is a pushed-OUT field now: the
+            // shell keeps mirroring it for spawn payloads and diagnostics.
+            enemy.speed = speed.current[i];
             if (vel !== undefined) {
                 enemy.velX = vel.x[i];
                 enemy.velY = vel.y[i];

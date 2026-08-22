@@ -3,13 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleMobDrops = handleMobDrops;
 const mobs_1 = require("../mobs");
 const gameState_1 = require("./gameState");
+const itemRegistry_1 = require("./itemRegistry");
 const utils_1 = require("./utils");
 // Shared with the item spawner and the spawner's rendered petal ring — see
 // getDroppablePetalTypes() in petals.ts. It caches, so this stays cheap per drop.
 function getEligiblePetalTypes() {
     return (0, petals_1.getDroppablePetalTypes)();
 }
-const physics_1 = require("./physics");
 const petals_1 = require("../petals");
 const rarity_1 = require("./shared/rarity");
 // Function to handle mob drops when a mob dies
@@ -120,35 +120,15 @@ function handleMobDrops(enemyData, io, dropRateMultiplier = 1) {
                 pickedUpBy: new Set(),
                 spawnTime: spawnTime
             };
-            // Check and fix wall collisions before adding item
-            // Defer collision check to avoid blocking when many items spawn
-            setImmediate(() => {
-                (0, physics_1.checkItemWallCollisions)(newItem);
-            });
-            gameState_1.items.push(newItem);
-            // Mark item for batched emission at end of frame to prevent stuttering
-            // Store eligible players for this item
-            newItem.pendingSpawnEmission = true;
-            newItem.eligibleSocketIds = eligiblePlayers.map(playerId => (0, utils_1.getOriginalSocketId)(playerId));
-            // Schedule automatic removal after expiration time
+            // Admit the drop as an entity. No wall fix here: the droppedItems
+            // system resolves walls every tick (the old code deferred the fix
+            // to a setImmediate anyway, so the spawn emit has never carried
+            // resolved coordinates). The Expires deadline replaces the old
+            // per-item setTimeout outright.
             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
-            const timeout = setTimeout(() => {
-                gameState_1.itemExpirationTimeouts.delete(itemId);
-                const itemIndex = gameState_1.items.findIndex(item => item.id === itemId);
-                if (itemIndex !== -1) {
-                    const expiredItem = gameState_1.items[itemIndex];
-                    gameState_1.items.splice(itemIndex, 1);
-                    // Notify eligible players that item expired
-                    // Map split player IDs to their original socket IDs for socket room targeting
-                    if (expiredItem.eligiblePlayers) {
-                        for (const playerId of expiredItem.eligiblePlayers) {
-                            const originalSocketId = (0, utils_1.getOriginalSocketId)(playerId);
-                            io.to(originalSocketId).emit('itemRemoved', itemId);
-                        }
-                    }
-                }
-            }, expirationTime);
-            gameState_1.itemExpirationTimeouts.set(itemId, timeout);
+            (0, itemRegistry_1.spawnWorldItem)(newItem, spawnTime + expirationTime);
+            // Queue for batched emission at end of frame to prevent stuttering.
+            (0, itemRegistry_1.queueItemSpawnEmission)(newItem, eligiblePlayers.map(playerId => (0, utils_1.getOriginalSocketId)(playerId)));
         }
     }
 }

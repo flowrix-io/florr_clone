@@ -96,6 +96,7 @@ function makeRuntime(): EcsRuntime {
         // This bench drives the schedulers directly; the post-movement pipeline
         // is the game\'s, not the bench\'s.
         runPlayerPipeline: () => { /* not exercised here */ },
+        runPetalBehaviours: () => { /* not exercised here */ },
         creditDamage: () => { /* not reachable from the player scheduler */ },
         onEnemyDamaged: () => { /* ditto */ },
         onEnemyKilled: () => { /* ditto */ },
@@ -107,6 +108,18 @@ function makeRuntime(): EcsRuntime {
         onPlayerHit: () => true,
         emitEnemyDamaged: () => { /* ditto */ },
         onProjectileKill: () => { /* ditto */ },
+        onGroundEffectExpired: () => { /* ditto */ },
+        onEnemyPoisonDamaged: () => { /* ditto */ },
+        onPoisonKill: () => { /* ditto */ },
+        tickPlayerPoison: () => { /* ditto */ },
+        onPlayerPoisonLapsed: () => { /* ditto */ },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { /* ditto */ },
+        onSpawnWaves: () => { /* ditto */ },
+        onWorldItemRemoved: () => { /* ditto */ },
+        onMobDespawn: () => { /* ditto */ },
+        onReapEnemy: () => { /* ditto */ },
     });
 }
 
@@ -129,7 +142,7 @@ function runPlayerPhase(
     body: (player: ServerPlayer) => void,
 ): void {
     const now = NOW0 + tick * (1000 / 30);
-    syncPlayersToEcs(runtime.world, players, now, { speedBoostOf: p => p.speed_boost });
+    syncPlayersToEcs(runtime.world, players, now);
     runtime.tickPlayers(DT, DT * 1000, now);
     syncPlayersFromEcs(runtime.world, players);
 
@@ -329,10 +342,10 @@ export function runPlayerWritebackCheck(): string[] {
         const dead = makePlayer('dead', 10, 20);
         dead.isDead = true;
         const players: Record<string, ServerPlayer> = { dead };
-        syncPlayersToEcs(runtime.world, players, NOW0, { speedBoostOf: p => p.speed_boost });
+        syncPlayersToEcs(runtime.world, players, NOW0);
         dead.x = 777;
         dead.y = -888;
-        syncPlayersToEcs(runtime.world, players, NOW0 + 33, { speedBoostOf: p => p.speed_boost });
+        syncPlayersToEcs(runtime.world, players, NOW0 + 33);
         if (dead.movedX !== 777 || dead.movedY !== -888) {
             fail(`a corpse's staging pair is ${dead.movedX},${dead.movedY} but it is at `
                 + '777,-888 — a mid-tick revive would commit the stale pair');

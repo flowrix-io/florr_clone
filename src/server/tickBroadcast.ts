@@ -20,7 +20,6 @@
  */
 
 import {
-    enemies,
     players,
     VIEWPORT_WIDTH,
     VIEWPORT_HEIGHT,
@@ -30,8 +29,7 @@ import { ServerPlayer, FaceFlags, effectiveRenderFlags } from '../player';
 import { WorldItem } from '../item';
 import { getPetalStats } from '../petals';
 import { getMobStats } from '../mobs';
-import { Enemy } from '../server_utils';
-import { items } from './gameState';
+import { collectWorldItems } from './itemRegistry';
 import { getSquadForPlayer } from './squadManager';
 import { getActivePlayerForSocket, getOriginalSocketId } from './utils';
 import { ENEMY_FIELDS, PETAL_FIELDS, PLAYER_FIELDS, packFields, packId } from '../wire_fields';
@@ -39,8 +37,59 @@ import {
     AuthenticatedSocket,
     ConnectionQuality,
     SentPlayerState,
-    SentEnemyState,
 } from './shared/socketTypes';
+import { Entity, Query, World } from '../ecs';
+import * as C from '../ecs/components';
+import { encodeEnemyDelta } from '../ecs/net/enemyEncoder';
+
+// ---------------------------------------------------------------------------
+// The world, injected
+// ---------------------------------------------------------------------------
+// Enemy deltas are encoded straight from component columns
+// (ecs/net/enemyEncoder.ts) — there is no shell array to iterate any more.
+// The world arrives through a thunk bound by server.ts, the same shape the
+// enemy and item registries use, because importing the runtime from here
+// would close a cycle.
+let broadcastWorldThunk: (() => World) | undefined;
+
+/** Install the ECS world source. Called once, from the composition root. */
+export function bindBroadcastWorld(getWorld: () => World): void {
+    broadcastWorldThunk = getWorld;
+}
+
+function requireBroadcastWorld(): World {
+    if (!broadcastWorldThunk) {
+        throw new Error(
+            'tickBroadcast: no ECS world installed. server.ts must call '
+            + 'bindBroadcastWorld() at startup — without it no enemy can reach the wire.',
+        );
+    }
+    return broadcastWorldThunk();
+}
+
+let enemyWireQuery: Query | undefined;
+let enemyWireQueryWorld: World | undefined;
+
+/**
+ * Every live, visible mob. IsDead is excluded even though the same-tick reap
+ * normally retires dead entities before a broadcast fires: an off-tick kill
+ * (an admin command between ticks) marks the shell dead while the entity waits
+ * for the end-of-step drain, and a client that was just told `enemyDestroyed`
+ * must not receive fresh deltas for the same id.
+ */
+function enemyWireEntities(world: World): Query {
+    if (enemyWireQuery === undefined || enemyWireQueryWorld !== world) {
+        enemyWireQuery = world.query([C.IsEnemy, C.Position, C.MobKind, C.Health], [C.IsDead]);
+        enemyWireQueryWorld = world;
+    }
+    return enemyWireQuery;
+}
+
+/** Mob-config lookup for the encoder's "omit default maxHealth" rule. */
+const enemyEncoderDeps = {
+    defaultMaxHealthOf: (typeName: string, rarityName: string) =>
+        getMobStats(typeName, rarityName)?.health,
+};
 
 /**
  * Item wire events whose loss desyncs the client's item map. A dropped spawn
@@ -63,6 +112,9 @@ function quantize(value: number, precision: number): number {
     return Math.round(value / precision) * precision;
 }
 
+/** Reused payload buffer for the eligible-items builder; see collectWorldItems. */
+const _resyncItemScratch: WorldItem[] = [];
+
 /**
  * All world items this socket's player (including split-screen halves) can
  * currently see: eligibility-listed for them and not yet picked up by them.
@@ -74,7 +126,7 @@ export function getEligibleItemsForSocket(socketId: string): WorldItem[] {
     const originalId = socketId.replace('_split2', '').replace('_split1', '');
     const splitState = splitPlayers.get(originalId);
     const playerIds = splitState ? [splitState.player1.id, splitState.player2.id, originalId] : [socketId];
-    return items.filter(item => {
+    return collectWorldItems(_resyncItemScratch).filter(item => {
         if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
             if (!playerIds.some(playerId => item.eligiblePlayers!.includes(playerId))) {
                 return false; // Not eligible
@@ -522,20 +574,38 @@ function collectEnemyDeltas(view: RecipientView): { changed: any[]; removed: str
     // 1 unit, so weak connections aren't regressed.
     const enemyPrecision = view.quality === 'slow' ? 1 : 0.5;
 
-    for (let ei = 0; ei < enemies.length; ei++) {
-        const e = enemies[ei];
-        const dx = e.x - view.px0;
-        const dy = e.y - view.py0;
-        if ((dx < 0 ? -dx : dx) >= view.vw || (dy < 0 ? -dy : dy) >= view.vh) continue;
+    // Straight off the component columns: the viewport cull reads the Position
+    // chunks, and only mobs inside the box pay the encode. The encoder
+    // (ecs/net/enemyEncoder.ts) converts interned type/tier ids back to wire
+    // strings — the one place that conversion is allowed to happen.
+    const world = requireBroadcastWorld();
+    enemyWireEntities(world).chunks(chunk => {
+        const pos = chunk.cols(C.Position);
+        const entities = chunk.entities;
+        for (let i = 0; i < chunk.count; i++) {
+            const dx = pos.x[i] - view.px0;
+            const dy = pos.y[i] - view.py0;
+            if ((dx < 0 ? -dx : dx) >= view.vw || (dy < 0 ? -dy : dy) >= view.vh) continue;
 
-        currentEnemyIds.add(e.id);
-        const delta = encodeEnemyDelta(e, lastEnemies.get(e.id), enemyPrecision);
-        if (delta) {
-            changed.push(delta.wire);
-            lastEnemies.set(e.id, delta.next);
+            const entity = entities[i] as Entity;
+            const id = world.externalIdOf(entity);
+            if (id === undefined) continue;
+
+            currentEnemyIds.add(id);
+            const delta = encodeEnemyDelta(world, entity, lastEnemies.get(id), enemyPrecision, enemyEncoderDeps);
+            if (delta) {
+                changed.push(packFields(delta.wire, ENEMY_FIELDS));
+                lastEnemies.set(id, delta.next);
+            }
         }
-    }
+    });
 
+    // Removals: anything this client knew that is no longer in its viewport
+    // box (left it, or left the world). Kept as the exact legacy rule rather
+    // than pruneSentState's alive-check variant, so a client with an empty
+    // viewport still forgets mobs that walked away. The sent-state stays
+    // authoritative, so a removal lost to backpressure is regenerated the
+    // next time this loop runs — the ghost-entity guard.
     const removed: string[] = [];
     for (const id of lastEnemies.keys()) {
         if (!currentEnemyIds.has(id)) {
@@ -545,57 +615,6 @@ function collectEnemyDeltas(view: RecipientView): { changed: any[]; removed: str
     }
 
     return { changed, removed };
-}
-
-
-/**
- * Diff one enemy against what this client last received.
- *
- * On first sight the full record is sent, minus anything the client can derive:
- * the default maxHealth comes from the mob config for (type, tier), and the
- * default tier is 'common'. `_mobStats` is the same object, cached on the enemy
- * by the collision grids.
- */
-function encodeEnemyDelta(e: Enemy, prev: SentEnemyState | undefined, precision: number): { wire: any; next: SentEnemyState } | null {
-    const next: SentEnemyState = {
-        x: quantize(e.x, precision),
-        y: quantize(e.y, precision),
-        a: quantize(e.angle, 0.05),
-        h: Math.round(e.health),
-        H: Math.round(e.maxHealth),
-        t: e.type,
-        T: e.tier,
-    };
-
-    if (!prev) {
-        const defaultStats = e._mobStats ?? getMobStats(e.type, e.tier);
-        const defaultMaxH = defaultStats ? Math.round(defaultStats.health) : next.H;
-        const wire: any = { i: e.id, t: e.type, x: next.x, y: next.y };
-        if (e.tier !== 'common') wire.T = e.tier;
-        if (next.a !== 0) wire.a = next.a;
-        wire.h = next.h;
-        if (next.H !== defaultMaxH) wire.H = next.H;
-        // Pet marker: pets are otherwise indistinguishable from wild mobs on the
-        // wire, and the client suppresses boss bars for them. Ownership never
-        // changes, so it only needs to ride the first-sight record.
-        if (e.ownerId) wire.o = 1;
-        return { wire: packFields(wire, ENEMY_FIELDS), next };
-    }
-
-    if (prev.x === next.x && prev.y === next.y && prev.a === next.a &&
-        prev.h === next.h && prev.H === next.H && prev.t === next.t && prev.T === next.T) {
-        return null;
-    }
-
-    const wire: any = { i: e.id };
-    if (prev.x !== next.x) wire.x = next.x;
-    if (prev.y !== next.y) wire.y = next.y;
-    if (prev.a !== next.a) wire.a = next.a;
-    if (prev.h !== next.h) wire.h = next.h;
-    if (prev.H !== next.H) wire.H = next.H;
-    if (prev.t !== next.t) wire.t = next.t;
-    if (prev.T !== next.T) wire.T = next.T;
-    return { wire: packFields(wire, ENEMY_FIELDS), next };
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,8 @@ import { Server as SocketIOServer } from '../ws_server';
 import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
 import { calculateMobDrops } from '../mobs';
-import { items, ITEM_EXPIRATION_TIMES, itemExpirationTimeouts } from './gameState';
+import { ITEM_EXPIRATION_TIMES } from './gameState';
+import { queueItemSpawnEmission, spawnWorldItem } from './itemRegistry';
 import { getEligiblePlayers, getOriginalSocketId } from './utils';
 
 // Shared with the item spawner and the spawner's rendered petal ring — see
@@ -10,7 +11,6 @@ import { getEligiblePlayers, getOriginalSocketId } from './utils';
 function getEligiblePetalTypes(): string[] {
     return getDroppablePetalTypes();
 }
-import { checkItemWallCollisions } from './physics';
 import { getDroppablePetalTypes } from '../petals';
 import {
     RARITY_ORDER,
@@ -145,39 +145,19 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
                 spawnTime: spawnTime
             };
             
-            // Check and fix wall collisions before adding item
-            // Defer collision check to avoid blocking when many items spawn
-            setImmediate(() => {
-                checkItemWallCollisions(newItem);
-            });
-            
-            items.push(newItem);
-            
-            // Mark item for batched emission at end of frame to prevent stuttering
-            // Store eligible players for this item
-            (newItem as any).pendingSpawnEmission = true;
-            (newItem as any).eligibleSocketIds = eligiblePlayers.map(playerId => getOriginalSocketId(playerId));
-            
-            // Schedule automatic removal after expiration time
+            // Admit the drop as an entity. No wall fix here: the droppedItems
+            // system resolves walls every tick (the old code deferred the fix
+            // to a setImmediate anyway, so the spawn emit has never carried
+            // resolved coordinates). The Expires deadline replaces the old
+            // per-item setTimeout outright.
             const expirationTime = ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
-            const timeout = setTimeout(() => {
-                itemExpirationTimeouts.delete(itemId);
-                const itemIndex = items.findIndex(item => item.id === itemId);
-                if (itemIndex !== -1) {
-                    const expiredItem = items[itemIndex];
-                    items.splice(itemIndex, 1);
-                    
-                    // Notify eligible players that item expired
-                    // Map split player IDs to their original socket IDs for socket room targeting
-                    if (expiredItem.eligiblePlayers) {
-                        for (const playerId of expiredItem.eligiblePlayers) {
-                            const originalSocketId = getOriginalSocketId(playerId);
-                            io.to(originalSocketId).emit('itemRemoved', itemId);
-                        }
-                    }
-                }
-            }, expirationTime);
-            itemExpirationTimeouts.set(itemId, timeout);
+            spawnWorldItem(newItem, spawnTime + expirationTime);
+
+            // Queue for batched emission at end of frame to prevent stuttering.
+            queueItemSpawnEmission(
+                newItem,
+                eligiblePlayers.map(playerId => getOriginalSocketId(playerId)),
+            );
         }
     }
 }

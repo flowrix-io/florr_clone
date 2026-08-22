@@ -203,6 +203,7 @@ export function spawnPlayer(world: World, spec: PlayerSpawn): Entity {
     });
     world.add(e, C.PlayerModifiers, {
         speedBoost: 1,
+        speedBoostBase: 1,
         speedFactor: 1,
         sizeMultiplier: 1,
         magnetism: 0,
@@ -225,16 +226,19 @@ export function spawnPlayer(world: World, spec: PlayerSpawn): Entity {
 /** A pollen puff left on the ground when a pollen petal breaks. */
 export function spawnGroundPollen(
     world: World,
-    spec: { x: number; y: number; owner: Entity; damage: number; radius: number; rarity: string; expiresAt: number },
+    spec: { id: string; x: number; y: number; owner: Entity; damage: number; radius: number; rarity: string; expiresAt: number },
 ): Entity {
     const e = world.create();
+    // The wire id: clients receive it in `groundPollenSpawned` and the expiry
+    // system reads it back for `groundPollenRemoved`.
+    world.bindExternalId(e, spec.id);
     world.add(e, C.Position, { x: spec.x, y: spec.y });
     world.add(e, C.Radius, { value: spec.radius });
     world.add(e, C.GroundPollen, {
         owner: spec.owner,
         damage: spec.damage,
         rarity: rarityToId(spec.rarity),
-        lastDamageByEnemy: new Map<string, number>(),
+        lastDamageByEnemy: new Map<number, number>(),
     });
     world.add(e, C.Expires, { at: spec.expiresAt });
     world.add(e, C.IsGroundEffect);
@@ -244,14 +248,58 @@ export function spawnGroundPollen(
 /** A web field: a stationary zone that halves the speed of anything inside it. */
 export function spawnWebField(
     world: World,
-    spec: { x: number; y: number; owner: Entity; radius: number; rarity: string; expiresAt: number },
+    spec: { id: string; x: number; y: number; owner: Entity; radius: number; rarity: string; expiresAt: number },
 ): Entity {
     const e = world.create();
+    // The wire id, as for pollen: emitted back on expiry as `webRemoved`.
+    world.bindExternalId(e, spec.id);
     world.add(e, C.Position, { x: spec.x, y: spec.y });
     world.add(e, C.Radius, { value: spec.radius });
     world.add(e, C.WebField, { owner: spec.owner, rarity: rarityToId(spec.rarity) });
     world.add(e, C.Expires, { at: spec.expiresAt });
     world.add(e, C.IsGroundEffect);
+    return e;
+}
+
+export interface DroppedItemSpawn {
+    /** The wire id (`WorldItem.id`), bound as the external id. */
+    id: string;
+    x: number;
+    y: number;
+    /** Interned petal type, or 0xffff for a non-petal pickup. */
+    petalType: number;
+    rarity: string;
+    kind: C.ItemKind;
+    /** string[] of player ids allowed to pick this up, or undefined for anyone. */
+    eligiblePlayers: unknown;
+    /** Set<string> of players who already took it. */
+    pickedUpBy: unknown;
+    /** The legacy WorldItem, preserved verbatim — the wire/pickup boundary. */
+    payload: unknown;
+    spawnTime: number;
+    expiresAt: number;
+}
+
+/**
+ * A dropped world item. The `Expires` deadline replaces the per-item
+ * setTimeout the drop code used to register; see systems/droppedItems.ts.
+ */
+export function spawnDroppedItem(world: World, spec: DroppedItemSpawn): Entity {
+    const e = world.create();
+    world.bindExternalId(e, spec.id);
+    world.add(e, C.Position, { x: spec.x, y: spec.y });
+    world.add(e, C.Radius, { value: 15 });
+    world.add(e, C.DroppedItem, {
+        petalType: spec.petalType,
+        rarity: rarityToId(spec.rarity),
+        kind: spec.kind,
+        eligiblePlayers: spec.eligiblePlayers,
+        pickedUpBy: spec.pickedUpBy,
+        payload: spec.payload,
+    });
+    world.add(e, C.SpawnTime, { at: spec.spawnTime });
+    world.add(e, C.Expires, { at: spec.expiresAt });
+    world.add(e, C.IsDroppedItem);
     return e;
 }
 

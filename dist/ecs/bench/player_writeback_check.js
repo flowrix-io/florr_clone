@@ -89,6 +89,7 @@ function makeRuntime() {
         // This bench drives the schedulers directly; the post-movement pipeline
         // is the game\'s, not the bench\'s.
         runPlayerPipeline: () => { },
+        runPetalBehaviours: () => { },
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },
@@ -100,6 +101,18 @@ function makeRuntime() {
         onPlayerHit: () => true,
         emitEnemyDamaged: () => { },
         onProjectileKill: () => { },
+        onGroundEffectExpired: () => { },
+        onEnemyPoisonDamaged: () => { },
+        onPoisonKill: () => { },
+        tickPlayerPoison: () => { },
+        onPlayerPoisonLapsed: () => { },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { },
+        onSpawnWaves: () => { },
+        onWorldItemRemoved: () => { },
+        onMobDespawn: () => { },
+        onReapEnemy: () => { },
     });
 }
 /**
@@ -115,7 +128,7 @@ function makeRuntime() {
  */
 function runPlayerPhase(runtime, players, order, tick, body) {
     const now = NOW0 + tick * (1000 / 30);
-    (0, ecsSync_1.syncPlayersToEcs)(runtime.world, players, now, { speedBoostOf: p => p.speed_boost });
+    (0, ecsSync_1.syncPlayersToEcs)(runtime.world, players, now);
     runtime.tickPlayers(DT, DT * 1000, now);
     (0, ecsSync_1.syncPlayersFromEcs)(runtime.world, players);
     for (const id of order) {
@@ -292,10 +305,10 @@ function runPlayerWritebackCheck() {
         const dead = makePlayer('dead', 10, 20);
         dead.isDead = true;
         const players = { dead };
-        (0, ecsSync_1.syncPlayersToEcs)(runtime.world, players, NOW0, { speedBoostOf: p => p.speed_boost });
+        (0, ecsSync_1.syncPlayersToEcs)(runtime.world, players, NOW0);
         dead.x = 777;
         dead.y = -888;
-        (0, ecsSync_1.syncPlayersToEcs)(runtime.world, players, NOW0 + 33, { speedBoostOf: p => p.speed_boost });
+        (0, ecsSync_1.syncPlayersToEcs)(runtime.world, players, NOW0 + 33);
         if (dead.movedX !== 777 || dead.movedY !== -888) {
             fail(`a corpse's staging pair is ${dead.movedX},${dead.movedY} but it is at `
                 + '777,-888 — a mid-tick revive would commit the stale pair');

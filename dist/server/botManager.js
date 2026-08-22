@@ -47,7 +47,7 @@ const map_data_1 = require("../map_data");
 const petals_1 = require("../petals");
 const mobs_1 = require("../mobs");
 const enemyGrid_1 = require("./enemyGrid");
-const gameState_1 = require("./gameState");
+const itemRegistry_1 = require("./itemRegistry");
 const squadManager_1 = require("./squadManager");
 const rarity_1 = require("./shared/rarity");
 const botReach_1 = require("./bots/botReach");
@@ -1851,6 +1851,8 @@ function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers, stickyId
         scoreEnemy(boss);
     return best ? { enemy: best, dist: bestDist } : null;
 }
+/** Reused payload buffer for the pickup scan; see collectWorldItems. */
+const _botItemScratch = [];
 function findPickupTarget(bot, anchor, tetherRadius, stickyId) {
     let best = null;
     // Effective distance of the current pick; the item the bot is already
@@ -1858,7 +1860,7 @@ function findPickupTarget(bot, anchor, tetherRadius, stickyId) {
     // trade places every tick and leave the bot shuffling between them.
     let bestDist = ITEM_SEEK_RANGE;
     let bestRealDist = ITEM_SEEK_RANGE;
-    for (const item of gameState_1.items) {
+    for (const item of (0, itemRegistry_1.collectWorldItems)(_botItemScratch)) {
         if (item.pickedUpBy && item.pickedUpBy.has(bot.id))
             continue;
         // Only chase items this bot is actually eligible for (it was a damage contributor)

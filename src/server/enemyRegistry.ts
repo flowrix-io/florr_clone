@@ -227,7 +227,7 @@ export function spawnEnemy(
         stats,
         now,
     });
-    attachMobBehaviour(world, entity, enemy, now);
+    attachMobBehaviour(world, entity, enemy, now, stats);
     linkEnemyReferences(world, enemy, activeHost.resolvePlayer);
 
     enemies.push(enemy);

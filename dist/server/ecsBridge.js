@@ -89,7 +89,7 @@ function radiusOf(enemy, stats) {
  * Reference-typed relationships (owner, hole, chain) are NOT here: they need
  * other entities to exist, so they go through `linkEnemyReferences`.
  */
-function attachMobBehaviour(world, entity, enemy, now) {
+function attachMobBehaviour(world, entity, enemy, now, stats) {
     // The entity -> shell link both bridge passes and the reconcile run on. It
     // goes here rather than in `spawnMob` because the ECS layer must not know
     // what an `Enemy` is, and here is the one place BOTH creation paths meet —
@@ -114,6 +114,20 @@ function attachMobBehaviour(world, entity, enemy, now) {
     }
     if (enemy.despawnAt) {
         world.add(entity, C.Expires, { at: enemy.despawnAt });
+    }
+    // Spawner triggers live in the ECS (systems/spawning.ts): the interval
+    // clock for queen-ant escorts and the health-threshold bookkeeping for
+    // ant-hole waves. Config decides which mobs get them.
+    const config = stats ?? enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+    if (config?.periodic_spawn) {
+        world.add(entity, C.PeriodicSpawner, {
+            lastSpawnTime: enemy.lastPeriodicSpawnTime ?? 0,
+        });
+    }
+    if (config?.spawn_waves && config.spawn_waves.length > 0) {
+        world.add(entity, C.SpawnWaveState, {
+            previousHealth: enemy._spawnWavePrevHealth ?? enemy.health,
+        });
     }
 }
 /**
@@ -153,7 +167,7 @@ function importEnemy(world, enemy, now) {
     if (enemy.slowUntil !== undefined) {
         world.add(entity, C.Slowed, { until: enemy.slowUntil });
     }
-    attachMobBehaviour(world, entity, enemy, now);
+    attachMobBehaviour(world, entity, enemy, now, stats);
     if (enemy.wanderTargetX !== undefined) {
         world.add(entity, C.Wander, {
             targetX: enemy.wanderTargetX,
@@ -173,9 +187,8 @@ function importEnemy(world, enemy, now) {
     if (enemy.damageContributors) {
         world.add(entity, C.DamageContributors, { byPlayer: enemy.damageContributors });
     }
-    if (enemy.lastPeriodicSpawnTime !== undefined) {
-        world.add(entity, C.PeriodicSpawner, { lastSpawnTime: enemy.lastPeriodicSpawnTime });
-    }
+    // PeriodicSpawner / SpawnWaveState are attached (with the shell's mid-life
+    // values) by attachMobBehaviour above, which knows the config.
     if (enemy.currentDPS !== undefined || enemy.dpsStartTime !== undefined) {
         world.add(entity, C.DpsTracker, {
             historyTimes: enemy.dpsHistoryTimes ?? [],
@@ -299,6 +312,7 @@ function importPlayer(world, player, now, lobby = false) {
     });
     world.write(entity, C.PlayerModifiers, {
         speedBoost: player.speed_boost || 1,
+        speedBoostBase: player.speed_boost || 1,
         speedFactor: player.speedFactor ?? 1,
         sizeMultiplier: player.sizeMultiplier ?? 1,
         magnetism: player.magnetism ?? 0,

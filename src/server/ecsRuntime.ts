@@ -16,6 +16,7 @@
  */
 
 import {
+    ENEMY_SIZE,
     MAX_SPEED,
     PLAYER_SIZE,
     VIEWPORT_WIDTH,
@@ -47,9 +48,13 @@ import {
     registerMobCollisionSystem,
 } from '../ecs/systems/mobCollision';
 import {
+    applyPoisonStack,
+    applySlowToEntity,
     createAfflictionQueries,
     registerAfflictionSystems,
 } from '../ecs/systems/afflictions';
+import { stallPower } from './shared/rarity';
+import { PRIMARY_LOADOUT_SLOTS } from './shared/playerModifiers';
 import {
     createLifetimeQueries,
     registerLifetimeSystems,
@@ -87,6 +92,20 @@ import {
     createPlayerModifierQueries,
     registerPlayerModifierSystem,
 } from '../ecs/systems/playerModifiers';
+import {
+    createGroundEffectQueries,
+    GroundEffectKind,
+    registerGroundEffectSystems,
+} from '../ecs/systems/groundEffects';
+import {
+    createDroppedItemQueries,
+    DROPPED_ITEM_RADIUS,
+    registerDroppedItemSystems,
+} from '../ecs/systems/droppedItems';
+import {
+    createSpawningQueries,
+    registerSpawningSystems,
+} from '../ecs/systems/spawning';
 
 /** A player-fired projectile, as the legacy petal loop describes it. */
 export interface PlayerProjectileSpawn {
@@ -148,6 +167,12 @@ export interface EcsRuntime {
     inputScheduler: Scheduler;
     /** The post-movement player pipeline's scheduler; see tickPlayerPipeline. */
     pipelineScheduler: Scheduler;
+    /**
+     * The WORLD-OBJECT half of the tick — ground pollen, web fields — on its
+     * own scheduler; see tickWorld. Exposed for the same reason as the others:
+     * timings drained from `scheduler` alone would omit it.
+     */
+    worldScheduler: Scheduler;
     grid: SpatialGrid;
     /** Reusable broad-phase result buffer. */
     gridResult: GridQueryResult;
@@ -213,10 +238,37 @@ export interface EcsRuntime {
      * would make an admin `simtick` spike do exactly that, silently.
      */
     tickProjectiles(deltaMs: number, now: number): void;
+    /**
+     * Tick the ground effects (pollen damage, web slows, their expiry).
+     *
+     * MUST run right after `tickProjectiles` and before the caller's follow-up
+     * `syncFromEcs`: it reuses the spatial grid `tickProjectiles` rebuilt (so
+     * candidates are at this tick's positions), and the health it writes rides
+     * the same write-back pass that carries projectile damage — without it the
+     * next tick's `syncToEcs` would push the legacy health straight back over
+     * every pollen hit.
+     *
+     * dt-SCALED like projectiles: exactly once per simulation step, never
+     * replayed for catch-up (all of its deadlines are absolute clock times).
+     */
+    tickWorld(deltaMs: number, now: number): void;
     /** Live projectile sets, for the (still legacy) viewport broadcast. */
     projectileQueries: { mob: Query; player: Query };
     /** Spawn a player-fired projectile. The petal loop that decides to fire is legacy. */
     spawnPlayerProjectile(spec: PlayerProjectileSpawn): void;
+    /**
+     * Slow a mob (honey/pincer petals, web fields). Runs the rarity contest
+     * against the mob's tier, then writes the ECS Speed/Slowed pair — which
+     * OWNS slows: syncToEcs no longer pushes speed in, syncFromEcs mirrors it
+     * out, and the slowExpiry system restores it when the timer lapses.
+     */
+    slowEnemy(victim: Entity, baseFactor: number, until: number, sourceRarity: string, now: number): void;
+    /**
+     * Poison a mob from a player's petal: one stack per (victim, source), a
+     * fresh bite taking over only when it outlasts the ticking one. The stack
+     * system credits and kills through the poison hooks.
+     */
+    poisonEnemy(victim: Entity, source: Entity, damagePerMs: number, endTime: number): void;
     /**
      * Run `visit` for every mob projectile overlapping a petal at (x, y).
      *
@@ -265,6 +317,12 @@ export interface EcsRuntimeOptions {
      * what the game does.
      */
     runPlayerPipeline(deltaTime: number, deltaMs: number, now: number): void;
+    /**
+     * Tick petal interval behaviours (petal_actions.updatePetalBehaviours).
+     * Injected wholesale like the pipeline: the behaviour table reaches pets,
+     * projectiles and the socket server.
+     */
+    runPetalBehaviours(): void;
     /**
      * Credit pet-dealt damage to the pet's OWNER, for XP and drop attribution.
      *
@@ -323,6 +381,53 @@ export interface EcsRuntimeOptions {
     playerRadiusOf(player: Entity): number;
     /** A projectile killed this mob: run the XP/drops/broadcast death sequence. */
     onProjectileKill(victim: Entity, killer: Entity, timing: KillTiming): void;
+    /** A ground effect's deadline passed: emit groundPollenRemoved/webRemoved. */
+    onGroundEffectExpired(kind: GroundEffectKind, id: string): void;
+    /** Is this position outside the playable space for a dropped item? */
+    isItemOutOfBounds(x: number, y: number): boolean;
+    /**
+     * Summon one escort behind this summoner (queen ant). The alive-cap, tier
+     * downgrade, placement and emit are registry/config business.
+     */
+    onSpawnEscort(summoner: Entity): void;
+    /** Spawn the wave contents for indices [startWave..endWave] (ant holes). */
+    onSpawnWaves(parent: Entity, startWave: number, endWave: number): void;
+    /**
+     * A dropped item expired or left the world: emit `itemRemoved` to its
+     * eligible players. Runs before the entity is destroyed.
+     */
+    onWorldItemRemoved(item: Entity): void;
+    /** Queue the victim into the batched damage broadcast, flagged poison-only. */
+    onEnemyPoisonDamaged(victim: Entity): void;
+    /**
+     * Poison finished a mob: run the legacy poison-death sequence (XP to the
+     * top contributor, drops, removal, `enemyDestroyed`, the replacement
+     * spawn). Must no-op on a mob whose shell has already left the world.
+     */
+    onPoisonKill(victim: Entity): void;
+    /**
+     * Tick a poisoned flower: armor, the health write, death/second-chance and
+     * the emits — all legacy-owned player state. See PlayerPoisonDeps.
+     */
+    tickPlayerPoison(victim: Entity, deltaTime: number): void;
+    /** A flower's poison lapsed: clear the legacy mirror fields. */
+    onPlayerPoisonLapsed(victim: Entity): void;
+    /**
+     * Whether a mob at this position is protected from distance-despawn (the
+     * occupied maze). See UnseenDespawnDeps.isProtectedAt.
+     */
+    isDespawnProtectedAt(x: number, y: number): boolean;
+    /**
+     * A mob went unseen past the threshold: splice the legacy shell, clean up
+     * and emit `enemyDestroyed`. The entity is retired by the registry drain.
+     */
+    onMobDespawn(victim: Entity): void;
+    /**
+     * A mob died this tick (the reaper found IsDead): run the death sequence —
+     * top-contributor XP, drops, kill tracking, the digger roll — and remove
+     * the shell. Must no-op on a mob a direct kill path already removed.
+     */
+    onReapEnemy(victim: Entity): void;
 }
 
 export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
@@ -354,6 +459,13 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
      * after the movement window closes. See EcsRuntime.tickPlayerPipeline.
      */
     const pipelineScheduler = new Scheduler(world);
+    /**
+     * Ground effects run on their OWN scheduler, ticked right after the
+     * projectile one, so they see the same freshly-rebuilt grid and their
+     * damage rides the caller's post-projectile write-back. See
+     * EcsRuntime.tickWorld.
+     */
+    const worldScheduler = new Scheduler(world);
     const grid = new SpatialGrid();
     const gridResult = new GridQueryResult(256);
 
@@ -386,9 +498,12 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
     // is still injected, and that is config, not state.
     registerPlayerModifierSystem(playerScheduler, createPlayerModifierQueries(world), {
         petalModifiersOf: (slot) => {
-            const item = slot as { petalType?: string; rarity?: string } | null;
-            if (!item?.petalType) return undefined;
-            const stats = getPetalStats(item.petalType, item.rarity ?? 'common');
+            // The gates match shared/playerModifiers.ts exactly: a slot only
+            // contributes when it is a petal WITH a rarity — the legacy fold
+            // skipped rarity-less items rather than defaulting to common.
+            const item = slot as { type?: string; petalType?: string; rarity?: string } | null;
+            if (!item?.petalType || !item.rarity || item.type !== 'petal') return undefined;
+            const stats = getPetalStats(item.petalType, item.rarity);
             const modifiers = stats?.playerModifiers;
             if (!modifiers) return undefined;
             return {
@@ -399,10 +514,20 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
                 rotationSpeed: modifiers.rotationSpeed,
             };
         },
-        // Active speed effects still come from the legacy effect pipeline; the
-        // effect LIST itself is already a component, so this reads component
-        // state through a config-only helper.
-        effectSpeedMultiplier: () => 1,
+        // The `speed_boost` effect fold from getSpeedMultiplier, over the
+        // mirrored effect list. Multiplicative, speed_boost entries only.
+        effectSpeedMultiplier: (effects) => {
+            const list = effects as Array<{ type?: string; value?: number }> | undefined;
+            if (!list) return 1;
+            let multiplier = 1;
+            for (const effect of list) {
+                if (effect.type === 'speed_boost' && effect.value !== undefined) {
+                    multiplier *= effect.value;
+                }
+            }
+            return multiplier;
+        },
+        primarySlotCount: PRIMARY_LOADOUT_SLOTS,
     });
 
     // The legacy pipeline, under the scheduler. Registered as a system rather
@@ -410,6 +535,12 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
     // per-system timings alongside everything else.
     pipelineScheduler.add('playerPipeline', Phase.Simulation, (ctx) => {
         options.runPlayerPipeline(ctx.deltaTime, ctx.deltaMs, ctx.now);
+    });
+    // Petal interval behaviours (the PETAL_BEHAVIOURS table's onInterval
+    // hooks) run right after the pipeline, exactly where the bare
+    // updatePetalBehaviours() call sat in runSimulationStep.
+    pipelineScheduler.add('petalBehaviours', Phase.Simulation, () => {
+        options.runPetalBehaviours();
     });
 
     registerPlayerMovementSystem(playerScheduler, createPlayerMovementQueries(world), {
@@ -443,6 +574,23 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         const typeName = mobTypes.nameOf(world.get(mob, C.MobKind, 'type') as number);
         const rarityName = idToRarity(world.get(mob, C.MobKind, 'tier') as number);
         return rarityName ? getMobStats(typeName, rarityName) : null;
+    };
+
+    /**
+     * Slow a mob: rarity contest against its tier, then the ECS write. The
+     * legacy applySlow's two halves, with the config half kept here.
+     */
+    const applyMobSlow = (
+        victim: Entity,
+        baseFactor: number,
+        until: number,
+        sourceRarity: string,
+        now: number,
+    ): void => {
+        if (!world.has(victim, C.MobKind)) return;
+        const tierName = idToRarity(world.get(victim, C.MobKind, 'tier') as number) ?? 'common';
+        const factor = 1 - (1 - baseFactor) * stallPower(sourceRarity, tierName);
+        applySlowToEntity(world, victim, factor, until, now);
     };
 
     const fireVolley = createFireVolley(world, {
@@ -484,6 +632,24 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
     const activity = new MobActivityField();
     registerMobActivitySystem(scheduler, activity, createMobActivityQueries(world));
 
+    // Registered BEFORE the AI so slowExpiry (Phase.Input) restores a lapsed
+    // slow before the chase logic reads Speed.current — the order the legacy
+    // tick had (updateSlowEffects ran before moveEnemies). The poison systems
+    // land in Phase.Combat ahead of mobCollision for the same reason: legacy
+    // ticked poison before the melee pass.
+    const afflictionQueries = createAfflictionQueries(world);
+    registerAfflictionSystems(scheduler, afflictionQueries, {
+        mobPoison: {
+            creditDamage,
+            markPoisonDamaged: options.onEnemyPoisonDamaged,
+            onPoisonKill: options.onPoisonKill,
+        },
+        playerPoison: {
+            tickPoison: options.tickPlayerPoison,
+            onPoisonLapsed: options.onPlayerPoisonLapsed,
+        },
+    });
+
     registerEnemyAISystem(scheduler, createEnemyAIQueries(world), {
         hasLineOfSight,
         resolveWall: (x, y, halfSize) => resolveEntityWallCollisions(x, y, halfSize),
@@ -522,8 +688,67 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         isNearAnyPlayer,
     });
 
-    registerAfflictionSystems(scheduler, createAfflictionQueries(world));
-    registerLifetimeSystems(scheduler, createLifetimeQueries(world));
+    registerLifetimeSystems(scheduler, createLifetimeQueries(world), {
+        // The exemptions despawnDistantEnemies used to check inline. Tier and
+        // type are config knowledge, so the answer is composed here rather
+        // than inside the ECS.
+        neverDespawns: (mob) => {
+            const tierName = idToRarity(world.get(mob, C.MobKind, 'tier') as number);
+            if (tierName === 'ultra' || tierName === 'super' || tierName === 'unique' || tierName === 'apex') {
+                return true;
+            }
+            return mobTypes.nameOf(world.get(mob, C.MobKind, 'type') as number) === 'target_dummy';
+        },
+        isProtectedAt: options.isDespawnProtectedAt,
+        despawn: options.onMobDespawn,
+        reap: options.onReapEnemy,
+    });
+
+    // Ground effects: pollen chip damage and web slows. On the world scheduler,
+    // which the caller ticks straight after tickProjectiles so the grid rebuilt
+    // there is current — see EcsRuntime.tickWorld for the ordering contract.
+    registerGroundEffectSystems(
+        worldScheduler,
+        createGroundEffectQueries(world),
+        grid,
+        gridResult,
+        {
+            damageMultiplierOf: options.damageMultiplierOf,
+            creditDamage,
+            markEnemyDamaged: onEnemyDamaged,
+            // Same legacy kill sequence projectiles use, with the same timing
+            // the legacy pollen loop passed to killEnemy.
+            onKill: (victim, killer) => options.onProjectileKill(victim, killer, 'sync-snapshot'),
+            applySlow: (victim, baseFactor, until, rarityId, now) =>
+                applyMobSlow(victim, baseFactor, until, idToRarity(rarityId) ?? 'common', now),
+            emitExpired: options.onGroundEffectExpired,
+            // The legacy pollen loop tested the mob's UNSCALED config radius,
+            // not the tier-scaled entity radius; preserved exactly.
+            pollenTargetRadiusOf: (victim) => {
+                const stats = statsOf(victim);
+                return stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
+            },
+        },
+    );
+
+    // Dropped items: wall push, bounds and expiry — the port of the legacy
+    // updateWorldItems pass plus every per-item removal setTimeout.
+    registerDroppedItemSystems(worldScheduler, createDroppedItemQueries(world), {
+        resolveWall: (x, y) => resolveEntityWallCollisions(x, y, DROPPED_ITEM_RADIUS),
+        isOutOfBounds: options.isItemOutOfBounds,
+        onRemoved: options.onWorldItemRemoved,
+    });
+
+    // Spawner triggers (queen-ant escorts, ant-hole waves). Phase.Spawning on
+    // the world scheduler puts them after this tick's damage — projectile and
+    // pollen included — exactly where the legacy spawnWaveMobs call sat.
+    registerSpawningSystems(worldScheduler, createSpawningQueries(world), {
+        spawnIntervalOf: (summoner) =>
+            (statsOf(summoner)?.periodic_spawn as { intervalMs?: number } | undefined)?.intervalMs,
+        spawnEscort: options.onSpawnEscort,
+        waveCountOf: (parent) => (statsOf(parent)?.spawn_waves?.length ?? 0),
+        spawnWaves: options.onSpawnWaves,
+    });
 
     // ---------------------------------------------------------------------
     // The petal bridge
@@ -543,6 +768,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         playerScheduler,
         inputScheduler,
         pipelineScheduler,
+        worldScheduler,
         grid,
         gridResult,
         projectileQueries: {
@@ -585,6 +811,21 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
             // the mobs actually are this tick.
             grid.rebuild(world, gridSource);
             projectileScheduler.tick(deltaMs / 1000, deltaMs, now);
+        },
+
+        tickWorld(deltaMs: number, now: number): void {
+            // No grid rebuild: the contract is that this runs straight after
+            // tickProjectiles, whose rebuild is still current. A mob killed by
+            // a projectile in between is still in the grid; the systems skip
+            // it by its zeroed Health/IsDead, and the legacy-side hooks no-op
+            // on a shell that has already left `enemies[]`.
+            worldScheduler.tick(deltaMs / 1000, deltaMs, now);
+        },
+
+        slowEnemy: applyMobSlow,
+
+        poisonEnemy(victim: Entity, source: Entity, damagePerMs: number, endTime: number): void {
+            applyPoisonStack(world, afflictionQueries.poisonStacks, victim, source, damagePerMs, endTime);
         },
 
         spawnPlayerProjectile(spec: PlayerProjectileSpawn): void {

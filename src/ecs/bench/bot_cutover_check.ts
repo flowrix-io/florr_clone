@@ -47,8 +47,9 @@
  * `updateBotAI` including targeting, the oscillation watchdog, squad membership
  * and the loadout swaps; `rebuildEnemyGrid`/`queryEnemiesNear`; `syncPlayersToEcs`,
  * `runtime.tickPlayers`, `syncPlayersFromEcs`; `botPetalReach` and the petal ring.
- * The legacy `players`, `enemies` and `items` singletons are the actual module
- * singletons botManager reads.
+ * The legacy `players` and `enemies` singletons are the actual module
+ * singletons botManager reads; drops are read from this bench's world through
+ * the item registry.
  *
  * STAND-IN: the socket server (a recording stub — bots emit chat and squad
  * updates), and the one line of `updatePlayerState` that commits the staging
@@ -62,7 +63,7 @@
 import { players, enemies } from '../../constants';
 import { ServerPlayer } from '../../player';
 import { getPetalStats } from '../../petals';
-import { items } from '../../server/gameState';
+import { bindItemHost } from '../../server/itemRegistry';
 import { rebuildEnemyGrid } from '../../server/enemyGrid';
 import { createEcsRuntime, EcsRuntime } from '../../server/ecsRuntime';
 import {
@@ -177,7 +178,8 @@ function makeBot(id: string, x: number, y: number, loadout: any[]): ServerPlayer
 function resetWorldSingletons(): void {
     for (const id in players) delete players[id];
     enemies.length = 0;
-    items.length = 0;
+    // Items live in the WORLD now; each makeRuntime() starts an empty one, so
+    // there is no item singleton left to clear.
 }
 
 function makeRuntime(): EcsRuntime {
@@ -186,6 +188,7 @@ function makeRuntime(): EcsRuntime {
         // This bench drives the schedulers directly; the post-movement pipeline
         // is the game\'s, not the bench\'s.
         runPlayerPipeline: () => { /* not exercised here */ },
+        runPetalBehaviours: () => { /* not exercised here */ },
         creditDamage: () => { /* attribution is not under test here */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },
@@ -197,12 +200,29 @@ function makeRuntime(): EcsRuntime {
         onPlayerHit: () => true,
         emitEnemyDamaged: () => { /* broadcast is not under test here */ },
         onProjectileKill: () => { /* drops/XP are not under test here */ },
+        onGroundEffectExpired: () => { /* wire is not under test here */ },
+        onEnemyPoisonDamaged: () => { /* wire is not under test here */ },
+        onPoisonKill: () => { /* drops/XP are not under test here */ },
+        tickPlayerPoison: () => { /* player poison is not under test here */ },
+        onPlayerPoisonLapsed: () => { /* ditto */ },
+        isDespawnProtectedAt: () => false,
+        isItemOutOfBounds: () => false,
+        onSpawnEscort: () => { /* spawners are not under test here */ },
+        onSpawnWaves: () => { /* ditto */ },
+        onWorldItemRemoved: () => { /* items are not under test here */ },
+        onMobDespawn: () => { /* despawn is not under test here */ },
+        onReapEnemy: () => { /* drops/XP are not under test here */ },
     });
     configureCutover(runtime);
+    // Bot pickup targeting reads drops through the item registry; point it at
+    // this bench's world (re-bound per runtime, exactly like server.ts does).
+    bindItemHost({ getWorld: () => runtime.world });
     return runtime;
 }
 
-const speedBoostOf = (player: ServerPlayer) => player.speed_boost || 1;
+// (speedBoost is derived by the live playerModifiers system now: with the
+// bots' loadouts carrying no speed-modifier petals and no active effects, it
+// resolves to the same `player.speed_boost || 1` the old push injected.)
 
 /** The one line of updatePlayerState that matters here: commit the staging pair. */
 function commitStagedPositions(): void {
@@ -291,7 +311,7 @@ function runOrderedTicks(
             for (const id in players) decided[id] = snapshotInputs(players[id]);
         }
 
-        syncPlayersToEcs(runtime.world, players, now, { speedBoostOf });
+        syncPlayersToEcs(runtime.world, players, now);
 
         if (misplaceInput) {
             // The mis-placement: the AI runs after the push that was supposed to

@@ -149,6 +149,14 @@ exports.PlayerModifiers = (0, component_1.defineComponent)('PlayerModifiers', {
      * a rounding difference can change how many substeps a wall contact gets.
      */
     speedBoost: 'f64',
+    /**
+     * The BASE multiplier the speed derivation starts from
+     * (`ServerPlayer.speed_boost`, written by the speed-boost consumable).
+     * Mirrored in by the sync while consumables stay legacy; the
+     * playerModifiers system multiplies the loadout and effect contributions
+     * onto it to produce `speedBoost`.
+     */
+    speedBoostBase: 'f64',
     speedFactor: 'f64',
     /** Multiplier on the flower's radius and hitbox. */
     sizeMultiplier: 'f64',

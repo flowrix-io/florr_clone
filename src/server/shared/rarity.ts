@@ -84,3 +84,20 @@ export function getDropDowngradeChance(currentRarity: Rarity): number {
 export function getMobDowngradeChance(currentRarity: Rarity): number {
     return getDropDowngradeChance(currentRarity);
 }
+
+/**
+ * How much of a slow (web/honey/pincer) actually lands on a mob: 1 at equal
+ * rarity, falling 3x per tier the mob is above the slow's source, clamped at 1
+ * so out-rareing the mob only buys reliability against tougher mobs, never a
+ * slow stronger than the petal's own design value.
+ *
+ * Moved here from playerState.ts when slows became ECS-owned: both the legacy
+ * petal loop and the ECS composition root need it, and importing playerState
+ * from the composition root would drag in a module that binds a port.
+ */
+export function stallPower(sourceRarity: string, mobTier: string): number {
+    const src = RARITY_ORDER.indexOf(sourceRarity as Rarity);
+    const mob = RARITY_ORDER.indexOf(mobTier as Rarity);
+    if (src < 0 || mob < 0) return 1;
+    return Math.min(1, Math.pow(3, src - mob));
+}

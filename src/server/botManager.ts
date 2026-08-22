@@ -26,7 +26,8 @@ import { WORLD_MAP, WALL_GRID } from '../map_data';
 import { getPetalStats } from '../petals';
 import { getMobStats } from '../mobs';
 import { queryEnemiesNear } from './enemyGrid';
-import { items } from './gameState';
+import { WorldItem } from '../item';
+import { collectWorldItems } from './itemRegistry';
 import {
     createSquad as createSquadFn,
     joinPublicSquad as joinPublicSquadFn,
@@ -2000,20 +2001,23 @@ function pickBestEnemyTarget(
     return best ? { enemy: best, dist: bestDist } : null;
 }
 
+/** Reused payload buffer for the pickup scan; see collectWorldItems. */
+const _botItemScratch: WorldItem[] = [];
+
 function findPickupTarget(
     bot: ServerPlayer,
     anchor: Anchor,
     tetherRadius: number,
     stickyId?: string
-): { item: typeof items[number]; dist: number } | null {
-    let best: typeof items[number] | null = null;
+): { item: WorldItem; dist: number } | null {
+    let best: WorldItem | null = null;
     // Effective distance of the current pick; the item the bot is already
     // walking to competes with a discount so two drops at similar range don't
     // trade places every tick and leave the bot shuffling between them.
     let bestDist = ITEM_SEEK_RANGE;
     let bestRealDist = ITEM_SEEK_RANGE;
 
-    for (const item of items) {
+    for (const item of collectWorldItems(_botItemScratch)) {
         if (item.pickedUpBy && item.pickedUpBy.has(bot.id)) continue;
         // Only chase items this bot is actually eligible for (it was a damage contributor)
         if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {

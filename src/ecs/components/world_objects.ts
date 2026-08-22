@@ -47,7 +47,11 @@ export const GroundPollen = defineComponent('GroundPollen', {
     owner: 'entity',
     damage: 'f32',
     rarity: 'u8',
-    /** Map<enemyId, lastDamageTime>. */
+    /**
+     * Map<entity handle, lastDamageTime> — the per-victim retrigger clock.
+     * Keyed by handle rather than external id: the generation bits make a
+     * recycled slot a new key, so no stale-id hygiene is needed.
+     */
     lastDamageByEnemy: 'obj',
 });
 

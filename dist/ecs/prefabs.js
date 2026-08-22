@@ -43,6 +43,7 @@ exports.spawnProjectile = spawnProjectile;
 exports.spawnPlayer = spawnPlayer;
 exports.spawnGroundPollen = spawnGroundPollen;
 exports.spawnWebField = spawnWebField;
+exports.spawnDroppedItem = spawnDroppedItem;
 exports.spawnObstacle = spawnObstacle;
 const C = __importStar(require("./components"));
 const entity_1 = require("./entity");
@@ -160,6 +161,7 @@ function spawnPlayer(world, spec) {
     });
     world.add(e, C.PlayerModifiers, {
         speedBoost: 1,
+        speedBoostBase: 1,
         speedFactor: 1,
         sizeMultiplier: 1,
         magnetism: 0,
@@ -183,6 +185,9 @@ function spawnPlayer(world, spec) {
 /** A pollen puff left on the ground when a pollen petal breaks. */
 function spawnGroundPollen(world, spec) {
     const e = world.create();
+    // The wire id: clients receive it in `groundPollenSpawned` and the expiry
+    // system reads it back for `groundPollenRemoved`.
+    world.bindExternalId(e, spec.id);
     world.add(e, C.Position, { x: spec.x, y: spec.y });
     world.add(e, C.Radius, { value: spec.radius });
     world.add(e, C.GroundPollen, {
@@ -198,11 +203,35 @@ function spawnGroundPollen(world, spec) {
 /** A web field: a stationary zone that halves the speed of anything inside it. */
 function spawnWebField(world, spec) {
     const e = world.create();
+    // The wire id, as for pollen: emitted back on expiry as `webRemoved`.
+    world.bindExternalId(e, spec.id);
     world.add(e, C.Position, { x: spec.x, y: spec.y });
     world.add(e, C.Radius, { value: spec.radius });
     world.add(e, C.WebField, { owner: spec.owner, rarity: (0, interning_1.rarityToId)(spec.rarity) });
     world.add(e, C.Expires, { at: spec.expiresAt });
     world.add(e, C.IsGroundEffect);
+    return e;
+}
+/**
+ * A dropped world item. The `Expires` deadline replaces the per-item
+ * setTimeout the drop code used to register; see systems/droppedItems.ts.
+ */
+function spawnDroppedItem(world, spec) {
+    const e = world.create();
+    world.bindExternalId(e, spec.id);
+    world.add(e, C.Position, { x: spec.x, y: spec.y });
+    world.add(e, C.Radius, { value: 15 });
+    world.add(e, C.DroppedItem, {
+        petalType: spec.petalType,
+        rarity: (0, interning_1.rarityToId)(spec.rarity),
+        kind: spec.kind,
+        eligiblePlayers: spec.eligiblePlayers,
+        pickedUpBy: spec.pickedUpBy,
+        payload: spec.payload,
+    });
+    world.add(e, C.SpawnTime, { at: spec.spawnTime });
+    world.add(e, C.Expires, { at: spec.expiresAt });
+    world.add(e, C.IsDroppedItem);
     return e;
 }
 /** A static wall. Position is the top-left corner, matching the old Obstacle. */
