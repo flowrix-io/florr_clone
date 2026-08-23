@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.petalRingEnemies = void 0;
 exports.rebuildEnemyGrid = rebuildEnemyGrid;
 exports.queryEnemiesNear = queryEnemiesNear;
-const mobs_1 = require("../mobs");
+const mobFields_1 = require("./mobFields");
 const constants_1 = require("../constants");
 // Cell size chosen so a typical query (a petal or player radius, tens of px) touches
 // only one or two cells per axis. Mobs larger than a cell are inserted into every cell
@@ -53,52 +53,50 @@ function key(cx, cy) {
  * inflated every petal's query from ~9 cells to ~64, for every player. With a Light
  * loadout (~70 petal instances, one query each) that dominated the tick.
  *
- * Side-effect: caches mob radius / mobStats on each enemy as `_radius` / `_mobStats`
- * so per-collision lookups don't have to call getMobStats again.
- * type/tier never change after spawn, so the cache is safe.
+ * No stat caching any more: radius and mob-config are components written once at
+ * spawn (C.Radius, C.MobStats), so the lazy `_radius` / `_mobStats` stamps this
+ * loop used to write on the first pass are redundant.
+ *
+ * Per-mob component reads are hoisted into locals. This runs over every mob
+ * every tick, and an accessor resolves archetype and row each call — cheap, but
+ * not free enough to pay eight times per mob.
  */
 function rebuildEnemyGrid(enemies) {
     grid.clear();
     exports.petalRingEnemies.length = 0;
+    const world = (0, mobFields_1.mobWorld)();
     for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
+        const entity = e.entity;
         if (e.ownerId)
             continue;
-        if (e.isDead)
+        if ((0, mobFields_1.isMobDead)(entity, world))
             continue;
+        const x = (0, mobFields_1.mobX)(entity, world);
+        const y = (0, mobFields_1.mobY)(entity, world);
         // A non-finite position would make the cell range below Infinity/NaN, and a
         // finite-but-absurd one (cell index past 2^53) stalls `cx++` outright — either
         // way the nested loops spin forever. Such a mob simply isn't in the grid this tick.
-        if (!Number.isFinite(e.x) || !Number.isFinite(e.y)
-            || Math.abs(e.x) > constants_1.MAX_SANE_WORLD_COORD || Math.abs(e.y) > constants_1.MAX_SANE_WORLD_COORD)
+        if (!Number.isFinite(x) || !Number.isFinite(y)
+            || Math.abs(x) > constants_1.MAX_SANE_WORLD_COORD || Math.abs(y) > constants_1.MAX_SANE_WORLD_COORD)
             continue;
-        // Cache derived stats once per spawn lifetime.
-        if (e._radius === undefined) {
-            const mobStats = (0, mobs_1.getMobStats)(e.type, e.tier);
-            // Pets never reach here (skipped above), but the two lazy `_radius`
-            // initialisers — this one and the collision pass in physics.ts —
-            // must stay the same formula, since whichever runs first wins.
-            e._radius = (mobStats ? (mobStats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2)
-                * (0, mobs_1.getEnemySizeScale)(!!e.ownerId, e.tier, e.type);
-            e._mobStats = mobStats;
-        }
-        let r = e._radius;
+        let r = (0, mobFields_1.mobRadiusOf)(entity, world);
         // A degenerate mob radius would blow up the insertion cell range below.
         // Clamp + log, and persist so it's only logged once.
         if (!(r >= 0 && r <= MAX_MOB_RADIUS)) {
             if (r !== _lastBadMobRadius) {
-                console.warn(`[enemyGrid] degenerate mob _radius=${r} for ${e.type}/${e.tier}; clamping to ${constants_1.ENEMY_SIZE / 2}`);
+                console.warn(`[enemyGrid] degenerate mob radius=${r} for ${e.type}/${e.tier}; clamping to ${constants_1.ENEMY_SIZE / 2}`);
                 _lastBadMobRadius = r;
             }
             r = constants_1.ENEMY_SIZE / 2;
-            e._radius = r;
+            (0, mobFields_1.setMobRadius)(entity, r, world);
         }
-        if (e._mobStats?.petal_ring)
+        if ((0, mobFields_1.mobStatsOf)(entity, world)?.petal_ring)
             exports.petalRingEnemies.push(e);
-        const minCX = Math.floor((e.x - r) / CELL_SIZE);
-        const maxCX = Math.floor((e.x + r) / CELL_SIZE);
-        const minCY = Math.floor((e.y - r) / CELL_SIZE);
-        const maxCY = Math.floor((e.y + r) / CELL_SIZE);
+        const minCX = Math.floor((x - r) / CELL_SIZE);
+        const maxCX = Math.floor((x + r) / CELL_SIZE);
+        const minCY = Math.floor((y - r) / CELL_SIZE);
+        const maxCY = Math.floor((y + r) / CELL_SIZE);
         for (let cy = minCY; cy <= maxCY; cy++) {
             for (let cx = minCX; cx <= maxCX; cx++) {
                 const k = key(cx, cy);
@@ -154,9 +152,11 @@ function queryEnemiesNear(x, y, radius, out) {
                 continue;
             for (let i = 0; i < bucket.length; i++) {
                 const e = bucket[i];
-                if (e._qs === stamp)
-                    continue; // already returned from another cell
-                e._qs = stamp;
+                // Per-query dedup stamp; a mob spans several cells. Lives in
+                // C.GridStamps rather than on the shell.
+                if ((0, mobFields_1.mobQueryStamp)(e.entity) === stamp)
+                    continue;
+                (0, mobFields_1.setMobQueryStamp)(e.entity, stamp);
                 out.push(e);
             }
         }

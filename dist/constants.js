@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.SECTION_CONFIGS = exports.PVP_MAX_HEALTH = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.MOUSE_FULL_SPEED_DISTANCE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.ENEMY_TIERS = exports.PLAYER_DAMAGE = exports.PLAYER_MAX_HEALTH = exports.SCALE_FACTOR = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.BUILTIN_TILE_TYPES = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.enemies = exports.dots = exports.players = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = void 0;
-exports.MAX_SANE_WORLD_COORD = exports.COLLISION_BUFFER = exports.JAGGED_NUM_SEGMENTS = exports.JAGGED_MAX_OFFSET = void 0;
+exports.JAGGED_MAX_OFFSET = exports.WALL_GRID = exports.DEFAULT_SERVER_CONFIGS = exports.SECTION_CONFIGS = exports.PVP_MAX_HEALTH = exports.PVP_INVENTORY_KEEP_RATIO = exports.PVP_ARENA_SPAWN_Y = exports.PVP_ARENA_SPAWN_X = exports.PVP_ARENA_RADIUS = exports.PVP_ARENA_CENTER_Y = exports.PVP_ARENA_CENTER_X = exports.TELEPORTER_COOLDOWN = exports.TELEPORTER_SUCTION_FORCE = exports.TELEPORTER_SUCTION_RADIUS = exports.TELEPORTER_RADIUS = exports.ENEMY_SIZE = exports.PLAYER_SIZE = exports.DAMAGE_PER_LEVEL = exports.HEALTH_PER_LEVEL = exports.XP_MULTIPLIER = exports.BASE_XP_REQUIREMENT = exports.MOUSE_FULL_SPEED_DISTANCE = exports.MAX_SPEED = exports.RESPAWN_INVULNERABILITY_TIME = exports.ENEMY_TIERS = exports.PLAYER_DAMAGE = exports.PLAYER_MAX_HEALTH = exports.SCALE_FACTOR = exports.ENEMIES_PER_VIEWPORT = exports.VIEWPORT_WITH_BUFFER_AREA = exports.ORIGINAL_ENEMY_DENSITY = exports.ORIGINAL_ENEMY_COUNT = exports.TOTAL_WORLD_AREA = exports.BUILTIN_TILE_TYPES = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.WORLD_HEIGHT = exports.WORLD_WIDTH = exports.items = exports.obstacles = exports.dots = exports.players = exports.VIEWPORT_HEIGHT = exports.VIEWPORT_WIDTH = exports.VIEWPORT_BUFFER = exports.SERVER_PROTOCOL = exports.USE_HTTPS = void 0;
+exports.MAX_SANE_WORLD_COORD = exports.COLLISION_BUFFER = exports.JAGGED_NUM_SEGMENTS = void 0;
 exports.getMobAnimationFramerate = getMobAnimationFramerate;
 exports.getMobAnimationFrameTime = getMobAnimationFrameTime;
 exports.getHighQualityMobs = getHighQualityMobs;
@@ -110,15 +110,10 @@ exports.VIEWPORT_WIDTH = 1920;
 exports.VIEWPORT_HEIGHT = 1080;
 exports.players = {};
 exports.dots = [];
-/**
- * Every wild mob in the world.
- *
- * Typed `LiveEnemy[]`, not `Enemy[]`: membership of this array means "has an ECS
- * entity", and the brand is what makes that structural rather than a convention
- * (see server_utils.LiveEnemy). Mobs are admitted by `spawnEnemy()` in
- * server/enemyRegistry.ts, which is the only producer of the branded type.
- */
-exports.enemies = [];
+// There is no `enemies` array here any more. Mobs live in the ECS world and
+// nowhere else; `liveEnemies()` in server/enemyRegistry.ts projects their shells
+// back out on demand. A module-level array was a SECOND place a mob could exist,
+// which is what every mob/entity disagreement this codebase has had came from.
 exports.obstacles = [];
 exports.items = [];
 exports.WORLD_WIDTH = 60000;

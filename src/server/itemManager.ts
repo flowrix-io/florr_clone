@@ -1,9 +1,8 @@
 import { Server as SocketIOServer } from '../ws_server';
-import { Enemy } from '../server_utils';
 import { WorldItem, Item } from '../item';
 import { calculateMobDrops } from '../mobs';
 import { ITEM_EXPIRATION_TIMES } from './gameState';
-import { queueItemSpawnEmission, spawnWorldItem } from './itemRegistry';
+import { spawnWorldItem } from './itemRegistry';
 import { getEligiblePlayers, getOriginalSocketId } from './utils';
 
 // Shared with the item spawner and the spawner's rendered petal ring — see
@@ -34,7 +33,7 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
     }
 
     // Get list of eligible players based on damage ranking
-    let eligiblePlayers = getEligiblePlayers(enemyData as Enemy);
+    let eligiblePlayers = getEligiblePlayers(enemyData);
     
     // For split players, also include both split player IDs and the original socket ID in eligible players
     // This ensures both split players can pick up items if either one dealt damage
@@ -151,13 +150,10 @@ export function handleMobDrops(enemyData: { type?: string, tier: string, x: numb
             // resolved coordinates). The Expires deadline replaces the old
             // per-item setTimeout outright.
             const expirationTime = ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
+            // Admission IS the announcement: the drop joins the entity stream
+            // and reaches every eligible client on the next frame, culled and
+            // delta-encoded like any other entity.
             spawnWorldItem(newItem, spawnTime + expirationTime);
-
-            // Queue for batched emission at end of frame to prevent stuttering.
-            queueItemSpawnEmission(
-                newItem,
-                eligiblePlayers.map(playerId => getOriginalSocketId(playerId)),
-            );
         }
     }
 }

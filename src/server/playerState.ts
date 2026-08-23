@@ -1,11 +1,11 @@
 import { Server as SocketIOServer } from '../ws_server';
+import { damageMob, isMobDead, mobDamage, mobHealth, mobRadiusOf, mobStatsOf, mobX, mobY, setMobKnockback } from './mobFields';
 import { ServerPlayer, canPetalsDamagePlayer } from '../player';
 import { Enemy } from '../server_utils';
 import { WorldItem } from '../item';
 import { RARITY_LEVELS, getRarityIndex, Rarity, getDroppablePetalTypes, getPetalStats, getEffectivePetalCooldown } from '../petals';
 import {
     players,
-    enemies,
     PLAYER_SIZE,
     ENEMY_SIZE,
     ACTUAL_WORLD_WIDTH,
@@ -150,10 +150,10 @@ const _petalRingDeps: PetalRingDeps = {
             const enemy = candidates[ai];
             // A mob killed earlier this tick (by an earlier petal in this same
             // loop) is spliced out of `enemies` but is still in the grid.
-            if (enemy.isDead) continue;
-            const candidateEnemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
+            if (isMobDead(enemy.entity)) continue;
+            const candidateEnemyRadius = mobRadiusOf(enemy.entity) ?? (ENEMY_SIZE / 2);
+            const dx = mobX(enemy.entity) - x;
+            const dy = mobY(enemy.entity) - y;
             const distSq = dx * dx + dy * dy;
             const maxDist = radius + candidateEnemyRadius;
             if (distSq <= maxDist * maxDist && distSq < closestDistanceSq) {
@@ -164,15 +164,15 @@ const _petalRingDeps: PetalRingDeps = {
         if (!closest) return null;
         const stats = getMobStats(closest.type, closest.tier);
         _attractionTarget.id = closest.id;
-        _attractionTarget.x = closest.x;
-        _attractionTarget.y = closest.y;
+        _attractionTarget.x = mobX(closest.entity);
+        _attractionTarget.y = mobY(closest.entity);
         _attractionTarget.radius = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
         return _attractionTarget;
     },
 
     isEnemyPresent(id: string): boolean {
-        for (let i = 0; i < enemies.length; i++) {
-            if (enemies[i].id === id) return true;
+        for (let i = 0; i < liveEnemies().length; i++) {
+            if (liveEnemies()[i].id === id) return true;
         }
         return false;
     },
@@ -224,7 +224,7 @@ import { addItem, applyPetalHealthBonus, calculatePlayerModifiers, enterPvpArena
 import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, cleanupEnemy, markEnemyDamaged, getOriginalSocketId } from './utils';
 import { killEnemy, type KillContext } from './shared/killHandler';
-import { removeEnemyAt } from './enemyRegistry';
+import { removeEnemy, liveEnemies} from './enemyRegistry';
 import { getWireOutbox } from './wireOutbox';
 
 /**
@@ -237,7 +237,7 @@ function killCtxFromDeps(deps: PlayerStateDependencies): KillContext {
         players,
         playerUserIds,
         database: deps.database,
-        removeEnemyAt,
+        removeEnemy,
         savePlayerProgress: deps.savePlayerProgress,
         addXPToPlayer: deps.addXPToPlayer,
         handleMobDrops: deps.handleMobDrops,
@@ -682,11 +682,11 @@ function applyRaindropAuraDamage(player: ServerPlayer, deps: PlayerStateDependen
     const candidates = queryEnemiesNear(player.x, player.y, bestRadius, _enemyQueryBuffer);
     for (let i = 0; i < candidates.length; i++) {
         const enemy = candidates[i];
-        if (enemy.isDead) continue;
+        if (isMobDead(enemy.entity)) continue;
 
-        const dx = enemy.x - player.x;
-        const dy = enemy.y - player.y;
-        const enemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+        const dx = mobX(enemy.entity) - player.x;
+        const dy = mobY(enemy.entity) - player.y;
+        const enemyRadius = mobRadiusOf(enemy.entity) ?? (ENEMY_SIZE / 2);
         const hitDist = bestRadius + enemyRadius;
         if (dx * dx + dy * dy >= hitDist * hitDist) continue;
 
@@ -695,12 +695,11 @@ function applyRaindropAuraDamage(player: ServerPlayer, deps: PlayerStateDependen
         lastDamageMap.set(enemy.id, now);
 
         trackDamage(enemy, player.id, finalDamage);
-        enemy.health = Math.max(0, enemy.health - finalDamage);
+        damageMob(enemy.entity, finalDamage);
         markEnemyDamaged(enemy);
 
-        if (enemy.health <= 0 && !(enemy as any).isDead) {
-            const idx = enemies.findIndex(e => e.id === enemy.id);
-            killEnemy(enemy, idx, enemies, killCtxFromDeps(deps), {
+        if (mobHealth(enemy.entity) <= 0 && !(enemy as any).isDead) {
+            killEnemy(enemy, killCtxFromDeps(deps), {
                 killerPlayerId: player.id,
                 trackMobKillTiming: 'sync-snapshot',
             });
@@ -735,14 +734,14 @@ function applyPetalRingDamage(player: ServerPlayer, io: SocketIOServer): void {
 
     for (let i = 0; i < petalRingEnemies.length; i++) {
         const enemy = petalRingEnemies[i];
-        if (enemy.isDead) continue;
+        if (isMobDead(enemy.entity)) continue;
 
-        const mobRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+        const mobRadius = mobRadiusOf(enemy.entity) ?? (ENEMY_SIZE / 2);
         const orbitRadius = mobRadius * PETAL_RING_ORBIT_SCALE;
         const petalRadius = mobRadius * PETAL_RING_HIT_SCALE;
 
-        const dx = player.x - enemy.x;
-        const dy = player.y - enemy.y;
+        const dx = player.x - mobX(enemy.entity);
+        const dy = player.y - mobY(enemy.entity);
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (Math.abs(distance - orbitRadius) > petalRadius + playerRadius) continue;
 
@@ -769,7 +768,7 @@ function applyPetalRingDamage(player: ServerPlayer, io: SocketIOServer): void {
 
         if (!player.isInvulnerable) {
             const shieldAmount = getShieldAmount(player);
-            const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+            const damageToPlayer = Math.max(0, mobDamage(enemy.entity) - shieldAmount);
             const spongeDuration = getSpongeAbsorbDuration(player);
 
             if (damageToPlayer > 0 && spongeDuration > 0) {
@@ -1144,12 +1143,12 @@ export function isPositionInAnyViewport200Percent(x: number, y: number): boolean
 export function getEnemiesInViewport200Percent(): Enemy[] {
     // Same hoist as getEnemiesInViewportCount — one TTL check for the pass.
     refreshViewportBoxes();
-    if (!_vpSawPlayer) return enemies.slice();
+    if (!_vpSawPlayer) return liveEnemies().slice();
 
     const out: Enemy[] = [];
-    for (let i = 0; i < enemies.length; i++) {
-        const e = enemies[i];
-        if (inAnyViewportBox(e.x, e.y, 4)) out.push(e);
+    for (let i = 0; i < liveEnemies().length; i++) {
+        const e = liveEnemies()[i];
+        if (inAnyViewportBox(mobX(e.entity), mobY(e.entity), 4)) out.push(e);
     }
     return out;
 }
@@ -1206,7 +1205,7 @@ export function isPositionInPlayerPetalRange(x: number, y: number, mobSize: numb
 }
 
 /**
- * Get count of enemies in viewport
+ * Get count of liveEnemies() in viewport
  */
 export function getEnemiesInViewportCount(): number {
     // Refresh once for the whole pass rather than per enemy: the per-call
@@ -1215,11 +1214,11 @@ export function getEnemiesInViewportCount(): number {
     refreshViewportBoxes();
 
     // If no players are connected, count all enemies (initial server startup).
-    if (!_vpSawPlayer) return enemies.length;
+    if (!_vpSawPlayer) return liveEnemies().length;
 
     let count = 0;
-    for (let i = 0; i < enemies.length; i++) {
-        if (inAnyViewportBox(enemies[i].x, enemies[i].y, 2)) count++;
+    for (let i = 0; i < liveEnemies().length; i++) {
+        if (inAnyViewportBox(mobX(liveEnemies()[i].entity), mobY(liveEnemies()[i].entity), 2)) count++;
     }
 
     return count;
@@ -1583,7 +1582,7 @@ function buildPetalInstances(
                     petalY: player.y, // Will be updated with actual position in game loop
                     petalSize: effectiveSize * 40,
                     petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                    enemies: enemies,
+                    enemies: liveEnemies(),
                     io: io,
                     petalId: petalId,
                     loadoutIndex: i,
@@ -1707,8 +1706,8 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
         // Don't interact with dead players (corpses)
         if (!player.isDead) {
             // Calculate knockback direction
-            const dx = enemy.x - newX;
-            const dy = enemy.y - newY;
+            const dx = mobX(enemy.entity) - newX;
+            const dy = mobY(enemy.entity) - newY;
             const distance = Math.sqrt(dx * dx + dy * dy) || 1;
             const normalizedDx = dx / distance;
             const normalizedDy = dy / distance;
@@ -1729,7 +1728,7 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
             // Only apply damage when not invulnerable
             if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
                 const shieldAmount = getShieldAmount(player);
-                const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+                const damageToPlayer = Math.max(0, mobDamage(enemy.entity) - shieldAmount);
                 const spongeDuration = getSpongeAbsorbDuration(player);
 
                 if (damageToPlayer > 0 && spongeDuration > 0) {
@@ -1768,7 +1767,7 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
 
                 // Poisonous mobs (evil centipede) leave poison on contact.
                 // One stack: a fresh bite replaces whatever was ticking.
-                const mobStats = enemy._mobStats ?? getMobStats(enemy.type, enemy.tier);
+                const mobStats = mobStatsOf(enemy.entity) ?? getMobStats(enemy.type, enemy.tier);
                 if (mobStats?.poison && mobStats.poisonDuration) {
                     player.poisonDamage = mobStats.poison * 1000; // per-ms -> per-second
                     player.poisonUntil = Date.now() + mobStats.poisonDuration;
@@ -1805,18 +1804,18 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
                 continue;
             }
             
-            enemy.health = Math.max(0, enemy.health - player.damage);
+            damageMob(enemy.entity, player.damage);
             // Mark enemy for batched damage update at end of frame
             markEnemyDamaged(enemy);
 
-            if (enemy.health <= 0 && !(enemy as any).isDead) {
-                const index = enemies.findIndex(e => e.id === enemy.id);
+            if (mobHealth(enemy.entity) <= 0 && !(enemy as any).isDead) {
+                const index = liveEnemies().findIndex(e => e.id === enemy.id);
                 // Original gated the entire death sequence on the enemy still
                 // being in the array (it can already be gone if another damage
                 // source finished it this tick). killEnemy handles a -1 index
                 // by skipping just the splice, so preserve the gate here.
                 if (index !== -1) {
-                    killEnemy(enemy, index, enemies, killCtxFromDeps(deps), {
+                    killEnemy(enemy, killCtxFromDeps(deps), {
                         killerPlayerId: player.id,
                         trackMobKillTiming: 'sync-snapshot',
                         requireNonEmptyContributors: true,
@@ -1971,11 +1970,10 @@ for (let i = pickupItems.length - 1; i >= 0; i--) {
             if (allPickedUp) {
                 // No expiry timer to clear any more: the deadline lives on the
                 // entity, and destroying it retires deadline and item together.
+                // No notification needed: the item leaves the entity stream,
+                // and every client that could see it gets it on their removal
+                // list next frame.
                 removeWorldItem(item);
-                // Notify only eligible players that the item is gone
-                for (const playerId of item.eligiblePlayers) {
-                    getWireOutbox().toSocket(playerId, 'itemRemoved', item.id);
-                }
             }
         }
     }
@@ -2362,7 +2360,7 @@ if (player.loadout) {
                         petalY: petalY,
                         petalSize: petalSize,
                         petalDamage: petalStats.damage,
-                        enemies: enemies,
+                        enemies: liveEnemies(),
                         io: io
                     };
                     runPetalBreakBehaviour(petal.petalType, actionContext);
@@ -2634,9 +2632,9 @@ if (player.loadout) {
                     let bestAngle: number | null = null;
                     for (let _si = 0; _si < seekCandidates.length; _si++) {
                         const candidate = seekCandidates[_si];
-                        if (candidate.isDead) continue;
-                        const sdx = candidate.x - petalX;
-                        const sdy = candidate.y - petalY;
+                        if (isMobDead(candidate.entity)) continue;
+                        const sdx = mobX(candidate.entity) - petalX;
+                        const sdy = mobY(candidate.entity) - petalY;
                         const sDistSq = sdx * sdx + sdy * sdy;
                         if (sDistSq > projectileConfig.seekRange * projectileConfig.seekRange) continue;
                         if (sDistSq >= bestDistSq) continue;
@@ -2706,20 +2704,20 @@ if (player.loadout) {
                 const irradiated = queryEnemiesNear(petalX, petalY, pulseRadius, _radiationQueryBuffer);
                 for (let _ri = 0; _ri < irradiated.length; _ri++) {
                     const target = irradiated[_ri];
-                    if (target.isDead) continue;
-                    const rdx = target.x - petalX;
-                    const rdy = target.y - petalY;
-                    const reach = pulseRadius + (target._radius ?? ENEMY_SIZE / 2);
+                    if (isMobDead(target.entity)) continue;
+                    const rdx = mobX(target.entity) - petalX;
+                    const rdy = mobY(target.entity) - petalY;
+                    const reach = pulseRadius + (mobRadiusOf(target.entity) ?? ENEMY_SIZE / 2);
                     if (rdx * rdx + rdy * rdy > reach * reach) continue;
 
                     trackDamage(target, player.id, pulseDamage);
-                    target.health = Math.max(0, target.health - pulseDamage);
+                    damageMob(target.entity, pulseDamage);
                     markEnemyDamaged(target);
 
-                    if (target.health <= 0 && !target.isDead) {
-                        const index = enemies.findIndex(e => e.id === target.id);
+                    if (mobHealth(target.entity) <= 0 && !isMobDead(target.entity)) {
+                        const index = liveEnemies().findIndex(e => e.id === target.id);
                         if (index !== -1) {
-                            killEnemy(target, index, enemies, killCtxFromDeps(deps), {
+                            killEnemy(target, killCtxFromDeps(deps), {
                                 killerPlayerId: player.id,
                                 trackMobKillTiming: 'sync-snapshot',
                                 requireNonEmptyContributors: true,
@@ -2740,13 +2738,13 @@ if (player.loadout) {
             const enemy = candidates[_ei];
 
             // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
-            const mobStats = enemy._mobStats || getMobStats(enemy.type, enemy.tier);
-            const enemyRadius = enemy._radius ?? (ENEMY_SIZE / 2);
+            const mobStats = mobStatsOf(enemy.entity) || getMobStats(enemy.type, enemy.tier);
+            const enemyRadius = mobRadiusOf(enemy.entity) ?? (ENEMY_SIZE / 2);
             const petalSize = _petalSize;
             const petalRadius = _petalRadius;
 
-            const dx = enemy.x - petalX;
-            const dy = enemy.y - petalY;
+            const dx = mobX(enemy.entity) - petalX;
+            const dy = mobY(enemy.entity) - petalY;
             const distSq = dx * dx + dy * dy;
             const minDistance = enemyRadius + petalRadius;
             const minDistSq = minDistance * minDistance;
@@ -2782,7 +2780,7 @@ if (player.loadout) {
                     continue;
                 }
 
-                enemy.health = Math.max(0, enemy.health - finalDamage);
+                damageMob(enemy.entity, finalDamage);
 
                 // Petals with damageCooldown don't take damage from mobs (they can't break)
                 if (petalStats.damageCooldown) {
@@ -2813,8 +2811,8 @@ if (player.loadout) {
                 const knockbackForce = petalStats.knockback || 0;
                 if (knockbackForce > 0) {
                     // Calculate knockback direction from petal to enemy
-                    const dx = enemy.x - petalX;
-                    const dy = enemy.y - petalY;
+                    const dx = mobX(enemy.entity) - petalX;
+                    const dy = mobY(enemy.entity) - petalY;
                     const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                     const normalizedDx = dx / distance;
                     const normalizedDy = dy / distance;
@@ -2823,8 +2821,7 @@ if (player.loadout) {
                     // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
                     const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
                     const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
-                    enemy.knockbackX = normalizedDx * effectiveKnockback;
-                    enemy.knockbackY = normalizedDy * effectiveKnockback;
+                    setMobKnockback(enemy.entity, normalizedDx * effectiveKnockback, normalizedDy * effectiveKnockback);
                 }
 
                 // Mark enemy for batched damage update at end of frame
@@ -2921,8 +2918,8 @@ if (player.loadout) {
                         const newItem: WorldItem = {
                             id: itemId,
                             type: 'petal',
-                            x: enemy.x + offsetX,
-                            y: enemy.y + offsetY,
+                            x: mobX(enemy.entity) + offsetX,
+                            y: mobY(enemy.entity) + offsetY,
                             rarity: randomRarity,
                             petalType: randomPetalType,
                             eligiblePlayers: eligiblePlayersForItem, // Include all split player IDs
@@ -2938,13 +2935,6 @@ if (player.loadout) {
                         // droppedItems system emits `itemRemoved` on expiry.
                         const expirationTime = ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
                         spawnWorldItem(newItem, spawnTime + expirationTime);
-
-                        // Send itemSpawned event to eligible players (map split player IDs to original socket IDs)
-                        const { getOriginalSocketId } = require('./utils');
-                        for (const eligiblePlayerId of eligiblePlayersForItem) {
-                            const originalSocketId = getOriginalSocketId(eligiblePlayerId);
-                            getWireOutbox().toSocket(originalSocketId, 'itemSpawned', newItem);
-                        }
 
                         if (!player.id.startsWith('bot_')) {
                             console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
@@ -2983,7 +2973,7 @@ if (player.loadout) {
                     petalY: petalY,
                     petalSize: petalSize,
                     petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                    enemies: enemies,
+                    enemies: liveEnemies(),
                     io: io,
                     petalId: petalId,
                     loadoutIndex: loadoutIndex,
@@ -3001,7 +2991,7 @@ if (player.loadout) {
                             petalY: petalY,
                             petalSize: petalSize,
                             petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                            enemies: enemies,
+                            enemies: liveEnemies(),
                             io: io
                         };
                         runPetalBreakBehaviour(petal.petalType, actionContext);
@@ -3096,10 +3086,10 @@ if (player.loadout) {
                 }
 
                 // Check if enemy dies (only process once per enemy)
-                if (enemy.health <= 0 && !(enemy as any).isDead) {
-                    const index = enemies.findIndex(e => e.id === enemy.id);
+                if (mobHealth(enemy.entity) <= 0 && !(enemy as any).isDead) {
+                    const index = liveEnemies().findIndex(e => e.id === enemy.id);
                     if (index !== -1) {
-                        killEnemy(enemy, index, enemies, killCtxFromDeps(deps), {
+                        killEnemy(enemy, killCtxFromDeps(deps), {
                             killerPlayerId: player.id,
                             trackMobKillTiming: 'sync-snapshot',
                         });

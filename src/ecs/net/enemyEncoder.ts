@@ -36,6 +36,8 @@ import { World } from '../world';
 
 /** The quantised state last sent to a client for one enemy. */
 export interface SentEnemyState {
+    /** Wire kind tag; owned by the broadcast, carried here so one map holds all kinds. */
+    K?: number;
     x: number;
     y: number;
     a: number;
@@ -49,6 +51,8 @@ export interface SentEnemyState {
 
 /** The delta payload for one enemy. Field names match the existing protocol. */
 export interface EnemyWire {
+    /** Set by the broadcast on an entity's first appearance. */
+    K?: number;
     i: string;
     t?: string;
     T?: string;

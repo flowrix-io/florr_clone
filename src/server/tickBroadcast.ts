@@ -8,9 +8,22 @@
  *
  * The shape of one frame:
  *   T  server tick timestamp (always present)
- *   P  changed/new players      D  players to forget
- *   E  changed/new enemies      R  enemies to forget
+ *   N  changed/new ENTITIES of any kind   R  entities to forget
  *   F  1 = this is a full resync, drop anything not mentioned
+ *
+ * There is ONE entity stream. Players, mobs and dropped loot used to travel as
+ * P/D, E/R and a separate one-shot item event channel respectively — three sets
+ * of delta bookkeeping, three removal paths, three viewport culls. They are one
+ * table keyed by entity id now, because they were never actually different
+ * things on the wire: an entity has a position, and the kind only decides which
+ * extra fields it fills in. `K` carries that kind and, being delta-encoded like
+ * everything else, costs one byte on first sight and nothing after.
+ *
+ * Folding items in also fixed them. One-shot events are lost for good when uWS
+ * discards a frame under backpressure — invisible loot, or a ghost the client
+ * can never clear — which is what the whole `needsItemResync` full-replace path
+ * existed to paper over. A delta-encoded item is re-derived from the per-socket
+ * baseline every tick, so a dropped frame costs one tick of staleness.
  *
  * Three things make the payload small, and all three are load-bearing:
  *   - recipient-invariant work (face/equip flags, petal positions) is computed
@@ -32,12 +45,16 @@ import { getMobStats } from '../mobs';
 import { collectWorldItems } from './itemRegistry';
 import { getSquadForPlayer } from './squadManager';
 import { getActivePlayerForSocket, getOriginalSocketId } from './utils';
-import { ENEMY_FIELDS, PETAL_FIELDS, PLAYER_FIELDS, packFields, packId } from '../wire_fields';
+import {
+    ENTITY_FIELDS, PETAL_FIELDS, WireKind, WIRE_ITEM_TYPES, WIRE_RARITIES, packFields, packId,
+} from '../wire_fields';
 import {
     AuthenticatedSocket,
     ConnectionQuality,
     SentPlayerState,
+    SentItemState,
 } from './shared/socketTypes';
+import { SentEnemyState } from '../ecs/net/enemyEncoder';
 import { Entity, Query, World } from '../ecs';
 import * as C from '../ecs/components';
 import { encodeEnemyDelta } from '../ecs/net/enemyEncoder';
@@ -92,12 +109,9 @@ const enemyEncoderDeps = {
         getMobStats(typeName, rarityName)?.health,
 };
 
-/**
- * Item wire events whose loss desyncs the client's item map. A dropped spawn
- * leaves loot the client never renders; a dropped remove/pickup leaves a
- * ghost item. All are recovered by one itemsUpdate full replace.
- */
-const ITEM_CHANNEL_EVENTS = ['itemsSpawned', 'itemSpawned', 'itemRemoved', 'itemPickedUp', 'itemsUpdate'] as const;
+// The item channel's drop-recovery list is gone with the channel. Items ride
+// the entity stream now, which re-derives them from the per-socket baseline
+// every tick — a dropped frame heals itself instead of needing a full replace.
 
 /**
  * How many OTHER flowers one client receives authoritative per-petal positions
@@ -113,32 +127,6 @@ function quantize(value: number, precision: number): number {
     return Math.round(value / precision) * precision;
 }
 
-/** Reused payload buffer for the eligible-items builder; see collectWorldItems. */
-const _resyncItemScratch: WorldItem[] = [];
-
-/**
- * All world items this socket's player (including split-screen halves) can
- * currently see: eligibility-listed for them and not yet picked up by them.
- * Used on authenticate and as the drop-recovery payload.
- */
-export function getEligibleItemsForSocket(socketId: string): WorldItem[] {
-    // Lazy require: petal_actions imports back into the server graph.
-    const { splitPlayers } = require('../petal_actions');
-    const originalId = socketId.replace('_split2', '').replace('_split1', '');
-    const splitState = splitPlayers.get(originalId);
-    const playerIds = splitState ? [splitState.player1.id, splitState.player2.id, originalId] : [socketId];
-    return collectWorldItems(_resyncItemScratch).filter(item => {
-        if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
-            if (!playerIds.some(playerId => item.eligiblePlayers!.includes(playerId))) {
-                return false; // Not eligible
-            }
-        }
-        if (item.pickedUpBy && playerIds.some(playerId => item.pickedUpBy!.has(playerId))) {
-            return false; // Already picked up
-        }
-        return true;
-    });
-}
 
 // ---------------------------------------------------------------------------
 // Recipient-invariant snapshots
@@ -271,29 +259,20 @@ function buildRecipientView(playerId: string, socket: AuthenticatedSocket): Reci
  *
  * emitWithStatus/sendRaw note the event name whenever uWS discards a frame to
  * this socket; consume them here once per tick. Item-channel losses
- * (spawns/removes/pickups fire from timers and pickup handlers, not just the
- * tick loop) are recovered with a full itemsUpdate replace — the client clears
- * and refills its item map.
+ * There is only one entity channel left to recover. Items used to need their
+ * own path because their spawns and removals were one-shot events fired from
+ * timers and pickup handlers; they ride the delta stream now, so a dropped
+ * frame is repaired by the same F=1 resync as everything else.
  *
  * Returns true if the entity channel needs a full resync this tick.
  */
 function recoverDroppedChannels(view: RecipientView): boolean {
-    const { socket, playerId } = view;
+    const { socket } = view;
 
     const dropped = socket.droppedEvents;
     if (dropped && dropped.size > 0) {
         if (dropped.has('gameStateUpdate')) socket.needsEntityResync = true;
-        for (const ev of ITEM_CHANNEL_EVENTS) {
-            if (dropped.has(ev)) { socket.needsItemResync = true; break; }
-        }
         dropped.clear();
-    }
-
-    if (socket.needsItemResync) {
-        // Status 2 = this resync was itself dropped; keep the flag armed.
-        if (socket.emitWithStatus('itemsUpdate', getEligibleItemsForSocket(playerId)) !== 2) {
-            socket.needsItemResync = false;
-        }
     }
 
     // A previous frame to this socket was dropped by uWS (backpressure over
@@ -304,8 +283,13 @@ function recoverDroppedChannels(view: RecipientView): boolean {
     // enemies it doesn't mention.
     const fullResync = socket.needsEntityResync === true;
     if (fullResync) {
-        socket.lastSentPlayers?.clear();
-        socket.lastSentEnemies?.clear();
+        // Clearing the baseline is the whole point: F=1 tells the client to drop
+        // anything this frame does not mention, which is only safe if the frame
+        // re-sends EVERYTHING as a first-sight record. Leaving the baseline
+        // populated would send just the tick's changes and make the client
+        // delete the rest — and the server, still believing it had delivered
+        // them, would never send them again.
+        socket.lastSentEntities?.clear();
     }
     return fullResync;
 }
@@ -394,14 +378,14 @@ function encodePetals(view: RecipientView, snap: PlayerSnapshot, wantPetals: boo
  * — the client kept the flower forever, frozen at its last-known position,
  * still drawn and still on the minimap.
  */
-function collectPlayerDeltas(view: RecipientView, snapshots: PlayerSnapshot[]): { changed: any[]; removed: string[] } {
-    const { socket, selfId } = view;
-
-    if (!socket.lastSentPlayers) socket.lastSentPlayers = new Map();
-    const lastPlayers = socket.lastSentPlayers;
-
-    const changed: any[] = [];
-    const currentPlayerIds = new Set<string>();
+function collectPlayerDeltas(
+    view: RecipientView,
+    snapshots: PlayerSnapshot[],
+    sent: Map<string, any>,
+    changed: any[],
+    present: Set<string>,
+): void {
+    const { selfId } = view;
 
     const squad = getSquadForPlayer(view.playerId);
     const squadIds = squad ? new Set(squad.memberIds) : null;
@@ -423,7 +407,7 @@ function collectPlayerDeltas(view: RecipientView, snapshots: PlayerSnapshot[]): 
         // Cull before anything else: a player that fails this is left out of
         // currentPlayerIds, which puts them on the remove list below.
         if (!isPlayerVisibleTo(view, snap, squadIds, selfInArena)) continue;
-        currentPlayerIds.add(p.id);
+        present.add(p.id);
 
         let wantPetals = isSelf;
         if (!wantPetals && petalDetailBudget > 0 &&
@@ -435,6 +419,7 @@ function collectPlayerDeltas(view: RecipientView, snapshots: PlayerSnapshot[]): 
         const { petalsOut, petalsSig } = encodePetals(view, snap, wantPetals);
 
         const next: SentPlayerState = {
+            K: WireKind.Player,
             x: isSelf ? p.x : quantize(p.x, view.precision),
             y: isSelf ? p.y : quantize(p.y, view.precision),
             a: isSelf ? p.angle : quantize(p.angle, view.anglePrecision),
@@ -462,22 +447,17 @@ function collectPlayerDeltas(view: RecipientView, snapshots: PlayerSnapshot[]): 
             petalsSig,
         };
 
-        const delta = encodePlayerDelta(p.id, next, lastPlayers.get(p.id), isSelf, petalsOut);
+        const prev = sent.get(p.id) as SentPlayerState | undefined;
+        const delta = encodePlayerDelta(p.id, next, prev, isSelf, petalsOut);
         if (delta) {
-            changed.push(delta);
-            lastPlayers.set(p.id, next);
+            // Kind rides the delta only when the client has not seen this entity
+            // before (or last saw it as something else, which a recycled id
+            // makes possible). One byte on appearance, nothing thereafter.
+            if (prev === undefined || prev.K !== WireKind.Player) delta.K = WireKind.Player;
+            changed.push(packFields(delta, ENTITY_FIELDS));
+            sent.set(p.id, next);
         }
     }
-
-    const removed: string[] = [];
-    for (const id of lastPlayers.keys()) {
-        if (!currentPlayerIds.has(id)) {
-            removed.push(id);
-            lastPlayers.delete(id);
-        }
-    }
-
-    return { changed, removed };
 }
 
 /**
@@ -546,7 +526,8 @@ function encodePlayerDelta(
         changed = true;
     }
 
-    return changed ? packFields(delta, PLAYER_FIELDS) : null;
+    // Returned UNPACKED: the caller attaches `K` on first appearance, then packs.
+    return changed ? delta : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -559,14 +540,12 @@ function encodePlayerDelta(
  * as-is. The remove list replaces an older per-tick U-array that mentioned
  * every still-visible enemy on every tick.
  */
-function collectEnemyDeltas(view: RecipientView): { changed: any[]; removed: string[] } {
-    const { socket } = view;
-
-    if (!socket.lastSentEnemies) socket.lastSentEnemies = new Map();
-    const lastEnemies = socket.lastSentEnemies;
-
-    const changed: any[] = [];
-    const currentEnemyIds = new Set<string>();
+function collectEnemyDeltas(
+    view: RecipientView,
+    sent: Map<string, any>,
+    changed: any[],
+    present: Set<string>,
+): void {
 
     // Finer position grid than the old 1-unit: slow wandering mobs (Bee/Ladybug
     // move ~0.5/tick) otherwise staircase across the 1-unit grid, so their
@@ -598,31 +577,101 @@ function collectEnemyDeltas(view: RecipientView): { changed: any[]; removed: str
             const id = world.externalIdOf(entity);
             if (id === undefined) continue;
 
-            currentEnemyIds.add(id);
-            const delta = encodeEnemyDelta(world, entity, lastEnemies.get(id), enemyPrecision, enemyEncoderDeps);
+            present.add(id);
+            const prev = sent.get(id) as SentEnemyState | undefined;
+            const delta = encodeEnemyDelta(world, entity, prev, enemyPrecision, enemyEncoderDeps);
             if (delta) {
-                changed.push(packFields(delta.wire, ENEMY_FIELDS));
-                lastEnemies.set(id, delta.next);
+                if (prev === undefined || prev.K !== WireKind.Mob) delta.wire.K = WireKind.Mob;
+                delta.next.K = WireKind.Mob;
+                changed.push(packFields(delta.wire, ENTITY_FIELDS));
+                sent.set(id, delta.next);
             }
         }
     });
 
-    // Removals: anything this client knew that is no longer in its viewport
-    // box (left it, or left the world). Kept as the exact legacy rule rather
-    // than pruneSentState's alive-check variant, so a client with an empty
-    // viewport still forgets mobs that walked away. The sent-state stays
-    // authoritative, so a removal lost to backpressure is regenerated the
-    // next time this loop runs — the ghost-entity guard.
-    const removed: string[] = [];
-    for (const id of lastEnemies.keys()) {
-        if (!currentEnemyIds.has(id)) {
-            removed.push(id);
-            lastEnemies.delete(id);
+}
+
+/**
+ * Every dropped item this client can see, delta-encoded into the entity stream.
+ *
+ * This replaces the itemsSpawned / itemSpawned / itemRemoved / itemPickedUp
+ * one-shot channel. One-shot was the whole problem: uWS discards a frame once a
+ * socket passes its backpressure limit, and a lost spawn left loot the client
+ * never rendered while a lost removal left a ghost it could never clear. The
+ * `needsItemResync` machinery existed to paper over exactly that.
+ *
+ * As part of the stream an item is re-derived from the per-socket baseline
+ * every tick, so a dropped frame costs one tick of staleness and then heals
+ * itself — the same property mobs and players already had.
+ *
+ * ELIGIBILITY is the cull, on top of the viewport box: a drop is only real for
+ * the players it was awarded to, and one already picked up by this player is
+ * gone as far as they are concerned.
+ */
+function collectItemDeltas(
+    view: RecipientView,
+    sent: Map<string, any>,
+    changed: any[],
+    present: Set<string>,
+): void {
+    const items = collectWorldItems(_broadcastItemScratch);
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+
+        const dx = item.x - view.px0;
+        const dy = item.y - view.py0;
+        if ((dx < 0 ? -dx : dx) >= view.vw || (dy < 0 ? -dy : dy) >= view.vh) continue;
+        if (!isItemVisibleTo(view, item)) continue;
+
+        present.add(item.id);
+
+        const next: SentItemState = {
+            K: WireKind.Item,
+            x: quantize(item.x, view.precision),
+            y: quantize(item.y, view.precision),
+            I: WIRE_ITEM_TYPES.indexOf(item.type as never),
+            R: item.rarity ? WIRE_RARITIES.indexOf(item.rarity) : 0,
+            P: item.petalType ?? '',
+        };
+
+        const prev = sent.get(item.id) as SentItemState | undefined;
+        const delta: any = { i: item.id };
+        let dirty = false;
+        if (!prev || prev.K !== WireKind.Item) { delta.K = WireKind.Item; dirty = true; }
+        if (!prev || prev.x !== next.x) { delta.x = next.x; dirty = true; }
+        if (!prev || prev.y !== next.y) { delta.y = next.y; dirty = true; }
+        if (!prev || prev.I !== next.I) { delta.I = next.I; dirty = true; }
+        if (!prev || prev.R !== next.R) { delta.R = next.R; dirty = true; }
+        if (!prev || prev.P !== next.P) { delta.P = next.P; dirty = true; }
+
+        if (dirty) {
+            changed.push(packFields(delta, ENTITY_FIELDS));
+            sent.set(item.id, next);
         }
     }
-
-    return { changed, removed };
 }
+
+/** Eligibility + already-picked-up, for this socket and its split halves. */
+function isItemVisibleTo(view: RecipientView, item: WorldItem): boolean {
+    if (item.eligiblePlayers && item.eligiblePlayers.length > 0) {
+        let ok = false;
+        for (const pid of item.eligiblePlayers) {
+            if (getOriginalSocketId(pid) === view.socket.id) { ok = true; break; }
+        }
+        if (!ok) return false;
+    }
+    if (item.pickedUpBy) {
+        for (const pid of item.pickedUpBy) {
+            if (getOriginalSocketId(pid) === view.socket.id) return false;
+        }
+    }
+    return true;
+}
+
+const _broadcastItemScratch: WorldItem[] = [];
+
+/** Reused across recipients; cleared per frame. */
+const _presentScratch = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -652,15 +701,35 @@ function sendGameStateTo(view: RecipientView, snapshots: PlayerSnapshot[]): void
     const now = Date.now();
 
     const fullResync = recoverDroppedChannels(view);
-    const playerDeltas = collectPlayerDeltas(view, snapshots);
-    const enemyDeltas = collectEnemyDeltas(view);
+
+    // ONE table, ONE pass, ONE removal list. Players, mobs and drops are all
+    // just entities on the wire now; what differs is which fields they fill in.
+    if (!socket.lastSentEntities) socket.lastSentEntities = new Map();
+    const sent = socket.lastSentEntities;
+    const changed: any[] = [];
+    const present = _presentScratch;
+    present.clear();
+
+    collectPlayerDeltas(view, snapshots, sent, changed, present);
+    collectEnemyDeltas(view, sent, changed, present);
+    collectItemDeltas(view, sent, changed, present);
+
+    // Removals: anything this client knew that is no longer present — it left
+    // the viewport box, was picked up, or left the world. The sent-state stays
+    // authoritative, so a removal lost to backpressure is simply regenerated
+    // the next time this loop runs. That is the ghost-entity guard, and it now
+    // covers items too, which used to rely on one-shot events.
+    const removed: string[] = [];
+    for (const id of sent.keys()) {
+        if (!present.has(id)) removed.push(id);
+    }
+    for (let i = 0; i < removed.length; i++) sent.delete(removed[i]);
 
     // Skip emit entirely when nothing changed this tick — quiet scenes use zero
     // bandwidth instead of an empty-but-still-emitted heartbeat. Never skip a
     // pending resync: even an empty F=1 snapshot is meaningful (it tells the
-    // client its remaining enemies are stale).
-    if (!fullResync && playerDeltas.changed.length === 0 && enemyDeltas.changed.length === 0 &&
-        enemyDeltas.removed.length === 0 && playerDeltas.removed.length === 0) {
+    // client its remaining entities are stale).
+    if (!fullResync && changed.length === 0 && removed.length === 0) {
         socket.lastUpdateTime = now;
         return;
     }
@@ -671,10 +740,8 @@ function sendGameStateTo(view: RecipientView, snapshots: PlayerSnapshot[]): void
     // (TCP under jitter) — arrival-time stamps compressed the timeline and
     // made entities visibly stutter/rubber-band under latency.
     const gameState: any = { T: now };
-    if (playerDeltas.changed.length > 0) gameState.P = playerDeltas.changed;
-    if (enemyDeltas.changed.length > 0) gameState.E = enemyDeltas.changed;
-    if (enemyDeltas.removed.length > 0) gameState.R = enemyDeltas.removed.map(packId);
-    if (playerDeltas.removed.length > 0) gameState.D = playerDeltas.removed.map(packId);
+    if (changed.length > 0) gameState.N = changed;
+    if (removed.length > 0) gameState.R = removed.map(packId);
     if (fullResync) gameState.F = 1;
 
     socket.lastUpdateTime = now;

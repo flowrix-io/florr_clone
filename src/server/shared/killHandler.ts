@@ -44,15 +44,20 @@ export interface KillContext {
     updateSpecialMobCounts: () => void;
     cleanupEnemy: (enemy: Enemy) => void;
     /**
-     * Remove the mob at `index` from `enemies[]` AND retire its ECS entity.
+     * Remove this mob from the game — it retires the ECS entity, which IS the
+     * mob's existence now that `liveEnemies()` projects the shell list out of
+     * the world rather than maintaining one.
      *
      * Injected rather than imported for the same reason everything else here
      * is: this module is reached from petal_actions and playerState, and a
-     * direct import of the registry would drag the ECS world into both. It
-     * replaces a bare `enemies.splice(index, 1)`, which left the entity behind
-     * for a per-tick reconcile to find. See server/enemyRegistry.ts.
+     * direct import of the registry would drag the ECS world into both.
+     *
+     * By IDENTITY, not by index. The old `removeEnemyAt(index)` required the
+     * caller to hold a live index into a container that no longer exists, and
+     * an index is only valid until the next removal — which is exactly the kind
+     * of coupling a shrinking array forces on every loop that kills.
      */
-    removeEnemyAt: (index: number) => Enemy | undefined;
+    removeEnemy: (enemy: Enemy) => boolean;
     trackMobKill: (
         enemy: Enemy,
         players: Record<string, any>,
@@ -89,9 +94,10 @@ export interface KillOptions {
 }
 
 /**
- * Run the full death sequence for `enemy` and splice it from `enemies` at
- * `index`. The caller owns the index (loop variable or findIndex result);
- * if the enemy is no longer in the array, pass -1 and no splice happens.
+ * Run the full death sequence for `enemy` and remove it from the world.
+ *
+ * The caller supplies neither an index nor the container: removal is by
+ * identity, and removing a mob that has already left is a no-op.
  *
  * `enemy` is marked isDead on entry. Order of operations:
  *   1. resolve credited player (killerPlayerId)
@@ -102,8 +108,6 @@ export interface KillOptions {
  */
 export function killEnemy(
     enemy: Enemy,
-    index: number,
-    enemies: Enemy[],
     ctx: KillContext,
     opts: KillOptions = {},
 ): void {
@@ -140,9 +144,7 @@ export function killEnemy(
         : undefined;
 
     if (!skipCleanup) ctx.cleanupEnemy(enemy);
-    if (index >= 0 && index < enemies.length) {
-        ctx.removeEnemyAt(index);
-    }
+    ctx.removeEnemy(enemy);
     if (emitDestroyed) getWireOutbox().all('enemyDestroyed', enemy.id);
 
     // --- kill tracking (snapshot modes run here, after cleanup) ---

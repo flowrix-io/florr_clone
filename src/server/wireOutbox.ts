@@ -13,7 +13,9 @@ import { Server as SocketIOServer } from '../ws_server';
 import { players, VIEWPORT_WIDTH, VIEWPORT_HEIGHT } from '../constants';
 import { getOriginalSocketId, getActivePlayerForSocket } from './utils';
 import { WireEvent } from '../wire_events';
-import { WireOutbox, WireSink, WireViewer, ViewerSource } from '../ecs/net/outbox';
+import { WireOutbox, WireSink, WireViewer, ViewerSource, EntityGate } from '../ecs/net/outbox';
+import { hasEntityHost, getEntityWorld, isLiveForWire } from './entityRegistry';
+import { Entity } from '../ecs';
 
 let outbox: WireOutbox | undefined;
 
@@ -84,7 +86,15 @@ export function bindWireOutbox(io: SocketIOServer): WireOutbox {
         },
     };
 
-    outbox = new WireOutbox(sink, viewerSource);
+    // The one liveness rule, shared by every kind. Before the entity host is
+    // installed nothing has been admitted yet, so nothing can have died —
+    // reporting "live" is both correct and the only answer available.
+    const gate: EntityGate = {
+        isLiveForWire: (entity: Entity) =>
+            !hasEntityHost() || isLiveForWire(getEntityWorld(), entity),
+    };
+
+    outbox = new WireOutbox(sink, viewerSource, gate);
     return outbox;
 }
 

@@ -20,6 +20,7 @@ exports.clampPlayerToRegion = clampPlayerToRegion;
 exports.resolvePlayerTeleporters = resolvePlayerTeleporters;
 exports.resolvePlayerPetals = resolvePlayerPetals;
 exports.updatePlayerState = updatePlayerState;
+const mobFields_1 = require("./mobFields");
 const player_1 = require("../player");
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
@@ -97,11 +98,11 @@ const _petalRingDeps = {
             const enemy = candidates[ai];
             // A mob killed earlier this tick (by an earlier petal in this same
             // loop) is spliced out of `enemies` but is still in the grid.
-            if (enemy.isDead)
+            if ((0, mobFields_1.isMobDead)(enemy.entity))
                 continue;
-            const candidateEnemyRadius = enemy._radius ?? (constants_1.ENEMY_SIZE / 2);
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
+            const candidateEnemyRadius = (0, mobFields_1.mobRadiusOf)(enemy.entity) ?? (constants_1.ENEMY_SIZE / 2);
+            const dx = (0, mobFields_1.mobX)(enemy.entity) - x;
+            const dy = (0, mobFields_1.mobY)(enemy.entity) - y;
             const distSq = dx * dx + dy * dy;
             const maxDist = radius + candidateEnemyRadius;
             if (distSq <= maxDist * maxDist && distSq < closestDistanceSq) {
@@ -113,14 +114,14 @@ const _petalRingDeps = {
             return null;
         const stats = (0, mobs_1.getMobStats)(closest.type, closest.tier);
         _attractionTarget.id = closest.id;
-        _attractionTarget.x = closest.x;
-        _attractionTarget.y = closest.y;
+        _attractionTarget.x = (0, mobFields_1.mobX)(closest.entity);
+        _attractionTarget.y = (0, mobFields_1.mobY)(closest.entity);
         _attractionTarget.radius = stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
         return _attractionTarget;
     },
     isEnemyPresent(id) {
-        for (let i = 0; i < constants_1.enemies.length; i++) {
-            if (constants_1.enemies[i].id === id)
+        for (let i = 0; i < (0, enemyRegistry_1.liveEnemies)().length; i++) {
+            if ((0, enemyRegistry_1.liveEnemies)()[i].id === id)
                 return true;
         }
         return false;
@@ -179,7 +180,7 @@ function killCtxFromDeps(deps) {
         players: constants_1.players,
         playerUserIds: gameState_1.playerUserIds,
         database: deps.database,
-        removeEnemyAt: enemyRegistry_1.removeEnemyAt,
+        removeEnemy: enemyRegistry_1.removeEnemy,
         savePlayerProgress: deps.savePlayerProgress,
         addXPToPlayer: deps.addXPToPlayer,
         handleMobDrops: deps.handleMobDrops,
@@ -593,11 +594,11 @@ function applyRaindropAuraDamage(player, deps) {
     const candidates = (0, enemyGrid_1.queryEnemiesNear)(player.x, player.y, bestRadius, _enemyQueryBuffer);
     for (let i = 0; i < candidates.length; i++) {
         const enemy = candidates[i];
-        if (enemy.isDead)
+        if ((0, mobFields_1.isMobDead)(enemy.entity))
             continue;
-        const dx = enemy.x - player.x;
-        const dy = enemy.y - player.y;
-        const enemyRadius = enemy._radius ?? (constants_1.ENEMY_SIZE / 2);
+        const dx = (0, mobFields_1.mobX)(enemy.entity) - player.x;
+        const dy = (0, mobFields_1.mobY)(enemy.entity) - player.y;
+        const enemyRadius = (0, mobFields_1.mobRadiusOf)(enemy.entity) ?? (constants_1.ENEMY_SIZE / 2);
         const hitDist = bestRadius + enemyRadius;
         if (dx * dx + dy * dy >= hitDist * hitDist)
             continue;
@@ -606,11 +607,10 @@ function applyRaindropAuraDamage(player, deps) {
             continue;
         lastDamageMap.set(enemy.id, now);
         (0, utils_1.trackDamage)(enemy, player.id, finalDamage);
-        enemy.health = Math.max(0, enemy.health - finalDamage);
+        (0, mobFields_1.damageMob)(enemy.entity, finalDamage);
         (0, utils_1.markEnemyDamaged)(enemy);
-        if (enemy.health <= 0 && !enemy.isDead) {
-            const idx = constants_1.enemies.findIndex(e => e.id === enemy.id);
-            (0, killHandler_1.killEnemy)(enemy, idx, constants_1.enemies, killCtxFromDeps(deps), {
+        if ((0, mobFields_1.mobHealth)(enemy.entity) <= 0 && !enemy.isDead) {
+            (0, killHandler_1.killEnemy)(enemy, killCtxFromDeps(deps), {
                 killerPlayerId: player.id,
                 trackMobKillTiming: 'sync-snapshot',
             });
@@ -644,13 +644,13 @@ function applyPetalRingDamage(player, io) {
     const now = Date.now();
     for (let i = 0; i < enemyGrid_1.petalRingEnemies.length; i++) {
         const enemy = enemyGrid_1.petalRingEnemies[i];
-        if (enemy.isDead)
+        if ((0, mobFields_1.isMobDead)(enemy.entity))
             continue;
-        const mobRadius = enemy._radius ?? (constants_1.ENEMY_SIZE / 2);
+        const mobRadius = (0, mobFields_1.mobRadiusOf)(enemy.entity) ?? (constants_1.ENEMY_SIZE / 2);
         const orbitRadius = mobRadius * mobs_1.PETAL_RING_ORBIT_SCALE;
         const petalRadius = mobRadius * mobs_1.PETAL_RING_HIT_SCALE;
-        const dx = player.x - enemy.x;
-        const dy = player.y - enemy.y;
+        const dx = player.x - (0, mobFields_1.mobX)(enemy.entity);
+        const dy = player.y - (0, mobFields_1.mobY)(enemy.entity);
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (Math.abs(distance - orbitRadius) > petalRadius + playerRadius)
             continue;
@@ -676,7 +676,7 @@ function applyPetalRingDamage(player, io) {
         }
         if (!player.isInvulnerable) {
             const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
-            const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+            const damageToPlayer = Math.max(0, (0, mobFields_1.mobDamage)(enemy.entity) - shieldAmount);
             const spongeDuration = getSpongeAbsorbDuration(player);
             if (damageToPlayer > 0 && spongeDuration > 0) {
                 queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
@@ -876,11 +876,11 @@ function getEnemiesInViewport200Percent() {
     // Same hoist as getEnemiesInViewportCount — one TTL check for the pass.
     refreshViewportBoxes();
     if (!_vpSawPlayer)
-        return constants_1.enemies.slice();
+        return (0, enemyRegistry_1.liveEnemies)().slice();
     const out = [];
-    for (let i = 0; i < constants_1.enemies.length; i++) {
-        const e = constants_1.enemies[i];
-        if (inAnyViewportBox(e.x, e.y, 4))
+    for (let i = 0; i < (0, enemyRegistry_1.liveEnemies)().length; i++) {
+        const e = (0, enemyRegistry_1.liveEnemies)()[i];
+        if (inAnyViewportBox((0, mobFields_1.mobX)(e.entity), (0, mobFields_1.mobY)(e.entity), 4))
             out.push(e);
     }
     return out;
@@ -931,7 +931,7 @@ function isPositionInPlayerPetalRange(x, y, mobSize) {
     return false; // Position is safe from petal range
 }
 /**
- * Get count of enemies in viewport
+ * Get count of liveEnemies() in viewport
  */
 function getEnemiesInViewportCount() {
     // Refresh once for the whole pass rather than per enemy: the per-call
@@ -940,10 +940,10 @@ function getEnemiesInViewportCount() {
     refreshViewportBoxes();
     // If no players are connected, count all enemies (initial server startup).
     if (!_vpSawPlayer)
-        return constants_1.enemies.length;
+        return (0, enemyRegistry_1.liveEnemies)().length;
     let count = 0;
-    for (let i = 0; i < constants_1.enemies.length; i++) {
-        if (inAnyViewportBox(constants_1.enemies[i].x, constants_1.enemies[i].y, 2))
+    for (let i = 0; i < (0, enemyRegistry_1.liveEnemies)().length; i++) {
+        if (inAnyViewportBox((0, mobFields_1.mobX)((0, enemyRegistry_1.liveEnemies)()[i].entity), (0, mobFields_1.mobY)((0, enemyRegistry_1.liveEnemies)()[i].entity), 2))
             count++;
     }
     return count;
@@ -1268,7 +1268,7 @@ function buildPetalInstances(player, io) {
                     petalY: player.y, // Will be updated with actual position in game loop
                     petalSize: effectiveSize * 40,
                     petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                    enemies: constants_1.enemies,
+                    enemies: (0, enemyRegistry_1.liveEnemies)(),
                     io: io,
                     petalId: petalId,
                     loadoutIndex: i,
@@ -1379,8 +1379,8 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
             // Don't interact with dead players (corpses)
             if (!player.isDead) {
                 // Calculate knockback direction
-                const dx = enemy.x - newX;
-                const dy = enemy.y - newY;
+                const dx = (0, mobFields_1.mobX)(enemy.entity) - newX;
+                const dy = (0, mobFields_1.mobY)(enemy.entity) - newY;
                 const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                 const normalizedDx = dx / distance;
                 const normalizedDy = dy / distance;
@@ -1398,7 +1398,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                 // Only apply damage when not invulnerable
                 if (!player.isInvulnerable && enemy.type !== 'item_spawner') {
                     const shieldAmount = (0, petal_actions_1.getShieldAmount)(player);
-                    const damageToPlayer = Math.max(0, enemy.damage - shieldAmount);
+                    const damageToPlayer = Math.max(0, (0, mobFields_1.mobDamage)(enemy.entity) - shieldAmount);
                     const spongeDuration = getSpongeAbsorbDuration(player);
                     if (damageToPlayer > 0 && spongeDuration > 0) {
                         queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
@@ -1433,7 +1433,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                     }
                     // Poisonous mobs (evil centipede) leave poison on contact.
                     // One stack: a fresh bite replaces whatever was ticking.
-                    const mobStats = enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                    const mobStats = (0, mobFields_1.mobStatsOf)(enemy.entity) ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
                     if (mobStats?.poison && mobStats.poisonDuration) {
                         player.poisonDamage = mobStats.poison * 1000; // per-ms -> per-second
                         player.poisonUntil = Date.now() + mobStats.poisonDuration;
@@ -1466,17 +1466,17 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                 if (enemy.isDead) {
                     continue;
                 }
-                enemy.health = Math.max(0, enemy.health - player.damage);
+                (0, mobFields_1.damageMob)(enemy.entity, player.damage);
                 // Mark enemy for batched damage update at end of frame
                 (0, utils_1.markEnemyDamaged)(enemy);
-                if (enemy.health <= 0 && !enemy.isDead) {
-                    const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
+                if ((0, mobFields_1.mobHealth)(enemy.entity) <= 0 && !enemy.isDead) {
+                    const index = (0, enemyRegistry_1.liveEnemies)().findIndex(e => e.id === enemy.id);
                     // Original gated the entire death sequence on the enemy still
                     // being in the array (it can already be gone if another damage
                     // source finished it this tick). killEnemy handles a -1 index
                     // by skipping just the splice, so preserve the gate here.
                     if (index !== -1) {
-                        (0, killHandler_1.killEnemy)(enemy, index, constants_1.enemies, killCtxFromDeps(deps), {
+                        (0, killHandler_1.killEnemy)(enemy, killCtxFromDeps(deps), {
                             killerPlayerId: player.id,
                             trackMobKillTiming: 'sync-snapshot',
                             requireNonEmptyContributors: true,
@@ -1611,11 +1611,10 @@ function resolvePlayerItemPickups(player, newX, newY, deps) {
                 if (allPickedUp) {
                     // No expiry timer to clear any more: the deadline lives on the
                     // entity, and destroying it retires deadline and item together.
+                    // No notification needed: the item leaves the entity stream,
+                    // and every client that could see it gets it on their removal
+                    // list next frame.
                     (0, itemRegistry_1.removeWorldItem)(item);
-                    // Notify only eligible players that the item is gone
-                    for (const playerId of item.eligiblePlayers) {
-                        (0, wireOutbox_1.getWireOutbox)().toSocket(playerId, 'itemRemoved', item.id);
-                    }
                 }
             }
         }
@@ -1928,7 +1927,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             petalY: petalY,
                             petalSize: petalSize,
                             petalDamage: petalStats.damage,
-                            enemies: constants_1.enemies,
+                            enemies: (0, enemyRegistry_1.liveEnemies)(),
                             io: io
                         };
                         (0, petal_actions_1.runPetalBreakBehaviour)(petal.petalType, actionContext);
@@ -2172,10 +2171,10 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                         let bestAngle = null;
                         for (let _si = 0; _si < seekCandidates.length; _si++) {
                             const candidate = seekCandidates[_si];
-                            if (candidate.isDead)
+                            if ((0, mobFields_1.isMobDead)(candidate.entity))
                                 continue;
-                            const sdx = candidate.x - petalX;
-                            const sdy = candidate.y - petalY;
+                            const sdx = (0, mobFields_1.mobX)(candidate.entity) - petalX;
+                            const sdy = (0, mobFields_1.mobY)(candidate.entity) - petalY;
                             const sDistSq = sdx * sdx + sdy * sdy;
                             if (sDistSq > projectileConfig.seekRange * projectileConfig.seekRange)
                                 continue;
@@ -2244,20 +2243,20 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                     const irradiated = (0, enemyGrid_1.queryEnemiesNear)(petalX, petalY, pulseRadius, _radiationQueryBuffer);
                     for (let _ri = 0; _ri < irradiated.length; _ri++) {
                         const target = irradiated[_ri];
-                        if (target.isDead)
+                        if ((0, mobFields_1.isMobDead)(target.entity))
                             continue;
-                        const rdx = target.x - petalX;
-                        const rdy = target.y - petalY;
-                        const reach = pulseRadius + (target._radius ?? constants_1.ENEMY_SIZE / 2);
+                        const rdx = (0, mobFields_1.mobX)(target.entity) - petalX;
+                        const rdy = (0, mobFields_1.mobY)(target.entity) - petalY;
+                        const reach = pulseRadius + ((0, mobFields_1.mobRadiusOf)(target.entity) ?? constants_1.ENEMY_SIZE / 2);
                         if (rdx * rdx + rdy * rdy > reach * reach)
                             continue;
                         (0, utils_1.trackDamage)(target, player.id, pulseDamage);
-                        target.health = Math.max(0, target.health - pulseDamage);
+                        (0, mobFields_1.damageMob)(target.entity, pulseDamage);
                         (0, utils_1.markEnemyDamaged)(target);
-                        if (target.health <= 0 && !target.isDead) {
-                            const index = constants_1.enemies.findIndex(e => e.id === target.id);
+                        if ((0, mobFields_1.mobHealth)(target.entity) <= 0 && !(0, mobFields_1.isMobDead)(target.entity)) {
+                            const index = (0, enemyRegistry_1.liveEnemies)().findIndex(e => e.id === target.id);
                             if (index !== -1) {
-                                (0, killHandler_1.killEnemy)(target, index, constants_1.enemies, killCtxFromDeps(deps), {
+                                (0, killHandler_1.killEnemy)(target, killCtxFromDeps(deps), {
                                     killerPlayerId: player.id,
                                     trackMobKillTiming: 'sync-snapshot',
                                     requireNonEmptyContributors: true,
@@ -2276,12 +2275,12 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
             for (let _ei = 0; _ei < candidates.length; _ei++) {
                 const enemy = candidates[_ei];
                 // Cached on the enemy by rebuildEnemyGrid — type/tier never change after spawn.
-                const mobStats = enemy._mobStats || (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-                const enemyRadius = enemy._radius ?? (constants_1.ENEMY_SIZE / 2);
+                const mobStats = (0, mobFields_1.mobStatsOf)(enemy.entity) || (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+                const enemyRadius = (0, mobFields_1.mobRadiusOf)(enemy.entity) ?? (constants_1.ENEMY_SIZE / 2);
                 const petalSize = _petalSize;
                 const petalRadius = _petalRadius;
-                const dx = enemy.x - petalX;
-                const dy = enemy.y - petalY;
+                const dx = (0, mobFields_1.mobX)(enemy.entity) - petalX;
+                const dy = (0, mobFields_1.mobY)(enemy.entity) - petalY;
                 const distSq = dx * dx + dy * dy;
                 const minDistance = enemyRadius + petalRadius;
                 const minDistSq = minDistance * minDistance;
@@ -2311,7 +2310,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                     if (enemy.isDead) {
                         continue;
                     }
-                    enemy.health = Math.max(0, enemy.health - finalDamage);
+                    (0, mobFields_1.damageMob)(enemy.entity, finalDamage);
                     // Petals with damageCooldown don't take damage from mobs (they can't break)
                     if (petalStats.damageCooldown) {
                         petalLastDamageTime.set(damageCooldownKey, currentTime);
@@ -2337,8 +2336,8 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                     const knockbackForce = petalStats.knockback || 0;
                     if (knockbackForce > 0) {
                         // Calculate knockback direction from petal to enemy
-                        const dx = enemy.x - petalX;
-                        const dy = enemy.y - petalY;
+                        const dx = (0, mobFields_1.mobX)(enemy.entity) - petalX;
+                        const dy = (0, mobFields_1.mobY)(enemy.entity) - petalY;
                         const distance = Math.sqrt(dx * dx + dy * dy) || 1;
                         const normalizedDx = dx / distance;
                         const normalizedDy = dy / distance;
@@ -2346,8 +2345,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                         // Mass is already calculated from size (which includes rarity), so higher rarity = more mass
                         const mobMass = mobStats ? mobStats.mass : 1.0; // Default mass of 1.0 if mobStats is null
                         const effectiveKnockback = knockbackForce / mobMass; // Divide by mass so heavier mobs resist knockback more
-                        enemy.knockbackX = normalizedDx * effectiveKnockback;
-                        enemy.knockbackY = normalizedDy * effectiveKnockback;
+                        (0, mobFields_1.setMobKnockback)(enemy.entity, normalizedDx * effectiveKnockback, normalizedDy * effectiveKnockback);
                     }
                     // Mark enemy for batched damage update at end of frame
                     (0, utils_1.markEnemyDamaged)(enemy);
@@ -2432,8 +2430,8 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             const newItem = {
                                 id: itemId,
                                 type: 'petal',
-                                x: enemy.x + offsetX,
-                                y: enemy.y + offsetY,
+                                x: (0, mobFields_1.mobX)(enemy.entity) + offsetX,
+                                y: (0, mobFields_1.mobY)(enemy.entity) + offsetY,
                                 rarity: randomRarity,
                                 petalType: randomPetalType,
                                 eligiblePlayers: eligiblePlayersForItem, // Include all split player IDs
@@ -2447,12 +2445,6 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             // droppedItems system emits `itemRemoved` on expiry.
                             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[randomRarity] || 10000;
                             (0, itemRegistry_1.spawnWorldItem)(newItem, spawnTime + expirationTime);
-                            // Send itemSpawned event to eligible players (map split player IDs to original socket IDs)
-                            const { getOriginalSocketId } = require('./utils');
-                            for (const eligiblePlayerId of eligiblePlayersForItem) {
-                                const originalSocketId = getOriginalSocketId(eligiblePlayerId);
-                                (0, wireOutbox_1.getWireOutbox)().toSocket(originalSocketId, 'itemSpawned', newItem);
-                            }
                             if (!player.id.startsWith('bot_')) {
                                 console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
                             }
@@ -2485,7 +2477,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                         petalY: petalY,
                         petalSize: petalSize,
                         petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                        enemies: constants_1.enemies,
+                        enemies: (0, enemyRegistry_1.liveEnemies)(),
                         io: io,
                         petalId: petalId,
                         loadoutIndex: loadoutIndex,
@@ -2502,7 +2494,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                 petalY: petalY,
                                 petalSize: petalSize,
                                 petalDamage: petalStats.damage, // Include petal damage for rarity scaling
-                                enemies: constants_1.enemies,
+                                enemies: (0, enemyRegistry_1.liveEnemies)(),
                                 io: io
                             };
                             (0, petal_actions_1.runPetalBreakBehaviour)(petal.petalType, actionContext);
@@ -2586,10 +2578,10 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                         }
                     }
                     // Check if enemy dies (only process once per enemy)
-                    if (enemy.health <= 0 && !enemy.isDead) {
-                        const index = constants_1.enemies.findIndex(e => e.id === enemy.id);
+                    if ((0, mobFields_1.mobHealth)(enemy.entity) <= 0 && !enemy.isDead) {
+                        const index = (0, enemyRegistry_1.liveEnemies)().findIndex(e => e.id === enemy.id);
                         if (index !== -1) {
-                            (0, killHandler_1.killEnemy)(enemy, index, constants_1.enemies, killCtxFromDeps(deps), {
+                            (0, killHandler_1.killEnemy)(enemy, killCtxFromDeps(deps), {
                                 killerPlayerId: player.id,
                                 trackMobKillTiming: 'sync-snapshot',
                             });

@@ -4,12 +4,13 @@
 // special-casing beyond skipping save/save-game paths (no socket/userId).
 
 import { Server as SocketIOServer } from '../ws_server';
+import { isMobDead, mobSpawnTime, mobX, mobY } from './mobFields';
+import { liveEnemies } from './enemyRegistry';
 import { ServerPlayer } from '../player';
 import { Enemy } from '../server_utils';
 import { sanitizePublicPlayerForClient } from './playerWire';
 import {
     players,
-    enemies,
     ACTUAL_WORLD_WIDTH,
     ACTUAL_WORLD_HEIGHT,
     PLAYER_SIZE,
@@ -1440,12 +1441,12 @@ function findInterceptingMob(
     const near = queryEnemiesNear(botX, botY, range, _botQueryScratch);
     for (let i = 0; i < near.length; i++) {
         const enemy = near[i];
-        if (enemy.isDead) continue;
+        if (isMobDead(enemy.entity)) continue;
         if (enemy.id === excludeId) continue;
         if (enemy.type === 'target_dummy') continue;
         if (enemy.type === 'item_spawner') continue;
-        const dx = enemy.x - botX;
-        const dy = enemy.y - botY;
+        const dx = mobX(enemy.entity) - botX;
+        const dy = mobY(enemy.entity) - botY;
         const d2 = dx * dx + dy * dy;
         if (d2 === 0) continue;
         const mobR = getMobRadius(enemy);
@@ -1965,7 +1966,7 @@ function pickBestEnemyTarget(
     // scan, without iterating all ~1400 enemies per bot.
     const near = queryEnemiesNear(bot.x, bot.y, HIGH_TIER_AGGRO_RANGE, _botQueryScratch);
     const scoreEnemy = (enemy: Enemy) => {
-        if (enemy.isDead) return;
+        if (isMobDead(enemy.entity)) return;
         if (enemy.type === 'item_spawner') return;
         if (enemy.type === 'target_dummy') return;
 
@@ -1973,11 +1974,11 @@ function pickBestEnemyTarget(
 
         // Tether applies to everything except bosses — bosses are raids and
         // bots are allowed to crowd up from across the map to fight them.
-        if (!isBoss && !withinAnchor(anchor, enemy.x, enemy.y, tetherRadius)) return;
+        if (!isBoss && !withinAnchor(anchor, mobX(enemy.entity), mobY(enemy.entity), tetherRadius)) return;
 
         const range = aggroRangeForTier(enemy.tier);
-        const dx = enemy.x - bot.x;
-        const dy = enemy.y - bot.y;
+        const dx = mobX(enemy.entity) - bot.x;
+        const dy = mobY(enemy.entity) - bot.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > range) return;
 
@@ -2066,7 +2067,7 @@ function distSqToNearestHumanPlayer(x: number, y: number): number {
 function pickRaidTargetGlobal(): { x: number; y: number; tier: string } | null {
     let pool: Enemy[] = [];
     let preferUnique = false;
-    for (const enemy of enemies) {
+    for (const enemy of liveEnemies()) {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
         if (enemy.type === 'target_dummy') continue;
@@ -2080,24 +2081,24 @@ function pickRaidTargetGlobal(): { x: number; y: number; tier: string } | null {
     if (pool.length === 0) return null;
 
     let best = pool[0];
-    let bestSpawn = best.spawnTime ?? 0;
-    let bestDistSq = distSqToNearestHumanPlayer(best.x, best.y);
+    let bestSpawn = mobSpawnTime(best.entity) ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(mobX(best.entity), mobY(best.entity));
     for (let i = 1; i < pool.length; i++) {
         const enemy = pool[i];
-        const spawn = enemy.spawnTime ?? 0;
+        const spawn = mobSpawnTime(enemy.entity) ?? 0;
         if (spawn > bestSpawn) {
             best = enemy;
             bestSpawn = spawn;
-            bestDistSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            bestDistSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
         } else if (spawn === bestSpawn) {
-            const distSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            const distSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
             if (distSq < bestDistSq) {
                 best = enemy;
                 bestDistSq = distSq;
             }
         }
     }
-    return { x: best.x, y: best.y, tier: best.tier };
+    return { x: mobX(best.entity), y: mobY(best.entity), tier: best.tier };
 }
 
 /**
@@ -2160,7 +2161,7 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
     // bot manager spun up (or that existed before this guard was in place).
     // Prevents a burst of "super X come!" chatter the instant supers spawn.
     if (!bossAnnounceInitialized) {
-        for (const enemy of enemies) {
+        for (const enemy of liveEnemies()) {
             if (enemy.ownerId) continue;
             if ((enemy as any).isDead) continue;
             if (!BOSS_TIERS.has(enemy.tier)) continue;
@@ -2175,7 +2176,7 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
 
     if (now < nextBossAnnounceAllowedAt) return;
 
-    for (const enemy of enemies) {
+    for (const enemy of liveEnemies()) {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
         if (!BOSS_TIERS.has(enemy.tier)) continue;
@@ -2187,8 +2188,8 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
         for (let i = 0; i < botRoster.length; i++) {
             const b = botRoster[i];
             if (b.isDead) continue;
-            const dx = b.x - enemy.x;
-            const dy = b.y - enemy.y;
+            const dx = b.x - mobX(enemy.entity);
+            const dy = b.y - mobY(enemy.entity);
             const d = dx * dx + dy * dy;
             if (d < bestD) { bestD = d; announcerId = b.id; }
         }
@@ -2221,7 +2222,7 @@ function announceNewBosses(io: SocketIOServer, now: number): void {
     // GC: drop ids of bosses that no longer exist so the set doesn't grow.
     if (announcedBosses.size > 32) {
         const live = new Set<string>();
-        for (const e of enemies) {
+        for (const e of liveEnemies()) {
             if (BOSS_TIERS.has(e.tier) && !(e as any).isDead) live.add(e.id);
         }
         for (const id of announcedBosses) {
@@ -2240,9 +2241,9 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     let pool: Enemy[] = [];
     let preferUnique = false;
     for (const enemy of bossIndex) {
-        if (enemy.isDead) continue; // may have died since the index was built this tick
-        const dx = enemy.x - bot.x;
-        const dy = enemy.y - bot.y;
+        if (isMobDead(enemy.entity)) continue; // may have died since the index was built this tick
+        const dx = mobX(enemy.entity) - bot.x;
+        const dy = mobY(enemy.entity) - bot.y;
         if (dx * dx + dy * dy > BOSS_RAID_RANGE * BOSS_RAID_RANGE) continue;
         if (enemy.tier === 'unique') {
             if (!preferUnique) { pool = []; preferUnique = true; }
@@ -2254,27 +2255,27 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     if (pool.length === 0) return null;
 
     let best = pool[0];
-    let bestSpawn = best.spawnTime ?? 0;
-    let bestDistSq = distSqToNearestHumanPlayer(best.x, best.y);
+    let bestSpawn = mobSpawnTime(best.entity) ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(mobX(best.entity), mobY(best.entity));
     for (let i = 1; i < pool.length; i++) {
         const enemy = pool[i];
-        const spawn = enemy.spawnTime ?? 0;
+        const spawn = mobSpawnTime(enemy.entity) ?? 0;
         if (spawn > bestSpawn) {
             best = enemy;
             bestSpawn = spawn;
-            bestDistSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            bestDistSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
         } else if (spawn === bestSpawn) {
-            const distSq = distSqToNearestHumanPlayer(enemy.x, enemy.y);
+            const distSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
             if (distSq < bestDistSq) {
                 best = enemy;
                 bestDistSq = distSq;
             }
         }
     }
-    const dx = best.x - bot.x;
-    const dy = best.y - bot.y;
+    const dx = mobX(best.entity) - bot.x;
+    const dy = mobY(best.entity) - bot.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    return { x: best.x, y: best.y, dist };
+    return { x: mobX(best.entity), y: mobY(best.entity), dist };
 }
 
 function hasHighRarityMobNearby(bot: ServerPlayer, range: number): boolean {
@@ -2283,10 +2284,10 @@ function hasHighRarityMobNearby(bot: ServerPlayer, range: number): boolean {
     const near = queryEnemiesNear(bot.x, bot.y, range, _botQueryScratch);
     for (let i = 0; i < near.length; i++) {
         const enemy = near[i];
-        if (enemy.isDead) continue;
+        if (isMobDead(enemy.entity)) continue;
         if (!HIGH_TIERS.has(enemy.tier)) continue;
-        const dx = enemy.x - bot.x;
-        const dy = enemy.y - bot.y;
+        const dx = mobX(enemy.entity) - bot.x;
+        const dy = mobY(enemy.entity) - bot.y;
         if (dx * dx + dy * dy <= rSq) return true;
     }
     return false;
@@ -2705,9 +2706,9 @@ const _botQueryScratch: (Enemy)[] = [];
 
 function rebuildBossIndex(): void {
     bossIndex.length = 0;
-    for (const enemy of enemies) {
+    for (const enemy of liveEnemies()) {
         if (enemy.ownerId) continue;
-        if (enemy.isDead) continue;
+        if (isMobDead(enemy.entity)) continue;
         if (enemy.type === 'target_dummy') continue;
         if (BOSS_TIERS.has(enemy.tier)) bossIndex.push(enemy);
     }
@@ -3077,8 +3078,8 @@ export function updateBotAI(io: SocketIOServer, world: World, now: number): void
         // Only fires when the bot is actually moving toward something — i.e.
         // there's a target whose direction we can read.
         if (target) {
-            const tdx = target.enemy.x - bot.x;
-            const tdy = target.enemy.y - bot.y;
+            const tdx = mobX(target.enemy.entity) - bot.x;
+            const tdy = mobY(target.enemy.entity) - bot.y;
             const tDist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
             const intercept = findInterceptingMob(
                 bot.x, bot.y, tdx / tDist, tdy / tDist,
@@ -3132,8 +3133,8 @@ export function updateBotAI(io: SocketIOServer, world: World, now: number): void
         }
 
         if (target && state.fleeing) {
-            const dx = bot.x - target.enemy.x;
-            const dy = bot.y - target.enemy.y;
+            const dx = bot.x - mobX(target.enemy.entity);
+            const dy = bot.y - mobY(target.enemy.entity);
             const d = Math.sqrt(dx * dx + dy * dy) || 1;
             // Break away at an angle instead of straight back: a dead-straight
             // retreat line from a chasing mob is a bot tell.
@@ -3147,8 +3148,8 @@ export function updateBotAI(io: SocketIOServer, world: World, now: number): void
         }
 
         if (target) {
-            const dx = target.enemy.x - bot.x;
-            const dy = target.enemy.y - bot.y;
+            const dx = mobX(target.enemy.entity) - bot.x;
+            const dy = mobY(target.enemy.entity) - bot.y;
             const d = target.dist || Math.sqrt(dx * dx + dy * dy) || 1;
             const dirX = dx / d;
             const dirY = dy / d;
@@ -3186,7 +3187,7 @@ export function updateBotAI(io: SocketIOServer, world: World, now: number): void
                 // use A* to navigate around wall clusters; normal bots use
                 // the cheap steering probe. (No speed-mod compensation: this
                 // is the traversal branch where powder is supposed to help.)
-                if (mode.kind !== 'normal' && followPath(bot, state, now, target.enemy.x, target.enemy.y, 0.95, extendedPetalExt)) {
+                if (mode.kind !== 'normal' && followPath(bot, state, now, mobX(target.enemy.entity), mobY(target.enemy.entity), 0.95, extendedPetalExt)) {
                     continue;
                 }
                 const steered = steerAroundWalls(bot.x, bot.y, dirX, dirY);
@@ -3221,8 +3222,8 @@ export function updateBotAI(io: SocketIOServer, world: World, now: number): void
                 }
                 state.slotAngle = use;
 
-                const slotX = target.enemy.x + Math.cos(use) * standoff;
-                const slotY = target.enemy.y + Math.sin(use) * standoff;
+                const slotX = mobX(target.enemy.entity) + Math.cos(use) * standoff;
+                const slotY = mobY(target.enemy.entity) + Math.sin(use) * standoff;
                 const sx = slotX - bot.x;
                 const sy = slotY - bot.y;
                 const sd = Math.sqrt(sx * sx + sy * sy);

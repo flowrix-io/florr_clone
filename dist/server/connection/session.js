@@ -20,10 +20,10 @@ const gameState_1 = require("../gameState");
 const guildManager_1 = require("../guildManager");
 const playerManager_1 = require("../playerManager");
 const playerState_1 = require("../playerState");
+const enemyWire_1 = require("../enemyWire");
 const playerWire_1 = require("../playerWire");
 const squadManager_1 = require("../squadManager");
 const tempAdmin_1 = require("../tempAdmin");
-const tickBroadcast_1 = require("../tickBroadcast");
 const utils_1 = require("../utils");
 const sessionGuard_1 = require("./sessionGuard");
 const petalEvents_1 = require("../petalEvents");
@@ -444,14 +444,35 @@ function registerSessionHandlers(ctx) {
             // dump (it also never receives a gameStateUpdate, since those are
             // built from `players`).
             if (!lobby) {
+                // This client's world starts EMPTY, so our record of what it
+                // already knows has to start empty too. The socket outlives a
+                // trip back to the title screen, so without this the per-socket
+                // baseline survives into a fresh session: the broadcast would
+                // keep omitting first-sight fields for entities the new client
+                // has never heard of, and those entities would sit frozen on
+                // screen forever. Same reasoning as the F=1 resync path.
+                socket.lastSentEntities?.clear();
+                socket.needsEntityResync = false;
                 // Send current game state
                 socket.emit('currentPlayers', (0, playerWire_1.sanitizePlayersForClient)(constants_1.players, socket.id));
-                // Only send enemies in viewport with 200% buffer on connection
-                const enemiesInViewport = (0, playerState_1.getEnemiesInViewport200Percent)();
-                socket.emit('enemiesUpdate', enemiesInViewport);
+                // Only send enemies in viewport with 200% buffer on connection.
+                //
+                // PROJECTED, not the raw shells. A mob's position, health and
+                // facing live in components now (server/mobFields.ts) — the
+                // shell carries none of them — so emitting shells here handed
+                // the client `health: undefined` for every mob in the join
+                // snapshot, and they rendered at 0 hp until a delta happened to
+                // correct them. `enemySpawnPayload` is the same shape the
+                // `enemySpawned` event sends, which is what this handler on the
+                // client already expects.
+                socket.emit('enemiesUpdate', (0, playerState_1.getEnemiesInViewport200Percent)().map(enemyWire_1.enemySpawnPayload));
                 socket.emit('obstaclesUpdate', constants_1.obstacles);
-                // Filter items to only send ones this player is eligible for and hasn't picked up yet
-                socket.emit('itemsUpdate', (0, tickBroadcast_1.getEligibleItemsForSocket)(socket.id));
+                // No item snapshot: drops arrive on the first gameStateUpdate
+                // frame like every other entity. Sending a full replace here as
+                // well would race the stream — it clears the client's item map,
+                // so it could wipe drops the first frame had already delivered,
+                // and the server (believing the client has them) would not
+                // re-send them.
                 // Notify other players
                 socket.broadcast.emit('newPlayer', (0, playerWire_1.sanitizePublicPlayerForClient)(sessionPlayer));
             }

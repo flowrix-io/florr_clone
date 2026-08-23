@@ -36,6 +36,8 @@ exports.recalculatePlayerStats = recalculatePlayerStats;
 exports.addXPToPlayer = addXPToPlayer;
 exports.addMazeXPToPlayer = addMazeXPToPlayer;
 exports.savePlayerProgress = savePlayerProgress;
+const mobFields_1 = require("./mobFields");
+const enemyRegistry_1 = require("./enemyRegistry");
 const playerWire_1 = require("./playerWire");
 const petals_1 = require("../petals");
 const playerModifiers_1 = require("./shared/playerModifiers");
@@ -493,9 +495,9 @@ function isPositionInsideWall(x, y, playerSize = constants_1.PLAYER_SIZE) {
  */
 function hasTooManyMobsNearby(x, y, radius = 200, maxMobs = 5) {
     let mobCount = 0;
-    for (const enemy of constants_1.enemies) {
-        const dx = enemy.x - x;
-        const dy = enemy.y - y;
+    for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
+        const dx = (0, mobFields_1.mobX)(enemy.entity) - x;
+        const dy = (0, mobFields_1.mobY)(enemy.entity) - y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance <= radius) {
             mobCount++;
@@ -511,12 +513,12 @@ function hasTooManyMobsNearby(x, y, radius = 200, maxMobs = 5) {
  */
 function isOverlappingMob(x, y, playerSize = constants_1.PLAYER_SIZE) {
     const playerRadius = playerSize / 2;
-    for (const enemy of constants_1.enemies) {
+    for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
         const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         const mobRadius = (mobStats ? (mobStats.size * 40) / 2 : 20)
             * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type);
-        const dx = enemy.x - x;
-        const dy = enemy.y - y;
+        const dx = (0, mobFields_1.mobX)(enemy.entity) - x;
+        const dy = (0, mobFields_1.mobY)(enemy.entity) - y;
         const distSq = dx * dx + dy * dy;
         const minDist = playerRadius + mobRadius;
         if (distSq < minDist * minDist) {

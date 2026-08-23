@@ -1,9 +1,9 @@
 import { ServerPlayer } from '../player';
+import { liveEnemies } from './enemyRegistry';
 import { Enemy, Obstacle } from '../server_utils';
 import {
     isWall,
     SCALE_FACTOR,
-    enemies,
     players
 } from '../constants';
 import { WORLD_MAP } from '../map_data';
@@ -192,8 +192,8 @@ export function getPlayers(): Record<string, ServerPlayer> {
     return players;
 }
 
-export function getEnemies(): Enemy[] {
-    return enemies;
+export function getEnemies(): readonly Enemy[] {
+    return liveEnemies();
 }
 
 export function setEnemyCount(count: number) {

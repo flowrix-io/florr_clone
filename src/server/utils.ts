@@ -1,6 +1,9 @@
 import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from '../server_utils';
+import * as C from '../ecs/components';
+import { mobAiType, mobHealth, mobTargetPlayerId, mobWorld, mobX, mobY, provokeMob } from './mobFields';
+import { liveEnemies } from './enemyRegistry';
 import { ServerPlayer } from '../player';
-import { ENEMY_TIERS, enemies, players } from '../constants';
+import { ENEMY_TIERS, players } from '../constants';
 import { splitPlayers, syncSplitStars } from '../petal_actions';
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
 import { isBot } from './botManager';
@@ -8,7 +11,7 @@ import { recordBossEvent, stripHtml } from './apiKeyApi';
 import { forgetEnemyFromRaindropAura } from './playerState';
 import { getWireOutbox } from './wireOutbox';
 
-// Per-tick batch of enemies that took damage. Keyed by enemy.id with the
+// Per-tick batch of liveEnemies() that took damage. Keyed by enemy.id with the
 // post-damage health snapshot. Using a module-level Map (cleared on flush)
 // avoids monkey-patching `pendingDamageUpdate` / `lastDamageHealth` onto
 // every damaged enemy and the per-tick `delete` that follows — both of which
@@ -29,10 +32,10 @@ export const pendingEnemyDamageUpdates: Map<string, PendingEnemyDamage> = new Ma
 export function markEnemyDamaged(enemy: Enemy): void {
     const pending = pendingEnemyDamageUpdates.get(enemy.id);
     if (pending) {
-        pending.health = enemy.health;
+        pending.health = mobHealth(enemy.entity);
         pending.poisonOnly = false;
     } else {
-        pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: false });
+        pendingEnemyDamageUpdates.set(enemy.id, { health: mobHealth(enemy.entity), poisonOnly: false });
     }
 }
 
@@ -55,9 +58,9 @@ export function markEnemyDamagedById(enemyId: string, health: number): void {
 export function markEnemyPoisonDamaged(enemy: Enemy): void {
     const pending = pendingEnemyDamageUpdates.get(enemy.id);
     if (pending) {
-        pending.health = enemy.health;
+        pending.health = mobHealth(enemy.entity);
     } else {
-        pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: true });
+        pendingEnemyDamageUpdates.set(enemy.id, { health: mobHealth(enemy.entity), poisonOnly: true });
     }
 }
 
@@ -70,8 +73,8 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
     enemy.damageContributors.set(playerId, currentDamage + damage);
 
     // Provoke neutral mobs when they take damage from a player
-    if (enemy.aiType === 'neutral' && !enemy.targetPlayerId) {
-        enemy.targetPlayerId = playerId;
+    if (mobAiType(enemy.entity) === 'neutral' && !mobTargetPlayerId(enemy.entity)) {
+        provokeMob(enemy.entity, playerId);
     }
 
     // Centipede chain: damaging any segment provokes the head and the whole chain.
@@ -79,9 +82,9 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
     if (isCentipedeHeadType(enemy.type) || isCentipedeBodyType(enemy.type)) {
         const headId = enemy.headId ?? (isCentipedeHeadType(enemy.type) ? enemy.id : undefined);
         if (headId) {
-            const head = enemies.find(e => e.id === headId);
-            if (head && head.aiType === 'neutral' && !head.targetPlayerId) {
-                head.targetPlayerId = playerId;
+            const head = liveEnemies().find(e => e.id === headId);
+            if (head && mobAiType(head.entity) === 'neutral' && !mobTargetPlayerId(head.entity)) {
+                provokeMob(head.entity, playerId);
             }
         }
     }
@@ -90,15 +93,16 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
     // reflects the real player's actual DPS.
     if (enemy.type === 'target_dummy' && !isBot(playerId)) {
         const now = Date.now();
-        if (!enemy.dpsStartTime) {
-            enemy.dpsStartTime = now;
+        // The sample buffers live in C.DpsTracker, which spawnMob attaches to
+        // dummies. Only a handful of dummies ever exist and nothing hot reads
+        // this, which is why the component stores plain arrays.
+        const world = mobWorld();
+        if (!world.has(enemy.entity, C.DpsTracker)) return;
+        if (!world.get(enemy.entity, C.DpsTracker, 'startTime')) {
+            world.set(enemy.entity, C.DpsTracker, 'startTime', now);
         }
-        if (!enemy.dpsHistoryTimes) {
-            enemy.dpsHistoryTimes = [];
-            enemy.dpsHistoryDamages = [];
-        }
-        const times = enemy.dpsHistoryTimes;
-        const damages = enemy.dpsHistoryDamages!;
+        const times = world.get(enemy.entity, C.DpsTracker, 'historyTimes') as number[];
+        const damages = world.get(enemy.entity, C.DpsTracker, 'historyDamages') as number[];
         times.push(now);
         damages.push(damage);
 
@@ -116,9 +120,11 @@ export function trackDamage(enemy: Enemy, playerId: string, damage: number) {
 
 // Calculate DPS for target dummies
 export function calculateDPS(enemy: Enemy): number {
-    const times = enemy.dpsHistoryTimes;
-    const damages = enemy.dpsHistoryDamages;
-    if (enemy.type !== 'target_dummy' || !times || !damages || times.length === 0) {
+    const world = mobWorld();
+    if (enemy.type !== 'target_dummy' || !world.has(enemy.entity, C.DpsTracker)) return 0;
+    const times = world.get(enemy.entity, C.DpsTracker, 'historyTimes') as number[];
+    const damages = world.get(enemy.entity, C.DpsTracker, 'historyDamages') as number[];
+    if (!times || !damages || times.length === 0) {
         return 0;
     }
 
@@ -179,7 +185,9 @@ export function getActivePlayerForSocket(socketId: string): ServerPlayer | undef
 // Helper function to get eligible players for a drop based on damage ranking
 // Squad members' damage is pooled (averaged) and they count as a single loot entry.
 // Returns individual player socket IDs (squads are expanded back to members).
-export function getEligiblePlayers(enemy: Enemy): string[] {
+export function getEligiblePlayers(
+    enemy: { damageContributors?: Map<string, number>; tier: string },
+): string[] {
     if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
         return [];
     }
@@ -260,8 +268,8 @@ export function sendBossMobDefeatedMessage(
         type: 'defeat',
         tier: enemy.tier,
         mobType: enemy.type,
-        x: enemy.x,
-        y: enemy.y,
+        x: mobX(enemy.entity),
+        y: mobY(enemy.entity),
         timestamp,
         message: stripHtml(content),
         defeatedBy: { username, playerName: topDamager.name }
@@ -393,28 +401,10 @@ export function cleanupEnemy(enemy: Enemy): void {
         enemy.damageContributors = undefined;
     }
 
-    if (enemy.poisonEffects) {
-        enemy.poisonEffects.length = 0;
-        enemy.poisonEffects = undefined;
-    }
-
-    if (enemy.dpsHistoryTimes) {
-        enemy.dpsHistoryTimes.length = 0;
-        enemy.dpsHistoryTimes = undefined;
-    }
-    if (enemy.dpsHistoryDamages) {
-        enemy.dpsHistoryDamages.length = 0;
-        enemy.dpsHistoryDamages = undefined;
-    }
-
-    enemy.dpsStartTime = undefined;
-    enemy.currentDPS = undefined;
-    enemy.wanderTargetX = undefined;
-    enemy.wanderTargetY = undefined;
-    enemy.lastWanderTime = undefined;
-    enemy.lastViewportCheck = undefined;
-    enemy.lastProjectileTime = undefined;
-    enemy.lastMeleeAttackTime = undefined;
+    // Poison stacks, DPS samples and viewport tracking are all components;
+    // retiring the entity frees them with everything else, so there is nothing
+    // to null out by hand. What remains here is legacy bookkeeping held OUTSIDE
+    // the entity.
 
     // Release this enemy's slot in every raindrop player's aura damage-timestamp
     // map so those inner maps don't grow unboundedly over a long session.

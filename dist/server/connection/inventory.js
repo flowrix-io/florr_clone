@@ -18,6 +18,9 @@ const gameState_1 = require("../gameState");
 const playerManager_1 = require("../playerManager");
 const playerWire_1 = require("../playerWire");
 const petalEvents_1 = require("../petalEvents");
+const enemyRegistry_1 = require("../enemyRegistry");
+/** Snapshot buffer for the pet-despawn loops below. */
+const petScratch = [];
 function registerInventoryHandlers(ctx) {
     const { io, socket } = ctx;
     const { addMazeXPToPlayer, addXPToPlayer, deleteCodeFromDatabase, redeemedCodes, saveCodeToDatabase, savePlayerProgress, savePlayerProgressImmediate } = ctx.deps;
@@ -324,8 +327,7 @@ function registerInventoryHandlers(ctx) {
                 if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
                     const oldPetalStats = (0, petals_1.getPetalStats)(oldItem.petalType, oldItem.rarity);
                     if (oldPetalStats?.petMobType) {
-                        for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-                            const e = constants_1.enemies[i];
+                        for (const e of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
                             if (e.ownerId === player.id && e.type === oldPetalStats.petMobType) {
                                 (0, petal_actions_1.despawnPet)(e, io);
                             }
@@ -488,8 +490,7 @@ function registerInventoryHandlers(ctx) {
                         if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
                             const oldPetalStats = (0, petals_1.getPetalStats)(oldItem.petalType, oldItem.rarity);
                             if (oldPetalStats?.petMobType) {
-                                for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-                                    const e = constants_1.enemies[i];
+                                for (const e of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
                                     if (e.ownerId === otherHalf.id && e.type === oldPetalStats.petMobType) {
                                         (0, petal_actions_1.despawnPet)(e, io);
                                     }

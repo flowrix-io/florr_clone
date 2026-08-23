@@ -28,7 +28,10 @@
  *    different candidates is not a faster grid.
  */
 
-import { makeEnemy, Enemy } from '../../server_utils';
+import { Enemy, LiveEnemy } from '../../server_utils';
+import { spawnEnemy } from '../../server/enemyRegistry';
+import { bindEntityHost } from '../../server/entityRegistry';
+import { mobRadiusOf, mobX, mobY } from '../../server/mobFields';
 import { getMobStats, getEnemySizeScale } from '../../mobs';
 import { rebuildEnemyGrid, queryEnemiesNear } from '../../server/enemyGrid';
 import * as C from '../components';
@@ -123,31 +126,25 @@ interface Result {
 
 /** Baseline: the production grid over real Enemy objects. */
 function runBaseline(specs: Spec[], queries: QuerySpec[], ticks: number): Result {
-    // A LOCAL array, not the game's `enemies`: that one is `LiveEnemy[]` now
-    // (membership means "has an ECS entity"), and a benchmark has no business
-    // pushing statues into it. rebuildEnemyGrid takes the array as a parameter,
-    // so the measurement is identical.
-    const enemies: Enemy[] = [];
+    // Mobs are admitted through the registry against a bench-local world:
+    // `rebuildEnemyGrid` reads position and radius out of the components now, so
+    // a bare shell would have nothing for it to read.
+    const world = new World();
+    bindEntityHost({ getWorld: () => world, resolvePlayer: () => undefined });
+    const enemies: LiveEnemy[] = [];
     for (let i = 0; i < specs.length; i++) {
         const s = specs[i];
-        enemies.push(makeEnemy({
-            id: `bench-${i}`,
-            type: s.type as never,
-            tier: s.tier as never,
-            x: s.x,
-            y: s.y,
-            angle: 0,
-            health: 100,
-            maxHealth: 100,
-            speed: 50,
-            damage: 10,
-        }));
+        const e = spawnEnemy(s.type, s.tier as never, s.x, s.y, {
+            angle: 0, health: 100, maxHealth: 100, damage: 10,
+        });
+        if (e) enemies.push(e);
     }
 
     const out: Enemy[] = [];
     let hits = 0;
 
-    // Warm up: JIT the loops and populate the lazy _radius/_mobStats caches.
+    // Warm up: JIT the loops. (There are no lazy stat caches any more —
+    // radius and mob-config are components written at spawn.)
     for (let t = 0; t < 20; t++) {
         rebuildEnemyGrid(enemies);
         for (const q of queries) queryEnemiesNear(q.x, q.y, q.radius, out);
@@ -164,9 +161,9 @@ function runBaseline(specs: Spec[], queries: QuerySpec[], ticks: number): Result
             // Narrow phase, exactly as real callers do it.
             for (let i = 0; i < out.length; i++) {
                 const e = out[i];
-                const dx = e.x - q.x;
-                const dy = e.y - q.y;
-                const reach = q.radius + (e._radius as number);
+                const dx = mobX(e.entity) - q.x;
+                const dy = mobY(e.entity) - q.y;
+                const reach = q.radius + (mobRadiusOf(e.entity) as number);
                 if (dx * dx + dy * dy < reach * reach) hits++;
             }
         }

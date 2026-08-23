@@ -7,7 +7,7 @@
  * server's authoritative copy before anything is persisted.
  */
 
-import { enemies, players } from '../../constants';
+import { players } from '../../constants';
 import { Notification, database } from '../../database';
 import { ID_TO_ITEM_KEY, ID_TO_RARITY, getItemCount } from '../../inventoryCodec';
 import { Item, ItemWithRarity } from '../../item';
@@ -19,6 +19,11 @@ import { addItem, applyPetalHealthBonus, buildCollection, capLoadoutToCollection
 import { sanitizePlayerForClient } from '../playerWire';
 import { ConnectionContext } from './context';
 import { emitPetalRestored } from '../petalEvents';
+import { collectEnemies } from '../enemyRegistry';
+import { LiveEnemy } from '../../server_utils';
+
+/** Snapshot buffer for the pet-despawn loops below. */
+const petScratch: LiveEnemy[] = [];
 
 export function registerInventoryHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -342,8 +347,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                 if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
                     const oldPetalStats = getPetalStats(oldItem.petalType, oldItem.rarity);
                     if (oldPetalStats?.petMobType) {
-                        for (let i = enemies.length - 1; i >= 0; i--) {
-                            const e = enemies[i];
+                        for (const e of collectEnemies(petScratch)) {
                             if (e.ownerId === player.id && e.type === oldPetalStats.petMobType) {
                                 despawnPet(e, io);
                             }
@@ -509,8 +513,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                         if (oldItem.type === 'petal' && oldItem.petalType && oldItem.rarity) {
                             const oldPetalStats = getPetalStats(oldItem.petalType, oldItem.rarity);
                             if (oldPetalStats?.petMobType) {
-                                for (let i = enemies.length - 1; i >= 0; i--) {
-                                    const e = enemies[i];
+                                for (const e of collectEnemies(petScratch)) {
                                     if (e.ownerId === otherHalf.id && e.type === oldPetalStats.petMobType) {
                                         despawnPet(e, io);
                                     }

@@ -35,6 +35,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WireOutbox = void 0;
 exports.registerWireOutboxSystem = registerWireOutboxSystem;
+const entity_1 = require("../entity");
 const system_1 = require("../system");
 const ROUTE_ALL = 0;
 const ROUTE_SOCKET = 1;
@@ -52,9 +53,15 @@ const MAX_LOGGED_DELIVERY_ERRORS = 5;
  * references are cleared, because those can retain arbitrarily large objects.
  */
 class WireOutbox {
-    constructor(sink, viewerSource) {
+    constructor(sink, viewerSource, 
+    /**
+     * Optional; without it entity-gated events are delivered unconditionally,
+     * which is the right default for tests and benches that have no world.
+     */
+    gate) {
         this.sink = sink;
         this.viewerSource = viewerSource;
+        this.gate = gate;
         this.events = [];
         this.payloads = [];
         this.routes = [];
@@ -62,8 +69,11 @@ class WireOutbox {
         this.targets = [];
         this.xs = [];
         this.ys = [];
+        /** The entity this event talks about, or NULL_ENTITY when it talks about none. */
+        this.gates = [];
         this.count = 0;
         this.nearCount = 0;
+        this.gatedDropped = 0;
         this.viewers = [];
         this.flushScheduled = false;
         this.flushing = false;
@@ -74,9 +84,42 @@ class WireOutbox {
     pending() {
         return this.count;
     }
+    /** Events dropped because their subject died before the flush. Diagnostics. */
+    droppedByGate() {
+        return this.gatedDropped;
+    }
     /** Send to every connected socket. */
     all(event, payload) {
         this.enqueue(ROUTE_ALL, event, payload, '', 0, 0);
+    }
+    // -- entity-gated routes --------------------------------------------------
+    //
+    // Same four routes, but the event is DROPPED at flush time if the entity it
+    // talks about is no longer live. This is the generic form of a rule three
+    // different kinds had each reinvented: a thing can be created and destroyed
+    // inside one tick (your own petal kills a mob inside pickup range; a drop is
+    // collected the instant it lands), and since events are delivered at end of
+    // tick, an ungated spawn would arrive AFTER its own removal and plant a
+    // ghost the client can never clear.
+    //
+    // Use these for anything that names an entity. The ungated forms are for
+    // events that name none — chat, stats, a player's own XP bar.
+    /** Broadcast, unless `entity` died first. */
+    allFor(entity, event, payload) {
+        this.enqueue(ROUTE_ALL, event, payload, '', 0, 0, entity);
+    }
+    /** Send to one socket, unless `entity` died first. */
+    toSocketFor(entity, socketId, event, payload) {
+        this.enqueue(ROUTE_SOCKET, event, payload, socketId, 0, 0, entity);
+    }
+    /** Send to a player's socket, unless `entity` died first. */
+    toPlayerFor(entity, playerId, event, payload) {
+        this.enqueue(ROUTE_PLAYER, event, payload, playerId, 0, 0, entity);
+    }
+    /** Send to viewers of (x, y), unless `entity` died first. */
+    nearFor(entity, x, y, event, payload, alwaysTo) {
+        this.enqueue(ROUTE_NEAR, event, payload, alwaysTo ?? '', x, y, entity);
+        this.nearCount++;
     }
     /** Send to one socket id. */
     toSocket(socketId, event, payload) {
@@ -136,7 +179,7 @@ class WireOutbox {
                 this.schedule();
         }
     }
-    enqueue(route, event, payload, target, x, y) {
+    enqueue(route, event, payload, target, x, y, gate = entity_1.NULL_ENTITY) {
         const i = this.count++;
         this.routes[i] = route;
         this.events[i] = event;
@@ -144,6 +187,7 @@ class WireOutbox {
         this.targets[i] = target;
         this.xs[i] = x;
         this.ys[i] = y;
+        this.gates[i] = gate;
         this.schedule();
     }
     /**
@@ -163,6 +207,13 @@ class WireOutbox {
     deliver(i) {
         const event = this.events[i];
         const payload = this.payloads[i];
+        // The subject died between queueing and now: saying anything about it
+        // would describe something the client has no entity for.
+        const gate = this.gates[i];
+        if (gate !== entity_1.NULL_ENTITY && this.gate !== undefined && !this.gate.isLiveForWire(gate)) {
+            this.gatedDropped++;
+            return;
+        }
         try {
             const route = this.routes[i];
             if (route === ROUTE_ALL) {
@@ -225,6 +276,7 @@ class WireOutbox {
             this.targets[i] = this.targets[from];
             this.xs[i] = this.xs[from];
             this.ys[i] = this.ys[from];
+            this.gates[i] = this.gates[from];
         }
         for (let i = remaining; i < this.count; i++)
             this.payloads[i] = undefined;

@@ -4,7 +4,8 @@
  * an item is ONE thing whose spatial/lifecycle half is an ECS entity
  * (Position, Expires — see ecs/systems/droppedItems.ts) while its WIRE OBJECT
  * (the legacy `WorldItem`) rides in the DroppedItem component's `payload` and
- * is what pickup, eligibility and every item event still speak.
+ * is what pickup and eligibility still speak. The WIRE no longer reads it: the
+ * broadcast projects drops into the entity stream from these components.
  *
  * Unlike mobs there is no separate shell ARRAY any more: the world is the only
  * container, and the payloads are collected from it on demand. That kills the
@@ -12,10 +13,6 @@
  * `itemExpirationTimeouts` + the per-tick sweep), which had exactly the
  * leak/ghost failure modes this file's mob sibling documents.
  *
- * The spawn-batch queue lives here too: drops mark themselves for one batched
- * `itemsSpawned` per recipient per tick (see server.ts flushItemSpawnBatch),
- * and the queue replaces the `pendingSpawnEmission` markers that used to be
- * monkey-patched onto each item object.
  */
 
 import { WorldItem } from '../item';
@@ -23,38 +20,12 @@ import { Entity, Query, World } from '../ecs';
 import * as C from '../ecs/components';
 import { petalTypes } from '../ecs/interning';
 import { spawnDroppedItem } from '../ecs/prefabs';
+import { cachedQuery, getEntityWorld, hasEntityHost, retireNow } from './entityRegistry';
 
-export interface ItemHost {
-    getWorld(): World;
-}
-
-let host: ItemHost | undefined;
-
-/** Install the ECS host. Called once, from the composition root. */
-export function bindItemHost(installed: ItemHost): void {
-    host = installed;
-}
-
-function requireHost(): ItemHost {
-    if (!host) {
-        throw new Error(
-            'itemRegistry: no ECS host installed. server.ts must call '
-            + 'bindItemHost() at startup — without it a drop would have nowhere '
-            + 'to exist.',
-        );
-    }
-    return host;
-}
-
-let itemQuery: Query | undefined;
-let itemQueryWorld: World | undefined;
+const itemQuerySlot: { query?: Query; world?: World } = {};
 
 function droppedItems(world: World): Query {
-    if (itemQuery === undefined || itemQueryWorld !== world) {
-        itemQuery = world.query([C.DroppedItem]);
-        itemQueryWorld = world;
-    }
-    return itemQuery;
+    return cachedQuery(itemQuerySlot, world, [C.DroppedItem]);
 }
 
 function kindOf(type: WorldItem['type']): C.ItemKind {
@@ -72,7 +43,7 @@ function kindOf(type: WorldItem['type']): C.ItemKind {
  * register.
  */
 export function spawnWorldItem(item: WorldItem, expiresAt: number): Entity {
-    const world = requireHost().getWorld();
+    const world = getEntityWorld();
     return spawnDroppedItem(world, {
         id: item.id,
         x: item.x,
@@ -94,10 +65,13 @@ export function spawnWorldItem(item: WorldItem, expiresAt: number): Entity {
  * Returns false when the item already left.
  */
 export function removeWorldItem(item: WorldItem): boolean {
-    const world = requireHost().getWorld();
-    const entity = world.lookup(item.id);
+    const entity = getEntityWorld().lookup(item.id);
     if (entity === undefined) return false;
-    return world.destroy(entity);
+    // Immediate, not deferred: a drop's WorldItem payload lives in its
+    // DroppedItem component, so an item left in the world until the drain
+    // would be collected by a second pickup pass in the same tick and handed
+    // out twice. See the retireNow note in entityRegistry.
+    return retireNow(entity);
 }
 
 /**
@@ -111,7 +85,7 @@ export function removeWorldItem(item: WorldItem): boolean {
  */
 export function collectWorldItems(out: WorldItem[]): WorldItem[] {
     out.length = 0;
-    const world = requireHost().getWorld();
+    const world = getEntityWorld();
     droppedItems(world).chunks(chunk => {
         const dropped = chunk.cols(C.DroppedItem);
         for (let i = 0; i < chunk.count; i++) {
@@ -123,42 +97,9 @@ export function collectWorldItems(out: WorldItem[]): WorldItem[] {
 
 /** Number of live drops. Diagnostics. */
 export function worldItemCount(): number {
-    return host ? droppedItems(host.getWorld()).count() : 0;
+    return hasEntityHost() ? droppedItems(getEntityWorld()).count() : 0;
 }
 
-// ---------------------------------------------------------------------------
-// The spawn batch
-// ---------------------------------------------------------------------------
-
-const pendingSpawnItems: WorldItem[] = [];
-const pendingSpawnRecipients: string[][] = [];
-
-/** Queue `item` for the end-of-tick batched `itemsSpawned` to these sockets. */
-export function queueItemSpawnEmission(item: WorldItem, socketIds: string[]): void {
-    pendingSpawnItems.push(item);
-    pendingSpawnRecipients.push(socketIds);
-}
-
-/**
- * Drain the queue, invoking `visit` once per (item, recipients) pair.
- *
- * Items that have ALREADY left the world are skipped, and this is
- * load-bearing, not tidiness: a drop can be spawned and fully picked up (or
- * bounds-culled) within one tick — your own petal kills a mob inside pickup
- * range every few seconds of normal play. The pickup emits `itemRemoved`
- * mid-tick; emitting the queued spawn at end of tick would then arrive AFTER
- * the removal and plant a permanent ghost item on the client. The legacy
- * flush got this for free by iterating the live `items[]` array, which no
- * longer held the item; the queue has to reproduce that rule explicitly.
- */
-export function drainItemSpawnEmissions(
-    visit: (item: WorldItem, socketIds: string[]) => void,
-): void {
-    const world = requireHost().getWorld();
-    for (let i = 0; i < pendingSpawnItems.length; i++) {
-        if (world.lookup(pendingSpawnItems[i].id) === undefined) continue;
-        visit(pendingSpawnItems[i], pendingSpawnRecipients[i]);
-    }
-    pendingSpawnItems.length = 0;
-    pendingSpawnRecipients.length = 0;
-}
+// The spawn-emission queue is gone with the one-shot item channel: drops are
+// part of the entity delta stream now (see server/tickBroadcast.ts), so there
+// is nothing to queue and nothing to drain.

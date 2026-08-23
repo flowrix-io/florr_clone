@@ -20,11 +20,12 @@ import { knownMobProjectilesByPlayer, knownPlayerProjectilesByPlayer, lobbyPlaye
 import { broadcastGuildUpdate, getGuildForUsername, syncGuildToOnlineMembers } from '../guildManager';
 import { applyPetalHealthBonus, calculateCurrentLevelXP, calculateDamageFromLevel, calculateLevelFromTotalXP, calculateMaxHealthFromLevel, calculateXPRequirement, createInitialBasicPetals, createInitialInventory, enterMazeState, enterPvpArena, findSafeSpawnPosition, getMazeSpawnPosition, getSkillMultiplier, getSpawnPositionInBiome, recalculatePlayerStats, reconcileTP } from '../playerManager';
 import { cleanupPetalPhysicsStates, getEnemiesInViewport200Percent } from '../playerState';
+import { enemySpawnPayload } from '../enemyWire';
 import { sanitizePlayersForClient, sanitizePublicPlayerForClient } from '../playerWire';
 import { AuthenticatedSocket } from '../shared/socketTypes';
 import { handlePlayerDisconnect as handleSquadDisconnect } from '../squadManager';
 import { revokeTempAdmin } from '../tempAdmin';
-import { getEligibleItemsForSocket } from '../tickBroadcast';
+import {} from '../tickBroadcast';
 import { getActivePlayerForSocket } from '../utils';
 import { ConnectionContext } from './context';
 import { kickDuplicateSessions } from './sessionGuard';
@@ -475,15 +476,40 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
             // dump (it also never receives a gameStateUpdate, since those are
             // built from `players`).
             if (!lobby) {
+                // This client's world starts EMPTY, so our record of what it
+                // already knows has to start empty too. The socket outlives a
+                // trip back to the title screen, so without this the per-socket
+                // baseline survives into a fresh session: the broadcast would
+                // keep omitting first-sight fields for entities the new client
+                // has never heard of, and those entities would sit frozen on
+                // screen forever. Same reasoning as the F=1 resync path.
+                (socket as AuthenticatedSocket).lastSentEntities?.clear();
+                (socket as AuthenticatedSocket).needsEntityResync = false;
+
                 // Send current game state
                 socket.emit('currentPlayers', sanitizePlayersForClient(players, socket.id));
-                // Only send enemies in viewport with 200% buffer on connection
-                const enemiesInViewport = getEnemiesInViewport200Percent();
-                socket.emit('enemiesUpdate', enemiesInViewport);
+                // Only send enemies in viewport with 200% buffer on connection.
+                //
+                // PROJECTED, not the raw shells. A mob's position, health and
+                // facing live in components now (server/mobFields.ts) — the
+                // shell carries none of them — so emitting shells here handed
+                // the client `health: undefined` for every mob in the join
+                // snapshot, and they rendered at 0 hp until a delta happened to
+                // correct them. `enemySpawnPayload` is the same shape the
+                // `enemySpawned` event sends, which is what this handler on the
+                // client already expects.
+                socket.emit(
+                    'enemiesUpdate',
+                    getEnemiesInViewport200Percent().map(enemySpawnPayload),
+                );
                 socket.emit('obstaclesUpdate', obstacles);
 
-                // Filter items to only send ones this player is eligible for and hasn't picked up yet
-                socket.emit('itemsUpdate', getEligibleItemsForSocket(socket.id));
+                // No item snapshot: drops arrive on the first gameStateUpdate
+                // frame like every other entity. Sending a full replace here as
+                // well would race the stream — it clears the client's item map,
+                // so it could wipe drops the first frame had already delivered,
+                // and the server (believing the client has them) would not
+                // re-send them.
 
                 // Notify other players
                 socket.broadcast.emit('newPlayer', sanitizePublicPlayerForClient(sessionPlayer));

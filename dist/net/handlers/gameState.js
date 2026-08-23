@@ -38,22 +38,96 @@ function registerGameStateHandlers(game) {
         // objects the rest of this handler has always read, so the packing is
         // invisible past this point. Non-arrays pass through, so a server still
         // sending maps keeps working.
-        const serverPlayers = Array.isArray(data.P)
-            ? data.P.map((e) => {
-                const o = (0, wire_fields_1.unpackFields)(e, wire_fields_1.PLAYER_FIELDS);
-                if (Array.isArray(o.p))
-                    o.p = o.p.map((q) => (0, wire_fields_1.unpackFields)(q, wire_fields_1.PETAL_FIELDS));
-                return o;
-            })
-            : data.P;
-        const serverEnemies = Array.isArray(data.E)
-            ? data.E.map((e) => (0, wire_fields_1.unpackFields)(e, wire_fields_1.ENEMY_FIELDS))
-            : data.E;
-        // Removal lists are bare id arrays; ids ride as integers (wire_fields.ts).
-        const removedEnemyIds = Array.isArray(data.R)
-            ? data.R.map(wire_fields_1.unpackId) : data.R;
-        const removedPlayerIds = Array.isArray(data.D)
-            ? data.D.map(wire_fields_1.unpackId) : data.D;
+        // ONE entity stream. `N` carries players, mobs and dropped items
+        // together; `K` says which, and rides only on an entity's FIRST
+        // appearance (it is delta-encoded like every other field), so the client
+        // has to remember what each id turned out to be. `entityKinds` is that
+        // memory — routing off "which map already holds this id?" instead would
+        // be ambiguous for an entity we dropped locally.
+        const kinds = game.entityKinds ?? (game.entityKinds = new Map());
+        const serverPlayers = [];
+        const serverEnemies = [];
+        const serverItems = [];
+        /** Ids this frame mentioned at all — used by the F=1 sweep below. */
+        const mentionedThisFrame = new Set();
+        if (Array.isArray(data.N)) {
+            for (const raw of data.N) {
+                const o = (0, wire_fields_1.unpackFields)(raw, wire_fields_1.ENTITY_FIELDS);
+                const id = (0, wire_fields_1.unpackId)(o.i);
+                o.i = id;
+                mentionedThisFrame.add(id);
+                let kind = o.K;
+                if (kind === undefined) {
+                    kind = kinds.get(id);
+                    if (kind === undefined) {
+                        // The remembered kind is GONE but the entity may not be.
+                        // This happens whenever our memory is newer than the
+                        // server's idea of what we know — re-entering the world
+                        // on the same socket rebuilds `game` (and this map)
+                        // while the server's per-socket baseline survives, so it
+                        // keeps omitting `K` for things we no longer recognise.
+                        //
+                        // Deriving the kind from what we ALREADY HOLD makes that
+                        // recoverable. Relying on the map alone made it fatal
+                        // and silent: every delta for those entities was
+                        // dropped, so they froze on screen forever — including
+                        // the local flower, which then stopped moving while the
+                        // server happily moved it.
+                        if (cw.player(id))
+                            kind = 0 /* WireKind.Player */;
+                        else if (cw.enemyEntity(id) !== undefined)
+                            kind = 1 /* WireKind.Mob */;
+                        else if (game.items.has(id))
+                            kind = 2 /* WireKind.Item */;
+                        else
+                            continue; // genuinely unknown; F=1 will repair it
+                    }
+                    kinds.set(id, kind);
+                }
+                else {
+                    kinds.set(id, kind);
+                }
+                if (kind === 0 /* WireKind.Player */) {
+                    if (Array.isArray(o.p))
+                        o.p = o.p.map((q) => (0, wire_fields_1.unpackFields)(q, wire_fields_1.PETAL_FIELDS));
+                    serverPlayers.push(o);
+                }
+                else if (kind === 1 /* WireKind.Mob */) {
+                    serverEnemies.push(o);
+                }
+                else {
+                    serverItems.push(o);
+                }
+            }
+        }
+        // Removal list is a bare id array covering every kind; ids ride as
+        // integers (wire_fields.ts). Route each by its remembered kind.
+        const removedPlayerIds = [];
+        const removedEnemyIds = [];
+        const removedItemIds = [];
+        if (Array.isArray(data.R)) {
+            for (const packed of data.R) {
+                const id = (0, wire_fields_1.unpackId)(packed);
+                const kind = kinds.get(id);
+                kinds.delete(id);
+                if (kind === 0 /* WireKind.Player */)
+                    removedPlayerIds.push(id);
+                else if (kind === 1 /* WireKind.Mob */)
+                    removedEnemyIds.push(id);
+                else if (kind === 2 /* WireKind.Item */)
+                    removedItemIds.push(id);
+                else {
+                    // Kind unknown — it was never streamed to us (the join
+                    // snapshot delivers players without one), so we cannot route
+                    // it. Ids are unique across kinds (entity_ids.ts), so
+                    // offering it to all three removers is safe: at most one
+                    // holds it. Guessing "enemy" here silently leaked players.
+                    removedPlayerIds.push(id);
+                    removedEnemyIds.push(id);
+                    removedItemIds.push(id);
+                }
+            }
+        }
         // De-jittered snapshot timeline. Stamping snapshots with *arrival* time
         // lets network jitter distort the timeline: under latency, TCP delivers
         // several ticks in a burst with near-identical timestamps, and the
@@ -239,35 +313,78 @@ function registerGameStateHandlers(game) {
         }
         // Explicit removes only: drop just the enemies the server told us to drop.
         // Stationary / unchanged enemies aren't mentioned at all and stay as-is.
-        if (removedEnemyIds) {
-            for (const id of removedEnemyIds)
-                handleEnemyOutOfView(id);
-        }
+        for (const id of removedEnemyIds)
+            handleEnemyOutOfView(id);
+        // Items: picked up, expired, or simply out of our box. The despawn
+        // animation no-ops when a pickup animation is already running for the
+        // same id, so a pickup cue followed by the stream's removal reads as one
+        // motion rather than two.
+        for (const id of removedItemIds)
+            game.removeWorldItem?.(id);
         // Full-resync snapshot: a frame to us was dropped under backpressure, so
         // one of our enemies may be a ghost whose one-shot removal never arrived.
         // E now lists the entire viewport — anything we hold beyond it is stale.
         // (Mid-death-animation enemies are skipped by handleEnemyOutOfView and
         // cleaned up by the game loop's 200ms animation timer.)
         if (data.F) {
+            // The server cleared its per-socket baseline for this frame, so
+            // every entity it can still see arrives as a first-sight record
+            // carrying `K`. Anything left in `kinds` beyond those is stale.
+            for (const id of Array.from(kinds.keys())) {
+                if (!mentionedThisFrame.has(id))
+                    kinds.delete(id);
+            }
             const mentioned = new Set();
-            if (serverEnemies)
-                for (const e of serverEnemies)
-                    mentioned.add(e.i);
+            for (const e of serverEnemies)
+                mentioned.add(e.i);
             for (const id of cw.enemyIds()) {
                 if (!mentioned.has(id))
                     handleEnemyOutOfView(id);
             }
             // Same for players: after a resync the server re-sends every visible
-            // flower as a first-sight record, so anything P doesn't mention is a
-            // ghost whose D entry was lost with the dropped frame.
+            // flower as a first-sight record, so anything N doesn't mention is a
+            // ghost whose removal was lost with the dropped frame.
             const mentionedPlayers = new Set();
-            if (serverPlayers)
-                for (const sp of serverPlayers)
-                    mentionedPlayers.add(sp.i);
+            for (const sp of serverPlayers)
+                mentionedPlayers.add(sp.i);
             for (const id of cw.playerIds()) {
                 if (!mentionedPlayers.has(id) && !(0, playerRefs_1.isOwnPlayerId)(game, id))
                     cw.removePlayer(id);
             }
+            // And items, which are part of the same stream now — this is what
+            // replaced the whole `itemsUpdate` full-replace recovery channel.
+            const mentionedItems = new Set();
+            for (const it of serverItems)
+                mentionedItems.add(it.i);
+            for (const id of Array.from(game.items.keys())) {
+                if (!mentionedItems.has(id))
+                    game.removeWorldItem?.(id);
+            }
+        }
+        // Dropped loot. First sight registers the spawn animation and the
+        // rarity burst — the cues the old itemsSpawned handler fired.
+        for (const it of serverItems) {
+            const existing = game.items.get(it.i);
+            if (existing) {
+                if (it.x !== undefined)
+                    existing.x = it.x;
+                if (it.y !== undefined)
+                    existing.y = it.y;
+                continue;
+            }
+            const item = {
+                id: it.i,
+                x: it.x ?? 0,
+                y: it.y ?? 0,
+                type: wire_fields_1.WIRE_ITEM_TYPES[it.I ?? 0] ?? 'petal',
+                rarity: wire_fields_1.WIRE_RARITIES[it.R ?? 0],
+            };
+            if (it.P)
+                item.petalType = it.P;
+            game.items.set(item.id, item);
+            game.registerItemSpawnAnim?.(item);
+            if (item.rarity)
+                game.graphics.showItemDropBurst(item.x, item.y, item.rarity);
         }
         if (serverEnemies) {
             for (const e of serverEnemies) {

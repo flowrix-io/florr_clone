@@ -21,6 +21,7 @@
  *   - `importEnemy` / `importWorld` ADOPT an existing legacy object. That is now
  *     only the harness (which builds a legacy world on purpose) and the
  *     orphan-adoption safety net in ecsSync. The live game does not import mobs
+import { mobAiType, mobAngle, mobDamage, mobDespawnAt, mobHealth, mobMaxHealth, mobRadiusOf, mobRange, mobReversed, mobSpeed, mobStatsOf, mobTargetPetId, mobTargetPlayerId, mobX, mobY } from './mobFields';
  *     any more — they are born as entities.
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
@@ -50,7 +51,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.aiTypeOf = aiTypeOf;
 exports.radiusOf = radiusOf;
 exports.attachMobBehaviour = attachMobBehaviour;
-exports.importEnemy = importEnemy;
 exports.linkEnemyReferences = linkEnemyReferences;
 exports.importPlayer = importPlayer;
 exports.importWorld = importWorld;
@@ -62,9 +62,14 @@ const interning_1 = require("../ecs/interning");
 const prefabs_1 = require("../ecs/prefabs");
 /** Mob types that use the bee cruise machine rather than the default one. */
 const BEE_FLIGHT_TYPES = new Set(['bee']);
-/** Mob AI type strings mapped to the component enum. */
-function aiTypeOf(enemy) {
-    switch (enemy.aiType) {
+/**
+ * Mob AI type strings mapped to the component enum.
+ *
+ * Takes the CONFIG string, not a shell: this runs while the entity is being
+ * built, so there is nothing to read it back off yet.
+ */
+function aiTypeOf(aiType) {
+    switch (aiType) {
         case 'passive': return 0 /* C.AiType.Passive */;
         case 'hostile': return 2 /* C.AiType.Hostile */;
         case 'sandstorm': return 3 /* C.AiType.Sandstorm */;
@@ -97,123 +102,61 @@ function attachMobBehaviour(world, entity, enemy, now, stats) {
     // direction. See C.LegacyShell.
     world.add(entity, C.LegacyShell, { ref: enemy });
     // Passive drift: only mobs that can actually move idle-drift.
-    if (enemy.speed > 0) {
-        world.add(entity, C.PassiveMotion, {
-            state: enemy.passiveState === 'moving' ? 1 /* C.PassiveState.Moving */ : 0 /* C.PassiveState.Idle */,
-            stateStart: enemy.passiveStateStart ?? now,
-        });
+    if (world.get(entity, C.Speed, 'current') > 0) {
+        world.add(entity, C.PassiveMotion, { state: 0 /* C.PassiveState.Idle */, stateStart: now });
         world.add(entity, C.IsIdle);
-        world.write(entity, C.Velocity, { x: enemy.velX ?? 0, y: enemy.velY ?? 0 });
+        // Velocity starts at rest; the passive-motion system drives it from here.
     }
     // The bee cruise machine is selected by the Wobble component.
     if (BEE_FLIGHT_TYPES.has(enemy.type)) {
-        world.add(entity, C.Wobble, { phase: enemy.wobblePhase ?? Math.random() * Math.PI * 2 });
+        world.add(entity, C.Wobble, { phase: Math.random() * Math.PI * 2 });
     }
-    if (enemy.reversed !== undefined) {
-        world.add(entity, C.RenderFlip, { flipped: enemy.reversed ? 1 : 0 });
-    }
-    if (enemy.despawnAt) {
-        world.add(entity, C.Expires, { at: enemy.despawnAt });
-    }
+    // RenderFlip and Expires are seeded by the caller's spawn options, which is
+    // the only place that knows them: a shell has no fields to read them from.
     // Spawner triggers live in the ECS (systems/spawning.ts): the interval
     // clock for queen-ant escorts and the health-threshold bookkeeping for
     // ant-hole waves. Config decides which mobs get them.
-    const config = stats ?? enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
+    const config = stats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
     if (config?.periodic_spawn) {
-        world.add(entity, C.PeriodicSpawner, {
-            lastSpawnTime: enemy.lastPeriodicSpawnTime ?? 0,
+        world.add(entity, C.PeriodicSpawner, { lastSpawnTime: 0 });
+    }
+    // Target dummies measure player DPS; the sample buffers are a component, so
+    // they are attached at spawn rather than lazily on first damage (which is
+    // what the shell's optional arrays used to do).
+    if (enemy.type === 'target_dummy' && !world.has(entity, C.DpsTracker)) {
+        world.add(entity, C.DpsTracker, {
+            historyTimes: [], historyDamages: [], startTime: 0, currentDPS: 0,
         });
     }
     if (config?.spawn_waves && config.spawn_waves.length > 0) {
         world.add(entity, C.SpawnWaveState, {
-            previousHealth: enemy._spawnWavePrevHealth ?? enemy.health,
+            previousHealth: world.get(entity, C.Health, 'current'),
         });
     }
 }
-/**
- * Create an ECS entity mirroring an EXISTING legacy `enemy`.
+/*
+ * `importEnemy` is gone.
  *
- * Adoption, not birth: it copies mid-life state (wander target, knockback,
- * attack timers, DPS history) that a freshly spawned mob does not have. The
- * live game spawns mobs through enemyRegistry.spawnEnemy instead; this remains
- * for the tick harness's legacy-world import and for ecsSync's orphan-adoption
- * safety net.
+ * It adopted an existing shell by copying its mid-life state (position, health,
+ * wander target, attack timers, DPS history) into fresh components. A shell no
+ * longer HAS mid-life state — the components are the only storage — so there is
+ * nothing to copy and nothing to adopt. Mobs come into existence exactly one
+ * way now: `spawnEnemy` in server/enemyRegistry.ts.
  */
-function importEnemy(world, enemy, now) {
-    const stats = enemy._mobStats ?? (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
-    const entity = (0, prefabs_1.spawnMob)(world, {
-        id: enemy.id,
-        type: enemy.type,
-        tier: enemy.tier,
-        x: enemy.x,
-        y: enemy.y,
-        angle: enemy.angle,
-        health: enemy.health,
-        maxHealth: enemy.maxHealth,
-        speed: enemy.speed,
-        damage: enemy.damage,
-        radius: enemy._radius ?? radiusOf(enemy, stats),
-        aiType: aiTypeOf(enemy),
-        range: enemy.range,
-        stats,
-        now,
-    });
-    // Speed carries its unslowed baseline separately so a lapsing slow restores
-    // the right value.
-    world.write(entity, C.Speed, {
-        current: enemy.speed,
-        base: enemy.baseSpeed ?? enemy.speed,
-    });
-    if (enemy.slowUntil !== undefined) {
-        world.add(entity, C.Slowed, { until: enemy.slowUntil });
-    }
-    attachMobBehaviour(world, entity, enemy, now, stats);
-    if (enemy.wanderTargetX !== undefined) {
-        world.add(entity, C.Wander, {
-            targetX: enemy.wanderTargetX,
-            targetY: enemy.wanderTargetY ?? enemy.y,
-            lastTime: enemy.lastWanderTime ?? 0,
-        });
-    }
-    if (enemy.knockbackX || enemy.knockbackY) {
-        world.add(entity, C.Knockback, { x: enemy.knockbackX ?? 0, y: enemy.knockbackY ?? 0 });
-    }
-    if (enemy.lastProjectileTime !== undefined || enemy.lastMeleeAttackTime !== undefined) {
-        world.add(entity, C.AttackTimers, {
-            lastProjectileTime: enemy.lastProjectileTime ?? 0,
-            lastMeleeAttackTime: enemy.lastMeleeAttackTime ?? 0,
-        });
-    }
-    if (enemy.damageContributors) {
-        world.add(entity, C.DamageContributors, { byPlayer: enemy.damageContributors });
-    }
-    // PeriodicSpawner / SpawnWaveState are attached (with the shell's mid-life
-    // values) by attachMobBehaviour above, which knows the config.
-    if (enemy.currentDPS !== undefined || enemy.dpsStartTime !== undefined) {
-        world.add(entity, C.DpsTracker, {
-            historyTimes: enemy.dpsHistoryTimes ?? [],
-            historyDamages: enemy.dpsHistoryDamages ?? [],
-            startTime: enemy.dpsStartTime ?? now,
-            currentDPS: enemy.currentDPS ?? 0,
-        });
-    }
-    // ChallengeMob is added by linkEnemyReferences, which is where the buyer's
-    // entity can actually be resolved.
-    return entity;
-}
 /**
  * Resolve the id-based cross-references an enemy carries into entity handles.
  *
- * When ADOPTING a snapshot this must run as a SECOND pass, after every enemy
- * has an entity: a centipede segment can reference a leader that has not been
- * imported yet. At SPAWN time no second pass is needed — a chain's head is
- * admitted before its segments and a hole before its guardians — so
- * enemyRegistry calls this inline.
+ * A chain's head is admitted before its segments and a hole before its
+ * guardians, so enemyRegistry calls this inline at spawn — there is no second
+ * pass any more, because there is no snapshot adoption any more.
  *
  * `resolveOwner` exists because a pet's owner is a PLAYER, and a player who
  * acted on their very first tick may not have been imported yet. Passing
  * `ensurePlayerEntity` here imports them on demand; without it the pet would
  * carry `owner: NULL_ENTITY` forever, since nothing re-links after spawn.
+ *
+ * The targeting fields it used to resolve are gone: a freshly spawned mob has
+ * no target, and provocation writes MobAI directly (see provokeMob).
  */
 function linkEnemyReferences(world, enemy, resolveOwner) {
     const entity = world.lookup(enemy.id);
@@ -243,29 +186,14 @@ function linkEnemyReferences(world, enemy, resolveOwner) {
         });
     }
     if (enemy.challengeOwnerId) {
-        // Resolved here rather than in importEnemy for the same reason as the
-        // others: the buyer may not have an entity yet at construction time.
+        // Resolved here rather than at construction for the same reason as the
+        // others: the buyer may not have an entity yet.
         world.add(entity, C.ChallengeMob, {
             owner: (resolveOwner
                 ? resolveOwner(enemy.challengeOwnerId)
                 : world.lookup(enemy.challengeOwnerId)) ?? ecs_1.NULL_ENTITY,
             starsReward: enemy.challengeStarsReward ?? 0,
         });
-    }
-    if (enemy.targetPlayerId) {
-        const target = world.lookup(enemy.targetPlayerId);
-        if (target !== undefined)
-            world.set(entity, C.MobAI, 'targetPlayer', target);
-    }
-    if (enemy.targetEnemyId) {
-        const target = world.lookup(enemy.targetEnemyId);
-        if (target !== undefined)
-            world.set(entity, C.MobAI, 'targetEnemy', target);
-    }
-    if (enemy.targetPetId) {
-        const target = world.lookup(enemy.targetPetId);
-        if (target !== undefined)
-            world.set(entity, C.MobAI, 'targetPet', target);
     }
 }
 /**
@@ -353,11 +281,15 @@ function importPlayer(world, player, now, lobby = false) {
  * Import a whole world snapshot: players first (so pets can resolve owners),
  * then enemies, then the reference-linking pass.
  */
-function importWorld(world, players, enemies, now) {
+/**
+ * Import a legacy world.
+ *
+ * PLAYERS ONLY. `ServerPlayer` is the database's shape and still holds state, so
+ * it genuinely has to be imported. Mobs do not: a shell carries no state any
+ * more, so there is nothing to copy — they are admitted through
+ * `spawnEnemy`, which builds the components directly from the mob config.
+ */
+function importWorld(world, players, now) {
     for (const player of players)
         importPlayer(world, player, now);
-    for (const enemy of enemies)
-        importEnemy(world, enemy, now);
-    for (const enemy of enemies)
-        linkEnemyReferences(world, enemy);
 }

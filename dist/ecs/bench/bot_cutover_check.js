@@ -88,7 +88,8 @@ exports.runBotCutoverCheck = runBotCutoverCheck;
 exports.main = main;
 const constants_1 = require("../../constants");
 const petals_1 = require("../../petals");
-const itemRegistry_1 = require("../../server/itemRegistry");
+const entityRegistry_1 = require("../../server/entityRegistry");
+const enemyRegistry_1 = require("../../server/enemyRegistry");
 const enemyGrid_1 = require("../../server/enemyGrid");
 const ecsRuntime_1 = require("../../server/ecsRuntime");
 const ecsSync_1 = require("../../server/ecsSync");
@@ -167,9 +168,8 @@ function makeBot(id, x, y, loadout) {
 function resetWorldSingletons() {
     for (const id in constants_1.players)
         delete constants_1.players[id];
-    constants_1.enemies.length = 0;
-    // Items live in the WORLD now; each makeRuntime() starts an empty one, so
-    // there is no item singleton left to clear.
+    // Mobs and items both live in the WORLD now, and each makeRuntime() starts
+    // an empty one — so there is no mob or item singleton left to clear.
 }
 function makeRuntime() {
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
@@ -203,9 +203,9 @@ function makeRuntime() {
         onReapEnemy: () => { },
     });
     (0, ecsSync_1.configureCutover)(runtime);
-    // Bot pickup targeting reads drops through the item registry; point it at
+    // Bot pickup targeting reads drops through the entity registry; point it at
     // this bench's world (re-bound per runtime, exactly like server.ts does).
-    (0, itemRegistry_1.bindItemHost)({ getWorld: () => runtime.world });
+    (0, entityRegistry_1.bindEntityHost)({ getWorld: () => runtime.world, resolvePlayer: () => undefined });
     return runtime;
 }
 // (speedBoost is derived by the live playerModifiers system now: with the
@@ -274,7 +274,7 @@ function runOrderedTicks(runtime, io, tickCount, misplaceInput) {
         const now = NOW0 + tick * (1000 / 30);
         // Exactly the order server.ts runs: the enemy grid bot targeting queries,
         // then the input phase, then the movement window.
-        (0, enemyGrid_1.rebuildEnemyGrid)(constants_1.enemies);
+        (0, enemyGrid_1.rebuildEnemyGrid)((0, enemyRegistry_1.liveEnemies)());
         if (!misplaceInput)
             runtime.tickInput(DT, DT * 1000, now);
         const decided = {};
@@ -332,11 +332,10 @@ function checkInputOrder() {
         constants_1.players[bot.id] = bot;
         (0, ecsSync_1.ensurePlayerEntity)(runtime.world, bot, NOW0);
     }
-    constants_1.enemies.push({
-        id: 'mob_order_0', type: 'ladybug', tier: 'common',
-        x: 12400, y: 12200, angle: 0, health: 5000, maxHealth: 5000,
-        speed: 100, damage: 5, aiType: 'neutral', isDead: false,
-    });
+    // Admitted through the registry, because a mob IS its entity now — a bare
+    // object pushed at a container would not exist as far as the world is
+    // concerned, and bot targeting queries the world.
+    (0, enemyRegistry_1.spawnEnemy)('ladybug', 'common', 12400, 12200, { health: 5000, maxHealth: 5000 });
     // Inputs must be MUTATED, never replaced: `syncPlayersToEcs` reads the fields
     // off whatever object `player.inputs` currently is, and the bot half of the
     // contract is that the object is stable for the flower's whole life.

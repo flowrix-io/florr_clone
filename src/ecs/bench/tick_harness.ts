@@ -18,10 +18,15 @@
  * number that decides whether the cutover is safe on the t3.micro and the Pi.
  */
 
-import { makeEnemy, Enemy } from '../../server_utils';
+import { LiveEnemy } from '../../server_utils';
+
+/** The AI archetypes the mob configs use. Was `Enemy['aiType']`. */
+type MobAiType = 'passive' | 'neutral' | 'hostile' | 'sandstorm';
 import { ServerPlayer } from '../../player';
 import { createEcsRuntime } from '../../server/ecsRuntime';
 import { importWorld } from '../../server/ecsBridge';
+import { spawnEnemy } from '../../server/enemyRegistry';
+import { bindEntityHost } from '../../server/entityRegistry';
 import * as C from '../components';
 import { MAX_SANE_WORLD_COORD_LIMIT } from './limits';
 
@@ -36,7 +41,7 @@ function mulberry32(seed: number): () => number {
 }
 
 /** A mix that exercises every AI branch the port touches. */
-const MOB_MIX: Array<{ type: string; tier: string; ai: Enemy['aiType']; weight: number }> = [
+const MOB_MIX: Array<{ type: string; tier: string; ai: MobAiType; weight: number }> = [
     { type: 'bee', tier: 'common', ai: 'neutral', weight: 25 },
     { type: 'ladybug', tier: 'common', ai: 'passive', weight: 20 },
     { type: 'soldier_ant', tier: 'uncommon', ai: 'hostile', weight: 20 },
@@ -76,11 +81,16 @@ export const DEFAULT_CONFIG: HarnessConfig = {
     seed: 20260810,
 };
 
-/** Build a legacy world, then let the bridge convert it. */
+/**
+ * Build the legacy player list, then admit the mobs.
+ *
+ * Mobs are admitted through `spawnEnemy` (which needs a bound world), so this
+ * runs AFTER the runtime exists — a shell carries no state any more, so there is
+ * nothing to hand to an importer.
+ */
 function buildLegacyWorld(config: HarnessConfig) {
     const rng = mulberry32(config.seed);
     const players: ServerPlayer[] = [];
-    const enemies: Enemy[] = [];
 
     for (let i = 0; i < config.players; i++) {
         players.push({
@@ -105,44 +115,58 @@ function buildLegacyWorld(config: HarnessConfig) {
         } as ServerPlayer);
     }
 
+    return { players };
+}
+
+/** Admit the scenario's mobs. Requires a bound world (see buildLegacyWorld). */
+function spawnHarnessMobs(config: HarnessConfig): LiveEnemy[] {
+    const rng = mulberry32(config.seed ^ 0x9e37);
+    const enemies: LiveEnemy[] = [];
     let centipedeHead: string | undefined;
     for (let i = 0; i < config.mobs; i++) {
         const m = pick(rng);
         const id = `mob-${i}`;
         const isPet = rng() < config.petFraction;
 
-        const enemy = makeEnemy({
-            id,
-            type: m.type as never,
-            tier: m.tier as never,
-            x: (rng() - 0.5) * config.extent,
-            y: (rng() - 0.5) * config.extent,
-            angle: rng() * Math.PI * 2,
-            health: 100,
-            maxHealth: 100,
-            speed: m.type === 'ant_hole' ? 0 : 30 + rng() * 40,
-            damage: 5,
-        });
-        enemy.aiType = m.ai;
-        enemy.range = 500;
-        if (isPet) enemy.ownerId = `sock-${Math.floor(rng() * config.players)}`;
-
-        // Build a few real centipede chains so the chain passes have work.
+        // Chain membership is decided before admission, because it is a spawn
+        // option now rather than a field patched onto a shell afterwards.
+        let headId: string | undefined;
+        let leaderId: string | undefined;
+        let segmentIndex: number | undefined;
         if (m.type === 'centipede') {
             if (!centipedeHead || rng() < 0.2) {
                 centipedeHead = id;
-                enemy.headId = id;
-                enemy.segmentIndex = 0;
+                headId = id;
+                segmentIndex = 0;
             } else {
-                enemy.headId = centipedeHead;
-                enemy.leaderId = centipedeHead;
-                enemy.segmentIndex = 1;
+                headId = centipedeHead;
+                leaderId = centipedeHead;
+                segmentIndex = 1;
             }
         }
-        enemies.push(enemy);
+
+        const enemy = spawnEnemy(
+            m.type,
+            m.tier as never,
+            (rng() - 0.5) * config.extent,
+            (rng() - 0.5) * config.extent,
+            {
+                angle: rng() * Math.PI * 2,
+                health: 100,
+                maxHealth: 100,
+                damage: 5,
+                aiType: m.ai as never,
+                range: 500,
+                ownerId: isPet ? `sock-${Math.floor(rng() * config.players)}` : undefined,
+                headId,
+                leaderId,
+                segmentIndex,
+            },
+        );
+        if (enemy) enemies.push(enemy);
     }
 
-    return { players, enemies };
+    return enemies;
 }
 
 export interface HarnessResult {
@@ -238,7 +262,8 @@ function percentile(sorted: number[], q: number): number {
 
 export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessResult {
     assertNoServerBooted();
-    const { players, enemies } = buildLegacyWorld(config);
+    const { players } = buildLegacyWorld(config);
+    const enemies: LiveEnemy[] = [];
 
     let netIdCounter = 0;
     let playerHits = 0;
@@ -288,7 +313,11 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     });
 
     const now0 = 1_000_000;
-    importWorld(runtime.world, players, enemies, now0);
+    // Players still import from shells: ServerPlayer is the database's shape and
+    // stays. Mobs are admitted through the registry against this runtime's world.
+    bindEntityHost({ getWorld: () => runtime.world, resolvePlayer: (id) => runtime.world.lookup(id) });
+    importWorld(runtime.world, players, now0);
+    enemies.push(...spawnHarnessMobs(config));
 
     const world = runtime.world;
     const positioned = world.query([C.Position]);

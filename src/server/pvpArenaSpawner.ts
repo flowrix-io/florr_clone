@@ -1,7 +1,7 @@
 import { Enemy } from '../server_utils';
+import { mobX, mobY } from './mobFields';
 import {
     players,
-    enemies,
     PVP_ARENA_CENTER_X,
     PVP_ARENA_CENTER_Y,
     PVP_ARENA_RADIUS,
@@ -9,7 +9,7 @@ import {
 } from '../constants';
 import { getMobStats } from '../mobs';
 import { pickWeighted } from './shared/weighted';
-import { spawnEnemy } from './enemyRegistry';
+import { spawnEnemy, liveEnemies} from './enemyRegistry';
 
 // Garden-themed mobs + spider. Weights control relative spawn frequency.
 // Spider is intentionally rarer — it's the standout threat in the arena.
@@ -49,8 +49,8 @@ function countArenaPlayers(): number {
 
 function countArenaMobs(): number {
     let count = 0;
-    for (const enemy of enemies) {
-        if (isInPvpArena(enemy.x, enemy.y)) count++;
+    for (const enemy of liveEnemies()) {
+        if (isInPvpArena(mobX(enemy.entity), mobY(enemy.entity))) count++;
     }
     return count;
 }
@@ -80,12 +80,12 @@ function findArenaSpawnPosition(mobRadius: number): { x: number; y: number } | n
 
         // Don't pile on top of another mob.
         let tooCloseToMob = false;
-        for (const enemy of enemies) {
-            if (!isInPvpArena(enemy.x, enemy.y)) continue;
+        for (const enemy of liveEnemies()) {
+            if (!isInPvpArena(mobX(enemy.entity), mobY(enemy.entity))) continue;
             const otherStats = getMobStats(enemy.type, enemy.tier);
             const otherRadius = otherStats ? (otherStats.size * 40) / 2 : 20;
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
+            const dx = mobX(enemy.entity) - x;
+            const dy = mobY(enemy.entity) - y;
             const minDist = mobRadius + otherRadius + MIN_SPAWN_DISTANCE_FROM_MOB;
             if (dx * dx + dy * dy < minDist * minDist) {
                 tooCloseToMob = true;
@@ -102,7 +102,7 @@ function findArenaSpawnPosition(mobRadius: number): { x: number; y: number } | n
 /**
  * Spawn up to `limit` mobs this tick to keep the arena populated.
  *
- * Mobs are admitted by `spawnEnemy` as they are created (entity + `enemies[]`);
+ * Mobs are admitted by `spawnEnemy` as they are created (entity + `liveEnemies()[]`);
  * the return value is the count, for logging and pacing.
  */
 export function spawnArenaMobs(limit: number = 3): number {

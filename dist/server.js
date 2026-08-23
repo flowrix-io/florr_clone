@@ -42,7 +42,7 @@ exports.getScheduledRestartInfo = getScheduledRestartInfo;
 exports.rotateMazeToDay = rotateMazeToDay;
 exports.adminChangeMaze = adminChangeMaze;
 const ws_server_1 = require("./ws_server");
-const scopedEmit_1 = require("./server/scopedEmit");
+const mobFields_1 = require("./server/mobFields");
 const wireOutbox_1 = require("./server/wireOutbox");
 const outbox_1 = require("./ecs/net/outbox");
 const enemyWire_1 = require("./server/enemyWire");
@@ -107,7 +107,6 @@ const playerState_1 = require("./server/playerState");
 const gameState_1 = require("./server/gameState");
 const prefabs_1 = require("./ecs/prefabs");
 const EC = __importStar(require("./ecs/components"));
-const itemRegistry_1 = require("./server/itemRegistry");
 const itemManager_1 = require("./server/itemManager");
 const botManager_1 = require("./server/botManager");
 const playerManager_1 = require("./server/playerManager");
@@ -119,6 +118,9 @@ const pvpArenaSpawner_1 = require("./server/pvpArenaSpawner");
 const spawnZoneManager_1 = require("./server/spawnZoneManager");
 const enemyGrid_1 = require("./server/enemyGrid");
 const enemyRegistry_1 = require("./server/enemyRegistry");
+/** Snapshot buffer: the bulk-clear loop removes while iterating. */
+const mobScratch = [];
+const entityRegistry_1 = require("./server/entityRegistry");
 const positions_1 = require("./server/shared/positions");
 const killHandler_1 = require("./server/shared/killHandler");
 const rarity_1 = require("./server/shared/rarity");
@@ -161,8 +163,8 @@ function handleMobDrops(enemy, dropMultiplier = 1, io) {
     const enemyData = {
         type: enemy.type,
         tier: enemy.tier,
-        x: enemy.x,
-        y: enemy.y,
+        x: (0, mobFields_1.mobX)(enemy.entity),
+        y: (0, mobFields_1.mobY)(enemy.entity),
         damageContributors: enemy.damageContributors ? new Map(enemy.damageContributors) : undefined
     };
     (0, itemManager_1.handleMobDrops)(enemyData, io || ioInstance, dropMultiplier);
@@ -176,10 +178,10 @@ function getLeaderboardRewardMultipliers(playerId) {
 function updateTargetDummyDPS() {
     if (!ioInstance)
         return; // Guard against ioInstance not being set yet
-    const targetDummies = constants_2.enemies.filter(e => e.type === 'target_dummy');
+    const targetDummies = (0, enemyRegistry_1.liveEnemies)().filter(e => e.type === 'target_dummy');
     for (const dummy of targetDummies) {
         const dps = (0, utils_1.calculateDPS)(dummy);
-        dummy.currentDPS = dps;
+        (0, mobFields_1.setMobCurrentDPS)(dummy.entity, dps);
         // Send DPS update to all clients
         (0, wireOutbox_1.getWireOutbox)().all('targetDummyDPS', {
             enemyId: dummy.id,
@@ -439,7 +441,7 @@ constants_2.obstacles.push(...(0, gameState_3.initializeMapObstacles)());
 // scheduler, exactly as the legacy passes were.
 function calculateCurrentDensity() {
     const playerCount = Object.keys(constants_2.players).length;
-    const totalEnemies = constants_2.enemies.length;
+    const totalEnemies = (0, enemyRegistry_1.liveEnemies)().length;
     const enemiesInViewport = (0, playerState_1.getEnemiesInViewportCount)();
     if (playerCount > 0) {
         const totalViewportArea = constants_2.VIEWPORT_WITH_BUFFER_AREA * playerCount;
@@ -497,7 +499,7 @@ function triggerViewportUpdate() {
             const enemiesToSpawn = Math.min(5 * playerCount, targetEnemyCount - currentViewportEnemies);
             let spawned = 0;
             for (let i = 0; i < enemiesToSpawn; i++) {
-                // createEnemy admits the mob itself (entity + enemies[]).
+                // createEnemy admits the mob itself (entity + liveEnemies()[]).
                 if (createEnemy())
                     spawned++;
             }
@@ -522,12 +524,11 @@ function spawnSpecialMobs() {
 // this is a clean despawn, not a scored kill.
 function clearAllMobs() {
     let removed = 0;
-    for (let i = constants_2.enemies.length - 1; i >= 0; i--) {
-        const enemy = constants_2.enemies[i];
+    for (const enemy of (0, enemyRegistry_1.collectEnemies)(mobScratch)) {
         if (enemy.ownerId)
             continue; // keep player pets
         (0, utils_1.cleanupEnemy)(enemy);
-        (0, enemyRegistry_1.removeEnemyAt)(i);
+        (0, enemyRegistry_1.removeEnemy)(enemy);
         (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', enemy.id);
         removed++;
     }
@@ -554,7 +555,7 @@ function createEnemy() {
 // chat banner or the boss-event log. This mirrors that announcement for any
 // tier normally treated as a boss (super, unique, apex), regardless of spawn origin.
 function announceBossSpawn(bossMob, tier) {
-    const mobSection = (0, enemySpawner_1.getSectionAtPosition)(bossMob.x, bossMob.y);
+    const mobSection = (0, enemySpawner_1.getSectionAtPosition)((0, mobFields_1.mobX)(bossMob.entity), (0, mobFields_1.mobY)(bossMob.entity));
     const spawnTimestamp = Date.now();
     const tierColor = constants_2.ENEMY_TIERS[tier].color;
     Object.entries(constants_2.players).forEach(([playerId, player]) => {
@@ -571,15 +572,15 @@ function announceBossSpawn(bossMob, tier) {
         type: 'spawn',
         tier,
         mobType: bossMob.type,
-        x: bossMob.x,
-        y: bossMob.y,
+        x: (0, mobFields_1.mobX)(bossMob.entity),
+        y: (0, mobFields_1.mobY)(bossMob.entity),
         timestamp: spawnTimestamp,
         message: (0, apiKeyApi_1.stripHtml)(message)
     });
 }
 function announceAmbientSuper(superMob) {
     gameState_1.superMobCount.value++;
-    const mobSection = (0, enemySpawner_1.getSectionAtPosition)(superMob.x, superMob.y);
+    const mobSection = (0, enemySpawner_1.getSectionAtPosition)((0, mobFields_1.mobX)(superMob.entity), (0, mobFields_1.mobY)(superMob.entity));
     (0, gameState_2.setSuperMobInSection)(mobSection, superMob.id);
     const spawnTimestamp = Date.now();
     Object.entries(constants_2.players).forEach(([playerId, player]) => {
@@ -596,12 +597,12 @@ function announceAmbientSuper(superMob) {
         type: 'spawn',
         tier: 'super',
         mobType: superMob.type,
-        x: superMob.x,
-        y: superMob.y,
+        x: (0, mobFields_1.mobX)(superMob.entity),
+        y: (0, mobFields_1.mobY)(superMob.entity),
         timestamp: spawnTimestamp,
         message: (0, apiKeyApi_1.stripHtml)(message)
     });
-    console.log(`[SERVER] Ambient super mob spawned: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
+    console.log(`[SERVER] Ambient super mob spawned: ${superMob.type} at (${(0, mobFields_1.mobX)(superMob.entity)}, ${(0, mobFields_1.mobY)(superMob.entity)})`);
 }
 // Function to spawn a specific mob with a specific rarity at optional coordinates
 function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
@@ -702,14 +703,15 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
             ex = clamped.x;
             ey = clamped.y;
         }
-        // Admits the mob (ECS entity + enemies[]); the `beforeCount` reads below
-        // still work because admission appends in creation order.
+        // Admits the mob. The child spawners below RETURN what they admitted —
+        // they used to be read back off the tail of `liveEnemies()[]`, which only
+        // worked while that array was a creation-ordered container.
         const enemy = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, ex, ey);
         if (!enemy)
             continue;
         // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
         // Notify all clients
-        (0, scopedEmit_1.emitToViewers)(enemy.x, enemy.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(enemy));
+        (0, enemyWire_1.emitEnemySpawned)(enemy);
         // Boss-tier mobs normally announce themselves via spawnSpecialMobs()/
         // announceAmbientSuper(), neither of which runs for an admin-triggered
         // spawn — fire the same chat banner + boss-event log here.
@@ -720,18 +722,14 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
         // like any other mob and the chain-specific features (severing, avoidance)
         // have nothing to act on.
         if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
-            const beforeCount = constants_2.enemies.length;
-            (0, enemySpawner_1.spawnCentipedeBodySegments)(enemy);
-            for (let i = beforeCount; i < constants_2.enemies.length; i++) {
-                (0, scopedEmit_1.emitToViewers)(constants_2.enemies[i].x, constants_2.enemies[i].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_2.enemies[i]));
+            for (const segment of (0, enemySpawner_1.spawnCentipedeBodySegments)(enemy)) {
+                (0, enemyWire_1.emitEnemySpawned)(segment);
             }
         }
         // Mobs with initial_spawns (e.g. ant holes) arrive with a pre-spawned cluster.
         if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
-            const beforeCount = constants_2.enemies.length;
-            (0, enemySpawner_1.spawnInitialSpawns)(enemy);
-            for (let j = beforeCount; j < constants_2.enemies.length; j++) {
-                (0, scopedEmit_1.emitToViewers)(constants_2.enemies[j].x, constants_2.enemies[j].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_2.enemies[j]));
+            for (const child of (0, enemySpawner_1.spawnInitialSpawns)(enemy)) {
+                (0, enemyWire_1.emitEnemySpawned)(child);
             }
         }
     }
@@ -890,22 +888,27 @@ function savePlayerProgressImmediate(player, userId) {
 function adjustEnemyCount() {
     const playerCount = Object.keys(constants_2.players).length;
     const targetEnemyCount = playerCount > 0 ? constants_2.ENEMIES_PER_VIEWPORT * playerCount : gameState_1.ENEMY_COUNT.value;
-    // Remove excess enemies if current count is higher than target
-    while (constants_2.enemies.length > targetEnemyCount) {
-        const removedEnemy = constants_2.enemies.pop();
-        if (removedEnemy) {
-            (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', removedEnemy.id);
-        }
+    // Remove excess enemies if current count is higher than target.
+    // This used to `enemies.pop()`, which dropped the shell and LEFT THE ENTITY
+    // BEHIND for the audit to find — an immortal, invisible mob until then.
+    // Going through removeEnemy retires both, because there is only one now.
+    while ((0, enemyRegistry_1.liveEnemies)().length > targetEnemyCount) {
+        const view = (0, enemyRegistry_1.liveEnemies)();
+        const removedEnemy = view[view.length - 1];
+        if (!removedEnemy)
+            break;
+        (0, enemyRegistry_1.removeEnemy)(removedEnemy);
+        (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', removedEnemy.id);
     }
     // Add new enemies if current count is lower than target. createEnemy admits
     // the mob itself, so the loop is bounded by it returning null (no valid
     // position) rather than by a push here.
-    while (constants_2.enemies.length < targetEnemyCount) {
+    while ((0, enemyRegistry_1.liveEnemies)().length < targetEnemyCount) {
         if (!createEnemy())
             break;
     }
     // Don't send enemiesUpdate here - enemies are sent via enemySpawned/enemyDestroyed events
-    console.log(`[SERVER] Adjusted enemy count to ${constants_2.enemies.length}/${targetEnemyCount} (${playerCount} players)`);
+    console.log(`[SERVER] Adjusted enemy count to ${(0, enemyRegistry_1.liveEnemies)().length}/${targetEnemyCount} (${playerCount} players)`);
 }
 // Command handler dependencies (defined after all functions it depends on)
 const commandDeps = {
@@ -1015,7 +1018,7 @@ const killCtx = {
     players: constants_2.players,
     playerUserIds: gameState_1.playerUserIds,
     database: database_1.database,
-    removeEnemyAt: enemyRegistry_1.removeEnemyAt,
+    removeEnemy: enemyRegistry_1.removeEnemy,
     savePlayerProgress,
     addXPToPlayer,
     handleMobDrops,
@@ -1063,7 +1066,7 @@ function handlePoisonDeath(enemy) {
     if (enemy.isDead)
         return;
     enemy.isDead = true;
-    const index = constants_2.enemies.findIndex(e => e.id === enemy.id);
+    const index = (0, enemyRegistry_1.liveEnemies)().findIndex(e => e.id === enemy.id);
     if (index === -1)
         return;
     const baseXpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
@@ -1090,7 +1093,7 @@ function handlePoisonDeath(enemy) {
     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);
     // Clean up enemy data structures before removal to prevent memory leaks
     (0, utils_1.cleanupEnemy)(enemy);
-    (0, enemyRegistry_1.removeEnemyAt)(index);
+    (0, enemyRegistry_1.removeEnemy)(enemy);
     updateSpecialMobCounts();
     (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', enemy.id);
     // Try to spawn a new enemy (admits itself)
@@ -1112,7 +1115,7 @@ function handlePoisonDeath(enemy) {
 function moveEnemies() {
     const now = Date.now();
     const runtime = getEcsRuntime();
-    (0, ecsSync_1.syncToEcs)(runtime.world, constants_2.enemies, constants_2.players, now);
+    (0, ecsSync_1.syncToEcs)(runtime.world, constants_2.players, now);
     // deltaTime is nominal here on purpose: the ported mob step is a FIXED
     // per-call step, exactly as the legacy one was, and moveEnemies is called
     // mobCatchupCalls times rather than being handed a larger dt.
@@ -1121,7 +1124,6 @@ function moveEnemies() {
     // thing in the Lifetime phase, driving the onReapEnemy hook (XP, drops and
     // the database stay behind that hook, unported).
     runtime.tick(1 / 30, 1000 / 30, now);
-    (0, ecsSync_1.syncFromEcs)(runtime.world, constants_2.enemies);
     // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
 }
 /**
@@ -1151,7 +1153,7 @@ function getEcsRuntime() {
             const ownerId = world.externalIdOf(ownerPlayer);
             if (!victimId || !ownerId)
                 return;
-            const enemy = constants_2.enemies.find(e => e.id === victimId);
+            const enemy = (0, enemyRegistry_1.liveEnemies)().find(e => e.id === victimId);
             if (enemy)
                 (0, utils_1.trackDamage)(enemy, ownerId, amount);
         },
@@ -1160,7 +1162,7 @@ function getEcsRuntime() {
             const victimId = world.externalIdOf(victim);
             if (!victimId)
                 return;
-            const enemy = constants_2.enemies.find(e => e.id === victimId);
+            const enemy = (0, enemyRegistry_1.liveEnemies)().find(e => e.id === victimId);
             if (enemy)
                 (0, utils_1.markEnemyDamaged)(enemy);
         },
@@ -1201,10 +1203,10 @@ function getEcsRuntime() {
             const victimId = world.externalIdOf(victim);
             if (!victimId)
                 return;
-            const index = constants_2.enemies.findIndex(e => e.id === victimId);
+            const index = (0, enemyRegistry_1.liveEnemies)().findIndex(e => e.id === victimId);
             if (index < 0)
                 return;
-            (0, killHandler_1.killEnemy)(constants_2.enemies[index], index, constants_2.enemies, killCtx, {
+            (0, killHandler_1.killEnemy)((0, enemyRegistry_1.liveEnemies)()[index], killCtx, {
                 killerPlayerId: world.externalIdOf(killer),
                 trackMobKillTiming: timing,
             });
@@ -1318,8 +1320,7 @@ function getEcsRuntime() {
             const enemy = world.get(victim, EC.LegacyShell, 'ref');
             if (!enemy)
                 return;
-            const index = constants_2.enemies.indexOf(enemy);
-            if (index < 0)
+            if (!(0, enemyRegistry_1.isEnemyLive)(enemy))
                 return; // a direct kill path already removed it
             if (enemy.damageContributors && enemy.damageContributors.size > 0) {
                 let topContributor;
@@ -1342,13 +1343,13 @@ function getEcsRuntime() {
             // player's own summon shouldn't hatch a hostile. The digger spawns
             // at full health, so it cannot be reaped by this same pass.
             if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
-                const digger = (0, enemyRegistry_1.spawnEnemy)('digger', enemy.tier, enemy.x, enemy.y);
+                const digger = (0, enemyRegistry_1.spawnEnemy)('digger', enemy.tier, (0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
                 if (digger)
-                    (0, scopedEmit_1.emitToViewers)(digger.x, digger.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(digger));
+                    (0, enemyWire_1.emitEnemySpawned)(digger);
             }
             // Clean up enemy data structures before removal to prevent memory leaks
             (0, utils_1.cleanupEnemy)(enemy);
-            (0, enemyRegistry_1.removeEnemyAt)(index);
+            (0, enemyRegistry_1.removeEnemy)(enemy);
             updateSpecialMobCounts();
             // Emit like every OTHER death path does. The legacy reaper relied
             // on the broadcast's R list alone, and that leaks: the join
@@ -1367,12 +1368,12 @@ function getEcsRuntime() {
             const enemy = world.get(summoner, EC.LegacyShell, 'ref');
             if (!enemy || enemy.isDead)
                 return;
-            const stats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+            const stats = (0, mobFields_1.mobStatsOf)(enemy.entity) ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             const spawnCfg = stats?.periodic_spawn;
             if (!spawnCfg)
                 return;
             let alive = 0;
-            for (const other of constants_2.enemies) {
+            for (const other of (0, enemyRegistry_1.liveEnemies)()) {
                 if (other.parentHoleId === enemy.id && other.type === spawnCfg.mobType)
                     alive++;
             }
@@ -1380,8 +1381,8 @@ function getEcsRuntime() {
                 return;
             // Behind the summoner, like gardn's queen ant.
             const radius = (stats.size * 40) / 2 * (0, mobs_2.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, spawnCfg.mobType);
-            const behindX = enemy.x - Math.cos(enemy.angle) * radius;
-            const behindY = enemy.y - Math.sin(enemy.angle) * radius;
+            const behindX = (0, mobFields_1.mobX)(enemy.entity) - Math.cos((0, mobFields_1.mobAngle)(enemy.entity)) * radius;
+            const behindY = (0, mobFields_1.mobY)(enemy.entity) - Math.sin((0, mobFields_1.mobAngle)(enemy.entity)) * radius;
             let spawnTier = enemy.tier;
             for (let step = 0; step < -(spawnCfg.spawnRarityOffset ?? 0); step++) {
                 spawnTier = (0, rarity_1.downgradeRarity)(spawnTier);
@@ -1394,11 +1395,11 @@ function getEcsRuntime() {
                 parentHoleId: enemy.id,
                 ownerId: enemy.ownerId,
                 despawnAt: Date.now() + spawnCfg.lifetimeMs,
-                targetPlayerId: enemy.targetPlayerId,
+                targetPlayerId: (0, mobFields_1.mobTargetPlayerId)(enemy.entity),
             });
             if (!child)
                 return;
-            (0, scopedEmit_1.emitToViewers)(child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
+            (0, enemyWire_1.emitEnemySpawned)(child);
         },
         // Ant-hole waves: the spawn half of the legacy spawnWaveMobs (the
         // health-threshold bookkeeping lives on SpawnWaveState now).
@@ -1409,7 +1410,7 @@ function getEcsRuntime() {
             const enemy = world.get(parent, EC.LegacyShell, 'ref');
             if (!enemy || enemy.isDead)
                 return;
-            const parentStats = enemy._mobStats ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
+            const parentStats = (0, mobFields_1.mobStatsOf)(enemy.entity) ?? (0, mobs_2.getMobStats)(enemy.type, enemy.tier);
             if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0)
                 return;
             const waves = parentStats.spawn_waves;
@@ -1423,10 +1424,10 @@ function getEcsRuntime() {
                 for (const childType of wave) {
                     const angle = Math.random() * Math.PI * 2;
                     const dist = parentRadius + 10 + Math.random() * parentRadius;
-                    const child = (0, enemyRegistry_1.spawnEnemy)(childType, enemy.tier, enemy.x + Math.cos(angle) * dist, enemy.y + Math.sin(angle) * dist, { parentHoleId: enemy.id });
+                    const child = (0, enemyRegistry_1.spawnEnemy)(childType, enemy.tier, (0, mobFields_1.mobX)(enemy.entity) + Math.cos(angle) * dist, (0, mobFields_1.mobY)(enemy.entity) + Math.sin(angle) * dist, { parentHoleId: enemy.id });
                     if (!child)
                         continue;
-                    (0, scopedEmit_1.emitToViewers)(child.x, child.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(child));
+                    (0, enemyWire_1.emitEnemySpawned)(child);
                 }
             }
         },
@@ -1451,20 +1452,24 @@ function getEcsRuntime() {
     return _ecsRuntime;
 }
 /**
- * Give the spawn registry its world.
+ * Give the entity registry its world — ONE host for every kind.
+ *
+ * Mobs, drops, players and projectiles all reach the world through this; there
+ * is no per-kind host any more, because nothing about admission or retirement
+ * was ever kind-specific (see server/entityRegistry.ts).
  *
  * A module-scope statement, so it is impossible for a spawn to happen before
  * the wiring exists — a mob admitted without an entity would be a statue, and
  * nothing would report it. `getWorld` is a thunk rather than a world so the
  * runtime stays lazily constructed; the registry is the first thing to ask for
- * it if a mob spawns before the first tick.
+ * it if something spawns before the first tick.
  *
  * `resolvePlayer` goes through ensurePlayerEntity, not a bare lookup: pets are
  * spawned by petal actions inside updatePlayerState, which runs BEFORE
  * moveEnemies' syncToEcs, so a player summoning on their very first tick would
  * otherwise hand their pet a null owner that nothing ever repairs.
  */
-(0, enemyRegistry_1.bindEnemySpawnHost)({
+(0, entityRegistry_1.bindEntityHost)({
     getWorld: () => getEcsRuntime().world,
     resolvePlayer: (socketId) => {
         const player = constants_2.players[socketId];
@@ -1473,9 +1478,6 @@ function getEcsRuntime() {
         return (0, ecsSync_1.ensurePlayerEntity)(getEcsRuntime().world, player, Date.now());
     },
 });
-// The item registry gets its world the same way, for the same reason: a drop
-// can happen before the first tick, and the thunk keeps the runtime lazy.
-(0, itemRegistry_1.bindItemHost)({ getWorld: () => getEcsRuntime().world });
 // The broadcast encodes enemies straight from component columns now.
 (0, tickBroadcast_1.bindBroadcastWorld)(() => getEcsRuntime().world);
 /** The ServerPlayer behind an ECS entity, if it is still in the world. */
@@ -1714,14 +1716,11 @@ function runSimulationStep(deltaTime, deltaMs, mobCatchupCalls) {
     // like everything else instead of per real tick — which is how a genuinely
     // slow server always behaved.
     projectileRuntime.tickWorld(deltaMs, Date.now());
-    // Projectile and ground-effect damage lands on ECS components, but this
-    // runs OUTSIDE the syncToEcs/syncFromEcs window inside moveEnemies. Without
-    // a second write-back, next tick's syncToEcs would push the legacy
-    // (undamaged) enemy.health straight back over C.Health and every projectile
-    // or pollen hit on a mob would be silently discarded — mobs unkillable by
-    // ranged attacks. syncFromEcs already merges health with MIN and carries
-    // knockback, so it is exactly the right pass to repeat here.
-    (0, ecsSync_1.syncFromEcs)(projectileRuntime.world, constants_2.enemies);
+    // No write-back here any more. This used to need one: projectile and
+    // ground-effect damage landed on the components, and without repeating
+    // syncFromEcs the next tick's syncToEcs would push the stale legacy
+    // `enemy.health` straight back over it — mobs unkillable by ranged attacks.
+    // With the components as the only storage there is no stale copy to lose to.
     broadcastProjectiles();
     // Retire the entities of every mob removed THIS step (kills, despawns,
     // expiries) before the tick ends. The broadcast timer fires between ticks
@@ -1754,25 +1753,10 @@ function flushEnemyDamageBatch() {
     utils_1.pendingEnemyDamageUpdates.clear();
     (0, wireOutbox_1.getWireOutbox)().all('enemiesDamaged', damagedEnemies);
 }
-/** Emit items that spawned this tick, batched into one event per recipient. */
-function flushItemSpawnBatch() {
-    const itemsByPlayer = new Map();
-    (0, itemRegistry_1.drainItemSpawnEmissions)((item, socketIds) => {
-        for (const socketId of socketIds) {
-            let list = itemsByPlayer.get(socketId);
-            if (!list) {
-                list = [];
-                itemsByPlayer.set(socketId, list);
-            }
-            list.push(item);
-        }
-    });
-    for (const [socketId, itemsToSend] of itemsByPlayer) {
-        if (itemsToSend.length > 0) {
-            (0, wireOutbox_1.getWireOutbox)().toSocket(socketId, 'itemsSpawned', itemsToSend);
-        }
-    }
-}
+// The item spawn batch is gone. Drops used to be announced with a batched
+// `itemsSpawned` per recipient per tick; they are part of the gameStateUpdate
+// entity stream now, so they are announced by simply existing — and, unlike a
+// one-shot event, a frame lost to backpressure repairs itself next tick.
 // updateWorldItems / removeWorldItem are gone: dropped items are ECS entities
 // (server/itemRegistry.ts admits them; ecs/systems/droppedItems.ts does the
 // per-tick wall push, bounds check and expiry through the isItemOutOfBounds /
@@ -1906,10 +1890,10 @@ function start_loop() {
         if (authenticatedPlayerIds.length === 0) {
             return;
         }
-        // Build a spatial grid of enemies once per tick. Player/petal collision
-        // loops in updatePlayerState query this instead of scanning all enemies.
+        // Build a spatial grid of liveEnemies() once per tick. Player/petal collision
+        // loops in updatePlayerState query this instead of scanning all liveEnemies().
         // Must run BEFORE the input tick: bot targeting queries this grid.
-        (0, enemyGrid_1.rebuildEnemyGrid)(constants_2.enemies);
+        (0, enemyGrid_1.rebuildEnemyGrid)((0, enemyRegistry_1.liveEnemies)());
         // The INPUT phase: bot AI writes into `player.inputs` before the normal
         // update pipeline reads them, so bots move and attack just like real
         // players. This is exactly where the bare `updateBotAI(io)` call used to
@@ -1936,7 +1920,6 @@ function start_loop() {
         // runSimulationStep now (the spawnWaves system on the world
         // scheduler), still before the damage batch below is emitted.
         flushEnemyDamageBatch();
-        flushItemSpawnBatch();
         evictStalePetalTimers();
         // NOTE: the gameStateUpdate broadcast no longer runs here — it is on its
         // own BROADCAST_INTERVAL timer below, so simulation rate and send rate

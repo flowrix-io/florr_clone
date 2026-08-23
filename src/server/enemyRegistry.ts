@@ -17,84 +17,170 @@
  *                            damage and still shows up on the wire.
  *
  * So creation is made atomic and structural rather than conventional:
- * `spawnEnemy` is the ONLY producer of `LiveEnemy`, `enemies` is a
- * `LiveEnemy[]`, and the entity is created BEFORE the array push. There is no
- * ordering in which one exists without the other, and `enemies.push(someEnemy)`
- * elsewhere does not compile.
+ * `spawnEnemy` is the ONLY producer of `LiveEnemy`, and it produces the shell
+ * and the entity together. There is no ordering in which one exists without the
+ * other, because the shell is not stored anywhere — it is reached THROUGH the
+ * entity, via C.LegacyShell, and projected back out by `liveEnemies()`.
  *
  * ---------------------------------------------------------------------------
  * The other half
  * ---------------------------------------------------------------------------
- * DESTRUCTION is now symmetric with creation: `removeEnemy`/`removeEnemyAt` are
- * the only ways a mob leaves, and they splice the shell and retire the entity
- * as one operation. Every former `enemies.splice(i, 1)` site calls one of them.
+ * DESTRUCTION is now symmetric with creation: `removeEnemy` is the only way a
+ * mob leaves, and it retires the entity — which IS the mob, so there is no
+ * second representation left to forget to update.
  *
  * This replaced a per-tick RECONCILE (`reconcileEnemyEntities` in ecsSync.ts),
- * which rebuilt a set of every live shell and swept every mob entity looking
- * for ones whose shell had gone. That was O(all mobs) every tick to discover
- * the ~0-5 removals a tick actually has, and it was the last thing keeping the
- * two representations related by SEARCH rather than by construction.
+ * and then the audit that replaced THAT. Both existed to find disagreement
+ * between two hand-maintained representations; there is now one representation,
+ * so there is no disagreement to find.
  *
- * The reconcile's real virtue was that no splice site had to remember anything,
- * and a convention gives that up — so `auditEnemyEntities` still runs, rarely,
- * and says so loudly if the two sides ever disagree. See it for what to do
- * about a report.
- *
- * Entity destruction is DEFERRED to `drainRemovedEnemies`, not done inline.
- * Kills arrive from inside loops that are mid-iteration over pooled entity
- * handles (the projectile sweep, the mob-collision entries list), and pulling
- * an entity's row out from under them is how a swap-remove corrupts an
- * iteration. The shell leaves `enemies[]` immediately — legacy semantics are
- * unchanged, since that is the array every legacy consumer reads — while the
+ * Entity destruction is DEFERRED, not done inline — the reason, the queue and
+ * the drain are all generic and now live in server/entityRegistry.ts, which
+ * every kind shares. The shell leaves `enemies[]` immediately (legacy semantics
+ * are unchanged, since that is the array every legacy consumer reads) while the
  * entity is retired at one safe point in the tick, exactly where the reconcile
  * used to run.
+ *
+ * What is left in THIS file is the only genuinely mob-specific part: turning a
+ * (type, tier) mob-config lookup into a shell and an entity that agree.
  */
 
 import { Enemy, LiveEnemy, makeEnemy } from '../server_utils';
-import { enemies } from '../constants';
+
 import { nextEntityId } from '../entity_ids';
 import { getMobStats } from '../mobs';
 import { Entity, NULL_ENTITY, Query, World } from '../ecs';
 import * as C from '../ecs/components';
 import { spawnMob } from '../ecs/prefabs';
 import { aiTypeOf, attachMobBehaviour, linkEnemyReferences, radiusOf } from './ecsBridge';
+import {
+    requireEntityHost,
+    getEntityWorld,
+    retire,
+    isPendingRetirement,
+    drainRetired,
+    entityRetirementVersion,
+    cachedQuery,
+} from './entityRegistry';
 
 /**
- * What the registry needs from the composition root.
+ * Whether this mob's shell has been removed and its entity awaits the drain.
  *
- * Injected rather than imported: the world lives on the EcsRuntime, which
- * server.ts builds lazily with hooks (drops, XP, the socket server) that only
- * server.ts has — and importing server.ts from here would boot a listening
- * server at module scope. `getWorld` is a thunk for the same reason: it must be
- * legal to install the host before the runtime is constructed.
+ * Kept as a named re-export because "pending removal" reads better at the
+ * broadcast's call site than the generic name, and because every caller that
+ * asks about a MOB should keep working if the mob lifecycle ever diverges.
  */
-export interface EnemySpawnHost {
-    getWorld(): World;
-    /**
-     * The entity for a player socket id, importing them if this is their first
-     * tick. Pets spawn from petal actions, which run BEFORE the tick's
-     * syncToEcs, so a bare `world.lookup` would hand the pet a null owner on the
-     * one tick that matters.
-     */
-    resolvePlayer(socketId: string): Entity | undefined;
-}
+export const isPendingEntityRemoval = isPendingRetirement;
 
-let host: EnemySpawnHost | undefined;
+/**
+ * Retire the entities of everything removed since the last drain.
+ *
+ * Generic now: mobs, drops and anything else that was retired this tick go
+ * together, from the same safe point in the tick.
+ */
+export const drainRemovedEnemies = drainRetired;
 
-/** Install the ECS host. Called once, from the composition root. */
-export function bindEnemySpawnHost(installed: EnemySpawnHost): void {
-    host = installed;
-}
+// ---------------------------------------------------------------------------
+// The mob view
+// ---------------------------------------------------------------------------
 
-function requireHost(): EnemySpawnHost {
-    if (!host) {
-        throw new Error(
-            'enemyRegistry: no ECS host installed. server.ts must call '
-            + 'bindEnemySpawnHost() at startup — without it a spawn would produce '
-            + 'a legacy shell with no entity, which nothing would ever simulate.',
-        );
+/**
+ * Every live mob's shell, PROJECTED OUT OF THE WORLD.
+ *
+ * `enemies[]` used to be a container in its own right: a second place a mob
+ * could exist, maintained by hand alongside the ECS and kept honest by an audit
+ * that periodically compared the two and repaired the difference. It is now a
+ * derived view — rebuilt from the mob query, never appended to, never spliced —
+ * so the two representations cannot disagree. A mob exists exactly when its
+ * entity does. That is the whole point of the change, and it is what let
+ * `maintainEnemyEntities`'s orphan-adoption path and the audit's repair half
+ * stop being load-bearing.
+ *
+ * REBUILD POLICY. Rebuilding on every read would cost ~1400 pointer copies per
+ * call at prod population, against ~55 read sites per tick — far too much. So
+ * the view is cached and invalidated by two counters: `World.version()` (any
+ * create/destroy, which covers entities destroyed directly by ECS systems as
+ * well as ones removed through this file) and the retirement counter (a mob
+ * removed this tick is gone from the game IMMEDIATELY even though its entity
+ * survives until the end-of-tick drain — that is the legacy semantic every
+ * caller expects, and dropping it would let a killed mob be killed twice).
+ *
+ * ORDER is archetype order, not creation order. Nothing depends on mob order:
+ * `syncToEcs` is world-driven, `syncFromEcs` ignores the array entirely, the
+ * grid rebuild is a bucket sort, and the two spawn sites that DID care were
+ * changed to take the children their spawner returns instead of slicing a
+ * range off the end of the array.
+ */
+const mobShellSlot: { query?: Query; world?: World } = {};
+const mobProjection: LiveEnemy[] = [];
+let projectedWorld: World | undefined;
+let projectedWorldVersion = -1;
+let projectedRetirementVersion = -1;
+
+export function liveEnemies(): readonly LiveEnemy[] {
+    const world = getEntityWorld();
+    const worldVersion = world.version();
+    const retirementVersion = entityRetirementVersion();
+    // The world identity is part of the key, not just its version: the benches
+    // and self-tests build throwaway worlds in the same process, and a fresh
+    // world's counter can coincide with the cached one — which would hand back
+    // the PREVIOUS world's mobs.
+    if (world === projectedWorld
+        && worldVersion === projectedWorldVersion
+        && retirementVersion === projectedRetirementVersion) {
+        return mobProjection;
     }
-    return host;
+
+    mobProjection.length = 0;
+    cachedQuery(mobShellSlot, world, [C.IsEnemy, C.LegacyShell]).chunks(chunk => {
+        const shells = chunk.cols(C.LegacyShell).ref as LiveEnemy[];
+        const entities = chunk.entities;
+        for (let i = 0; i < chunk.count; i++) {
+            // Removed this tick: gone from the game now, entity retired later.
+            if (isPendingRetirement(entities[i] as Entity)) continue;
+            const shell = shells[i];
+            if (shell !== undefined && shell !== null) mobProjection.push(shell);
+        }
+    });
+
+    projectedWorld = world;
+    projectedWorldVersion = worldVersion;
+    projectedRetirementVersion = retirementVersion;
+    return mobProjection;
+}
+
+/** Number of live mobs. */
+export function liveEnemyCount(): number {
+    return liveEnemies().length;
+}
+
+/**
+ * Is this mob still in the game?
+ *
+ * Replaces `enemies.indexOf(enemy) >= 0`, which was both O(mobs) and a question
+ * about a container that no longer exists. Asks the world instead: a mob is
+ * live exactly while its entity is, minus the ones retired earlier this tick.
+ */
+export function isEnemyLive(enemy: Enemy): boolean {
+    const entity = getEntityWorld().lookup(enemy.id);
+    return entity !== undefined && !isPendingRetirement(entity);
+}
+
+/**
+ * Copy every live mob's shell into `out` (cleared first), for loops that REMOVE.
+ *
+ * `liveEnemies()` hands back the shared projection, which is rebuilt IN PLACE
+ * the moment anything is retired — so killing while iterating it would shift
+ * rows out from under the loop. The item registry has the same rule for the
+ * same reason (see collectWorldItems): iterating a copy is the point.
+ *
+ * Callers own their buffer so two passes can never scribble over each other.
+ */
+export function collectEnemies(out: LiveEnemy[]): LiveEnemy[] {
+    out.length = 0;
+    const view = liveEnemies();
+    for (let i = 0; i < view.length; i++) out.push(view[i]);
+    return out;
 }
 
 export interface SpawnEnemyOptions {
@@ -103,7 +189,7 @@ export interface SpawnEnemyOptions {
     /** Overrides the mob config's flip flag. */
     reversed?: boolean;
     range?: number;
-    aiType?: Enemy['aiType'];
+    aiType?: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
 
     // --- stat overrides -------------------------------------------------
     // Pets are nerfed relative to their wild stat line. These are options
@@ -140,7 +226,6 @@ export interface SpawnEnemyOptions {
     bossWireShape?: boolean;
 }
 
-
 /**
  * Create a mob. Returns null when the (type, tier) pair has no stats.
  *
@@ -163,7 +248,7 @@ export function spawnEnemy(
     const stats = getMobStats(type, tier);
     if (!stats) return null;
 
-    const activeHost = requireHost();
+    const activeHost = requireEntityHost();
     const world = activeHost.getWorld();
     const now = Date.now();
 
@@ -173,6 +258,8 @@ export function spawnEnemy(
     const health = opts?.health ?? maxHealth;
     const damage = opts?.damage ?? stats.damage;
     const speed = stats.speed;
+    const aiType = opts?.aiType ?? stats.ai_type;
+    const range = opts?.range ?? stats.range;
 
     // The legacy shell. Still built through makeEnemy so every enemy in the
     // process keeps the one hidden class that file exists to guarantee.
@@ -180,20 +267,6 @@ export function spawnEnemy(
         id,
         type: type as Enemy['type'],
         tier,
-        x,
-        y,
-        angle,
-        health,
-        maxHealth,
-        speed,
-        damage,
-        knockbackX: 0,
-        knockbackY: 0,
-        aiType: opts?.aiType ?? stats.ai_type,
-        range: opts?.range ?? stats.range,
-        reversed: opts?.bossWireShape ? undefined : (opts?.reversed ?? stats.reversed ?? false),
-        spawnTime: now,
-        lastViewportCheck: opts?.bossWireShape ? undefined : now,
         parentHoleId: opts?.parentHoleId,
         ownerId: opts?.ownerId,
         petImage: opts?.petImage,
@@ -202,8 +275,6 @@ export function spawnEnemy(
         segmentIndex: opts?.segmentIndex,
         challengeOwnerId: opts?.challengeOwnerId,
         challengeStarsReward: opts?.challengeStarsReward,
-        targetPlayerId: opts?.targetPlayerId,
-        despawnAt: opts?.despawnAt,
     }) as LiveEnemy;
 
     // The entity, from the same locals. `spawnMob` is the archetype every mob
@@ -222,138 +293,42 @@ export function spawnEnemy(
         speed,
         damage,
         radius: radiusOf(enemy, stats),
-        aiType: aiTypeOf(enemy),
-        range: enemy.range,
+        aiType: aiTypeOf(aiType),
+        range,
         stats,
         now,
     });
+    // The identity link, so every accessor in mobFields.ts can reach the
+    // components from a shell without an id lookup.
+    enemy.entity = entity;
+
     attachMobBehaviour(world, entity, enemy, now, stats);
     linkEnemyReferences(world, enemy, activeHost.resolvePlayer);
 
-    enemies.push(enemy);
+    // No array push: the entity IS the admission. `liveEnemies()` projects the
+    // shell back out of the world on the next read.
     return enemy;
 }
 
 /**
- * Entities whose shell has left `enemies[]` and which are waiting to be retired.
+ * Remove a mob — the destruction counterpart to `spawnEnemy`.
  *
- * Reused across ticks; see the header for why destruction is deferred at all.
- * The parallel Set answers "is this mob already gone?" for readers that see
- * the world between the removal and the drain — chiefly the broadcast, which
- * fires between ticks and must not put a mob back on the wire after the
- * client was told it died.
- */
-const pendingEntityRemovals: Entity[] = [];
-const pendingEntityRemovalSet = new Set<Entity>();
-
-/** Whether this mob's shell has been removed and its entity awaits the drain. */
-export function isPendingEntityRemoval(entity: Entity): boolean {
-    return pendingEntityRemovalSet.has(entity);
-}
-
-/**
- * Remove the mob at `index` — the destruction counterpart to `spawnEnemy`.
+ * By identity, because there is no container to hold an index into any more.
+ * Retires the entity, which is what makes the mob stop existing: the next read
+ * of `liveEnemies()` no longer projects it. Callers keep doing their own
+ * `cleanupEnemy` and `enemyDestroyed` emit — those differ per site (the melee
+ * sweep does not emit, the bulk clear emits once per mob and refreshes counters
+ * afterwards) and folding them in here would need a flag per caller, which is
+ * exactly the shape killHandler already regrets.
  *
- * Splices the shell and queues its entity for retirement. Callers keep doing
- * their own `cleanupEnemy` and `enemyDestroyed` emit: those differ per site
- * (the melee sweep does not emit, the bulk clear emits once per mob and
- * refreshes counters afterwards) and folding them in here would need a flag per
- * caller, which is exactly the shape killHandler already regrets.
- *
- * Returns the removed shell, or undefined when the index is out of range.
- */
-export function removeEnemyAt(index: number): Enemy | undefined {
-    if (index < 0 || index >= enemies.length) return undefined;
-    const enemy = enemies[index];
-    enemies.splice(index, 1);
-
-    const world = requireHost().getWorld();
-    const entity = world.lookup(enemy.id);
-    if (entity !== undefined) {
-        pendingEntityRemovals.push(entity);
-        pendingEntityRemovalSet.add(entity);
-    }
-    return enemy;
-}
-
-/**
- * Remove a mob by identity, for callers that hold the shell but not its index.
- *
- * Prefer `removeEnemyAt` inside a backwards loop that already has the index —
- * this one pays an `indexOf`. Returns false when the mob has already left.
+ * Returns false when the mob has already left.
  */
 export function removeEnemy(enemy: Enemy): boolean {
-    const index = enemies.indexOf(enemy as LiveEnemy);
-    if (index < 0) return false;
-    removeEnemyAt(index);
+    const entity = getEntityWorld().lookup(enemy.id);
+    if (entity === undefined || isPendingRetirement(entity)) return false;
+    retire(entity);
     return true;
 }
-
-/**
- * Retire the entities of mobs removed since the last drain.
- *
- * Called once per tick from the same point the reconcile occupied — after the
- * ECS has finished stepping and nothing is iterating a query or a pooled handle
- * list. Destroying is idempotent on a stale handle (`World.destroy` returns
- * false), so a mob removed twice in one tick is harmless.
- */
-export function drainRemovedEnemies(world: World): void {
-    if (pendingEntityRemovals.length === 0) return;
-    for (let i = 0; i < pendingEntityRemovals.length; i++) {
-        world.destroy(pendingEntityRemovals[i]);
-    }
-    pendingEntityRemovals.length = 0;
-    pendingEntityRemovalSet.clear();
-}
-
-/**
- * Check that every shell has an entity and every mob entity has a live shell.
- *
- * The safety net the reconcile used to provide for free. Removal is a
- * CONVENTION now — a splice that bypasses `removeEnemy` leaves an orphan entity
- * that keeps moving, shooting and taking up grid space while being invisible to
- * every client, which is precisely the silent failure this module exists to
- * prevent. So the invariant is still checked, just at a cadence that costs
- * nothing instead of every tick.
- *
- * Repairs what it finds (an unreferenced entity is destroyed, a shell with no
- * entity is reported for `spawnEnemy`'s adoption path) and returns the number of
- * disagreements. A non-zero return means some site removed a mob without going
- * through here — log it and fix the site; do not treat the repair as the fix.
- */
-export function auditEnemyEntities(world: World, query: Query): number {
-    liveShells.clear();
-    for (let i = 0; i < enemies.length; i++) liveShells.add(enemies[i]);
-
-    let matched = 0;
-    orphanScratch.length = 0;
-    query.chunks(chunk => {
-        const shells = chunk.cols(C.LegacyShell).ref as Enemy[];
-        const entities = chunk.entities;
-        for (let i = 0; i < chunk.count; i++) {
-            if (liveShells.has(shells[i])) matched++;
-            else orphanScratch.push(entities[i] as Entity);
-        }
-    });
-
-    for (let i = 0; i < orphanScratch.length; i++) world.destroy(orphanScratch[i]);
-    const orphanEntities = orphanScratch.length;
-    orphanScratch.length = 0;
-
-    const missingEntities = liveShells.size - matched;
-    const disagreements = orphanEntities + Math.max(0, missingEntities);
-    if (disagreements > 0) {
-        console.warn(
-            `[ECS] mob audit: ${orphanEntities} entity(s) with no shell (destroyed), `
-            + `${missingEntities} shell(s) with no entity. Some site removed or added a mob `
-            + 'without going through server/enemyRegistry.ts.',
-        );
-    }
-    return disagreements;
-}
-
-const liveShells = new Set<Enemy>();
-const orphanScratch: Entity[] = [];
 
 /**
  * Promote an already-admitted mob to the head of a centipede chain.
@@ -367,7 +342,7 @@ export function markCentipedeHead(head: LiveEnemy): void {
     head.headId = head.id;
     head.segmentIndex = 0;
 
-    const world = requireHost().getWorld();
+    const world = getEntityWorld();
     const entity = world.lookup(head.id);
     if (entity === undefined) return;
     world.add(entity, C.CentipedeSegment, {

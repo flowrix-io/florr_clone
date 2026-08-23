@@ -1,4 +1,6 @@
 import { Server as SocketIOServer } from '../ws_server';
+import { mobX, mobY } from './mobFields';
+import { liveEnemies } from './enemyRegistry';
 import { ServerPlayer, PlayerInventory, PlayerSkills } from '../player';
 import { sanitizePlayerForClient } from './playerWire';
 import { Item } from '../item';
@@ -15,7 +17,6 @@ import {
     DAMAGE_PER_LEVEL,
     BASE_XP_REQUIREMENT,
     XP_MULTIPLIER,
-    enemies,
     PLAYER_SIZE,
     getTileState,
     isTileIdBlocking,
@@ -498,9 +499,9 @@ function isPositionInsideWall(x: number, y: number, playerSize: number = PLAYER_
 function hasTooManyMobsNearby(x: number, y: number, radius: number = 200, maxMobs: number = 5): boolean {
     let mobCount = 0;
     
-    for (const enemy of enemies) {
-        const dx = enemy.x - x;
-        const dy = enemy.y - y;
+    for (const enemy of liveEnemies()) {
+        const dx = mobX(enemy.entity) - x;
+        const dy = mobY(enemy.entity) - y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance <= radius) {
@@ -520,12 +521,12 @@ function hasTooManyMobsNearby(x: number, y: number, radius: number = 200, maxMob
 function isOverlappingMob(x: number, y: number, playerSize: number = PLAYER_SIZE): boolean {
     const playerRadius = playerSize / 2;
 
-    for (const enemy of enemies) {
+    for (const enemy of liveEnemies()) {
         const mobStats = getMobStats(enemy.type, enemy.tier);
         const mobRadius = (mobStats ? (mobStats.size * 40) / 2 : 20)
             * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
-        const dx = enemy.x - x;
-        const dy = enemy.y - y;
+        const dx = mobX(enemy.entity) - x;
+        const dy = mobY(enemy.entity) - y;
         const distSq = dx * dx + dy * dy;
         const minDist = playerRadius + mobRadius;
 

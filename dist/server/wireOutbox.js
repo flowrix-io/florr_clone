@@ -15,6 +15,7 @@ exports.getWireOutbox = getWireOutbox;
 const constants_1 = require("../constants");
 const utils_1 = require("./utils");
 const outbox_1 = require("../ecs/net/outbox");
+const entityRegistry_1 = require("./entityRegistry");
 let outbox;
 /**
  * Reused viewer records. The recipient list is rebuilt on every flush (30Hz),
@@ -80,7 +81,13 @@ function bindWireOutbox(io) {
             return (0, utils_1.getOriginalSocketId)(playerId);
         },
     };
-    outbox = new outbox_1.WireOutbox(sink, viewerSource);
+    // The one liveness rule, shared by every kind. Before the entity host is
+    // installed nothing has been admitted yet, so nothing can have died —
+    // reporting "live" is both correct and the only answer available.
+    const gate = {
+        isLiveForWire: (entity) => !(0, entityRegistry_1.hasEntityHost)() || (0, entityRegistry_1.isLiveForWire)((0, entityRegistry_1.getEntityWorld)(), entity),
+    };
+    outbox = new outbox_1.WireOutbox(sink, viewerSource, gate);
     return outbox;
 }
 /**

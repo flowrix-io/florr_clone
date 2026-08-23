@@ -60,10 +60,11 @@
  * path ever reaching one of them.
  */
 
-import { players, enemies } from '../../constants';
+import { players } from '../../constants';
 import { ServerPlayer } from '../../player';
 import { getPetalStats } from '../../petals';
-import { bindItemHost } from '../../server/itemRegistry';
+import { bindEntityHost } from '../../server/entityRegistry';
+import { liveEnemies, spawnEnemy } from '../../server/enemyRegistry';
 import { rebuildEnemyGrid } from '../../server/enemyGrid';
 import { createEcsRuntime, EcsRuntime } from '../../server/ecsRuntime';
 import {
@@ -177,9 +178,8 @@ function makeBot(id: string, x: number, y: number, loadout: any[]): ServerPlayer
 /** Clear the legacy singletons botManager reads, so runs do not contaminate each other. */
 function resetWorldSingletons(): void {
     for (const id in players) delete players[id];
-    enemies.length = 0;
-    // Items live in the WORLD now; each makeRuntime() starts an empty one, so
-    // there is no item singleton left to clear.
+    // Mobs and items both live in the WORLD now, and each makeRuntime() starts
+    // an empty one — so there is no mob or item singleton left to clear.
 }
 
 function makeRuntime(): EcsRuntime {
@@ -214,9 +214,9 @@ function makeRuntime(): EcsRuntime {
         onReapEnemy: () => { /* drops/XP are not under test here */ },
     });
     configureCutover(runtime);
-    // Bot pickup targeting reads drops through the item registry; point it at
+    // Bot pickup targeting reads drops through the entity registry; point it at
     // this bench's world (re-bound per runtime, exactly like server.ts does).
-    bindItemHost({ getWorld: () => runtime.world });
+    bindEntityHost({ getWorld: () => runtime.world, resolvePlayer: () => undefined });
     return runtime;
 }
 
@@ -302,7 +302,7 @@ function runOrderedTicks(
 
         // Exactly the order server.ts runs: the enemy grid bot targeting queries,
         // then the input phase, then the movement window.
-        rebuildEnemyGrid(enemies as any);
+        rebuildEnemyGrid(liveEnemies());
 
         if (!misplaceInput) runtime.tickInput(DT, DT * 1000, now);
 
@@ -364,11 +364,10 @@ function checkInputOrder(): void {
         players[bot.id] = bot;
         ensurePlayerEntity(runtime.world, bot, NOW0);
     }
-    enemies.push({
-        id: 'mob_order_0', type: 'ladybug', tier: 'common',
-        x: 12400, y: 12200, angle: 0, health: 5000, maxHealth: 5000,
-        speed: 100, damage: 5, aiType: 'neutral', isDead: false,
-    } as any);
+    // Admitted through the registry, because a mob IS its entity now — a bare
+    // object pushed at a container would not exist as far as the world is
+    // concerned, and bot targeting queries the world.
+    spawnEnemy('ladybug', 'common', 12400, 12200, { health: 5000, maxHealth: 5000 });
 
     // Inputs must be MUTATED, never replaced: `syncPlayersToEcs` reads the fields
     // off whatever object `player.inputs` currently is, and the bot half of the

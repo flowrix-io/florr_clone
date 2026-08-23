@@ -9,6 +9,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerChatHandlers = registerChatHandlers;
 const constants_1 = require("../../constants");
+const mobFields_1 = require("../mobFields");
+const enemyRegistry_1 = require("../enemyRegistry");
 const database_1 = require("../../database");
 const botManager_1 = require("../botManager");
 const commands_1 = require("../commands");
@@ -586,7 +588,7 @@ function registerChatHandlers(ctx) {
             }
             if (command === 'list_ultra') {
                 // Exclude target dummies from list commands
-                const ultraMobs = constants_1.enemies.filter(e => e.tier === 'ultra' && e.type !== 'target_dummy');
+                const ultraMobs = (0, enemyRegistry_1.liveEnemies)().filter(e => e.tier === 'ultra' && e.type !== 'target_dummy');
                 if (ultraMobs.length === 0) {
                     io.to(socket.id).emit('chatMessage', {
                         sender: 'System',
@@ -596,8 +598,8 @@ function registerChatHandlers(ctx) {
                 }
                 else {
                     ultraMobs.forEach((mob, index) => {
-                        const x = Math.round(mob.x / constants_1.SCALE_FACTOR);
-                        const y = Math.round(mob.y / constants_1.SCALE_FACTOR);
+                        const x = Math.round((0, mobFields_1.mobX)(mob.entity) / constants_1.SCALE_FACTOR);
+                        const y = Math.round((0, mobFields_1.mobY)(mob.entity) / constants_1.SCALE_FACTOR);
                         io.to(socket.id).emit('chatMessage', {
                             sender: 'System',
                             content: `Ultra ${mob.type} at position (${x}, ${y})`,
@@ -618,7 +620,7 @@ function registerChatHandlers(ctx) {
             }
             if (command === 'list_super') {
                 // Exclude target dummies from list commands
-                const superMobs = constants_1.enemies.filter(e => e.tier === 'super' && e.type !== 'target_dummy');
+                const superMobs = (0, enemyRegistry_1.liveEnemies)().filter(e => e.tier === 'super' && e.type !== 'target_dummy');
                 if (superMobs.length === 0) {
                     io.to(socket.id).emit('chatMessage', {
                         sender: 'System',
@@ -628,8 +630,8 @@ function registerChatHandlers(ctx) {
                 }
                 else {
                     superMobs.forEach((mob, index) => {
-                        const x = Math.round(mob.x / constants_1.SCALE_FACTOR);
-                        const y = Math.round(mob.y / constants_1.SCALE_FACTOR);
+                        const x = Math.round((0, mobFields_1.mobX)(mob.entity) / constants_1.SCALE_FACTOR);
+                        const y = Math.round((0, mobFields_1.mobY)(mob.entity) / constants_1.SCALE_FACTOR);
                         io.to(socket.id).emit('chatMessage', {
                             sender: 'System',
                             content: `Super ${mob.type} at position (${x}, ${y})`,
@@ -638,8 +640,8 @@ function registerChatHandlers(ctx) {
                         // Emit viewport animation event with delay for each mob
                         setTimeout(() => {
                             socket.emit('animateViewportToMob', {
-                                x: mob.x,
-                                y: mob.y,
+                                x: (0, mobFields_1.mobX)(mob.entity),
+                                y: (0, mobFields_1.mobY)(mob.entity),
                                 mobType: mob.type,
                                 rarity: 'super'
                             });
@@ -650,7 +652,7 @@ function registerChatHandlers(ctx) {
             }
             if (command === 'list_unique') {
                 // Exclude target dummies from list commands
-                const uniqueMobs = constants_1.enemies.filter(e => e.tier === 'unique' && e.type !== 'target_dummy');
+                const uniqueMobs = (0, enemyRegistry_1.liveEnemies)().filter(e => e.tier === 'unique' && e.type !== 'target_dummy');
                 if (uniqueMobs.length === 0) {
                     io.to(socket.id).emit('chatMessage', {
                         sender: 'System',
@@ -660,8 +662,8 @@ function registerChatHandlers(ctx) {
                 }
                 else {
                     uniqueMobs.forEach((mob, index) => {
-                        const x = Math.round(mob.x / constants_1.SCALE_FACTOR);
-                        const y = Math.round(mob.y / constants_1.SCALE_FACTOR);
+                        const x = Math.round((0, mobFields_1.mobX)(mob.entity) / constants_1.SCALE_FACTOR);
+                        const y = Math.round((0, mobFields_1.mobY)(mob.entity) / constants_1.SCALE_FACTOR);
                         io.to(socket.id).emit('chatMessage', {
                             sender: 'System',
                             content: `Unique ${mob.type} at position (${x}, ${y})`,
@@ -670,8 +672,8 @@ function registerChatHandlers(ctx) {
                         // Emit viewport animation event with delay for each mob
                         setTimeout(() => {
                             socket.emit('animateViewportToMob', {
-                                x: mob.x,
-                                y: mob.y,
+                                x: (0, mobFields_1.mobX)(mob.entity),
+                                y: (0, mobFields_1.mobY)(mob.entity),
                                 mobType: mob.type,
                                 rarity: 'unique'
                             });

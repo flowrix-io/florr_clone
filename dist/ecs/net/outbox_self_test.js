@@ -196,6 +196,50 @@ function runOutboxSelfTest() {
         checkEqual('the next flush delivers it', sent.length, 2);
         checkEqual('with the right event', sent[1].event, 'playerRespawned');
     }
+    // -- the entity gate ------------------------------------------------------
+    {
+        const { sink, sent } = makeSink();
+        const { source } = makeViewers();
+        const dead = new Set();
+        const outbox = new outbox_1.WireOutbox(sink, source, {
+            isLiveForWire: (entity) => !dead.has(entity),
+        });
+        const alive = 11;
+        const doomed = 22;
+        // The failure this exists for: a mob spawns and is removed inside one
+        // tick by a path that does NOT emit enemyDestroyed. Without the gate the
+        // client is left holding a mob it will never hear about again.
+        outbox.nearFor(doomed, 0, 0, 'enemySpawned', { id: 'm2' });
+        outbox.nearFor(alive, 0, 0, 'enemySpawned', { id: 'm1' });
+        dead.add(doomed);
+        outbox.flush();
+        checkEqual('the dead subject is dropped', sent.length, 1);
+        checkEqual('the live one still goes out', sent[0].payload.id, 'm1');
+        checkEqual('and the drop is counted', outbox.droppedByGate(), 1);
+        // Every route honours it.
+        sent.length = 0;
+        outbox.allFor(doomed, 'enemyDestroyed', 'm2');
+        outbox.toSocketFor(doomed, 'a', 'itemsSpawned', []);
+        outbox.toPlayerFor(doomed, 'a', 'petalRestored', {});
+        outbox.flush();
+        checkEqual('all gated routes drop a dead subject', sent.length, 0);
+        // Ungated events are never affected — they name no entity.
+        sent.length = 0;
+        outbox.all('debugStats', {});
+        outbox.flush();
+        checkEqual('ungated events are untouched', sent.length, 1);
+    }
+    // -- no gate installed ----------------------------------------------------
+    {
+        // Benches and tests construct an outbox with no world behind it; gated
+        // events must still be delivered rather than silently vanishing.
+        const { sink, sent } = makeSink();
+        const { source } = makeViewers();
+        const outbox = new outbox_1.WireOutbox(sink, source);
+        outbox.allFor(33, 'enemyDestroyed', 'm3');
+        outbox.flush();
+        checkEqual('without a gate everything is deliverable', sent.length, 1);
+    }
     // -- scheduling -----------------------------------------------------------
     {
         const { sink } = makeSink();

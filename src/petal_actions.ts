@@ -1,14 +1,15 @@
 import { getRarityIndex, getEffectivePetalCooldown } from './petals';
+import { damageMob, mobHealth, mobX, mobY, setMobKnockback } from './server/mobFields';
 import { emitToViewers } from './server/scopedEmit';
-import { enemySpawnPayload } from './server/enemyWire';
+import { emitEnemySpawned } from './server/enemyWire';
 import { ServerPlayer } from './player';
 import { sanitizePlayerForClient } from './server/playerWire';
 import { Item } from './item';
-import { Enemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
+import { Enemy, LiveEnemy, isCentipedeHeadType, isCentipedeBodyType } from './server_utils';
 import { addXPToPlayer, handleMobDrops, updateSpecialMobCounts, sendBossMobDefeatedMessage, trackDamage } from './server';
-import { spawnEnemy, removeEnemyAt } from './server/enemyRegistry';
+import { spawnEnemy, removeEnemy, collectEnemies, liveEnemies, isEnemyLive } from './server/enemyRegistry';
 import { killEnemy, type KillContext } from './server/shared/killHandler';
-import { players, enemies } from './constants';
+import { players } from './constants';
 import { queryEnemiesNear } from './server/enemyGrid';
 import { markEnemyDamaged } from './server/utils';
 import { database } from './database';
@@ -18,6 +19,9 @@ import { spawnCentipedeBodySegments } from './server/enemySpawner';
 import { emitPetalRestored, emitPetalBroken } from './server/petalEvents';
 import { getWireOutbox } from './server/wireOutbox';
 
+/** Snapshot buffer for pet loops that despawn while iterating. */
+const petScratch: LiveEnemy[] = [];
+
 // Action execution context
 export interface ActionContext {
     player: ServerPlayer;
@@ -25,7 +29,7 @@ export interface ActionContext {
     petalY: number;
     petalSize: number;
     petalDamage: number; // Add petal damage for rarity scaling
-    enemies: Enemy[];
+    enemies: readonly Enemy[];
     io: any; // Socket.IO instance
     petalId?: string; // Unique ID for the petal instance
     loadoutIndex?: number; // Index in player loadout
@@ -47,7 +51,7 @@ function makePetalKillCtx(io: any): KillContext {
         players,
         playerUserIds,
         database,
-        removeEnemyAt,
+        removeEnemy,
         // Stubs — only reachable when trackMobKillTiming !== 'none', which
         // explodePetal/strikeLightning never pass.
         savePlayerProgress: undefined!,
@@ -204,7 +208,7 @@ const _explodeScratch: Enemy[] = [];
 const _lightningScratch: Enemy[] = [];
 
 // Explode petal and deal area damage
-function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: Enemy[], io: any, player?: ServerPlayer): void {
+function explodePetal(x: number, y: number, petalSize: number, damage: number, enemies: readonly Enemy[], io: any, player?: ServerPlayer): void {
     // Throttle explosions to 1 per 20ms
     const currentTime = Date.now();
     if (currentTime - lastExplosionTime < EXPLOSION_THROTTLE_MS) {
@@ -234,8 +238,8 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
 
         // The grid returns a cell-aligned superset, so the exact radius test
         // still has to run — squared, to keep the sqrt out of the hot path.
-        const ddx = enemy.x - x;
-        const ddy = enemy.y - y;
+        const ddx = mobX(enemy.entity) - x;
+        const ddy = mobY(enemy.entity) - y;
 
         if (ddx * ddx + ddy * ddy <= radiusSq) {
             const distance = Math.sqrt(ddx * ddx + ddy * ddy);
@@ -244,30 +248,27 @@ function explodePetal(x: number, y: number, petalSize: number, damage: number, e
                 trackDamage(enemy, player.id, damage);
             }
             
-            enemy.health = Math.max(0, enemy.health - damage);
+            damageMob(enemy.entity, damage);
             
             // Apply knockback
             const knockbackForce = 20;
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
+            const dx = mobX(enemy.entity) - x;
+            const dy = mobY(enemy.entity) - y;
             const normalizedDx = dx / (distance || 1);
             const normalizedDy = dy / (distance || 1);
             
-            enemy.knockbackX = normalizedDx * knockbackForce;
-            enemy.knockbackY = normalizedDy * knockbackForce;
+            setMobKnockback(enemy.entity, normalizedDx * knockbackForce, normalizedDy * knockbackForce);
             
             markEnemyDamaged(enemy);
             
             // Check if enemy dies
-            if (enemy.health <= 0) {
-                // Resolved here, not carried from the loop: the grid result is
-                // not `enemies`, and earlier kills in this same explosion have
-                // already shifted it. Only paid on an actual kill.
-                const i = enemies.indexOf(enemy);
-                if (i < 0) continue;
+            if (mobHealth(enemy.entity) <= 0) {
+                // Earlier kills in this same explosion may already have taken
+                // it: the grid result is a snapshot, the world is not.
+                if (!isEnemyLive(enemy)) continue;
                 // Explode/lightning never ran cleanupEnemy or trackMobKill
                 // historically (skipCleanup + timing 'none' preserve that).
-                killEnemy(enemy, i, enemies, makePetalKillCtx(io), {
+                killEnemy(enemy, makePetalKillCtx(io), {
                     killerPlayerId: player?.id,
                     skipCleanup: true,
                     trackMobKillTiming: 'none',
@@ -328,7 +329,7 @@ function canStrikeLightning(player: ServerPlayer | undefined, context?: ActionCo
 }
 
 // Strike lightning and deal damage to multiple targets in radius
-function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[], io: any, player?: ServerPlayer, petalDamage?: number, context?: ActionContext): void {
+function strikeLightning(x: number, y: number, radius: number, enemies: readonly Enemy[], io: any, player?: ServerPlayer, petalDamage?: number, context?: ActionContext): void {
     // Check rate limit for lightning_cutter
     if (!canStrikeLightning(player, context)) {
         return; // Rate limit exceeded, skip this lightning strike
@@ -351,13 +352,13 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
         }
 
         // The grid returns a cell-aligned superset; exact test, squared.
-        const ldx = enemy.x - x;
-        const ldy = enemy.y - y;
+        const ldx = mobX(enemy.entity) - x;
+        const ldy = mobY(enemy.entity) - y;
 
         if (ldx * ldx + ldy * ldy <= radiusSq) {
             targets.push({
-                x: enemy.x,
-                y: enemy.y,
+                x: mobX(enemy.entity),
+                y: mobY(enemy.entity),
                 enemyId: enemy.id
             });
             
@@ -369,16 +370,15 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
                 trackDamage(enemy, player.id, damage);
             }
             
-            enemy.health = Math.max(0, enemy.health - damage);
+            damageMob(enemy.entity, damage);
             
             markEnemyDamaged(enemy);
             
             // Check if enemy dies
-            if (enemy.health <= 0) {
-                // Live index; see the matching note in explodePetal.
-                const i = enemies.indexOf(enemy);
-                if (i < 0) continue;
-                killEnemy(enemy, i, enemies, makePetalKillCtx(io), {
+            if (mobHealth(enemy.entity) <= 0) {
+                // See the matching note in explodePetal.
+                if (!isEnemyLive(enemy)) continue;
+                killEnemy(enemy, makePetalKillCtx(io), {
                     killerPlayerId: player?.id,
                     skipCleanup: true,
                     trackMobKillTiming: 'none',
@@ -405,7 +405,7 @@ function strikeLightning(x: number, y: number, radius: number, enemies: Enemy[],
 
 // Helper function to find a player's pet by mob type
 function findPlayerPetByMobType(ownerId: string, mobType: string): Enemy | undefined {
-    return enemies.find(enemy => 
+    return liveEnemies().find(enemy => 
         enemy.ownerId === ownerId && 
         enemy.type === mobType
     );
@@ -416,19 +416,16 @@ export function despawnPet(pet: Enemy, io: any): void {
     // For centipede pets, drop the whole chain — otherwise the first orphaned
     // body segment would auto-promote into a new free-roaming head.
     if (isCentipedeHeadType(pet.type)) {
-        for (let i = enemies.length - 1; i >= 0; i--) {
-            const e = enemies[i];
+        for (const e of collectEnemies(petScratch)) {
             if (e.id === pet.id || (isCentipedeBodyType(e.type) && e.headId === pet.id)) {
-                removeEnemyAt(i);
+                removeEnemy(e);
                 getWireOutbox().all('enemyDestroyed', e.id);
             }
         }
         return;
     }
 
-    const index = enemies.findIndex(e => e.id === pet.id);
-    if (index !== -1) {
-        removeEnemyAt(index);
+    if (removeEnemy(pet)) {
         getWireOutbox().all('enemyDestroyed', pet.id);
         // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
     }
@@ -436,10 +433,10 @@ export function despawnPet(pet: Enemy, io: any): void {
 
 // Despawn all pets owned by a player
 export function despawnAllPlayerPets(playerId: string, io: any): void {
-    for (let i = enemies.length - 1; i >= 0; i--) {
-        if (enemies[i].ownerId === playerId) {
-            getWireOutbox().all('enemyDestroyed', enemies[i].id);
-            removeEnemyAt(i);
+    for (const pet of collectEnemies(petScratch)) {
+        if (pet.ownerId === playerId) {
+            getWireOutbox().all('enemyDestroyed', pet.id);
+            removeEnemy(pet);
         }
     }
 }
@@ -466,9 +463,9 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     // previous one and only the last would survive.
     if (count > 1) {
         if (!skipDuplicateCheck) {
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                if (enemies[i].ownerId === ownerId && enemies[i].type === mobType) {
-                    despawnPet(enemies[i], io);
+            for (const existing of collectEnemies(petScratch)) {
+                if (existing.ownerId === ownerId && existing.type === mobType) {
+                    despawnPet(existing, io);
                 }
             }
         }
@@ -494,9 +491,9 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
 
     // Apex eggs spawn 3 unique pets instead of a single apex pet
     if (rarity.toLowerCase() === 'apex') {
-        for (let i = enemies.length - 1; i >= 0; i--) {
-            if (enemies[i].ownerId === ownerId && enemies[i].type === mobType) {
-                despawnPet(enemies[i], io);
+        for (const existing of collectEnemies(petScratch)) {
+            if (existing.ownerId === ownerId && existing.type === mobType) {
+                despawnPet(existing, io);
             }
         }
         for (let i = 0; i < 3; i++) {
@@ -521,7 +518,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     // loop until nginx answered 502. The cap sits far above any normal
     // loadout, so it only bites deliberate stacking.
     let ownedEntities = 0;
-    for (const e of enemies) {
+    for (const e of liveEnemies()) {
         if (e.ownerId === ownerId) ownedEntities++;
     }
     if (ownedEntities >= MAX_PET_ENTITIES_PER_PLAYER) {
@@ -553,7 +550,7 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     // value while the legacy object read the nerfed one.
     const statMods = PET_STAT_MULTIPLIERS[mobType];
 
-    // Create the pet enemy (ECS entity + enemies[] admission, atomically)
+    // Create the pet enemy (ECS entity + liveEnemies()[] admission, atomically)
     const pet = spawnEnemy(mobType, tier, x, y, {
         aiType: 'passive', // Pets are not hostile to players
         range: petRange,
@@ -564,15 +561,13 @@ export function spawnPet(mobType: string, rarity: string, x: number, y: number, 
     })!; // mobStats validated above
 
     // Notify all clients
-    emitToViewers(pet.x, pet.y, 'enemySpawned', enemySpawnPayload(pet));
+    emitEnemySpawned(pet);
 
     // Centipede pets need their trailing body chain too, with ownerId propagated
     // to each segment so they follow the owner alongside the head.
     if (isCentipedeHeadType(mobType)) {
-        const beforeCount = enemies.length;
-        spawnCentipedeBodySegments(pet);
-        for (let i = beforeCount; i < enemies.length; i++) {
-            emitToViewers(enemies[i].x, enemies[i].y, 'enemySpawned', enemySpawnPayload(enemies[i]));
+        for (const segment of spawnCentipedeBodySegments(pet)) {
+            emitEnemySpawned(segment);
         }
     }
 

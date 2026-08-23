@@ -14,6 +14,7 @@ exports.getPlayers = getPlayers;
 exports.getEnemies = getEnemies;
 exports.setEnemyCount = setEnemyCount;
 exports.getEnemyCount = getEnemyCount;
+const enemyRegistry_1 = require("./enemyRegistry");
 const constants_1 = require("../constants");
 const map_data_1 = require("../map_data");
 // World items are ECS entities now — see server/itemRegistry.ts (admission,
@@ -184,7 +185,7 @@ function getPlayers() {
     return constants_1.players;
 }
 function getEnemies() {
-    return constants_1.enemies;
+    return (0, enemyRegistry_1.liveEnemies)();
 }
 function setEnemyCount(count) {
     _ENEMY_COUNT = count;

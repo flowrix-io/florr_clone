@@ -126,9 +126,10 @@ function handleMobDrops(enemyData, io, dropRateMultiplier = 1) {
             // resolved coordinates). The Expires deadline replaces the old
             // per-item setTimeout outright.
             const expirationTime = gameState_1.ITEM_EXPIRATION_TIMES[finalRarity] || 10000;
+            // Admission IS the announcement: the drop joins the entity stream
+            // and reaches every eligible client on the next frame, culled and
+            // delta-encoded like any other entity.
             (0, itemRegistry_1.spawnWorldItem)(newItem, spawnTime + expirationTime);
-            // Queue for batched emission at end of frame to prevent stuttering.
-            (0, itemRegistry_1.queueItemSpawnEmission)(newItem, eligiblePlayers.map(playerId => (0, utils_1.getOriginalSocketId)(playerId)));
         }
     }
 }

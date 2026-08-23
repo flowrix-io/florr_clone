@@ -262,6 +262,8 @@ export class World {
 
     /** Live entity count. */
     private liveCount = 0;
+    /** See version(): bumped on create/destroy so derived views can cache. */
+    private structuralVersion = 0;
 
     /**
      * String id <-> entity, for the parts of the game that address entities by
@@ -294,6 +296,7 @@ export class World {
         const entity = makeEntity(index, this.generations[index]);
         this.alive[index] = 1;
         this.liveCount++;
+        this.structuralVersion++;
 
         const empty = this.archetypes[0];
         this.archetypeOf[index] = 0;
@@ -337,7 +340,23 @@ export class World {
         this.generations[index] = (this.generations[index] + 1) % ENTITY_MAX_GENERATION;
         this.freeSlots.push(index);
         this.liveCount--;
+        this.structuralVersion++;
         return true;
+    }
+
+    /**
+     * Counter bumped whenever an entity is created or destroyed.
+     *
+     * Exists so a derived VIEW of the world can tell, in O(1), whether it is
+     * still current — see liveEnemies() in server/enemyRegistry.ts, which
+     * projects mob shells out of the world and must not rebuild on every read.
+     * Deliberately NOT bumped by component add/remove: those move an entity
+     * between archetypes but cannot change which entities exist, and bumping on
+     * them would invalidate every view every tick (IsDead alone is added to
+     * something most frames).
+     */
+    version(): number {
+        return this.structuralVersion;
     }
 
     /** Number of live entities. */

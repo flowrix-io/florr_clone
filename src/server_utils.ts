@@ -35,50 +35,31 @@ export function getCentipedeBodyType(headType: string): string {
 
 export interface Enemy {
   id: string;
+  /**
+   * The mob's entity.
+   *
+   * Not a duplicated field — it is the IDENTITY link, and it is what lets a
+   * call site holding a shell read the mob's state out of the components (see
+   * server/mobFields.ts) without paying an id→entity map lookup. As the shell's
+   * own fields are deleted group by group, what is left of a shell converges on
+   * exactly this — at which point the shell is the entity and can go.
+   *
+   * NULL_ENTITY between `makeEnemy` and admission; `spawnEnemy` is the only
+   * caller of makeEnemy and sets it immediately.
+   */
+  entity: import('./ecs').Entity;
   // Partial union — see the note on the client-side Enemy in enemy.ts. The
   // authoritative type set is the mob_configs.ts keys.
   type: 'bee' | 'ladybug' | 'soldier_ant' | 'hornet' | 'mantis' | 'leafbug' | 'bush' | 'target_dummy' | 'item_spawner' | 'garbage' | 'centipede' | 'centipede_body' | 'desert_centipede' | 'desert_centipede_body' | 'ant_hole' | 'fire_ant_hole' | 'digger' | 'glitch' | 'glitch_flower';
   tier: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
-  x: number;
-  y: number;
-  angle: number;
-  health: number;
-  maxHealth: number;
-  speed: number;
-  damage: number;
-  knockbackX?: number;
-  knockbackY?: number;
-  aiType?: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
-  isChasing?: boolean;  // Whether the enemy is currently chasing a player
-  targetPlayerId?: string;  // ID of the player currently being targeted (persists until player is out of range)
-  targetEnemyId?: string;   // pets: cached wild-mob target — revalidated each tick so steady-state targeting costs one LOS ray instead of a full rescan
-  targetPetId?: string;     // wild mobs: cached pet target, same revalidate-then-rescan scheme
-  range?: number;
-  wanderTargetX?: number;
-  wanderTargetY?: number;
-  lastWanderTime?: number;
   // gardn-style passive AI (see moveEnemies): state machine + friction velocity.
-  passiveState?: 'idle' | 'moving';
-  passiveStateStart?: number;  // timestamp the current passive state began
-  velX?: number;               // passive movement velocity (friction integrator)
-  velY?: number;
-  wobblePhase?: number;        // bee flight: per-mob phase offset for the sinusoidal heading wobble
   parentHoleId?: string;       // hole this mob spawned from — tethers it to a territory (gardn parent)
   returningToHole?: boolean;   // gardn kReturning: heading home after straying past the retreat radius
-  spawnTime?: number;  // Timestamp when enemy was spawned
-  lastViewportCheck?: number;  // Last time this enemy was in any player's viewport
   damageContributors?: Map<string, number>;  // Map of player ID to damage dealt
   poisonEffects?: PoisonEffect[];  // Active poison effects on this enemy
-  lastProjectileTime?: number;  // Last time this enemy shot a projectile
-  lastMeleeAttackTime?: number;  // Last time this enemy performed a melee attack
-  reversed?: boolean;  // Whether the mob image should be flipped horizontally
   ownerId?: string;  // ID of the player who owns this pet (if this is a pet)
   petImage?: string;  // Optional image to use when this mob is spawned as a pet (32x32 SVG image)
   // DPS tracking for target dummies — parallel arrays avoid per-event object allocations
-  dpsHistoryTimes?: number[];
-  dpsHistoryDamages?: number[];
-  dpsStartTime?: number;  // When DPS tracking started
-  currentDPS?: number;  // Current calculated DPS
   // Challenge mob tracking
   challengeOwnerId?: string;  // ID of the player who purchased this challenge
   challengeStarsReward?: number;  // Stars to award when this challenge mob is killed
@@ -89,27 +70,20 @@ export interface Enemy {
   // Slow (web/honey/pincer). `speed` is the value every movement branch reads, so
   // a slow is applied by scaling it down and restoring `baseSpeed` when it lapses
   // (see updateSlowEffects) rather than by teaching ~15 call sites about slows.
-  baseSpeed?: number;   // unslowed speed, captured the first time a slow lands
-  slowUntil?: number;   // timestamp the current slow expires
   // Periodic summoner (queen ant) and the despawn timer on what it summons
-  lastPeriodicSpawnTime?: number;
-  despawnAt?: number;   // timestamp this mob removes itself, 0/undefined = never
   // Server-internal caches. Declared here rather than bolted on through `as any`
   // so they are part of the shape from birth (see makeEnemy).
-  isDead?: boolean;             // spliced from `enemies` at end of tick; still referenced by in-flight loops
-  _radius?: number;             // collision radius, cached by rebuildEnemyGrid
-  _mobStats?: any;              // getMobStats(type, tier), cached by rebuildEnemyGrid
-  _ci?: number;                 // pair-dedup stamp for the enemy-enemy collision grid
-  _qs?: number;                 // per-query dedup stamp for queryEnemiesNear (mobs span several cells)
-  _spawnWavePrevHealth?: number; // ant-hole wave bookkeeping
 }
 
 /**
- * Every field of Enemy except the ten that have no sensible default.
- * `Partial<Enemy>` alone would let a caller omit `id`/`x`/`y`; the Pick re-requires them.
+ * What `makeEnemy` needs.
+ *
+ * Much shorter than it was: position, health, speed, damage, facing and the
+ * rest are components now, so they are not passed here at all — `spawnEnemy`
+ * writes them straight to the entity. What is left is identity plus the
+ * legacy-only bookkeeping the shell still carries.
  */
-export type EnemyInit = Partial<Enemy> &
-  Pick<Enemy, 'id' | 'type' | 'tier' | 'x' | 'y' | 'angle' | 'health' | 'maxHealth' | 'speed' | 'damage'>;
+export type EnemyInit = Partial<Enemy> & Pick<Enemy, 'id' | 'type' | 'tier'>;
 
 /**
  * The ONLY place a server-side enemy object may be created.
@@ -138,75 +112,35 @@ export type EnemyInit = Partial<Enemy> &
 export function makeEnemy(init: EnemyInit): Enemy {
   return {
     id: init.id,
+    entity: 0 as import('./ecs').Entity,
     type: init.type,
     tier: init.tier,
-    x: init.x,
-    y: init.y,
-    angle: init.angle,
-    health: init.health,
-    maxHealth: init.maxHealth,
-    speed: init.speed,
-    damage: init.damage,
-    knockbackX: init.knockbackX,
-    knockbackY: init.knockbackY,
-    aiType: init.aiType,
-    isChasing: init.isChasing,
-    targetPlayerId: init.targetPlayerId,
-    targetEnemyId: init.targetEnemyId,
-    targetPetId: init.targetPetId,
-    range: init.range,
-    wanderTargetX: init.wanderTargetX,
-    wanderTargetY: init.wanderTargetY,
-    lastWanderTime: init.lastWanderTime,
-    passiveState: init.passiveState,
-    passiveStateStart: init.passiveStateStart,
-    velX: init.velX,
-    velY: init.velY,
-    wobblePhase: init.wobblePhase,
     parentHoleId: init.parentHoleId,
-    returningToHole: init.returningToHole,
-    spawnTime: init.spawnTime,
-    lastViewportCheck: init.lastViewportCheck,
     damageContributors: init.damageContributors,
-    poisonEffects: init.poisonEffects,
-    lastProjectileTime: init.lastProjectileTime,
-    lastMeleeAttackTime: init.lastMeleeAttackTime,
-    reversed: init.reversed,
     ownerId: init.ownerId,
     petImage: init.petImage,
-    dpsHistoryTimes: init.dpsHistoryTimes,
-    dpsHistoryDamages: init.dpsHistoryDamages,
-    dpsStartTime: init.dpsStartTime,
-    currentDPS: init.currentDPS,
     challengeOwnerId: init.challengeOwnerId,
     challengeStarsReward: init.challengeStarsReward,
     leaderId: init.leaderId,
     headId: init.headId,
     segmentIndex: init.segmentIndex,
-    baseSpeed: init.baseSpeed,
-    slowUntil: init.slowUntil,
-    lastPeriodicSpawnTime: init.lastPeriodicSpawnTime,
-    despawnAt: init.despawnAt,
-    isDead: init.isDead,
-    _radius: init._radius,
-    _mobStats: init._mobStats,
-    _ci: init._ci,
-    _qs: init._qs,
-    _spawnWavePrevHealth: init._spawnWavePrevHealth,
   };
 }
 
 /**
- * An enemy that has been ADMITTED to the world: it is in `enemies[]` AND it has
- * an ECS entity.
+ * An enemy that has been ADMITTED to the world — i.e. one that has an ECS
+ * entity, which is now the only sense in which a mob exists at all.
  *
- * This brand is the structural half of the spawn cutover. `enemies` is declared
- * as `LiveEnemy[]`, so `enemies.push(makeEnemy({...}))` no longer compiles —
- * the only way to obtain a `LiveEnemy` is `spawnEnemy()` in
- * server/enemyRegistry.ts, which creates the ECS entity FIRST and pushes
- * second. A mob can therefore never exist as a legacy shell with no entity
- * (invisible to the simulation) or as an entity with no shell (invisible to
- * clients and never reaped).
+ * This brand is the structural half of the spawn cutover. The only way to
+ * obtain a `LiveEnemy` is `spawnEnemy()` in server/enemyRegistry.ts, which
+ * creates the entity and the shell together; `makeEnemy()` alone yields a plain
+ * `Enemy`, which nothing that expects a live mob will accept. So a mob can
+ * never exist as a shell with no entity (invisible to the simulation).
+ *
+ * The converse — an entity with no shell — used to be possible and is not any
+ * more: `liveEnemies()` PROJECTS the shell list out of the world, so the shell
+ * is reached through the entity rather than stored beside it. There is no
+ * container to fall out of sync with.
  *
  * The brand is erased at runtime; it costs nothing and exists purely so the
  * compiler enumerates every spawn site.

@@ -1,7 +1,6 @@
 import { ServerPlayer } from "./player";
 import { Dot } from "./enemy";
 import { Obstacle } from "./enemy";
-import { LiveEnemy } from "./server_utils";
 import { Item } from "./item";
 import { isInMazeRegion, resolveMazeCollision, mazeCircleWallOverlap } from "./maze";
 
@@ -81,15 +80,10 @@ export const VIEWPORT_HEIGHT = 1080;
 
 export const players: Record<string, ServerPlayer> = {};
 export const dots: Dot[] = [];
-/**
- * Every wild mob in the world.
- *
- * Typed `LiveEnemy[]`, not `Enemy[]`: membership of this array means "has an ECS
- * entity", and the brand is what makes that structural rather than a convention
- * (see server_utils.LiveEnemy). Mobs are admitted by `spawnEnemy()` in
- * server/enemyRegistry.ts, which is the only producer of the branded type.
- */
-export const enemies: LiveEnemy[] = [];
+// There is no `enemies` array here any more. Mobs live in the ECS world and
+// nowhere else; `liveEnemies()` in server/enemyRegistry.ts projects their shells
+// back out on demand. A module-level array was a SECOND place a mob could exist,
+// which is what every mob/entity disagreement this codebase has had came from.
 export const obstacles: Obstacle[] = [];
 export const items: Item[] = [];
 

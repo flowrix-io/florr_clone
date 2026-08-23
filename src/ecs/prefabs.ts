@@ -53,6 +53,12 @@ export function spawnMob(world: World, spec: MobSpawn): Entity {
 
     world.add(e, C.Position, { x: spec.x, y: spec.y });
     world.add(e, C.Velocity, { x: 0, y: 0 });
+    // Unconditional, though most mobs are never knocked back. Adding it lazily
+    // on first impact moved the mob to a different ARCHETYPE mid-tick, which
+    // meant a structural change (and therefore a deferral queue in syncToEcs)
+    // on the first hit of every mob's life. Eight bytes per mob buys that away
+    // and keeps the mob archetype stable for its whole life.
+    world.add(e, C.Knockback, { x: 0, y: 0 });
     world.add(e, C.Angle, { value: spec.angle ?? 0 });
     world.add(e, C.Radius, { value: spec.radius });
     world.add(e, C.Speed, { current: spec.speed, base: spec.speed });
@@ -186,6 +192,12 @@ export function spawnPlayer(world: World, spec: PlayerSpawn): Entity {
 
     world.add(e, C.Position, { x: spec.x, y: spec.y });
     world.add(e, C.Velocity, { x: 0, y: 0 });
+    // Unconditional, though most mobs are never knocked back. Adding it lazily
+    // on first impact moved the mob to a different ARCHETYPE mid-tick, which
+    // meant a structural change (and therefore a deferral queue in syncToEcs)
+    // on the first hit of every mob's life. Eight bytes per mob buys that away
+    // and keeps the mob archetype stable for its whole life.
+    world.add(e, C.Knockback, { x: 0, y: 0 });
     world.add(e, C.Angle, { value: 0 });
     world.add(e, C.Radius, { value: spec.radius });
     world.add(e, C.Health, { current: spec.health, max: spec.maxHealth });

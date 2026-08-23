@@ -18,6 +18,9 @@
  */
 
 import { Enemy } from '../server_utils';
+import { mobAiType, mobAngle, mobHealth, mobIsChasing, mobMaxHealth, mobX, mobY } from './mobFields';
+import { getWireOutbox } from './wireOutbox';
+import { getEntityWorld } from './entityRegistry';
 
 export interface EnemySpawnWire {
     id: string;
@@ -38,19 +41,38 @@ export interface EnemySpawnWire {
 export function enemySpawnPayload(e: Enemy): EnemySpawnWire {
     const wire: EnemySpawnWire = {
         id: e.id,
-        x: e.x,
-        y: e.y,
-        angle: e.angle,
-        health: e.health,
-        maxHealth: e.maxHealth,
+        x: mobX(e.entity),
+        y: mobY(e.entity),
+        angle: mobAngle(e.entity),
+        health: mobHealth(e.entity),
+        maxHealth: mobMaxHealth(e.entity),
         type: e.type,
         tier: e.tier,
     };
     // Optional half of the contract — omitted when absent so the common wild
     // mob does not pay for a pet/boss-only field.
     if (e.ownerId !== undefined) wire.ownerId = e.ownerId;
-    if (e.aiType !== undefined) wire.aiType = e.aiType as string;
-    if (e.isChasing !== undefined) wire.isChasing = e.isChasing;
+    if (mobAiType(e.entity) !== undefined) wire.aiType = mobAiType(e.entity) as string;
+    if (mobIsChasing(e.entity)) wire.isChasing = true;
     if ((e as any).reversed !== undefined) wire.reversed = (e as any).reversed;
     return wire;
+}
+
+/**
+ * Announce a new mob to everyone who can see it.
+ *
+ * ENTITY-GATED, and that is the point of routing every spawn through one
+ * function. Events are delivered at the end of the tick that produced them, so a
+ * mob that spawns and dies within the same tick would otherwise put its
+ * `enemySpawned` on the wire after it was already gone. When the removal path
+ * also emits `enemyDestroyed` the client recovers, because the outbox preserves
+ * production order — but several removal paths deliberately do NOT emit (the
+ * melee sweep, bulk despawns), and for those the client is left holding a mob
+ * that will never move, never die and never be mentioned again. The gate makes
+ * that unrepresentable rather than a rule each caller has to remember.
+ */
+export function emitEnemySpawned(enemy: Enemy): void {
+    const entity = getEntityWorld().lookup(enemy.id);
+    if (entity === undefined) return;
+    getWireOutbox().nearFor(entity, mobX(enemy.entity), mobY(enemy.entity), 'enemySpawned', enemySpawnPayload(enemy));
 }

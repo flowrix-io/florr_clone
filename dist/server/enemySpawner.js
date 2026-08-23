@@ -12,6 +12,7 @@ exports.spawnCentipedeBodySegments = spawnCentipedeBodySegments;
 exports.createSpecialMob = createSpecialMob;
 exports.updateSpecialMobCounts = updateSpecialMobCounts;
 exports.spawnSpecialMobs = spawnSpecialMobs;
+const mobFields_1 = require("./mobFields");
 const server_utils_1 = require("../server_utils");
 const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
@@ -67,12 +68,12 @@ function getSectionAtPosition(x, y) {
 // Target dummies never despawn and are effectively unkillable, so any duplicate
 // that slips through is permanent. Cap them at one of each rarity per section.
 function targetDummyExistsInSection(tier, section) {
-    for (const e of constants_1.enemies) {
+    for (const e of (0, enemyRegistry_1.liveEnemies)()) {
         if (e.type !== 'target_dummy')
             continue;
         if (e.tier !== tier)
             continue;
-        if (getSectionAtPosition(e.x, e.y) === section)
+        if (getSectionAtPosition((0, mobFields_1.mobX)(e.entity), (0, mobFields_1.mobY)(e.entity)) === section)
             return true;
     }
     return false;
@@ -123,8 +124,8 @@ function countMobsInZone(zone) {
     const minY = zone.y * constants_2.SCALE_FACTOR;
     const maxY = (zone.y + zone.height) * constants_2.SCALE_FACTOR;
     let count = 0;
-    for (const e of constants_1.enemies) {
-        if (e.x >= minX && e.x <= maxX && e.y >= minY && e.y <= maxY)
+    for (const e of (0, enemyRegistry_1.liveEnemies)()) {
+        if ((0, mobFields_1.mobX)(e.entity) >= minX && (0, mobFields_1.mobX)(e.entity) <= maxX && (0, mobFields_1.mobY)(e.entity) >= minY && (0, mobFields_1.mobY)(e.entity) <= maxY)
             count++;
     }
     return count;
@@ -260,7 +261,7 @@ function getRandomPositionInZoneType(zoneType) {
 /**
  * Create a new enemy at a valid position.
  *
- * The mob is ADMITTED here (entity + `enemies[]`) rather than returned for the
+ * The mob is ADMITTED here (entity + `liveEnemies()[]`) rather than returned for the
  * caller to push — see server/enemyRegistry.ts. The return value is only for
  * bookkeeping the caller still owns (the ambient-super announcement, spawn
  * counters).
@@ -284,7 +285,7 @@ function getRandomPositionInZoneType(zoneType) {
 /**
  * Scratch buffers for the mob-spacing rejection test.
  *
- * `_spacingR2[i]` is the SQUARED rejection radius for `enemies[i]` — squared so
+ * `_spacingR2[i]` is the SQUARED rejection radius for `liveEnemies()[i]` — squared so
  * the test is a plain compare against dx²+dy² with no Math.sqrt. Positions are
  * copied in alongside it so the hot loop touches two flat Float64Arrays instead
  * of chasing 1600 object pointers per attempt.
@@ -297,7 +298,7 @@ let _spacingX = new Float64Array(0);
 let _spacingY = new Float64Array(0);
 let _spacingCount = 0;
 function buildSpacingRadii(baseRadius) {
-    const n = constants_1.enemies.length;
+    const n = (0, enemyRegistry_1.liveEnemies)().length;
     if (_spacingR2.length < n) {
         const cap = n + 256;
         _spacingR2 = new Float64Array(cap);
@@ -305,13 +306,13 @@ function buildSpacingRadii(baseRadius) {
         _spacingY = new Float64Array(cap);
     }
     for (let i = 0; i < n; i++) {
-        const e = constants_1.enemies[i];
+        const e = (0, enemyRegistry_1.liveEnemies)()[i];
         const stats = (0, mobs_1.getMobStats)(e.type, e.tier);
         const otherHalfSize = (stats ? stats.size * 40 : 40) / 2;
         const r = baseRadius + otherHalfSize;
         _spacingR2[i] = r * r;
-        _spacingX[i] = e.x;
-        _spacingY[i] = e.y;
+        _spacingX[i] = (0, mobFields_1.mobX)(e.entity);
+        _spacingY[i] = (0, mobFields_1.mobY)(e.entity);
     }
     _spacingCount = n;
 }
@@ -382,8 +383,8 @@ function createEnemy(helpers) {
             const minY = p.y - vpH / 2 - constants_2.VIEWPORT_BUFFER;
             const maxY = p.y + vpH / 2 + constants_2.VIEWPORT_BUFFER;
             let count = 0;
-            for (const enemy of constants_1.enemies) {
-                if (enemy.x >= minX && enemy.x <= maxX && enemy.y >= minY && enemy.y <= maxY) {
+            for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
+                if ((0, mobFields_1.mobX)(enemy.entity) >= minX && (0, mobFields_1.mobX)(enemy.entity) <= maxX && (0, mobFields_1.mobY)(enemy.entity) >= minY && (0, mobFields_1.mobY)(enemy.entity) <= maxY) {
                     count++;
                 }
             }
@@ -651,12 +652,12 @@ function createEnemy(helpers) {
     // Final overlap check using the ACTUAL mob size (Phase 2 used a preliminary estimate)
     const actualMobSize = mobStats.size * 40;
     const actualHalfSize = actualMobSize / 2;
-    const overlapsExistingMob = constants_1.enemies.some((otherEnemy) => {
+    const overlapsExistingMob = (0, enemyRegistry_1.liveEnemies)().some((otherEnemy) => {
         const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
         const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
         const otherHalfSize = otherMobSize / 2;
-        const dx = otherEnemy.x - x;
-        const dy = otherEnemy.y - y;
+        const dx = (0, mobFields_1.mobX)(otherEnemy.entity) - x;
+        const dy = (0, mobFields_1.mobY)(otherEnemy.entity) - y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         return distance < actualHalfSize + otherHalfSize;
     });
@@ -738,12 +739,12 @@ function createEnemyInZone(helpers, zone) {
             continue;
         if (helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE))
             continue;
-        const tooClose = constants_1.enemies.some((otherEnemy) => {
+        const tooClose = (0, enemyRegistry_1.liveEnemies)().some((otherEnemy) => {
             const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
             const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
             const otherHalfSize = otherMobSize / 2;
-            const dx = otherEnemy.x - x;
-            const dy = otherEnemy.y - y;
+            const dx = (0, mobFields_1.mobX)(otherEnemy.entity) - x;
+            const dy = (0, mobFields_1.mobY)(otherEnemy.entity) - y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
         });
@@ -861,12 +862,12 @@ function createEnemyInZone(helpers, zone) {
         return null;
     const actualMobSize = mobStats.size * 40;
     const actualHalfSize = actualMobSize / 2;
-    const overlapsExistingMob = constants_1.enemies.some((otherEnemy) => {
+    const overlapsExistingMob = (0, enemyRegistry_1.liveEnemies)().some((otherEnemy) => {
         const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
         const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
         const otherHalfSize = otherMobSize / 2;
-        const dx = otherEnemy.x - x;
-        const dy = otherEnemy.y - y;
+        const dx = (0, mobFields_1.mobX)(otherEnemy.entity) - x;
+        const dy = (0, mobFields_1.mobY)(otherEnemy.entity) - y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         return distance < actualHalfSize + otherHalfSize;
     });
@@ -889,17 +890,21 @@ function createEnemyInZone(helpers, zone) {
  * it, so mobs like ant holes are guarded the moment they appear.
  */
 function spawnInitialSpawns(parent) {
+    const children = [];
     const parentStats = (0, mobs_1.getMobStats)(parent.type, parent.tier);
     if (!parentStats || !parentStats.initial_spawns)
-        return;
+        return children;
     const parentRadius = (parentStats.size * 40) / 2;
     // `parent` is a LiveEnemy, which is the type-level statement that it has
     // already been admitted — so each child's HoleTether resolves immediately.
     for (const childType of parentStats.initial_spawns) {
         const angle = Math.random() * Math.PI * 2;
         const dist = parentRadius + 30 + Math.random() * parentRadius;
-        (0, enemyRegistry_1.spawnEnemy)(childType, parent.tier, parent.x + Math.cos(angle) * dist, parent.y + Math.sin(angle) * dist, { parentHoleId: parent.id });
+        const child = (0, enemyRegistry_1.spawnEnemy)(childType, parent.tier, (0, mobFields_1.mobX)(parent.entity) + Math.cos(angle) * dist, (0, mobFields_1.mobY)(parent.entity) + Math.sin(angle) * dist, { parentHoleId: parent.id });
+        if (child)
+            children.push(child);
     }
+    return children;
 }
 /**
  * Attach the body-segment chain to a centipede head. Used by every centipede
@@ -907,6 +912,7 @@ function spawnInitialSpawns(parent) {
  * appears alone.
  */
 function spawnCentipedeBodySegments(head) {
+    const segments = [];
     // Stamps the head's own chain fields on BOTH representations. The chain
     // passes are ECS-owned now, so setting only the legacy fields would leave
     // the head out of its own chain.
@@ -914,17 +920,17 @@ function spawnCentipedeBodySegments(head) {
     const bodyType = (0, server_utils_1.getCentipedeBodyType)(head.type);
     const bodyStats = (0, mobs_1.getMobStats)(bodyType, head.tier);
     if (!bodyStats)
-        return;
+        return segments;
     const segmentCount = 9; // head + 9 body = 10 total
     // Segments inherit the head's ownership, so a pet chain lays out at the
     // pet size scale — same spacing formula the follow pass uses each tick.
     const segmentSize = bodyStats.size * 40 * (0, mobs_1.getEnemySizeScale)(!!head.ownerId, head.tier, bodyType);
     const spacing = segmentSize * 0.9;
-    const dirX = -Math.cos(head.angle);
-    const dirY = -Math.sin(head.angle);
+    const dirX = -Math.cos((0, mobFields_1.mobAngle)(head.entity));
+    const dirY = -Math.sin((0, mobFields_1.mobAngle)(head.entity));
     let prevId = head.id;
-    let prevX = head.x;
-    let prevY = head.y;
+    let prevX = (0, mobFields_1.mobX)(head.entity);
+    let prevY = (0, mobFields_1.mobY)(head.entity);
     for (let i = 1; i <= segmentCount; i++) {
         const segX = prevX + dirX * spacing;
         const segY = prevY + dirY * spacing;
@@ -932,7 +938,7 @@ function spawnCentipedeBodySegments(head) {
         // Angle is written at construction, so a post-spawn `segment.angle = ...`
         // would only move the legacy half and the chain would start out bent.
         const segment = (0, enemyRegistry_1.spawnEnemy)(bodyType, head.tier, segX, segY, {
-            angle: head.angle,
+            angle: (0, mobFields_1.mobAngle)(head.entity),
             // undefined for wild centipedes, set for pet ones — either way the key exists.
             ownerId: head.ownerId,
             leaderId: prevId,
@@ -941,10 +947,12 @@ function spawnCentipedeBodySegments(head) {
         });
         if (!segment)
             break;
+        segments.push(segment);
         prevId = segment.id;
         prevX = segX;
         prevY = segY;
     }
+    return segments;
 }
 /**
  * Function to create special mobs (ultra, super, unique)
@@ -1078,12 +1086,12 @@ function createSpecialMob(tier, helpers, targetSection, acceptPosition) {
     }
     // Final overlap check with existing mobs using actual size
     const halfMobSize = mobSize / 2;
-    const overlapsExistingMob = constants_1.enemies.some((otherEnemy) => {
+    const overlapsExistingMob = (0, enemyRegistry_1.liveEnemies)().some((otherEnemy) => {
         const otherMobStats = (0, mobs_1.getMobStats)(otherEnemy.type, otherEnemy.tier);
         const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
         const otherHalfSize = otherMobSize / 2;
-        const dx = otherEnemy.x - position.x;
-        const dy = otherEnemy.y - position.y;
+        const dx = (0, mobFields_1.mobX)(otherEnemy.entity) - position.x;
+        const dy = (0, mobFields_1.mobY)(otherEnemy.entity) - position.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         return distance < halfMobSize + otherHalfSize;
     });
@@ -1110,20 +1118,20 @@ function updateSpecialMobCounts() {
     let unique = 0;
     // Reset per-section tracking for super mobs
     const activeSuperSections = new Set();
-    for (const enemy of constants_1.enemies) {
+    for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
         if (enemy.type === 'target_dummy')
             continue;
         // Maze bosses are managed by mazeSpawner — counting them here would
         // suppress the main world's ultra/super spawns while the maze is
         // populated.
-        if ((0, maze_1.isInMazeRegion)(enemy.x, enemy.y))
+        if ((0, maze_1.isInMazeRegion)((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity)))
             continue;
         if (enemy.tier === 'ultra')
             ultra++;
         else if (enemy.tier === 'super') {
             super_++;
             // Track which sections have super bosses
-            const section = getSectionAtPosition(enemy.x, enemy.y);
+            const section = getSectionAtPosition((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
             activeSuperSections.add(section);
             (0, gameState_1.setSuperMobInSection)(section, enemy.id);
         }
@@ -1151,7 +1159,7 @@ function spawnSpecialMobs(helpers, io) {
         const ultraMob = createSpecialMob('ultra', helpers);
         if (ultraMob) {
             gameState_1.ultraMobCount.value = 1;
-            console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${ultraMob.x}, ${ultraMob.y})`);
+            console.log(`[SERVER] Spawned ultra mob: ${ultraMob.type} at (${(0, mobFields_1.mobX)(ultraMob.entity)}, ${(0, mobFields_1.mobY)(ultraMob.entity)})`);
         }
     }
     // Spawn super mob in each section that doesn't have one. Supers land in
@@ -1168,7 +1176,7 @@ function spawnSpecialMobs(helpers, io) {
             // leave its entity behind.
             const superMob = createSpecialMob('super', helpers, section, (x, y) => !(0, gameState_1.getSuperMobInSection)(getSectionAtPosition(x, y)));
             if (superMob) {
-                const mobSection = getSectionAtPosition(superMob.x, superMob.y);
+                const mobSection = getSectionAtPosition((0, mobFields_1.mobX)(superMob.entity), (0, mobFields_1.mobY)(superMob.entity));
                 gameState_1.superMobCount.value++;
                 (0, gameState_1.setSuperMobInSection)(mobSection, superMob.id);
                 // Don't send spawn notification for target dummies
@@ -1189,13 +1197,13 @@ function spawnSpecialMobs(helpers, io) {
                         type: 'spawn',
                         tier: 'super',
                         mobType: superMob.type,
-                        x: superMob.x,
-                        y: superMob.y,
+                        x: (0, mobFields_1.mobX)(superMob.entity),
+                        y: (0, mobFields_1.mobY)(superMob.entity),
                         timestamp: spawnTimestamp,
                         message: `A super ${superMob.type.replace('_', ' ')} has spawned!`
                     });
                 }
-                console.log(`[SERVER] Spawned super mob in section ${section}: ${superMob.type} at (${superMob.x}, ${superMob.y})`);
+                console.log(`[SERVER] Spawned super mob in section ${section}: ${superMob.type} at (${(0, mobFields_1.mobX)(superMob.entity)}, ${(0, mobFields_1.mobY)(superMob.entity)})`);
             }
         }
     }
@@ -1206,7 +1214,7 @@ function spawnSpecialMobs(helpers, io) {
             gameState_1.uniqueMobCount.value = 1;
             // Don't send spawn notification for target dummies
             if (uniqueMob.type !== 'target_dummy') {
-                const mobSection = getSectionAtPosition(uniqueMob.x, uniqueMob.y);
+                const mobSection = getSectionAtPosition((0, mobFields_1.mobX)(uniqueMob.entity), (0, mobFields_1.mobY)(uniqueMob.entity));
                 const spawnTimestamp = Date.now();
                 // Send personalized message to each player based on their section
                 Object.entries(constants_1.players).forEach(([playerId, player]) => {
@@ -1223,13 +1231,13 @@ function spawnSpecialMobs(helpers, io) {
                     type: 'spawn',
                     tier: 'unique',
                     mobType: uniqueMob.type,
-                    x: uniqueMob.x,
-                    y: uniqueMob.y,
+                    x: (0, mobFields_1.mobX)(uniqueMob.entity),
+                    y: (0, mobFields_1.mobY)(uniqueMob.entity),
                     timestamp: spawnTimestamp,
                     message: `A unique ${uniqueMob.type.replace('_', ' ')} has spawned!`
                 });
             }
-            console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${uniqueMob.x}, ${uniqueMob.y})`);
+            console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${(0, mobFields_1.mobX)(uniqueMob.entity)}, ${(0, mobFields_1.mobY)(uniqueMob.entity)})`);
         }
     }
 }

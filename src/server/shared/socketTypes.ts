@@ -16,6 +16,8 @@ export type ConnectionQuality = 'good' | 'medium' | 'slow';
 
 /** One player's last-sent field values, the baseline for the next delta. */
 export interface SentPlayerState {
+    /** Which kind this entry describes; sent once, on first appearance. */
+    K: number;
     x: number; y: number; a: number;
     vx: number; vy: number;
     h: number; H: number;
@@ -43,7 +45,27 @@ export interface SentPlayerState {
 
 /** One enemy's last-sent field values, the baseline for the next delta. */
 export interface SentEnemyState {
+    K: number;
     x: number; y: number; a: number; h: number; H: number; t: any; T: any;
+}
+
+/**
+ * One dropped item's last-sent field values.
+ *
+ * Items used to travel on their own one-shot event channel (itemsSpawned /
+ * itemRemoved / itemPickedUp) as whole unpacked maps. One-shot is the problem:
+ * a frame lost to uWS backpressure left the client with loot it could not see
+ * or a ghost it could never clear, which is why a whole `needsItemResync`
+ * recovery path existed. As part of the entity stream they are delta-encoded
+ * and re-derived from this baseline every tick, so a dropped frame self-heals.
+ */
+export interface SentItemState {
+    K: number;
+    x: number; y: number;
+    /** Item kind (petal / potion / …) and rarity, interned to small ints. */
+    I: number; R: number;
+    /** Petal type name, for petal drops. Interned ids cannot cross the wire. */
+    P: string;
 }
 
 export interface AuthenticatedSocket extends Socket {
@@ -55,18 +77,20 @@ export interface AuthenticatedSocket extends Socket {
     lastUpdateTime?: number;
     lastGameState?: any; // For delta compression
     lastStateHash?: number; // Lightweight hash for skip-if-unchanged
-    lastSentEnemies?: Map<string, SentEnemyState>;
-    lastSentPlayers?: Map<string, SentPlayerState>;
+    /**
+     * Everything this client has been told about, in ONE table.
+     *
+     * Was two maps (lastSentEnemies / lastSentPlayers) plus an untracked item
+     * channel. Players, mobs and items share a single id sequence (see
+     * entity_ids.ts — that is a deliberate invariant, because `world.lookup`
+     * spans all kinds), so one map keyed by id is well-defined and the removal
+     * sweep becomes one pass instead of one per kind.
+     */
+    lastSentEntities?: Map<string, SentPlayerState | SentEnemyState | SentItemState>;
     /**
      * Set when a gameStateUpdate frame was dropped by the uWS backpressure
      * limit: the lastSent* maps were already committed as if delivered, so the
      * next tick must re-send full state with a replace-all marker (F=1).
      */
     needsEntityResync?: boolean;
-    /**
-     * Set when any item-channel frame (spawn/remove/pickup) was dropped: the
-     * client's item map has silently diverged (invisible loot or ghost items),
-     * so re-send the full eligible list via the itemsUpdate replace channel.
-     */
-    needsItemResync?: boolean;
 }

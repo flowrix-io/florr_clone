@@ -1,4 +1,27 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pendingEnemyDamageUpdates = void 0;
 exports.markEnemyDamaged = markEnemyDamaged;
@@ -13,6 +36,9 @@ exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
 exports.trackMobKill = trackMobKill;
 exports.cleanupEnemy = cleanupEnemy;
 const server_utils_1 = require("../server_utils");
+const C = __importStar(require("../ecs/components"));
+const mobFields_1 = require("./mobFields");
+const enemyRegistry_1 = require("./enemyRegistry");
 const constants_1 = require("../constants");
 const petal_actions_1 = require("../petal_actions");
 const squadManager_1 = require("./squadManager");
@@ -24,11 +50,11 @@ exports.pendingEnemyDamageUpdates = new Map();
 function markEnemyDamaged(enemy) {
     const pending = exports.pendingEnemyDamageUpdates.get(enemy.id);
     if (pending) {
-        pending.health = enemy.health;
+        pending.health = (0, mobFields_1.mobHealth)(enemy.entity);
         pending.poisonOnly = false;
     }
     else {
-        exports.pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: false });
+        exports.pendingEnemyDamageUpdates.set(enemy.id, { health: (0, mobFields_1.mobHealth)(enemy.entity), poisonOnly: false });
     }
 }
 /**
@@ -50,10 +76,10 @@ function markEnemyDamagedById(enemyId, health) {
 function markEnemyPoisonDamaged(enemy) {
     const pending = exports.pendingEnemyDamageUpdates.get(enemy.id);
     if (pending) {
-        pending.health = enemy.health;
+        pending.health = (0, mobFields_1.mobHealth)(enemy.entity);
     }
     else {
-        exports.pendingEnemyDamageUpdates.set(enemy.id, { health: enemy.health, poisonOnly: true });
+        exports.pendingEnemyDamageUpdates.set(enemy.id, { health: (0, mobFields_1.mobHealth)(enemy.entity), poisonOnly: true });
     }
 }
 // Helper function to track damage dealt to an enemy
@@ -64,17 +90,17 @@ function trackDamage(enemy, playerId, damage) {
     const currentDamage = enemy.damageContributors.get(playerId) || 0;
     enemy.damageContributors.set(playerId, currentDamage + damage);
     // Provoke neutral mobs when they take damage from a player
-    if (enemy.aiType === 'neutral' && !enemy.targetPlayerId) {
-        enemy.targetPlayerId = playerId;
+    if ((0, mobFields_1.mobAiType)(enemy.entity) === 'neutral' && !(0, mobFields_1.mobTargetPlayerId)(enemy.entity)) {
+        (0, mobFields_1.provokeMob)(enemy.entity, playerId);
     }
     // Centipede chain: damaging any segment provokes the head and the whole chain.
     // Only applies when the chain's head is neutral (above rare).
     if ((0, server_utils_1.isCentipedeHeadType)(enemy.type) || (0, server_utils_1.isCentipedeBodyType)(enemy.type)) {
         const headId = enemy.headId ?? ((0, server_utils_1.isCentipedeHeadType)(enemy.type) ? enemy.id : undefined);
         if (headId) {
-            const head = constants_1.enemies.find(e => e.id === headId);
-            if (head && head.aiType === 'neutral' && !head.targetPlayerId) {
-                head.targetPlayerId = playerId;
+            const head = (0, enemyRegistry_1.liveEnemies)().find(e => e.id === headId);
+            if (head && (0, mobFields_1.mobAiType)(head.entity) === 'neutral' && !(0, mobFields_1.mobTargetPlayerId)(head.entity)) {
+                (0, mobFields_1.provokeMob)(head.entity, playerId);
             }
         }
     }
@@ -82,15 +108,17 @@ function trackDamage(enemy, playerId, damage) {
     // reflects the real player's actual DPS.
     if (enemy.type === 'target_dummy' && !(0, botManager_1.isBot)(playerId)) {
         const now = Date.now();
-        if (!enemy.dpsStartTime) {
-            enemy.dpsStartTime = now;
+        // The sample buffers live in C.DpsTracker, which spawnMob attaches to
+        // dummies. Only a handful of dummies ever exist and nothing hot reads
+        // this, which is why the component stores plain arrays.
+        const world = (0, mobFields_1.mobWorld)();
+        if (!world.has(enemy.entity, C.DpsTracker))
+            return;
+        if (!world.get(enemy.entity, C.DpsTracker, 'startTime')) {
+            world.set(enemy.entity, C.DpsTracker, 'startTime', now);
         }
-        if (!enemy.dpsHistoryTimes) {
-            enemy.dpsHistoryTimes = [];
-            enemy.dpsHistoryDamages = [];
-        }
-        const times = enemy.dpsHistoryTimes;
-        const damages = enemy.dpsHistoryDamages;
+        const times = world.get(enemy.entity, C.DpsTracker, 'historyTimes');
+        const damages = world.get(enemy.entity, C.DpsTracker, 'historyDamages');
         times.push(now);
         damages.push(damage);
         // Drop entries older than 60s by trimming the front in place — avoids
@@ -107,9 +135,12 @@ function trackDamage(enemy, playerId, damage) {
 }
 // Calculate DPS for target dummies
 function calculateDPS(enemy) {
-    const times = enemy.dpsHistoryTimes;
-    const damages = enemy.dpsHistoryDamages;
-    if (enemy.type !== 'target_dummy' || !times || !damages || times.length === 0) {
+    const world = (0, mobFields_1.mobWorld)();
+    if (enemy.type !== 'target_dummy' || !world.has(enemy.entity, C.DpsTracker))
+        return 0;
+    const times = world.get(enemy.entity, C.DpsTracker, 'historyTimes');
+    const damages = world.get(enemy.entity, C.DpsTracker, 'historyDamages');
+    if (!times || !damages || times.length === 0) {
         return 0;
     }
     const now = Date.now();
@@ -227,8 +258,8 @@ function sendBossMobDefeatedMessage(enemy, io, players) {
         type: 'defeat',
         tier: enemy.tier,
         mobType: enemy.type,
-        x: enemy.x,
-        y: enemy.y,
+        x: (0, mobFields_1.mobX)(enemy.entity),
+        y: (0, mobFields_1.mobY)(enemy.entity),
         timestamp,
         message: (0, apiKeyApi_1.stripHtml)(content),
         defeatedBy: { username, playerName: topDamager.name }
@@ -339,26 +370,10 @@ function cleanupEnemy(enemy) {
         enemy.damageContributors.clear();
         enemy.damageContributors = undefined;
     }
-    if (enemy.poisonEffects) {
-        enemy.poisonEffects.length = 0;
-        enemy.poisonEffects = undefined;
-    }
-    if (enemy.dpsHistoryTimes) {
-        enemy.dpsHistoryTimes.length = 0;
-        enemy.dpsHistoryTimes = undefined;
-    }
-    if (enemy.dpsHistoryDamages) {
-        enemy.dpsHistoryDamages.length = 0;
-        enemy.dpsHistoryDamages = undefined;
-    }
-    enemy.dpsStartTime = undefined;
-    enemy.currentDPS = undefined;
-    enemy.wanderTargetX = undefined;
-    enemy.wanderTargetY = undefined;
-    enemy.lastWanderTime = undefined;
-    enemy.lastViewportCheck = undefined;
-    enemy.lastProjectileTime = undefined;
-    enemy.lastMeleeAttackTime = undefined;
+    // Poison stacks, DPS samples and viewport tracking are all components;
+    // retiring the entity frees them with everything else, so there is nothing
+    // to null out by hand. What remains here is legacy bookkeeping held OUTSIDE
+    // the entity.
     // Release this enemy's slot in every raindrop player's aura damage-timestamp
     // map so those inner maps don't grow unboundedly over a long session.
     (0, playerState_1.forgetEnemyFromRaindropAura)(enemy.id);

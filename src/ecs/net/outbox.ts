@@ -33,6 +33,7 @@
  */
 
 import { WireEvent } from '../../wire_events';
+import { Entity, NULL_ENTITY } from '../entity';
 import { Phase, SystemContext } from '../system';
 
 /**
@@ -58,6 +59,17 @@ export interface WireViewer {
     /** Half-extents of the box, already scaled to the culling margin. */
     halfWidth: number;
     halfHeight: number;
+}
+
+/**
+ * Whether an entity may still be mentioned on the wire.
+ *
+ * Injected because liveness is a server-side question (is it destroyed? is it
+ * removed but waiting for the end-of-tick drain?) — see isLiveForWire in
+ * server/entityRegistry.ts, which is the one implementation.
+ */
+export interface EntityGate {
+    isLiveForWire(entity: Entity): boolean;
 }
 
 /** Where the recipient list comes from. Injected; see the file header. */
@@ -97,8 +109,11 @@ export class WireOutbox {
     private readonly targets: string[] = [];
     private readonly xs: number[] = [];
     private readonly ys: number[] = [];
+    /** The entity this event talks about, or NULL_ENTITY when it talks about none. */
+    private readonly gates: Entity[] = [];
     private count = 0;
     private nearCount = 0;
+    private gatedDropped = 0;
 
     private readonly viewers: WireViewer[] = [];
     private flushScheduled = false;
@@ -110,6 +125,11 @@ export class WireOutbox {
     constructor(
         private readonly sink: WireSink,
         private readonly viewerSource: ViewerSource,
+        /**
+         * Optional; without it entity-gated events are delivered unconditionally,
+         * which is the right default for tests and benches that have no world.
+         */
+        private readonly gate?: EntityGate,
     ) {}
 
     /** Events queued but not yet delivered. For tests and the debug menu. */
@@ -117,9 +137,55 @@ export class WireOutbox {
         return this.count;
     }
 
+    /** Events dropped because their subject died before the flush. Diagnostics. */
+    droppedByGate(): number {
+        return this.gatedDropped;
+    }
+
     /** Send to every connected socket. */
     all(event: WireEvent, payload: unknown): void {
         this.enqueue(ROUTE_ALL, event, payload, '', 0, 0);
+    }
+
+    // -- entity-gated routes --------------------------------------------------
+    //
+    // Same four routes, but the event is DROPPED at flush time if the entity it
+    // talks about is no longer live. This is the generic form of a rule three
+    // different kinds had each reinvented: a thing can be created and destroyed
+    // inside one tick (your own petal kills a mob inside pickup range; a drop is
+    // collected the instant it lands), and since events are delivered at end of
+    // tick, an ungated spawn would arrive AFTER its own removal and plant a
+    // ghost the client can never clear.
+    //
+    // Use these for anything that names an entity. The ungated forms are for
+    // events that name none — chat, stats, a player's own XP bar.
+
+    /** Broadcast, unless `entity` died first. */
+    allFor(entity: Entity, event: WireEvent, payload: unknown): void {
+        this.enqueue(ROUTE_ALL, event, payload, '', 0, 0, entity);
+    }
+
+    /** Send to one socket, unless `entity` died first. */
+    toSocketFor(entity: Entity, socketId: string, event: WireEvent, payload: unknown): void {
+        this.enqueue(ROUTE_SOCKET, event, payload, socketId, 0, 0, entity);
+    }
+
+    /** Send to a player's socket, unless `entity` died first. */
+    toPlayerFor(entity: Entity, playerId: string, event: WireEvent, payload: unknown): void {
+        this.enqueue(ROUTE_PLAYER, event, payload, playerId, 0, 0, entity);
+    }
+
+    /** Send to viewers of (x, y), unless `entity` died first. */
+    nearFor(
+        entity: Entity,
+        x: number,
+        y: number,
+        event: WireEvent,
+        payload: unknown,
+        alwaysTo?: string,
+    ): void {
+        this.enqueue(ROUTE_NEAR, event, payload, alwaysTo ?? '', x, y, entity);
+        this.nearCount++;
     }
 
     /** Send to one socket id. */
@@ -194,6 +260,7 @@ export class WireOutbox {
         target: string,
         x: number,
         y: number,
+        gate: Entity = NULL_ENTITY,
     ): void {
         const i = this.count++;
         this.routes[i] = route;
@@ -202,6 +269,7 @@ export class WireOutbox {
         this.targets[i] = target;
         this.xs[i] = x;
         this.ys[i] = y;
+        this.gates[i] = gate;
         this.schedule();
     }
 
@@ -222,6 +290,15 @@ export class WireOutbox {
     private deliver(i: number): void {
         const event = this.events[i];
         const payload = this.payloads[i];
+
+        // The subject died between queueing and now: saying anything about it
+        // would describe something the client has no entity for.
+        const gate = this.gates[i];
+        if (gate !== NULL_ENTITY && this.gate !== undefined && !this.gate.isLiveForWire(gate)) {
+            this.gatedDropped++;
+            return;
+        }
+
         try {
             const route = this.routes[i];
             if (route === ROUTE_ALL) {
@@ -280,6 +357,7 @@ export class WireOutbox {
             this.targets[i] = this.targets[from];
             this.xs[i] = this.xs[from];
             this.ys[i] = this.ys[from];
+            this.gates[i] = this.gates[from];
         }
         for (let i = remaining; i < this.count; i++) this.payloads[i] = undefined;
         this.count = remaining;

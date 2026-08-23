@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.spawnArenaMobs = spawnArenaMobs;
+const mobFields_1 = require("./mobFields");
 const constants_1 = require("../constants");
 const mobs_1 = require("../mobs");
 const weighted_1 = require("./shared/weighted");
@@ -41,8 +42,8 @@ function countArenaPlayers() {
 }
 function countArenaMobs() {
     let count = 0;
-    for (const enemy of constants_1.enemies) {
-        if ((0, constants_1.isInPvpArena)(enemy.x, enemy.y))
+    for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
+        if ((0, constants_1.isInPvpArena)((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity)))
             count++;
     }
     return count;
@@ -72,13 +73,13 @@ function findArenaSpawnPosition(mobRadius) {
             continue;
         // Don't pile on top of another mob.
         let tooCloseToMob = false;
-        for (const enemy of constants_1.enemies) {
-            if (!(0, constants_1.isInPvpArena)(enemy.x, enemy.y))
+        for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
+            if (!(0, constants_1.isInPvpArena)((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity)))
                 continue;
             const otherStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
             const otherRadius = otherStats ? (otherStats.size * 40) / 2 : 20;
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
+            const dx = (0, mobFields_1.mobX)(enemy.entity) - x;
+            const dy = (0, mobFields_1.mobY)(enemy.entity) - y;
             const minDist = mobRadius + otherRadius + MIN_SPAWN_DISTANCE_FROM_MOB;
             if (dx * dx + dy * dy < minDist * minDist) {
                 tooCloseToMob = true;
@@ -94,7 +95,7 @@ function findArenaSpawnPosition(mobRadius) {
 /**
  * Spawn up to `limit` mobs this tick to keep the arena populated.
  *
- * Mobs are admitted by `spawnEnemy` as they are created (entity + `enemies[]`);
+ * Mobs are admitted by `spawnEnemy` as they are created (entity + `liveEnemies()[]`);
  * the return value is the count, for logging and pacing.
  */
 function spawnArenaMobs(limit = 3) {

@@ -27,18 +27,56 @@
  * this format exists.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PETAL_FIELDS = exports.PLAYER_FIELDS = exports.ENEMY_FIELDS = void 0;
+exports.PETAL_FIELDS = exports.WIRE_RARITIES = exports.WIRE_ITEM_TYPES = exports.ENTITY_FIELDS = void 0;
 exports.packId = packId;
 exports.unpackId = unpackId;
 exports.packFields = packFields;
 exports.unpackFields = unpackFields;
 exports.wireFieldsSignature = wireFieldsSignature;
-/** Enemy delta. i/x/y/a/h are the common case and stay inside one mask byte. */
-exports.ENEMY_FIELDS = ['i', 'x', 'y', 'a', 'h', 'H', 't', 'T', 'o'];
-/** Player delta. Self-only fields (vx/vy/u/sm) sit high; they are rare. */
-exports.PLAYER_FIELDS = [
-    'i', 'x', 'y', 'a', 'h', 'H', 'e', 'f', 'm', 'q', 'r', 'n', 'k', 'l', 's',
+/**
+ * The unified entity delta layout.
+ *
+ * There used to be one table per kind (ENEMY_FIELDS, PLAYER_FIELDS) feeding two
+ * separate arrays in every frame, plus items on their own one-shot event
+ * channel. This is the single table all three share.
+ *
+ * ORDER IS THE PROTOCOL, and here it is doing two jobs at once:
+ *
+ *  - Bits 0..6 are the SHARED hot fields — id, position, facing, health — which
+ *    every kind sends every tick. A mask that fits in bits 0..6 is <= 127, which
+ *    the codec writes as ONE byte, so the steady-state cost per entity is
+ *    unchanged from the per-kind tables (their first six entries were already
+ *    identical). `K` takes bit 6 and is absent in steady state.
+ *  - Everything after bit 6 is kind-specific and rare: mob type/tier, the
+ *    player's two dozen render/status fields, the item's drop description. A
+ *    kind never pays mask bits for another kind's fields, because absent fields
+ *    cost nothing but a zero bit.
+ */
+exports.ENTITY_FIELDS = [
+    // -- shared hot path, bits 0..6 ---------------------------------------
+    'i', 'x', 'y', 'a', 'h', 'H', 'K',
+    // -- mob ---------------------------------------------------------------
+    't', 'T', 'o',
+    // -- player ------------------------------------------------------------
+    'e', 'f', 'm', 'q', 'r', 'n', 'k', 'l', 's',
     'v', 'M', 'V', 'z', 'c', 'p', 'sm', 'u', 'vx', 'vy',
+    // -- item --------------------------------------------------------------
+    'I', 'R', 'P',
+];
+/**
+ * Item kind and rarity, as small ints on the wire.
+ *
+ * These are CLOSED sets defined here, so both sides share the order and it is
+ * folded into the handshake signature like every other layout in this file.
+ * The petal TYPE is not here and travels as a string: petal type ids come from
+ * a runtime interner whose numbering the client has no way to reproduce — the
+ * same reason the mob encoder converts interned type/tier back to strings at
+ * the wire boundary.
+ */
+exports.WIRE_ITEM_TYPES = ['petal', 'health_potion', 'speed_boost', 'shield'];
+exports.WIRE_RARITIES = [
+    'common', 'uncommon', 'rare', 'epic', 'legendary',
+    'mythic', 'ultra', 'super', 'unique', 'apex',
 ];
 /** One petal position inside a player's `p` array. */
 exports.PETAL_FIELDS = ['L', 'I', 'x', 'y', 'N'];
@@ -98,7 +136,7 @@ function unpackFields(arr, fields) {
 /** Fingerprint of all three layouts, mixed into the handshake signature. */
 function wireFieldsSignature() {
     let h = 2166136261;
-    for (const list of [exports.ENEMY_FIELDS, exports.PLAYER_FIELDS, exports.PETAL_FIELDS]) {
+    for (const list of [exports.ENTITY_FIELDS, exports.PETAL_FIELDS, exports.WIRE_ITEM_TYPES, exports.WIRE_RARITIES]) {
         for (const n of list) {
             for (let i = 0; i < n.length; i++)
                 h = Math.imul(h ^ n.charCodeAt(i), 16777619);

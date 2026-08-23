@@ -6,6 +6,7 @@ exports.spawnMazeMobs = spawnMazeMobs;
 exports.spawnMazeBosses = spawnMazeBosses;
 exports.clearMazeEnemies = clearMazeEnemies;
 const server_utils_1 = require("../server_utils");
+const mobFields_1 = require("./mobFields");
 const constants_1 = require("../constants");
 const mobs_1 = require("../mobs");
 const enemySpawner_1 = require("./enemySpawner");
@@ -14,6 +15,8 @@ const maze_1 = require("../maze");
 const rarity_1 = require("./shared/rarity");
 const weighted_1 = require("./shared/weighted");
 const enemyRegistry_1 = require("./enemyRegistry");
+/** Snapshot buffer: the clear loop removes while iterating. */
+const mazeScratch = [];
 // Population control. Unlike the open world (which only populates viewports),
 // the maze is a bounded dungeon populated rrolf-style: mobs spawn across ALL
 // corridors and persist while anyone is inside (despawnDistantEnemies exempts
@@ -104,10 +107,10 @@ function hasMazePlayers() {
 function countMazeMobs() {
     let total = 0;
     let ultras = 0;
-    for (const enemy of constants_1.enemies) {
+    for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
         if (enemy.ownerId)
             continue; // pets don't count against the population
-        if (!(0, maze_1.isInMazeRegion)(enemy.x, enemy.y))
+        if (!(0, maze_1.isInMazeRegion)((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity)))
             continue;
         total++;
         // Centipede body segments share the head's tier — only the head counts
@@ -139,7 +142,7 @@ function isTooCloseToPlayersOrMobs(x, y, mobRadius) {
     for (const enemy of nearby) {
         const otherStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
         const otherRadius = otherStats ? (otherStats.size * 40) / 2 : 20;
-        const dx = enemy.x - x, dy = enemy.y - y;
+        const dx = (0, mobFields_1.mobX)(enemy.entity) - x, dy = (0, mobFields_1.mobY)(enemy.entity) - y;
         const minDist = mobRadius + otherRadius + MIN_SPAWN_DISTANCE_FROM_MOB;
         if (dx * dx + dy * dy < minDist * minDist)
             return true;
@@ -202,7 +205,7 @@ function spawnMazeMobs(limit = 3) {
         return 0;
     // Fresh broad-phase grid for the too-close checks below (the tick loop
     // rebuilds it too, but this call runs on its own interval).
-    (0, enemyGrid_1.rebuildEnemyGrid)(constants_1.enemies);
+    (0, enemyGrid_1.rebuildEnemyGrid)((0, enemyRegistry_1.liveEnemies)());
     let spawned = 0;
     for (let i = 0; i < needed; i++) {
         const mobEntry = (0, weighted_1.pickWeighted)(pool);
@@ -273,12 +276,12 @@ function spawnMazeBosses() {
             continue;
         // One boss per room.
         let bossHere = false;
-        for (const enemy of constants_1.enemies) {
+        for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
             if ((0, server_utils_1.isCentipedeBodyType)(enemy.type))
                 continue;
             if (rarity_1.RARITY_ORDER.indexOf(enemy.tier) < rarity_1.RARITY_ORDER.indexOf('ultra'))
                 continue;
-            const dx = enemy.x - spot.x, dy = enemy.y - spot.y;
+            const dx = (0, mobFields_1.mobX)(enemy.entity) - spot.x, dy = (0, mobFields_1.mobY)(enemy.entity) - spot.y;
             if (dx * dx + dy * dy < 2000 * 2000) {
                 bossHere = true;
                 break;
@@ -304,11 +307,10 @@ function spawnMazeBosses() {
  */
 function clearMazeEnemies() {
     const removed = [];
-    for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-        const enemy = constants_1.enemies[i];
-        if ((0, maze_1.isInMazeRegion)(enemy.x, enemy.y)) {
+    for (const enemy of (0, enemyRegistry_1.collectEnemies)(mazeScratch)) {
+        if ((0, maze_1.isInMazeRegion)((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity))) {
             removed.push(enemy.id);
-            (0, enemyRegistry_1.removeEnemyAt)(i);
+            (0, enemyRegistry_1.removeEnemy)(enemy);
         }
     }
     return removed;

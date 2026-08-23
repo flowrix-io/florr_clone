@@ -31,9 +31,10 @@ exports.killEnemy = killEnemy;
 const server_utils_1 = require("../../server_utils");
 const wireOutbox_1 = require("../wireOutbox");
 /**
- * Run the full death sequence for `enemy` and splice it from `enemies` at
- * `index`. The caller owns the index (loop variable or findIndex result);
- * if the enemy is no longer in the array, pass -1 and no splice happens.
+ * Run the full death sequence for `enemy` and remove it from the world.
+ *
+ * The caller supplies neither an index nor the container: removal is by
+ * identity, and removing a mob that has already left is a no-op.
  *
  * `enemy` is marked isDead on entry. Order of operations:
  *   1. resolve credited player (killerPlayerId)
@@ -42,7 +43,7 @@ const wireOutbox_1 = require("../wireOutbox");
  *   4. cleanupEnemy, splice, emit enemyDestroyed
  *   5. trackMobKill (sync-snapshot or deferred), gated on credit + contributor copy
  */
-function killEnemy(enemy, index, enemies, ctx, opts = {}) {
+function killEnemy(enemy, ctx, opts = {}) {
     const { killerPlayerId, emitDestroyed = true, trackMobKillTiming = 'sync-snapshot', requireNonEmptyContributors = false, skipCleanup = false, } = opts;
     enemy.isDead = true;
     // --- resolve the player who gets credit ---
@@ -66,9 +67,7 @@ function killEnemy(enemy, index, enemies, ctx, opts = {}) {
         : undefined;
     if (!skipCleanup)
         ctx.cleanupEnemy(enemy);
-    if (index >= 0 && index < enemies.length) {
-        ctx.removeEnemyAt(index);
-    }
+    ctx.removeEnemy(enemy);
     if (emitDestroyed)
         (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', enemy.id);
     // --- kill tracking (snapshot modes run here, after cleanup) ---

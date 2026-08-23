@@ -8,24 +8,9 @@ exports.registerItemHandlers = registerItemHandlers;
 const playerRefs_1 = require("../playerRefs");
 function registerItemHandlers(game) {
     const cw = game.clientWorld;
-    game.socket.on('itemsUpdate', (items) => {
-        game.items.clear();
-        items.forEach(item => {
-            game.items.set(item.id, item);
-        });
-        // This full replace is also the server's drop-recovery payload (a
-        // spawn/remove frame to us was discarded under backpressure). Clear
-        // animation entries for items that no longer exist — their items are
-        // gone from the map, so they'd linger in these Maps forever.
-        game.graphics.itemSpawnAnim?.forEach((_, id) => {
-            if (!game.items.has(id))
-                game.graphics.itemSpawnAnim.delete(id);
-        });
-        game.graphics.itemDeathAnim?.forEach((_, id) => {
-            if (!game.items.has(id))
-                game.graphics.itemDeathAnim.delete(id);
-        });
-    });
+    // itemsUpdate is gone: there is no separate item channel to full-replace.
+    // Drops arrive in the gameStateUpdate entity stream, and the stream's own
+    // F=1 resync is what repairs a client whose frame was dropped.
     const registerSpawnAnim = (item) => {
         if (!game.graphics.itemSpawnAnim) {
             game.graphics.itemSpawnAnim = new Map();
@@ -37,24 +22,15 @@ function registerItemHandlers(game) {
             startTime: Date.now()
         });
     };
-    game.socket.on('itemSpawned', (item) => {
-        // Legacy handler for single item spawn (kept for backwards compatibility)
-        game.items.set(item.id, item);
-        registerSpawnAnim(item);
-        if (item.rarity) {
-            game.graphics.showItemDropBurst(item.x, item.y, item.rarity);
-        }
-    });
-    game.socket.on('itemsSpawned', (items) => {
-        // Batch handler for multiple item spawns
-        for (const item of items) {
-            game.items.set(item.id, item);
-            registerSpawnAnim(item);
-            if (item.rarity) {
-                game.graphics.showItemDropBurst(item.x, item.y, item.rarity);
-            }
-        }
-    });
+    // Exposed for the entity-stream ingest in gameState.ts: item STATE arrives
+    // in the delta stream now, but the cues (spawn flourish, despawn fade) still
+    // belong here with the rest of the item visuals.
+    game.registerItemSpawnAnim = registerSpawnAnim;
+    // itemSpawned / itemsSpawned / itemsUpdate are gone: dropped loot is part of
+    // the gameStateUpdate entity stream now, delta-encoded and viewport-culled
+    // like mobs and players. They were one-shot events, and a frame lost to uWS
+    // backpressure meant loot the client never rendered — the failure the
+    // `needsItemResync` recovery channel existed to paper over.
     // Petal action event handlers
     game.socket.on('playerHealed', (data) => {
         const player = cw.player(data.playerId);
@@ -161,10 +137,8 @@ function registerItemHandlers(game) {
         // actually on screen (the pickup is emitted to the socket, not per half).
         registerPickupAnim(itemId, (0, playerRefs_1.localPlayerId)(game));
     });
-    game.socket.on('itemRemoved', (itemId) => {
-        // If not already animating (e.g. pickup), show despawn animation
-        registerDespawnAnim(itemId);
-    });
+    // Removal is driven by the entity stream's R list; this is the cue it calls.
+    game.removeWorldItem = (itemId) => registerDespawnAnim(itemId);
     game.socket.on('itemCollected', (data) => {
         const player = cw.player(data.playerId);
         if (player) {

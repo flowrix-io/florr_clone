@@ -22,6 +22,7 @@ exports.switchPlayer = switchPlayer;
 exports.syncSplitStars = syncSplitStars;
 exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
+const mobFields_1 = require("./server/mobFields");
 const scopedEmit_1 = require("./server/scopedEmit");
 const enemyWire_1 = require("./server/enemyWire");
 const playerWire_1 = require("./server/playerWire");
@@ -38,6 +39,8 @@ const mobs_1 = require("./mobs");
 const enemySpawner_1 = require("./server/enemySpawner");
 const petalEvents_1 = require("./server/petalEvents");
 const wireOutbox_1 = require("./server/wireOutbox");
+/** Snapshot buffer for pet loops that despawn while iterating. */
+const petScratch = [];
 /**
  * Build a kill context for the partial death handlers in explodePetal /
  * strikeLightning. Those paths never call trackMobKill or cleanupEnemy
@@ -53,7 +56,7 @@ function makePetalKillCtx(io) {
         players: constants_1.players,
         playerUserIds: gameState_1.playerUserIds,
         database: database_1.database,
-        removeEnemyAt: enemyRegistry_1.removeEnemyAt,
+        removeEnemy: enemyRegistry_1.removeEnemy,
         // Stubs — only reachable when trackMobKillTiming !== 'none', which
         // explodePetal/strikeLightning never pass.
         savePlayerProgress: undefined,
@@ -196,35 +199,32 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
         }
         // The grid returns a cell-aligned superset, so the exact radius test
         // still has to run — squared, to keep the sqrt out of the hot path.
-        const ddx = enemy.x - x;
-        const ddy = enemy.y - y;
+        const ddx = (0, mobFields_1.mobX)(enemy.entity) - x;
+        const ddy = (0, mobFields_1.mobY)(enemy.entity) - y;
         if (ddx * ddx + ddy * ddy <= radiusSq) {
             const distance = Math.sqrt(ddx * ddx + ddy * ddy);
             // Track damage if player is provided
             if (player) {
                 (0, server_1.trackDamage)(enemy, player.id, damage);
             }
-            enemy.health = Math.max(0, enemy.health - damage);
+            (0, mobFields_1.damageMob)(enemy.entity, damage);
             // Apply knockback
             const knockbackForce = 20;
-            const dx = enemy.x - x;
-            const dy = enemy.y - y;
+            const dx = (0, mobFields_1.mobX)(enemy.entity) - x;
+            const dy = (0, mobFields_1.mobY)(enemy.entity) - y;
             const normalizedDx = dx / (distance || 1);
             const normalizedDy = dy / (distance || 1);
-            enemy.knockbackX = normalizedDx * knockbackForce;
-            enemy.knockbackY = normalizedDy * knockbackForce;
+            (0, mobFields_1.setMobKnockback)(enemy.entity, normalizedDx * knockbackForce, normalizedDy * knockbackForce);
             (0, utils_1.markEnemyDamaged)(enemy);
             // Check if enemy dies
-            if (enemy.health <= 0) {
-                // Resolved here, not carried from the loop: the grid result is
-                // not `enemies`, and earlier kills in this same explosion have
-                // already shifted it. Only paid on an actual kill.
-                const i = enemies.indexOf(enemy);
-                if (i < 0)
+            if ((0, mobFields_1.mobHealth)(enemy.entity) <= 0) {
+                // Earlier kills in this same explosion may already have taken
+                // it: the grid result is a snapshot, the world is not.
+                if (!(0, enemyRegistry_1.isEnemyLive)(enemy))
                     continue;
                 // Explode/lightning never ran cleanupEnemy or trackMobKill
                 // historically (skipCleanup + timing 'none' preserve that).
-                (0, killHandler_1.killEnemy)(enemy, i, enemies, makePetalKillCtx(io), {
+                (0, killHandler_1.killEnemy)(enemy, makePetalKillCtx(io), {
                     killerPlayerId: player?.id,
                     skipCleanup: true,
                     trackMobKillTiming: 'none',
@@ -294,12 +294,12 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage, context
             continue;
         }
         // The grid returns a cell-aligned superset; exact test, squared.
-        const ldx = enemy.x - x;
-        const ldy = enemy.y - y;
+        const ldx = (0, mobFields_1.mobX)(enemy.entity) - x;
+        const ldy = (0, mobFields_1.mobY)(enemy.entity) - y;
         if (ldx * ldx + ldy * ldy <= radiusSq) {
             targets.push({
-                x: enemy.x,
-                y: enemy.y,
+                x: (0, mobFields_1.mobX)(enemy.entity),
+                y: (0, mobFields_1.mobY)(enemy.entity),
                 enemyId: enemy.id
             });
             // Deal damage to the enemy - use petal damage for rarity scaling
@@ -308,15 +308,14 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage, context
             if (player) {
                 (0, server_1.trackDamage)(enemy, player.id, damage);
             }
-            enemy.health = Math.max(0, enemy.health - damage);
+            (0, mobFields_1.damageMob)(enemy.entity, damage);
             (0, utils_1.markEnemyDamaged)(enemy);
             // Check if enemy dies
-            if (enemy.health <= 0) {
-                // Live index; see the matching note in explodePetal.
-                const i = enemies.indexOf(enemy);
-                if (i < 0)
+            if ((0, mobFields_1.mobHealth)(enemy.entity) <= 0) {
+                // See the matching note in explodePetal.
+                if (!(0, enemyRegistry_1.isEnemyLive)(enemy))
                     continue;
-                (0, killHandler_1.killEnemy)(enemy, i, enemies, makePetalKillCtx(io), {
+                (0, killHandler_1.killEnemy)(enemy, makePetalKillCtx(io), {
                     killerPlayerId: player?.id,
                     skipCleanup: true,
                     trackMobKillTiming: 'none',
@@ -341,7 +340,7 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage, context
 }
 // Helper function to find a player's pet by mob type
 function findPlayerPetByMobType(ownerId, mobType) {
-    return constants_1.enemies.find(enemy => enemy.ownerId === ownerId &&
+    return (0, enemyRegistry_1.liveEnemies)().find(enemy => enemy.ownerId === ownerId &&
         enemy.type === mobType);
 }
 // Helper function to despawn a pet
@@ -349,28 +348,25 @@ function despawnPet(pet, io) {
     // For centipede pets, drop the whole chain — otherwise the first orphaned
     // body segment would auto-promote into a new free-roaming head.
     if ((0, server_utils_1.isCentipedeHeadType)(pet.type)) {
-        for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-            const e = constants_1.enemies[i];
+        for (const e of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
             if (e.id === pet.id || ((0, server_utils_1.isCentipedeBodyType)(e.type) && e.headId === pet.id)) {
-                (0, enemyRegistry_1.removeEnemyAt)(i);
+                (0, enemyRegistry_1.removeEnemy)(e);
                 (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', e.id);
             }
         }
         return;
     }
-    const index = constants_1.enemies.findIndex(e => e.id === pet.id);
-    if (index !== -1) {
-        (0, enemyRegistry_1.removeEnemyAt)(index);
+    if ((0, enemyRegistry_1.removeEnemy)(pet)) {
         (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', pet.id);
         // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
     }
 }
 // Despawn all pets owned by a player
 function despawnAllPlayerPets(playerId, io) {
-    for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-        if (constants_1.enemies[i].ownerId === playerId) {
-            (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', constants_1.enemies[i].id);
-            (0, enemyRegistry_1.removeEnemyAt)(i);
+    for (const pet of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
+        if (pet.ownerId === playerId) {
+            (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', pet.id);
+            (0, enemyRegistry_1.removeEnemy)(pet);
         }
     }
 }
@@ -394,9 +390,9 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     // previous one and only the last would survive.
     if (count > 1) {
         if (!skipDuplicateCheck) {
-            for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-                if (constants_1.enemies[i].ownerId === ownerId && constants_1.enemies[i].type === mobType) {
-                    despawnPet(constants_1.enemies[i], io);
+            for (const existing of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
+                if (existing.ownerId === ownerId && existing.type === mobType) {
+                    despawnPet(existing, io);
                 }
             }
         }
@@ -419,9 +415,9 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     }
     // Apex eggs spawn 3 unique pets instead of a single apex pet
     if (rarity.toLowerCase() === 'apex') {
-        for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
-            if (constants_1.enemies[i].ownerId === ownerId && constants_1.enemies[i].type === mobType) {
-                despawnPet(constants_1.enemies[i], io);
+        for (const existing of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
+            if (existing.ownerId === ownerId && existing.type === mobType) {
+                despawnPet(existing, io);
             }
         }
         for (let i = 0; i < 3; i++) {
@@ -444,7 +440,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     // loop until nginx answered 502. The cap sits far above any normal
     // loadout, so it only bites deliberate stacking.
     let ownedEntities = 0;
-    for (const e of constants_1.enemies) {
+    for (const e of (0, enemyRegistry_1.liveEnemies)()) {
         if (e.ownerId === ownerId)
             ownedEntities++;
     }
@@ -472,7 +468,7 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     // afterwards would leave ECS-owned pet melee hitting for the full wild
     // value while the legacy object read the nerfed one.
     const statMods = PET_STAT_MULTIPLIERS[mobType];
-    // Create the pet enemy (ECS entity + enemies[] admission, atomically)
+    // Create the pet enemy (ECS entity + liveEnemies()[] admission, atomically)
     const pet = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, x, y, {
         aiType: 'passive', // Pets are not hostile to players
         range: petRange,
@@ -482,14 +478,12 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
         damage: statMods ? mobStats.damage * statMods.damage : undefined,
     }); // mobStats validated above
     // Notify all clients
-    (0, scopedEmit_1.emitToViewers)(pet.x, pet.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(pet));
+    (0, enemyWire_1.emitEnemySpawned)(pet);
     // Centipede pets need their trailing body chain too, with ownerId propagated
     // to each segment so they follow the owner alongside the head.
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
-        const beforeCount = constants_1.enemies.length;
-        (0, enemySpawner_1.spawnCentipedeBodySegments)(pet);
-        for (let i = beforeCount; i < constants_1.enemies.length; i++) {
-            (0, scopedEmit_1.emitToViewers)(constants_1.enemies[i].x, constants_1.enemies[i].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_1.enemies[i]));
+        for (const segment of (0, enemySpawner_1.spawnCentipedeBodySegments)(pet)) {
+            (0, enemyWire_1.emitEnemySpawned)(segment);
         }
     }
     // console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
