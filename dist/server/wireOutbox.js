@@ -12,10 +12,27 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bindWireOutbox = bindWireOutbox;
 exports.getWireOutbox = getWireOutbox;
-const constants_1 = require("../constants");
-const utils_1 = require("./utils");
 const outbox_1 = require("../ecs/net/outbox");
+const constants_1 = require("../constants");
 const entityRegistry_1 = require("./entityRegistry");
+/**
+ * `./utils` is reached LAZILY, not imported at module scope.
+ *
+ * utils -> petal_actions -> server.ts, and server.ts calls `bindWireOutbox` at
+ * module scope. So a module-scope import here means that requiring this file
+ * before server.ts re-enters it mid-initialisation, and the assignment below
+ * lands on a `let` that has not executed yet — "Cannot access 'outbox' before
+ * initialization". Production always enters through server.ts and never hit it,
+ * but any tooling that requires a deep module first did, and the failure looked
+ * like a bug in the outbox rather than in the import graph.
+ *
+ * Both helpers are only ever called from inside the closures below, long after
+ * every module has finished loading, so deferring the require costs nothing.
+ */
+let utilsModule;
+function utils() {
+    return (utilsModule ?? (utilsModule = require('./utils')));
+}
 let outbox;
 /**
  * Reused viewer records. The recipient list is rebuilt on every flush (30Hz),
@@ -46,7 +63,7 @@ function bindWireOutbox(io) {
             seenSockets.clear();
             let n = 0;
             for (const playerId in constants_1.players) {
-                const socketId = (0, utils_1.getOriginalSocketId)(playerId);
+                const socketId = utils().getOriginalSocketId(playerId);
                 if (seenSockets.has(socketId))
                     continue;
                 seenSockets.add(socketId);
@@ -58,7 +75,7 @@ function bindWireOutbox(io) {
                     continue;
                 // The camera follows the ACTIVE half: the splitter petal can put
                 // it on `${id}_split2`, standing somewhere else entirely.
-                const viewer = (0, utils_1.getActivePlayerForSocket)(socketId);
+                const viewer = utils().getActivePlayerForSocket(socketId);
                 if (!viewer)
                     continue;
                 let slot = viewerPool[n];
@@ -78,7 +95,7 @@ function bindWireOutbox(io) {
             }
         },
         socketIdOf(playerId) {
-            return (0, utils_1.getOriginalSocketId)(playerId);
+            return utils().getOriginalSocketId(playerId);
         },
     };
     // The one liveness rule, shared by every kind. Before the entity host is

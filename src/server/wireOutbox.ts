@@ -9,13 +9,32 @@
  * server.ts at startup, the same shape enemyRegistry and itemRegistry use.
  */
 
+import { WireOutbox, WireSink, WireViewer, ViewerSource, EntityGate } from '../ecs/net/outbox';
 import { Server as SocketIOServer } from '../ws_server';
 import { players, VIEWPORT_WIDTH, VIEWPORT_HEIGHT } from '../constants';
-import { getOriginalSocketId, getActivePlayerForSocket } from './utils';
+import type { getOriginalSocketId as GetOriginalSocketId, getActivePlayerForSocket as GetActivePlayerForSocket } from './utils';
 import { WireEvent } from '../wire_events';
-import { WireOutbox, WireSink, WireViewer, ViewerSource, EntityGate } from '../ecs/net/outbox';
 import { hasEntityHost, getEntityWorld, isLiveForWire } from './entityRegistry';
 import { Entity } from '../ecs';
+
+/**
+ * `./utils` is reached LAZILY, not imported at module scope.
+ *
+ * utils -> petal_actions -> server.ts, and server.ts calls `bindWireOutbox` at
+ * module scope. So a module-scope import here means that requiring this file
+ * before server.ts re-enters it mid-initialisation, and the assignment below
+ * lands on a `let` that has not executed yet — "Cannot access 'outbox' before
+ * initialization". Production always enters through server.ts and never hit it,
+ * but any tooling that requires a deep module first did, and the failure looked
+ * like a bug in the outbox rather than in the import graph.
+ *
+ * Both helpers are only ever called from inside the closures below, long after
+ * every module has finished loading, so deferring the require costs nothing.
+ */
+let utilsModule: { getOriginalSocketId: typeof GetOriginalSocketId; getActivePlayerForSocket: typeof GetActivePlayerForSocket } | undefined;
+function utils() {
+    return (utilsModule ??= require('./utils'));
+}
 
 let outbox: WireOutbox | undefined;
 
@@ -49,7 +68,7 @@ export function bindWireOutbox(io: SocketIOServer): WireOutbox {
             seenSockets.clear();
             let n = 0;
             for (const playerId in players) {
-                const socketId = getOriginalSocketId(playerId);
+                const socketId = utils().getOriginalSocketId(playerId);
                 if (seenSockets.has(socketId)) continue;
                 seenSockets.add(socketId);
 
@@ -61,7 +80,7 @@ export function bindWireOutbox(io: SocketIOServer): WireOutbox {
 
                 // The camera follows the ACTIVE half: the splitter petal can put
                 // it on `${id}_split2`, standing somewhere else entirely.
-                const viewer = getActivePlayerForSocket(socketId);
+                const viewer = utils().getActivePlayerForSocket(socketId);
                 if (!viewer) continue;
 
                 let slot = viewerPool[n];
@@ -82,7 +101,7 @@ export function bindWireOutbox(io: SocketIOServer): WireOutbox {
         },
 
         socketIdOf(playerId: string): string {
-            return getOriginalSocketId(playerId);
+            return utils().getOriginalSocketId(playerId);
         },
     };
 

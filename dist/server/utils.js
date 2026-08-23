@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.pendingEnemyDamageUpdates = void 0;
+exports.getEligiblePlayers = exports.pendingEnemyDamageUpdates = void 0;
 exports.markEnemyDamaged = markEnemyDamaged;
 exports.markEnemyDamagedById = markEnemyDamagedById;
 exports.markEnemyPoisonDamaged = markEnemyPoisonDamaged;
@@ -31,7 +31,6 @@ exports.trackDamage = trackDamage;
 exports.calculateDPS = calculateDPS;
 exports.getOriginalSocketId = getOriginalSocketId;
 exports.getActivePlayerForSocket = getActivePlayerForSocket;
-exports.getEligiblePlayers = getEligiblePlayers;
 exports.sendBossMobDefeatedMessage = sendBossMobDefeatedMessage;
 exports.trackMobKill = trackMobKill;
 exports.cleanupEnemy = cleanupEnemy;
@@ -41,7 +40,7 @@ const mobFields_1 = require("./mobFields");
 const enemyRegistry_1 = require("./enemyRegistry");
 const constants_1 = require("../constants");
 const petal_actions_1 = require("../petal_actions");
-const squadManager_1 = require("./squadManager");
+const lootRecipients_1 = require("./lootRecipients");
 const botManager_1 = require("./botManager");
 const apiKeyApi_1 = require("./apiKeyApi");
 const playerState_1 = require("./playerState");
@@ -197,24 +196,14 @@ function getActivePlayerForSocket(socketId) {
 // Helper function to get eligible players for a drop based on damage ranking
 // Squad members' damage is pooled (averaged) and they count as a single loot entry.
 // Returns individual player socket IDs (squads are expanded back to members).
-function getEligiblePlayers(enemy) {
-    if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
-        return [];
-    }
-    // Pool squad damage: squad members' damage is averaged into a single squad entry
-    const pooled = (0, squadManager_1.getPooledDamageContributors)(enemy.damageContributors);
-    // Sort entities (players or squad IDs) by pooled damage (highest first)
-    const sortedEntities = Array.from(pooled.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(entry => entry[0]);
-    // Determine placement requirement based on mob rarity
-    const isUltraOrAbove = ['ultra', 'super', 'unique', 'apex'].includes(enemy.tier);
-    const placementRequirement = isUltraOrAbove ? 15 : 4;
-    // Get top N entities (a squad counts as 1 slot)
-    const topEntities = sortedEntities.slice(0, placementRequirement);
-    // Expand squad IDs back to individual player socket IDs
-    return (0, squadManager_1.expandEligibleToPlayerIds)(topEntities);
-}
+/**
+ * Who may pick up this mob's drops.
+ *
+ * Re-exported so the existing drop-path callers keep working; the rule and its
+ * squad wiring live in lootRecipients.ts / shared/lootEligibility.ts, out of
+ * this module's import cycle so the kill path can reach them too.
+ */
+exports.getEligiblePlayers = lootRecipients_1.getLootRecipients;
 // Helper function to send boss mob defeated message in chat
 function sendBossMobDefeatedMessage(enemy, io, players) {
     // Check if this is a boss mob whose defeat is broadcast.
@@ -274,7 +263,7 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
     //     hasDamageContributors: !!enemy.damageContributors,
     //     damageContributorsSize: enemy.damageContributors?.size || 0
     // });
-    const eligiblePlayers = getEligiblePlayers(enemy);
+    const eligiblePlayers = (0, exports.getEligiblePlayers)(enemy);
     // console.log('[Server] Eligible players for mob kill:', eligiblePlayers);
     if (eligiblePlayers.length === 0) {
         // console.log('[Server] No eligible players for mob kill');

@@ -1069,7 +1069,6 @@ function handlePoisonDeath(enemy) {
     const index = (0, enemyRegistry_1.liveEnemies)().findIndex(e => e.id === enemy.id);
     if (index === -1)
         return;
-    const baseXpGained = (0, server_utils_1.getXPFromEnemy)(enemy);
     // Find the player who dealt the most damage (including poison)
     let topContributor;
     let maxDamage = 0;
@@ -1081,12 +1080,13 @@ function handlePoisonDeath(enemy) {
             }
         });
     }
-    const { xpMultiplier, dropMultiplier } = topContributor
+    const { dropMultiplier } = topContributor
         ? getLeaderboardRewardMultipliers(topContributor)
-        : { xpMultiplier: 1, dropMultiplier: 1 };
-    if (topContributor && constants_2.players[topContributor]) {
-        addXPToPlayer(constants_2.players[topContributor], Math.round(baseXpGained * xpMultiplier), topContributor);
-    }
+        : { dropMultiplier: 1 };
+    // XP goes to every player who earned loot rights, each at the mob's FULL
+    // value — same rule as every other death path. The top contributor still
+    // decides the DROP multiplier, since that is one roll for the whole mob.
+    (0, killHandler_1.awardKillXp)(enemy, killCtx);
     // Track mob kill for eligible players (use debounced save to prevent lag)
     (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
     handleMobDrops(enemy, dropMultiplier);
@@ -1331,9 +1331,10 @@ function getEcsRuntime() {
                         topContributor = playerId;
                     }
                 });
+                // Same rule as every other death path: full XP to each looter.
+                (0, killHandler_1.awardKillXp)(enemy, killCtx);
                 if (topContributor && constants_2.players[topContributor]) {
-                    const { xpMultiplier, dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
-                    addXPToPlayer(constants_2.players[topContributor], Math.round((0, server_utils_1.getXPFromEnemy)(enemy) * xpMultiplier), topContributor);
+                    const { dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
                     (0, utils_1.trackMobKill)(enemy, constants_2.players, gameState_1.playerUserIds, database_1.database, io, savePlayerProgress);
                     handleMobDrops(enemy, dropMultiplier);
                     (0, utils_1.sendBossMobDefeatedMessage)(enemy, io, constants_2.players);

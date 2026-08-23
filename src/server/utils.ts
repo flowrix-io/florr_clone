@@ -5,7 +5,7 @@ import { liveEnemies } from './enemyRegistry';
 import { ServerPlayer } from '../player';
 import { ENEMY_TIERS, players } from '../constants';
 import { splitPlayers, syncSplitStars } from '../petal_actions';
-import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
+import { getLootRecipients } from './lootRecipients';
 import { isBot } from './botManager';
 import { recordBossEvent, stripHtml } from './apiKeyApi';
 import { forgetEnemyFromRaindropAura } from './playerState';
@@ -185,31 +185,14 @@ export function getActivePlayerForSocket(socketId: string): ServerPlayer | undef
 // Helper function to get eligible players for a drop based on damage ranking
 // Squad members' damage is pooled (averaged) and they count as a single loot entry.
 // Returns individual player socket IDs (squads are expanded back to members).
-export function getEligiblePlayers(
-    enemy: { damageContributors?: Map<string, number>; tier: string },
-): string[] {
-    if (!enemy.damageContributors || enemy.damageContributors.size === 0) {
-        return [];
-    }
-
-    // Pool squad damage: squad members' damage is averaged into a single squad entry
-    const pooled = getPooledDamageContributors(enemy.damageContributors);
-
-    // Sort entities (players or squad IDs) by pooled damage (highest first)
-    const sortedEntities = Array.from(pooled.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(entry => entry[0]);
-
-    // Determine placement requirement based on mob rarity
-    const isUltraOrAbove = ['ultra', 'super', 'unique', 'apex'].includes(enemy.tier);
-    const placementRequirement = isUltraOrAbove ? 15 : 4;
-
-    // Get top N entities (a squad counts as 1 slot)
-    const topEntities = sortedEntities.slice(0, placementRequirement);
-
-    // Expand squad IDs back to individual player socket IDs
-    return expandEligibleToPlayerIds(topEntities);
-}
+/**
+ * Who may pick up this mob's drops.
+ *
+ * Re-exported so the existing drop-path callers keep working; the rule and its
+ * squad wiring live in lootRecipients.ts / shared/lootEligibility.ts, out of
+ * this module's import cycle so the kill path can reach them too.
+ */
+export const getEligiblePlayers = getLootRecipients;
 
 // Helper function to send boss mob defeated message in chat
 export function sendBossMobDefeatedMessage(

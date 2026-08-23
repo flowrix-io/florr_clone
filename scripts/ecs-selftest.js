@@ -51,6 +51,9 @@ function main() {
     const { runEnemyEncoderSelfTest } = require(path.join(outDir, 'ecs', 'net', 'enemyEncoder_self_test.js'));
     const { runOutboxSelfTest } = require(path.join(outDir, 'ecs', 'net', 'outbox_self_test.js'));
     const { runClientSelfTest } = require(path.join(outDir, 'ecs', 'client', 'client_self_test.js'));
+    // Loot eligibility is pure policy (no world, no sockets), so it rides along
+    // here rather than needing a server to boot.
+    const { runLootEligibilitySelfTest } = require(path.join(outDir, 'server', 'shared', 'lootEligibility_self_test.js'));
     const failures = [
         ...runEcsSelfTest(),
         ...runSystemsSelfTest(),
@@ -66,6 +69,7 @@ function main() {
         ...runEnemyEncoderSelfTest(),
         ...runOutboxSelfTest(),
         ...runClientSelfTest(),
+        ...runLootEligibilitySelfTest(),
     ];
 
     if (failures.length === 0) {

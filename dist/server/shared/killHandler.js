@@ -27,9 +27,39 @@
  *     several more flags for one-off behavior; they stay inline.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.awardKillXp = awardKillXp;
 exports.killEnemy = killEnemy;
 const server_utils_1 = require("../../server_utils");
+const lootRecipients_1 = require("../lootRecipients");
+const lootEligibility_1 = require("./lootEligibility");
 const wireOutbox_1 = require("../wireOutbox");
+/**
+ * Award a mob's XP to everyone who earned loot rights on it.
+ *
+ * Each recipient gets the mob's FULL XP — this is not a split. The leaderboard
+ * multiplier is applied PER RECIPIENT, because it is a property of that
+ * player's account (top-10 accounts earn less per kill), not of the mob.
+ *
+ * Recipients are de-duplicated by ACCOUNT, not by player id: a split flower is
+ * two player records for one person, and both halves can appear in the damage
+ * tally. Paying both would hand that person double XP for one kill.
+ *
+ * Imported directly rather than injected like the rest of this file's
+ * dependencies: `lootRecipients` reaches only the squad registry and a pure
+ * rule, so it closes no cycle — and a direct import means no kill path can
+ * forget to wire it and silently go back to paying one player.
+ *
+ * Exported because the kill paths that do NOT go through `killEnemy` — the
+ * poison death sequence and the reaper — have to award XP the same way.
+ */
+function awardKillXp(enemy, ctx) {
+    const recipients = (0, lootRecipients_1.getLootRecipients)(enemy);
+    if (recipients.length === 0)
+        return;
+    (0, lootEligibility_1.payFullXpToEach)(
+    // Only players still in the world can be paid.
+    recipients.filter(id => ctx.players[id] !== undefined), (0, server_utils_1.getXPFromEnemy)(enemy), playerId => ctx.playerUserIds[playerId], playerId => ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[playerId]).xpMultiplier, (playerId, xp) => ctx.addXPToPlayer(ctx.players[playerId], xp, playerId));
+}
 /**
  * Run the full death sequence for `enemy` and remove it from the world.
  *
@@ -50,12 +80,16 @@ function killEnemy(enemy, ctx, opts = {}) {
     const creditedPlayerId = killerPlayerId;
     const creditedPlayer = killerPlayerId !== undefined ? ctx.players[killerPlayerId] : undefined;
     // --- XP + drops + boss message + special-mob count (only when someone gets credit) ---
+    // XP goes to everyone who earned loot rights, and each of them gets the
+    // mob's FULL value — it is not a share divided between them. Killing blow
+    // no longer decides it: a last hit on something you barely damaged wins no
+    // loot slot, so it wins no XP either.
+    awardKillXp(enemy, ctx);
     if (creditedPlayer) {
         // Leaderboard reward tiers: top 10 accounts get 0.5x XP / 1.2x drop rate,
-        // top 20 get 0.75x XP / 1.1x drop rate.
-        const { xpMultiplier, dropMultiplier } = ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[creditedPlayerId]);
-        const xpGained = Math.round((0, server_utils_1.getXPFromEnemy)(enemy) * xpMultiplier);
-        ctx.addXPToPlayer(creditedPlayer, xpGained, creditedPlayerId);
+        // top 20 get 0.75x XP / 1.1x drop rate. Only the DROP half is keyed to
+        // the credited player; XP is per-recipient, above.
+        const { dropMultiplier } = ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[creditedPlayerId]);
         ctx.handleMobDrops(enemy, dropMultiplier);
         ctx.sendBossMobDefeatedMessage(enemy, ctx.io, ctx.players);
         ctx.updateSpecialMobCounts();

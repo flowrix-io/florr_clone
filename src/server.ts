@@ -49,7 +49,7 @@ import { wireFieldsSignature } from './wire_fields';
 import { getDamageMultiplier, updatePetalBehaviours, despawnAllPlayerPets } from './petal_actions';
 import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, players, obstacles, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
-import { Enemy, LiveEnemy, getXPFromEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
+import { Enemy, LiveEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
 import { WorldItem } from './item';
 import { getMobStats, getAllMobTypes, getEnemySizeScale } from './mobs';
 
@@ -160,7 +160,7 @@ import { drainRemovedEnemies, spawnEnemy, removeEnemy, collectEnemies, liveEnemi
 const mobScratch: LiveEnemy[] = [];
 import { bindEntityHost } from './server/entityRegistry';
 import { isInOutOfBoundsZone, clampToWorld, isWallAt, samplePointInViewport } from './server/shared/positions';
-import { killEnemy } from './server/shared/killHandler';
+import { awardKillXp, killEnemy } from './server/shared/killHandler';
 import { downgradeRarity } from './server/shared/rarity';
 import type { KillContext } from './server/shared/killHandler';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
@@ -1226,8 +1226,6 @@ function handlePoisonDeath(enemy: Enemy): void {
     const index = liveEnemies().findIndex(e => e.id === enemy.id);
     if (index === -1) return;
 
-    const baseXpGained = getXPFromEnemy(enemy);
-
     // Find the player who dealt the most damage (including poison)
     let topContributor: string | undefined;
     let maxDamage = 0;
@@ -1240,13 +1238,14 @@ function handlePoisonDeath(enemy: Enemy): void {
         });
     }
 
-    const { xpMultiplier, dropMultiplier } = topContributor
+    const { dropMultiplier } = topContributor
         ? getLeaderboardRewardMultipliers(topContributor)
-        : { xpMultiplier: 1, dropMultiplier: 1 };
+        : { dropMultiplier: 1 };
 
-    if (topContributor && players[topContributor]) {
-        addXPToPlayer(players[topContributor], Math.round(baseXpGained * xpMultiplier), topContributor);
-    }
+    // XP goes to every player who earned loot rights, each at the mob's FULL
+    // value — same rule as every other death path. The top contributor still
+    // decides the DROP multiplier, since that is one roll for the whole mob.
+    awardKillXp(enemy, killCtx);
 
     // Track mob kill for eligible players (use debounced save to prevent lag)
     trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
@@ -1483,9 +1482,10 @@ function getEcsRuntime(): EcsRuntime {
                     }
                 });
 
+                // Same rule as every other death path: full XP to each looter.
+                awardKillXp(enemy, killCtx);
                 if (topContributor && players[topContributor]) {
-                    const { xpMultiplier, dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
-                    addXPToPlayer(players[topContributor], Math.round(getXPFromEnemy(enemy) * xpMultiplier), topContributor);
+                    const { dropMultiplier } = getLeaderboardRewardMultipliers(topContributor);
                     trackMobKill(enemy, players, playerUserIds, database, io, savePlayerProgress);
                     handleMobDrops(enemy, dropMultiplier);
                     sendBossMobDefeatedMessage(enemy, io, players);

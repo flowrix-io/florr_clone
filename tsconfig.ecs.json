@@ -1,5 +1,5 @@
 {
-  "//": "Compiles ONLY the ECS core, for the self-test. Kept separate from the server/client configs so the ECS can be typechecked and exercised in about a second without building the whole game.",
+  "//": "Compiles the ECS core plus the few PURE server rules that need no world or socket (loot eligibility), for the self-test. Kept separate from the server/client configs so the ECS can be typechecked and exercised in about a second without building the whole game.",
   "compilerOptions": {
     "target": "ES2020",
     "module": "CommonJS",
@@ -14,5 +14,5 @@
     "moduleResolution": "node",
     "types": ["node"]
   },
-  "include": ["src/ecs/**/*"]
+  "include": ["src/ecs/**/*", "src/server/shared/lootEligibility.ts", "src/server/shared/lootEligibility_self_test.ts"]
 }
