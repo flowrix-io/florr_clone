@@ -6,6 +6,7 @@ import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadM
 import { isBot } from './botManager';
 import { recordBossEvent, stripHtml } from './apiKeyApi';
 import { forgetEnemyFromRaindropAura } from './playerState';
+import { getWireOutbox } from './wireOutbox';
 
 // Per-tick batch of enemies that took damage. Keyed by enemy.id with the
 // post-damage health snapshot. Using a module-level Map (cleared on flush)
@@ -335,7 +336,7 @@ export function trackMobKill(
             if (io && starsAwarded > 0) {
                 // Map split player ID to original socket ID for socket room targeting
                 const originalSocketId = getOriginalSocketId(playerId);
-                io.to(originalSocketId).emit('starsEarned', {
+                getWireOutbox().toSocket(originalSocketId, 'starsEarned', {
                     amount: starsAwarded,
                     total: player.stars,
                     mobName: enemy.type,
@@ -371,7 +372,7 @@ export function trackMobKill(
         // off by one — the next kill of that same type re-states the truth.
         if (io) {
             const originalSocketId = getOriginalSocketId(playerId);
-            io.to(originalSocketId).emit('mobKillUpdate', {
+            getWireOutbox().toSocket(originalSocketId, 'mobKillUpdate', {
                 t: enemy.type,
                 r: enemy.tier,
                 c: player.mobKills[enemy.type][enemy.tier],

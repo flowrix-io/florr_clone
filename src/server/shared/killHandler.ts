@@ -29,6 +29,7 @@
 import type { Enemy } from '../../server_utils';
 import type { Server as SocketIOServer } from '../../ws_server';
 import { getXPFromEnemy } from '../../server_utils';
+import { getWireOutbox } from '../wireOutbox';
 
 /** Kill-time dependencies injected by the caller (mirrors PlayerStateDependencies' kill subset). */
 export interface KillContext {
@@ -142,7 +143,7 @@ export function killEnemy(
     if (index >= 0 && index < enemies.length) {
         ctx.removeEnemyAt(index);
     }
-    if (emitDestroyed) ctx.io.emit('enemyDestroyed', enemy.id);
+    if (emitDestroyed) getWireOutbox().all('enemyDestroyed', enemy.id);
 
     // --- kill tracking (snapshot modes run here, after cleanup) ---
     if (trackMobKillTiming === 'sync-snapshot' || trackMobKillTiming === 'deferred') {

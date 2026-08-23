@@ -93,7 +93,7 @@ function registerSkillHandlers(ctx) {
                         petal.health = petal.maxHealth;
                         petal.onCooldown = false;
                         // Emit petal restored event for each petal
-                        (0, petalEvents_1.emitPetalRestored)(io, player.id, {
+                        (0, petalEvents_1.emitPetalRestored)(player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal
@@ -138,7 +138,7 @@ function registerSkillHandlers(ctx) {
                         petal.health = petal.maxHealth;
                         petal.onCooldown = false;
                         // Emit petal restored event for each petal
-                        (0, petalEvents_1.emitPetalRestored)(io, player.id, {
+                        (0, petalEvents_1.emitPetalRestored)(player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal

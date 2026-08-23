@@ -168,6 +168,7 @@ const inventoryCodec_1 = require("../inventoryCodec");
 const utils_1 = require("./utils");
 const killHandler_1 = require("./shared/killHandler");
 const enemyRegistry_1 = require("./enemyRegistry");
+const wireOutbox_1 = require("./wireOutbox");
 /**
  * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
  * context. The two share the same kill-related fields; this just projects them.
@@ -278,7 +279,7 @@ function spawnGroundPollen(io, groundEffects, player, petalStats, petal, petalX,
         rarity: petal.rarity,
         expiresAt: now + gameState_1.GROUND_POLLEN_LIFETIME_MS,
     });
-    io.emit('groundPollenSpawned', {
+    (0, wireOutbox_1.getWireOutbox)().all('groundPollenSpawned', {
         id,
         playerId: player.id,
         x: petalX,
@@ -305,7 +306,7 @@ function spawnWebField(io, groundEffects, player, radius, rarity, x, y) {
         rarity,
         expiresAt: now + gameState_1.WEB_LIFETIME_MS,
     });
-    io.emit('webSpawned', { id, x, y, radius, rarity, lifetime: gameState_1.WEB_LIFETIME_MS });
+    (0, wireOutbox_1.getWireOutbox)().all('webSpawned', { id, x, y, radius, rarity, lifetime: gameState_1.WEB_LIFETIME_MS });
 }
 // --- Per-instance petal health/cooldown helpers ---
 // Some petals spawn multiple instances (count > 1) that should each carry their own
@@ -349,7 +350,7 @@ function restoreIndependentPetalInstance(playerId, loadoutIndex, instanceIndex, 
     current.instanceHealth[instanceIndex] = restoredHealth;
     current.health = Math.max(0, ...current.instanceHealth);
     current.onCooldown = current.instanceOnCooldown.every((c) => c);
-    (0, petalEvents_1.emitPetalRestored)(io, playerId, {
+    (0, petalEvents_1.emitPetalRestored)(playerId, {
         playerId,
         slotIndex: loadoutIndex,
         instanceIndex,
@@ -489,7 +490,7 @@ function updateSpongeDamage(player, deltaTime, io) {
     if (secondChanceTriggered) {
         player.spongeDamageEffects = [];
     }
-    io.emit('playerDamaged', {
+    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
         playerId: player.id,
         health: player.health,
         maxHealth: player.maxHealth,
@@ -683,7 +684,7 @@ function applyPetalRingDamage(player, io) {
                 setTimeout(() => {
                     if (constants_1.players[player.id]) {
                         constants_1.players[player.id].isInvulnerable = false;
-                        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                        (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
                     }
                 }, 50);
             }
@@ -698,13 +699,13 @@ function applyPetalRingDamage(player, io) {
                     setTimeout(() => {
                         if (constants_1.players[player.id]) {
                             constants_1.players[player.id].isInvulnerable = false;
-                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                            (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
                         }
                     }, 50);
                 }
             }
         }
-        io.emit('playerDamaged', {
+        (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
             playerId: player.id,
             health: player.health,
             maxHealth: player.maxHealth,
@@ -969,7 +970,7 @@ function validatePlayerPositions(io) {
                 player.x = constants_1.ACTUAL_WORLD_WIDTH / 2;
                 player.y = constants_1.ACTUAL_WORLD_HEIGHT / 2;
                 // Notify client of position correction
-                io.to(playerId).emit('positionCorrected', { x: player.x, y: player.y });
+                (0, wireOutbox_1.getWireOutbox)().toSocket(playerId, 'positionCorrected', { x: player.x, y: player.y });
             }
         }
     }
@@ -1016,10 +1017,10 @@ function trySecondChance(player, io) {
     setTimeout(() => {
         if (constants_1.players[player.id]) {
             constants_1.players[player.id].isInvulnerable = false;
-            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+            (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
         }
     }, durationMs);
-    io.emit('playerDamaged', {
+    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
         playerId: player.id,
         health: player.health,
         maxHealth: player.maxHealth,
@@ -1046,7 +1047,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
         setTimeout(() => {
             if (constants_1.players[victim.id]) {
                 constants_1.players[victim.id].isInvulnerable = false;
-                io.emit('playerInvulnerabilityEnded', { playerId: victim.id });
+                (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: victim.id });
             }
         }, 50);
     }
@@ -1063,7 +1064,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
         setTimeout(() => {
             if (constants_1.players[victim.id]) {
                 constants_1.players[victim.id].isInvulnerable = false;
-                io.emit('playerInvulnerabilityEnded', { playerId: victim.id });
+                (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: victim.id });
             }
         }, 50);
     }
@@ -1079,7 +1080,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
     // the gap between the movement window and that victim's own commit, and be
     // thrown away by `player.x = newX`. See displacePlayer in server/ecsSync.
     (0, ecsSync_1.displacePlayer)(victim, knockbackX, knockbackY);
-    io.emit('playerDamaged', {
+    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
         playerId: victim.id,
         health: victim.health,
         maxHealth: victim.maxHealth,
@@ -1125,7 +1126,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
         victim.isDead = true;
         victim.angle = Math.random() * Math.PI * 2;
         (0, petal_actions_1.despawnAllPlayerPets)(victim.id, io);
-        io.emit('playerDied', {
+        (0, wireOutbox_1.getWireOutbox)().all('playerDied', {
             playerId: victim.id,
             x: victim.x,
             y: victim.y,
@@ -1405,7 +1406,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                         setTimeout(() => {
                             if (constants_1.players[player.id]) {
                                 constants_1.players[player.id].isInvulnerable = false;
-                                io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                                (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
                             }
                         }, 50);
                     }
@@ -1425,7 +1426,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                                 if (constants_1.players[player.id]) {
                                     constants_1.players[player.id].isInvulnerable = false;
                                     // Notify client that invulnerability has ended
-                                    io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                                    (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
                                 }
                             }, 50);
                         }
@@ -1440,7 +1441,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                     }
                 }
                 // Always emit knockback (and current health state)
-                io.emit('playerDamaged', {
+                (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
                     playerId: player.id,
                     health: player.health,
                     maxHealth: player.maxHealth,
@@ -1597,7 +1598,7 @@ function resolvePlayerItemPickups(player, newX, newY, deps) {
             // Map split player IDs to original socket IDs for socket room targeting
             const { getOriginalSocketId } = require('./utils');
             const originalSocketId = getOriginalSocketId(player.id);
-            io.to(originalSocketId).emit('itemPickedUp', item.id);
+            (0, wireOutbox_1.getWireOutbox)().toSocket(originalSocketId, 'itemPickedUp', item.id);
             io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
             // Save player progress to persist inventory changes
             const userId = gameState_1.playerUserIds[player.id];
@@ -1613,7 +1614,7 @@ function resolvePlayerItemPickups(player, newX, newY, deps) {
                     (0, itemRegistry_1.removeWorldItem)(item);
                     // Notify only eligible players that the item is gone
                     for (const playerId of item.eligiblePlayers) {
-                        io.to(playerId).emit('itemRemoved', item.id);
+                        (0, wireOutbox_1.getWireOutbox)().toSocket(playerId, 'itemRemoved', item.id);
                     }
                 }
             }
@@ -1714,7 +1715,7 @@ function resolvePlayerTeleporters(player, startX, startY, deltaTime, deps) {
                 // id: a splitter half (`..._split2`) has no socket of its own, so
                 // addressing it dropped the event and the flower charged up with
                 // no spin animation and no iris transition.
-                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('teleporterEntered', {
+                (0, wireOutbox_1.getWireOutbox)().toSocket((0, utils_1.getOriginalSocketId)(player.id), 'teleporterEntered', {
                     teleporterId,
                     timeRequired: 1000,
                     teleportTo: element.properties.teleportTo
@@ -1737,7 +1738,7 @@ function resolvePlayerTeleporters(player, startX, startY, deltaTime, deps) {
                     player.teleporterEnterTime = undefined;
                     transferPlayerToServer(player, teleportTo.serverPort, teleportTo.x * constants_1.SCALE_FACTOR, teleportTo.y * constants_1.SCALE_FACTOR, io, database, useHttps, currentServerConfig, currentServerPort).catch(error => {
                         console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
-                        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
+                        (0, wireOutbox_1.getWireOutbox)().toSocket((0, utils_1.getOriginalSocketId)(player.id), 'transferFailed', { message: 'Failed to connect to target server' });
                         player.teleportCooldown = undefined;
                     });
                     return { x: newX, y: newY, transferred: true };
@@ -1750,7 +1751,7 @@ function resolvePlayerTeleporters(player, startX, startY, deltaTime, deps) {
                     if (!player.id.startsWith('bot_')) {
                         console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
                     }
-                    io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTeleported', {
+                    (0, wireOutbox_1.getWireOutbox)().toSocket((0, utils_1.getOriginalSocketId)(player.id), 'playerTeleported', {
                         newX,
                         newY,
                         playerId: player.id
@@ -1886,7 +1887,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                     };
                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
                     player.loadout[loadoutIndex] = restoredPetal;
-                    (0, petalEvents_1.emitPetalRestored)(io, player.id, {
+                    (0, petalEvents_1.emitPetalRestored)(player.id, {
                         playerId: player.id,
                         slotIndex: loadoutIndex,
                         petal: player.loadout[loadoutIndex]
@@ -1960,7 +1961,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             // reload: nothing else pushes the slot-level flag out
                             // (petalRestored is the only other carrier, and that's
                             // the end of the reload, not the start).
-                            (0, petalEvents_1.emitPetalBroken)(io, player.id, {
+                            (0, petalEvents_1.emitPetalBroken)(player.id, {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petalType: petal.petalType,
@@ -1999,14 +2000,14 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                 };
                                 (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
                                 player.loadout[loadoutIndex] = restoredPetal;
-                                (0, petalEvents_1.emitPetalRestored)(io, player.id, {
+                                (0, petalEvents_1.emitPetalRestored)(player.id, {
                                     playerId: player.id,
                                     slotIndex: loadoutIndex,
                                     petal: player.loadout[loadoutIndex]
                                 });
                             }
                         }, cooldownTime);
-                        (0, petalEvents_1.emitPetalBroken)(io, player.id, {
+                        (0, petalEvents_1.emitPetalBroken)(player.id, {
                             playerId: player.id,
                             slotIndex: loadoutIndex,
                             petalType: petal.petalType,
@@ -2135,7 +2136,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                 break;
                         }
                     }
-                    io.emit('playerDamaged', {
+                    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
                         playerId: player.id,
                         health: player.health,
                         maxHealth: player.maxHealth,
@@ -2450,7 +2451,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             const { getOriginalSocketId } = require('./utils');
                             for (const eligiblePlayerId of eligiblePlayersForItem) {
                                 const originalSocketId = getOriginalSocketId(eligiblePlayerId);
-                                io.to(originalSocketId).emit('itemSpawned', newItem);
+                                (0, wireOutbox_1.getWireOutbox)().toSocket(originalSocketId, 'itemSpawned', newItem);
                             }
                             if (!player.id.startsWith('bot_')) {
                                 console.log(`[ITEM_SPAWNER] Spawned random petal: ${randomPetalType} (${randomRarity}) for player ${player.name}`);
@@ -2532,7 +2533,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             if (petal.instanceOnCooldown.every((c) => c)) {
                                 petal.onCooldown = true;
                                 // See the matching emit in the tick-loop break above.
-                                (0, petalEvents_1.emitPetalBroken)(io, player.id, {
+                                (0, petalEvents_1.emitPetalBroken)(player.id, {
                                     playerId: player.id,
                                     slotIndex: loadoutIndex,
                                     petalType: petal.petalType,
@@ -2569,14 +2570,14 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                     };
                                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
                                     player.loadout[loadoutIndex] = restoredPetal;
-                                    (0, petalEvents_1.emitPetalRestored)(io, player.id, {
+                                    (0, petalEvents_1.emitPetalRestored)(player.id, {
                                         playerId: player.id,
                                         slotIndex: loadoutIndex,
                                         petal: player.loadout[loadoutIndex]
                                     });
                                 }
                             }, cooldownTime);
-                            (0, petalEvents_1.emitPetalBroken)(io, player.id, {
+                            (0, petalEvents_1.emitPetalBroken)(player.id, {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petalType: petal.petalType,
@@ -2669,7 +2670,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             otherPlayer.isInvulnerable = true;
                             otherPlayer.lastDamageTime = 0;
                             // Notify all clients about the revival
-                            io.emit('playerRevived', {
+                            (0, wireOutbox_1.getWireOutbox)().all('playerRevived', {
                                 revivedPlayerId: otherPlayerId,
                                 revivingPlayerId: player.id,
                                 revivedPlayerName: otherPlayer.name,
@@ -2679,7 +2680,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             setTimeout(() => {
                                 if (constants_1.players[otherPlayerId]) {
                                     constants_1.players[otherPlayerId].isInvulnerable = false;
-                                    io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
+                                    (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: otherPlayerId });
                                 }
                             }, constants_1.RESPAWN_INVULNERABILITY_TIME);
                             if (!player.id.startsWith('bot_') && !otherPlayerId.startsWith('bot_')) {
@@ -2780,7 +2781,7 @@ function updatePlayerState(player, deltaTime, deps) {
         player.angle = Math.random() * Math.PI * 2;
         // Despawn all pets owned by this player
         (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
-        io.emit('playerDied', {
+        (0, wireOutbox_1.getWireOutbox)().all('playerDied', {
             playerId: player.id,
             x: player.x,
             y: player.y,

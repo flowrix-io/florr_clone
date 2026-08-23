@@ -19,6 +19,7 @@ const squadManager_1 = require("./squadManager");
 const botManager_1 = require("./botManager");
 const apiKeyApi_1 = require("./apiKeyApi");
 const playerState_1 = require("./playerState");
+const wireOutbox_1 = require("./wireOutbox");
 exports.pendingEnemyDamageUpdates = new Map();
 function markEnemyDamaged(enemy) {
     const pending = exports.pendingEnemyDamageUpdates.get(enemy.id);
@@ -285,7 +286,7 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
             if (io && starsAwarded > 0) {
                 // Map split player ID to original socket ID for socket room targeting
                 const originalSocketId = getOriginalSocketId(playerId);
-                io.to(originalSocketId).emit('starsEarned', {
+                (0, wireOutbox_1.getWireOutbox)().toSocket(originalSocketId, 'starsEarned', {
                     amount: starsAwarded,
                     total: player.stars,
                     mobName: enemy.type,
@@ -319,7 +320,7 @@ function trackMobKill(enemy, players, playerUserIds, database, io, savePlayerPro
         // off by one — the next kill of that same type re-states the truth.
         if (io) {
             const originalSocketId = getOriginalSocketId(playerId);
-            io.to(originalSocketId).emit('mobKillUpdate', {
+            (0, wireOutbox_1.getWireOutbox)().toSocket(originalSocketId, 'mobKillUpdate', {
                 t: enemy.type,
                 r: enemy.tier,
                 c: player.mobKills[enemy.type][enemy.tier],

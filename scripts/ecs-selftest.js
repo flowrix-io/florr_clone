@@ -49,6 +49,7 @@ function main() {
     const { runLodSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'lod_self_test.js'));
     const { runGroundEffectsSelfTest } = require(path.join(outDir, 'ecs', 'systems', 'groundEffects_self_test.js'));
     const { runEnemyEncoderSelfTest } = require(path.join(outDir, 'ecs', 'net', 'enemyEncoder_self_test.js'));
+    const { runOutboxSelfTest } = require(path.join(outDir, 'ecs', 'net', 'outbox_self_test.js'));
     const { runClientSelfTest } = require(path.join(outDir, 'ecs', 'client', 'client_self_test.js'));
     const failures = [
         ...runEcsSelfTest(),
@@ -63,6 +64,7 @@ function main() {
         ...runLodSelfTest(),
         ...runGroundEffectsSelfTest(),
         ...runEnemyEncoderSelfTest(),
+        ...runOutboxSelfTest(),
         ...runClientSelfTest(),
     ];
 

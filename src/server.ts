@@ -1,5 +1,7 @@
 import { Server } from './ws_server';
 import { emitToViewers } from './server/scopedEmit';
+import { bindWireOutbox, getWireOutbox } from './server/wireOutbox';
+import { registerWireOutboxSystem } from './ecs/net/outbox';
 import { enemySpawnPayload } from './server/enemyWire';
 import { createApp, UApp, staticFiles, jsonParser } from './server/uws_app';
 import { startWebTransportServer, getWebTransportAdvertisement } from './server/webtransport_server';
@@ -62,7 +64,6 @@ import {
     markEnemyPoisonDamaged,
     pendingEnemyDamageUpdates,
     getActivePlayerForSocket,
-    getOriginalSocketId,
     markEnemyDamagedById,
 } from './server/utils';
 import {
@@ -231,7 +232,7 @@ function updateTargetDummyDPS() {
         dummy.currentDPS = dps;
         
         // Send DPS update to all clients
-        ioInstance.emit('targetDummyDPS', {
+        getWireOutbox().all('targetDummyDPS', {
             enemyId: dummy.id,
             dps: dps
         });
@@ -430,6 +431,13 @@ const io = new Server(app);
 // Set ioInstance for use in modules
 ioInstance = io;
 
+// Every gameplay event leaves through the ECS outbox (drained in
+// Phase.Networking, see registerWireOutboxSystem below). Bound here, at the
+// first moment `io` exists, rather than beside the other bindings further down:
+// module-scope initialisation between the two points can already raise world
+// events, and an unbound outbox throws rather than silently swallowing them.
+bindWireOutbox(io);
+
 // Get current server port and configuration
 const PORT = process.env.PORT || 3000;
 const CURRENT_SERVER_PORT = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
@@ -615,7 +623,7 @@ function clearAllMobs(): number {
         if (enemy.ownerId) continue; // keep player pets
         cleanupEnemy(enemy);
         removeEnemyAt(i);
-        io.emit('enemyDestroyed', enemy.id);
+        getWireOutbox().all('enemyDestroyed', enemy.id);
         removed++;
     }
     // Special-mob counters (ultra/super/unique, section tracking) are derived from
@@ -818,7 +826,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
         // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
 
         // Notify all clients
-        emitToViewers(io, enemy.x, enemy.y, 'enemySpawned', enemySpawnPayload(enemy));
+        emitToViewers(enemy.x, enemy.y, 'enemySpawned', enemySpawnPayload(enemy));
 
         // Boss-tier mobs normally announce themselves via spawnSpecialMobs()/
         // announceAmbientSuper(), neither of which runs for an admin-triggered
@@ -834,7 +842,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
             const beforeCount = enemies.length;
             spawnCentipedeBodySegments(enemy);
             for (let i = beforeCount; i < enemies.length; i++) {
-                emitToViewers(io, enemies[i].x, enemies[i].y, 'enemySpawned', enemySpawnPayload(enemies[i]));
+                emitToViewers(enemies[i].x, enemies[i].y, 'enemySpawned', enemySpawnPayload(enemies[i]));
             }
         }
 
@@ -843,7 +851,7 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
             const beforeCount = enemies.length;
             spawnInitialSpawns(enemy);
             for (let j = beforeCount; j < enemies.length; j++) {
-                emitToViewers(io, enemies[j].x, enemies[j].y, 'enemySpawned', enemySpawnPayload(enemies[j]));
+                emitToViewers(enemies[j].x, enemies[j].y, 'enemySpawned', enemySpawnPayload(enemies[j]));
             }
         }
     }
@@ -889,7 +897,7 @@ function saveAfterXP(player: ServerPlayer, socketId?: string): void {
 
 // The live track's XP bar / level / stats changed — tell the owning client.
 function emitLiveXPGain(player: ServerPlayer, xp: number): void {
-    ioInstance.to(player.id).emit('xpGained', {
+    getWireOutbox().toSocket(player.id, 'xpGained', {
         playerId: player.id,
         xp: xp,
         totalXp: player.xp,
@@ -911,7 +919,7 @@ export function addXPToPlayer(player: ServerPlayer, xp: number, socketId?: strin
 
     if (banked) {
         const outsideTotalXP = getOutsideTotalXP(player);
-        ioInstance.to(player.id).emit('outsideXpGained', {
+        getWireOutbox().toSocket(player.id, 'outsideXpGained', {
             playerId: player.id,
             xp: xp,
             outsideLevel: calculateLevelFromTotalXP(outsideTotalXP),
@@ -1034,7 +1042,7 @@ function adjustEnemyCount() {
     while (enemies.length > targetEnemyCount) {
         const removedEnemy = enemies.pop();
         if (removedEnemy) {
-            io.emit('enemyDestroyed', removedEnemy.id);
+            getWireOutbox().all('enemyDestroyed', removedEnemy.id);
         }
     }
 
@@ -1246,7 +1254,7 @@ function handlePoisonDeath(enemy: Enemy): void {
     cleanupEnemy(enemy);
     removeEnemyAt(index);
     updateSpecialMobCounts();
-    io.emit('enemyDestroyed', enemy.id);
+    getWireOutbox().all('enemyDestroyed', enemy.id);
 
     // Try to spawn a new enemy (admits itself)
     createEnemy();
@@ -1364,7 +1372,7 @@ function getEcsRuntime(): EcsRuntime {
             });
         },
         onGroundEffectExpired: (kind, id) => {
-            io.emit(kind === 'pollen' ? 'groundPollenRemoved' : 'webRemoved', id);
+            getWireOutbox().all(kind === 'pollen' ? 'groundPollenRemoved' : 'webRemoved', id);
         },
         // The PVP arena and the maze live well outside the regular world
         // rectangle, so items inside them are exempt from the bounds check.
@@ -1379,7 +1387,7 @@ function getEcsRuntime(): EcsRuntime {
             // Split halves are addressed by their original socket, the same
             // mapping every other item event uses.
             for (const playerId of item.eligiblePlayers) {
-                io.to(getOriginalSocketId(playerId)).emit('itemRemoved', item.id);
+                getWireOutbox().toPlayer(playerId, 'itemRemoved', item.id);
             }
         },
         onEnemyPoisonDamaged: (victim) => {
@@ -1415,10 +1423,10 @@ function getEcsRuntime(): EcsRuntime {
                 player.isDead = true;
                 if (player.poisonSource) player.killedBy = player.poisonSource;
                 despawnAllPlayerPets(player.id, io);
-                io.emit('playerDied', { playerId: player.id });
+                getWireOutbox().all('playerDied', { playerId: player.id });
             }
 
-            io.emit('playerDamaged', {
+            getWireOutbox().all('playerDamaged', {
                 playerId: player.id,
                 health: player.health,
                 maxHealth: player.maxHealth,
@@ -1451,7 +1459,7 @@ function getEcsRuntime(): EcsRuntime {
             // passes ran.
             (enemy as { isDead?: boolean }).isDead = true;
             cleanupEnemy(enemy);
-            if (removeEnemy(enemy)) io.emit('enemyDestroyed', enemy.id);
+            if (removeEnemy(enemy)) getWireOutbox().all('enemyDestroyed', enemy.id);
         },
         // The reaper's death sequence — the body of the old reapDeadEnemies
         // loop, per victim. XP to the top damage contributor (a pet kill
@@ -1489,7 +1497,7 @@ function getEcsRuntime(): EcsRuntime {
             // at full health, so it cannot be reaped by this same pass.
             if (DIGGER_SPAWNING_HOLES.has(enemy.type) && !enemy.ownerId && Math.random() < DIGGER_SPAWN_CHANCE) {
                 const digger = spawnEnemy('digger', enemy.tier, enemy.x, enemy.y);
-                if (digger) emitToViewers(io, digger.x, digger.y, 'enemySpawned', enemySpawnPayload(digger));
+                if (digger) emitToViewers(digger.x, digger.y, 'enemySpawned', enemySpawnPayload(digger));
             }
 
             // Clean up enemy data structures before removal to prevent memory leaks
@@ -1502,7 +1510,7 @@ function getEcsRuntime(): EcsRuntime {
             // player, while the delta broadcast tracks only a ~2x box around
             // this client — a preloaded mob reaped outside that box gets no R
             // and, without this, no event either: a permanent client ghost.
-            io.emit('enemyDestroyed', enemy.id);
+            getWireOutbox().all('enemyDestroyed', enemy.id);
         },
         // Queen-ant escorts: the summon half of the legacy updatePeriodicSpawns
         // (the interval clock lives on the PeriodicSpawner component now).
@@ -1540,7 +1548,7 @@ function getEcsRuntime(): EcsRuntime {
                 targetPlayerId: enemy.targetPlayerId,
             });
             if (!child) return;
-            emitToViewers(io, child.x, child.y, 'enemySpawned', enemySpawnPayload(child));
+            emitToViewers(child.x, child.y, 'enemySpawned', enemySpawnPayload(child));
         },
         // Ant-hole waves: the spawn half of the legacy spawnWaveMobs (the
         // health-threshold bookkeeping lives on SpawnWaveState now).
@@ -1571,7 +1579,7 @@ function getEcsRuntime(): EcsRuntime {
                         { parentHoleId: enemy.id },
                     );
                     if (!child) continue;
-                    emitToViewers(io, child.x, child.y, 'enemySpawned', enemySpawnPayload(child));
+                    emitToViewers(child.x, child.y, 'enemySpawned', enemySpawnPayload(child));
                 }
             }
         },
@@ -1584,6 +1592,14 @@ function getEcsRuntime(): EcsRuntime {
     // wanted a world. See registerBotInputSystem for why it lands on the input
     // scheduler and nowhere else.
     registerBotInputSystem(_ecsRuntime.inputScheduler, io);
+    // The wire outbox drains in Phase.Networking on the WORLD scheduler, which
+    // is the last one to run in a step (see runSimulationStep) — so everything
+    // a tick produced leaves together, in production order, and ahead of the
+    // separately-timed gameStateUpdate frame that could mention the same
+    // entities. Registered from here for the same reason bot AI is: the binding
+    // in server/wireOutbox.ts reaches `players`, the viewport constants and the
+    // socket server, none of which the ECS composition root may import.
+    registerWireOutboxSystem(_ecsRuntime.worldScheduler, getWireOutbox());
     console.log('[ECS] mob simulation initialised');
     return _ecsRuntime;
 }
@@ -1661,11 +1677,11 @@ function applyProjectileHitToPlayer(
             player.isDead = true;
             player.health = 0;
             despawnAllPlayerPets(player.id, io);
-            io.emit('playerDied', { playerId: player.id });
+            getWireOutbox().all('playerDied', { playerId: player.id });
         }
     }
 
-    io.emit('playerDamaged', {
+    getWireOutbox().all('playerDamaged', {
         playerId: player.id,
         health: player.health,
         maxHealth: player.maxHealth,
@@ -1927,7 +1943,7 @@ function flushEnemyDamageBatch(): void {
             : { enemyId, health: pending.health });
     });
     pendingEnemyDamageUpdates.clear();
-    io.emit('enemiesDamaged', damagedEnemies);
+    getWireOutbox().all('enemiesDamaged', damagedEnemies);
 }
 
 /** Emit items that spawned this tick, batched into one event per recipient. */
@@ -1944,7 +1960,7 @@ function flushItemSpawnBatch(): void {
 
     for (const [socketId, itemsToSend] of itemsByPlayer) {
         if (itemsToSend.length > 0) {
-            io.to(socketId).emit('itemsSpawned', itemsToSend);
+            getWireOutbox().toSocket(socketId, 'itemsSpawned', itemsToSend);
         }
     }
 }
@@ -2430,12 +2446,12 @@ let mazeDayOffset = 0;
 export function rotateMazeToDay(day: number): void {
     const removedIds = clearMazeEnemies();
     for (const id of removedIds) {
-        io.emit('enemyDestroyed', id);
+        getWireOutbox().all('enemyDestroyed', id);
     }
 
     const maze = setActiveMazeDay(day);
     invalidateMazeMobPool();
-    io.emit('mazeInfo', { day: maze.dayNumber, biome: maze.biome });
+    getWireOutbox().all('mazeInfo', { day: maze.dayNumber, biome: maze.biome });
     console.log(`[MAZE] Rotated to day ${maze.dayNumber} (${maze.biome})`);
 
     for (const pid in players) {
@@ -2445,7 +2461,7 @@ export function rotateMazeToDay(day: number): void {
         p.x = spawn.x;
         p.y = spawn.y;
         // `players` includes splitter halves, which own no socket of their own.
-        io.to(getOriginalSocketId(pid)).emit('playerTeleported', { newX: spawn.x, newY: spawn.y, playerId: pid });
+        getWireOutbox().toPlayer(pid, 'playerTeleported', { newX: spawn.x, newY: spawn.y, playerId: pid });
     }
 }
 

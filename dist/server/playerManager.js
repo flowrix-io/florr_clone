@@ -55,6 +55,7 @@ Object.defineProperty(exports, "removeItem", { enumerable: true, get: function (
 Object.defineProperty(exports, "hasItem", { enumerable: true, get: function () { return inventoryCodec_3.hasItem; } });
 Object.defineProperty(exports, "createInitialInventory", { enumerable: true, get: function () { return inventoryCodec_3.createInitialInventory; } });
 const mobs_1 = require("../mobs");
+const wireOutbox_1 = require("./wireOutbox");
 const RARITY_TP_COSTS = {
     common: 0,
     uncommon: 1,
@@ -148,7 +149,7 @@ function exitPvpArena(player, io, savePlayerProgress) {
         // a stale `updateLoadout` that the server would persist as the regular
         // loadout (the mode-tag guard in the updateLoadout handler is the other
         // half of that fix).
-        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
+        (0, wireOutbox_1.getWireOutbox)().toSocket((0, utils_1.getOriginalSocketId)(player.id), 'playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     }
     if (savePlayerProgress) {
         const userId = gameState_1.playerUserIds[player.id];
@@ -673,7 +674,7 @@ function respawnPlayer(player, io) {
     setTimeout(() => {
         player.isInvulnerable = false;
         // Notify client that invulnerability has ended
-        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+        (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
     }, constants_1.RESPAWN_INVULNERABILITY_TIME);
 }
 // Helper function to determine spawn type based on level
@@ -919,7 +920,7 @@ function recalculatePlayerStats(player, io) {
     }
     // Emit update only to the affected player
     if (io) {
-        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
+        (0, wireOutbox_1.getWireOutbox)().toSocket((0, utils_1.getOriginalSocketId)(player.id), 'playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(player));
     }
 }
 /**
@@ -986,7 +987,7 @@ function applyXPToLiveTrack(player, xp, io) {
         player.health = player.maxHealth;
         // Emit level up event only to the affected player
         for (let level = oldLevel + 1; level <= newLevel; level++) {
-            io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('levelUp', {
+            (0, wireOutbox_1.getWireOutbox)().toSocket((0, utils_1.getOriginalSocketId)(player.id), 'levelUp', {
                 playerId: player.id,
                 level: level,
                 maxHealth: calculateMaxHealthFromLevel(level),

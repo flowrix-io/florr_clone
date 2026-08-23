@@ -372,7 +372,7 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
                                     applyPetalHealthBonus(restoredPetal, players[socket.id]);
                                     players[socket.id].loadout[i] = restoredPetal;
 
-                                    emitPetalRestored(io, players[socket.id].id, {
+                                    emitPetalRestored(players[socket.id].id, {
                                         playerId: players[socket.id].id,
                                         slotIndex: i,
                                         petal: players[socket.id].loadout[i]

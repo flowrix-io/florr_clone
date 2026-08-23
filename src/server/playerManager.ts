@@ -51,6 +51,7 @@ import {
     inventoryToDict
 } from '../inventoryCodec';
 import { getMobStats, getEnemySizeScale } from '../mobs';
+import { getWireOutbox } from './wireOutbox';
 
 // Re-export inventory functions so existing imports keep working
 export { addItem, removeItem, hasItem, createInitialInventory };
@@ -156,7 +157,7 @@ export function exitPvpArena(
         // a stale `updateLoadout` that the server would persist as the regular
         // loadout (the mode-tag guard in the updateLoadout handler is the other
         // half of that fix).
-        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', sanitizePlayerForClient(player));
+        getWireOutbox().toSocket(getOriginalSocketId(player.id), 'playerUpdated', sanitizePlayerForClient(player));
     }
     if (savePlayerProgress) {
         const userId = playerUserIds[player.id];
@@ -711,7 +712,7 @@ export function respawnPlayer(player: ServerPlayer, io: SocketIOServer) {
     setTimeout(() => {
         player.isInvulnerable = false;
         // Notify client that invulnerability has ended
-        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+        getWireOutbox().all('playerInvulnerabilityEnded', { playerId: player.id });
     }, RESPAWN_INVULNERABILITY_TIME);
 }
 
@@ -1000,7 +1001,7 @@ export function recalculatePlayerStats(player: ServerPlayer, io?: SocketIOServer
     
     // Emit update only to the affected player
     if (io) {
-        io.to(getOriginalSocketId(player.id)).emit('playerUpdated', sanitizePlayerForClient(player));
+        getWireOutbox().toSocket(getOriginalSocketId(player.id), 'playerUpdated', sanitizePlayerForClient(player));
     }
 }
 
@@ -1089,7 +1090,7 @@ function applyXPToLiveTrack(
         
         // Emit level up event only to the affected player
         for (let level = oldLevel + 1; level <= newLevel; level++) {
-            io.to(getOriginalSocketId(player.id)).emit('levelUp', {
+            getWireOutbox().toSocket(getOriginalSocketId(player.id), 'levelUp', {
                 playerId: player.id,
                 level: level,
                 maxHealth: calculateMaxHealthFromLevel(level),

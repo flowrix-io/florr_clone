@@ -37,6 +37,7 @@ const gameState_1 = require("./server/gameState");
 const mobs_1 = require("./mobs");
 const enemySpawner_1 = require("./server/enemySpawner");
 const petalEvents_1 = require("./server/petalEvents");
+const wireOutbox_1 = require("./server/wireOutbox");
 /**
  * Build a kill context for the partial death handlers in explodePetal /
  * strikeLightning. Those paths never call trackMobKill or cleanupEnemy
@@ -112,7 +113,7 @@ function healPlayer(player, healAmount, io, context) {
     const modifiedHealAmount = healAmount * rarityMultiplier * healingMultiplier * 3;
     player.health = Math.min(player.maxHealth, player.health + modifiedHealAmount);
     if (player.health !== oldHealth) {
-        io.emit('playerHealed', {
+        (0, wireOutbox_1.getWireOutbox)().all('playerHealed', {
             playerId: player.id,
             health: player.health,
             healAmount: player.health - oldHealth
@@ -232,7 +233,7 @@ function explodePetal(x, y, petalSize, damage, enemies, io, player) {
         }
     }
     // Emit explosion effect to clients
-    io.emit('petalExplosion', {
+    (0, wireOutbox_1.getWireOutbox)().all('petalExplosion', {
         x: x,
         y: y,
         radius: explosionRadius,
@@ -328,7 +329,7 @@ function strikeLightning(x, y, radius, enemies, io, player, petalDamage, context
     // carrying every struck mob — prod measured 1.0 KB average at 297 msg/s
     // (302 KB/s), and a lightning petal fired into an admin-spawned mob pile
     // makes `targets` as long as the pile.
-    (0, scopedEmit_1.emitToViewers)(io, x, y, 'lightningStrike', {
+    (0, scopedEmit_1.emitToViewers)(x, y, 'lightningStrike', {
         x: x,
         y: y,
         // VFX only — damage above already applied to every struck mob. Past a
@@ -352,7 +353,7 @@ function despawnPet(pet, io) {
             const e = constants_1.enemies[i];
             if (e.id === pet.id || ((0, server_utils_1.isCentipedeBodyType)(e.type) && e.headId === pet.id)) {
                 (0, enemyRegistry_1.removeEnemyAt)(i);
-                io.emit('enemyDestroyed', e.id);
+                (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', e.id);
             }
         }
         return;
@@ -360,7 +361,7 @@ function despawnPet(pet, io) {
     const index = constants_1.enemies.findIndex(e => e.id === pet.id);
     if (index !== -1) {
         (0, enemyRegistry_1.removeEnemyAt)(index);
-        io.emit('enemyDestroyed', pet.id);
+        (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', pet.id);
         // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
     }
 }
@@ -368,7 +369,7 @@ function despawnPet(pet, io) {
 function despawnAllPlayerPets(playerId, io) {
     for (let i = constants_1.enemies.length - 1; i >= 0; i--) {
         if (constants_1.enemies[i].ownerId === playerId) {
-            io.emit('enemyDestroyed', constants_1.enemies[i].id);
+            (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', constants_1.enemies[i].id);
             (0, enemyRegistry_1.removeEnemyAt)(i);
         }
     }
@@ -481,21 +482,21 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
         damage: statMods ? mobStats.damage * statMods.damage : undefined,
     }); // mobStats validated above
     // Notify all clients
-    (0, scopedEmit_1.emitToViewers)(io, pet.x, pet.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(pet));
+    (0, scopedEmit_1.emitToViewers)(pet.x, pet.y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(pet));
     // Centipede pets need their trailing body chain too, with ownerId propagated
     // to each segment so they follow the owner alongside the head.
     if ((0, server_utils_1.isCentipedeHeadType)(mobType)) {
         const beforeCount = constants_1.enemies.length;
         (0, enemySpawner_1.spawnCentipedeBodySegments)(pet);
         for (let i = beforeCount; i < constants_1.enemies.length; i++) {
-            (0, scopedEmit_1.emitToViewers)(io, constants_1.enemies[i].x, constants_1.enemies[i].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_1.enemies[i]));
+            (0, scopedEmit_1.emitToViewers)(constants_1.enemies[i].x, constants_1.enemies[i].y, 'enemySpawned', (0, enemyWire_1.enemySpawnPayload)(constants_1.enemies[i]));
         }
     }
     // console.log(`Spawned pet ${tier} ${mobType} for player ${ownerId} at (${Math.round(x)}, ${Math.round(y)})`);
 }
 // Mark petal for breaking
 function markPetalForBreak(petalId, context) {
-    const { player, loadoutIndex, io } = context;
+    const { player, loadoutIndex } = context;
     if (loadoutIndex !== undefined && player.loadout[loadoutIndex]) {
         const petal = player.loadout[loadoutIndex];
         if (!petal)
@@ -512,7 +513,7 @@ function markPetalForBreak(petalId, context) {
             maxHealth: petal.maxHealth
         };
         // Emit petal broken event to clients
-        (0, petalEvents_1.emitPetalBroken)(io, player.id, {
+        (0, petalEvents_1.emitPetalBroken)(player.id, {
             playerId: player.id,
             loadoutIndex: loadoutIndex,
             petalType: petal.petalType
@@ -541,7 +542,7 @@ function markPetalForBreak(petalId, context) {
                 onCooldown: false
             };
             // Emit restoration event
-            (0, petalEvents_1.emitPetalRestored)(io, player.id, {
+            (0, petalEvents_1.emitPetalRestored)(player.id, {
                 playerId: player.id,
                 loadoutIndex: loadoutIndex,
                 petal: player.loadout[loadoutIndex]
@@ -877,13 +878,13 @@ function splitPlayer(player, io) {
     const { recalculatePlayerStats } = require('./server/playerManager');
     recalculatePlayerStats(splitPlayer2, io);
     // Notify clients about the split
-    io.emit('playerSplit', {
+    (0, wireOutbox_1.getWireOutbox)().all('playerSplit', {
         originalId: originalId,
         player1Id: player.id,
         player2Id: splitPlayer2.id
     });
     // Send full player data including loadout to clients so they can render the split player's petals
-    io.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(splitPlayer2));
+    (0, wireOutbox_1.getWireOutbox)().all('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(splitPlayer2));
     console.log(`[PetalActions] Player ${player.name} (${player.id}) split into 2 players with separate inventories and states`);
 }
 // Switch between split players
@@ -933,20 +934,20 @@ function switchPlayer(player, io, socketId) {
     }
     // Notify the specific client (or all clients if socketId not provided)
     if (socketId) {
-        io.to(socketId).emit('playerSwitched', {
+        (0, wireOutbox_1.getWireOutbox)().toSocket(socketId, 'playerSwitched', {
             originalId: originalId,
             activePlayerId: activePlayerId
         });
         // Send full player data including loadout to the client so they can display the correct loadout
-        io.to(socketId).emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
+        (0, wireOutbox_1.getWireOutbox)().toSocket(socketId, 'playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
     }
     else {
-        io.emit('playerSwitched', {
+        (0, wireOutbox_1.getWireOutbox)().all('playerSwitched', {
             originalId: originalId,
             activePlayerId: activePlayerId
         });
         // Send full player data including loadout to all clients
-        io.emit('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
+        (0, wireOutbox_1.getWireOutbox)().all('playerUpdated', (0, playerWire_1.sanitizePlayerForClient)(activePlayer));
     }
     console.log(`[PetalActions] Switched to player ${splitState.activeIndex === 0 ? '1' : '2'} (activePlayerId=${activePlayerId})`);
 }

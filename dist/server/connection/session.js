@@ -351,7 +351,7 @@ function registerSessionHandlers(ctx) {
                                     // Apply petal health bonus
                                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_1.players[socket.id]);
                                     constants_1.players[socket.id].loadout[i] = restoredPetal;
-                                    (0, petalEvents_1.emitPetalRestored)(io, constants_1.players[socket.id].id, {
+                                    (0, petalEvents_1.emitPetalRestored)(constants_1.players[socket.id].id, {
                                         playerId: constants_1.players[socket.id].id,
                                         slotIndex: i,
                                         petal: constants_1.players[socket.id].loadout[i]

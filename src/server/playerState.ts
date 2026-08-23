@@ -225,6 +225,7 @@ import { ID_TO_RARITY, ID_TO_ITEM_KEY } from '../inventoryCodec';
 import { trackDamage, cleanupEnemy, markEnemyDamaged, getOriginalSocketId } from './utils';
 import { killEnemy, type KillContext } from './shared/killHandler';
 import { removeEnemyAt } from './enemyRegistry';
+import { getWireOutbox } from './wireOutbox';
 
 /**
  * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
@@ -343,7 +344,7 @@ function spawnGroundPollen(io: any, groundEffects: GroundEffectsBridge, player: 
         rarity: petal.rarity,
         expiresAt: now + GROUND_POLLEN_LIFETIME_MS,
     });
-    io.emit('groundPollenSpawned', {
+    getWireOutbox().all('groundPollenSpawned', {
         id,
         playerId: player.id,
         x: petalX,
@@ -371,7 +372,7 @@ function spawnWebField(io: any, groundEffects: GroundEffectsBridge, player: Serv
         rarity,
         expiresAt: now + WEB_LIFETIME_MS,
     });
-    io.emit('webSpawned', { id, x, y, radius, rarity, lifetime: WEB_LIFETIME_MS });
+    getWireOutbox().all('webSpawned', { id, x, y, radius, rarity, lifetime: WEB_LIFETIME_MS });
 }
 
 // --- Per-instance petal health/cooldown helpers ---
@@ -425,7 +426,7 @@ function restoreIndependentPetalInstance(
     current.health = Math.max(0, ...current.instanceHealth!);
     current.onCooldown = current.instanceOnCooldown!.every((c: boolean) => c);
 
-    emitPetalRestored(io, playerId, {
+    emitPetalRestored(playerId, {
         playerId,
         slotIndex: loadoutIndex,
         instanceIndex,
@@ -582,7 +583,7 @@ function updateSpongeDamage(player: ServerPlayer, deltaTime: number, io: SocketI
         player.spongeDamageEffects = [];
     }
 
-    io.emit('playerDamaged', {
+    getWireOutbox().all('playerDamaged', {
         playerId: player.id,
         health: player.health,
         maxHealth: player.maxHealth,
@@ -777,7 +778,7 @@ function applyPetalRingDamage(player: ServerPlayer, io: SocketIOServer): void {
                 setTimeout(() => {
                     if (players[player.id]) {
                         players[player.id].isInvulnerable = false;
-                        io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                        getWireOutbox().all('playerInvulnerabilityEnded', { playerId: player.id });
                     }
                 }, 50);
             } else {
@@ -792,14 +793,14 @@ function applyPetalRingDamage(player: ServerPlayer, io: SocketIOServer): void {
                     setTimeout(() => {
                         if (players[player.id]) {
                             players[player.id].isInvulnerable = false;
-                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                            getWireOutbox().all('playerInvulnerabilityEnded', { playerId: player.id });
                         }
                     }, 50);
                 }
             }
         }
 
-        io.emit('playerDamaged', {
+        getWireOutbox().all('playerDamaged', {
             playerId: player.id,
             health: player.health,
             maxHealth: player.maxHealth,
@@ -1249,7 +1250,7 @@ export function validatePlayerPositions(io: SocketIOServer): void {
                 player.y = ACTUAL_WORLD_HEIGHT / 2;
                 
                 // Notify client of position correction
-                io.to(playerId).emit('positionCorrected', { x: player.x, y: player.y });
+                getWireOutbox().toSocket(playerId, 'positionCorrected', { x: player.x, y: player.y });
             }
         }
     }
@@ -1298,11 +1299,11 @@ export function trySecondChance(player: ServerPlayer, io: SocketIOServer): boole
     setTimeout(() => {
         if (players[player.id]) {
             players[player.id].isInvulnerable = false;
-            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+            getWireOutbox().all('playerInvulnerabilityEnded', { playerId: player.id });
         }
     }, durationMs);
 
-    io.emit('playerDamaged', {
+    getWireOutbox().all('playerDamaged', {
         playerId: player.id,
         health: player.health,
         maxHealth: player.maxHealth,
@@ -1337,7 +1338,7 @@ function applyPvpDamage(
         setTimeout(() => {
             if (players[victim.id]) {
                 players[victim.id].isInvulnerable = false;
-                io.emit('playerInvulnerabilityEnded', { playerId: victim.id });
+                getWireOutbox().all('playerInvulnerabilityEnded', { playerId: victim.id });
             }
         }, 50);
     } else {
@@ -1355,7 +1356,7 @@ function applyPvpDamage(
         setTimeout(() => {
             if (players[victim.id]) {
                 players[victim.id].isInvulnerable = false;
-                io.emit('playerInvulnerabilityEnded', { playerId: victim.id });
+                getWireOutbox().all('playerInvulnerabilityEnded', { playerId: victim.id });
             }
         }, 50);
     }
@@ -1373,7 +1374,7 @@ function applyPvpDamage(
     // thrown away by `player.x = newX`. See displacePlayer in server/ecsSync.
     displacePlayer(victim, knockbackX, knockbackY);
 
-    io.emit('playerDamaged', {
+    getWireOutbox().all('playerDamaged', {
         playerId: victim.id,
         health: victim.health,
         maxHealth: victim.maxHealth,
@@ -1420,7 +1421,7 @@ function applyPvpDamage(
         victim.isDead = true;
         victim.angle = Math.random() * Math.PI * 2;
         despawnAllPlayerPets(victim.id, io);
-        io.emit('playerDied', {
+        getWireOutbox().all('playerDied', {
             playerId: victim.id,
             x: victim.x,
             y: victim.y,
@@ -1737,7 +1738,7 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
                     setTimeout(() => {
                         if (players[player.id]) {
                             players[player.id].isInvulnerable = false;
-                            io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                            getWireOutbox().all('playerInvulnerabilityEnded', { playerId: player.id });
                         }
                     }, 50);
                 } else {
@@ -1759,7 +1760,7 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
                             if (players[player.id]) {
                                 players[player.id].isInvulnerable = false;
                                 // Notify client that invulnerability has ended
-                                io.emit('playerInvulnerabilityEnded', { playerId: player.id });
+                                getWireOutbox().all('playerInvulnerabilityEnded', { playerId: player.id });
                             }
                         }, 50);
                     }
@@ -1776,7 +1777,7 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
             }
 
             // Always emit knockback (and current health state)
-            io.emit('playerDamaged', {
+            getWireOutbox().all('playerDamaged', {
                 playerId: player.id,
                 health: player.health,
                 maxHealth: player.maxHealth,
@@ -1953,7 +1954,7 @@ for (let i = pickupItems.length - 1; i >= 0; i--) {
         // Map split player IDs to original socket IDs for socket room targeting
         const { getOriginalSocketId } = require('./utils');
         const originalSocketId = getOriginalSocketId(player.id);
-        io.to(originalSocketId).emit('itemPickedUp', item.id);
+        getWireOutbox().toSocket(originalSocketId, 'itemPickedUp', item.id);
         io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
         
         // Save player progress to persist inventory changes
@@ -1973,7 +1974,7 @@ for (let i = pickupItems.length - 1; i >= 0; i--) {
                 removeWorldItem(item);
                 // Notify only eligible players that the item is gone
                 for (const playerId of item.eligiblePlayers) {
-                    io.to(playerId).emit('itemRemoved', item.id);
+                    getWireOutbox().toSocket(playerId, 'itemRemoved', item.id);
                 }
             }
         }
@@ -2098,7 +2099,7 @@ for (const element of WORLD_MAP.filter(isTeleporter)) {
             // id: a splitter half (`..._split2`) has no socket of its own, so
             // addressing it dropped the event and the flower charged up with
             // no spin animation and no iris transition.
-            io.to(getOriginalSocketId(player.id)).emit('teleporterEntered', {
+            getWireOutbox().toSocket(getOriginalSocketId(player.id), 'teleporterEntered', {
                 teleporterId,
                 timeRequired: 1000,
                 teleportTo: element.properties.teleportTo
@@ -2138,7 +2139,7 @@ for (const element of WORLD_MAP.filter(isTeleporter)) {
                     currentServerPort
                 ).catch(error => {
                     console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player ${player.name}:`, error);
-                    io.to(getOriginalSocketId(player.id)).emit('transferFailed', { message: 'Failed to connect to target server' });
+                    getWireOutbox().toSocket(getOriginalSocketId(player.id), 'transferFailed', { message: 'Failed to connect to target server' });
                     player.teleportCooldown = undefined;
                 });
 
@@ -2154,7 +2155,7 @@ for (const element of WORLD_MAP.filter(isTeleporter)) {
                     console.log(`[SERVER ${currentServerConfig.name}] Player ${player.name} teleported to (${newX}, ${newY}) after 1 second delay`);
                 }
 
-                io.to(getOriginalSocketId(player.id)).emit('playerTeleported', {
+                getWireOutbox().toSocket(getOriginalSocketId(player.id), 'playerTeleported', {
                     newX,
                     newY,
                     playerId: player.id
@@ -2318,7 +2319,7 @@ if (player.loadout) {
                 };
                 applyPetalHealthBonus(restoredPetal, player);
                 player.loadout[loadoutIndex] = restoredPetal;
-                emitPetalRestored(io, player.id, {
+                emitPetalRestored(player.id, {
                     playerId: player.id,
                     slotIndex: loadoutIndex,
                     petal: player.loadout[loadoutIndex]
@@ -2405,7 +2406,7 @@ if (player.loadout) {
                         // reload: nothing else pushes the slot-level flag out
                         // (petalRestored is the only other carrier, and that's
                         // the end of the reload, not the start).
-                        emitPetalBroken(io, player.id, {
+                        emitPetalBroken(player.id, {
                             playerId: player.id,
                             slotIndex: loadoutIndex,
                             petalType: petal.petalType,
@@ -2442,7 +2443,7 @@ if (player.loadout) {
                             applyPetalHealthBonus(restoredPetal, player);
                             player.loadout[loadoutIndex] = restoredPetal;
 
-                            emitPetalRestored(io, player.id, {
+                            emitPetalRestored(player.id, {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petal: player.loadout[loadoutIndex]
@@ -2450,7 +2451,7 @@ if (player.loadout) {
                         }
                     }, cooldownTime);
 
-                    emitPetalBroken(io, player.id, {
+                    emitPetalBroken(player.id, {
                         playerId: player.id,
                         slotIndex: loadoutIndex,
                         petalType: petal.petalType,
@@ -2594,7 +2595,7 @@ if (player.loadout) {
                         if (blockedX && blockedY) break;
                     }
                 }
-                io.emit('playerDamaged', {
+                getWireOutbox().all('playerDamaged', {
                     playerId: player.id,
                     health: player.health,
                     maxHealth: player.maxHealth,
@@ -2942,7 +2943,7 @@ if (player.loadout) {
                         const { getOriginalSocketId } = require('./utils');
                         for (const eligiblePlayerId of eligiblePlayersForItem) {
                             const originalSocketId = getOriginalSocketId(eligiblePlayerId);
-                            io.to(originalSocketId).emit('itemSpawned', newItem);
+                            getWireOutbox().toSocket(originalSocketId, 'itemSpawned', newItem);
                         }
 
                         if (!player.id.startsWith('bot_')) {
@@ -3042,7 +3043,7 @@ if (player.loadout) {
                         if (petal.instanceOnCooldown!.every((c: boolean) => c)) {
                             petal.onCooldown = true;
                             // See the matching emit in the tick-loop break above.
-                            emitPetalBroken(io, player.id, {
+                            emitPetalBroken(player.id, {
                                 playerId: player.id,
                                 slotIndex: loadoutIndex,
                                 petalType: petal.petalType,
@@ -3077,7 +3078,7 @@ if (player.loadout) {
                                 applyPetalHealthBonus(restoredPetal, player);
                                 player.loadout[loadoutIndex] = restoredPetal;
 
-                                emitPetalRestored(io, player.id, {
+                                emitPetalRestored(player.id, {
                                     playerId: player.id,
                                     slotIndex: loadoutIndex,
                                     petal: player.loadout[loadoutIndex]
@@ -3085,7 +3086,7 @@ if (player.loadout) {
                             }
                         }, cooldownTime);
 
-                        emitPetalBroken(io, player.id, {
+                        emitPetalBroken(player.id, {
                             playerId: player.id,
                             slotIndex: loadoutIndex,
                             petalType: petal.petalType,
@@ -3187,7 +3188,7 @@ if (player.loadout) {
                         otherPlayer.lastDamageTime = 0;
                         
                         // Notify all clients about the revival
-                        io.emit('playerRevived', {
+                        getWireOutbox().all('playerRevived', {
                             revivedPlayerId: otherPlayerId,
                             revivingPlayerId: player.id,
                             revivedPlayerName: otherPlayer.name,
@@ -3198,7 +3199,7 @@ if (player.loadout) {
                         setTimeout(() => {
                             if (players[otherPlayerId]) {
                                 players[otherPlayerId].isInvulnerable = false;
-                                io.emit('playerInvulnerabilityEnded', { playerId: otherPlayerId });
+                                getWireOutbox().all('playerInvulnerabilityEnded', { playerId: otherPlayerId });
                             }
                         }, RESPAWN_INVULNERABILITY_TIME);
                         
@@ -3317,7 +3318,7 @@ export function updatePlayerState(
         // Despawn all pets owned by this player
         despawnAllPlayerPets(player.id, io);
 
-        io.emit('playerDied', {
+        getWireOutbox().all('playerDied', {
             playerId: player.id,
             x: player.x,
             y: player.y,

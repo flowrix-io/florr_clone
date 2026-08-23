@@ -424,7 +424,7 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                                     applyPetalHealthBonus(restoredPetal, players[targetId]);
                                     players[targetId].loadout[index] = restoredPetal;
 
-                                    emitPetalRestored(io, players[targetId].id, {
+                                    emitPetalRestored(players[targetId].id, {
                                         playerId: players[targetId].id,
                                         slotIndex: index,
                                         petal: players[targetId].loadout[index]

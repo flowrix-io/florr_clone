@@ -108,7 +108,7 @@ export function registerSkillHandlers(ctx: ConnectionContext): void {
                         petal.onCooldown = false;
 
                         // Emit petal restored event for each petal
-                        emitPetalRestored(io, player.id, {
+                        emitPetalRestored(player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal
@@ -162,7 +162,7 @@ export function registerSkillHandlers(ctx: ConnectionContext): void {
                         petal.onCooldown = false;
 
                         // Emit petal restored event for each petal
-                        emitPetalRestored(io, player.id, {
+                        emitPetalRestored(player.id, {
                             playerId: player.id,
                             slotIndex: index,
                             petal: petal

@@ -89,42 +89,109 @@ const readDatabase = () => {
             'Restore from db_backups and restart.');
     }
 };
-let writePending = false;
+/**
+ * Persistence scheduling.
+ *
+ * The write used to be fully synchronous on the next macrotask: stringify
+ * (pretty-printed), writeFileSync, readFileSync + JSON.parse (the verify),
+ * renameSync. Fine at 400KB; at a 5MB database that is ~20MB of JSON work and
+ * blocking I/O ON THE EVENT LOOP per save — measured on prod as 120-145ms
+ * tick stalls every couple of seconds while anyone was farming (each pickup
+ * arms a 2s-debounced save).
+ *
+ * Now: at most one DISK write per MIN_WRITE_INTERVAL_MS, with a guaranteed
+ * trailing write for whatever changed in between; the file I/O is async; the
+ * stringify is compact (pretty-printing doubled both the bytes and the
+ * stringify time, and nothing reads the live file by eye); and the read-back
+ * verify is a byte-length compare rather than a full parse — truncation (the
+ * historical failure: the process dying mid-write on heap exhaustion) is a
+ * SHORT file, which the length check catches at no CPU cost.
+ *
+ * What is deliberately kept: write-then-rename (rename(2) is atomic within a
+ * filesystem, so a crash leaves the previous good file intact), the verify
+ * before promotion, and durability across ORDERLY exits — see the 'exit'
+ * hook below, which flushes synchronously if anything is still dirty. The
+ * residual event-loop cost is the compact stringify alone.
+ */
+const MIN_WRITE_INTERVAL_MS = 5000;
+let writeTimer = null;
+let writeInFlight = false;
+let dbDirty = false;
+let lastWriteStartedAt = 0;
 const writeDatabase = () => {
     if (loadFailed)
         return;
-    if (writePending)
-        return;
-    writePending = true;
-    setImmediate(() => {
-        writePending = false;
-        try {
-            // Write-then-rename, never in place. writeFileSync truncates its
-            // target before writing, so a crash partway through (the process
-            // has died on heap exhaustion before) used to leave inventory.json
-            // half-written. readDatabase's JSON.parse would then throw, the
-            // catch would swallow it, the server would come up on an EMPTY db,
-            // and the next save would persist that emptiness over the ruined
-            // file — every account gone. rename(2) is atomic within a
-            // filesystem, so a crash now leaves the previous good file intact.
-            const json = JSON.stringify(db, null, 2);
-            fs.writeFileSync(tmpPath, json);
-            // Parse the bytes back off disk before they replace the live file:
-            // a short write or bad encoding must never be promoted (mirrors the
-            // read-back check backupDatabase already does).
-            JSON.parse(fs.readFileSync(tmpPath, 'utf-8'));
-            fs.renameSync(tmpPath, inventoryPath);
-        }
-        catch (error) {
-            console.error('Error writing to database file:', error);
-            try {
-                if (fs.existsSync(tmpPath))
-                    fs.unlinkSync(tmpPath);
-            }
-            catch { }
-        }
-    });
+    dbDirty = true;
+    scheduleWrite();
 };
+const scheduleWrite = () => {
+    if (writeTimer || writeInFlight || !dbDirty)
+        return;
+    const wait = Math.max(0, lastWriteStartedAt + MIN_WRITE_INTERVAL_MS - Date.now());
+    writeTimer = setTimeout(runWrite, wait);
+};
+const runWrite = async () => {
+    writeTimer = null;
+    if (writeInFlight)
+        return;
+    writeInFlight = true;
+    dbDirty = false;
+    lastWriteStartedAt = Date.now();
+    try {
+        const json = JSON.stringify(db);
+        await fs.promises.writeFile(tmpPath, json);
+        // Verify before promoting: a short write must never replace the live
+        // file. Length equality against what we meant to write catches
+        // truncation; content corruption of a correct-length file is not a
+        // failure mode fs gives us on a healthy disk.
+        const written = await fs.promises.stat(tmpPath);
+        if (written.size !== Buffer.byteLength(json)) {
+            throw new Error(`short write: ${written.size} of ${Buffer.byteLength(json)} bytes`);
+        }
+        await fs.promises.rename(tmpPath, inventoryPath);
+    }
+    catch (error) {
+        console.error('Error writing to database file:', error);
+        dbDirty = true; // the change is still unpersisted; retry on schedule
+        try {
+            if (fs.existsSync(tmpPath))
+                fs.unlinkSync(tmpPath);
+        }
+        catch { }
+    }
+    finally {
+        writeInFlight = false;
+        scheduleWrite();
+    }
+};
+// Orderly exits (scheduled restarts, pm2 SIGINT) must not lose the trailing
+// window the rate limit created. 'exit' handlers may only do synchronous
+// work, which is exactly what this is. A SIGKILL still loses the window —
+// as it always lost the debounce window before.
+//
+// SIGINT/SIGTERM get explicit handlers because Node's DEFAULT signal death
+// skips 'exit' hooks entirely — and pm2 stops the process with SIGINT.
+// Nothing else in the server handles either signal; converting them to
+// process.exit(0) preserves "die now" while letting the flush run (pm2's
+// kill timeout is 1.6s, the flush is ~100ms).
+process.on('SIGINT', () => process.exit(0));
+process.on('SIGTERM', () => process.exit(0));
+process.on('exit', () => {
+    if (loadFailed)
+        return;
+    if (!dbDirty && !writeInFlight && !writeTimer)
+        return;
+    try {
+        const json = JSON.stringify(db);
+        fs.writeFileSync(tmpPath, json);
+        if (fs.statSync(tmpPath).size !== Buffer.byteLength(json))
+            return;
+        fs.renameSync(tmpPath, inventoryPath);
+    }
+    catch (error) {
+        console.error('Error flushing database on exit:', error);
+    }
+});
 readDatabase();
 /**
  * Drop expired sessions. Cheap and rare (login/logout only), so it just walks

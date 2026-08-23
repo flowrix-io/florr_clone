@@ -10,42 +10,28 @@
  * The box matches the one the tick broadcast culls entities with: ±200% of the
  * recipient's viewport, centred on their ACTIVE half (the splitter petal can
  * put the camera on `${id}_split2`, which stands somewhere else entirely).
+ *
+ * The scoping itself now lives in the ECS outbox (ecs/net/outbox.ts, drained in
+ * Phase.Networking). This module is the thin call-site-facing name for it. The
+ * difference is that the recipient list used to be rebuilt from `players` on
+ * every single call — so spawning a centipede or an ant-hole cluster re-derived
+ * it once per segment — and is now built once per flush and shared by every
+ * event in the tick.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.emitToViewers = emitToViewers;
-const constants_1 = require("../constants");
-const utils_1 = require("./utils");
+const wireOutbox_1 = require("./wireOutbox");
 /**
  * Send `event` only to sockets whose viewport contains (x, y).
  *
  * `alwaysTo` is a player id that receives it regardless of distance — used for
  * the owner of an effect, who must see their own action even if the camera has
  * been moved elsewhere.
+ *
+ * Queued, not sent: delivery happens at the end of the tick that produced it
+ * (or, for events raised outside a tick, at the end of the current JS turn —
+ * still ahead of any broadcast frame).
  */
-function emitToViewers(io, x, y, event, payload, alwaysTo) {
-    // One socket can back several player records (split halves), so dedupe by
-    // socket id.
-    const sent = new Set();
-    if (alwaysTo) {
-        const ownerSocketId = (0, utils_1.getOriginalSocketId)(alwaysTo);
-        sent.add(ownerSocketId);
-        io.to(ownerSocketId).emit(event, payload);
-    }
-    for (const otherId in constants_1.players) {
-        const socketId = (0, utils_1.getOriginalSocketId)(otherId);
-        if (sent.has(socketId))
-            continue;
-        sent.add(socketId);
-        // Bots live in `players` with no socket; io.to() no-ops for them.
-        const viewer = (0, utils_1.getActivePlayerForSocket)(socketId);
-        if (!viewer)
-            continue;
-        const halfW = (viewer.viewportWidth || constants_1.VIEWPORT_WIDTH) * 2;
-        const halfH = (viewer.viewportHeight || constants_1.VIEWPORT_HEIGHT) * 2;
-        const dx = x - viewer.x;
-        const dy = y - viewer.y;
-        if ((dx < 0 ? -dx : dx) >= halfW || (dy < 0 ? -dy : dy) >= halfH)
-            continue;
-        io.to(socketId).emit(event, payload);
-    }
+function emitToViewers(x, y, event, payload, alwaysTo) {
+    (0, wireOutbox_1.getWireOutbox)().near(x, y, event, payload, alwaysTo);
 }

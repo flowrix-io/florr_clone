@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WIRE_EVENT_IDS = exports.WIRE_EVENTS = void 0;
+exports.isWireEvent = isWireEvent;
 exports.wireEventsSignature = wireEventsSignature;
 /**
  * Wire opcodes for event names.
@@ -156,6 +157,10 @@ exports.WIRE_EVENTS = [
     'xpGained',
     'zoneUpdate',
 ];
+/** Whether a name has an opcode — the runtime half of the check above. */
+function isWireEvent(name) {
+    return exports.WIRE_EVENT_IDS.has(name);
+}
 /** name -> opcode. Built once; the reverse direction is WIRE_EVENTS itself. */
 exports.WIRE_EVENT_IDS = new Map(exports.WIRE_EVENTS.map((n, i) => [n, i]));
 /**

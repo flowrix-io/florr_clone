@@ -29,6 +29,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.killEnemy = killEnemy;
 const server_utils_1 = require("../../server_utils");
+const wireOutbox_1 = require("../wireOutbox");
 /**
  * Run the full death sequence for `enemy` and splice it from `enemies` at
  * `index`. The caller owns the index (loop variable or findIndex result);
@@ -69,7 +70,7 @@ function killEnemy(enemy, index, enemies, ctx, opts = {}) {
         ctx.removeEnemyAt(index);
     }
     if (emitDestroyed)
-        ctx.io.emit('enemyDestroyed', enemy.id);
+        (0, wireOutbox_1.getWireOutbox)().all('enemyDestroyed', enemy.id);
     // --- kill tracking (snapshot modes run here, after cleanup) ---
     if (trackMobKillTiming === 'sync-snapshot' || trackMobKillTiming === 'deferred') {
         const qualifies = damageContributorsCopy &&

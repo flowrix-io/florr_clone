@@ -23,51 +23,29 @@
  *
  * petalBroken additionally triggers a one-shot break VFX at the flower, which
  * is worth sending only to clients whose viewport actually contains it.
+ *
+ * Both routes go through the ECS outbox (ecs/net/outbox.ts) now, so they are
+ * ordered with the rest of the tick's events and share its recipient list
+ * instead of walking `players` per petal.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.emitPetalRestored = emitPetalRestored;
 exports.emitPetalBroken = emitPetalBroken;
-const constants_1 = require("../constants");
-const utils_1 = require("./utils");
+const wireOutbox_1 = require("./wireOutbox");
 /**
  * Reload finished. Owner-only: nothing another client renders depends on it.
  *
- * Split halves share one socket, so the owner id has to come from
- * getOriginalSocketId — `players[playerId]` is not the socket key.
+ * Split halves share one socket, so the owner id has to come from the outbox's
+ * player→socket mapping — `players[playerId]` is not the socket key.
  */
-function emitPetalRestored(io, playerId, payload) {
-    io.to((0, utils_1.getOriginalSocketId)(playerId)).emit('petalRestored', payload);
+function emitPetalRestored(playerId, payload) {
+    (0, wireOutbox_1.getWireOutbox)().toPlayer(playerId, 'petalRestored', payload);
 }
 /**
  * Petal broke. The owner always gets it (loadout UI reload animation); other
  * clients get it only when the breaking flower is inside their visibility box,
  * because for them it is purely a particle burst.
- *
- * The box matches the one the tick broadcast culls entities with: ±200% of the
- * recipient's viewport, centred on their ACTIVE half (the splitter petal can
- * put the camera on `${id}_split2`, which stands somewhere else entirely).
  */
-function emitPetalBroken(io, playerId, payload, x, y) {
-    const ownerSocketId = (0, utils_1.getOriginalSocketId)(playerId);
-    io.to(ownerSocketId).emit('petalBroken', payload);
-    // One socket can back several player records (split halves), so dedupe by
-    // socket id — seeded with the owner, who was just sent to.
-    const sent = new Set([ownerSocketId]);
-    for (const otherId in constants_1.players) {
-        const socketId = (0, utils_1.getOriginalSocketId)(otherId);
-        if (sent.has(socketId))
-            continue;
-        sent.add(socketId);
-        // Bots live in `players` with no socket; io.to() no-ops for them.
-        const viewer = (0, utils_1.getActivePlayerForSocket)(socketId);
-        if (!viewer)
-            continue;
-        const halfW = (viewer.viewportWidth || constants_1.VIEWPORT_WIDTH) * 2;
-        const halfH = (viewer.viewportHeight || constants_1.VIEWPORT_HEIGHT) * 2;
-        const dx = x - viewer.x;
-        const dy = y - viewer.y;
-        if ((dx < 0 ? -dx : dx) >= halfW || (dy < 0 ? -dy : dy) >= halfH)
-            continue;
-        io.to(socketId).emit('petalBroken', payload);
-    }
+function emitPetalBroken(playerId, payload, x, y) {
+    (0, wireOutbox_1.getWireOutbox)().near(x, y, 'petalBroken', payload, playerId);
 }

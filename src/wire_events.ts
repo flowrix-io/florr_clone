@@ -19,7 +19,7 @@
  * protocol compatibility in the first place, so it must decode before the
  * client can know whether this table is even valid.
  */
-export const WIRE_EVENTS: readonly string[] = [
+export const WIRE_EVENTS = [
     'absorbFailed',
     'absorbItems',
     'animateViewportToMob',
@@ -151,7 +151,23 @@ export const WIRE_EVENTS: readonly string[] = [
     'webSpawned',
     'xpGained',
     'zoneUpdate',
-];
+] as const;
+
+/**
+ * An event name that has an opcode.
+ *
+ * `as const` above is what makes this a union of the literal names rather than
+ * plain `string`, and the ECS outbox (ecs/net/outbox.ts) types its whole API
+ * against it. That turns "this event is missing from the table, so it costs its
+ * own name in bytes on every frame" from something you would only discover with
+ * a bandwidth probe into a compile error.
+ */
+export type WireEvent = typeof WIRE_EVENTS[number];
+
+/** Whether a name has an opcode — the runtime half of the check above. */
+export function isWireEvent(name: string): name is WireEvent {
+    return WIRE_EVENT_IDS.has(name);
+}
 
 /** name -> opcode. Built once; the reverse direction is WIRE_EVENTS itself. */
 export const WIRE_EVENT_IDS: ReadonlyMap<string, number> =

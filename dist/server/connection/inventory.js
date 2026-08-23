@@ -401,7 +401,7 @@ function registerInventoryHandlers(ctx) {
                                     // Apply petal health bonus
                                     (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_1.players[targetId]);
                                     constants_1.players[targetId].loadout[index] = restoredPetal;
-                                    (0, petalEvents_1.emitPetalRestored)(io, constants_1.players[targetId].id, {
+                                    (0, petalEvents_1.emitPetalRestored)(constants_1.players[targetId].id, {
                                         playerId: constants_1.players[targetId].id,
                                         slotIndex: index,
                                         petal: constants_1.players[targetId].loadout[index]
