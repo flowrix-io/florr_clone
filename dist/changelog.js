@@ -521,6 +521,15 @@ exports.CHANGELOG = [
             'Apex mobs now have 100x HP and XP',
             'Server optimizations'
         ]
+    },
+    {
+        date: 'August 23, 2026',
+        changes: [
+            'Fix bugs',
+            'Magnet no longer instantly attracts petals without playing animation',
+            'Jungle coming soon',
+            'Looting requirements changed'
+        ]
     }
 ];
 class ChangelogManager {
