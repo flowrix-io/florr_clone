@@ -146,10 +146,33 @@ export function registerItemHandlers(game: any): void {
         }, DESPAWN_ANIM_MS);
     };
 
-    game.socket.on('itemPickedUp', (itemId: string) => {
+    game.socket.on('itemPickedUp', (payload: string | {
+        id: string; x: number; y: number;
+        type?: WorldItem['type']; rarity?: WorldItem['rarity']; petalType?: string;
+    }) => {
         // Local player picked up this item — animate toward the half that's
         // actually on screen (the pickup is emitted to the socket, not per half).
-        registerPickupAnim(itemId, localPlayerId(game));
+        const id = typeof payload === 'string' ? payload : payload.id;
+
+        // The drop may never have reached us: a magnet petal's pickup radius
+        // (500px) collects loot on the tick it spawns, well before the next
+        // snapshot could carry it. The animations all start from `game.items`,
+        // so without this the whole flourish is skipped and the pickup is
+        // invisible. Materialise the item from the cue, play its drop burst,
+        // and let the normal pickup animation carry it to the flower.
+        if (typeof payload === 'object' && !game.items.has(id)) {
+            game.items.set(id, {
+                id, x: payload.x, y: payload.y,
+                type: payload.type ?? 'petal',
+                rarity: payload.rarity,
+                petalType: payload.petalType,
+            } as WorldItem);
+            if (payload.rarity) {
+                game.graphics.showItemDropBurst(payload.x, payload.y, payload.rarity);
+            }
+        }
+
+        registerPickupAnim(id, localPlayerId(game));
     });
 
     // Removal is driven by the entity stream's R list; this is the cue it calls.

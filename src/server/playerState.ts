@@ -1953,7 +1953,23 @@ for (let i = pickupItems.length - 1; i >= 0; i--) {
         // Map split player IDs to original socket IDs for socket room targeting
         const { getOriginalSocketId } = require('./utils');
         const originalSocketId = getOriginalSocketId(player.id);
-        getWireOutbox().toSocket(originalSocketId, 'itemPickedUp', item.id);
+        // The cue carries the whole drop, not just its id.
+        //
+        // A drop can be collected before ANY snapshot has carried it to the
+        // client — and with a magnet petal (magnetism 500 = a 500px pickup
+        // radius) that is essentially every drop, because loot lands well
+        // inside pickup range and is taken on the tick it spawns. The client
+        // then has nothing to animate and the pickup passes in silence: no
+        // drop burst, no flourish. Sending the position and look with the cue
+        // lets it play the animation for an item it never held.
+        getWireOutbox().toSocket(originalSocketId, 'itemPickedUp', {
+            id: item.id,
+            x: item.x,
+            y: item.y,
+            type: item.type,
+            rarity: item.rarity,
+            petalType: item.petalType,
+        });
         io.to(originalSocketId).emit('inventoryUpdated', player.inventory);
         
         // Save player progress to persist inventory changes
