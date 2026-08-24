@@ -1,3 +1,5 @@
+import { isBotId } from './botId';
+
 /**
  * Who may loot a mob.
  *
@@ -6,6 +8,30 @@
  * without booting a server (requiring server/utils.ts pulls in the whole game,
  * listening port and all).
  */
+
+/**
+ * Drop filler bots from a damage tally.
+ *
+ * Bots fight, so their damage lands in the tally like anyone's — and with a slot
+ * cap of 4 on ordinary mobs, four bots on a mob shut a real player out of loot
+ * they helped earn. That is invisible on a quiet local server and constant on a
+ * live one, where the roster is topped up to ~23 bots: it is why loot can "work
+ * locally and not in production".
+ *
+ * Nothing is lost by skipping them — a bot's inventory is not a real inventory —
+ * and a mob only bots touched now drops nothing rather than littering the world
+ * with loot no player is eligible for. Bot damage is already excluded from the
+ * target-dummy DPS readout for the same reason.
+ */
+export function withoutBots(
+    contributors: ReadonlyMap<string, number>,
+): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const [playerId, damage] of contributors) {
+        if (!isBotId(playerId)) out.set(playerId, damage);
+    }
+    return out;
+}
 
 /**
  * How many players may loot a mob of each tier.

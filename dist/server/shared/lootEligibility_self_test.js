@@ -86,5 +86,29 @@ function runLootEligibilitySelfTest() {
         check('multiplier applies per recipient', paidA?.xp === 15 && paidB?.xp === 30, JSON.stringify(scaled));
         check('nobody eligible means nobody paid', pay([]).length === 0);
     }
+    // -- bots must not take slots from real players ---------------------------
+    {
+        // The production shape: a busy server tops the roster up to ~23 bots, and
+        // they fight. Four of them on an ordinary mob would otherwise fill every
+        // slot and shut out a player who helped kill it.
+        const busy = new Map([
+            ['bot_1', 500], ['bot_2', 400], ['bot_3', 300], ['bot_4', 200], ['human', 50],
+        ]);
+        const filtered = (0, lootEligibility_1.withoutBots)(busy);
+        const got = solo(filtered, 'common');
+        check('a human out-damaged by four bots still gets loot', got.includes('human'), JSON.stringify(got));
+        check('bots occupy no loot slots', got.every(id => !id.startsWith('bot_')), JSON.stringify(got));
+        // The cap still applies — among players.
+        const mixed = new Map();
+        for (let i = 0; i < 8; i++)
+            mixed.set('bot_' + i, 1000 - i);
+        for (let i = 0; i < 6; i++)
+            mixed.set('h' + i, 100 - i);
+        const m = solo((0, lootEligibility_1.withoutBots)(mixed), 'common');
+        check('the cap applies among humans', m.length === lootEligibility_1.BASE_LOOT_SLOTS, JSON.stringify(m));
+        check('and it is the top humans by damage', JSON.stringify(m) === JSON.stringify(['h0', 'h1', 'h2', 'h3']), JSON.stringify(m));
+        // A mob only bots touched rewards nobody, so it drops nothing.
+        check('a bot-only kill has no recipients', (0, lootEligibility_1.withoutBots)(new Map([['bot_a', 100], ['bot_b', 50]])).size === 0);
+    }
     return failures;
 }

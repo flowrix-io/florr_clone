@@ -23,8 +23,13 @@ const lootEligibility_1 = require("./shared/lootEligibility");
  * shared/lootEligibility.ts for the rule and what it used to get wrong.
  */
 function getLootRecipients(enemy) {
-    const contributors = enemy.damageContributors;
-    if (!contributors || contributors.size === 0)
+    const raw = enemy.damageContributors;
+    if (!raw || raw.size === 0)
+        return [];
+    // Bots must not take loot slots from real players — see withoutBots for why
+    // this is the difference between loot working locally and in production.
+    const contributors = (0, lootEligibility_1.withoutBots)(raw);
+    if (contributors.size === 0)
         return [];
     const pooled = (0, squadManager_1.getPooledDamageContributors)(contributors);
     const rankedEntities = Array.from(pooled.entries())

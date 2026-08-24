@@ -28,6 +28,7 @@ import { getPetalStats } from '../petals';
 import { getMobStats } from '../mobs';
 import { queryEnemiesNear } from './enemyGrid';
 import { WorldItem } from '../item';
+import { BOT_ID_PREFIX } from './shared/botId';
 import { collectWorldItems } from './itemRegistry';
 import {
     createSquad as createSquadFn,
@@ -74,7 +75,7 @@ function guilds(): typeof import('./guildManager') {
     return require('./guildManager');
 }
 
-const BOT_ID_PREFIX = 'bot_';
+
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
 const SPAWN_BURST_CAP = 4;

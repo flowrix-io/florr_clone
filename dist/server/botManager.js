@@ -49,6 +49,7 @@ const map_data_1 = require("../map_data");
 const petals_1 = require("../petals");
 const mobs_1 = require("../mobs");
 const enemyGrid_1 = require("./enemyGrid");
+const botId_1 = require("./shared/botId");
 const itemRegistry_1 = require("./itemRegistry");
 const squadManager_1 = require("./squadManager");
 const rarity_1 = require("./shared/rarity");
@@ -85,7 +86,6 @@ function guilds() {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('./guildManager');
 }
-const BOT_ID_PREFIX = 'bot_';
 const TARGET_TOTAL_PLAYERS = 23;
 const MAINTAIN_INTERVAL_MS = 1500;
 const SPAWN_BURST_CAP = 4;
@@ -309,7 +309,7 @@ const BOSS_SHOUT_TEMPLATES_UNIQUE = [
     '{tier} {mob} carry code {code}',
 ];
 function isBot(id) {
-    return id.startsWith(BOT_ID_PREFIX);
+    return id.startsWith(botId_1.BOT_ID_PREFIX);
 }
 // ---------------------------------------------------------------------------
 // The bot roster
@@ -416,7 +416,7 @@ function botRosterCounts(world) {
     return { ecs, prefix };
 }
 function generateBotId() {
-    return BOT_ID_PREFIX + Math.random().toString(36).substring(2, 10);
+    return botId_1.BOT_ID_PREFIX + Math.random().toString(36).substring(2, 10);
 }
 // Per-level-band rarity weights derived (offline) from aggregating real-player
 // inventories in server_inventory.json. Each band covers 10 levels. Within a

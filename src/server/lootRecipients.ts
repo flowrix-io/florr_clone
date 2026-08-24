@@ -11,7 +11,7 @@
  */
 
 import { getPooledDamageContributors, expandEligibleToPlayerIds } from './squadManager';
-import { selectLootRecipients } from './shared/lootEligibility';
+import { selectLootRecipients, withoutBots } from './shared/lootEligibility';
 
 /**
  * The players who may loot this mob — the top damage dealers, capped per tier.
@@ -24,8 +24,13 @@ import { selectLootRecipients } from './shared/lootEligibility';
 export function getLootRecipients(
     enemy: { damageContributors?: Map<string, number>; tier: string },
 ): string[] {
-    const contributors = enemy.damageContributors;
-    if (!contributors || contributors.size === 0) return [];
+    const raw = enemy.damageContributors;
+    if (!raw || raw.size === 0) return [];
+
+    // Bots must not take loot slots from real players — see withoutBots for why
+    // this is the difference between loot working locally and in production.
+    const contributors = withoutBots(raw);
+    if (contributors.size === 0) return [];
 
     const pooled = getPooledDamageContributors(contributors);
     const rankedEntities = Array.from(pooled.entries())

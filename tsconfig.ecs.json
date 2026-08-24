@@ -14,5 +14,5 @@
     "moduleResolution": "node",
     "types": ["node"]
   },
-  "include": ["src/ecs/**/*", "src/server/shared/lootEligibility.ts", "src/server/shared/lootEligibility_self_test.ts"]
+  "include": ["src/ecs/**/*", "src/server/shared/botId.ts", "src/server/shared/lootEligibility.ts", "src/server/shared/lootEligibility_self_test.ts"]
 }
