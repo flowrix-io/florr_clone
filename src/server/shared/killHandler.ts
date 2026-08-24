@@ -95,6 +95,17 @@ export interface KillOptions {
     skipCleanup?: boolean;
 }
 
+/** The single biggest damage dealer, for rewards that need one player to key off. */
+function topDamageContributor(enemy: Enemy): string | undefined {
+    if (!enemy.damageContributors) return undefined;
+    let top: string | undefined;
+    let best = 0;
+    enemy.damageContributors.forEach((damage, playerId) => {
+        if (damage > best) { best = damage; top = playerId; }
+    });
+    return top;
+}
+
 /**
  * Award a mob's XP to everyone who earned loot rights on it.
  *
@@ -167,11 +178,22 @@ export function killEnemy(
     // loot slot, so it wins no XP either.
     awardKillXp(enemy, ctx);
 
-    if (creditedPlayer) {
+    // Drops are gated on the SAME thing as xp: somebody earned rewards from
+    // this mob. They used to require a CREDITED KILLER, which is a different
+    // question — a death with damage on it but no attributed killing blow (an
+    // explosion, a lightning strike, a mob finished by a pet whose owner left)
+    // paid xp to every looter and then dropped nothing at all.
+    //
+    // The multiplier still needs ONE player to key off, since a drop is a
+    // single roll for the whole mob: the credited killer when there is one, and
+    // otherwise the biggest damage dealer — which is what the reaper path has
+    // always used.
+    const dropCreditId = creditedPlayer ? creditedPlayerId : topDamageContributor(enemy);
+    if (dropCreditId !== undefined && ctx.players[dropCreditId] !== undefined) {
         // Leaderboard reward tiers: top 10 accounts get 0.5x XP / 1.2x drop rate,
         // top 20 get 0.75x XP / 1.1x drop rate. Only the DROP half is keyed to
-        // the credited player; XP is per-recipient, above.
-        const { dropMultiplier } = ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[creditedPlayerId!]);
+        // one player; xp is per-recipient, above.
+        const { dropMultiplier } = ctx.database.getLeaderboardRewardMultipliers(ctx.playerUserIds[dropCreditId]);
         ctx.handleMobDrops(enemy, dropMultiplier);
         ctx.sendBossMobDefeatedMessage(enemy, ctx.io, ctx.players);
         ctx.updateSpecialMobCounts();
