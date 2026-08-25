@@ -1530,7 +1530,7 @@ function getEcsRuntime(): EcsRuntime {
             if (alive >= spawnCfg.maxAlive) return;
 
             // Behind the summoner, like gardn's queen ant.
-            const radius = (stats!.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier, spawnCfg.mobType);
+            const radius = (stats!.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier, spawnCfg.mobType, enemy.id);
             const behindX = mobX(enemy.entity) - Math.cos(mobAngle(enemy.entity)) * radius;
             const behindY = mobY(enemy.entity) - Math.sin(mobAngle(enemy.entity)) * radius;
             let spawnTier = enemy.tier;
@@ -1561,7 +1561,7 @@ function getEcsRuntime(): EcsRuntime {
             if (!parentStats || !parentStats.spawn_waves || parentStats.spawn_waves.length === 0) return;
             const waves = parentStats.spawn_waves;
             const numWaves = waves.length - 1;
-            const parentRadius = (parentStats.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
+            const parentRadius = (parentStats.size * 40) / 2 * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type, enemy.id);
 
             for (let i = startWave; i >= endWave; i--) {
                 const waveIndex = numWaves - i;

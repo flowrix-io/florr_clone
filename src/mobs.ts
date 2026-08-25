@@ -220,16 +220,65 @@ const DUMMY_SIZE_SCALE_AT_UNIQUE = 0.75;
 export const DUMMY_SIZE_SCALING: { [rarity: string]: number } = buildSizeRamp(DUMMY_SIZE_SCALE_AT_UNIQUE);
 
 /**
+ * The [0, 1) roll behind a mob's per-spawn random size, hashed from its wire
+ * id. The id is the one per-mob value BOTH sides already share (the server
+ * mints it, the client receives it as `i`), so hashing it is what makes each
+ * spawn's size random AND identical on client and server without a wire field.
+ * Same hash shape as glitchSeedFor; cached because the client re-derives sizes
+ * every frame.
+ */
+const sizeRollCache = new Map<string, number>();
+function sizeRollOf(id: string): number {
+    let roll = sizeRollCache.get(id);
+    if (roll === undefined) {
+        let h = 0;
+        for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+        // murmur3 finalizer: ids are SEQUENTIAL integers ("1", "2", ...), and
+        // the 31-hash alone maps consecutive ids to consecutive hashes, which
+        // would give every sandstorm in a batch the same size.
+        h ^= h >>> 16;
+        h = Math.imul(h, 0x85ebca6b);
+        h ^= h >>> 13;
+        h = Math.imul(h, 0xc2b2ae35);
+        h ^= h >>> 16;
+        roll = (h >>> 0) / 4294967296;
+        if (sizeRollCache.size > 512) sizeRollCache.clear();
+        sizeRollCache.set(id, roll);
+    }
+    return roll;
+}
+
+/** Whether this mob type rolls a per-spawn random size (see BaseMobConfig.random_size). */
+export function mobHasRandomSize(mobType: string): boolean {
+    return BASE_MOB_CONFIGS[mobType]?.random_size !== undefined;
+}
+
+/**
  * Size multiplier for a single live enemy. Every place that turns
  * `mobStats.size` into world pixels multiplies by this, so a mob's sprite, its
  * hitbox, its wall collisions and its melee reach all agree on one size.
  * `mobType` is required for that reason: a call site that can't name the type
  * would silently draw a dummy at a different size than it collides at.
+ *
+ * `mobId` matters only for types with a `random_size` range (sandstorm): the
+ * roll is derived from it, so a per-entity call site that omits the id would
+ * silently collide at the nominal size while drawing at the rolled one (or
+ * vice versa). Sites with no entity in hand (gallery previews, benches,
+ * pre-spawn placement) omit it and get the nominal midpoint.
  */
-export function getEnemySizeScale(isPet: boolean | undefined, tier: string, mobType: string): number {
-    if (isPet) return PET_SIZE_SCALING[tier] ?? 1;
-    if (mobType === 'target_dummy') return DUMMY_SIZE_SCALING[tier] ?? 1;
-    return 1;
+export function getEnemySizeScale(isPet: boolean | undefined, tier: string, mobType: string, mobId?: string): number {
+    let scale = 1;
+    if (isPet) scale = PET_SIZE_SCALING[tier] ?? 1;
+    else if (mobType === 'target_dummy') scale = DUMMY_SIZE_SCALING[tier] ?? 1;
+    const randomSize = BASE_MOB_CONFIGS[mobType]?.random_size;
+    if (randomSize !== undefined) {
+        const [min, max] = randomSize;
+        const rolled = mobId === undefined ? (min + max) / 2 : min + (max - min) * sizeRollOf(mobId);
+        // random_size is an absolute size range; convert to a multiplier on the
+        // config's nominal `size` (which SIZE_SCALING has already multiplied).
+        scale *= rolled / BASE_MOB_CONFIGS[mobType].size;
+    }
+    return scale;
 }
 
 // Separate XP tables for each mob type (maintaining original values)

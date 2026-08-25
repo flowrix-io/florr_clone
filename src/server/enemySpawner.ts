@@ -1038,7 +1038,7 @@ export function spawnCentipedeBodySegments(head: LiveEnemy): LiveEnemy[] {
     const segmentCount = 9; // head + 9 body = 10 total
     // Segments inherit the head's ownership, so a pet chain lays out at the
     // pet size scale — same spacing formula the follow pass uses each tick.
-    const segmentSize = bodyStats.size * 40 * getEnemySizeScale(!!head.ownerId, head.tier, bodyType);
+    const segmentSize = bodyStats.size * 40 * getEnemySizeScale(!!head.ownerId, head.tier, bodyType, head.id);
     const spacing = segmentSize * 0.9;
     const dirX = -Math.cos(mobAngle(head.entity));
     const dirY = -Math.sin(mobAngle(head.entity));

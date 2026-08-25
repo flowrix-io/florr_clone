@@ -1,4 +1,4 @@
-import { Graphics, WorldItem, PLAYER_SIZE, getMobStats, getEnemySizeScale, getPetalStats } from './core';
+import { Graphics, WorldItem, PLAYER_SIZE, getMobStats, getEnemySizeScale, mobHasRandomSize, getPetalStats } from './core';
 import { ClientWorld } from '../client_world';
 import { Entity } from '../ecs';
 import { DEATH_ANIMATION_DURATION } from './enemy-drawing';
@@ -42,8 +42,10 @@ Graphics.prototype.drawGameObjects = function(this: Graphics, world: ClientWorld
         // own size math (pet scale included) — this value is also what the
         // health-bar pass below sizes bars against.
         const tier = world.mobTier(enemy);
-        const mobStats = getMobStats(world.mobType(enemy), tier);
-        const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier, world.mobType(enemy));
+        const mobType = world.mobType(enemy);
+        const mobStats = getMobStats(mobType, tier);
+        const baseSize = (mobStats ? mobStats.size * 40 : 40)
+            * getEnemySizeScale(world.isPet(enemy), tier, mobType, mobHasRandomSize(mobType) ? world.mobId(enemy) : undefined);
         const visualScale = mobStats?.visual_scale ?? 1.0;
         const enemySize = baseSize * visualScale;
 

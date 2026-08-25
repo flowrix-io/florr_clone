@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Graphics = exports.getSVGRenderer = exports.PETAL_RING_ROTATION_SPEED = exports.PETAL_RING_PETAL_SCALE = exports.PETAL_RING_ORBIT_SCALE = exports.MOB_CONFIG = exports.getEnemySizeScale = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.getDroppablePetalTypes = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
+exports.Graphics = exports.getSVGRenderer = exports.PETAL_RING_ROTATION_SPEED = exports.PETAL_RING_PETAL_SCALE = exports.PETAL_RING_ORBIT_SCALE = exports.MOB_CONFIG = exports.mobHasRandomSize = exports.getEnemySizeScale = exports.getMobTypesBySection = exports.getAllMobTypes = exports.getMobStats = exports.getDroppablePetalTypes = exports.isUndroppableEggPetalType = exports.getAllPetalTypes = exports.getPetalStats = exports.getTileJaggedEdges = exports.seededRandom = exports.SECTION_CONFIGS = exports.getTileState = exports.tileToWorldY = exports.tileToWorldX = exports.worldToTileY = exports.worldToTileX = exports.WALL_GRID_HEIGHT = exports.WALL_GRID_WIDTH = exports.WALL_TILE_SIZE = exports.WALL_GRID = exports.getHighQualityMobs = exports.getMobAnimationFrameTime = exports.PLAYER_SIZE = exports.ACTUAL_WORLD_HEIGHT = exports.ACTUAL_WORLD_WIDTH = exports.EquipmentFlags = exports.FaceFlags = void 0;
 const constants_1 = require("../constants");
 const petals_1 = require("../petals");
 const svg_renderer_1 = require("../svg_renderer");
@@ -37,6 +37,7 @@ Object.defineProperty(exports, "getMobStats", { enumerable: true, get: function 
 Object.defineProperty(exports, "getAllMobTypes", { enumerable: true, get: function () { return mobs_1.getAllMobTypes; } });
 Object.defineProperty(exports, "getMobTypesBySection", { enumerable: true, get: function () { return mobs_1.getMobTypesBySection; } });
 Object.defineProperty(exports, "getEnemySizeScale", { enumerable: true, get: function () { return mobs_1.getEnemySizeScale; } });
+Object.defineProperty(exports, "mobHasRandomSize", { enumerable: true, get: function () { return mobs_1.mobHasRandomSize; } });
 Object.defineProperty(exports, "MOB_CONFIG", { enumerable: true, get: function () { return mobs_1.MOB_CONFIG; } });
 Object.defineProperty(exports, "PETAL_RING_ORBIT_SCALE", { enumerable: true, get: function () { return mobs_1.PETAL_RING_ORBIT_SCALE; } });
 Object.defineProperty(exports, "PETAL_RING_PETAL_SCALE", { enumerable: true, get: function () { return mobs_1.PETAL_RING_PETAL_SCALE; } });

@@ -79,7 +79,7 @@ function aiTypeOf(aiType) {
 /** The collision radius formula, shared with the grid rebuild. */
 function radiusOf(enemy, stats) {
     const base = stats ? (stats.size * 40) / 2 : constants_1.ENEMY_SIZE / 2;
-    return base * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type);
+    return base * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type, enemy.id);
 }
 /**
  * Add the optional behaviour components a mob's TYPE and STATE call for.

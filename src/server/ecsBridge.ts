@@ -55,7 +55,7 @@ export function aiTypeOf(aiType: string | undefined): C.AiType {
 /** The collision radius formula, shared with the grid rebuild. */
 export function radiusOf(enemy: Enemy, stats: MobStats | null): number {
     const base = stats ? (stats.size * 40) / 2 : ENEMY_SIZE / 2;
-    return base * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
+    return base * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type, enemy.id);
 }
 
 /**

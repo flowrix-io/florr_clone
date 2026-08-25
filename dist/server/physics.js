@@ -85,7 +85,7 @@ Object.defineProperty(exports, "hasLineOfSight", { enumerable: true, get: functi
 function checkPlayerEnemyCollision(playerX, playerY, playerSize, enemy) {
     const mobStats = (0, mobs_1.getMobStats)(enemy.type, enemy.tier);
     const enemySize = (mobStats ? mobStats.size * 40 : constants_1.ENEMY_SIZE)
-        * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type);
+        * (0, mobs_1.getEnemySizeScale)(!!enemy.ownerId, enemy.tier, enemy.type, enemy.id);
     const enemyRadius = enemySize / 2;
     const playerRadius = playerSize / 2;
     // Use circular hitbox collision

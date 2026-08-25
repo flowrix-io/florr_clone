@@ -33,8 +33,10 @@ core_1.Graphics.prototype.drawGameObjects = function (world, items, mobProjectil
         // own size math (pet scale included) — this value is also what the
         // health-bar pass below sizes bars against.
         const tier = world.mobTier(enemy);
-        const mobStats = (0, core_1.getMobStats)(world.mobType(enemy), tier);
-        const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(world.isPet(enemy), tier, world.mobType(enemy));
+        const mobType = world.mobType(enemy);
+        const mobStats = (0, core_1.getMobStats)(mobType, tier);
+        const baseSize = (mobStats ? mobStats.size * 40 : 40)
+            * (0, core_1.getEnemySizeScale)(world.isPet(enemy), tier, mobType, (0, core_1.mobHasRandomSize)(mobType) ? world.mobId(enemy) : undefined);
         const visualScale = mobStats?.visual_scale ?? 1.0;
         const enemySize = baseSize * visualScale;
         // Add a buffer margin to ensure mobs are completely out before culling

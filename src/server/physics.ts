@@ -108,7 +108,7 @@ export function checkPlayerEnemyCollision(
 ): { collided: boolean; distance: number; dx: number; dy: number } {
     const mobStats = getMobStats(enemy.type, enemy.tier);
     const enemySize = (mobStats ? mobStats.size * 40 : ENEMY_SIZE)
-        * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type);
+        * getEnemySizeScale(!!enemy.ownerId, enemy.tier, enemy.type, enemy.id);
     const enemyRadius = enemySize / 2;
     const playerRadius = playerSize / 2;
 

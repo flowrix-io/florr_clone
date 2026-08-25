@@ -139,7 +139,10 @@ core_1.Graphics.prototype.drawEnemy = function (world, enemy) {
     // hitbox, so the sprite and what it collides with stay the same circle.
     const mobStats = (0, core_1.getMobStats)(enemyType, enemyTier);
     // Use visual_scale for rendering (affects visual only, not hitbox)
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(world.isPet(enemy), enemyTier, enemyType);
+    // The id fetch is gated on mobHasRandomSize: mobId() allocates, and this
+    // runs per mob per frame (see the mob-bake note in client_world).
+    const baseSize = (mobStats ? mobStats.size * 40 : 40)
+        * (0, core_1.getEnemySizeScale)(world.isPet(enemy), enemyTier, enemyType, (0, core_1.mobHasRandomSize)(enemyType) ? world.mobId(enemy) : undefined);
     const visualScale = mobStats?.visual_scale ?? 1.0;
     let enemySize = baseSize * visualScale;
     // Apply death animation effects: scale up, fade out, red tint
@@ -430,8 +433,10 @@ core_1.Graphics.prototype.getEligiblePetalTypes = function () {
 core_1.Graphics.prototype.drawGarbagePile = function (world, enemy, enemySize) {
     // Get base size for hitbox calculation
     const tier = world.mobTier(enemy);
-    const mobStats = (0, core_1.getMobStats)(world.mobType(enemy), tier);
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * (0, core_1.getEnemySizeScale)(world.isPet(enemy), tier, world.mobType(enemy));
+    const mobType = world.mobType(enemy);
+    const mobStats = (0, core_1.getMobStats)(mobType, tier);
+    const baseSize = (mobStats ? mobStats.size * 40 : 40)
+        * (0, core_1.getEnemySizeScale)(world.isPet(enemy), tier, mobType, (0, core_1.mobHasRandomSize)(mobType) ? world.mobId(enemy) : undefined);
     // Use enemy position as seed for deterministic random petal selection
     const seed = Math.floor(world.mobX(enemy) * 1000 + world.mobY(enemy) * 1000);
     const eligiblePetalTypes = this.getEligiblePetalTypes();

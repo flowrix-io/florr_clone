@@ -54,6 +54,13 @@ export interface BaseMobConfig {
     ai_type: 'passive' | 'neutral' | 'hostile' | 'sandstorm';
     range: number;
     section?: number[]; // Optional: section numbers (0-8) where this mob spawns. Empty array (or omitted) means the mob does not spawn naturally.
+    // Per-spawn random size range, in the same units as `size` (rarity scaling
+    // applies on top). Each spawned mob rolls its own size in [min, max),
+    // derived deterministically from its wire id so the client and server agree
+    // on every mob's size without sending it (see getEnemySizeScale in mobs.ts).
+    // Keep `size` at the midpoint of the range: `size` still feeds mass and the
+    // nominal-size heuristics (spawn spacing, magnet radius, pollen radius).
+    random_size?: [number, number];
     min_rarity?: string; // Optional: lowest rarity this mob spawns at. Lower rarities get an empty section list, so every spawner's section filter rejects them.
     poison?: number; // Optional: poison damage per millisecond inflicted on players on contact
     poisonDuration?: number; // Optional: milliseconds the inflicted poison lasts
@@ -618,7 +625,9 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         name: "Sandstorm",
         health: 125,
         damage: 40,
-        size: 1.0,
+        size: 1.5,
+        visual_scale: 1.4,
+        random_size: [1, 2],
         speed: 2.0,
         cooldown: 2000,
         description: "Unpredictable",
@@ -694,7 +703,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         name: "Cactus",
         health: 35,
         damage: 35,
-        size: 1.0,
+        size: 1.5,
+        random_size: [1, 2],
         visual_scale: 1.5,
         speed: 0.0,
         cooldown: 2000,
@@ -713,7 +723,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         name: "Beetle",
         health: 100,
         damage: 30,
-        size: 1.0,
+        size: 1.5,
         speed: 2.6,
         cooldown: 2000,
         description: "Fast, and has lots of health",

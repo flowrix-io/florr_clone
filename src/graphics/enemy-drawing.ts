@@ -1,5 +1,5 @@
 import {
-    Graphics, FaceFlags, getPetalStats, getMobStats, getEnemySizeScale,
+    Graphics, FaceFlags, getPetalStats, getMobStats, getEnemySizeScale, mobHasRandomSize,
     getDroppablePetalTypes, PETAL_RING_ORBIT_SCALE, PETAL_RING_PETAL_SCALE, PETAL_RING_ROTATION_SPEED,
 } from './core';
 import { ClientWorld } from '../client_world';
@@ -174,7 +174,10 @@ Graphics.prototype.drawEnemy = function(this: Graphics, world: ClientWorld, enem
     // hitbox, so the sprite and what it collides with stay the same circle.
     const mobStats = getMobStats(enemyType, enemyTier);
     // Use visual_scale for rendering (affects visual only, not hitbox)
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), enemyTier, enemyType);
+    // The id fetch is gated on mobHasRandomSize: mobId() allocates, and this
+    // runs per mob per frame (see the mob-bake note in client_world).
+    const baseSize = (mobStats ? mobStats.size * 40 : 40)
+        * getEnemySizeScale(world.isPet(enemy), enemyTier, enemyType, mobHasRandomSize(enemyType) ? world.mobId(enemy) : undefined);
     const visualScale = mobStats?.visual_scale ?? 1.0;
     let enemySize = baseSize * visualScale;
 
@@ -506,8 +509,10 @@ Graphics.prototype.getEligiblePetalTypes = function(this: Graphics): string[] {
 Graphics.prototype.drawGarbagePile = function(this: Graphics, world: ClientWorld, enemy: Entity, enemySize: number) {
     // Get base size for hitbox calculation
     const tier = world.mobTier(enemy);
-    const mobStats = getMobStats(world.mobType(enemy), tier);
-    const baseSize = (mobStats ? mobStats.size * 40 : 40) * getEnemySizeScale(world.isPet(enemy), tier, world.mobType(enemy));
+    const mobType = world.mobType(enemy);
+    const mobStats = getMobStats(mobType, tier);
+    const baseSize = (mobStats ? mobStats.size * 40 : 40)
+        * getEnemySizeScale(world.isPet(enemy), tier, mobType, mobHasRandomSize(mobType) ? world.mobId(enemy) : undefined);
 
     // Use enemy position as seed for deterministic random petal selection
     const seed = Math.floor(world.mobX(enemy) * 1000 + world.mobY(enemy) * 1000);
