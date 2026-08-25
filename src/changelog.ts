@@ -550,6 +550,7 @@ export const CHANGELOG: ChangelogEntry[] = [
         date: 'August 24, 2026',
         changes: [
             'Balanced all mob HP/damage',
+            'Changed some mob sizes'
         ]
     }
 ];
