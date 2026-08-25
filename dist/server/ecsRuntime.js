@@ -278,6 +278,9 @@ function createEcsRuntime(options) {
         sandstormSuckTier: (0, petals_1.getRarityIndex)('super'),
         maxTargetDistance: constants_1.VIEWPORT_WIDTH * 5,
         activity,
+        viewHalfWidth: constants_1.VIEWPORT_WIDTH / 2,
+        viewHalfHeight: constants_1.VIEWPORT_HEIGHT / 2,
+        onPetOutOfView: (pet) => options.onPetOutOfView(pet),
     });
     (0, mobCollision_1.registerMobCollisionSystem)(scheduler, (0, mobCollision_1.createMobCollisionQueries)(world), {
         resolveWall: (x, y, halfSize) => (0, constants_1.resolveEntityWallCollisions)(x, y, halfSize),

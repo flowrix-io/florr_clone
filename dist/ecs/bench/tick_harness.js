@@ -217,6 +217,7 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },
+        onPetOutOfView: () => { },
         // Mirrors the real near-a-player test closely enough to exercise the
         // viewport pass: mobs within a viewport-ish radius of a player stay.
         isNearAnyPlayer: (x, y) => {

@@ -38,6 +38,7 @@ export function runEnemyAiBehaviourSelfTest(): string[] {
         const world = new World();
         const scheduler = new Scheduler(world);
         const volleys: Array<{ shooter: Entity; aim: number }> = [];
+        const lostPets: Entity[] = [];
         let losCalls = 0;
 
         const deps: EnemyAIDeps = {
@@ -57,6 +58,9 @@ export function runEnemyAiBehaviourSelfTest(): string[] {
             // so these cases exercise the AI itself rather than the LOD stride.
             // systems/lod.ts has its own coverage.
             activity: new MobActivityField(),
+            viewHalfWidth: 960,
+            viewHalfHeight: 540,
+            onPetOutOfView: (pet) => { lostPets.push(pet); },
         };
 
         registerEnemyAISystem(scheduler, createEnemyAIQueries(world), deps);
@@ -65,6 +69,7 @@ export function runEnemyAiBehaviourSelfTest(): string[] {
         return {
             world,
             volleys,
+            lostPets,
             get losCalls() { return losCalls; },
             resetLosCalls() { losCalls = 0; },
             get now() { return now; },
@@ -296,6 +301,114 @@ export function runEnemyAiBehaviourSelfTest(): string[] {
         checkEqual('pet targets the wild mob', h.world.get(pet, C.MobAI, 'targetEnemy'), wild);
         check('pet does not target another pet',
             (h.world.get(pet, C.MobAI, 'targetEnemy') as Entity) !== otherPet);
+    }
+
+    // -- a pet's sight is its owner's screen ---------------------------------------
+    {
+        // Inside the pet's own aggro range but off the owner's screen: ignored.
+        const h = makeHarness();
+        const owner = addPlayer(h.world, 'ownerView', 0, 0);
+        const pet = addMob(h.world, 'petView', 900, 0, C.AiType.Hostile);
+        makePet(h.world, pet, owner);
+        addMob(h.world, 'offscreen', 1300, 0, C.AiType.Hostile);
+
+        h.tick();
+        checkEqual('a mob off the owner\'s screen is not targeted',
+            h.world.get(pet, C.MobAI, 'targetEnemy'), NULL_ENTITY);
+    }
+    {
+        // Beyond the pet's own range but on the owner's screen: targeted.
+        const h = makeHarness();
+        const owner = addPlayer(h.world, 'ownerView2', 0, 0);
+        const pet = addMob(h.world, 'petView2', 0, 0, C.AiType.Hostile);
+        makePet(h.world, pet, owner);
+        const wild = addMob(h.world, 'onscreen', 800, 0, C.AiType.Hostile);
+
+        h.tick();
+        checkEqual('a mob on the owner\'s screen is targeted past the pet\'s own range',
+            h.world.get(pet, C.MobAI, 'targetEnemy'), wild);
+    }
+
+    // -- passive pets never engage; neutral pets turn hostile ------------------------
+    {
+        const h = makeHarness();
+        const owner = addPlayer(h.world, 'ownerCalm', 0, 0);
+        const passivePet = addMob(h.world, 'petPassive', 100, 0, C.AiType.Passive);
+        makePet(h.world, passivePet, owner);
+        const neutralPet = addMob(h.world, 'petNeutral', 100, 50, C.AiType.Neutral);
+        makePet(h.world, neutralPet, owner);
+        const wild = addMob(h.world, 'wildCalm', 150, 0, C.AiType.Hostile);
+
+        h.tick();
+        checkEqual('a passive pet takes no target',
+            h.world.get(passivePet, C.MobAI, 'targetEnemy'), NULL_ENTITY);
+        check('a passive pet fires no volley',
+            !h.volleys.some(v => v.shooter === passivePet));
+        checkEqual('a neutral pet attacks like a hostile one',
+            h.world.get(neutralPet, C.MobAI, 'targetEnemy'), wild);
+    }
+
+    // -- sandstorm pets shadow the owner's movement ----------------------------------
+    {
+        const h = makeHarness();
+        const owner = addPlayer(h.world, 'ownerStorm', 0, 0);
+        const storm = addMob(h.world, 'petStorm', 100, 0, C.AiType.Sandstorm);
+        makePet(h.world, storm, owner);
+
+        h.tick();
+        checkEqual('a sandstorm pet stands still while its owner does',
+            h.world.get(storm, C.Position, 'x'), 100);
+
+        h.world.write(owner, C.Velocity, { x: 300, y: 0 });
+        h.tick();
+        const x = h.world.get(storm, C.Position, 'x') as number;
+        // Owner moves 300/30 = 10px per tick; the pet must beat that.
+        check('a sandstorm pet moves the way its owner moves, slightly faster',
+            x > 110, `expected x > 110, got ${x}`);
+        checkEqual('a sandstorm pet never takes a target',
+            h.world.get(storm, C.MobAI, 'targetEnemy'), NULL_ENTITY);
+    }
+
+    // -- off-screen sandstorm and passive pets despawn instead of teleporting --------
+    {
+        const h = makeHarness();
+        const owner = addPlayer(h.world, 'ownerLost', 0, 0);
+        const storm = addMob(h.world, 'lostStorm', 2000, 0, C.AiType.Sandstorm);
+        makePet(h.world, storm, owner);
+        const calm = addMob(h.world, 'lostCalm', 0, 2000, C.AiType.Passive);
+        makePet(h.world, calm, owner);
+
+        h.tick();
+        check('an off-screen sandstorm pet is reported lost', h.lostPets.includes(storm));
+        check('an off-screen passive pet is reported lost', h.lostPets.includes(calm));
+        checkEqual('the lost sandstorm pet was not teleported',
+            h.world.get(storm, C.Position, 'x'), 2000);
+        checkEqual('the lost passive pet was not teleported',
+            h.world.get(calm, C.Position, 'y'), 2000);
+    }
+    {
+        // Sight lost but still on-screen: a passive pet holds position rather
+        // than teleporting, and is not despawned.
+        const h = makeHarness({ losBlocked: true });
+        const owner = addPlayer(h.world, 'ownerWall', 500, 0);
+        const calm = addMob(h.world, 'walledCalm', 0, 0, C.AiType.Passive);
+        makePet(h.world, calm, owner);
+
+        h.tick();
+        checkEqual('a sight-blocked on-screen passive pet is not despawned', h.lostPets.length, 0);
+        checkEqual('and holds position instead of teleporting',
+            h.world.get(calm, C.Position, 'x'), 0);
+    }
+    {
+        // Hostile pets keep the teleport recovery.
+        const h = makeHarness({ losBlocked: true });
+        const owner = addPlayer(h.world, 'ownerHost', 3000, 3000);
+        const pet = addMob(h.world, 'hostPet', 0, 0, C.AiType.Hostile);
+        makePet(h.world, pet, owner);
+
+        h.tick();
+        checkEqual('a hostile pet still teleports to its owner', h.world.get(pet, C.Position, 'x'), 3000);
+        checkEqual('and is never reported lost', h.lostPets.length, 0);
     }
 
     // -- wild mobs fall back to pets when no player is in range --------------------

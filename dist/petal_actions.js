@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PETAL_BEHAVIOURS = exports.splitPlayers = void 0;
 exports.grantShield = grantShield;
 exports.despawnPet = despawnPet;
+exports.countPlayerPetsByMobType = countPlayerPetsByMobType;
+exports.despawnPetAndReloadEgg = despawnPetAndReloadEgg;
 exports.despawnAllPlayerPets = despawnAllPlayerPets;
 exports.spawnPet = spawnPet;
 exports.hasPetalBehaviour = hasPetalBehaviour;
@@ -361,6 +363,50 @@ function despawnPet(pet, io) {
         // console.log(`Despawned pet ${pet.tier} ${pet.type} for player ${pet.ownerId}`);
     }
 }
+/** How many pet entities of this mob type a player currently owns (centipede
+ *  body segments excluded, so a live centipede pet counts once). */
+function countPlayerPetsByMobType(ownerId, mobType) {
+    let count = 0;
+    for (const enemy of (0, enemyRegistry_1.liveEnemies)()) {
+        if (enemy.ownerId === ownerId && enemy.type === mobType)
+            count++;
+    }
+    return count;
+}
+/**
+ * A passive or sandstorm pet drifted off its owner's screen: despawn it and
+ * put the egg petal that hatched it on reload. No restore timer is scheduled
+ * here — the tick-loop cooldown backstop in playerState restores the petal
+ * when the stamped deadline passes, and that restore re-hatches the pet.
+ */
+function despawnPetAndReloadEgg(pet, io) {
+    const ownerId = pet.ownerId;
+    despawnPet(pet, io);
+    if (!ownerId)
+        return;
+    const player = constants_1.players[ownerId];
+    if (!player || !player.loadout)
+        return;
+    for (let i = 0; i < player.loadout.length; i++) {
+        const petal = player.loadout[i];
+        if (!petal || petal.type !== 'petal' || petal.onCooldown || !petal.petalType || !petal.rarity)
+            continue;
+        const stats = (0, petals_1.getPetalStats)(petal.petalType, petal.rarity);
+        if (stats?.petMobType !== pet.type)
+            continue;
+        petal.onCooldown = true;
+        // The absolute deadline is the ONLY restore trigger for this break, so
+        // it must be stamped — see the backstop note in updatePlayerState.
+        petal.cooldownEndTime = Date.now() + (0, petals_1.getEffectivePetalCooldown)(petal.petalType, petal.rarity, stats);
+        (0, petalEvents_1.emitPetalBroken)(player.id, {
+            playerId: player.id,
+            slotIndex: i,
+            petalType: petal.petalType,
+            rarity: petal.rarity,
+        }, player.x, player.y);
+        break;
+    }
+}
 // Despawn all pets owned by a player
 function despawnAllPlayerPets(playerId, io) {
     for (const pet of (0, enemyRegistry_1.collectEnemies)(petScratch)) {
@@ -469,8 +515,12 @@ function spawnPet(mobType, rarity, x, y, ownerId, io, skipDuplicateCheck = false
     // value while the legacy object read the nerfed one.
     const statMods = PET_STAT_MULTIPLIERS[mobType];
     // Create the pet enemy (ECS entity + liveEnemies()[] admission, atomically)
+    // aiType is NOT overridden: the pet keeps its config ai_type, and the pet
+    // AI loop maps it (hostile/neutral attack for the owner, passive stays
+    // passive, sandstorm drifts). Pets can't target or contact-damage players
+    // regardless — the pet AI never scans players and the player-contact grid
+    // excludes pets.
     const pet = (0, enemyRegistry_1.spawnEnemy)(mobType, tier, x, y, {
-        aiType: 'passive', // Pets are not hostile to players
         range: petRange,
         ownerId, // Set the owner
         petImage: mobStats.petImage, // Use pet image if available

@@ -276,6 +276,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
         creditDamage: () => { /* attribution is exercised elsewhere */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },
+        onPetOutOfView: () => { /* pets are not under test here */ },
         // Mirrors the real near-a-player test closely enough to exercise the
         // viewport pass: mobs within a viewport-ish radius of a player stay.
         isNearAnyPlayer: (x, y) => {

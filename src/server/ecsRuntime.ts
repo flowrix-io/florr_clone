@@ -19,6 +19,7 @@ import {
     ENEMY_SIZE,
     MAX_SPEED,
     PLAYER_SIZE,
+    VIEWPORT_HEIGHT,
     VIEWPORT_WIDTH,
     getTileState,
     isTileIdBlocking,
@@ -336,6 +337,12 @@ export interface EcsRuntimeOptions {
     onEnemyDamaged(victim: Entity): void;
     /** The victim died: award XP and drops, and emit to clients. */
     onEnemyKilled(victim: Entity): void;
+    /**
+     * A passive or sandstorm pet drifted off its owner's screen. The handler
+     * despawns it and puts its egg petal on reload — loadout and wire state,
+     * so it is injected like every other legacy hook.
+     */
+    onPetOutOfView(pet: Entity): void;
     /**
      * Whether a world position is near enough to a live player to count as
      * seen, feeding the unseen-despawn timer.
@@ -661,6 +668,9 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         sandstormSuckTier: getRarityIndex('super'),
         maxTargetDistance: VIEWPORT_WIDTH * 5,
         activity,
+        viewHalfWidth: VIEWPORT_WIDTH / 2,
+        viewHalfHeight: VIEWPORT_HEIGHT / 2,
+        onPetOutOfView: (pet) => options.onPetOutOfView(pet),
     });
 
     registerMobCollisionSystem(scheduler, createMobCollisionQueries(world), {

@@ -46,7 +46,7 @@ import { ServerPlayer } from './player';
 import { getInventoryCodecSignature } from './inventoryCodec';
 import { wireEventsSignature } from './wire_events';
 import { wireFieldsSignature } from './wire_fields';
-import { getDamageMultiplier, updatePetalBehaviours, despawnAllPlayerPets } from './petal_actions';
+import { getDamageMultiplier, updatePetalBehaviours, despawnAllPlayerPets, despawnPetAndReloadEgg } from './petal_actions';
 import { ENEMY_TIERS, ENEMY_SIZE, PLAYER_SIZE, players, obstacles, ACTUAL_WORLD_HEIGHT, ACTUAL_WORLD_WIDTH, VIEWPORT_BUFFER, ENEMIES_PER_VIEWPORT, ORIGINAL_ENEMY_DENSITY, ORIGINAL_ENEMY_COUNT, VIEWPORT_WITH_BUFFER_AREA, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, TOTAL_WORLD_AREA, getServerConfigByPort, isInPvpArena } from './constants';
 import { WALL_GRID } from './map_data';
 import { Enemy, LiveEnemy, isCentipedeHeadType, isGlitchInfectingType } from './server_utils';
@@ -1331,6 +1331,12 @@ function getEcsRuntime(): EcsRuntime {
         // Death is left to reapDeadEnemies: syncFromEcs zeroes the legacy
         // health, and the existing reaper awards XP and drops from there.
         onEnemyKilled: () => { /* handled by reapDeadEnemies */ },
+        onPetOutOfView: (pet) => {
+            const world = _ecsRuntime!.world;
+            if (!world.has(pet, EC.LegacyShell)) return;
+            const enemy = world.get(pet, EC.LegacyShell, 'ref') as Enemy | undefined;
+            if (enemy) despawnPetAndReloadEgg(enemy, io);
+        },
         isNearAnyPlayer: isPositionNearAnyPlayer,
 
         // --- projectiles -------------------------------------------------

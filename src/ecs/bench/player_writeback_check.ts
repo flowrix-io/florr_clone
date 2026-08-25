@@ -100,6 +100,7 @@ function makeRuntime(): EcsRuntime {
         creditDamage: () => { /* not reachable from the player scheduler */ },
         onEnemyDamaged: () => { /* ditto */ },
         onEnemyKilled: () => { /* ditto */ },
+        onPetOutOfView: () => { /* pets are not under test here */ },
         isNearAnyPlayer: () => true,
         allocateProjectileNetId: () => 1,
         resolvePlayerEntity: () => undefined,

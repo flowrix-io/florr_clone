@@ -293,6 +293,7 @@ function makeRuntime() {
         creditDamage: () => { },
         onEnemyDamaged: () => { },
         onEnemyKilled: () => { },
+        onPetOutOfView: () => { },
         isNearAnyPlayer: () => true,
         allocateProjectileNetId: () => 1,
         resolvePlayerEntity: () => undefined,

@@ -1907,6 +1907,16 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                         slotIndex: loadoutIndex,
                         petal: player.loadout[loadoutIndex]
                     });
+                    // An egg finished reloading: hatch its pet again, unless the
+                    // pet is still out (the petal can also break from combat while
+                    // its pet lives on, and then the reload must not replace it).
+                    const petMobType = instancePetalStats?.petMobType;
+                    if (petMobType && restoredPetal.rarity && !player.isDead) {
+                        const squadSize = instancePetalStats.petCount ?? 1;
+                        if ((0, petal_actions_1.countPlayerPetsByMobType)(player.id, petMobType) < squadSize) {
+                            (0, petal_actions_1.spawnPet)(petMobType, restoredPetal.rarity, player.x, player.y, player.id, io, false, squadSize);
+                        }
+                    }
                 }
                 // Restored or not, this instance sits this tick out; a restored
                 // petal starts orbiting on the next tick like a timer restore.

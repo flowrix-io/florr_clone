@@ -192,6 +192,7 @@ function makeRuntime(): EcsRuntime {
         creditDamage: () => { /* attribution is not under test here */ },
         onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
         onEnemyKilled: () => { /* drops/XP are not under test here */ },
+        onPetOutOfView: () => { /* pets are not under test here */ },
         isNearAnyPlayer: () => true,
         allocateProjectileNetId: () => 1,
         resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),

@@ -1169,6 +1169,14 @@ function getEcsRuntime() {
         // Death is left to reapDeadEnemies: syncFromEcs zeroes the legacy
         // health, and the existing reaper awards XP and drops from there.
         onEnemyKilled: () => { },
+        onPetOutOfView: (pet) => {
+            const world = _ecsRuntime.world;
+            if (!world.has(pet, EC.LegacyShell))
+                return;
+            const enemy = world.get(pet, EC.LegacyShell, 'ref');
+            if (enemy)
+                (0, petal_actions_1.despawnPetAndReloadEgg)(enemy, io);
+        },
         isNearAnyPlayer: playerState_1.isPositionNearAnyPlayer,
         // --- projectiles -------------------------------------------------
         // The wire-id counters stay in gameState because they are broadcast

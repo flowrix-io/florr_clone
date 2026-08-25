@@ -55,6 +55,9 @@ const SANDSTORM_SUCK_FORCE = 1.5;
 const AVOID_RADIUS = 140;
 const AVOID_WEIGHT = 2.5;
 
+/** Sandstorm pets shadow the owner's heading this much faster than the owner. */
+const SANDSTORM_PET_SPEED_FACTOR = 1.2;
+
 /** Ring positions tried when teleporting a pet back to its owner. */
 const PET_TELEPORT_DISTANCE = 80;
 const PET_TELEPORT_ANGLES = [
@@ -98,6 +101,20 @@ export interface EnemyAIDeps {
      * thing in the tick and the great majority of mobs are nowhere near anyone.
      */
     activity: MobActivityField;
+    /**
+     * Half-extents of a player's viewport. A pet only sees what its owner's
+     * screen shows, so its targeting scan is clipped to this rectangle around
+     * the owner rather than to the pet's own aggro range.
+     */
+    viewHalfWidth: number;
+    viewHalfHeight: number;
+    /**
+     * A passive or sandstorm pet drifted off its owner's screen. These pets
+     * never teleport back: the handler despawns the pet and puts the egg that
+     * hatched it on reload, which respawns it when the reload completes.
+     * Injected — eggs are loadout state the ECS never touches.
+     */
+    onPetOutOfView(pet: Entity): void;
 }
 
 export interface EnemyAIQueries {
@@ -141,7 +158,7 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
     const {
         hasLineOfSight, resolveWall, isBlocked,
         fireVolley, hasProjectile, isPlayerSpeedChaser, playerChaseStep, sandstormSuckTier,
-        maxTargetDistance, activity,
+        maxTargetDistance, activity, viewHalfWidth, viewHalfHeight, onPetOutOfView,
     } = deps;
 
     // Scratch reused across mobs and ticks so a full tick allocates nothing.
@@ -375,10 +392,23 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
         return target;
     }
 
-    /** A pet's wild-mob target: revalidate the cached one, else rescan. */
-    function acquirePetWildTarget(world: World, pet: Entity, x: number, y: number): Entity {
+    /**
+     * A pet's wild-mob target: revalidate the cached one, else rescan.
+     *
+     * With a living owner the pet sees exactly what the owner's screen shows —
+     * candidates are the wild mobs inside the owner's viewport rectangle,
+     * scored nearest-to-the-PET first. Ownerless pets have no screen to be
+     * clipped to and fall back to their own aggro range.
+     */
+    function acquirePetWildTarget(
+        world: World, pet: Entity, x: number, y: number,
+        hasOwner: boolean, ox: number, oy: number,
+    ): Entity {
         const range = (world.get(pet, C.MobAI, 'range') as number) || ENEMY_CHASE_RANGE;
         const rangeSq = range * range;
+        const canSee = (cx: number, cy: number, d2: number): boolean => hasOwner
+            ? Math.abs(cx - ox) <= viewHalfWidth && Math.abs(cy - oy) <= viewHalfHeight
+            : d2 < rangeSq;
 
         const cached = world.get(pet, C.MobAI, 'targetEnemy') as Entity;
         if (cached !== NULL_ENTITY && world.isAlive(cached)
@@ -388,7 +418,7 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
             const cy = world.get(cached, C.Position, 'y') as number;
             const dx = cx - x;
             const dy = cy - y;
-            if (dx * dx + dy * dy < rangeSq && hasLineOfSight(x, y, cx, cy)) return cached;
+            if (canSee(cx, cy, dx * dx + dy * dy) && hasLineOfSight(x, y, cx, cy)) return cached;
         }
         world.set(pet, C.MobAI, 'targetEnemy', NULL_ENTITY);
 
@@ -399,12 +429,36 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
             const dx = wild.x - x;
             const dy = wild.y - y;
             const d2 = dx * dx + dy * dy;
-            if (d2 < rangeSq) candidates.push({ entity: wild.entity, x: wild.x, y: wild.y, score: d2 });
+            if (canSee(wild.x, wild.y, d2)) candidates.push({ entity: wild.entity, x: wild.x, y: wild.y, score: d2 });
         }
         const found = pickNearestVisible(x, y);
         const target = found ? found.entity : NULL_ENTITY;
         world.set(pet, C.MobAI, 'targetEnemy', target);
         return target;
+    }
+
+    /**
+     * Pop a pet to a clear, visible ring position around its owner, else onto
+     * the owner's own tile if that is clear. Returns the new position, or null
+     * when nothing was clear and the pet stayed put.
+     */
+    function teleportPetToOwner(world: World, pet: Entity, ox: number, oy: number): { x: number; y: number } | null {
+        for (const angle of PET_TELEPORT_ANGLES) {
+            const tx = ox + Math.cos(angle) * PET_TELEPORT_DISTANCE;
+            const ty = oy + Math.sin(angle) * PET_TELEPORT_DISTANCE;
+            if (!isBlocked(tx, ty) && hasLineOfSight(tx, ty, ox, oy)) {
+                world.write(pet, C.Position, { x: tx, y: ty });
+                if (ox !== tx || oy !== ty) {
+                    world.set(pet, C.Angle, 'value', Math.atan2(oy - ty, ox - tx));
+                }
+                return { x: tx, y: ty };
+            }
+        }
+        if (!isBlocked(ox, oy)) {
+            world.write(pet, C.Position, { x: ox, y: oy });
+            return { x: ox, y: oy };
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------
@@ -687,6 +741,11 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
             const ownerAlive = world.isAlive(owner) && !world.has(owner, C.IsDead);
             const speed = world.get(pet, C.Speed, 'current') as number;
             const radius = world.get(pet, C.Radius, 'value') as number;
+            const aiType = world.get(pet, C.MobAI, 'aiType') as number;
+            // A neutral mob has nothing to be neutral ABOUT once tamed — it
+            // fights for its owner, so neutral and hostile both run the hostile
+            // pet AI. Passive stays passive; sandstorms keep their drift.
+            const attacks = aiType === C.AiType.Hostile || aiType === C.AiType.Neutral;
 
             let x = world.get(pet, C.Position, 'x') as number;
             let y = world.get(pet, C.Position, 'y') as number;
@@ -697,7 +756,37 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
                 const ox = world.get(owner, C.Position, 'x') as number;
                 const oy = world.get(owner, C.Position, 'y') as number;
 
-                if (hasLineOfSight(x, y, ox, oy)) {
+                // Sandstorm and passive pets never teleport back to the ring:
+                // once off the owner's screen they despawn, and the egg that
+                // hatched them reloads and hatches a replacement.
+                if (aiType === C.AiType.Sandstorm || aiType === C.AiType.Passive) {
+                    const inView = Math.abs(x - ox) <= viewHalfWidth && Math.abs(y - oy) <= viewHalfHeight;
+                    if (!inView) {
+                        onPetOutOfView(pet);
+                        continue;
+                    }
+                }
+
+                if (aiType === C.AiType.Sandstorm) {
+                    // Sandstorm pets shadow their owner: same heading the owner
+                    // is moving in, slightly faster. Being faster they steadily
+                    // pull ahead until they drift off-screen and despawn above.
+                    if (speed > 0 && world.has(owner, C.Velocity)) {
+                        const vx = world.get(owner, C.Velocity, 'x') as number;
+                        const vy = world.get(owner, C.Velocity, 'y') as number;
+                        const ownerSpeed = Math.sqrt(vx * vx + vy * vy);
+                        // Velocity is px/sec; friction leaves a tiny residual
+                        // after the keys are released, so treat sub-1px/sec
+                        // as standing still.
+                        if (ownerSpeed > 1) {
+                            const step = ownerSpeed * ctx.deltaTime * SANDSTORM_PET_SPEED_FACTOR;
+                            x += (vx / ownerSpeed) * step;
+                            y += (vy / ownerSpeed) * step;
+                            world.write(pet, C.Position, { x, y });
+                            world.set(pet, C.Angle, 'value', Math.atan2(vy, vx));
+                        }
+                    }
+                } else if (hasLineOfSight(x, y, ox, oy)) {
                     // Follow directly — no distance limit while sight holds.
                     const dx = ox - x;
                     const dy = oy - y;
@@ -709,33 +798,20 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
                         world.write(pet, C.Position, { x, y });
                         world.set(pet, C.Angle, 'value', Math.atan2(dy, dx));
                     }
+                } else if (aiType === C.AiType.Passive) {
+                    // Sight-blocked passive pet: hold position. The off-screen
+                    // rule above is what recovers it, not a teleport.
                 } else {
-                    // No sight: pop to a clear, visible ring position, else onto
-                    // the owner's own tile if that is clear.
-                    let placed = false;
-                    for (const angle of PET_TELEPORT_ANGLES) {
-                        const tx = ox + Math.cos(angle) * PET_TELEPORT_DISTANCE;
-                        const ty = oy + Math.sin(angle) * PET_TELEPORT_DISTANCE;
-                        if (!isBlocked(tx, ty) && hasLineOfSight(tx, ty, ox, oy)) {
-                            x = tx;
-                            y = ty;
-                            world.write(pet, C.Position, { x, y });
-                            if (ox !== x || oy !== y) {
-                                world.set(pet, C.Angle, 'value', Math.atan2(oy - y, ox - x));
-                            }
-                            placed = true;
-                            break;
-                        }
-                    }
-                    if (!placed && !isBlocked(ox, oy)) {
-                        x = ox;
-                        y = oy;
-                        world.write(pet, C.Position, { x, y });
+                    // No sight: pop back to the owner's ring.
+                    const moved = teleportPetToOwner(world, pet, ox, oy);
+                    if (moved) {
+                        x = moved.x;
+                        y = moved.y;
                     }
                 }
 
-                if (speed > 0) {
-                    target = acquirePetWildTarget(world, pet, x, y);
+                if (attacks && speed > 0) {
+                    target = acquirePetWildTarget(world, pet, x, y, true, ox, oy);
                     targetResolved = true;
 
                     if (target !== NULL_ENTITY) {
@@ -753,6 +829,9 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
                     } else {
                         world.set(pet, C.MobAI, 'isChasing', 0);
                     }
+                } else if (!attacks) {
+                    // Passive and sandstorm pets never engage.
+                    world.set(pet, C.MobAI, 'isChasing', 0);
                 }
             } else {
                 // Owner dead or gone: wander, straight at the target, no avoidance.
@@ -772,10 +851,11 @@ export function enemyAISystem(queries: EnemyAIQueries, deps: EnemyAIDeps) {
                 }
             }
 
-            if (hasProjectile(pet) && speed > 0) {
+            if (attacks && hasProjectile(pet) && speed > 0) {
                 // Only a wandering (ownerless) pet skipped the block above, so
-                // acquire a target for it here.
-                if (!targetResolved) target = acquirePetWildTarget(world, pet, x, y);
+                // acquire a target for it here — with no owner there is no
+                // screen to clip to, so it uses its own range.
+                if (!targetResolved) target = acquirePetWildTarget(world, pet, x, y, false, 0, 0);
                 if (target !== NULL_ENTITY) {
                     // A pet aims from where it ended up this tick.
                     const aim = Math.atan2(
