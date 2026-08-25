@@ -530,6 +530,12 @@ exports.CHANGELOG = [
             'Jungle coming soon',
             'Looting requirements changed'
         ]
+    },
+    {
+        date: 'August 24, 2026',
+        changes: [
+            'Balanced all mob HP/damage',
+        ]
     }
 ];
 class ChangelogManager {

@@ -545,6 +545,12 @@ export const CHANGELOG: ChangelogEntry[] = [
             'Jungle coming soon',
             'Looting requirements changed'
         ]
+    },
+    {
+        date: 'August 24, 2026',
+        changes: [
+            'Balanced all mob HP/damage',
+        ]
     }
 ];
 
