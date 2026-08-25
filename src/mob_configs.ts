@@ -96,7 +96,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     bee: {
         name: "Bee",
         damage: 50,
-        health: 37.5,
+        health: 35,
         size: 1.0,
         speed: 0.5,
         cooldown: 2000,
@@ -160,7 +160,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     ladybug: {
         name: "Ladybug",
         damage: 10,
-        health: 62.5,
+        health: 60,
         size: 1.0,
         visual_scale: 1.2,
         speed: 0.5,
@@ -287,7 +287,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     baby_ant: {
         name: "Baby Ant",
         damage: 10,
-        health: 30,
+        health: 25,
         size: 0.7,
         visual_scale: 1.2,
         speed: 2.4,
@@ -318,8 +318,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     ant_hole: {
         name: "Ant Hole",
-        damage: 10,
-        health: 500,
+        damage: 15,
+        health: 750,
         size: 2.0,
         visual_scale: 1.0,
         speed: 0,
@@ -357,8 +357,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     fire_ant_hole: {
         name: "Fire Ant Hole",
-        damage: 20,
-        health: 500,
+        damage: 15,
+        health: 750,
         size: 2.0,
         visual_scale: 1.0,
         speed: 0,
@@ -424,7 +424,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     baby_fire_ant: {
         name: "Baby Fire Ant",
         damage: 20,
-        health: 30,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 2.4,
@@ -455,7 +455,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     rock: {
         name: "Rock",
         damage: 10,
-        health: 75,
+        health: 50,
         size: 1.0,
         speed: 0.0,
         cooldown: 2000,
@@ -476,8 +476,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     dandelion: {
         name: "Dandelion",
-        damage: 25,
-        health: 15,
+        damage: 15,
+        health: 25,
         size: 1.0,
         visual_scale: 2.0,
         speed: 0.0,
@@ -543,7 +543,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     shiny_ladybug: {
         name: "Shiny Ladybug",
-        health: 25,
+        health: 85,
         damage: 10,
         size: 1.0,
         visual_scale: 1.2,
@@ -580,7 +580,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     dark_ladybug: {
         name: "Dark Ladybug",
-        health: 35,
+        health: 85,
         damage: 10,
         size: 1.0,
         visual_scale: 1.2,
@@ -616,7 +616,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     sandstorm: {
         name: "Sandstorm",
-        health: 40,
+        health: 125,
         damage: 40,
         size: 1.0,
         speed: 2.0,
@@ -692,8 +692,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     cactus: {
         name: "Cactus",
-        health: 30,
-        damage: 30,
+        health: 35,
+        damage: 35,
         size: 1.0,
         visual_scale: 1.5,
         speed: 0.0,
@@ -711,8 +711,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     beetle: {
         name: "Beetle",
-        health: 40,
-        damage: 35,
+        health: 100,
+        damage: 30,
         size: 1.0,
         speed: 2.6,
         cooldown: 2000,
@@ -766,8 +766,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     hel_beetle: {
         name: "Hel Beetle",
-        health: 40,
-        damage: 50,
+        health: 150,
+        damage: 30,
         size: 1.0,
         speed: 2.6,
         cooldown: 2000,
@@ -821,8 +821,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     jellyfish: {
         name: "Jellyfish",
-        health: 40,
-        damage: 40,
+        health: 75,
+        damage: 25,
         size: 1.0,
         visual_scale: 1.4,
         speed: 0.5,
@@ -888,8 +888,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     bubble: {
         name: "Bubble",
-        health: 10,
-        damage: 0,
+        health: 1,
+        damage: 5,
         visual_scale: 1.0,
         size: 2.0,
         speed: 0.0,
@@ -903,8 +903,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     starfish: {
         name: "Starfish",
-        health: 8,
-        damage: 10,
+        health: 50,
+        damage: 20,
         size: 1.2,
         visual_scale: 1.5,
         speed: 2.4,
@@ -972,8 +972,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     sponge_2: {
         name: "Sponge",
-        health: 75,
-        damage: 4,
+        health: 100,
+        damage: 10,
         size: 1.0,
         visual_scale: 1.5,
         speed: 0.0,
@@ -1287,8 +1287,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     sponge_1: {
         name: "Sponge",
-        health: 75,
-        damage: 4,
+        health: 100,
+        damage: 10,
         size: 1.0,
         visual_scale: 1.5,
         speed: 0.0,
@@ -1602,8 +1602,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     shell: {
         name: "Shell",
-        health: 5,
-        damage: 5,
+        health: 50,
+        damage: 10,
         size: 1.0,
         range: 100,
         visual_scale: 1.5,
@@ -1617,9 +1617,9 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     hornet: {
         name: "Hornet",
-        health: 10,
-        damage: 10,
-        size: 1.0,
+        health: 60,
+        damage: 50,
+        size: 1.3,
         visual_scale: 1.5,
         speed: 2.0,
         cooldown: 2000,
@@ -1676,320 +1676,52 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     mantis: {
         name: "Mantis",
-        health: 10,
-        damage: 10,
-        size: 1.0,
-        visual_scale: 1.5,
-        speed: 1.0,
-        cooldown: 2000,
+        health: 0,
+        damage: 0,
+        size: 0,
+        visual_scale: 0,
+        speed: 0,
+        cooldown: 0,
         description: "Mantis",
         color: "#7fb500",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<g>
-  <path d="M5 20 L2 25 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 5 20"
-    to="-28 5 20"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M12 20 L12 27 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 12 20"
-    to="-28 12 20"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M19 20 L21 25 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none">
-    <animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 19 20"
-    to="28 19 20"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/>
-  </path>
-</g>
-<g>
-  <path d="M5 12 L2 7 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 5 12"
-    to="-28 5 12"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M12 12 L12 5 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 12 12"
-    to="28 12 12"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M19 12 L21 7 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none">
-    <animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 19 12"
-    to="28 19 12"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/>
-  </path>
-</g>
-<path d="M21 12 L28 8 Z" 
-        stroke="#000000" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-<path d="M21 20 L28 24 Z" 
-        stroke="#000000" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-<ellipse cx="12" cy="16" rx="12" ry="8" fill="#66aa11" stroke="#338808"/>
-<path d="M5 16 L20 16 Z" 
-        stroke="#338808" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-</svg>`,
+        image: `<svg/>`,
         ai_type: 'hostile',
         range: 500,
         section: [],
-        projectile: {
-            count: 1,
-            distance: 500,
-            petalType: 'basic',
-            petalRarity: 'uncommon',
-            speed: 300,
-            spreadAngle: 0.0
-        }
     },
     leafbug: {
         name: "Leafbug",
-        health: 100,
-        damage: 12,
-        size: 1.0,
-        visual_scale: 1.5,
-        speed: 1.0,
-        cooldown: 2000,
+        health: 0,
+        damage: 0,
+        size: 0,
+        visual_scale: 0,
+        speed: 0,
+        cooldown: 0,
         description: "It's not a leaf, it's a bug",
         color: "#12590a",
-        image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-<g>
-  <path d="M5 20 L2 25 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 5 20"
-    to="-28 5 20"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M12 20 L12 27 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 12 20"
-    to="-28 12 20"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M8 20 L8 26 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none">
-    <animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 8 20"
-    to="-28 8 20"
-    additive="sum"
-    dur="1.1s"
-    repeatCount="indefinite"/>
-  </path>
-</g>
-<g>
-  <path d="M5 12 L2 7 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 5 12"
-    to="-28 5 12"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/></path>
-  <path d="M12 12 L12 5 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none"><animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 12 12"
-    to="28 12 12"
-    additive="sum"
-    dur="1.2s"
-    repeatCount="indefinite"/></path>
-  <path d="M8 12 L8 6 Z" 
-          stroke="#000000" 
-          stroke-width="2" 
-          stroke-linejoin="round" 
-          fill="none">
-    <animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 8 12"
-    to="28 8 12"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/>
-  </path>
-</g>
-<path d="M21 12 L28 13 Z" 
-        stroke="#000000" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none">
-  <animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 21 12"
-    to="12 21 12"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/>
-</path>
-<path d="M21 20 L28 19 Z" 
-        stroke="#000000" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none">
-  <animateTransform 
-    attributeName="transform"
-    attributeType="XML" type="rotate"
-    from="0 21 20"
-    to="-12 21 20"
-    additive="sum"
-    dur="1s"
-    repeatCount="indefinite"/>
-</path>
-<ellipse cx="12" cy="16" rx="12" ry="8" fill="#09b529" stroke="#057519"/>
-<path d="M5 16 L20 16 Z" 
-        stroke="#057519" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-<path d="M5 16 L3 14 Z" 
-        stroke="#057519" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-<path d="M5 16 L3 18 Z" 
-        stroke="#057519" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-<path d="M16 16 L13 18 Z" 
-        stroke="#057519" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-<path d="M16 16 L13 14 Z" 
-        stroke="#057519" 
-        stroke-width="2" 
-        stroke-linejoin="round" 
-        fill="none"/>
-</svg>`,
+        image: `<svg/>`,
         ai_type: 'passive',
         range: 100,
         section: [],
     },
     bush: {
         name: "Bush",
-        health: 50,
-        damage: 12,
-        size: 1.0,
-        visual_scale: 1.2,
-        speed: 0.0,
-        cooldown: 2000,
+        health: 0,
+        damage: 0,
+        size: 0,
+        visual_scale: 0,
+        speed: 0,
+        cooldown: 0,
         description: "Bush",
         color: "#0a4f02",
-        image: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <polygon points="16,2 20,12 30,12 22,18 24,28 16,23 8,28 10,18 2,12 12,12"
-           fill="#15ad31" stroke="#059e21" stroke-width="1" stroke-linejoin="round"/>
-  <path d="M16 16 L16 8 Z"
-    stroke="#059e21" 
-    stroke-width="2" 
-    stroke-linejoin="round" 
-    fill="none"/>
-  <path d="M16 16 L16 8 Z"
-    stroke="#059e21" 
-    stroke-width="2" 
-    stroke-linejoin="round" 
-    fill="none" transform="rotate(72 16 16)"/>
-  <path d="M16 16 L16 8 Z"
-    stroke="#059e21" 
-    stroke-width="2" 
-    stroke-linejoin="round" 
-    fill="none" transform="rotate(144 16 16)"/>
-  <path d="M16 16 L16 8 Z"
-    stroke="#059e21" 
-    stroke-width="2" 
-    stroke-linejoin="round" 
-    fill="none" transform="rotate(216 16 16)"/>
-  <path d="M16 16 L16 8 Z"
-    stroke="#059e21" 
-    stroke-width="2" 
-    stroke-linejoin="round" 
-    fill="none" transform="rotate(288 16 16)"/>
-</svg>`,
+        image: `<svg/>`,
         ai_type: 'passive',
         range: 100,
         section: [],
     },
     target_dummy: {
         name: "Target Dummy",
-        health: 100000000,
+        health: 1000000000,
         damage: 10,
         size: 1.0,
         visual_scale: 1.15,
@@ -2020,7 +1752,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     fly: {
         name: "Fly",
-        health: 8,
+        health: 5,
         damage: 10,
         size: 1.0,
         visual_scale: 1.0,
@@ -2059,7 +1791,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     roach: {
         name: "Roach",
         health: 50,
-        damage: 13,
+        damage: 20,
         size: 2.0,
         visual_scale: 1.0,
         speed: 5.0,
@@ -2083,8 +1815,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     garbage: {
         name: "Garbage",
-        health: 10,
-        damage: 10,
+        health: 250,
+        damage: 5,
         size: 1.0,
         visual_scale: 1.0,
         speed: 0.0,
@@ -2100,13 +1832,13 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     moth: {
         name: "Moth",
-        health: 10,
+        health: 15,
         damage: 10,
         size: 1.0,
         visual_scale: 1.0,
         speed: -2.4,
         cooldown: 2000,
-        description: "A moth",
+        description: "It will run away if you hit it",
         color: "#bcc286",
         image: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-16 -16 32 32">
   <circle cx="0" cy="0" r="10" stroke-width="2" fill="#c4c1af" stroke="#858275"/>
@@ -2164,8 +1896,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     spider: {
         name: "Spider",
-        health: 30,
-        damage: 10,
+        health: 60,
+        damage: 15,
         size: 1.0,
         visual_scale: 2.2,
         speed: 3.0,
@@ -2455,7 +2187,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     },
     cube: {
         name: "Cube",
-        health: 100,
+        health: 180,
         damage: 10,
         size: 1.0,
         visual_scale: 1.0,
@@ -2534,8 +2266,8 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     sun: {
         name: "Sun",
         health: 100,
-        damage: Infinity,
-        size: 25.0,
+        damage: 250,
+        size: 7.5,
         range: 100,
         visual_scale: 1.2,
         speed: 0,
@@ -2552,12 +2284,11 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
         emissive: true,
         light_radius: 2000,
         hideRotation: true,
-        noEggDrop: true,
     },
     centipede: {
         name: "Centipede",
         damage: 10,
-        health: 50,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 2.4,
@@ -2581,7 +2312,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     centipede_body: {
         name: "Centipede",
         damage: 10,
-        health: 50,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 2.4,
@@ -2602,7 +2333,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     desert_centipede: {
         name: "Desert Centipede",
         damage: 10,
-        health: 50,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 4.8,
@@ -2626,7 +2357,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     desert_centipede_body: {
         name: "Desert Centipede",
         damage: 10,
-        health: 50,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 4.8,
@@ -2647,7 +2378,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     evil_centipede: {
         name: "Evil Centipede",
         damage: 10,
-        health: 50,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 2.4,
@@ -2674,7 +2405,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     evil_centipede_body: {
         name: "Evil Centipede",
         damage: 10,
-        health: 50,
+        health: 25,
         size: 1.0,
         visual_scale: 1.2,
         speed: 2.4,
@@ -2698,7 +2429,7 @@ export const BASE_MOB_CONFIGS: { [mobType: string]: BaseMobConfig } = {
     queen_ant: {
         name: "Queen Ant",
         damage: 10,
-        health: 400,
+        health: 250,
         size: 2.0,
         visual_scale: 1.2,
         speed: 2.2,

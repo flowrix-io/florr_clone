@@ -1,0 +1,2147 @@
+{
+ "health_scale_by_rarity": {
+  "common": 1.0,
+  "unusual": 3.75,
+  "rare": 13.5,
+  "epic": 54.0,
+  "legendary": 324.0,
+  "mythic": 3159.0,
+  "ultra": 196830.0,
+  "super": 4374000.0,
+  "unique": 26244000.0
+ },
+ "mobs": [
+  {
+   "id": 1,
+   "name": "rock",
+   "display": "Rock",
+   "description": "A rock. It doesn't do much.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.15,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 2,
+   "name": "cactus",
+   "display": "Cactus",
+   "description": "Avoid touching it, it hurts.",
+   "base_health": 35.0,
+   "health_by_rarity": {
+    "common": 35.0,
+    "unusual": 131.25,
+    "rare": 472.5,
+    "epic": 1890.0,
+    "legendary": 11340.0,
+    "mythic": 110565.0,
+    "ultra": 6889050.0,
+    "super": 153090000.0,
+    "unique": 918540000.0
+   },
+   "damage": 35.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 1,
+    "double_0x20": 0.15,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 3,
+   "name": "ladybug",
+   "display": "Ladybug",
+   "description": "Cute and harmless.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 4,
+   "name": "bee",
+   "display": "Bee",
+   "description": "It stings. Don't touch it.",
+   "base_health": 35.0,
+   "health_by_rarity": {
+    "common": 35.0,
+    "unusual": 131.25,
+    "rare": 472.5,
+    "epic": 1890.0,
+    "legendary": 11340.0,
+    "mythic": 110565.0,
+    "ultra": 6889050.0,
+    "super": 153090000.0,
+    "unique": 918540000.0
+   },
+   "damage": 50.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.1
+   }
+  },
+  {
+   "id": 5,
+   "name": "ant_baby",
+   "display": "Baby Ant",
+   "description": "Weak and defenseless, but big dreams.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.5,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 6,
+   "name": "ant_worker",
+   "display": "Worker Ant",
+   "description": "It's a bit temperamental, probably from working all the time.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.15,
+    "double_0x30": 0.15
+   }
+  },
+  {
+   "id": 7,
+   "name": "ant_soldier",
+   "display": "Soldier Ant",
+   "description": "It's got wings and it's ready to use them.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.3,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 8,
+   "name": "ant_queen",
+   "display": "Queen Ant",
+   "description": "You must have done something really bad if she's chasing you.",
+   "base_health": 250.0,
+   "health_by_rarity": {
+    "common": 250.0,
+    "unusual": 937.5,
+    "rare": 3375.0,
+    "epic": 13500.0,
+    "legendary": 81000.0,
+    "mythic": 789750.0,
+    "ultra": 49207500.0,
+    "super": 1093500000.0,
+    "unique": 6561000000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.5,
+    "double_0x30": 0.3
+   }
+  },
+  {
+   "id": 9,
+   "name": "ant_hole",
+   "display": "Ant Hole",
+   "description": "Ants go in, and come out. Can't explain that.",
+   "base_health": 750.0,
+   "health_by_rarity": {
+    "common": 750.0,
+    "unusual": 2812.5,
+    "rare": 10125.0,
+    "epic": 40500.0,
+    "legendary": 243000.0,
+    "mythic": 2369250.0,
+    "ultra": 147622500.0,
+    "super": 3280500000.0,
+    "unique": 19683000000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.2
+   }
+  },
+  {
+   "id": 10,
+   "name": "beetle",
+   "display": "Beetle",
+   "description": "It's hungry and flowers are its favorite meal.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.5,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 11,
+   "name": "hornet",
+   "display": "Hornet",
+   "description": "These aren't quite as nice as the little bees.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 50.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 12,
+   "name": "centipede",
+   "display": "Centipede",
+   "description": "It's just there doing its thing.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.05,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 13,
+   "name": "centipede_body",
+   "display": "Centipede",
+   "description": "It's just there doing its thing.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 14,
+   "name": "centipede_evil",
+   "display": "Centipede",
+   "description": "This one loves flowers.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.05,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 15,
+   "name": "centipede_evil_body",
+   "display": "Centipede",
+   "description": "This one loves flowers.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 16,
+   "name": "centipede_desert",
+   "display": "Centipede",
+   "description": "Gotta go fast.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.15,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 17,
+   "name": "centipede_desert_body",
+   "display": "Centipede",
+   "description": "Gotta go fast.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 18,
+   "name": "square",
+   "display": "Square",
+   "description": "This shape... it looks familiar...",
+   "base_health": 35.0,
+   "health_by_rarity": {
+    "common": 35.0,
+    "unusual": 131.25,
+    "rare": 472.5,
+    "epic": 1890.0,
+    "legendary": 11340.0,
+    "mythic": 110565.0,
+    "ultra": 6889050.0,
+    "super": 153090000.0,
+    "unique": 918540000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 1,
+    "double_0x20": 1.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 19,
+   "name": "ladybug_dark",
+   "display": "Ladybug",
+   "description": "Cute and harmless... if left unprovoked.",
+   "base_health": 85.0,
+   "health_by_rarity": {
+    "common": 85.0,
+    "unusual": 318.75,
+    "rare": 1147.5,
+    "epic": 4590.0,
+    "legendary": 27540.0,
+    "mythic": 268515.0,
+    "ultra": 16730550.0,
+    "super": 371790000.0,
+    "unique": 2230740000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.1
+   }
+  },
+  {
+   "id": 20,
+   "name": "ladybug_shiny",
+   "display": "Ladybug",
+   "description": "Shiny, cute and mostly harmless.",
+   "base_health": 85.0,
+   "health_by_rarity": {
+    "common": 85.0,
+    "unusual": 318.75,
+    "rare": 1147.5,
+    "epic": 4590.0,
+    "legendary": 27540.0,
+    "mythic": 268515.0,
+    "ultra": 16730550.0,
+    "super": 371790000.0,
+    "unique": 2230740000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 1.0,
+    "double_0x30": 1.0
+   }
+  },
+  {
+   "id": 21,
+   "name": "spider",
+   "display": "Spider",
+   "description": "Spooky.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 22,
+   "name": "scorpion",
+   "display": "Scorpion",
+   "description": "IT STINGS!",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 23,
+   "name": "fire_ant_soldier",
+   "display": "Soldier Fire Ant",
+   "description": "This ant is on fireeeeeeeeeeeeee.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.3,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 24,
+   "name": "fire_ant_burrow",
+   "display": "Fire Ant Burrow",
+   "description": "What could be in here?",
+   "base_health": 750.0,
+   "health_by_rarity": {
+    "common": 750.0,
+    "unusual": 2812.5,
+    "rare": 10125.0,
+    "epic": 40500.0,
+    "legendary": 243000.0,
+    "mythic": 2369250.0,
+    "ultra": 147622500.0,
+    "super": 3280500000.0,
+    "unique": 19683000000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.5,
+    "double_0x30": 0.3
+   }
+  },
+  {
+   "id": 25,
+   "name": "sandstorm",
+   "display": "Sandstorm",
+   "description": "Darude (1999)",
+   "base_health": 125.0,
+   "health_by_rarity": {
+    "common": 125.0,
+    "unusual": 468.75,
+    "rare": 1687.5,
+    "epic": 6750.0,
+    "legendary": 40500.0,
+    "mythic": 394875.0,
+    "ultra": 24603750.0,
+    "super": 546750000.0,
+    "unique": 3280500000.0
+   },
+   "damage": 40.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.15,
+    "double_0x30": 0.1
+   }
+  },
+  {
+   "id": 26,
+   "name": "bubble",
+   "display": "Bubble",
+   "description": "Pop",
+   "base_health": 1.0,
+   "health_by_rarity": {
+    "common": 1.0,
+    "unusual": 3.75,
+    "rare": 13.5,
+    "epic": 54.0,
+    "legendary": 324.0,
+    "mythic": 3159.0,
+    "ultra": 196830.0,
+    "super": 4374000.0,
+    "unique": 26244000.0
+   },
+   "damage": 5.0,
+   "armor": 5.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 1.0,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 27,
+   "name": "bumble_bee",
+   "display": "Bumble Bee",
+   "description": "GOTTA RUN.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.85,
+    "double_0x30": 0.55
+   }
+  },
+  {
+   "id": 28,
+   "name": "shell",
+   "display": "Shell",
+   "description": "Not an advertisement.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.15
+   }
+  },
+  {
+   "id": 29,
+   "name": "starfish",
+   "display": "Starfish",
+   "description": "His name is Patrick.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 30,
+   "name": "crab",
+   "display": "Crab",
+   "description": "Mr. Crab.",
+   "base_health": 75.0,
+   "health_by_rarity": {
+    "common": 75.0,
+    "unusual": 281.25,
+    "rare": 1012.5,
+    "epic": 4050.0,
+    "legendary": 24300.0,
+    "mythic": 236925.0,
+    "ultra": 14762250.0,
+    "super": 328050000.0,
+    "unique": 1968300000.0
+   },
+   "damage": 25.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 31,
+   "name": "jellyfish",
+   "display": "Jellyfish",
+   "description": "Makes the most delicious jam.",
+   "base_health": 75.0,
+   "health_by_rarity": {
+    "common": 75.0,
+    "unusual": 281.25,
+    "rare": 1012.5,
+    "epic": 4050.0,
+    "legendary": 24300.0,
+    "mythic": 236925.0,
+    "ultra": 14762250.0,
+    "super": 328050000.0,
+    "unique": 1968300000.0
+   },
+   "damage": 25.0,
+   "armor": 0.0,
+   "lightning_damage": true,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.15
+   }
+  },
+  {
+   "id": 32,
+   "name": "digger",
+   "display": "Digger",
+   "description": "Wrong game, bud.",
+   "base_health": 350.0,
+   "health_by_rarity": {
+    "common": 350.0,
+    "unusual": 1312.5,
+    "rare": 4725.0,
+    "epic": 18900.0,
+    "legendary": 113400.0,
+    "mythic": 1105650.0,
+    "ultra": 68890500.0,
+    "super": 1530900000.0,
+    "unique": 9185400000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.15,
+    "double_0x30": 0.15
+   }
+  },
+  {
+   "id": 33,
+   "name": "sponge",
+   "display": "Sponge",
+   "description": "Bob.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.1
+   }
+  },
+  {
+   "id": 34,
+   "name": "leech",
+   "display": "Leech",
+   "description": "Slurp slurp.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 35,
+   "name": "leech_body",
+   "display": "Leech",
+   "description": "Slurp slurp.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 36,
+   "name": "dandelion",
+   "display": "Dandelion",
+   "description": "Puffy.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 1,
+    "double_0x20": 0.3,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 37,
+   "name": "fire_ant_baby",
+   "display": "Baby Fire Ant",
+   "description": "This ant is on fireeeeeeeeeeeeee.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.5,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 38,
+   "name": "fire_ant_worker",
+   "display": "Worker Fire Ant",
+   "description": "This ant is on fireeeeeeeeeeeeee.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.15,
+    "double_0x30": 0.15
+   }
+  },
+  {
+   "id": 39,
+   "name": "fire_ant_queen",
+   "display": "Queen Fire Ant",
+   "description": "This ant is on fireeeeeeeeeeeeee.",
+   "base_health": 250.0,
+   "health_by_rarity": {
+    "common": 250.0,
+    "unusual": 937.5,
+    "rare": 3375.0,
+    "epic": 13500.0,
+    "legendary": 81000.0,
+    "mythic": 789750.0,
+    "ultra": 49207500.0,
+    "super": 1093500000.0,
+    "unique": 6561000000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.5,
+    "double_0x30": 0.3
+   }
+  },
+  {
+   "id": 40,
+   "name": "ant_egg",
+   "display": "Ant Egg",
+   "description": "Not yet an ant but perhaps soon.",
+   "base_health": 150.0,
+   "health_by_rarity": {
+    "common": 150.0,
+    "unusual": 562.5,
+    "rare": 2025.0,
+    "epic": 8100.0,
+    "legendary": 48600.0,
+    "mythic": 473850.0,
+    "ultra": 29524500.0,
+    "super": 656100000.0,
+    "unique": 3936600000.0
+   },
+   "damage": 3.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 1,
+    "double_0x20": 0.25,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 41,
+   "name": "fire_ant_egg",
+   "display": "Fire Ant Egg",
+   "description": "This ant is not yet on fire.",
+   "base_health": 150.0,
+   "health_by_rarity": {
+    "common": 150.0,
+    "unusual": 562.5,
+    "rare": 2025.0,
+    "epic": 8100.0,
+    "legendary": 48600.0,
+    "mythic": 473850.0,
+    "ultra": 29524500.0,
+    "super": 656100000.0,
+    "unique": 3936600000.0
+   },
+   "damage": 3.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 1,
+    "double_0x20": 0.25,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 42,
+   "name": "fly",
+   "display": "Fly",
+   "description": "Hzzzzzzzzzzzz.",
+   "base_health": 5.0,
+   "health_by_rarity": {
+    "common": 5.0,
+    "unusual": 18.75,
+    "rare": 67.5,
+    "epic": 270.0,
+    "legendary": 1620.0,
+    "mythic": 15795.0,
+    "ultra": 984150.0,
+    "super": 21870000.0,
+    "unique": 131220000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 43,
+   "name": "leafbug",
+   "display": "Leafbug",
+   "description": "It's not a leaf, but it is a bug.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 30.0,
+   "armor": 10.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 44,
+   "name": "mantis",
+   "display": "Mantis",
+   "description": "You better pray you don't become dinner.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 45,
+   "name": "termite_baby",
+   "display": "Baby Termite",
+   "description": "Weak and defenseless, but big dreams.\nThese creatures appear to be connected somehow.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 46,
+   "name": "termite_worker",
+   "display": "Worker Termite",
+   "description": "It's a bit temperamental, probably from working all the time.\nThese creatures appear to be connected somehow.",
+   "base_health": 125.0,
+   "health_by_rarity": {
+    "common": 125.0,
+    "unusual": 468.75,
+    "rare": 1687.5,
+    "epic": 6750.0,
+    "legendary": 40500.0,
+    "mythic": 394875.0,
+    "ultra": 24603750.0,
+    "super": 546750000.0,
+    "unique": 3280500000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.15,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 47,
+   "name": "termite_soldier",
+   "display": "Soldier Termite",
+   "description": "It's got wings and it's ready to use them.\nThese creatures appear to be connected somehow.",
+   "base_health": 200.0,
+   "health_by_rarity": {
+    "common": 200.0,
+    "unusual": 750.0,
+    "rare": 2700.0,
+    "epic": 10800.0,
+    "legendary": 64800.0,
+    "mythic": 631800.0,
+    "ultra": 39366000.0,
+    "super": 874800000.0,
+    "unique": 5248800000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 48,
+   "name": "termite_overmind",
+   "display": "Termite Overmind",
+   "description": "The one who oversees all.",
+   "base_health": 500.0,
+   "health_by_rarity": {
+    "common": 500.0,
+    "unusual": 1875.0,
+    "rare": 6750.0,
+    "epic": 27000.0,
+    "legendary": 162000.0,
+    "mythic": 1579500.0,
+    "ultra": 98415000.0,
+    "super": 2187000000.0,
+    "unique": 13122000000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 1.0,
+    "double_0x30": 1.0
+   }
+  },
+  {
+   "id": 49,
+   "name": "termite_mound",
+   "display": "Termite Mound",
+   "description": "Termites go in, and come out. Can't explain that.",
+   "base_health": 750.0,
+   "health_by_rarity": {
+    "common": 750.0,
+    "unusual": 2812.5,
+    "rare": 10125.0,
+    "epic": 40500.0,
+    "legendary": 243000.0,
+    "mythic": 2369250.0,
+    "ultra": 147622500.0,
+    "super": 3280500000.0,
+    "unique": 19683000000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.2
+   }
+  },
+  {
+   "id": 50,
+   "name": "termite_egg",
+   "display": "Termite Egg",
+   "description": "Not yet a termite but perhaps soon.",
+   "base_health": 150.0,
+   "health_by_rarity": {
+    "common": 150.0,
+    "unusual": 562.5,
+    "rare": 2025.0,
+    "epic": 8100.0,
+    "legendary": 48600.0,
+    "mythic": 473850.0,
+    "ultra": 29524500.0,
+    "super": 656100000.0,
+    "unique": 3936600000.0
+   },
+   "damage": 3.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 51,
+   "name": "bush",
+   "display": "Bush",
+   "description": "Don't misunderestimate me.",
+   "base_health": 25.0,
+   "health_by_rarity": {
+    "common": 25.0,
+    "unusual": 93.75,
+    "rare": 337.5,
+    "epic": 1350.0,
+    "legendary": 8100.0,
+    "mythic": 78975.0,
+    "ultra": 4920750.0,
+    "super": 109350000.0,
+    "unique": 656100000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.5,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 52,
+   "name": "roach",
+   "display": "Roach",
+   "description": "Gotta go FAST... until they get tired.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 53,
+   "name": "moth",
+   "display": "Moth",
+   "description": "Easily scared, be nice.",
+   "base_health": 15.0,
+   "health_by_rarity": {
+    "common": 15.0,
+    "unusual": 56.25,
+    "rare": 202.5,
+    "epic": 810.0,
+    "legendary": 4860.0,
+    "mythic": 47385.0,
+    "ultra": 2952450.0,
+    "super": 65610000.0,
+    "unique": 393660000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 54,
+   "name": "firefly",
+   "display": "Firefly",
+   "description": "Oooooh shiny.",
+   "base_health": 40.0,
+   "health_by_rarity": {
+    "common": 40.0,
+    "unusual": 150.0,
+    "rare": 540.0,
+    "epic": 2160.0,
+    "legendary": 12960.0,
+    "mythic": 126360.0,
+    "ultra": 7873200.0,
+    "super": 174960000.0,
+    "unique": 1049760000.0
+   },
+   "damage": 5.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 55,
+   "name": "beetle_hel",
+   "display": "Beetle",
+   "description": "Scourge that spawns in the other plane.",
+   "base_health": 150.0,
+   "health_by_rarity": {
+    "common": 150.0,
+    "unusual": 562.5,
+    "rare": 2025.0,
+    "epic": 8100.0,
+    "legendary": 48600.0,
+    "mythic": 473850.0,
+    "ultra": 29524500.0,
+    "super": 656100000.0,
+    "unique": 3936600000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.1,
+    "double_0x30": 0.02
+   }
+  },
+  {
+   "id": 56,
+   "name": "wasp",
+   "display": "Wasp",
+   "description": "They are ANGRY.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 50.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.75,
+    "double_0x30": 0.2
+   }
+  },
+  {
+   "id": 57,
+   "name": "dummy",
+   "display": "Target Dummy",
+   "description": "How do you have this in your gallery?",
+   "base_health": 1000000000.0,
+   "health_by_rarity": {
+    "common": 1000000000.0,
+    "unusual": 3750000000.0,
+    "rare": 13500000000.0,
+    "epic": 54000000000.0,
+    "legendary": 324000000000.0,
+    "mythic": 3159000000000.0,
+    "ultra": 196830000000000.0,
+    "super": 4374000000000000.0,
+    "unique": 2.6244e+16
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 58,
+   "name": "spider_hel",
+   "display": "Spider",
+   "description": "Scourge that spawns in the other plane.",
+   "base_health": 150.0,
+   "health_by_rarity": {
+    "common": 150.0,
+    "unusual": 562.5,
+    "rare": 2025.0,
+    "epic": 8100.0,
+    "legendary": 48600.0,
+    "mythic": 473850.0,
+    "ultra": 29524500.0,
+    "super": 656100000.0,
+    "unique": 3936600000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.1,
+    "double_0x30": 0.01
+   }
+  },
+  {
+   "id": 59,
+   "name": "centipede_hel",
+   "display": "Centipede",
+   "description": "Scourge that spawns in the other plane.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.01,
+    "double_0x30": 0.001
+   }
+  },
+  {
+   "id": 60,
+   "name": "centipede_hel_body",
+   "display": "Centipede",
+   "description": "Scourge that spawns in the other plane.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 61,
+   "name": "wasp_hel",
+   "display": "Wasp",
+   "description": "Scourge that spawns in the other plane.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 50.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.75,
+    "double_0x30": 0.1
+   }
+  },
+  {
+   "id": 62,
+   "name": "trader",
+   "display": "Trader",
+   "description": " ",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 0.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 63,
+   "name": "gambler",
+   "display": "Gambler",
+   "description": "This can happen to YOU.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 15.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 5,
+    "double_0x20": 1.0,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 64,
+   "name": "oracle",
+   "display": "Oracle",
+   "description": " ",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 0.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 65,
+   "name": "firefly_magic",
+   "display": "Firefly",
+   "description": "There's something magical about this one.",
+   "base_health": 40.0,
+   "health_by_rarity": {
+    "common": 40.0,
+    "unusual": 150.0,
+    "rare": 540.0,
+    "epic": 2160.0,
+    "legendary": 12960.0,
+    "mythic": 126360.0,
+    "ultra": 7873200.0,
+    "super": 174960000.0,
+    "unique": 1049760000.0
+   },
+   "damage": 5.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 1.0,
+    "double_0x30": 0.28
+   }
+  },
+  {
+   "id": 66,
+   "name": "titan",
+   "display": "Titan",
+   "description": " ",
+   "base_health": 1000.0,
+   "health_by_rarity": {
+    "common": 1000.0,
+    "unusual": 3750.0,
+    "rare": 13500.0,
+    "epic": 54000.0,
+    "legendary": 324000.0,
+    "mythic": 3159000.0,
+    "ultra": 196830000.0,
+    "super": 4374000000.0,
+    "unique": 26244000000.0
+   },
+   "damage": 20.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 67,
+   "name": "beetle_nazar",
+   "display": "Beetle",
+   "description": "This one has a different pattern... what does that mean?",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 1.0,
+    "double_0x30": 0.04
+   }
+  },
+  {
+   "id": 68,
+   "name": "worm",
+   "display": "Worm",
+   "description": "It's supposed to eat dirt but this one's eating flowers.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.15,
+    "double_0x30": 0.1
+   }
+  },
+  {
+   "id": 69,
+   "name": "worm_guts",
+   "display": "Worm guts",
+   "description": "You're not supposed to see this text. I'm calling the police.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 5.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 70,
+   "name": "mecha_flower",
+   "display": "Mecha Flower",
+   "description": "Someone has been making these mechanical flowers... What could this mean?",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 10.0,
+   "armor": 5.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 1.0,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 71,
+   "name": "wasp_mecha",
+   "display": "Wasp",
+   "description": "They're MECHA ANGRY.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 50.0,
+   "armor": 2.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.75,
+    "double_0x30": 0.45
+   }
+  },
+  {
+   "id": 72,
+   "name": "spider_mecha",
+   "display": "Spider",
+   "description": "Mecha Spooky.",
+   "base_health": 60.0,
+   "health_by_rarity": {
+    "common": 60.0,
+    "unusual": 225.0,
+    "rare": 810.0,
+    "epic": 3240.0,
+    "legendary": 19440.0,
+    "mythic": 189540.0,
+    "ultra": 11809800.0,
+    "super": 262440000.0,
+    "unique": 1574640000.0
+   },
+   "damage": 30.0,
+   "armor": 2.0,
+   "lightning_damage": true,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 1.0,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 73,
+   "name": "leafbug_shiny",
+   "display": "Leafbug",
+   "description": "This one has a special color to it...",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 30.0,
+   "armor": 10.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 1.0,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 74,
+   "name": "crab_mecha",
+   "display": "Crab",
+   "description": "Dr. Crab.",
+   "base_health": 75.0,
+   "health_by_rarity": {
+    "common": 75.0,
+    "unusual": 281.25,
+    "rare": 1012.5,
+    "epic": 4050.0,
+    "legendary": 24300.0,
+    "mythic": 236925.0,
+    "ultra": 14762250.0,
+    "super": 328050000.0,
+    "unique": 1968300000.0
+   },
+   "damage": 15.0,
+   "armor": 2.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.65,
+    "double_0x30": 0.05
+   }
+  },
+  {
+   "id": 75,
+   "name": "assembler",
+   "display": "Assembler",
+   "description": " ",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 0.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 0,
+    "double_0x20": 0.0,
+    "double_0x30": 0.0
+   }
+  },
+  {
+   "id": 76,
+   "name": "barrel",
+   "display": "Barrel",
+   "description": "Under no circumstances let this thing spill.\nWe cannot risk another mutant insect this month.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 4.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 1.0,
+    "double_0x30": 0.35
+   }
+  },
+  {
+   "id": 77,
+   "name": "beetle_mummy",
+   "display": "Beetle",
+   "description": "This one seems like it shouldn't be alive...",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 0.25,
+    "double_0x30": 0.15
+   }
+  },
+  {
+   "id": 78,
+   "name": "beetle_pharaoh",
+   "display": "Beetle",
+   "description": "That thing on its head looks valuable... We should steal it.",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 3,
+    "double_0x20": 1.0,
+    "double_0x30": 1.0
+   }
+  },
+  {
+   "id": 79,
+   "name": "tomb",
+   "display": "Tomb",
+   "description": "Huh, what could be in here?",
+   "base_health": 150.0,
+   "health_by_rarity": {
+    "common": 150.0,
+    "unusual": 562.5,
+    "rare": 2025.0,
+    "epic": 8100.0,
+    "legendary": 48600.0,
+    "mythic": 473850.0,
+    "ultra": 29524500.0,
+    "super": 656100000.0,
+    "unique": 3936600000.0
+   },
+   "damage": 3.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 1.0,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 80,
+   "name": "silverfish",
+   "display": "Silverfish",
+   "description": "Those annoying little things that eat clothes.\nIt also loves garbage.",
+   "base_health": 50.0,
+   "health_by_rarity": {
+    "common": 50.0,
+    "unusual": 187.5,
+    "rare": 675.0,
+    "epic": 2700.0,
+    "legendary": 16200.0,
+    "mythic": 157950.0,
+    "ultra": 9841500.0,
+    "super": 218700000.0,
+    "unique": 1312200000.0
+   },
+   "damage": 30.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.75,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 81,
+   "name": "garbage",
+   "display": "Garbage",
+   "description": "Someone's treasure...",
+   "base_health": 250.0,
+   "health_by_rarity": {
+    "common": 250.0,
+    "unusual": 937.5,
+    "rare": 3375.0,
+    "epic": 13500.0,
+    "legendary": 81000.0,
+    "mythic": 789750.0,
+    "ultra": 49207500.0,
+    "super": 1093500000.0,
+    "unique": 6561000000.0
+   },
+   "damage": 5.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 0.25,
+    "double_0x30": 0.25
+   }
+  },
+  {
+   "id": 82,
+   "name": "ant_soldier_diver",
+   "display": "Soldier Ant",
+   "description": "How did they end up here?",
+   "base_health": 100.0,
+   "health_by_rarity": {
+    "common": 100.0,
+    "unusual": 375.0,
+    "rare": 1350.0,
+    "epic": 5400.0,
+    "legendary": 32400.0,
+    "mythic": 315900.0,
+    "ultra": 19683000.0,
+    "super": 437400000.0,
+    "unique": 2624400000.0
+   },
+   "damage": 10.0,
+   "armor": 0.0,
+   "lightning_damage": false,
+   "registry_unlabeled": {
+    "int_0x10": 2,
+    "double_0x20": 1.0,
+    "double_0x30": 1.0
+   }
+  }
+ ]
+}
