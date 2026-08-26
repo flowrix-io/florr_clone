@@ -48,6 +48,8 @@ const COMMANDS: CommandDefinition[] = [
     { command: '/admin tp', description: 'Teleport a player (shorthand)', isAdmin: true },
     { command: '/admin teleport_all', description: 'Teleport every player and bot: /admin teleport_all <x> <y>', isAdmin: true },
     { command: '/admin tpall', description: 'Teleport every player (shorthand)', isAdmin: true },
+    { command: '/admin teleport_bots', description: 'Teleport every bot only: /admin teleport_bots <x> <y>', isAdmin: true },
+    { command: '/admin tpbots', description: 'Teleport every bot only (shorthand)', isAdmin: true },
     { command: '/admin corrupt', description: 'Toggle corruption (fights players anywhere): /admin corrupt <player> [on|off|toggle]', isAdmin: true },
     { command: '/admin generate_code', description: 'Generate a star code', isAdmin: true },
     { command: '/admin gen_code', description: 'Generate a star code (shorthand)', isAdmin: true },
