@@ -307,6 +307,49 @@ function executeServerCommand(command, executor, deps, socketId) {
             sendOutput('    tp abc123 1000 2000  (shorthand)', socketId, io);
         }
     }
+    else if (trimmedCommand.startsWith('teleport_all ') || trimmedCommand.startsWith('tpall ')
+        || trimmedCommand === 'teleport_all' || trimmedCommand === 'tpall') {
+        // teleport_all <x> <y> — move every real player (bots excluded) to one spot.
+        const parts = trimmedCommand.split(' ');
+        if (parts.length !== 3) {
+            sendOutput('Usage: teleport_all <x> <y>', socketId, io);
+            sendOutput('  Teleports every online player (bots excluded) to (x, y).', socketId, io);
+            sendOutput('  Example: teleport_all 1000 2000   (tpall works too)', socketId, io);
+            return;
+        }
+        const x = parseFloat(parts[1]);
+        const y = parseFloat(parts[2]);
+        if (isNaN(x) || isNaN(y)) {
+            sendOutput('Invalid coordinates. Usage: teleport_all <x> <y>', socketId, io);
+            return;
+        }
+        if (!isSaneCoord(x) || !isSaneCoord(y)) {
+            sendOutput(`Coordinates out of range: (${parts[1]}, ${parts[2]}). Max is ±${constants_1.MAX_SANE_WORLD_COORD}.`, socketId, io);
+            return;
+        }
+        let moved = 0;
+        for (const [pid, player] of Object.entries(constants_1.players)) {
+            if ((0, botManager_1.isBot)(pid))
+                continue;
+            player.x = x;
+            player.y = y;
+            // Same maze-exit rule as single teleport: dragging a maze player out
+            // of the region must drop maze state or the per-tick clamp pins them
+            // at the border with maze-shifted inventory/level.
+            if (player.inMaze && !(0, maze_1.isInMazeRegion)(x, y)) {
+                (0, playerManager_1.exitMazeState)(player, io);
+                (0, playerManager_1.recalculatePlayerStats)(player, io);
+            }
+            // A splitter half owns no socket — address the client that drives it.
+            io.to((0, utils_1.getOriginalSocketId)(pid)).emit('playerTeleported', {
+                newX: x,
+                newY: y,
+                playerId: pid
+            });
+            moved++;
+        }
+        sendOutput(`Teleported ${moved} player${moved === 1 ? '' : 's'} to (${x}, ${y})`, socketId, io);
+    }
     else if (trimmedCommand === 'change-maze' || trimmedCommand.startsWith('change-maze ')
         || trimmedCommand === 'change_maze' || trimmedCommand.startsWith('change_maze ')) {
         // change-maze [next|garden|desert|ocean|<dayNumber>] — force a new maze
@@ -1177,5 +1220,5 @@ function getAdminHelpText() {
     return '<br/><br/>Admin commands:<br/>' +
         '/admin <command> - Execute server command<br/>' +
         '/cmd <command> - Execute server command (alternative)<br/>' +
-        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), grant_admin <playerId/username> (lend the admin console until they respawn), revoke_admin <playerId/username>, list_admins, mute <playerId/username> (bar an account from chat, persists across sessions), unmute <playerId/username>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
+        'Available server commands: save, list-players, list-sockets, set_max_enemies, set_bot_count <0-' + botManager_1.MAX_BOT_COUNT + '|default>, spawn_special_mobs, spawn <mobType> <rarity> [x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport <playerId/username> <x> <y>, teleport_all <x> <y> (move every player, bots excluded), give <playerId/username> <itemType> <rarity> [amount], set_skin <playerId/username> <skin|none>, corrupt <playerId/username> [on|off|toggle] (corrupted flowers fight players anywhere, not just in PVP), grant_admin <playerId/username> (lend the admin console until they respawn), revoke_admin <playerId/username>, list_admins, mute <playerId/username> (bar an account from chat, persists across sessions), unmute <playerId/username>, notification <type> <message>, clear_notifications, delete_guests, list_today_logins, guild_list, guild_info <guild name>, guild_force_join <guild name> <username>, restart [<N>(s|m|h)|cancel|status], backup_db [list], update [now|<N>(s|m|h)|status|cancel] (backs up DB first, then installs latest build + restarts), change-maze [next|garden|desert|ocean|<dayNumber>], simtick <deltaSeconds> <durationSeconds>|status|cancel';
 }
