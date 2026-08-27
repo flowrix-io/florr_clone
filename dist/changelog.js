@@ -538,6 +538,12 @@ exports.CHANGELOG = [
             'Balanced all mob HP/damage',
             'Changed some mob sizes'
         ]
+    },
+    {
+        date: 'August 26, 2026',
+        changes: [
+            'Fixed server crash bug'
+        ]
     }
 ];
 class ChangelogManager {
