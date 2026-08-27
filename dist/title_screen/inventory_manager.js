@@ -12,6 +12,7 @@ const app_refs_1 = require("../app_refs");
 const preconnect_1 = require("../net/preconnect");
 const preloader_1 = require("../preloader");
 const alt_key_1 = require("../alt_key");
+const tooltip_1 = require("../graphics/tooltip");
 const auth_session_1 = require("../auth_session");
 /**
  * Title Screen Inventory Manager
@@ -38,7 +39,6 @@ class TitleScreenInventoryManager {
         this.svgBlobUrlCache = new Map();
         this.LOADOUT_SLOTS = 20;
         this.ITEM_RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
-        this.tooltipElement = null;
         this.tooltipTimeout = null;
         this.hoveredElement = null;
         /** Handlers are built once and reused so re-registration can't double-fire
@@ -49,14 +49,10 @@ class TitleScreenInventoryManager {
         this.craftingInventoryManager = new inventory_1.InventoryManager(this.gameAdapter, null, { craftingOnly: true });
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
-        // ALT held = tooltips show full values. The document listeners and the
-        // flag live in alt_key.ts; subscribing per instance replaces the old
-        // window-global array of every live manager.
+        // ALT held = tooltips show full values. The flag lives in alt_key.ts
+        // and the shared tooltip overlay (graphics/tooltip.ts) repaints itself
+        // on ALT changes.
         (0, alt_key_1.installAltKeyTracking)();
-        (0, alt_key_1.onAltChange)((pressed) => {
-            if (this.tooltipElement)
-                this.updateTooltipValues(pressed);
-        });
     }
     setupGlobalDragAndDrop() {
         // Handle dropping items outside loadout slots to move them back to inventory
@@ -1198,98 +1194,21 @@ class TitleScreenInventoryManager {
         const petalHealthMultiplier = this.getSkillMultiplier(this.playerData.skills?.petalHealth);
         return Math.round(baseHealth * petalHealthMultiplier);
     }
-    showTooltip(element, petalType, rarity) {
+    /** Shows the shared petal tooltip (graphics/tooltip.ts) next to an anchor
+     *  rect, with this manager's skill-adjusted final stats. */
+    showPetalTooltip(anchor, petalType, rarity) {
         const stats = (0, petals_1.getPetalStats)(petalType, rarity);
         if (!stats)
             return;
-        this.hideTooltip();
-        const tooltip = document.createElement('div');
-        tooltip.className = 'petal-tooltip';
-        tooltip.style.cssText = `
-            position: fixed;
-            background: rgba(0, 0, 0, 0.95);
-            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
-            border-radius: 8px;
-            padding: 12px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            z-index: 10000;
-            pointer-events: none;
-            max-width: 250px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        `;
-        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
-        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
-        const nameDiv = document.createElement('div');
-        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
-        nameDiv.textContent = stats.name;
-        tooltip.appendChild(nameDiv);
-        if (stats.description) {
-            const descDiv = document.createElement('div');
-            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
-            descDiv.textContent = stats.description;
-            tooltip.appendChild(descDiv);
-        }
-        const hpDiv = document.createElement('div');
-        hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.setAttribute('data-full-value', finalHealth.toString());
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
-        tooltip.appendChild(hpDiv);
-        const damageDiv = document.createElement('div');
-        damageDiv.setAttribute('data-full-value', finalDamage.toString());
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
-        tooltip.appendChild(damageDiv);
-        document.body.appendChild(tooltip);
-        this.tooltipElement = tooltip;
-        this.updateTooltipPosition(element, tooltip);
-    }
-    updateTooltipPosition(element, tooltip) {
-        const rect = element.getBoundingClientRect();
-        const tooltipRect = tooltip.getBoundingClientRect();
-        let left = rect.right + 10;
-        let top = rect.top;
-        if (left + tooltipRect.width > window.innerWidth) {
-            left = rect.left - tooltipRect.width - 10;
-        }
-        if (top + tooltipRect.height > window.innerHeight) {
-            top = window.innerHeight - tooltipRect.height - 10;
-        }
-        if (top < 0) {
-            top = 10;
-        }
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
+        (0, tooltip_1.showTooltip)(anchor, (0, tooltip_1.petalTooltipLines)(stats, rarity, this.calculateFinalPetalHealth(petalType, rarity), this.calculateFinalPetalDamage(petalType, rarity), (n) => this.abbreviateNumber(n)));
     }
     hideTooltip() {
         if (this.tooltipTimeout !== null) {
             clearTimeout(this.tooltipTimeout);
             this.tooltipTimeout = null;
         }
-        if (this.tooltipElement) {
-            this.tooltipElement.remove();
-            this.tooltipElement = null;
-        }
+        (0, tooltip_1.hideTooltip)();
         this.hoveredElement = null;
-    }
-    updateTooltipValues(showFull) {
-        if (!this.tooltipElement)
-            return;
-        const valueElements = this.tooltipElement.querySelectorAll('.tooltip-value');
-        valueElements.forEach((valueEl) => {
-            const parent = valueEl.parentElement;
-            if (parent && parent.hasAttribute('data-full-value')) {
-                const fullValue = parent.getAttribute('data-full-value');
-                if (fullValue) {
-                    if (showFull) {
-                        valueEl.textContent = fullValue;
-                    }
-                    else {
-                        valueEl.textContent = this.abbreviateNumber(parseInt(fullValue));
-                    }
-                }
-            }
-        });
     }
     setupTooltip(element, petalType, rarity) {
         let isDragging = false;
@@ -1300,19 +1219,12 @@ class TitleScreenInventoryManager {
             this.hoveredElement = element;
             this.tooltipTimeout = window.setTimeout(() => {
                 if (this.hoveredElement === element && !isDragging) {
-                    this.showTooltip(element, petalType, rarity);
-                    // Check initial ALT state
-                    this.updateTooltipValues((0, alt_key_1.isAltPressed)());
+                    this.showPetalTooltip(element.getBoundingClientRect(), petalType, rarity);
                 }
             }, 200);
         };
         const handleMouseLeave = () => {
             this.hideTooltip();
-        };
-        const handleMouseMove = (e) => {
-            if (this.tooltipElement && this.hoveredElement === element) {
-                this.updateTooltipPosition(element, this.tooltipElement);
-            }
         };
         const handleMouseDown = () => {
             mouseDownTime = Date.now();
@@ -1334,7 +1246,6 @@ class TitleScreenInventoryManager {
         };
         element.addEventListener('mouseenter', handleMouseEnter);
         element.addEventListener('mouseleave', handleMouseLeave);
-        element.addEventListener('mousemove', handleMouseMove);
         element.addEventListener('mousedown', handleMouseDown);
         element.addEventListener('mouseup', handleMouseUp);
         element.addEventListener('dragstart', handleDragStart);
@@ -1430,79 +1341,15 @@ class TitleScreenInventoryManager {
             clearTimeout(this.tooltipTimeout);
             this.tooltipTimeout = null;
         }
-        if (this.tooltipElement) {
-            this.tooltipElement.remove();
-            this.tooltipElement = null;
-        }
+        (0, tooltip_1.hideTooltip)();
         if (!hit || !hit.itemType.startsWith('petal_'))
             return;
         const petalType = hit.itemType.replace('petal_', '');
         const rarity = hit.rarity;
         const rect = hit.rect;
         this.tooltipTimeout = window.setTimeout(() => {
-            this.showTooltipAtRect(rect, petalType, rarity);
-            this.updateTooltipValues((0, alt_key_1.isAltPressed)());
+            this.showPetalTooltip(rect, petalType, rarity);
         }, 200);
-    }
-    /** Like showTooltip() but anchored to a client-space rect (canvas hit). */
-    showTooltipAtRect(rect, petalType, rarity) {
-        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
-        if (!stats)
-            return;
-        if (this.tooltipElement) {
-            this.tooltipElement.remove();
-            this.tooltipElement = null;
-        }
-        const tooltip = document.createElement('div');
-        tooltip.className = 'petal-tooltip';
-        tooltip.style.cssText = `
-            position: fixed;
-            background: rgba(0, 0, 0, 0.95);
-            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
-            border-radius: 8px;
-            padding: 12px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            z-index: 10000;
-            pointer-events: none;
-            max-width: 250px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        `;
-        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
-        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
-        const nameDiv = document.createElement('div');
-        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
-        nameDiv.textContent = stats.name;
-        tooltip.appendChild(nameDiv);
-        if (stats.description) {
-            const descDiv = document.createElement('div');
-            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
-            descDiv.textContent = stats.description;
-            tooltip.appendChild(descDiv);
-        }
-        const hpDiv = document.createElement('div');
-        hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.setAttribute('data-full-value', finalHealth.toString());
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
-        tooltip.appendChild(hpDiv);
-        const damageDiv = document.createElement('div');
-        damageDiv.setAttribute('data-full-value', finalDamage.toString());
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
-        tooltip.appendChild(damageDiv);
-        document.body.appendChild(tooltip);
-        this.tooltipElement = tooltip;
-        const tooltipRect = tooltip.getBoundingClientRect();
-        let left = rect.right + 10;
-        let top = rect.top;
-        if (left + tooltipRect.width > window.innerWidth)
-            left = rect.left - tooltipRect.width - 10;
-        if (top + tooltipRect.height > window.innerHeight)
-            top = window.innerHeight - tooltipRect.height - 10;
-        if (top < 0)
-            top = 10;
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
     }
     updateFromPlayerData(playerData) {
         // Preserve the separate maze loadout preset across regular-state syncs —

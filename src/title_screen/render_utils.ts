@@ -3,6 +3,8 @@
  * No state, no `this` — safe to call from anywhere.
  */
 
+import { drawText } from '../graphics/text';
+
 /** Draws a rounded rectangle path (caller fills/strokes). */
 export function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
     ctx.beginPath();
@@ -108,14 +110,10 @@ export function drawGardnButton(
     ctx.stroke();
 
     if (text) {
-        ctx.font = `bold ${fontSize}px Ubuntu, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'miter';
-        ctx.strokeText(text, x + width / 2, y + height / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(text, x + width / 2, y + height / 2);
+        drawText(ctx, text, x + width / 2, y + height / 2,
+            { size: fontSize, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     }
 }

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const text_1 = require("./text");
 // Canvas size: 50x50 rarity box + text below (needs ~18px extra) + padding
 const ITEM_CANVAS_SIZE = 60;
 const ITEM_CANVAS_CENTER = 30;
@@ -74,14 +75,9 @@ core_1.Graphics.prototype.getItemCanvas = function (item) {
         itemName = item.type[0].toUpperCase() + item.type.slice(1).toLowerCase();
     }
     itemName = itemName.replace('_', ' ');
-    ctx.font = '12px Ubuntu, sans-serif';
     ctx.textAlign = 'center';
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText(itemName, 0, 20);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(itemName, 0, 20);
+    (0, text_1.drawText)(ctx, itemName, 0, 20, { size: 12, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     this.itemCanvasCache.set(key, canvas);
     return canvas;
 };
@@ -211,8 +207,6 @@ core_1.Graphics.prototype.drawItem = function (item, world) {
         }
     }
     // Draw item name
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = '12px Ubuntu, sans-serif';
     this.ctx.textAlign = 'center';
     let itemName = "";
     if (item.type === 'petal' && item.petalType) {
@@ -225,11 +219,7 @@ core_1.Graphics.prototype.drawItem = function (item, world) {
     // Ensure item name is not blurred by setting shadow blur to 0
     this.ctx.shadowBlur = 0;
     this.ctx.globalAlpha = 1.0;
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
-    this.ctx.strokeText(itemName, 0, 20);
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText(itemName, 0, 20);
+    (0, text_1.drawText)(this.ctx, itemName, 0, 20, { size: 12, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     // Draw hitbox if enabled
     if (this.showHitboxes) {
         this.ctx.save();

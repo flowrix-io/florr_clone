@@ -2,6 +2,7 @@ import { Graphics } from './core';
 import { ClientWorld } from '../client_world';
 import { Entity } from '../ecs';
 import { getSquadMemberIds } from '../squad_state';
+import { drawText } from './text';
 import {
     getActiveMaze,
     MAZE_ORIGIN_X,
@@ -276,13 +277,8 @@ Graphics.prototype.drawMazeMinimap = function (this: Graphics, world: ClientWorl
 
     const biomeName = maze.biome.charAt(0).toUpperCase() + maze.biome.slice(1);
     const label = `Maze — ${biomeName}`;
-    ctx.font = '14px Ubuntu, sans-serif';
     ctx.textAlign = 'center';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText(label, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
-    ctx.fillStyle = 'white';
-    ctx.fillText(label, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
+    drawText(ctx, label, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18, { size: 14, fill: 'white', stroke: '#000000', strokeWidth: 3 });
     ctx.textAlign = 'left';
     return true;
 };

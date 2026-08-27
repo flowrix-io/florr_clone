@@ -1,5 +1,6 @@
 import { Socket } from './ws_client';
 import { getBaseDeviceScale } from './zoom-compensation';
+import { drawText } from './graphics/text';
 
 interface GuildState {
     name: string; // 5-char alphanumeric guild name — the sole identifier
@@ -373,15 +374,10 @@ export class GuildMenuManager {
 
         // Title.
         ctx.save();
-        ctx.font = 'bold 22px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 4;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000';
-        ctx.strokeText('Guild', x0 + 16, y0 + 14);
-        ctx.fillStyle = '#fff';
-        ctx.fillText('Guild', x0 + 16, y0 + 14);
+        drawText(ctx, 'Guild', x0 + 16, y0 + 14, { size: 22, weight: 'bold', fill: '#fff', strokeWidth: 4 });
         ctx.restore();
 
         // Close button (top-right, inventory-style).
@@ -422,12 +418,9 @@ export class GuildMenuManager {
             ctx.fillStyle = 'rgba(0,0,0,0.25)';
             this.roundRect(ctx, x0 + 12, contentY, w - 24, bannerH, 6);
             ctx.fill();
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 14px Ubuntu, sans-serif';
             ctx.textBaseline = 'top';
-            ctx.fillText(`@${this.pendingInvite.fromUsername} invited you to`, x0 + 22, contentY + 8);
-            ctx.font = 'bold 16px Ubuntu, sans-serif';
-            ctx.fillText(`${this.pendingInvite.guildName}`, x0 + 22, contentY + 26);
+            drawText(ctx, `@${this.pendingInvite.fromUsername} invited you to`, x0 + 22, contentY + 8, { size: 14, weight: 'bold', fill: '#fff', strokeWidth: 0 });
+            drawText(ctx, `${this.pendingInvite.guildName}`, x0 + 22, contentY + 26, { size: 16, weight: 'bold', fill: '#fff', strokeWidth: 0 });
 
             const btnW = 80, btnH = 26;
             const acceptX = x0 + w - 24 - btnW * 2 - 6;
@@ -445,16 +438,12 @@ export class GuildMenuManager {
 
         if (!this.currentGuild) {
             // No guild — create view.
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 14px Ubuntu, sans-serif';
             ctx.textBaseline = 'top';
-            ctx.fillText('You are not in a guild yet.', x0 + 16, contentY);
+            drawText(ctx, 'You are not in a guild yet.', x0 + 16, contentY, { size: 14, weight: 'bold', fill: '#fff', strokeWidth: 0 });
             contentY += 20;
-            ctx.font = '13px Ubuntu, sans-serif';
-            ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            ctx.fillText('Guilds hold up to 200 members and have a 5-character ID.', x0 + 16, contentY);
+            drawText(ctx, 'Guilds hold up to 200 members and have a 5-character ID.', x0 + 16, contentY, { size: 13, fill: 'rgba(255,255,255,0.85)', strokeWidth: 0 });
             contentY += 18;
-            ctx.fillText('The leader invites players; admins can force-join.', x0 + 16, contentY);
+            drawText(ctx, 'The leader invites players; admins can force-join.', x0 + 16, contentY, { size: 13, fill: 'rgba(255,255,255,0.85)', strokeWidth: 0 });
             contentY += 26;
 
             const btnW = 160, btnH = 34;
@@ -467,20 +456,13 @@ export class GuildMenuManager {
             const guild = this.currentGuild;
             // Guild header line.
             ctx.save();
-            ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textBaseline = 'top';
-            ctx.lineWidth = 3;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#000';
             const nameLine = `${guild.name}`;
-            ctx.strokeText(nameLine, x0 + 16, contentY);
-            ctx.fillStyle = '#fff';
-            ctx.fillText(nameLine, x0 + 16, contentY);
+            drawText(ctx, nameLine, x0 + 16, contentY, { size: 16, weight: 'bold', fill: '#fff', strokeWidth: 3 });
             contentY += 22;
 
-            ctx.font = '13px Ubuntu, sans-serif';
-            ctx.fillStyle = 'rgba(255,255,255,0.92)';
-            ctx.fillText(`Leader: @${guild.leaderUsername} — ${guild.memberUsernames.length}/200 members`, x0 + 16, contentY);
+            drawText(ctx, `Leader: @${guild.leaderUsername} — ${guild.memberUsernames.length}/200 members`, x0 + 16, contentY, { size: 13, fill: 'rgba(255,255,255,0.92)', strokeWidth: 0 });
             contentY += 22;
             ctx.restore();
 
@@ -505,9 +487,7 @@ export class GuildMenuManager {
             drawnY += 22 + 22 + smallH + 14;
 
             // Members list.
-            ctx.font = 'bold 13px Ubuntu, sans-serif';
-            ctx.fillStyle = 'rgba(255,255,255,0.95)';
-            ctx.fillText(`Members (${guild.memberUsernames.length})`, x0 + 16, contentY);
+            drawText(ctx, `Members (${guild.memberUsernames.length})`, x0 + 16, contentY, { size: 13, weight: 'bold', fill: 'rgba(255,255,255,0.95)', strokeWidth: 0 });
             contentY += 20;
             drawnY += 20;
 
@@ -539,13 +519,11 @@ export class GuildMenuManager {
                 ctx.fill();
 
                 // Name + badges.
-                ctx.font = 'bold 13px Ubuntu, sans-serif';
                 ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#fff';
                 let label = `@${member}`;
                 if (isLeader) label += '  ★';
                 if (isMe) label += '  (you)';
-                ctx.fillText(label, x0 + 38, rowY + (this.ROW_HEIGHT - 4) / 2);
+                drawText(ctx, label, x0 + 38, rowY + (this.ROW_HEIGHT - 4) / 2, { size: 13, weight: 'bold', fill: '#fff', strokeWidth: 0 });
 
                 // Per-member action buttons on the right.
                 const btnH = 22, btnW = 56;
@@ -604,15 +582,10 @@ export class GuildMenuManager {
         this.roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 3);
         ctx.fill();
 
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000';
-        ctx.strokeText(label, x + w / 2, y + h / 2 + 1);
-        ctx.fillStyle = labelColor;
-        ctx.fillText(label, x + w / 2, y + h / 2 + 1);
+        drawText(ctx, label, x + w / 2, y + h / 2 + 1, { size: 13, weight: 'bold', fill: labelColor, strokeWidth: 3 });
         ctx.restore();
     }
 

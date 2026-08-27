@@ -1,6 +1,7 @@
 import { Graphics, Player } from './core';
 import { ClientWorld } from '../client_world';
 import { Entity } from '../ecs';
+import { drawText } from './text';
 
 declare module './core' {
     interface Graphics {
@@ -356,10 +357,8 @@ Graphics.prototype.drawFloatingTexts = function(this: Graphics): void {
         this.ctx.translate(-validCameraX, -validCameraY);
 
         this.ctx.globalAlpha = text.alpha;
-        this.ctx.fillStyle = text.color;
-        this.ctx.font = `${text.fontSize}px Ubuntu, sans-serif`;
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(text.text, text.x, text.y);
+        drawText(this.ctx, text.text, text.x, text.y, { size: text.fontSize, fill: text.color, strokeWidth: 0 });
         this.ctx.restore();
 
         return true;

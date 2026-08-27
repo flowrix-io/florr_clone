@@ -9,6 +9,7 @@ exports.hsvAdjust = hsvAdjust;
 exports.getButtonFillColor = getButtonFillColor;
 exports.getButtonStrokeColor = getButtonStrokeColor;
 exports.drawGardnButton = drawGardnButton;
+const text_1 = require("../graphics/text");
 /** Draws a rounded rectangle path (caller fills/strokes). */
 function drawRoundedRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
@@ -134,14 +135,9 @@ function drawGardnButton(ctx, x, y, width, height, baseColor, isHovered, isPress
     ctx.fill();
     ctx.stroke();
     if (text) {
-        ctx.font = `bold ${fontSize}px Ubuntu, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'miter';
-        ctx.strokeText(text, x + width / 2, y + height / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(text, x + width / 2, y + height / 2);
+        (0, text_1.drawText)(ctx, text, x + width / 2, y + height / 2, { size: fontSize, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     }
 }

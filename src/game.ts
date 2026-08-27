@@ -1,4 +1,5 @@
 import { applyZoomCompensation, canvasCoords } from './zoom-compensation';
+import { drawText } from './graphics/text';
 import { Player, PlayerInventory } from './player';
 import { ClientWorld } from './client_world';
 import { Entity } from './ecs';
@@ -1605,11 +1606,8 @@ export class Game {
 
         ctx.save();
         const lineHeight = 15;
-        ctx.font = 'bold 11px Ubuntu, sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#000000';
 
         const x = this.graphics.viewW - 8;
         // Deliberately socket.id, NOT the active half: this readout is a probe
@@ -1668,9 +1666,7 @@ export class Game {
         // Draw from bottom up
         let y = this.graphics.viewH - 8;
         for (const line of lines) {
-            ctx.strokeText(line.text, x, y);
-            ctx.fillStyle = line.color;
-            ctx.fillText(line.text, x, y);
+            drawText(ctx, line.text, x, y, { size: 11, weight: 'bold', fill: line.color, strokeWidth: 2 });
             y -= lineHeight;
         }
         ctx.restore();

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Game = void 0;
 const zoom_compensation_1 = require("./zoom-compensation");
+const text_1 = require("./graphics/text");
 const client_world_1 = require("./client_world");
 const constants_1 = require("./constants");
 const map_data_1 = require("./map_data");
@@ -1453,11 +1454,8 @@ class Game {
             return;
         ctx.save();
         const lineHeight = 15;
-        ctx.font = 'bold 11px Ubuntu, sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#000000';
         const x = this.graphics.viewW - 8;
         // Deliberately socket.id, NOT the active half: this readout is a probe
         // for where the SOCKET's own flower is, and after a splitter switch the
@@ -1504,9 +1502,7 @@ class Game {
         // Draw from bottom up
         let y = this.graphics.viewH - 8;
         for (const line of lines) {
-            ctx.strokeText(line.text, x, y);
-            ctx.fillStyle = line.color;
-            ctx.fillText(line.text, x, y);
+            (0, text_1.drawText)(ctx, line.text, x, y, { size: 11, weight: 'bold', fill: line.color, strokeWidth: 2 });
             y -= lineHeight;
         }
         ctx.restore();

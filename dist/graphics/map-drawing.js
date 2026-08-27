@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.preloadCustomTileTextures = preloadCustomTileTextures;
 const core_1 = require("./core");
 const constants_1 = require("../constants");
+const text_1 = require("./text");
 const tileTextureCache = new Map();
 /** Inject `xmlns="http://www.w3.org/2000/svg"` into the root <svg> tag if it's
  *  missing — without it, browsers refuse to rasterize SVG loaded as an Image. */
@@ -136,9 +137,7 @@ core_1.Graphics.prototype.drawMap = function (world_map_data) {
             if (this.showHitboxes) {
                 this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
                 this.ctx.strokeRect(x, y, width, height);
-                this.ctx.fillStyle = 'white';
-                this.ctx.font = '12px Ubuntu, sans-serif';
-                this.ctx.fillText(`${Math.round(x)},${Math.round(y)}`, x, y - 5);
+                (0, text_1.drawText)(this.ctx, `${Math.round(x)},${Math.round(y)}`, x, y - 5, { size: 12, fill: 'white', strokeWidth: 0 });
             }
         }
     });

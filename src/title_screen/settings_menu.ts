@@ -1,5 +1,6 @@
 import { invalidateSettingsCache } from '../constants';
 import { drawRoundedRect, hsvAdjust, drawGardnButton } from './render_utils';
+import { drawText } from '../graphics/text';
 import { applyZoomCompensation } from '../zoom-compensation';
 import { resolveMobileControlsEnabled } from '../graphics/mobile-controls';
 import { getCurrentGame } from '../app_refs';
@@ -168,14 +169,10 @@ export class SettingsMenu {
         ctx.rect(panelX + 4, panelY + 4, panelW - 8, panelH - 8);
         ctx.fill();
 
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.strokeText('Settings', panelX + pad, panelY + pad + headerH / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Settings', panelX + pad, panelY + pad + headerH / 2);
+        drawText(ctx, 'Settings', panelX + pad, panelY + pad + headerH / 2,
+            { size: 20, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
 
         const closeBtnX = panelX + panelW - pad - 28;
         const closeBtnY = panelY + pad;
@@ -227,29 +224,25 @@ export class SettingsMenu {
             }
 
             cy += 5;
-            ctx.font = 'bold 13px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
             const scalePct = Math.round(this.renderScale * 100);
-            ctx.strokeText(`Render Resolution: ${scalePct}%`, contentX, cy + 8);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(`Render Resolution: ${scalePct}%`, contentX, cy + 8);
+            drawText(ctx, `Render Resolution: ${scalePct}%`, contentX, cy + 8,
+                { size: 13, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
             cy += 22;
             this.drawSlider(ctx, contentX, cy, contentW, sliderH, (this.renderScale - 0.25) / 0.75, 'renderScale');
             cy += 25;
 
-            ctx.strokeText(`Mob Animation FPS: ${this.mobFramerate}`, contentX, cy + 8);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(`Mob Animation FPS: ${this.mobFramerate}`, contentX, cy + 8);
+            // These two labels have always been outlined with the slider
+            // thumb's leftover '#888888' stroke — kept for identical output.
+            drawText(ctx, `Mob Animation FPS: ${this.mobFramerate}`, contentX, cy + 8,
+                { size: 13, weight: 'bold', fill: '#ffffff', stroke: '#888888', strokeWidth: 2 });
             cy += 22;
             this.drawSlider(ctx, contentX, cy, contentW, sliderH, (this.mobFramerate - 5) / 55, 'mobFramerate');
             cy += 25;
 
-            ctx.strokeText(`Interpolation: ${this.interpolation.toFixed(2)}`, contentX, cy + 8);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(`Interpolation: ${this.interpolation.toFixed(2)}`, contentX, cy + 8);
+            drawText(ctx, `Interpolation: ${this.interpolation.toFixed(2)}`, contentX, cy + 8,
+                { size: 13, weight: 'bold', fill: '#ffffff', stroke: '#888888', strokeWidth: 2 });
             cy += 22;
             this.drawSlider(ctx, contentX, cy, contentW, sliderH, (this.interpolation - 0.05) / 0.45, 'interpolation');
             cy += 30;
@@ -262,14 +255,10 @@ export class SettingsMenu {
             cy += resetBtnH + 10;
 
         } else if (this.tab === 'controls') {
-            ctx.font = 'bold 15px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
-            ctx.strokeText('Controls', contentX, cy + 10);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText('Controls', contentX, cy + 10);
+            drawText(ctx, 'Controls', contentX, cy + 10,
+                { size: 15, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
             cy += 28;
 
             const controls = getControls();
@@ -279,15 +268,11 @@ export class SettingsMenu {
 
             for (const action of Object.keys(controls)) {
                 const displayName = action.replace(/_/g, ' ');
-                ctx.font = 'bold 12px Ubuntu, sans-serif';
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'middle';
-                ctx.strokeStyle = '#000000';
-                ctx.lineWidth = 2;
                 const labelText = displayName.charAt(0).toUpperCase() + displayName.slice(1);
-                ctx.strokeText(labelText, contentX, cy + inputH / 2);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(labelText, contentX, cy + inputH / 2);
+                drawText(ctx, labelText, contentX, cy + inputH / 2,
+                    { size: 12, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
 
                 const inputX = contentX + labelW;
                 const isEditing = this.editingControl === action;
@@ -299,12 +284,11 @@ export class SettingsMenu {
                 ctx.fillStyle = boxColor;
                 ctx.fillRect(inputX + 3, cy + 3, inputW - 6, inputH - 6);
 
-                ctx.font = 'bold 12px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#000000';
                 const keyText = isEditing ? '...' : (controls[action] === ' ' ? 'Space' : controls[action]);
-                ctx.fillText(keyText, inputX + inputW / 2, cy + inputH / 2);
+                drawText(ctx, keyText, inputX + inputW / 2, cy + inputH / 2,
+                    { size: 12, weight: 'bold', fill: '#000000', strokeWidth: 0 });
 
                 cy += inputH + 6;
             }
@@ -328,14 +312,10 @@ export class SettingsMenu {
             cy += rowH;
 
         } else if (this.tab === 'advanced') {
-            ctx.font = 'bold 13px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
-            ctx.strokeText('Server IP:', contentX, cy + 10);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText('Server IP:', contentX, cy + 10);
+            drawText(ctx, 'Server IP:', contentX, cy + 10,
+                { size: 13, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
             cy += 25;
 
             const ipInputW = contentW;
@@ -349,13 +329,13 @@ export class SettingsMenu {
             ctx.font = '13px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#000000';
             const ipText = this.serverIP || window.location.origin;
             let displayIP = ipText;
             while (ctx.measureText(displayIP).width > ipInputW - 20 && displayIP.length > 0) {
                 displayIP = displayIP.slice(1);
             }
-            ctx.fillText(displayIP, contentX + 8, cy + ipInputH / 2);
+            drawText(ctx, displayIP, contentX + 8, cy + ipInputH / 2,
+                { size: 13, fill: '#000000', strokeWidth: 0 });
 
             if (this.serverIPFocused && Math.floor(Date.now() / 500) % 2 === 0) {
                 const cursorX = contentX + 8 + ctx.measureText(displayIP).width;
@@ -392,47 +372,42 @@ export class SettingsMenu {
 
     private renderCreditsTab(ctx: CanvasRenderingContext2D, contentX: number, contentW: number, startY: number): number {
         let cy = startY;
-        const drawText = (text: string, font: string, color: string, y: number, align: CanvasTextAlign = 'left') => {
-            ctx.font = font;
+        const drawCredit = (text: string, font: string, color: string, y: number, align: CanvasTextAlign = 'left') => {
             ctx.textAlign = align;
             ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
             const drawX = align === 'center' ? contentX + contentW / 2 : contentX;
-            ctx.strokeText(text, drawX, y);
-            ctx.fillStyle = color;
-            ctx.fillText(text, drawX, y);
+            drawText(ctx, text, drawX, y, { font, fill: color, stroke: '#000000', strokeWidth: 2 });
         };
 
-        drawText('Flowrix.pro', 'bold 18px Ubuntu, sans-serif', '#ffffff', cy + 10, 'center');
+        drawCredit('Flowrix.pro', 'bold 18px Ubuntu, sans-serif', '#ffffff', cy + 10, 'center');
         cy += 30;
-        drawText('Developers', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
+        drawCredit('Developers', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
         cy += 24;
-        drawText('• sussybite8888', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• sussybite8888', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('• Cookery', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• Cookery', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('• Codelinkd203', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• Codelinkd203', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('• NachoFrenchFry', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• NachoFrenchFry', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('• Arras Guard YT', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• Arras Guard YT', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('Inspired By', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
+        drawCredit('Inspired By', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
         cy += 24;
-        drawText('• florr.io by M28', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• florr.io by M28', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 28;
-        drawText('Assets & Libraries', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
+        drawCredit('Assets & Libraries', 'bold 14px Ubuntu, sans-serif', '#ffdd66', cy + 10);
         cy += 24;
-        drawText('• Icons from game-icons.net and svgrepo.com', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• Icons from game-icons.net and svgrepo.com', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('• Ubuntu font by Canonical', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• Ubuntu font by Canonical', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 28;
-        drawText('• Assets extracted by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• Assets extracted by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
+        drawCredit('• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)', 'bold 12px Ubuntu, sans-serif', '#ffffff', cy + 8);
         cy += 20;
-        drawText('Thanks for playing!', 'bold 13px Ubuntu, sans-serif', '#cccccc', cy + 8, 'center');
+        drawCredit('Thanks for playing!', 'bold 13px Ubuntu, sans-serif', '#cccccc', cy + 8, 'center');
         return cy + 20;
     }
 
@@ -444,14 +419,10 @@ export class SettingsMenu {
         ctx.fillStyle = hovered ? hsvAdjust(innerColor, 1.1) : innerColor;
         ctx.fillRect(x + 3, y + 5, size - 6, size - 6);
 
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeText(label, x + size + 8, y + 2 + size / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(label, x + size + 8, y + 2 + size / 2);
+        drawText(ctx, label, x + size + 8, y + 2 + size / 2,
+            { size: 13, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
     }
 
     private drawSlider(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, ratio: number, id: string): void {

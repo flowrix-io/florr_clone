@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationsManager = void 0;
 const zoom_compensation_1 = require("./zoom-compensation");
+const text_1 = require("./graphics/text");
 const STORAGE_KEY = 'game_notifications_read';
 const NOTIFICATIONS_PER_PAGE = 50;
 class NotificationsManager {
@@ -319,13 +320,8 @@ class NotificationsManager {
         ctx.fill();
         ctx.stroke();
         // Draw header (before clipping)
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeText('Notifications', offsetX + this.PADDING, offsetY + this.PADDING);
-        ctx.fillText('Notifications', offsetX + this.PADDING, offsetY + this.PADDING);
+        (0, text_1.drawText)(ctx, 'Notifications', offsetX + this.PADDING, offsetY + this.PADDING, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
         // Draw mark all read button (before clipping)
         const markAllReadButtonX = offsetX + this.PANEL_WIDTH - 180;
         const markAllReadButtonY = offsetY + 10;
@@ -340,11 +336,9 @@ class NotificationsManager {
         ctx.fillStyle = '#357abd';
         this.roundRect(ctx, markAllReadButtonX, markAllReadButtonY, markAllReadButtonWidth, markAllReadButtonHeight, 5);
         ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '14px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Mark All Read', markAllReadButtonX + markAllReadButtonWidth / 2, markAllReadButtonY + markAllReadButtonHeight / 2);
+        (0, text_1.drawText)(ctx, 'Mark All Read', markAllReadButtonX + markAllReadButtonWidth / 2, markAllReadButtonY + markAllReadButtonHeight / 2, { size: 14, fill: '#FFFFFF', strokeWidth: 0 });
         ctx.textAlign = 'left';
         // Draw close button (before clipping)
         const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
@@ -355,10 +349,8 @@ class NotificationsManager {
         ctx.fillStyle = '#ff4444';
         this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
         ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
+        (0, text_1.drawText)(ctx, '✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2, { size: 16, fill: '#FFFFFF', strokeWidth: 0 });
         ctx.textAlign = 'left';
         // Clip to panel content area (after header and buttons)
         ctx.save();
@@ -369,10 +361,8 @@ class NotificationsManager {
         let contentY = offsetY + 40 + this.PADDING - this.scrollY;
         this.notificationBounds.clear();
         if (this.notifications.length === 0 && !this.isLoading) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.font = '14px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('No notifications yet', offsetX + this.PANEL_WIDTH / 2, contentY + 20);
+            (0, text_1.drawText)(ctx, 'No notifications yet', offsetX + this.PANEL_WIDTH / 2, contentY + 20, { size: 14, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
             ctx.textAlign = 'left';
         }
         else {
@@ -425,22 +415,15 @@ class NotificationsManager {
                 ctx.fillStyle = borderColor;
                 ctx.fillRect(entryX, entryY, 4, entryHeight);
                 // Draw message (split by newlines)
-                ctx.fillStyle = '#FFFFFF';
-                ctx.strokeStyle = '#000000';
-                ctx.lineWidth = 0.5;
-                ctx.font = '14px Ubuntu, sans-serif';
                 let lineY = entryY + 10;
                 wrappedLines.forEach((line, index) => {
                     if (line && line.trim()) {
-                        ctx.strokeText(line, entryX + 10, lineY);
-                        ctx.fillText(line, entryX + 10, lineY);
+                        (0, text_1.drawText)(ctx, line, entryX + 10, lineY, { size: 14, fill: '#FFFFFF', strokeWidth: 0.5 });
                     }
                     lineY += 18; // Move to next line (14px font + 4px spacing)
                 });
                 // Draw time (positioned at bottom of entry)
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                ctx.font = '12px Ubuntu, sans-serif';
-                ctx.fillText(timeAgo, entryX + 10, entryY + entryHeight - 20);
+                (0, text_1.drawText)(ctx, timeAgo, entryX + 10, entryY + entryHeight - 20, { size: 12, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
                 this.notificationBounds.set(notification.id, {
                     x: entryX,
                     y: entryY,
@@ -451,10 +434,8 @@ class NotificationsManager {
             });
             // Draw loading indicator
             if (this.hasMore) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                ctx.font = '14px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(this.isLoading ? 'Loading...' : 'Scroll for more', offsetX + this.PANEL_WIDTH / 2, contentY + 10);
+                (0, text_1.drawText)(ctx, this.isLoading ? 'Loading...' : 'Scroll for more', offsetX + this.PANEL_WIDTH / 2, contentY + 10, { size: 14, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
                 ctx.textAlign = 'left';
             }
         }

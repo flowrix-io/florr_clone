@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEATH_ANIMATION_DURATION = void 0;
 const core_1 = require("./core");
 const glitch_effect_1 = require("./glitch-effect");
+const text_1 = require("./text");
 /**
  * Ease a mob's eye toward where it is facing, and store it back.
  *
@@ -532,12 +533,7 @@ core_1.Graphics.prototype.getMobLabelCanvas = function (cacheKey, tier, healthBa
     cctx.rect(ox, oy, w, h);
     cctx.clip();
     cctx.textAlign = 'left';
-    cctx.font = '12px Ubuntu, sans-serif';
-    cctx.strokeStyle = '#000000';
-    cctx.lineWidth = 3;
-    cctx.strokeText(mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT);
-    cctx.fillStyle = 'white';
-    cctx.fillText(mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT);
+    (0, text_1.drawText)(cctx, mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT, { size: 12, fill: 'white', stroke: '#000000', strokeWidth: 3 });
     // Health bar background (rounded), drawn after the name so it covers
     // descenders exactly like the old world-space draw order did.
     cctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
@@ -545,13 +541,8 @@ core_1.Graphics.prototype.getMobLabelCanvas = function (cacheKey, tier, healthBa
     cctx.roundRect(ox + MOB_LABEL_PAD_X - 1, oy + MOB_LABEL_ASCENT + 3, healthBarWidth + 2, healthBarHeight + 2, healthBarHeight / 2);
     cctx.fill();
     cctx.textAlign = 'right';
-    cctx.fillStyle = this.ENEMY_COLORS[tier];
-    cctx.font = '10px Ubuntu, sans-serif';
-    cctx.strokeStyle = '#000000';
-    cctx.lineWidth = 3;
     const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
-    cctx.strokeText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
-    cctx.fillText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
+    (0, text_1.drawText)(cctx, tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY, { size: 10, fill: this.ENEMY_COLORS[tier], stroke: '#000000', strokeWidth: 3 });
     cctx.restore();
     cell = { canvas, sx: ox, sy: oy, w, h };
     this.mobLabelCache[key] = cell;
@@ -592,13 +583,8 @@ core_1.Graphics.prototype.drawEnemyHealthBar = function (world, enemy, enemySize
         const formattedDPS = this.formatNumber(dps);
         const dpsText = `DPS: ${formattedDPS}`;
         this.ctx.textAlign = 'right';
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '10px Ubuntu, sans-serif';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
         const dpsY = healthBarY + healthBarHeight + 12 + 14;
-        this.ctx.strokeText(dpsText, enemyX + healthBarWidth / 2, dpsY);
-        this.ctx.fillText(dpsText, enemyX + healthBarWidth / 2, dpsY);
+        (0, text_1.drawText)(this.ctx, dpsText, enemyX + healthBarWidth / 2, dpsY, { size: 10, fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
         this.ctx.textAlign = 'start'; // no restore() here anymore — reset explicitly
     }
 };

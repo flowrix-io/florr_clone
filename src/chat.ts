@@ -30,9 +30,6 @@ interface CommandDefinition {
 
 const COMMANDS: CommandDefinition[] = [
     { command: '/help', description: 'Show available commands', isAdmin: false },
-    { command: '/list_ultra', description: 'List all ultra mobs', isAdmin: false },
-    { command: '/list_super', description: 'List all super mobs', isAdmin: false },
-    { command: '/list_unique', description: 'List all unique mobs', isAdmin: false },
     { command: '/biome', description: 'Show the most populated biome', isAdmin: false },
     { command: '/create-api-key', description: 'Issue an API key tied to your account: /create-api-key [label]', isAdmin: false },
     { command: '/delete-api-key', description: 'Revoke one of your API keys: /delete-api-key <key-or-prefix>', isAdmin: false },

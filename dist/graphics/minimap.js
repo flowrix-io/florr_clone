@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const constants_1 = require("../constants");
 const squad_state_1 = require("../squad_state");
+const text_1 = require("./text");
 /** Reused entity snapshot; see ClientWorld.collectPlayers. */
 const minimapScratch = [];
 const MINIMAP_SPAWN_COLORS = {
@@ -246,13 +247,8 @@ core_1.Graphics.prototype.drawMinimap = function (world, socket) {
     const sectionConfig = core_1.SECTION_CONFIGS[sectionIndex];
     const sectionName = sectionConfig?.name || `Section ${sectionIndex + 1}`;
     // Draw section title below the minimap using level bar font (Ubuntu)
-    this.ctx.font = '14px Ubuntu, sans-serif';
     this.ctx.textAlign = 'center';
     // Draw text with black outline like the level bar
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
-    this.ctx.strokeText(sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
-    this.ctx.fillStyle = 'white';
-    this.ctx.fillText(sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
+    (0, text_1.drawText)(this.ctx, sectionName, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18, { size: 14, fill: 'white', stroke: '#000000', strokeWidth: 3 });
     this.ctx.textAlign = 'left';
 };

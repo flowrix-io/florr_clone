@@ -15,6 +15,7 @@ const zoom_compensation_1 = require("../zoom-compensation");
 const mobile_text_input_1 = require("./mobile_text_input");
 const inventory_manager_1 = require("./inventory_manager");
 const render_utils_1 = require("./render_utils");
+const text_1 = require("../graphics/text");
 const biomes_1 = require("./biomes");
 const background_1 = require("./background");
 const settings_menu_1 = require("./settings_menu");
@@ -991,10 +992,6 @@ class TitleScreen {
         }
         // Draw title
         ctx.save();
-        ctx.font = 'bold 48px Ubuntu, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 6;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const titleText = 'flowrix beta';
@@ -1004,13 +1001,11 @@ class TitleScreen {
             return;
         }
         if (!this.authForm.isVisible()) {
-            ctx.strokeText(titleText, centerX, centerY - 200);
-            ctx.fillText(titleText, centerX, centerY - 200);
+            (0, text_1.drawText)(ctx, titleText, centerX, centerY - 200, { size: 48, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 6 });
             ctx.restore();
         }
         else {
-            ctx.strokeText(titleText, centerX, centerY - 400);
-            ctx.fillText(titleText, centerX, centerY - 400);
+            (0, text_1.drawText)(ctx, titleText, centerX, centerY - 400, { size: 48, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 6 });
             ctx.restore();
         }
         // Render auth form if visible, otherwise render game menu
@@ -1052,13 +1047,8 @@ class TitleScreen {
         }
         const textX = nameInputX + 10;
         const textY = nameInputY + nameInputHeight / 2;
-        // Draw black outline
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.strokeText(displayName, textX, textY);
-        // Draw text fill (white)
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(displayName, textX, textY);
+        // Black outline + white fill
+        (0, text_1.drawText)(ctx, displayName, textX, textY, { size: 18, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         // Draw cursor if focused
         if (this.isNameInputFocused) {
             const cursorX = nameInputX + 10 + ctx.measureText(displayName).width;
@@ -1075,14 +1065,9 @@ class TitleScreen {
         const startButtonHeight = 42;
         (0, render_utils_1.drawGardnButton)(ctx, startButtonX, startButtonY, startButtonWidth, startButtonHeight, '#1dd129', this.hoveredStartButton, this.pressedButton === 'start', 'Ready', 18, 5, 3);
         // Draw biome selector label
-        ctx.font = 'bold 18px Ubuntu, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 4;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.strokeText('Spawn Biome:', centerX, centerY - 50);
-        ctx.fillText('Spawn Biome:', centerX, centerY - 50);
+        (0, text_1.drawText)(ctx, 'Spawn Biome:', centerX, centerY - 50, { size: 18, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 4 });
         // Draw biome buttons
         const biomeStartY = centerY - 20;
         const biomeButtonWidth = 90;
@@ -1104,10 +1089,6 @@ class TitleScreen {
         });
         // Draw controls text (below the loadout bar, which sits at centerY+50 with ~158px height)
         const controlsY = centerY + 225;
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         const numberKeysUseItems = localStorage.getItem('numberKeysUseItems') === 'true';
@@ -1128,10 +1109,8 @@ class TitleScreen {
         ];
         controlsText.forEach((text, index) => {
             const y = controlsY + index * 20;
-            // Draw black outline (already has stroke from above)
-            ctx.strokeText(text, centerX, y);
-            // Draw text fill
-            ctx.fillText(text, centerX, y);
+            // Black outline + white fill
+            (0, text_1.drawText)(ctx, text, centerX, y, { size: 14, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         });
         // Draw stats counters
         this.renderStatsCounters(ctx, width, height);
@@ -1149,11 +1128,8 @@ class TitleScreen {
             return;
         ctx.save();
         const lineHeight = 15;
-        ctx.font = 'bold 11px Ubuntu, sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#000000';
         const x = width - 8;
         const lines = [
             { text: 'Pos: --, --', color: '#ffd700' },
@@ -1164,9 +1140,7 @@ class TitleScreen {
         ];
         let y = height - 8;
         for (const line of lines) {
-            ctx.strokeText(line.text, x, y);
-            ctx.fillStyle = line.color;
-            ctx.fillText(line.text, x, y);
+            (0, text_1.drawText)(ctx, line.text, x, y, { size: 11, weight: 'bold', fill: line.color, stroke: '#000000', strokeWidth: 2 });
             y -= lineHeight;
         }
         ctx.restore();
@@ -1178,26 +1152,16 @@ class TitleScreen {
     renderConnecting(ctx, centerX, centerY) {
         // Draw title
         ctx.save();
-        ctx.font = 'bold 48px Ubuntu, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 6;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const titleText = 'flowrix beta';
-        ctx.strokeText(titleText, centerX, centerY - 200);
-        ctx.fillText(titleText, centerX, centerY - 200);
+        (0, text_1.drawText)(ctx, titleText, centerX, centerY - 200, { size: 48, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 6 });
         ctx.restore();
         // Draw connecting text
-        ctx.font = 'bold 24px Ubuntu, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 4;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const connectingText = 'Connecting...';
-        ctx.strokeText(connectingText, centerX, centerY);
-        ctx.fillText(connectingText, centerX, centerY);
+        (0, text_1.drawText)(ctx, connectingText, centerX, centerY, { size: 24, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 4 });
         // Draw stats counters
         this.renderStatsCounters(ctx, this.logicalW, this.logicalH);
     }

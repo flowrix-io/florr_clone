@@ -9,8 +9,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerChatHandlers = registerChatHandlers;
 const constants_1 = require("../../constants");
-const mobFields_1 = require("../mobFields");
-const enemyRegistry_1 = require("../enemyRegistry");
 const database_1 = require("../../database");
 const botManager_1 = require("../botManager");
 const commands_1 = require("../commands");
@@ -545,9 +543,6 @@ function registerChatHandlers(ctx) {
                 const isAdmin = (socket.username ? database_1.database.isUserAdmin(socket.username) : false)
                     || (0, tempAdmin_1.hasTempAdmin)(socket.id);
                 let helpText = 'Available commands:\n';
-                helpText += '/list_ultra - List all ultra mobs <br/>';
-                helpText += '/list_super - List all super mobs <br/>';
-                helpText += '/list_unique - List all unique mobs <br/>';
                 helpText += '/biome - Show the most populated biome <br/>';
                 helpText += '/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would roll <br/>';
                 helpText += '/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; would roll <br/>';
@@ -584,102 +579,6 @@ function registerChatHandlers(ctx) {
                     content: helpText,
                     timestamp: Date.now()
                 });
-                return;
-            }
-            if (command === 'list_ultra') {
-                // Exclude target dummies from list commands
-                const ultraMobs = (0, enemyRegistry_1.liveEnemies)().filter(e => e.tier === 'ultra' && e.type !== 'target_dummy');
-                if (ultraMobs.length === 0) {
-                    io.to(socket.id).emit('chatMessage', {
-                        sender: 'System',
-                        content: 'No ultra mobs currently spawned.',
-                        timestamp: Date.now()
-                    });
-                }
-                else {
-                    ultraMobs.forEach((mob, index) => {
-                        const x = Math.round((0, mobFields_1.mobX)(mob.entity) / constants_1.SCALE_FACTOR);
-                        const y = Math.round((0, mobFields_1.mobY)(mob.entity) / constants_1.SCALE_FACTOR);
-                        io.to(socket.id).emit('chatMessage', {
-                            sender: 'System',
-                            content: `Ultra ${mob.type} at position (${x}, ${y})`,
-                            timestamp: Date.now()
-                        });
-                        // Emit viewport animation event with delay for each mob
-                        // setTimeout(() => { // too many ultra mobs, gets stuck
-                        //     socket.emit('animateViewportToMob', {
-                        //         x: mob.x,
-                        //         y: mob.y,
-                        //         mobType: mob.type,
-                        //         rarity: 'ultra'
-                        //     });
-                        // }, index * 2500); // 2.5 second delay between each mob animation
-                    });
-                }
-                return;
-            }
-            if (command === 'list_super') {
-                // Exclude target dummies from list commands
-                const superMobs = (0, enemyRegistry_1.liveEnemies)().filter(e => e.tier === 'super' && e.type !== 'target_dummy');
-                if (superMobs.length === 0) {
-                    io.to(socket.id).emit('chatMessage', {
-                        sender: 'System',
-                        content: 'No super mobs currently spawned.',
-                        timestamp: Date.now()
-                    });
-                }
-                else {
-                    superMobs.forEach((mob, index) => {
-                        const x = Math.round((0, mobFields_1.mobX)(mob.entity) / constants_1.SCALE_FACTOR);
-                        const y = Math.round((0, mobFields_1.mobY)(mob.entity) / constants_1.SCALE_FACTOR);
-                        io.to(socket.id).emit('chatMessage', {
-                            sender: 'System',
-                            content: `Super ${mob.type} at position (${x}, ${y})`,
-                            timestamp: Date.now()
-                        });
-                        // Emit viewport animation event with delay for each mob
-                        setTimeout(() => {
-                            socket.emit('animateViewportToMob', {
-                                x: (0, mobFields_1.mobX)(mob.entity),
-                                y: (0, mobFields_1.mobY)(mob.entity),
-                                mobType: mob.type,
-                                rarity: 'super'
-                            });
-                        }, index * 2500); // 2.5 second delay between each mob animation
-                    });
-                }
-                return;
-            }
-            if (command === 'list_unique') {
-                // Exclude target dummies from list commands
-                const uniqueMobs = (0, enemyRegistry_1.liveEnemies)().filter(e => e.tier === 'unique' && e.type !== 'target_dummy');
-                if (uniqueMobs.length === 0) {
-                    io.to(socket.id).emit('chatMessage', {
-                        sender: 'System',
-                        content: 'No unique mobs currently spawned.',
-                        timestamp: Date.now()
-                    });
-                }
-                else {
-                    uniqueMobs.forEach((mob, index) => {
-                        const x = Math.round((0, mobFields_1.mobX)(mob.entity) / constants_1.SCALE_FACTOR);
-                        const y = Math.round((0, mobFields_1.mobY)(mob.entity) / constants_1.SCALE_FACTOR);
-                        io.to(socket.id).emit('chatMessage', {
-                            sender: 'System',
-                            content: `Unique ${mob.type} at position (${x}, ${y})`,
-                            timestamp: Date.now()
-                        });
-                        // Emit viewport animation event with delay for each mob
-                        setTimeout(() => {
-                            socket.emit('animateViewportToMob', {
-                                x: (0, mobFields_1.mobX)(mob.entity),
-                                y: (0, mobFields_1.mobY)(mob.entity),
-                                mobType: mob.type,
-                                rarity: 'unique'
-                            });
-                        }, index * 2500); // 2.5 second delay between each mob animation
-                    });
-                }
                 return;
             }
             if (command === 'biome') {
@@ -851,7 +750,7 @@ function registerChatHandlers(ctx) {
             // Unknown command
             io.to(socket.id).emit('chatMessage', {
                 sender: 'System',
-                content: 'Unknown command. Available commands: /list_ultra, /list_super, /list_unique, /biome, /level-from-string, /loadout-from-string, /create-api-key, /delete-api-key',
+                content: 'Unknown command. Available commands: /biome, /level-from-string, /loadout-from-string, /create-api-key, /delete-api-key',
                 timestamp: Date.now()
             });
             return;

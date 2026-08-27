@@ -4,6 +4,7 @@ import { Entity } from '../ecs';
 import { getActivePlayerSkin, getCustomSkin, renderCustomSkinShapes } from './player-skins';
 import { drawBodyWithGlitch, glitchSeedFor } from './glitch-effect';
 import { PlayerRenderFlags } from '../player';
+import { drawText } from './text';
 
 declare module './core' {
     interface Graphics {
@@ -450,14 +451,9 @@ Graphics.prototype.drawPlayerHealthBar = function(this: Graphics, player: Player
 
     // Draw player name above health bar, left-aligned
     this.ctx.textAlign = 'left';
-    this.ctx.font = '12px Ubuntu, sans-serif';
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
     const nameX = -healthBarWidth / 2;
     const nameY = healthBarY - 4;
-    this.ctx.strokeText(player.name || 'Unnamed', nameX, nameY);
-    this.ctx.fillStyle = 'white';
-    this.ctx.fillText(player.name || 'Unnamed', nameX, nameY);
+    drawText(this.ctx, player.name || 'Unnamed', nameX, nameY, { size: 12, fill: 'white', stroke: '#000000', strokeWidth: 3 });
 
     // Health bar background (rounded)
     this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
@@ -519,30 +515,20 @@ Graphics.prototype.drawPlayerHealthBar = function(this: Graphics, player: Player
 
     // Draw level label below health bar, right-aligned
     this.ctx.textAlign = 'right';
-    this.ctx.fillStyle = rarityColor;
-    this.ctx.font = '10px Ubuntu, sans-serif';
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
     const levelX = healthBarWidth / 2;
     const levelY = healthBarY + healthBarHeight + 12;
     const levelLabel = `Lv. ${player.level}`;
-    this.ctx.strokeText(levelLabel, levelX, levelY);
-    this.ctx.fillText(levelLabel, levelX, levelY);
+    drawText(this.ctx, levelLabel, levelX, levelY, { size: 10, fill: rarityColor, stroke: '#000000', strokeWidth: 3 });
 
     // Draw guild tag below health bar, left-aligned — mirrors the level label position
     // so the two sit on opposite sides under the bar. Smaller font so a 5-char
     // ID plus brackets doesn't collide with the right-aligned level label.
     if (player.guildName) {
         this.ctx.textAlign = 'left';
-        this.ctx.font = '8px Ubuntu, sans-serif';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
         const tagX = -healthBarWidth / 2;
         const tagY = levelY;
         const tag = `[${player.guildName}]`;
-        this.ctx.strokeText(tag, tagX, tagY);
-        this.ctx.fillStyle = '#27dade';
-        this.ctx.fillText(tag, tagX, tagY);
+        drawText(this.ctx, tag, tagX, tagY, { size: 8, fill: '#27dade', stroke: '#000000', strokeWidth: 2 });
     }
 };
 

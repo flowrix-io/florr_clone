@@ -15,6 +15,8 @@
 import { getAllMobTypes, getMobStats, getMobRarities, MobStats, MOB_DROP_TABLES, Rarity } from '../mobs';
 import { ITEM_RARITY_COLORS, RARITY_LEVELS } from '../petals';
 import { getPreloadedAssets } from '../preloader';
+import { drawText } from './text';
+import { measureTooltip, paintTooltip, capitalizeRarity, TooltipLine, TOOLTIP_STAT_COLOR } from './tooltip';
 
 // Rarity progression for drop-rarity calculations. Mirrors the order used
 // server-side (server/itemManager.ts) and in the legacy DOM tooltip.
@@ -367,15 +369,10 @@ export class CanvasMobGalleryPanel {
 
         // Title — white, 24px Ubuntu, with a black outline for readability
         // against the yellow panel.
-        ctx.font = 'bold 24px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineJoin = 'round';
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#000000';
-        ctx.strokeText('Mob Gallery', cssW / 2, PANEL_PAD + TITLE_HEIGHT / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Mob Gallery', cssW / 2, PANEL_PAD + TITLE_HEIGHT / 2);
+        drawText(ctx, 'Mob Gallery', cssW / 2, PANEL_PAD + TITLE_HEIGHT / 2, { size: 24, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 4 });
 
         // Close button (top-right). Sits inside the panel padding.
         const closeSize = 26;
@@ -441,15 +438,10 @@ export class CanvasMobGalleryPanel {
                     ctx.drawImage(img, c.x + (c.w - sz) / 2, c.y + (c.h - sz) / 2 - 4, sz, sz);
                 }
                 // Mob name (small label at bottom of cell).
-                ctx.font = 'bold 8px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
-                ctx.fillStyle = '#fff';
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 2;
                 const name = c.stats.name || c.mobType;
-                ctx.strokeText(name, c.x + c.w / 2, c.y + c.h - 4);
-                ctx.fillText(name, c.x + c.w / 2, c.y + c.h - 4);
+                drawText(ctx, name, c.x + c.w / 2, c.y + c.h - 4, { size: 8, weight: 'bold', fill: '#fff', stroke: '#000', strokeWidth: 2 });
 
                 // Kill count badge.
                 const text = c.killCount.toString();
@@ -462,15 +454,12 @@ export class CanvasMobGalleryPanel {
                 ctx.fillStyle = 'rgba(0,0,0,0.8)';
                 roundedRect(ctx, bx, by, tw + 6, 14, 3);
                 ctx.fill();
-                ctx.fillStyle = '#fff';
-                ctx.fillText(text, bx + 3, by + 2);
+                drawText(ctx, text, bx + 3, by + 2, { size: 10, weight: 'bold', fill: '#fff', strokeWidth: 0 });
             } else if (c.valid) {
                 // Locked.
-                ctx.font = 'bold 24px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#666';
-                ctx.fillText('?', c.x + c.w / 2, c.y + c.h / 2);
+                drawText(ctx, '?', c.x + c.w / 2, c.y + c.h / 2, { size: 24, weight: 'bold', fill: '#666', strokeWidth: 0 });
             }
 
             // Hover highlight.
@@ -514,30 +503,22 @@ export class CanvasMobGalleryPanel {
     private drawTooltip(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, c: CellRect) {
         const stats = c.stats!;
         const rarityColor = ITEM_RARITY_COLORS[c.rarity] || '#fff';
-
-        // === Header text lines ===
-        type Line = { text: string; color: string; font: string };
-        const lines: Line[] = [];
-        const titleFont = 'bold 14px Ubuntu, sans-serif';
-        const bodyFont = '12px Ubuntu, sans-serif';
-        const headerFont = 'bold 12px Ubuntu, sans-serif';
         const probFont = 'bold 10px Ubuntu, sans-serif';
-        const colHeaderFont = 'bold 10px Ubuntu, sans-serif';
 
-        lines.push({
-            text: `${c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1)} ${stats.name || c.mobType}`,
-            color: rarityColor,
-            font: titleFont,
-        });
+        // === Header text lines (gardn layout: name / rarity / spacer / body) ===
+        const lines: TooltipLine[] = [
+            { text: stats.name || c.mobType, size: 20 },
+            { text: capitalizeRarity(c.rarity), size: 14, color: rarityColor },
+        ];
         if (stats.description) {
-            for (const w of wrapText(ctx, stats.description, 280, bodyFont)) {
-                lines.push({ text: w, color: '#ccc', font: bodyFont });
-            }
+            lines.push({ text: stats.description, size: 12, gapBefore: 10, maxWidth: 280 });
         }
-        lines.push({ text: `HP: ${abbreviateNumber(stats.health)}`, color: '#4CAF50', font: bodyFont });
-        lines.push({ text: `Damage: ${abbreviateNumber(stats.damage)}`, color: '#f44336', font: bodyFont });
-        lines.push({ text: `Speed: ${stats.speed.toFixed(1)}`, color: '#2196F3', font: bodyFont });
-        lines.push({ text: `XP: ${abbreviateNumber(stats.xp)}`, color: '#FF9800', font: bodyFont });
+        lines.push(
+            { text: `HP: ${abbreviateNumber(stats.health)}`, size: 12, color: TOOLTIP_STAT_COLOR, gapBefore: stats.description ? 4 : 10 },
+            { text: `Damage: ${abbreviateNumber(stats.damage)}`, size: 12, color: TOOLTIP_STAT_COLOR },
+            { text: `Speed: ${stats.speed.toFixed(1)}`, size: 12, color: TOOLTIP_STAT_COLOR },
+            { text: `XP: ${abbreviateNumber(stats.xp)}`, size: 12, color: TOOLTIP_STAT_COLOR },
+        );
 
         // === Build drops table: rows = drop types, columns = rarities ===
         const flatDrops = computeMobDrops(c.mobType, c.rarity);
@@ -564,10 +545,7 @@ export class CanvasMobGalleryPanel {
         const hasDrops = rowKeys.length > 0 && colRarities.length > 0;
 
         // === Layout constants ===
-        const padX = 10;
-        const padY = 8;
-        const lineH = 16;
-        const titleH = 20;
+        const dropsGapY = 6;         // gap between the text block and the table
         const dropsHeaderH = 20;
         const colHeaderH = 16;
         const cardSize = 32;
@@ -576,24 +554,13 @@ export class CanvasMobGalleryPanel {
         const rowH = cardSize + 4 + cardLabelH; // card + gap + probability label
         const rowGapY = 4;
 
-        // === Tooltip width = max(text body, drops table) + padding ===
-        let textW = 0;
-        for (const ln of lines) {
-            if (!ln.text) continue;
-            ctx.font = ln.font;
-            const w = ctx.measureText(ln.text).width;
-            if (w > textW) textW = w;
-        }
+        // === Box = shared gardn tooltip; reserve space below the text for the table ===
         const tableW = colRarities.length * cellW;
-        const w = Math.max(textW, tableW) + padX * 2;
-
-        // === Tooltip height = text + drops header + col header + rows ===
-        let textH = padY * 2;
-        for (const ln of lines) textH += ln.font === titleFont ? titleH : lineH;
         const dropsH = hasDrops
-            ? dropsHeaderH + colHeaderH + rowKeys.length * rowH + Math.max(0, rowKeys.length - 1) * rowGapY + 4
+            ? dropsGapY + dropsHeaderH + colHeaderH + rowKeys.length * rowH + Math.max(0, rowKeys.length - 1) * rowGapY
             : 0;
-        const h = textH + dropsH;
+        const contentOpts = { minContentW: hasDrops ? tableW : 0, extraH: dropsH };
+        const { w, h } = measureTooltip(ctx, lines, contentOpts);
 
         // Position next to the cell, clamped to canvas bounds.
         let tx = c.x + c.w + 8;
@@ -602,42 +569,21 @@ export class CanvasMobGalleryPanel {
         if (ty + h > cssH - 4) ty = cssH - h - 4;
         if (ty < this.contentTop()) ty = this.contentTop();
 
-        // Background.
-        ctx.fillStyle = 'rgba(0,0,0,0.95)';
-        ctx.strokeStyle = rarityColor;
-        ctx.lineWidth = 2;
-        roundedRect(ctx, tx, ty, w, h, 6);
-        ctx.fill();
-        ctx.stroke();
-
-        // === Render text lines ===
-        let cy = ty + padY;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        for (const ln of lines) {
-            const lh = ln.font === titleFont ? titleH : lineH;
-            if (ln.text) {
-                ctx.font = ln.font;
-                ctx.fillStyle = ln.color;
-                ctx.fillText(ln.text, tx + padX, cy);
-            }
-            cy += lh;
-        }
+        const layout = paintTooltip(ctx, tx, ty, lines, contentOpts);
 
         // === Render drops table ===
         if (!hasDrops) return;
+        let cy = layout.textBottom + dropsGapY;
         // 'Drops:' header (gold).
-        ctx.font = headerFont;
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#FFD700';
-        ctx.fillText('Drops:', tx + padX, cy);
+        ctx.textBaseline = 'top';
+        drawText(ctx, 'Drops:', layout.contentX, cy, { size: 12, weight: 'bold', fill: '#FFD700' });
         cy += dropsHeaderH;
 
         // Center the table horizontally inside the tooltip.
         const tableStartX = tx + (w - tableW) / 2;
 
         // Column header row: rarity labels colored by rarity.
-        ctx.font = colHeaderFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineJoin = 'round';
@@ -645,12 +591,9 @@ export class CanvasMobGalleryPanel {
             const r = colRarities[i];
             const col = ITEM_RARITY_COLORS[r] || '#fff';
             const cx = tableStartX + i * cellW + cellW / 2;
-            const label = r.charAt(0).toUpperCase() + r.slice(1);
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = '#000';
-            ctx.strokeText(label, cx, cy + colHeaderH / 2);
-            ctx.fillStyle = col;
-            ctx.fillText(label, cx, cy + colHeaderH / 2);
+            drawText(ctx, capitalizeRarity(r), cx, cy + colHeaderH / 2, {
+                size: 10, weight: 'bold', fill: col, strokeWidth: 2,
+            });
         }
         cy += colHeaderH;
 
@@ -743,15 +686,10 @@ export class CanvasMobGalleryPanel {
 
         // Multiplier badge in the top-right corner if quantity > 1.
         if (d.multiplier && d.multiplier > 1) {
-            ctx.font = 'bold 9px Ubuntu, sans-serif';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'top';
-            ctx.fillStyle = '#FFD700';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2;
             const text = `x${d.multiplier}`;
-            ctx.strokeText(text, cardX + cardSize - 2, cardY + 2);
-            ctx.fillText(text, cardX + cardSize - 2, cardY + 2);
+            drawText(ctx, text, cardX + cardSize - 2, cardY + 2, { size: 9, weight: 'bold', fill: '#FFD700', stroke: '#000', strokeWidth: 2 });
         }
 
         // Probability label below the card. Aggregated branches can push the
@@ -760,14 +698,9 @@ export class CanvasMobGalleryPanel {
         const probStr = d.probability < 0.01
             ? '<0.01%'
             : Math.min(100, d.probability).toFixed(2) + '%';
-        ctx.font = probFont;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#fff';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 2;
-        ctx.strokeText(probStr, cellX + cellW / 2, cardY + cardSize + 4);
-        ctx.fillText(probStr, cellX + cellW / 2, cardY + cardSize + 4);
+        drawText(ctx, probStr, cellX + cellW / 2, cardY + cardSize + 4, { font: probFont, fill: '#fff', stroke: '#000', strokeWidth: 2 });
     }
 
     // ===== input =====
@@ -859,25 +792,5 @@ export class CanvasMobGalleryPanel {
 
 function pointInRect(x: number, y: number, r: { x: number; y: number; w: number; h: number }): boolean {
     return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, font: string): string[] {
-    const prevFont = ctx.font;
-    ctx.font = font;
-    const words = text.split(/\s+/);
-    const lines: string[] = [];
-    let line = '';
-    for (const w of words) {
-        const candidate = line ? line + ' ' + w : w;
-        if (ctx.measureText(candidate).width > maxWidth && line) {
-            lines.push(line);
-            line = w;
-        } else {
-            line = candidate;
-        }
-    }
-    if (line) lines.push(line);
-    ctx.font = prevFont;
-    return lines;
 }
 

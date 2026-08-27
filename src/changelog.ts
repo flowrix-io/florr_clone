@@ -1,6 +1,7 @@
 // This file should not be updated every time
 // It should only be updated when there are major changes
 import { canvasCoords } from './zoom-compensation';
+import { drawText } from './graphics/text';
 
 export interface ChangelogEntry {
     date: string;
@@ -720,13 +721,8 @@ export class ChangelogManager {
         ctx.stroke();
 
         // Draw header (before clipping)
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeText('Changelog', offsetX + this.PADDING, offsetY + this.PADDING);
-        ctx.fillText('Changelog', offsetX + this.PADDING, offsetY + this.PADDING);
+        drawText(ctx, 'Changelog', offsetX + this.PADDING, offsetY + this.PADDING, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
 
         // Draw close button (before clipping)
         const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
@@ -738,11 +734,9 @@ export class ChangelogManager {
         ctx.fillStyle = '#ff4444';
         this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
         ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
+        drawText(ctx, '✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2, { size: 16, fill: '#FFFFFF', strokeWidth: 0 });
         ctx.textAlign = 'left';
 
         // Clip to panel content area (after header and buttons)
@@ -764,12 +758,7 @@ export class ChangelogManager {
             ctx.fill();
 
             // Draw date
-            ctx.font = 'bold 20px Ubuntu, sans-serif';
-            ctx.fillStyle = '#FFFFFF';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
-            ctx.strokeText(entry.date, offsetX + this.PADDING, contentY);
-            ctx.fillText(entry.date, offsetX + this.PADDING, contentY);
+            drawText(ctx, entry.date, offsetX + this.PADDING, contentY, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
             contentY += 25;
 
             // Draw changes
@@ -834,10 +823,10 @@ export class ChangelogManager {
 
             const width = ctx.measureText(segment.text).width;
             if (segment.type === 'link') {
-                ctx.fillStyle = '#d8f7ff';
-                ctx.strokeStyle = '#000000';
-                ctx.strokeText(segment.text, currentX, y);
-                ctx.fillText(segment.text, currentX, y);
+                // strokeWidth follows the ambient lineWidth on purpose: the
+                // caller sets 0.5, but a link underline bumps it to 1 for the
+                // segments after it — preserved as-is.
+                drawText(ctx, segment.text, currentX, y, { size: 14, fill: '#d8f7ff', strokeWidth: ctx.lineWidth });
 
                 ctx.beginPath();
                 ctx.strokeStyle = '#d8f7ff';
@@ -854,10 +843,7 @@ export class ChangelogManager {
                     url: segment.url
                 });
             } else {
-                ctx.fillStyle = '#FFFFFF';
-                ctx.strokeStyle = '#000000';
-                ctx.strokeText(segment.text, currentX, y);
-                ctx.fillText(segment.text, currentX, y);
+                drawText(ctx, segment.text, currentX, y, { size: 14, fill: '#FFFFFF', strokeWidth: ctx.lineWidth });
             }
 
             currentX += width;

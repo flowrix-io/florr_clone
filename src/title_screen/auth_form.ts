@@ -1,4 +1,5 @@
 import { drawRoundedRect, hsvAdjust, drawGardnButton } from './render_utils';
+import { drawText } from '../graphics/text';
 import { HiddenTextInput } from './mobile_text_input';
 
 export type AuthAction = 'login' | 'register' | 'guest' | 'offline';
@@ -116,25 +117,17 @@ export class AuthForm {
         // Suppress "unused" for formX (kept for layout symmetry; future hit-test math)
         void formX;
 
-        ctx.font = 'bold 28px Ubuntu, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const formTitle = this.loginMode ? 'Login' : 'Register';
-        ctx.strokeText(formTitle, centerX, currentY);
-        ctx.fillText(formTitle, centerX, currentY);
+        drawText(ctx, formTitle, centerX, currentY,
+            { size: 28, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         currentY += 50;
 
         if (location.protocol === 'http:') {
-            ctx.font = 'bold 14px Ubuntu, sans-serif';
-            ctx.fillStyle = '#ff6b6b';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
             const warningText = 'WARNING: Using HTTP (not secure)';
-            ctx.strokeText(warningText, centerX, currentY);
-            ctx.fillText(warningText, centerX, currentY);
+            drawText(ctx, warningText, centerX, currentY,
+                { size: 14, weight: 'bold', fill: '#ff6b6b', stroke: '#000000', strokeWidth: 2 });
             currentY += 30;
         }
 
@@ -180,22 +173,20 @@ export class AuthForm {
             this.drawButton(ctx, guestButtonX, currentY, guestButtonWidth, buttonHeight * 0.8, inputRadius, 'guest', 'Guest', '#6A1B9A', pressedButton);
             currentY += buttonHeight * 0.8 + 4;
 
-            ctx.font = '11px Ubuntu, sans-serif';
-            ctx.fillStyle = '#FF9800';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Guest accounts do not keep progress', centerX, currentY + 6);
+            drawText(ctx, 'Guest accounts do not keep progress', centerX, currentY + 6,
+                { size: 11, fill: '#FF9800', strokeWidth: 0 });
         } else {
             this.drawButton(ctx, inputX, currentY, inputWidth, buttonHeight, inputRadius, 'register', 'Register', '#8A2BE2', pressedButton);
             currentY += buttonHeight + buttonSpacing;
             this.drawButton(ctx, inputX, currentY, inputWidth, buttonHeight, inputRadius, 'offline', 'Register Offline', '#6A1B9A', pressedButton);
             currentY += buttonHeight + buttonSpacing;
 
-            ctx.font = '14px Ubuntu, sans-serif';
-            ctx.fillStyle = this.hoveredButton === 'showLogin' ? '#ffffff' : '#E0B0FF';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Already have an account? Login', centerX, currentY + 10);
+            drawText(ctx, 'Already have an account? Login', centerX, currentY + 10,
+                { size: 14, fill: this.hoveredButton === 'showLogin' ? '#ffffff' : '#E0B0FF', strokeWidth: 0 });
         }
     }
 
@@ -211,17 +202,12 @@ export class AuthForm {
         ctx.fill();
         ctx.stroke();
 
-        ctx.font = '18px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         const displayValue = isPassword ? '*'.repeat(value.length) : value;
         const displayText = displayValue || (isFocused ? '' : placeholder);
-        ctx.strokeStyle = 'rgb(0, 0, 0)';
-        ctx.lineWidth = 2;
-        ctx.strokeText(displayText, x + 10, y + height / 2);
-        ctx.lineWidth = 0;
-        ctx.fillStyle = 'rgb(255, 255, 255)';
-        ctx.fillText(displayText, x + 10, y + height / 2);
+        drawText(ctx, displayText, x + 10, y + height / 2,
+            { size: 18, fill: 'rgb(255, 255, 255)', stroke: 'rgb(0, 0, 0)', strokeWidth: 2 });
 
         if (isFocused) {
             const textWidth = ctx.measureText(displayText).width;

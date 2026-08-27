@@ -8,6 +8,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DailyStreakWidget = void 0;
+const text_1 = require("./graphics/text");
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -197,40 +198,24 @@ class DailyStreakWidget {
         this.drawStar(ctx, starCx, starCy, 22 * pulse, cycleDay > 0, state.newDay);
         // Number inside star (cycle day)
         if (cycleDay > 0) {
-            ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#000000';
-            ctx.fillStyle = '#ffffff';
             const label = `${cycleDay}`;
-            ctx.strokeText(label, starCx, starCy + 1);
-            ctx.fillText(label, starCx, starCy + 1);
+            (0, text_1.drawText)(ctx, label, starCx, starCy + 1, { size: 16, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
         }
         // ----- Claim status below the star -----
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#000000';
         const statusY = 74;
-        ctx.strokeText(text.status, W / 2, statusY);
-        ctx.fillStyle = text.claimed ? '#ffffff' : '#ffe65d';
-        ctx.fillText(text.status, W / 2, statusY);
+        (0, text_1.drawText)(ctx, text.status, W / 2, statusY, { size: 13, weight: 'bold', fill: text.claimed ? '#ffffff' : '#ffe65d', strokeWidth: 3 });
         // ----- Countdown lines -----
-        ctx.font = '11px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.lineWidth = 2.5;
         const nextText = text.nextText;
         const resetText = text.resetText;
         const lineY1 = 100;
         const lineY2 = 120;
-        ctx.strokeStyle = '#000000';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeText(nextText, 12, lineY1);
-        ctx.fillText(nextText, 12, lineY1);
-        ctx.strokeText(resetText, 12, lineY2);
-        ctx.fillText(resetText, 12, lineY2);
+        (0, text_1.drawText)(ctx, nextText, 12, lineY1, { size: 11, fill: '#ffffff', strokeWidth: 2.5 });
+        (0, text_1.drawText)(ctx, resetText, 12, lineY2, { size: 11, fill: '#ffffff', strokeWidth: 2.5 });
     }
     drawStar(ctx, cx, cy, r, earned, highlight) {
         ctx.save();

@@ -4,6 +4,7 @@ exports.LeaderboardManager = void 0;
 const constants_1 = require("./constants");
 const zoom_compensation_1 = require("./zoom-compensation");
 const auth_session_1 = require("./auth_session");
+const text_1 = require("./graphics/text");
 class LeaderboardManager {
     constructor() {
         this.canvas = null;
@@ -214,22 +215,14 @@ class LeaderboardManager {
         ctx.fill();
         ctx.stroke();
         // Header
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
-        ctx.fillText('Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING);
+        (0, text_1.drawText)(ctx, 'Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
         // Total accounts count and daily active users (DAU only shown to admins)
         if (this.totalAccounts > 0) {
-            ctx.font = '13px Ubuntu, sans-serif';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.lineWidth = 0;
             const statsText = this.dailyActiveUsers !== null
                 ? `${this.totalAccounts} accounts \u00B7 ${this.dailyActiveUsers} active today`
                 : `${this.totalAccounts} accounts`;
-            ctx.fillText(statsText, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5);
+            (0, text_1.drawText)(ctx, statsText, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5, { size: 13, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
         }
         // Refresh button
         const refreshButtonX = offsetX + this.PANEL_WIDTH - 140;
@@ -240,11 +233,9 @@ class LeaderboardManager {
         ctx.fillStyle = '#c4871a';
         this.roundRect(ctx, refreshButtonX, refreshButtonY, refreshButtonWidth, refreshButtonHeight, 5);
         ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '14px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Refresh', refreshButtonX + refreshButtonWidth / 2, refreshButtonY + refreshButtonHeight / 2);
+        (0, text_1.drawText)(ctx, 'Refresh', refreshButtonX + refreshButtonWidth / 2, refreshButtonY + refreshButtonHeight / 2, { size: 14, fill: '#FFFFFF', strokeWidth: 0 });
         ctx.textAlign = 'left';
         // Close button
         const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
@@ -255,11 +246,9 @@ class LeaderboardManager {
         ctx.fillStyle = '#ff4444';
         this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
         ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('\u2715', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
+        (0, text_1.drawText)(ctx, '\u2715', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2, { size: 16, fill: '#FFFFFF', strokeWidth: 0 });
         ctx.textAlign = 'left';
         // Clip content area
         ctx.save();
@@ -268,19 +257,15 @@ class LeaderboardManager {
         ctx.clip();
         let contentY = offsetY + headerHeight - this.scrollY;
         if (this.isLoading && this.entries.length === 0) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.font = '14px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            ctx.fillText('Loading...', offsetX + this.PANEL_WIDTH / 2, contentY + 20);
+            (0, text_1.drawText)(ctx, 'Loading...', offsetX + this.PANEL_WIDTH / 2, contentY + 20, { size: 14, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
             ctx.textAlign = 'left';
         }
         else if (this.entries.length === 0) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.font = '14px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            ctx.fillText('No accounts found', offsetX + this.PANEL_WIDTH / 2, contentY + 20);
+            (0, text_1.drawText)(ctx, 'No accounts found', offsetX + this.PANEL_WIDTH / 2, contentY + 20, { size: 14, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
             ctx.textAlign = 'left';
         }
         else {
@@ -289,14 +274,12 @@ class LeaderboardManager {
             const colName = offsetX + 60;
             const colLevel = offsetX + this.PANEL_WIDTH - 170;
             const colXP = offsetX + this.PANEL_WIDTH - 80;
-            ctx.font = 'bold 14px Ubuntu, sans-serif';
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.textBaseline = 'top';
-            ctx.fillText('#', colRank, contentY + 8);
-            ctx.fillText('Player', colName, contentY + 8);
-            ctx.fillText('Level', colLevel, contentY + 8);
+            (0, text_1.drawText)(ctx, '#', colRank, contentY + 8, { size: 14, weight: 'bold', fill: 'rgba(255, 255, 255, 0.8)', strokeWidth: 0 });
+            (0, text_1.drawText)(ctx, 'Player', colName, contentY + 8, { size: 14, weight: 'bold', fill: 'rgba(255, 255, 255, 0.8)', strokeWidth: 0 });
+            (0, text_1.drawText)(ctx, 'Level', colLevel, contentY + 8, { size: 14, weight: 'bold', fill: 'rgba(255, 255, 255, 0.8)', strokeWidth: 0 });
             ctx.textAlign = 'right';
-            ctx.fillText('XP', colXP + 50, contentY + 8);
+            (0, text_1.drawText)(ctx, 'XP', colXP + 50, contentY + 8, { size: 14, weight: 'bold', fill: 'rgba(255, 255, 255, 0.8)', strokeWidth: 0 });
             ctx.textAlign = 'left';
             contentY += columnHeaderHeight;
             // Rows
@@ -319,34 +302,18 @@ class LeaderboardManager {
                     rankColor = '#C0C0C0';
                 else if (rank === 3)
                     rankColor = '#CD7F32';
-                ctx.font = 'bold 16px Ubuntu, sans-serif';
-                ctx.fillStyle = rankColor;
-                ctx.strokeStyle = '#000000';
-                ctx.lineWidth = 1;
                 ctx.textBaseline = 'middle';
                 const rankText = `${rank}`;
-                ctx.strokeText(rankText, colRank, rowY + this.ROW_HEIGHT / 2);
-                ctx.fillText(rankText, colRank, rowY + this.ROW_HEIGHT / 2);
+                (0, text_1.drawText)(ctx, rankText, colRank, rowY + this.ROW_HEIGHT / 2, { size: 16, weight: 'bold', fill: rankColor, strokeWidth: 1 });
                 // Username
-                ctx.font = '14px Ubuntu, sans-serif';
-                ctx.fillStyle = rankColor;
-                ctx.strokeStyle = '#000000';
-                ctx.lineWidth = 0.5;
                 const displayName = entry.username.length > 20 ? entry.username.substring(0, 17) + '...' : entry.username;
-                ctx.strokeText(displayName, colName, rowY + this.ROW_HEIGHT / 2);
-                ctx.fillText(displayName, colName, rowY + this.ROW_HEIGHT / 2);
+                (0, text_1.drawText)(ctx, displayName, colName, rowY + this.ROW_HEIGHT / 2, { size: 14, fill: rankColor, strokeWidth: 0.5 });
                 // Level
-                ctx.font = 'bold 14px Ubuntu, sans-serif';
-                ctx.fillStyle = '#FFFFFF';
-                ctx.strokeText(`${entry.level}`, colLevel, rowY + this.ROW_HEIGHT / 2);
-                ctx.fillText(`${entry.level}`, colLevel, rowY + this.ROW_HEIGHT / 2);
+                (0, text_1.drawText)(ctx, `${entry.level}`, colLevel, rowY + this.ROW_HEIGHT / 2, { size: 14, weight: 'bold', fill: '#FFFFFF', strokeWidth: 0.5 });
                 // XP
-                ctx.font = '13px Ubuntu, sans-serif';
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                 ctx.textAlign = 'right';
                 const xpText = this.formatXP(entry.totalXP);
-                ctx.strokeText(xpText, colXP + 50, rowY + this.ROW_HEIGHT / 2);
-                ctx.fillText(xpText, colXP + 50, rowY + this.ROW_HEIGHT / 2);
+                (0, text_1.drawText)(ctx, xpText, colXP + 50, rowY + this.ROW_HEIGHT / 2, { size: 13, fill: 'rgba(255, 255, 255, 0.8)', strokeWidth: 0.5 });
                 ctx.textAlign = 'left';
                 contentY += this.ROW_HEIGHT;
             });

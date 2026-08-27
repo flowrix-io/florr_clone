@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.debugMenuPanel = exports.DebugMenuPanel = exports.DEBUG_MENU_SETTING_KEY = void 0;
 exports.isDebugMenuEnabled = isDebugMenuEnabled;
 const render_utils_1 = require("./title_screen/render_utils");
+const text_1 = require("./graphics/text");
 exports.DEBUG_MENU_SETTING_KEY = 'debugMenuEnabled';
 function isDebugMenuEnabled() {
     return localStorage.getItem(exports.DEBUG_MENU_SETTING_KEY) === 'true';
@@ -131,14 +132,9 @@ class DebugMenuPanel {
         ctx.beginPath();
         ctx.rect(panelX + 4, panelY + 4, panelW - 8, panelH - 8);
         ctx.fill();
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.strokeText('Debug', panelX + pad, panelY + pad + headerH / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Debug', panelX + pad, panelY + pad + headerH / 2);
+        (0, text_1.drawText)(ctx, 'Debug', panelX + pad, panelY + pad + headerH / 2, { size: 20, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
         const closeBtnX = panelX + panelW - pad - 28;
         const closeBtnY = panelY + pad;
         (0, render_utils_1.drawGardnButton)(ctx, closeBtnX, closeBtnY, 28, 28, '#cc4444', this.closeHovered, false, 'X', 16, 3, 3);
@@ -178,19 +174,11 @@ class DebugMenuPanel {
      */
     drawGraph(ctx, x, y, w, h, label, valueText, lines, unit) {
         const labelH = 18;
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeText(label, x, y + labelH / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(label, x, y + labelH / 2);
-        ctx.font = 'bold 12px Ubuntu, sans-serif';
+        (0, text_1.drawText)(ctx, label, x, y + labelH / 2, { size: 13, weight: 'bold', fill: '#ffffff', strokeWidth: 2 });
         ctx.textAlign = 'right';
-        ctx.strokeText(valueText, x + w, y + labelH / 2);
-        ctx.fillStyle = lines[lines.length - 1]?.color || '#ffffff';
-        ctx.fillText(valueText, x + w, y + labelH / 2);
+        (0, text_1.drawText)(ctx, valueText, x + w, y + labelH / 2, { size: 12, weight: 'bold', fill: lines[lines.length - 1]?.color || '#ffffff', strokeWidth: 2 });
         const plotY = y + labelH;
         ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         ctx.beginPath();
@@ -205,10 +193,8 @@ class DebugMenuPanel {
                     maxV = v;
         }
         if (maxV <= 0) {
-            ctx.font = '11px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillStyle = '#888888';
-            ctx.fillText('no data yet', x + w / 2, plotY + h / 2);
+            (0, text_1.drawText)(ctx, 'no data yet', x + w / 2, plotY + h / 2, { size: 11, fill: '#888888', strokeWidth: 0 });
             return;
         }
         const scaleMax = maxV * 1.15;
@@ -219,10 +205,8 @@ class DebugMenuPanel {
         ctx.moveTo(x + 2, plotY + h / 2);
         ctx.lineTo(x + w - 2, plotY + h / 2);
         ctx.stroke();
-        ctx.font = '9px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillText(`${(scaleMax / 2).toFixed(1)} ${unit}`, x + 4, plotY + h / 2 - 5);
+        (0, text_1.drawText)(ctx, `${(scaleMax / 2).toFixed(1)} ${unit}`, x + 4, plotY + h / 2 - 5, { size: 9, fill: 'rgba(255, 255, 255, 0.5)', strokeWidth: 0 });
         ctx.save();
         ctx.beginPath();
         ctx.rect(x, plotY, w, h);

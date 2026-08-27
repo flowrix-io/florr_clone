@@ -5,6 +5,7 @@ import {
 import { ClientWorld } from '../client_world';
 import { Entity } from '../ecs';
 import { drawBodyWithGlitch, glitchSeedFor } from './glitch-effect';
+import { drawText } from './text';
 
 declare module './core' {
     interface Graphics {
@@ -620,12 +621,7 @@ Graphics.prototype.getMobLabelCanvas = function(this: Graphics, cacheKey: string
     cctx.clip();
 
     cctx.textAlign = 'left';
-    cctx.font = '12px Ubuntu, sans-serif';
-    cctx.strokeStyle = '#000000';
-    cctx.lineWidth = 3;
-    cctx.strokeText(mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT);
-    cctx.fillStyle = 'white';
-    cctx.fillText(mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT);
+    drawText(cctx, mobName, ox + MOB_LABEL_PAD_X, oy + MOB_LABEL_ASCENT, { size: 12, fill: 'white', stroke: '#000000', strokeWidth: 3 });
 
     // Health bar background (rounded), drawn after the name so it covers
     // descenders exactly like the old world-space draw order did.
@@ -635,13 +631,8 @@ Graphics.prototype.getMobLabelCanvas = function(this: Graphics, cacheKey: string
     cctx.fill();
 
     cctx.textAlign = 'right';
-    cctx.fillStyle = this.ENEMY_COLORS[tier as keyof typeof this.ENEMY_COLORS];
-    cctx.font = '10px Ubuntu, sans-serif';
-    cctx.strokeStyle = '#000000';
-    cctx.lineWidth = 3;
     const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
-    cctx.strokeText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
-    cctx.fillText(tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY);
+    drawText(cctx, tierLabel, ox + MOB_LABEL_PAD_X + healthBarWidth, oy + MOB_LABEL_ASCENT + tierDY, { size: 10, fill: this.ENEMY_COLORS[tier as keyof typeof this.ENEMY_COLORS], stroke: '#000000', strokeWidth: 3 });
     cctx.restore();
 
     cell = { canvas, sx: ox, sy: oy, w, h };
@@ -689,13 +680,8 @@ Graphics.prototype.drawEnemyHealthBar = function(this: Graphics, world: ClientWo
         const formattedDPS = this.formatNumber(dps);
         const dpsText = `DPS: ${formattedDPS}`;
         this.ctx.textAlign = 'right';
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '10px Ubuntu, sans-serif';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
         const dpsY = healthBarY + healthBarHeight + 12 + 14;
-        this.ctx.strokeText(dpsText, enemyX + healthBarWidth / 2, dpsY);
-        this.ctx.fillText(dpsText, enemyX + healthBarWidth / 2, dpsY);
+        drawText(this.ctx, dpsText, enemyX + healthBarWidth / 2, dpsY, { size: 10, fill: '#ffffff', stroke: '#000000', strokeWidth: 2 });
         this.ctx.textAlign = 'start'; // no restore() here anymore — reset explicitly
     }
 };

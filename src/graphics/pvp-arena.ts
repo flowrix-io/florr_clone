@@ -5,6 +5,7 @@ import { Entity } from '../ecs';
 /** Reused entity snapshot; see ClientWorld.collectPlayers. */
 const leaderboardScratch: Entity[] = [];
 import { PVP_ARENA_CENTER_X, PVP_ARENA_CENTER_Y, PVP_ARENA_RADIUS } from '../constants';
+import { drawText } from './text';
 
 declare module './core' {
     interface Graphics {
@@ -166,18 +167,12 @@ Graphics.prototype.drawPvpLeaderboard = function(this: Graphics, world: ClientWo
     const headerText = arenaPlayers.length === 1 ? '1 Flower' : `${arenaPlayers.length} Flowers`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 18px Ubuntu, sans-serif';
-    ctx.lineWidth = 18 * 0.18;
-    ctx.strokeStyle = '#222222';
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeText(headerText, headerX + headerW / 2, headerY + HEADER_H / 2);
-    ctx.fillText(headerText, headerX + headerW / 2, headerY + HEADER_H / 2);
+    drawText(ctx, headerText, headerX + headerW / 2, headerY + HEADER_H / 2, { size: 18, weight: 'bold', fill: '#ffffff', stroke: '#222222', strokeWidth: 18 * 0.18 });
 
     // Rows.
     const rowsX = x + (panelW - ROW_W) / 2;
     const rowsY = headerY + HEADER_H + PANEL_PAD;
     const rowFontSize = ROW_H * 0.75;
-    ctx.font = `bold ${rowFontSize}px Ubuntu, sans-serif`;
 
     for (let i = 0; i < topN.length; i++) {
         const entry = topN[i];
@@ -209,11 +204,7 @@ Graphics.prototype.drawPvpLeaderboard = function(this: Graphics, world: ClientWo
 
         // Centered "Name - Score" with dark outline.
         const label = `${entry.name} - ${formatScore(entry.score)}`;
-        ctx.lineWidth = rowFontSize * 0.18;
-        ctx.strokeStyle = '#222222';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeText(label, cx, cy);
-        ctx.fillText(label, cx, cy);
+        drawText(ctx, label, cx, cy, { size: rowFontSize, weight: 'bold', fill: '#ffffff', stroke: '#222222', strokeWidth: rowFontSize * 0.18 });
     }
 
     ctx.restore();

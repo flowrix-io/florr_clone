@@ -6,6 +6,8 @@
  * the canvas inventory panel so the two read as part of the same UI kit.
  */
 
+import { drawText } from './graphics/text';
+
 export interface DailyStreakState {
     streak: number;
     newDay: boolean;
@@ -222,44 +224,28 @@ export class DailyStreakWidget {
 
         // Number inside star (cycle day)
         if (cycleDay > 0) {
-            ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#000000';
-            ctx.fillStyle = '#ffffff';
             const label = `${cycleDay}`;
-            ctx.strokeText(label, starCx, starCy + 1);
-            ctx.fillText(label, starCx, starCy + 1);
+            drawText(ctx, label, starCx, starCy + 1, { size: 16, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
         }
 
         // ----- Claim status below the star -----
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#000000';
         const statusY = 74;
-        ctx.strokeText(text.status, W / 2, statusY);
-        ctx.fillStyle = text.claimed ? '#ffffff' : '#ffe65d';
-        ctx.fillText(text.status, W / 2, statusY);
+        drawText(ctx, text.status, W / 2, statusY, { size: 13, weight: 'bold', fill: text.claimed ? '#ffffff' : '#ffe65d', strokeWidth: 3 });
 
         // ----- Countdown lines -----
-        ctx.font = '11px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.lineWidth = 2.5;
 
         const nextText = text.nextText;
         const resetText = text.resetText;
 
         const lineY1 = 100;
         const lineY2 = 120;
-        ctx.strokeStyle = '#000000';
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeText(nextText, 12, lineY1);
-        ctx.fillText(nextText, 12, lineY1);
-        ctx.strokeText(resetText, 12, lineY2);
-        ctx.fillText(resetText, 12, lineY2);
+        drawText(ctx, nextText, 12, lineY1, { size: 11, fill: '#ffffff', strokeWidth: 2.5 });
+        drawText(ctx, resetText, 12, lineY2, { size: 11, fill: '#ffffff', strokeWidth: 2.5 });
     }
 
     // Path from GAME_ICONS_NET_ICONS 'stars' (viewBox 0 0 512 512).

@@ -1,5 +1,6 @@
 import { Graphics, MapElement, WALL_GRID, WALL_TILE_SIZE, worldToTileX, worldToTileY, tileToWorldX, tileToWorldY, getTileJaggedEdges } from './core';
 import { getAllTileTypes, getTileTypeConfig, TileTypeConfig } from '../constants';
+import { drawText } from './text';
 
 // --- SVG-string tile texture cache ---
 //
@@ -170,9 +171,7 @@ Graphics.prototype.drawMap = function(this: Graphics, world_map_data: MapElement
             if (this.showHitboxes) {
                 this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
                 this.ctx.strokeRect(x, y, width, height);
-                this.ctx.fillStyle = 'white';
-                this.ctx.font = '12px Ubuntu, sans-serif';
-                this.ctx.fillText(`${Math.round(x)},${Math.round(y)}`, x, y - 5);
+                drawText(this.ctx, `${Math.round(x)},${Math.round(y)}`, x, y - 5, { size: 12, fill: 'white', strokeWidth: 0 });
             }
         }
     });

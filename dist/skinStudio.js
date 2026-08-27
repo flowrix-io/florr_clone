@@ -6,6 +6,7 @@ const zoom_compensation_1 = require("./zoom-compensation");
 const skin_format_1 = require("./skin_format");
 const player_skins_1 = require("./graphics/player-skins");
 const app_refs_1 = require("./app_refs");
+const text_1 = require("./graphics/text");
 // Theme matches the purple "skins" icon-button on the title strip
 // (#c45cff bg / #9a3fd0 border in title_screen/canvas_buttons.ts).
 const ACCENT = '#c45cff';
@@ -487,29 +488,11 @@ class SkinStudio {
         ctx.save();
         ctx.setTransform((0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0, (0, zoom_compensation_1.getBaseDeviceScale)(), 0, 0);
         ctx.textBaseline = 'alphabetic';
-        // Draw every canvas label with a black outline (strokeText → fillText),
-        // like the other menus. Wrap fillText for this frame so all labels,
-        // headings and button text pick it up without per-call changes; the
-        // outline width tracks the font size (≈ the other menus' lineWidth-3-on-13px).
-        const origFillText = ctx.fillText.bind(ctx);
-        ctx.fillText = (text, x, y, maxWidth) => {
-            const m = /([\d.]+)px/.exec(ctx.font);
-            const fp = m ? parseFloat(m[1]) : 12;
-            ctx.save();
-            ctx.lineJoin = 'round';
-            ctx.lineWidth = Math.max(2, fp * 0.22);
-            ctx.strokeStyle = '#000';
-            ctx.fillStyle = '#fff'; // all label text is white over the black outline
-            if (maxWidth === undefined) {
-                ctx.strokeText(text, x, y);
-                origFillText(text, x, y);
-            }
-            else {
-                ctx.strokeText(text, x, y, maxWidth);
-                origFillText(text, x, y, maxWidth);
-            }
-            ctx.restore();
-        };
+        // Every canvas label is drawn with a black outline via drawText, like
+        // the other menus; the outline width tracks the font size through
+        // outlineW (≈ the other menus' lineWidth-3-on-13px), and all label
+        // text is white over the black outline.
+        ctx.lineJoin = 'round';
         try {
             // Panel
             roundRect(ctx, this.PX, this.PY, this.PW, this.PH, 8);
@@ -525,7 +508,6 @@ class SkinStudio {
                 this.drawBrowse(ctx);
         }
         finally {
-            ctx.fillText = origFillText;
             ctx.restore();
         }
         // The text editor is a real <textarea> floated over the canvas (you
@@ -541,10 +523,8 @@ class SkinStudio {
         roundRect(ctx, x + 3, y + 3, w - 6, this.HEADER, 6);
         ctx.fillStyle = PANEL_BG2;
         ctx.fill();
-        ctx.font = 'bold 18px Ubuntu, sans-serif';
-        ctx.fillStyle = ACCENT;
         ctx.textAlign = 'left';
-        ctx.fillText('Skin Studio', x + 16, y + 30);
+        (0, text_1.drawText)(ctx, 'Skin Studio', x + 16, y + 30, { size: 18, weight: 'bold', fill: '#fff', strokeWidth: outlineW(18) });
         // Tabs
         this.button(ctx, x + 150, y + 11, 86, 26, 'Create', this.tab === 'create', { k: 'tab', tab: 'create' });
         this.button(ctx, x + 242, y + 11, 86, 26, 'Browse', this.tab === 'browse', { k: 'tab', tab: 'browse' });
@@ -569,10 +549,8 @@ class SkinStudio {
             const pr = this.previewRect();
             const listX = this.PX + 12, listW = 224;
             let ay = pr.y + pr.h + 28;
-            ctx.font = '11px Ubuntu, sans-serif';
-            ctx.fillStyle = MUTED;
             ctx.textAlign = 'left';
-            ctx.fillText('Add shape', listX + 4, ay + 2);
+            (0, text_1.drawText)(ctx, 'Add shape', listX + 4, ay + 2, { size: 11, fill: '#fff', strokeWidth: outlineW(11) });
             ay += 8;
             // Two rows of three — six types no longer fit legibly on one row.
             const types = ['circle', 'ellipse', 'rect', 'polygon', 'line', 'curve'];
@@ -653,10 +631,8 @@ class SkinStudio {
             }
         }
         ctx.restore();
-        ctx.fillStyle = MUTED;
-        ctx.font = '10px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(this.textMode ? 'live preview' : 'drag the handles to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12);
+        (0, text_1.drawText)(ctx, this.textMode ? 'live preview' : 'drag the handles to shape it', pr.x + pr.w / 2, pr.y + pr.h + 12, { size: 10, fill: '#fff', strokeWidth: outlineW(10) });
     }
     drawShapeList(ctx, x, y, w, h) {
         ctx.save();
@@ -686,10 +662,8 @@ class SkinStudio {
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(x + 10, ry + 6, 10, 10);
-                ctx.fillStyle = TEXT;
-                ctx.font = '12px Ubuntu, sans-serif';
                 ctx.textAlign = 'left';
-                ctx.fillText(`${i + 1}. ${s.t}`, x + 28, ry + 15);
+                (0, text_1.drawText)(ctx, `${i + 1}. ${s.t}`, x + 28, ry + 15, { size: 12, fill: '#fff', strokeWidth: outlineW(12) });
                 // row buttons
                 const bx = x + w - 80;
                 this.iconBtn(ctx, bx, ry + 2, 'up', { k: 'moveShape', i, dir: -1 });
@@ -703,12 +677,10 @@ class SkinStudio {
     }
     drawProps(ctx, x, y, w) {
         const s = this.shapes[this.selected];
-        ctx.fillStyle = MUTED;
-        ctx.font = '11px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText('Selected shape', x, y + 2);
+        (0, text_1.drawText)(ctx, 'Selected shape', x, y + 2, { size: 11, fill: '#fff', strokeWidth: outlineW(11) });
         if (!s) {
-            ctx.fillText('— none —', x, y + 22);
+            (0, text_1.drawText)(ctx, '— none —', x, y + 22, { size: 11, fill: '#fff', strokeWidth: outlineW(11) });
             return;
         }
         let cy = y + 14;
@@ -736,11 +708,9 @@ class SkinStudio {
             cy += 30;
         }
         if (s.t === 'curve') {
-            ctx.fillStyle = MUTED;
-            ctx.font = '10px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText('Drag the two round handles to bend it.', x, cy + 8);
-            ctx.fillText('A fill closes the curve into a blob.', x, cy + 21);
+            (0, text_1.drawText)(ctx, 'Drag the two round handles to bend it.', x, cy + 8, { size: 10, fill: '#fff', strokeWidth: outlineW(10) });
+            (0, text_1.drawText)(ctx, 'A fill closes the curve into a blob.', x, cy + 21, { size: 10, fill: '#fff', strokeWidth: outlineW(10) });
             cy += 30;
         }
         if (s.t !== 'line') {
@@ -749,10 +719,8 @@ class SkinStudio {
         cy = this.drawPalette(ctx, x, cy, w, 'Outline', s.stroke || '', 'stroke');
     }
     drawPalette(ctx, x, y, w, label, current, kind) {
-        ctx.fillStyle = MUTED;
-        ctx.font = '11px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(label, x, y + 10);
+        (0, text_1.drawText)(ctx, label, x, y + 10, { size: 11, fill: '#fff', strokeWidth: outlineW(11) });
         const sw = 20, gap = 4, perRow = Math.floor((w + gap) / (sw + gap));
         let sx = x, sy = y + 16;
         const cells = ['', ...PALETTE]; // '' = none
@@ -787,29 +755,23 @@ class SkinStudio {
         return y + 16 + rows * (sw + gap) + 8;
     }
     stepper(ctx, x, y, w, label, field, value, step) {
-        ctx.fillStyle = MUTED;
-        ctx.font = '10px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText(label, x, y + 9);
+        (0, text_1.drawText)(ctx, label, x, y + 9, { size: 10, fill: '#fff', strokeWidth: outlineW(10) });
         const by = y + 12, bh = 18, bw = 20;
         const valW = w - bw * 2 - 6;
         this.button(ctx, x, by, bw, bh, '-', false, { k: 'step', field, delta: -step }, ROW_BG, BORDER, TEXT, '12px');
         roundRect(ctx, x + bw + 3, by, valW, bh, 3);
         ctx.fillStyle = PANEL_BG2;
         ctx.fill();
-        ctx.fillStyle = TEXT;
-        ctx.font = '11px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(String(round1(value)), x + bw + 3 + valW / 2, by + 13);
+        (0, text_1.drawText)(ctx, String(round1(value)), x + bw + 3 + valW / 2, by + 13, { size: 11, fill: '#fff', strokeWidth: outlineW(11) });
         this.button(ctx, x + bw + valW + 6, by, bw, bh, '+', false, { k: 'step', field, delta: step }, ROW_BG, BORDER, TEXT, '12px');
     }
     // BROWSE TAB
     drawBrowse(ctx) {
         const x = this.PX, top = this.PY + this.HEADER + 8;
-        ctx.fillStyle = MUTED;
-        ctx.font = '12px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText('Published skins — equip one; everyone sees it.', x + 14, top + 12);
+        (0, text_1.drawText)(ctx, 'Published skins — equip one; everyone sees it.', x + 14, top + 12, { size: 12, fill: '#fff', strokeWidth: outlineW(12) });
         this.button(ctx, x + this.PW - 190, top, 176, 24, 'Unequip (default flower)', false, { k: 'unequip' }, ROW_BG, BORDER, TEXT, '11px');
         const gridTop = top + 34, gridBottom = this.PY + this.PH - 12;
         const gridX = x + 14, gridW = this.PW - 28;
@@ -818,10 +780,8 @@ class SkinStudio {
         ctx.rect(gridX, gridTop, gridW, gridBottom - gridTop);
         ctx.clip();
         if (this.catalog.length === 0) {
-            ctx.fillStyle = MUTED;
-            ctx.font = '13px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText('No skins published yet. Make one in the Create tab.', gridX + 4, gridTop + 24);
+            (0, text_1.drawText)(ctx, 'No skins published yet. Make one in the Create tab.', gridX + 4, gridTop + 24, { size: 13, fill: '#fff', strokeWidth: outlineW(13) });
             ctx.restore();
             return;
         }
@@ -857,13 +817,9 @@ class SkinStudio {
             ctx.translate(pcx, pcy);
             (0, player_skins_1.renderCustomSkinShapes)(ctx, skin.shapes, (ps / 2) * (25 / 36));
             ctx.restore();
-            ctx.fillStyle = TEXT;
-            ctx.font = 'bold 12px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText(clip(skin.name, 16), cx + 10, cyp + ps + 26);
-            ctx.fillStyle = MUTED;
-            ctx.font = '10px Ubuntu, sans-serif';
-            ctx.fillText('by ' + clip(skin.author, 16), cx + 10, cyp + ps + 40);
+            (0, text_1.drawText)(ctx, clip(skin.name, 16), cx + 10, cyp + ps + 26, { size: 12, weight: 'bold', fill: '#fff', strokeWidth: outlineW(12) });
+            (0, text_1.drawText)(ctx, 'by ' + clip(skin.author, 16), cx + 10, cyp + ps + 40, { size: 10, fill: '#fff', strokeWidth: outlineW(10) });
             const by = cyp + cardH - 28;
             const canDelete = this.isAdmin || skin.author.toLowerCase() === me;
             const eqW = canDelete ? cardW - 20 - 56 : cardW - 20;
@@ -896,15 +852,12 @@ class SkinStudio {
         let hy = pr.y + pr.h + 26;
         const line = (s, color = MUTED, font = '11px') => {
             ctx.fillStyle = color;
-            ctx.font = `${font} Ubuntu, sans-serif`;
             ctx.textAlign = 'left';
-            ctx.fillText(s, this.PX + 14, hy);
+            (0, text_1.drawText)(ctx, s, this.PX + 14, hy, { font: `${font} Ubuntu, sans-serif`, fill: '#fff', strokeWidth: outlineW(font) });
             hy += 16;
         };
-        ctx.fillStyle = TEXT;
-        ctx.font = 'bold 12px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText('Canvas commands', this.PX + 14, hy);
+        (0, text_1.drawText)(ctx, 'Canvas commands', this.PX + 14, hy, { size: 12, weight: 'bold', fill: '#fff', strokeWidth: outlineW(12) });
         hy += 18;
         line('One shape per line:');
         line('type x=.. y=.. fill=#rrggbb');
@@ -1085,7 +1038,7 @@ class SkinStudio {
         ctx.font = `bold ${font} Ubuntu, sans-serif`;
         ctx.textAlign = align;
         const tx = align === 'left' ? x + 8 : x + w / 2;
-        ctx.fillText(clipToWidth(ctx, label, w - 12), tx, y + h / 2 + 4);
+        (0, text_1.drawText)(ctx, clipToWidth(ctx, label, w - 12), tx, y + h / 2 + 4, { font: `bold ${font} Ubuntu, sans-serif`, fill: '#fff', strokeWidth: outlineW(font) });
         this.hitRegions.push({ x, y, w, h, action });
     }
     iconBtn(ctx, x, y, kind, action) {
@@ -1139,6 +1092,13 @@ function actionKey(a) {
         .filter(v => v !== undefined).join(':');
 }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+// Outline width for label text: tracks the font size (≈ the other menus'
+// lineWidth-3-on-13px), never thinner than 2. Accepts a px count or a CSS
+// font string like '11px' / 'bold 11px'.
+function outlineW(font) {
+    const px = typeof font === 'number' ? font : parseFloat(/([\d.]+)px/.exec(font)?.[1] ?? '12');
+    return Math.max(2, px * 0.22);
+}
 function round1(v) { return Math.round(v * 10) / 10; }
 function shortType(t) {
     return t === 'circle' ? 'Circle' : t === 'ellipse' ? 'Ellipse' : t === 'rect' ? 'Rect'

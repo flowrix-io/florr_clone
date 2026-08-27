@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanvasLoadoutBar = exports.LOADOUT_SLOT_COUNT = exports.LOADOUT_SECONDARY_COUNT = exports.LOADOUT_PRIMARY_COUNT = void 0;
 const petals_1 = require("../petals");
 const petal_icon_1 = require("./petal-icon");
+const text_1 = require("./text");
 function darken(hex, percent = 30) {
     const num = parseInt(hex.replace('#', ''), 16);
     const r = (num >> 16) & 255;
@@ -258,16 +259,11 @@ class CanvasLoadoutBar {
             || !!(this.game.inventoryManager && this.game.inventoryManager.isDragging);
         if (isDragging) {
             ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3;
-            ctx.font = `bold ${Math.round(this.trash.h / 4)}px Ubuntu, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             const cx = this.trash.x + this.trash.w / 2;
             const cy = this.trash.y + this.trash.h / 2;
-            ctx.strokeText('Delete', cx, cy);
-            ctx.fillText('Delete', cx, cy);
+            (0, text_1.drawText)(ctx, 'Delete', cx, cy, { size: Math.round(this.trash.h / 4), weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
             ctx.restore();
         }
         // Draw each slot background
@@ -320,14 +316,9 @@ class CanvasLoadoutBar {
     drawKeyLabel(ctx, text, x, y, size, align) {
         ctx.save();
         ctx.globalAlpha = 0.85;
-        ctx.font = `bold ${size}px Ubuntu, sans-serif`;
         ctx.textAlign = align;
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.strokeText(text, x, y);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(text, x, y);
+        (0, text_1.drawText)(ctx, text, x, y, { size, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
     }
     drawSlot(ctx, rect, fill, _isTrash, hovered) {
@@ -444,11 +435,7 @@ class CanvasLoadoutBar {
             ctx.font = `bold ${fontSize.toFixed(2)}px Ubuntu, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3 / scale;
-            ctx.strokeText(name, 0, 20);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(name, 0, 20);
+            (0, text_1.drawText)(ctx, name, 0, 20, { font: ctx.font, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 / scale });
         }
         ctx.restore(); // unclip
         ctx.restore(); // undo translate/scale

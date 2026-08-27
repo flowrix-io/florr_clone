@@ -7,6 +7,8 @@ exports.CanvasSkillsPanel = void 0;
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
 const petals_1 = require("../petals");
+const tooltip_1 = require("./tooltip");
+const text_1 = require("./text");
 const RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
 const RARITY_MULTIPLIERS = {
     common: 1.0,
@@ -415,15 +417,10 @@ class CanvasSkillsPanel {
     drawHeader(ctx, cssW) {
         // Title centered.
         ctx.save();
-        ctx.font = 'bold 22px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 4;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
-        ctx.strokeText('Talents', cssW / 2, 14);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Talents', cssW / 2, 14);
+        (0, text_1.drawText)(ctx, 'Talents', cssW / 2, 14, { size: 22, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 4 });
         ctx.restore();
         // TP badge — dark rounded square containing the talent point count,
         // followed by an outlined "TP" label.
@@ -439,23 +436,15 @@ class CanvasSkillsPanel {
         ctx.beginPath();
         ctx.roundRect(bx + 3, by + 3, badgeSize - 6, badgeSize - 6, 4);
         ctx.fill();
-        ctx.font = 'bold 16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
         const tpText = String(this.playerTp);
-        ctx.strokeText(tpText, bx + badgeSize / 2, by + badgeSize / 2 + 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(tpText, bx + badgeSize / 2, by + badgeSize / 2 + 1);
+        (0, text_1.drawText)(ctx, tpText, bx + badgeSize / 2, by + badgeSize / 2 + 1, { size: 16, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         // "TP" label to the right of the badge.
-        ctx.font = 'bold 16px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.strokeText('TP', bx + badgeSize + 6, by + badgeSize / 2 + 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('TP', bx + badgeSize + 6, by + badgeSize / 2 + 1);
+        (0, text_1.drawText)(ctx, 'TP', bx + badgeSize + 6, by + badgeSize / 2 + 1, { size: 16, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
         // Close button (top-right).
         const cb = this.closeBtnRect;
@@ -587,17 +576,12 @@ class CanvasSkillsPanel {
         const cost = RARITY_TP_COSTS[node.rarity];
         ctx.save();
         const fontSize = Math.max(7, 11 * node.scale);
-        ctx.font = `bold ${fontSize.toFixed(1)}px Ubuntu, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3 * node.scale;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
         const lx = node.sx + r * 0.7;
         const ly = node.sy - r * 0.85;
-        ctx.strokeText(String(cost), lx, ly);
-        ctx.fillStyle = '#ff5050';
-        ctx.fillText(String(cost), lx, ly);
+        (0, text_1.drawText)(ctx, String(cost), lx, ly, { font: `bold ${fontSize.toFixed(1)}px Ubuntu, sans-serif`, fill: '#ff5050', stroke: '#000000', strokeWidth: 3 * node.scale });
         ctx.restore();
     }
     drawIcon(ctx, icon, cx, cy, size, color) {
@@ -735,22 +719,15 @@ class CanvasSkillsPanel {
     drawStatsAndReset(ctx, cssW, cssH) {
         // Stat lines, just above the reset button on the right.
         ctx.save();
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
         const rightX = cssW - 18;
         const baseY = cssH - 56;
         const fhText = `Flower Health: ${this.statFlowerHealth}`;
-        ctx.strokeText(fhText, rightX, baseY);
-        ctx.fillStyle = '#7eef6d';
-        ctx.fillText(fhText, rightX, baseY);
+        (0, text_1.drawText)(ctx, fhText, rightX, baseY, { size: 13, weight: 'bold', fill: '#7eef6d', stroke: '#000000', strokeWidth: 3 });
         const bdText = `Body Damage: ${this.statBodyDamage}`;
-        ctx.strokeText(bdText, rightX, baseY + 16);
-        ctx.fillStyle = '#e0e0e0';
-        ctx.fillText(bdText, rightX, baseY + 16);
+        (0, text_1.drawText)(ctx, bdText, rightX, baseY + 16, { size: 13, weight: 'bold', fill: '#e0e0e0', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
         // Reset button (bottom-right, dark red).
         const rb = this.resetBtnRect;
@@ -763,15 +740,10 @@ class CanvasSkillsPanel {
         ctx.beginPath();
         ctx.roundRect(rb.x + 2, rb.y + 2, rb.w - 4, rb.h - 4, 4);
         ctx.fill();
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
-        ctx.strokeText('Reset', rb.x + rb.w / 2, rb.y + rb.h / 2 + 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Reset', rb.x + rb.w / 2, rb.y + rb.h / 2 + 1);
+        (0, text_1.drawText)(ctx, 'Reset', rb.x + rb.w / 2, rb.y + rb.h / 2 + 1, { size: 14, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
     }
     /** Draws a tooltip box near the hovered node showing skill name, rarity,
@@ -811,27 +783,16 @@ class CanvasSkillsPanel {
         // Use custom tier description if available, otherwise show multiplier.
         const effectLine = skill.tierDescriptions?.[node.rarity]
             ?? `${(RARITY_MULTIPLIERS[node.rarity] * 100).toFixed(0)}% multiplier`;
+        // gardn tooltip layout: name / rarity / spacer / body.
         const lines = [
-            { text: `${skill.name} — ${rarityName}`, color: RARITY_COLORS[node.rarity] },
-            { text: effectLine, color: '#ffffff' },
-            { text: `Cost: ${cost} TP`, color: '#ffffff' },
-            { text: status, color: statusColor },
+            { text: skill.name, size: 20 },
+            { text: rarityName, size: 14, color: RARITY_COLORS[node.rarity] },
+            { text: effectLine, size: 12, gapBefore: 10 },
+            { text: `Cost: ${cost} TP`, size: 12 },
+            { text: status, size: 12, color: statusColor },
         ];
-        const fontSize = 13;
-        const lineHeight = 18;
-        const padX = 12;
-        const padY = 10;
-        ctx.font = `bold ${fontSize}px Ubuntu, sans-serif`;
-        // Measure widest line.
-        let maxW = 0;
-        for (const l of lines) {
-            const w = ctx.measureText(l.text).width;
-            if (w > maxW)
-                maxW = w;
-        }
-        const boxW = maxW + padX * 2;
-        const boxH = lines.length * lineHeight + padY * 2;
         // Position: prefer above the node; shift left/right to stay in bounds.
+        const { w: boxW, h: boxH } = (0, tooltip_1.measureTooltip)(ctx, lines);
         let tx = node.sx - boxW / 2;
         let ty = node.sy - node.r * node.scale - boxH - 8;
         if (tx < 4)
@@ -840,27 +801,7 @@ class CanvasSkillsPanel {
             tx = cssW - 4 - boxW;
         if (ty < 4)
             ty = node.sy + node.r * node.scale + 8;
-        ctx.save();
-        // Background.
-        ctx.fillStyle = 'rgba(30, 30, 30, 0.92)';
-        ctx.beginPath();
-        ctx.roundRect(tx, ty, boxW, boxH, 6);
-        ctx.fill();
-        // Border.
-        ctx.strokeStyle = RARITY_COLORS[node.rarity];
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(tx, ty, boxW, boxH, 6);
-        ctx.stroke();
-        // Text lines.
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        for (let i = 0; i < lines.length; i++) {
-            const ly = ty + padY + i * lineHeight;
-            ctx.fillStyle = lines[i].color;
-            ctx.fillText(lines[i].text, tx + padX, ly);
-        }
-        ctx.restore();
+        (0, tooltip_1.paintTooltip)(ctx, tx, ty, lines);
     }
     // ===== input =====
     toLocal(e) {

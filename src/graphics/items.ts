@@ -1,5 +1,6 @@
 import { Graphics, WorldItem, getPetalStats } from './core';
 import { ClientWorld } from '../client_world';
+import { drawText } from './text';
 
 declare module './core' {
     interface Graphics {
@@ -96,14 +97,9 @@ Graphics.prototype.getItemCanvas = function(this: Graphics, item: WorldItem): HT
         itemName = item.type[0].toUpperCase() + item.type.slice(1).toLowerCase();
     }
     itemName = itemName.replace('_', ' ');
-    ctx.font = '12px Ubuntu, sans-serif';
     ctx.textAlign = 'center';
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText(itemName, 0, 20);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(itemName, 0, 20);
+    drawText(ctx, itemName, 0, 20, { size: 12, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
 
     this.itemCanvasCache.set(key, canvas);
     return canvas;
@@ -236,8 +232,6 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, world?: 
     }
 
     // Draw item name
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = '12px Ubuntu, sans-serif';
     this.ctx.textAlign = 'center';
     let itemName = "";
     if (item.type === 'petal' && item.petalType) {
@@ -250,11 +244,7 @@ Graphics.prototype.drawItem = function(this: Graphics, item: WorldItem, world?: 
     // Ensure item name is not blurred by setting shadow blur to 0
     this.ctx.shadowBlur = 0;
     this.ctx.globalAlpha = 1.0;
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
-    this.ctx.strokeText(itemName, 0, 20);
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillText(itemName, 0, 20);
+    drawText(this.ctx, itemName, 0, 20, { size: 12, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
 
     // Draw hitbox if enabled
     if (this.showHitboxes) {

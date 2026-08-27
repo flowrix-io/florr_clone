@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const squad_state_1 = require("../squad_state");
+const text_1 = require("./text");
 const maze_1 = require("../maze");
 /** Reused entity snapshot; see ClientWorld.collectPlayers. */
 const mazeMinimapScratch = [];
@@ -251,13 +252,8 @@ core_1.Graphics.prototype.drawMazeMinimap = function (world, socket) {
     ctx.strokeRect(minimapX, minimapY, this.MINIMAP_WIDTH, this.MINIMAP_HEIGHT);
     const biomeName = maze.biome.charAt(0).toUpperCase() + maze.biome.slice(1);
     const label = `Maze — ${biomeName}`;
-    ctx.font = '14px Ubuntu, sans-serif';
     ctx.textAlign = 'center';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText(label, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
-    ctx.fillStyle = 'white';
-    ctx.fillText(label, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18);
+    (0, text_1.drawText)(ctx, label, minimapX + this.MINIMAP_WIDTH / 2, minimapY + this.MINIMAP_HEIGHT + 18, { size: 14, fill: 'white', stroke: '#000000', strokeWidth: 3 });
     ctx.textAlign = 'left';
     return true;
 };

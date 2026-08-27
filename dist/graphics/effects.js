@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
+const text_1 = require("./text");
 // Rarity ordering kept in sync with petals.RARITY_LEVELS so the client computes
 // the same aura radius the server uses. Duplicating it (rather than importing
 // petals.ts) keeps this draw layer free of heavy dependencies and matches the
@@ -299,10 +300,8 @@ core_1.Graphics.prototype.drawFloatingTexts = function () {
         const validCameraY = isNaN(this.cameraY) || !isFinite(this.cameraY) ? 0 : this.cameraY;
         this.ctx.translate(-validCameraX, -validCameraY);
         this.ctx.globalAlpha = text.alpha;
-        this.ctx.fillStyle = text.color;
-        this.ctx.font = `${text.fontSize}px Ubuntu, sans-serif`;
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(text.text, text.x, text.y);
+        (0, text_1.drawText)(this.ctx, text.text, text.x, text.y, { size: text.fontSize, fill: text.color, strokeWidth: 0 });
         this.ctx.restore();
         return true;
     });

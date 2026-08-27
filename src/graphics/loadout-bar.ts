@@ -2,6 +2,7 @@
 import { Item } from '../item';
 import { ITEM_RARITY_COLORS, getEffectivePetalCooldown } from '../petals';
 import { drawPetalGroup } from './petal-icon';
+import { drawText } from './text';
 
 interface SlotRect { x: number; y: number; w: number; h: number }
 
@@ -293,16 +294,11 @@ export class CanvasLoadoutBar {
             || !!(this.game.inventoryManager && (this.game.inventoryManager as any).isDragging);
         if (isDragging) {
             ctx.save();
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3;
-            ctx.font = `bold ${Math.round(this.trash.h / 4)}px Ubuntu, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             const cx = this.trash.x + this.trash.w / 2;
             const cy = this.trash.y + this.trash.h / 2;
-            ctx.strokeText('Delete', cx, cy);
-            ctx.fillText('Delete', cx, cy);
+            drawText(ctx, 'Delete', cx, cy, { size: Math.round(this.trash.h / 4), weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
             ctx.restore();
         }
 
@@ -367,14 +363,9 @@ export class CanvasLoadoutBar {
     ) {
         ctx.save();
         ctx.globalAlpha = 0.85;
-        ctx.font = `bold ${size}px Ubuntu, sans-serif`;
         ctx.textAlign = align;
         ctx.textBaseline = 'middle';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.strokeText(text, x, y);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(text, x, y);
+        drawText(ctx, text, x, y, { size, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
     }
 
@@ -497,11 +488,7 @@ export class CanvasLoadoutBar {
             ctx.font = `bold ${fontSize.toFixed(2)}px Ubuntu, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 3 / scale;
-            ctx.strokeText(name, 0, 20);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(name, 0, 20);
+            drawText(ctx, name, 0, 20, { font: ctx.font, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 / scale });
         }
 
         ctx.restore(); // unclip

@@ -9,6 +9,7 @@ import { Player } from './player';
 import { Socket } from './socket';
 import { getPetalStats, getAllPetalTypes, isUndroppableEggPetalType, RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS, getShopPrice } from './petals';
 import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
+import { drawText } from './graphics/text';
 
 interface GameInterface {
     getLocalPlayer(): Player | undefined;
@@ -286,31 +287,16 @@ export class ShopManager {
         if (this.codeFocused && !this.modal) this.requestDraw();
     }
 
-    /**
-     * Draw text with the game-standard black outline (matches the HUD,
-     * inventory, loadout, etc.). Uses the already-set font/fillStyle/align so
-     * callers configure those as usual, then call this instead of fillText.
-     */
-    private outlinedText(text: string, x: number, y: number, lineWidth = 3): void {
-        const ctx = this.ctx;
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = lineWidth;
-        ctx.strokeText(text, x, y);
-        ctx.fillText(text, x, y);
-    }
-
     private drawHeader(cssW: number): void {
         const ctx = this.ctx;
         const player = this.game.getLocalPlayer();
         const stars = player?.stars ?? 0;
 
         // Title
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 24px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        this.outlinedText('Shop', cssW / 2, PANEL_PADDING + 18, 4);
+        ctx.lineJoin = 'round';
+        drawText(ctx, 'Shop', cssW / 2, PANEL_PADDING + 18, { size: 24, weight: 'bold', fill: '#ffffff', strokeWidth: 4 });
 
         // Stars (icon + count, centered)
         const text = stars.toLocaleString();
@@ -325,16 +311,12 @@ export class ShopManager {
         if (this.starIcon && this.starIcon.complete) {
             ctx.drawImage(this.starIcon, startX, yIcon, iconSize, iconSize);
         } else {
-            ctx.fillStyle = '#ffd700';
-            ctx.font = '28px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText('⭐', startX, yIcon + iconSize - 5);
-            ctx.font = 'bold 24px Ubuntu, sans-serif';
+            drawText(ctx, '⭐', startX, yIcon + iconSize - 5, { size: 28, fill: '#ffd700', strokeWidth: 0 });
         }
-        ctx.fillStyle = '#ffd700';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        this.outlinedText(text, startX + iconSize + gap, yIcon + iconSize / 2, 4);
+        drawText(ctx, text, startX + iconSize + gap, yIcon + iconSize / 2, { size: 24, weight: 'bold', fill: '#ffd700', strokeWidth: 4 });
 
         // Close (X) button in top-right
         const cb = { x: cssW - PANEL_PADDING - 24, y: PANEL_PADDING - 4, w: 24, h: 24 };
@@ -367,11 +349,9 @@ export class ShopManager {
         ctx.stroke();
 
         // Title
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 18px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        this.outlinedText('Redeem Code', x + 15, y + 12);
+        drawText(ctx, 'Redeem Code', x + 15, y + 12, { size: 18, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
 
         // Input + button
         const fieldY = y + 45;
@@ -406,7 +386,7 @@ export class ShopManager {
         // Auto-scroll text so the caret stays inside the visible area.
         const visibleW = fieldW - 16;
         const scrollX = Math.max(0, beforeCaretW - visibleW);
-        ctx.fillText(display, fieldX + 8 - scrollX, textY);
+        drawText(ctx, display, fieldX + 8 - scrollX, textY, { size: 16, fill: this.codeText ? '#ffffff' : 'rgba(255,255,255,0.45)', strokeWidth: 0 });
 
         if (this.codeFocused && this.shouldShowCaret()) {
             const caretX = fieldX + 8 - scrollX + beforeCaretW;
@@ -426,11 +406,9 @@ export class ShopManager {
         ctx.fillStyle = btnHover ? '#5fa1ed' : '#4a90e2';
         roundRect(ctx, buttonX, fieldY, buttonW, fieldH, 5);
         ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        this.outlinedText('Redeem', buttonX + buttonW / 2, fieldY + fieldH / 2);
+        drawText(ctx, 'Redeem', buttonX + buttonW / 2, fieldY + fieldH / 2, { size: 16, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
         this.regions.push({ x: buttonX, y: fieldY, w: buttonW, h: fieldH, kind: 'redeem' });
     }
 
@@ -452,11 +430,9 @@ export class ShopManager {
             ctx.fillStyle = active ? 'rgba(255,255,255,0.25)' : (hov ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)');
             roundRect(ctx, tx, y, tabW, tabH, 6);
             ctx.fill();
-            ctx.fillStyle = active ? '#ffffff' : 'rgba(255,255,255,0.7)';
-            ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            this.outlinedText(t.label, tx + tabW / 2, y + tabH / 2);
+            drawText(ctx, t.label, tx + tabW / 2, y + tabH / 2, { size: 16, weight: 'bold', fill: active ? '#ffffff' : 'rgba(255,255,255,0.7)', strokeWidth: 3 });
             if (active) {
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(tx, y + tabH - 2, tabW, 2);
@@ -547,15 +523,14 @@ export class ShopManager {
                 // Price bar
                 ctx.fillStyle = 'rgba(0,0,0,0.8)';
                 ctx.fillRect(cx, cy + cardSize - ITEM_PRICE_BAR_H, cardSize, ITEM_PRICE_BAR_H);
-                ctx.fillStyle = disabled ? '#e74c3c' : '#ffd700';
-                ctx.font = 'bold 9px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                this.outlinedText(
+                drawText(
+                    ctx,
                     formatPrice(price),
                     cx + cardSize / 2,
                     cy + cardSize - ITEM_PRICE_BAR_H / 2,
-                    2
+                    { size: 9, weight: 'bold', fill: disabled ? '#e74c3c' : '#ffd700', strokeWidth: 2 }
                 );
 
                 this.regions.push({
@@ -578,11 +553,9 @@ export class ShopManager {
         let cursorY = y + 10 - scroll;
 
         // Title
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        this.outlinedText('Earn Stars by Defeating Mythic+ Mobs', x + w / 2, cursorY, 4);
+        drawText(ctx, 'Earn Stars by Defeating Mythic+ Mobs', x + w / 2, cursorY, { size: 20, weight: 'bold', fill: '#ffffff', strokeWidth: 4 });
         cursorY += 32;
 
         // Current stars line
@@ -596,10 +569,9 @@ export class ShopManager {
         if (this.starIcon && this.starIcon.complete) {
             ctx.drawImage(this.starIcon, tx, cursorY, iconSize, iconSize);
         }
-        ctx.fillStyle = '#ffd700';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        this.outlinedText(text, tx + iconSize + gap, cursorY + iconSize / 2);
+        drawText(ctx, text, tx + iconSize + gap, cursorY + iconSize / 2, { size: 18, weight: 'bold', fill: '#ffd700', strokeWidth: 3 });
         cursorY += 40;
 
         const challengeTiers = [
@@ -621,15 +593,11 @@ export class ShopManager {
             ctx.fill();
             ctx.stroke();
 
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 18px Ubuntu, sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
-            this.outlinedText(`${c.tier.charAt(0).toUpperCase() + c.tier.slice(1)} Challenge`, x + 18, cursorY + 12);
+            drawText(ctx, `${c.tier.charAt(0).toUpperCase() + c.tier.slice(1)} Challenge`, x + 18, cursorY + 12, { size: 18, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
 
-            ctx.fillStyle = 'rgba(255,255,255,0.95)';
-            ctx.font = '14px Ubuntu, sans-serif';
-            this.outlinedText(c.description, x + 18, cursorY + 36);
+            drawText(ctx, c.description, x + 18, cursorY + 36, { size: 14, fill: 'rgba(255,255,255,0.95)', strokeWidth: 3 });
 
             // Reward
             const rewardText = `${c.stars} Star${c.stars !== 1 ? 's' : ''}`;
@@ -637,10 +605,8 @@ export class ShopManager {
             if (this.starIcon && this.starIcon.complete) {
                 ctx.drawImage(this.starIcon, x + 18, cursorY + 60, rIconSize, rIconSize);
             }
-            ctx.fillStyle = '#ffd700';
-            ctx.font = 'bold 16px Ubuntu, sans-serif';
             ctx.textBaseline = 'middle';
-            this.outlinedText(rewardText, x + 18 + rIconSize + 8, cursorY + 60 + rIconSize / 2);
+            drawText(ctx, rewardText, x + 18 + rIconSize + 8, cursorY + 60 + rIconSize / 2, { size: 16, weight: 'bold', fill: '#ffd700', strokeWidth: 3 });
 
             cursorY += cardH + 12;
         }
@@ -712,11 +678,9 @@ export class ShopManager {
             ctx.fillStyle = hov ? lighten(b.bg, 0.15) : b.bg;
             roundRect(ctx, bxStart, btnY, btnW, btnH, 6);
             ctx.fill();
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 15px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            this.outlinedText(b.label, bxStart + btnW / 2, btnY + btnH / 2);
+            drawText(ctx, b.label, bxStart + btnW / 2, btnY + btnH / 2, { size: 15, weight: 'bold', fill: '#ffffff', strokeWidth: 3 });
             this.regions.push({
                 x: bxStart, y: btnY, w: btnW, h: btnH,
                 kind: 'modal-button', payload: b.action
@@ -1018,13 +982,13 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, maxWidth: number, lineH: number): void {
-    // Match the game-standard outlined text style.
+    // Match the game-standard outlined text style. The caller sets font and
+    // fillStyle; capture them so each line routes through the shared drawText.
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
+    const font = ctx.font;
+    const fill = ctx.fillStyle as string;
     const drawLine = (line: string, ly: number) => {
-        ctx.strokeText(line, cx, ly);
-        ctx.fillText(line, cx, ly);
+        drawText(ctx, line, cx, ly, { font, fill, strokeWidth: 3 });
     };
     const words = text.split(/\s+/);
     let line = '';

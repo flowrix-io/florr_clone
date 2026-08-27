@@ -4,6 +4,7 @@
 import { inventoryToDict, ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ITEM_RARITY_COLORS } from '../petals';
 import { drawPetalGroup } from './petal-icon';
+import { drawText } from './text';
 
 interface ItemRect {
     x: number;
@@ -620,14 +621,9 @@ export class CanvasInventoryPanel {
                 if (labelY < viewTop - 22 || labelY >= viewBottom) continue;
                 const color = ITEM_RARITY_COLORS[r.rarity] || '#fff';
                 const labelText = r.rarity.charAt(0).toUpperCase() + r.rarity.slice(1).toLowerCase();
-                ctx.font = 'bold 14px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-                ctx.strokeText(labelText, cssW / 2, labelY);
-                ctx.fillStyle = color;
-                ctx.fillText(labelText, cssW / 2, labelY);
+                drawText(ctx, labelText, cssW / 2, labelY, { size: 14, weight: 'bold', fill: color, stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
 
                 const textW = ctx.measureText(labelText).width;
                 const gap = 10;
@@ -681,21 +677,13 @@ export class CanvasInventoryPanel {
     private drawHeader(ctx: CanvasRenderingContext2D, cssW: number) {
         // ----- Title -----
         ctx.save();
-        ctx.font = 'bold 22px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 4;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
-        ctx.strokeText('Inventory', cssW / 2, 14);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Inventory', cssW / 2, 14);
+        drawText(ctx, 'Inventory', cssW / 2, 14, { size: 22, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 4 });
 
         // ----- Subtitle -----
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
-        ctx.lineWidth = 3;
-        ctx.strokeText('Drag a petal to equip it', cssW / 2, 14 + 26 + 2);
-        ctx.fillText('Drag a petal to equip it', cssW / 2, 14 + 26 + 2);
+        drawText(ctx, 'Drag a petal to equip it', cssW / 2, 14 + 26 + 2, { size: 13, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
 
         // ----- Stack toggle (gardn ToggleButton style) -----
@@ -732,17 +720,12 @@ export class CanvasInventoryPanel {
 
         // "Stack" label next to the toggle.
         ctx.save();
-        ctx.font = 'bold 14px Ubuntu, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
         const labelX = box.x + box.w + 5;
         const labelY = box.y + box.h / 2 + 1;
-        ctx.strokeText('Stack', labelX, labelY);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Stack', labelX, labelY);
+        drawText(ctx, 'Stack', labelX, labelY, { size: 14, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
         ctx.restore();
 
         // ----- Search box background (gardn TextInput fill) -----
@@ -844,14 +827,10 @@ export class CanvasInventoryPanel {
             }
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.lineWidth = 3;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#000000';
             const tx = r.x + r.w / 2;
             const ty = r.y + r.h - 5;
-            ctx.strokeText(displayName, tx, ty);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(displayName, tx, ty);
+            drawText(ctx, displayName, tx, ty, { font: ctx.font, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
             ctx.restore();
         }
 
@@ -859,17 +838,12 @@ export class CanvasInventoryPanel {
         if (r.count > 1) {
             const text = `x${r.count}`;
             ctx.save();
-            ctx.font = 'bold 11px Ubuntu, sans-serif';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'top';
-            ctx.lineWidth = 3;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#000000';
             const tx = r.x + r.w - 4;
             const ty = r.y + 3;
-            ctx.strokeText(text, tx, ty);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(text, tx, ty);
+            drawText(ctx, text, tx, ty, { size: 11, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
             ctx.restore();
         }
 

@@ -5,6 +5,7 @@ const core_1 = require("./core");
 const player_skins_1 = require("./player-skins");
 const glitch_effect_1 = require("./glitch-effect");
 const player_1 = require("../player");
+const text_1 = require("./text");
 // Symbol-keyed so JSON.stringify skips them. The client emits its loadout to the
 // server on every change; if these caches lived on string keys they would be
 // serialized (canvases stringify to {}), round-tripped back, and the truthy-but-
@@ -411,14 +412,9 @@ core_1.Graphics.prototype.drawPlayerHealthBar = function (player) {
     const radius = healthBarHeight / 2;
     // Draw player name above health bar, left-aligned
     this.ctx.textAlign = 'left';
-    this.ctx.font = '12px Ubuntu, sans-serif';
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
     const nameX = -healthBarWidth / 2;
     const nameY = healthBarY - 4;
-    this.ctx.strokeText(player.name || 'Unnamed', nameX, nameY);
-    this.ctx.fillStyle = 'white';
-    this.ctx.fillText(player.name || 'Unnamed', nameX, nameY);
+    (0, text_1.drawText)(this.ctx, player.name || 'Unnamed', nameX, nameY, { size: 12, fill: 'white', stroke: '#000000', strokeWidth: 3 });
     // Health bar background (rounded)
     this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
     this.ctx.beginPath();
@@ -476,29 +472,19 @@ core_1.Graphics.prototype.drawPlayerHealthBar = function (player) {
     const rarityColor = this.ITEM_RARITY_COLORS[maxRarity];
     // Draw level label below health bar, right-aligned
     this.ctx.textAlign = 'right';
-    this.ctx.fillStyle = rarityColor;
-    this.ctx.font = '10px Ubuntu, sans-serif';
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 3;
     const levelX = healthBarWidth / 2;
     const levelY = healthBarY + healthBarHeight + 12;
     const levelLabel = `Lv. ${player.level}`;
-    this.ctx.strokeText(levelLabel, levelX, levelY);
-    this.ctx.fillText(levelLabel, levelX, levelY);
+    (0, text_1.drawText)(this.ctx, levelLabel, levelX, levelY, { size: 10, fill: rarityColor, stroke: '#000000', strokeWidth: 3 });
     // Draw guild tag below health bar, left-aligned — mirrors the level label position
     // so the two sit on opposite sides under the bar. Smaller font so a 5-char
     // ID plus brackets doesn't collide with the right-aligned level label.
     if (player.guildName) {
         this.ctx.textAlign = 'left';
-        this.ctx.font = '8px Ubuntu, sans-serif';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
         const tagX = -healthBarWidth / 2;
         const tagY = levelY;
         const tag = `[${player.guildName}]`;
-        this.ctx.strokeText(tag, tagX, tagY);
-        this.ctx.fillStyle = '#27dade';
-        this.ctx.fillText(tag, tagX, tagY);
+        (0, text_1.drawText)(this.ctx, tag, tagX, tagY, { size: 8, fill: '#27dade', stroke: '#000000', strokeWidth: 2 });
     }
 };
 /**

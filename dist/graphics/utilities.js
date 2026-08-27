@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("./core");
 const player_drawing_1 = require("./player-drawing");
 const squad_state_1 = require("../squad_state");
+const text_1 = require("./text");
 /** Reused entity snapshots; see ClientWorld.collectMobs. */
 const bossScanScratch = [];
 const bossScratch = [];
@@ -101,15 +102,10 @@ core_1.Graphics.prototype.drawUI = function (world, socket) {
         this.ctx.roundRect(healthX, healthY, healthFillWidth, healthBarHeight, radius);
         this.ctx.fill();
         // Health text with black outline
-        this.ctx.font = '14px Ubuntu, sans-serif';
         const healthTextX = textX;
         const healthTextY = healthY + 15;
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 3;
         const healthText = `${this.formatNumber(Math.round(clampedHealth))}/${this.formatNumber(player.maxHealth)}`;
-        this.ctx.strokeText(healthText, healthTextX, healthTextY);
-        this.ctx.fillStyle = 'white';
-        this.ctx.fillText(healthText, healthTextX, healthTextY);
+        (0, text_1.drawText)(this.ctx, healthText, healthTextX, healthTextY, { size: 14, fill: 'white', stroke: '#000000', strokeWidth: 3 });
         // Draw XP bar with rounded ends
         const xpBarY = healthY + healthBarHeight + 5;
         const xpFillWidth = (player.xp / player.xpToNextLevel) * healthBarWidth;
@@ -126,17 +122,13 @@ core_1.Graphics.prototype.drawUI = function (world, socket) {
         // XP text with black outline
         const xpTextX = textX;
         const xpTextY = xpBarY + 15;
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 3;
         // Inside the maze `player.level` is the maze track's level; the outside
         // level (which maze mob kills bank into) trails it in parentheses.
         const levelLabel = player.inMaze
             ? `MAZE LVL ${player.level}${player.outsideLevel ? ` (LVL ${player.outsideLevel})` : ''}`
             : `LVL ${player.level}`;
         const xpText = `${levelLabel} - ${this.formatNumber(player.xp)}/${this.formatNumber(player.xpToNextLevel)}`;
-        this.ctx.strokeText(xpText, xpTextX, xpTextY);
-        this.ctx.fillStyle = 'white';
-        this.ctx.fillText(xpText, xpTextX, xpTextY);
+        (0, text_1.drawText)(this.ctx, xpText, xpTextX, xpTextY, { size: 14, fill: 'white', stroke: '#000000', strokeWidth: 3 });
         this.ctx.save();
         this.ctx.translate(flowerCenterX, flowerCenterY);
         // Black outline around flower
@@ -185,14 +177,9 @@ core_1.Graphics.prototype.drawUI = function (world, socket) {
                 const member = world.player(memberId);
                 if (!member)
                     continue;
-                this.ctx.font = `${smFontSize}px Ubuntu, sans-serif`;
                 const memberName = member.name || 'Squadmate';
                 const nameBaselineY = smBlockTopY + smFontSize;
-                this.ctx.strokeStyle = '#000000';
-                this.ctx.lineWidth = smTextLineWidth;
-                this.ctx.strokeText(memberName, smBarX, nameBaselineY);
-                this.ctx.fillStyle = 'white';
-                this.ctx.fillText(memberName, smBarX, nameBaselineY);
+                (0, text_1.drawText)(this.ctx, memberName, smBarX, nameBaselineY, { size: smFontSize, fill: 'white', stroke: '#000000', strokeWidth: smTextLineWidth });
                 const smHealthY = nameBaselineY + smNameGap;
                 const smXpY = smHealthY + smBarHeight + smBarGap;
                 const smFlowerCenterY = smHealthY + smBarsHalfHeight;
@@ -210,13 +197,9 @@ core_1.Graphics.prototype.drawUI = function (world, socket) {
                 this.ctx.roundRect(smBarX, smHealthY, smHealthFillWidth, smBarHeight, smRadius);
                 this.ctx.fill();
                 // Health text
-                this.ctx.strokeStyle = '#000000';
-                this.ctx.lineWidth = smTextLineWidth;
                 const smHealthText = `${this.formatNumber(Math.round(smClampedHealth))}/${this.formatNumber(member.maxHealth)}`;
                 const smHealthTextY = smHealthY + 15 * scale;
-                this.ctx.strokeText(smHealthText, smTextX, smHealthTextY);
-                this.ctx.fillStyle = 'white';
-                this.ctx.fillText(smHealthText, smTextX, smHealthTextY);
+                (0, text_1.drawText)(this.ctx, smHealthText, smTextX, smHealthTextY, { size: smFontSize, fill: 'white', stroke: '#000000', strokeWidth: smTextLineWidth });
                 // XP bar background
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';
                 this.ctx.beginPath();
@@ -230,13 +213,9 @@ core_1.Graphics.prototype.drawUI = function (world, socket) {
                 this.ctx.roundRect(smBarX, smXpY, smXpFillWidth, smBarHeight, smRadius);
                 this.ctx.fill();
                 // XP text
-                this.ctx.strokeStyle = '#000000';
-                this.ctx.lineWidth = smTextLineWidth;
                 const smXpText = `LVL ${member.level} - ${this.formatNumber(member.xp)}/${this.formatNumber(member.xpToNextLevel)}`;
                 const smXpTextY = smXpY + 15 * scale;
-                this.ctx.strokeText(smXpText, smTextX, smXpTextY);
-                this.ctx.fillStyle = 'white';
-                this.ctx.fillText(smXpText, smTextX, smXpTextY);
+                (0, text_1.drawText)(this.ctx, smXpText, smTextX, smXpTextY, { size: smFontSize, fill: 'white', stroke: '#000000', strokeWidth: smTextLineWidth });
                 // Flower (uses the member's own colors/flags/mouth)
                 this.ctx.save();
                 this.ctx.translate(smFlowerCenterX, smFlowerCenterY);
@@ -346,13 +325,9 @@ core_1.Graphics.prototype.drawBossBars = function (world) {
             const mobName = mobStats ? mobStats.name : `${enemyTier} ${enemyType}`;
             // Draw mob name above the bar (larger font, centered)
             this.ctx.font = `${nameFontSize}px Ubuntu, sans-serif`;
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 4;
             const nameTextWidth = this.ctx.measureText(mobName).width;
             const nameX = centerX - nameTextWidth / 2;
-            this.ctx.strokeText(mobName, nameX, nameY);
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillText(mobName, nameX, nameY);
+            (0, text_1.drawText)(this.ctx, mobName, nameX, nameY, { size: nameFontSize, fill: 'white', stroke: '#000000', strokeWidth: 4 });
             // Draw health bar with rounded ends
             const bossMaxHealth = world.mobMaxHealth(enemy);
             const clampedHealth = Math.max(0, world.mobHealth(enemy));
@@ -374,11 +349,7 @@ core_1.Graphics.prototype.drawBossBars = function (world) {
             const healthText = `${this.formatNumber(Math.round(clampedHealth))}/${this.formatNumber(bossMaxHealth)}`;
             const healthTextWidth = this.ctx.measureText(healthText).width;
             const healthTextX = centerX - healthTextWidth / 2;
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 3;
-            this.ctx.strokeText(healthText, healthTextX, textY);
-            this.ctx.fillStyle = 'white';
-            this.ctx.fillText(healthText, healthTextX, textY);
+            (0, text_1.drawText)(this.ctx, healthText, healthTextX, textY, { size: 16, fill: 'white', stroke: '#000000', strokeWidth: 3 });
         });
     }
 };
@@ -493,13 +464,12 @@ core_1.Graphics.prototype.drawConsoleLogs = function () {
         const fadeStart = this.CONSOLE_LOG_LIFETIME * 0.7;
         const alpha = age > fadeStart ? 1 - (age - fadeStart) / (this.CONSOLE_LOG_LIFETIME - fadeStart) : 1;
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = log.color;
         // Truncate text to fit
         let displayText = log.text;
         while (ctx.measureText(displayText).width > maxWidth - padding * 2 && displayText.length > 0) {
             displayText = displayText.slice(0, -4) + '...';
         }
-        ctx.fillText(displayText, x + padding, y + padding + i * lineHeight);
+        (0, text_1.drawText)(ctx, displayText, x + padding, y + padding + i * lineHeight, { font: '12px monospace', fill: log.color, strokeWidth: 0 });
     }
     ctx.restore();
 };
@@ -532,22 +502,12 @@ core_1.Graphics.prototype.drawDeathScreen = function () {
     const centerX = w / 2;
     const centerY = h / 2;
     // "You Died!" title
-    ctx.font = 'bold 48px Ubuntu, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 5;
-    ctx.strokeText('You Died!', centerX, centerY - 60);
-    ctx.fillStyle = '#ff4444';
-    ctx.fillText('You Died!', centerX, centerY - 60);
+    (0, text_1.drawText)(ctx, 'You Died!', centerX, centerY - 60, { size: 48, weight: 'bold', fill: '#ff4444', stroke: '#000000', strokeWidth: 5 });
     // Killed-by message
-    ctx.font = '22px Ubuntu, sans-serif';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
     const killedText = `You were destroyed by: ${this.deathScreenKilledBy}`;
-    ctx.strokeText(killedText, centerX, centerY - 10);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(killedText, centerX, centerY - 10);
+    (0, text_1.drawText)(ctx, killedText, centerX, centerY - 10, { size: 22, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     // "Continue" button
     const btnW = 200;
     const btnH = 50;
@@ -566,12 +526,7 @@ core_1.Graphics.prototype.drawDeathScreen = function () {
     ctx.lineWidth = 3;
     ctx.stroke();
     // Button text
-    ctx.font = 'bold 22px Ubuntu, sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText('Continue', centerX, btnY + btnH / 2);
-    ctx.fillText('Continue', centerX, btnY + btnH / 2);
+    (0, text_1.drawText)(ctx, 'Continue', centerX, btnY + btnH / 2, { size: 22, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     // "Close" button
     const closeBtnW = 140;
     const closeBtnH = 36;
@@ -585,16 +540,8 @@ core_1.Graphics.prototype.drawDeathScreen = function () {
     ctx.strokeStyle = '#444444';
     ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.font = 'bold 16px Ubuntu, sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 3;
-    ctx.strokeText('Close', centerX, closeBtnY + closeBtnH / 2);
-    ctx.fillText('Close', centerX, closeBtnY + closeBtnH / 2);
+    (0, text_1.drawText)(ctx, 'Close', centerX, closeBtnY + closeBtnH / 2, { size: 16, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
     // Hint text
-    ctx.font = '14px Ubuntu, sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.lineWidth = 0;
-    ctx.fillText('Press ENTER to continue', centerX, closeBtnY + closeBtnH + 25);
+    (0, text_1.drawText)(ctx, 'Press ENTER to continue', centerX, closeBtnY + closeBtnH + 25, { size: 14, fill: 'rgba(255, 255, 255, 0.6)', strokeWidth: 0 });
     ctx.restore();
 };

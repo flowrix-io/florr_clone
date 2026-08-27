@@ -7,6 +7,7 @@ exports.CanvasCraftingPanel = void 0;
 const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
 const petal_icon_1 = require("./petal-icon");
+const text_1 = require("./text");
 /** Column order for the crafting inventory grid: common on left, no apex. */
 const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 function darken(hex, percent = 30) {
@@ -550,12 +551,9 @@ class CanvasCraftingPanel {
         // ----- Success chance / absorb XP text -----
         const cb = this.craftBtnRect;
         ctx.save();
-        ctx.font = 'bold 12px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
         // A computed chance is always > 0 for a valid craft (even high tiers are
         // shown as fractions like 0.25%). A chance of 0 means there's nothing to
         // craft (empty slots / craft disabled), so show "?%" rather than "0%".
@@ -566,24 +564,17 @@ class CanvasCraftingPanel {
                 : `?% success chance`);
         const chanceX = cb.x + cb.w / 2;
         const chanceY = cb.y + cb.h + 6;
-        ctx.strokeText(chanceText, chanceX, chanceY);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(chanceText, chanceX, chanceY);
+        (0, text_1.drawText)(ctx, chanceText, chanceX, chanceY, { size: 12, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
         ctx.restore();
         // ----- Instruction text -----
         ctx.save();
-        ctx.font = 'bold 13px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
         const instruction = absorb
             ? 'Absorb petals to convert them into XP'
             : 'Combine 5 of the same petal to craft an upgrade';
-        ctx.strokeText(instruction, cssW / 2, instructionY + 4);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(instruction, cssW / 2, instructionY + 4);
+        (0, text_1.drawText)(ctx, instruction, cssW / 2, instructionY + 4, { size: 13, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
         ctx.restore();
         // ----- Scrollable inventory area -----
         const contentTop = this.inventoryTop;
@@ -621,15 +612,10 @@ class CanvasCraftingPanel {
         // Title
         const title = this.mode === 'absorb' ? 'Absorb' : 'Craft';
         ctx.save();
-        ctx.font = 'bold 22px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.lineWidth = 4;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#000000';
-        ctx.strokeText(title, cssW / 2, 14);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(title, cssW / 2, 14);
+        (0, text_1.drawText)(ctx, title, cssW / 2, 14, { size: 22, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 4 });
         ctx.restore();
         // Switch button (craft ⇄ absorb) — left of the X. Greyed out (and
         // inert) when disabled, i.e. outside the maze.
@@ -648,15 +634,10 @@ class CanvasCraftingPanel {
         ctx.beginPath();
         ctx.roundRect(sb.x + 2, sb.y + 2, sb.w - 4, sb.h - 4, 3);
         ctx.fill();
-        ctx.font = 'bold 12px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.strokeText('Switch', sb.x + sb.w / 2, sb.y + sb.h / 2 + 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('Switch', sb.x + sb.w / 2, sb.y + sb.h / 2 + 1);
+        (0, text_1.drawText)(ctx, 'Switch', sb.x + sb.w / 2, sb.y + sb.h / 2 + 1, { size: 12, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
         ctx.restore();
         // Close button
         const cb = this.closeBtnRect;
@@ -740,15 +721,10 @@ class CanvasCraftingPanel {
             const attempts = Math.floor(this.craftingItems.length / 5);
             if (attempts > 0) {
                 ctx.save();
-                ctx.font = 'bold 24px Ubuntu, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.lineWidth = 4;
                 ctx.lineJoin = 'round';
-                ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-                ctx.strokeText(`x${attempts}`, center.cx, center.cy);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(`x${attempts}`, center.cx, center.cy);
+                (0, text_1.drawText)(ctx, `x${attempts}`, center.cx, center.cy, { size: 24, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 });
                 ctx.restore();
             }
         }
@@ -789,44 +765,29 @@ class CanvasCraftingPanel {
                     }
                 }
             }
-            ctx.font = 'bold 18px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            ctx.lineWidth = 3;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = 'rgba(0,0,0,0.8)';
             const countText = `x${this.successResult.count}`;
-            ctx.strokeText(countText, cx, cy + resultSize / 2 + 4);
-            ctx.fillStyle = rColor;
-            ctx.fillText(countText, cx, cy + resultSize / 2 + 4);
+            (0, text_1.drawText)(ctx, countText, cx, cy + resultSize / 2 + 4, { size: 18, weight: 'bold', fill: rColor, stroke: 'rgba(0,0,0,0.8)', strokeWidth: 3 });
             ctx.restore();
         }
         // Absorb result — "+N XP" in the center.
         if (this.animState === 'result' && this.resultSuccess && this.absorbResultXp > 0) {
             ctx.save();
-            ctx.font = 'bold 22px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.lineWidth = 4;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-            ctx.strokeText(`+${this.absorbResultXp} XP`, center.cx, center.cy);
-            ctx.fillStyle = '#c9ffb3';
-            ctx.fillText(`+${this.absorbResultXp} XP`, center.cx, center.cy);
+            (0, text_1.drawText)(ctx, `+${this.absorbResultXp} XP`, center.cx, center.cy, { size: 22, weight: 'bold', fill: '#c9ffb3', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 });
             ctx.restore();
         }
         // Draw "Failed" text in center on failure result
         if (this.animState === 'result' && !this.resultSuccess) {
             ctx.save();
-            ctx.font = 'bold 20px Ubuntu, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.lineWidth = 4;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-            ctx.strokeText('Failed!', center.cx, center.cy);
-            ctx.fillStyle = '#ff4444';
-            ctx.fillText('Failed!', center.cx, center.cy);
+            (0, text_1.drawText)(ctx, 'Failed!', center.cx, center.cy, { size: 20, weight: 'bold', fill: '#ff4444', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 });
             ctx.restore();
         }
     }
@@ -892,15 +853,10 @@ class CanvasCraftingPanel {
         ctx.roundRect(b.x + bw, b.y + bw, b.w - bw * 2, b.h - bw * 2, Math.max(0, radius - 2));
         ctx.fill();
         // Button text
-        ctx.font = 'bold 15px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3;
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-        ctx.strokeText(label, b.x + b.w / 2, b.y + b.h / 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2);
+        (0, text_1.drawText)(ctx, label, b.x + b.w / 2, b.y + b.h / 2, { size: 15, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
         ctx.restore();
     }
     drawEmptySlot(ctx, r) {
@@ -961,31 +917,22 @@ class CanvasCraftingPanel {
             }
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.lineWidth = 3;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#000000';
             const tx = r.x + r.w / 2;
             const ty = r.y + r.h - 5;
-            ctx.strokeText(displayName, tx, ty);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(displayName, tx, ty);
+            (0, text_1.drawText)(ctx, displayName, tx, ty, { font: ctx.font, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
             ctx.restore();
         }
         // Count badge
         if (r.count > 1) {
             const text = `x${r.count}`;
             ctx.save();
-            ctx.font = 'bold 11px Ubuntu, sans-serif';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'top';
-            ctx.lineWidth = 3;
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#000000';
             const tx = r.x + r.w - 4;
             const ty = r.y + 3;
-            ctx.strokeText(text, tx, ty);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillText(text, tx, ty);
+            (0, text_1.drawText)(ctx, text, tx, ty, { size: 11, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
             ctx.restore();
         }
         // Disabled items (e.g. non-petals in the Absorb tab): grey the slot out

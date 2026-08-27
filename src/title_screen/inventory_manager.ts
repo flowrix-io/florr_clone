@@ -10,7 +10,13 @@ import { getBaseDeviceScale } from '../zoom-compensation';
 import { getCurrentGame, getTitleScreen } from '../app_refs';
 import { getPreconnectedSocket, getLivePreconnectedSocket } from '../net/preconnect';
 import { getPreloadedAssets } from '../preloader';
-import { installAltKeyTracking, isAltPressed, onAltChange } from '../alt_key';
+import { installAltKeyTracking } from '../alt_key';
+import {
+    showTooltip as showTooltipOverlay,
+    hideTooltip as hideTooltipOverlay,
+    petalTooltipLines,
+    TooltipAnchor,
+} from '../graphics/tooltip';
 import { getSocketAuth } from '../auth_session';
 
 /**
@@ -37,7 +43,6 @@ export class TitleScreenInventoryManager {
     private svgBlobUrlCache: Map<string, string> = new Map();
     private readonly LOADOUT_SLOTS = 20;
     private readonly ITEM_RARITY_COLORS = ITEM_RARITY_COLORS;
-    private tooltipElement: HTMLDivElement | null = null;
     private tooltipTimeout: number | null = null;
     private hoveredElement: HTMLElement | null = null;
     /** Real InventoryManager used for crafting (uses the same code as in-game) */
@@ -50,13 +55,10 @@ export class TitleScreenInventoryManager {
         this.setupSocketListeners();
         this.setupGlobalDragAndDrop();
         
-        // ALT held = tooltips show full values. The document listeners and the
-        // flag live in alt_key.ts; subscribing per instance replaces the old
-        // window-global array of every live manager.
+        // ALT held = tooltips show full values. The flag lives in alt_key.ts
+        // and the shared tooltip overlay (graphics/tooltip.ts) repaints itself
+        // on ALT changes.
         installAltKeyTracking();
-        onAltChange((pressed) => {
-            if (this.tooltipElement) this.updateTooltipValues(pressed);
-        });
     }
     
     private setupGlobalDragAndDrop(): void {
@@ -1231,82 +1233,18 @@ export class TitleScreenInventoryManager {
         return Math.round(baseHealth * petalHealthMultiplier);
     }
 
-    private showTooltip(element: HTMLElement, petalType: string, rarity: string): void {
+    /** Shows the shared petal tooltip (graphics/tooltip.ts) next to an anchor
+     *  rect, with this manager's skill-adjusted final stats. */
+    private showPetalTooltip(anchor: TooltipAnchor, petalType: string, rarity: string): void {
         const stats = getPetalStats(petalType, rarity);
         if (!stats) return;
-
-        this.hideTooltip();
-
-        const tooltip = document.createElement('div');
-        tooltip.className = 'petal-tooltip';
-        tooltip.style.cssText = `
-            position: fixed;
-            background: rgba(0, 0, 0, 0.95);
-            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
-            border-radius: 8px;
-            padding: 12px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            z-index: 10000;
-            pointer-events: none;
-            max-width: 250px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        `;
-
-        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
-        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
-
-        const nameDiv = document.createElement('div');
-        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
-        nameDiv.textContent = stats.name;
-        tooltip.appendChild(nameDiv);
-
-        if (stats.description) {
-            const descDiv = document.createElement('div');
-            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
-            descDiv.textContent = stats.description;
-            tooltip.appendChild(descDiv);
-        }
-
-        const hpDiv = document.createElement('div');
-        hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.setAttribute('data-full-value', finalHealth.toString());
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
-        tooltip.appendChild(hpDiv);
-
-        const damageDiv = document.createElement('div');
-        damageDiv.setAttribute('data-full-value', finalDamage.toString());
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
-        tooltip.appendChild(damageDiv);
-
-        document.body.appendChild(tooltip);
-        this.tooltipElement = tooltip;
-
-        this.updateTooltipPosition(element, tooltip);
-    }
-
-    private updateTooltipPosition(element: HTMLElement, tooltip: HTMLDivElement): void {
-        const rect = element.getBoundingClientRect();
-        const tooltipRect = tooltip.getBoundingClientRect();
-        
-        let left = rect.right + 10;
-        let top = rect.top;
-
-        if (left + tooltipRect.width > window.innerWidth) {
-            left = rect.left - tooltipRect.width - 10;
-        }
-
-        if (top + tooltipRect.height > window.innerHeight) {
-            top = window.innerHeight - tooltipRect.height - 10;
-        }
-
-        if (top < 0) {
-            top = 10;
-        }
-
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
+        showTooltipOverlay(anchor, petalTooltipLines(
+            stats,
+            rarity,
+            this.calculateFinalPetalHealth(petalType, rarity),
+            this.calculateFinalPetalDamage(petalType, rarity),
+            (n) => this.abbreviateNumber(n),
+        ));
     }
 
     private hideTooltip(): void {
@@ -1314,30 +1252,8 @@ export class TitleScreenInventoryManager {
             clearTimeout(this.tooltipTimeout);
             this.tooltipTimeout = null;
         }
-        if (this.tooltipElement) {
-            this.tooltipElement.remove();
-            this.tooltipElement = null;
-        }
+        hideTooltipOverlay();
         this.hoveredElement = null;
-    }
-
-    private updateTooltipValues(showFull: boolean): void {
-        if (!this.tooltipElement) return;
-
-        const valueElements = this.tooltipElement.querySelectorAll('.tooltip-value');
-        valueElements.forEach((valueEl) => {
-            const parent = valueEl.parentElement;
-            if (parent && parent.hasAttribute('data-full-value')) {
-                const fullValue = parent.getAttribute('data-full-value');
-                if (fullValue) {
-                    if (showFull) {
-                        valueEl.textContent = fullValue;
-                    } else {
-                        valueEl.textContent = this.abbreviateNumber(parseInt(fullValue));
-                    }
-                }
-            }
-        });
     }
 
     private setupTooltip(element: HTMLElement, petalType: string, rarity: string): void {
@@ -1349,21 +1265,13 @@ export class TitleScreenInventoryManager {
             this.hoveredElement = element;
             this.tooltipTimeout = window.setTimeout(() => {
                 if (this.hoveredElement === element && !isDragging) {
-                    this.showTooltip(element, petalType, rarity);
-                    // Check initial ALT state
-                    this.updateTooltipValues(isAltPressed());
+                    this.showPetalTooltip(element.getBoundingClientRect(), petalType, rarity);
                 }
             }, 200);
         };
 
         const handleMouseLeave = () => {
             this.hideTooltip();
-        };
-
-        const handleMouseMove = (e: MouseEvent) => {
-            if (this.tooltipElement && this.hoveredElement === element) {
-                this.updateTooltipPosition(element, this.tooltipElement);
-            }
         };
 
         const handleMouseDown = () => {
@@ -1390,7 +1298,6 @@ export class TitleScreenInventoryManager {
 
         element.addEventListener('mouseenter', handleMouseEnter);
         element.addEventListener('mouseleave', handleMouseLeave);
-        element.addEventListener('mousemove', handleMouseMove);
         element.addEventListener('mousedown', handleMouseDown);
         element.addEventListener('mouseup', handleMouseUp);
         element.addEventListener('dragstart', handleDragStart);
@@ -1486,84 +1393,14 @@ export class TitleScreenInventoryManager {
             clearTimeout(this.tooltipTimeout);
             this.tooltipTimeout = null;
         }
-        if (this.tooltipElement) {
-            this.tooltipElement.remove();
-            this.tooltipElement = null;
-        }
+        hideTooltipOverlay();
         if (!hit || !hit.itemType.startsWith('petal_')) return;
         const petalType = hit.itemType.replace('petal_', '');
         const rarity = hit.rarity;
         const rect = hit.rect;
         this.tooltipTimeout = window.setTimeout(() => {
-            this.showTooltipAtRect(rect, petalType, rarity);
-            this.updateTooltipValues(isAltPressed());
+            this.showPetalTooltip(rect, petalType, rarity);
         }, 200);
-    }
-
-    /** Like showTooltip() but anchored to a client-space rect (canvas hit). */
-    private showTooltipAtRect(
-        rect: { left: number; top: number; right: number; bottom: number; width: number; height: number },
-        petalType: string,
-        rarity: string
-    ): void {
-        const stats = getPetalStats(petalType, rarity);
-        if (!stats) return;
-        if (this.tooltipElement) { this.tooltipElement.remove(); this.tooltipElement = null; }
-
-        const tooltip = document.createElement('div');
-        tooltip.className = 'petal-tooltip';
-        tooltip.style.cssText = `
-            position: fixed;
-            background: rgba(0, 0, 0, 0.95);
-            border: 2px solid ${this.ITEM_RARITY_COLORS[rarity] || '#fff'};
-            border-radius: 8px;
-            padding: 12px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            z-index: 10000;
-            pointer-events: none;
-            max-width: 250px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        `;
-
-        const finalDamage = this.calculateFinalPetalDamage(petalType, rarity);
-        const finalHealth = this.calculateFinalPetalHealth(petalType, rarity);
-
-        const nameDiv = document.createElement('div');
-        nameDiv.style.cssText = 'font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ' + (this.ITEM_RARITY_COLORS[rarity] || '#fff') + ';';
-        nameDiv.textContent = stats.name;
-        tooltip.appendChild(nameDiv);
-
-        if (stats.description) {
-            const descDiv = document.createElement('div');
-            descDiv.style.cssText = 'margin-bottom: 8px; color: #ccc; line-height: 1.4;';
-            descDiv.textContent = stats.description;
-            tooltip.appendChild(descDiv);
-        }
-
-        const hpDiv = document.createElement('div');
-        hpDiv.style.cssText = 'margin-bottom: 4px;';
-        hpDiv.setAttribute('data-full-value', finalHealth.toString());
-        hpDiv.innerHTML = `<span style="color: #4CAF50;">HP:</span> <span class="tooltip-value">${this.abbreviateNumber(finalHealth)}</span>`;
-        tooltip.appendChild(hpDiv);
-
-        const damageDiv = document.createElement('div');
-        damageDiv.setAttribute('data-full-value', finalDamage.toString());
-        damageDiv.innerHTML = `<span style="color: #f44336;">Damage:</span> <span class="tooltip-value">${this.abbreviateNumber(finalDamage)}</span>`;
-        tooltip.appendChild(damageDiv);
-
-        document.body.appendChild(tooltip);
-        this.tooltipElement = tooltip;
-
-        const tooltipRect = tooltip.getBoundingClientRect();
-        let left = rect.right + 10;
-        let top = rect.top;
-        if (left + tooltipRect.width > window.innerWidth) left = rect.left - tooltipRect.width - 10;
-        if (top + tooltipRect.height > window.innerHeight) top = window.innerHeight - tooltipRect.height - 10;
-        if (top < 0) top = 10;
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
     }
 
     public updateFromPlayerData(playerData: { inventory: PlayerInventory; loadout: (Item | null)[]; tp?: number; skills?: any }): void {

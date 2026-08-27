@@ -4,6 +4,7 @@ exports.ChangelogManager = exports.CHANGELOG = void 0;
 // This file should not be updated every time
 // It should only be updated when there are major changes
 const zoom_compensation_1 = require("./zoom-compensation");
+const text_1 = require("./graphics/text");
 exports.CHANGELOG = [
     {
         date: 'October 18, 2025',
@@ -687,13 +688,8 @@ class ChangelogManager {
         ctx.fill();
         ctx.stroke();
         // Draw header (before clipping)
-        ctx.font = 'bold 20px Ubuntu, sans-serif';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeText('Changelog', offsetX + this.PADDING, offsetY + this.PADDING);
-        ctx.fillText('Changelog', offsetX + this.PADDING, offsetY + this.PADDING);
+        (0, text_1.drawText)(ctx, 'Changelog', offsetX + this.PADDING, offsetY + this.PADDING, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
         // Draw close button (before clipping)
         const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
         const closeButtonY = offsetY + 10;
@@ -703,11 +699,9 @@ class ChangelogManager {
         ctx.fillStyle = '#ff4444';
         this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
         ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '16px Ubuntu, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2);
+        (0, text_1.drawText)(ctx, '✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2, { size: 16, fill: '#FFFFFF', strokeWidth: 0 });
         ctx.textAlign = 'left';
         // Clip to panel content area (after header and buttons)
         ctx.save();
@@ -722,12 +716,7 @@ class ChangelogManager {
             this.roundRect(ctx, offsetX + this.PADDING, contentY - 5, this.PANEL_WIDTH - this.PADDING * 2 - (this.contentHeight > this.PANEL_HEIGHT - 40 ? this.SCROLLBAR_WIDTH + 5 : 0), 10, 8);
             ctx.fill();
             // Draw date
-            ctx.font = 'bold 20px Ubuntu, sans-serif';
-            ctx.fillStyle = '#FFFFFF';
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 2;
-            ctx.strokeText(entry.date, offsetX + this.PADDING, contentY);
-            ctx.fillText(entry.date, offsetX + this.PADDING, contentY);
+            (0, text_1.drawText)(ctx, entry.date, offsetX + this.PADDING, contentY, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
             contentY += 25;
             // Draw changes
             ctx.font = '14px Ubuntu, sans-serif';
@@ -782,10 +771,10 @@ class ChangelogManager {
                 return;
             const width = ctx.measureText(segment.text).width;
             if (segment.type === 'link') {
-                ctx.fillStyle = '#d8f7ff';
-                ctx.strokeStyle = '#000000';
-                ctx.strokeText(segment.text, currentX, y);
-                ctx.fillText(segment.text, currentX, y);
+                // strokeWidth follows the ambient lineWidth on purpose: the
+                // caller sets 0.5, but a link underline bumps it to 1 for the
+                // segments after it — preserved as-is.
+                (0, text_1.drawText)(ctx, segment.text, currentX, y, { size: 14, fill: '#d8f7ff', strokeWidth: ctx.lineWidth });
                 ctx.beginPath();
                 ctx.strokeStyle = '#d8f7ff';
                 ctx.lineWidth = 1;
@@ -801,10 +790,7 @@ class ChangelogManager {
                 });
             }
             else {
-                ctx.fillStyle = '#FFFFFF';
-                ctx.strokeStyle = '#000000';
-                ctx.strokeText(segment.text, currentX, y);
-                ctx.fillText(segment.text, currentX, y);
+                (0, text_1.drawText)(ctx, segment.text, currentX, y, { size: 14, fill: '#FFFFFF', strokeWidth: ctx.lineWidth });
             }
             currentX += width;
         });
