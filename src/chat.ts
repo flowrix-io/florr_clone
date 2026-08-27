@@ -2,6 +2,7 @@ import { Socket } from './ws_client';
 import { FaceFlags, EquipmentFlags, PlayerRenderFlags } from './player';
 import { getCurrentGame } from './app_refs';
 import { setSquadMemberIds } from './squad_state';
+import { ChatLogEntry, attachChatLogSocket, getChatLog, pushChatEntry, subscribeChatLog } from './chat_log';
 
 interface SandboxedScript {
     id: string;
@@ -111,16 +112,32 @@ export class Chat {
     private pendingScripts: Map<string, SandboxedScript> = new Map();
     private pendingIframes: Map<string, PendingIframe> = new Map();
     private socket: Socket;
+    private unsubscribeChatLog: (() => void) | null = null;
 
     constructor(socket: Socket) {
         this.socket = socket;
         this.initialize();
         this.setupSocketListeners();
+        this.bindChatLog();
+    }
+
+    /**
+     * Point this (fresh) chat box at the persistent transcript: replay what the
+     * player already had, then follow it live. The log — not this instance — is
+     * what owns the socket's chat handlers, so a respawn's teardown/rebuild
+     * cycle never drops a message.
+     */
+    private bindChatLog(): void {
+        attachChatLogSocket(this.socket);
+        for (const entry of getChatLog()) this.renderChatMessage(entry);
+        this.unsubscribeChatLog?.();
+        this.unsubscribeChatLog = subscribeChatLog(entry => this.renderChatMessage(entry));
     }
 
     // Method to update socket reference (for cross-server transfers)
     public updateSocket(newSocket: Socket) {
-        // Remove old listeners
+        // Remove old listeners (this clears the chat log's handlers on the old
+        // socket too; bindChatLog re-attaches them to the new one below).
         this.socket.off('chatMessage');
         this.socket.off('chatHistory');
         this.socket.off('squadUpdate');
@@ -131,6 +148,7 @@ export class Chat {
         
         // Set up new listeners
         this.setupSocketListeners();
+        attachChatLogSocket(this.socket);
         
         // Request chat history from new server
         this.socket.emit('requestChatHistory');
@@ -139,14 +157,8 @@ export class Chat {
     }
 
     private setupSocketListeners() {
-        this.socket.on('chatMessage', (message: { sender: string; content: string; timestamp: number }) => {
-            this.addChatMessage(message);
-        });
-
-        this.socket.on('chatHistory', (history: Array<{ sender: string; content: string; timestamp: number }>) => {
-            history.forEach(message => this.addChatMessage(message));
-        });
-
+        // 'chatMessage' / 'chatHistory' are handled by chat_log.ts, which keeps
+        // recording across respawns and while the title screen is up.
         this.socket.on('squadUpdate', (data: { squadId: string; memberIds: string[]; leaderId: string } | null) => {
             // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
             setSquadMemberIds(data ? data.memberIds : []);
@@ -932,7 +944,17 @@ export class Chat {
         this.addChatMessage({ sender: 'System', content, timestamp: Date.now() });
     }
 
-    private addChatMessage(message: { sender: string; content: string; timestamp: number }) {
+    /**
+     * Add a line to the transcript. Goes through the persistent log, which
+     * echoes it back to renderChatMessage() — so locally generated System lines
+     * survive a respawn exactly like server ones do.
+     */
+    private addChatMessage(message: ChatLogEntry) {
+        pushChatEntry(message);
+    }
+
+    /** Paint one transcript line into this chat box. */
+    private renderChatMessage(message: ChatLogEntry) {
         if (!this.chatMessages) return;
 
         const messageElement = document.createElement('div');
@@ -998,6 +1020,10 @@ export class Chat {
     }
 
     public cleanup(): void {
+        // Only the view goes away — the transcript and its socket handlers stay
+        // put so the next Chat (after a respawn) can replay them.
+        this.unsubscribeChatLog?.();
+        this.unsubscribeChatLog = null;
         this.chatContainer?.remove();
     }
 }

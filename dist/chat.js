@@ -4,6 +4,7 @@ exports.Chat = void 0;
 const player_1 = require("./player");
 const app_refs_1 = require("./app_refs");
 const squad_state_1 = require("./squad_state");
+const chat_log_1 = require("./chat_log");
 const COMMANDS = [
     { command: '/help', description: 'Show available commands', isAdmin: false },
     { command: '/biome', description: 'Show the most populated biome', isAdmin: false },
@@ -86,13 +87,29 @@ class Chat {
         this.isChatFocused = false;
         this.pendingScripts = new Map();
         this.pendingIframes = new Map();
+        this.unsubscribeChatLog = null;
         this.socket = socket;
         this.initialize();
         this.setupSocketListeners();
+        this.bindChatLog();
+    }
+    /**
+     * Point this (fresh) chat box at the persistent transcript: replay what the
+     * player already had, then follow it live. The log — not this instance — is
+     * what owns the socket's chat handlers, so a respawn's teardown/rebuild
+     * cycle never drops a message.
+     */
+    bindChatLog() {
+        (0, chat_log_1.attachChatLogSocket)(this.socket);
+        for (const entry of (0, chat_log_1.getChatLog)())
+            this.renderChatMessage(entry);
+        this.unsubscribeChatLog?.();
+        this.unsubscribeChatLog = (0, chat_log_1.subscribeChatLog)(entry => this.renderChatMessage(entry));
     }
     // Method to update socket reference (for cross-server transfers)
     updateSocket(newSocket) {
-        // Remove old listeners
+        // Remove old listeners (this clears the chat log's handlers on the old
+        // socket too; bindChatLog re-attaches them to the new one below).
         this.socket.off('chatMessage');
         this.socket.off('chatHistory');
         this.socket.off('squadUpdate');
@@ -101,17 +118,14 @@ class Chat {
         this.socket = newSocket;
         // Set up new listeners
         this.setupSocketListeners();
+        (0, chat_log_1.attachChatLogSocket)(this.socket);
         // Request chat history from new server
         this.socket.emit('requestChatHistory');
         console.log('[CHAT] Socket updated for new server connection');
     }
     setupSocketListeners() {
-        this.socket.on('chatMessage', (message) => {
-            this.addChatMessage(message);
-        });
-        this.socket.on('chatHistory', (history) => {
-            history.forEach(message => this.addChatMessage(message));
-        });
+        // 'chatMessage' / 'chatHistory' are handled by chat_log.ts, which keeps
+        // recording across respawns and while the title screen is up.
         this.socket.on('squadUpdate', (data) => {
             // Expose member IDs so the minimap can render squadmates as pink dots without ALT.
             (0, squad_state_1.setSquadMemberIds)(data ? data.memberIds : []);
@@ -851,7 +865,16 @@ class Chat {
     addLocalSystemMessage(content) {
         this.addChatMessage({ sender: 'System', content, timestamp: Date.now() });
     }
+    /**
+     * Add a line to the transcript. Goes through the persistent log, which
+     * echoes it back to renderChatMessage() — so locally generated System lines
+     * survive a respawn exactly like server ones do.
+     */
     addChatMessage(message) {
+        (0, chat_log_1.pushChatEntry)(message);
+    }
+    /** Paint one transcript line into this chat box. */
+    renderChatMessage(message) {
         if (!this.chatMessages)
             return;
         const messageElement = document.createElement('div');
@@ -909,6 +932,10 @@ class Chat {
         }
     }
     cleanup() {
+        // Only the view goes away — the transcript and its socket handlers stay
+        // put so the next Chat (after a respawn) can replay them.
+        this.unsubscribeChatLog?.();
+        this.unsubscribeChatLog = null;
         this.chatContainer?.remove();
     }
 }

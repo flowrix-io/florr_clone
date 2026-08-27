@@ -15,6 +15,7 @@ import { exposeDevGlobals } from './dev_expose';
 import { isLoggedIn, migrateLegacyCredentials } from './auth_session';
 import { attachSessionReplacedHandler } from './net/sessionReplaced';
 import { prefetchTransportInfo } from './net/transport';
+import { attachChatLogSocket } from './chat_log';
 
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
@@ -177,6 +178,12 @@ function attachTitleScreenSocketListeners(sock: any) {
     // The title screen holds a real authenticated session (inventory, crafting,
     // talents), so it is kickable like an in-game one — see net/sessionReplaced.
     attachSessionReplacedHandler(sock);
+
+    // Keep recording chat while no chat box is mounted — between dying and
+    // playing again, the transcript must not develop a hole. Idempotent, so it
+    // also covers the game-exit handover, where the Game has just stripped
+    // every listener off this same socket.
+    attachChatLogSocket(sock);
 
     // Daily maze descriptor — keeps the locally-generated maze in sync with
     // the server (matters across the UTC day boundary / client clock skew).

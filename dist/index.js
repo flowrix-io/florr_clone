@@ -16,6 +16,7 @@ const dev_expose_1 = require("./dev_expose");
 const auth_session_1 = require("./auth_session");
 const sessionReplaced_1 = require("./net/sessionReplaced");
 const transport_1 = require("./net/transport");
+const chat_log_1 = require("./chat_log");
 // Build today's maze immediately from the local clock. The server's
 // authoritative 'mazeInfo' (sent at socket connection and on daily rotation)
 // overrides this if the days ever disagree, but the local fallback guarantees
@@ -155,6 +156,11 @@ function attachTitleScreenSocketListeners(sock) {
     // The title screen holds a real authenticated session (inventory, crafting,
     // talents), so it is kickable like an in-game one — see net/sessionReplaced.
     (0, sessionReplaced_1.attachSessionReplacedHandler)(sock);
+    // Keep recording chat while no chat box is mounted — between dying and
+    // playing again, the transcript must not develop a hole. Idempotent, so it
+    // also covers the game-exit handover, where the Game has just stripped
+    // every listener off this same socket.
+    (0, chat_log_1.attachChatLogSocket)(sock);
     // Daily maze descriptor — keeps the locally-generated maze in sync with
     // the server (matters across the UTC day boundary / client clock skew).
     sock.on('mazeInfo', (data) => {
