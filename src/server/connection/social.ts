@@ -7,7 +7,7 @@
 
 import { acceptGuildInvite, broadcastGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
 import { getSessionPlayer } from '../gameState';
-import { MAX_SQUAD_SIZE, acceptInvite, createSquad, declineInvite, findPlayerByUsername, getSquadForPlayer, inviteToSquad, leaveSquad as leaveSquadFn, sendSquadChatMessage, sendSquadSystemMessage } from '../squadManager';
+import { getOrCreateSquad, MAX_SQUAD_SIZE, acceptInvite, createSquad, declineInvite, findPlayerByUsername, getSquadForPlayer, inviteToSquad, leaveSquad as leaveSquadFn, sendSquadChatMessage, sendSquadSystemMessage } from '../squadManager';
 import { ConnectionContext } from './context';
 import { rejectIfMuted } from '../chatMute';
 
@@ -189,15 +189,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: `${targetUsername} is offline.`, timestamp: Date.now() });
             return;
         }
-        let squad = getSquadForPlayer(socket.id);
-        if (!squad) {
-            squad = createSquad(socket.id, false);
-            if (squad) {
-                const player = getSessionPlayer(socket.id);
-                if (player) player.squadId = squad.id;
-                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
-            }
-        }
+        const squad = getOrCreateSquad(io, socket.id);
         if (!squad) {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Failed to create a squad.', timestamp: Date.now() });
             return;
@@ -219,15 +211,7 @@ export function registerSocialHandlers(ctx: ConnectionContext): void {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'You are not in a guild.', timestamp: Date.now() });
             return;
         }
-        let squad = getSquadForPlayer(socket.id);
-        if (!squad) {
-            squad = createSquad(socket.id, false);
-            if (squad) {
-                const player = getSessionPlayer(socket.id);
-                if (player) player.squadId = squad.id;
-                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
-            }
-        }
+        const squad = getOrCreateSquad(io, socket.id);
         if (!squad || squad.leaderId !== socket.id) {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Only your squad leader can invite guildmates into the squad.', timestamp: Date.now() });
             return;

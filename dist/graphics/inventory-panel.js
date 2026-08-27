@@ -6,26 +6,10 @@ exports.CanvasInventoryPanel = void 0;
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
 const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
-const petal_icon_1 = require("./petal-icon");
 const text_1 = require("./text");
+const petal_display_1 = require("./petal-display");
+const panel_common_1 = require("./panel-common");
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
-function darken(hex, percent = 30) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
-function formatPetalName(petalType) {
-    if (!petalType)
-        return '';
-    const name = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
-    return name.replace(/_/g, ' ');
-}
 class CanvasInventoryPanel {
     setStackMode(stack) {
         this.stackMode = stack;
@@ -623,8 +607,8 @@ class CanvasInventoryPanel {
         if (!this.cachedFilter)
             return true;
         const display = itemType.startsWith('petal_')
-            ? formatPetalName(itemType.replace('petal_', ''))
-            : formatPetalName(itemType);
+            ? (0, petal_display_1.formatPetalName)(itemType.replace('petal_', ''))
+            : (0, petal_display_1.formatPetalName)(itemType);
         return display.toLowerCase().includes(this.cachedFilter)
             || itemType.toLowerCase().includes(this.cachedFilter);
     }
@@ -833,109 +817,7 @@ class CanvasInventoryPanel {
      *  rounded square with a darker border, centered icon, outlined white
      *  name text at the bottom, and an outlined `xN` count in the top-right. */
     drawItemSlot(ctx, r, hovered, time) {
-        const baseColor = petals_1.ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
-        const borderColor = darken(baseColor, 25);
-        const radius = 6;
-        const borderW = 3;
-        // Outer rounded border + inner fill.
-        ctx.save();
-        ctx.fillStyle = borderColor;
-        ctx.beginPath();
-        ctx.roundRect(r.x, r.y, r.w, r.h, radius);
-        ctx.fill();
-        ctx.fillStyle = baseColor;
-        ctx.beginPath();
-        ctx.roundRect(r.x + borderW, r.y + borderW, r.w - borderW * 2, r.h - borderW * 2, Math.max(0, radius - 2));
-        ctx.fill();
-        if (hovered) {
-            ctx.globalAlpha = 0.18;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.roundRect(r.x + borderW, r.y + borderW, r.w - borderW * 2, r.h - borderW * 2, Math.max(0, radius - 2));
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-        ctx.restore();
-        // Item icon (slightly above center to leave room for the name text).
-        this.drawItemIcon(ctx, r, time);
-        // Item name — outlined white text at the bottom of the slot.
-        const displayName = r.itemType.startsWith('petal_')
-            ? formatPetalName(r.itemType.replace('petal_', ''))
-            : formatPetalName(r.itemType);
-        if (displayName) {
-            ctx.save();
-            let fontSize = 10;
-            ctx.font = `bold ${fontSize}px Ubuntu, sans-serif`;
-            const maxTextW = r.w - 8;
-            let measured = ctx.measureText(displayName).width;
-            if (measured > maxTextW) {
-                fontSize = Math.max(7, (fontSize * maxTextW) / measured);
-                ctx.font = `bold ${fontSize.toFixed(1)}px Ubuntu, sans-serif`;
-            }
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.lineJoin = 'round';
-            const tx = r.x + r.w / 2;
-            const ty = r.y + r.h - 5;
-            (0, text_1.drawText)(ctx, displayName, tx, ty, { font: ctx.font, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
-            ctx.restore();
-        }
-        // Count badge: outlined white "xN" in the top-right corner of the slot.
-        if (r.count > 1) {
-            const text = `x${r.count}`;
-            ctx.save();
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'top';
-            ctx.lineJoin = 'round';
-            const tx = r.x + r.w - 4;
-            const ty = r.y + 3;
-            (0, text_1.drawText)(ctx, text, tx, ty, { size: 11, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
-            ctx.restore();
-        }
-        // Disabled items (e.g. ultra+ petals in the maze): grey the whole slot
-        // out so it reads as unusable — interactions are blocked in the input
-        // handlers via the same isItemDisabled hook.
-        if (this.isItemDisabled && this.isItemDisabled(r.rarity, r.itemType)) {
-            ctx.save();
-            ctx.globalAlpha = 0.6;
-            ctx.fillStyle = '#3a3a3a';
-            ctx.beginPath();
-            ctx.roundRect(r.x, r.y, r.w, r.h, radius);
-            ctx.fill();
-            ctx.restore();
-        }
-    }
-    drawItemIcon(ctx, r, time) {
-        const cx = r.x + r.w / 2;
-        // Sit the icon in the upper portion of the slot to leave room for the
-        // outlined name text at the bottom.
-        const cy = r.y + r.h * 0.4;
-        const iconSize = 32;
-        if (r.itemType.startsWith('petal_')) {
-            const petalType = r.itemType.replace('petal_', '');
-            const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
-            if (pc) {
-                const stats = this.game.getPetalStats?.(petalType, r.rarity);
-                (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, cx, cy, iconSize);
-            }
-        }
-        else {
-            if (!this.imgCache.has(r.itemType)) {
-                const dataUrl = this.game.getItemSpriteDataUrl?.(r.itemType);
-                if (dataUrl) {
-                    const img = new Image();
-                    img.src = dataUrl;
-                    this.imgCache.set(r.itemType, img);
-                }
-                else {
-                    this.imgCache.set(r.itemType, null);
-                }
-            }
-            const img = this.imgCache.get(r.itemType);
-            if (img && img.complete && img.naturalWidth > 0) {
-                ctx.drawImage(img, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
-            }
-        }
+        (0, panel_common_1.drawItemSlot)(ctx, r, hovered, time, this.game, this.imgCache, this.isItemDisabled);
     }
     // ===== input handlers =====
     toLocal(e) {
@@ -943,11 +825,7 @@ class CanvasInventoryPanel {
         return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
     findItemIndex(rarity, itemType) {
-        for (let i = 0; i < this.itemRects.length; i++) {
-            if (this.itemRects[i].rarity === rarity && this.itemRects[i].itemType === itemType)
-                return i;
-        }
-        return -1;
+        return (0, panel_common_1.findItemIndex)(this.itemRects, rarity, itemType);
     }
 }
 exports.CanvasInventoryPanel = CanvasInventoryPanel;

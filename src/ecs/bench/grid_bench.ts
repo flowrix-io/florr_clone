@@ -38,17 +38,9 @@ import * as C from '../components';
 import { World } from '../world';
 import { spawnMob } from '../prefabs';
 import { GridQueryResult, SpatialGrid } from '../spatial/grid';
+import { mulberry32 } from './rng';
 
 /** Deterministic PRNG so both sides see exactly the same world. */
-function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 /** Mob mix roughly matching a populated server: mostly small, a few large. */
 const MOB_MIX: Array<{ type: string; tier: string; weight: number }> = [

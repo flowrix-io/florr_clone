@@ -55,6 +55,7 @@ import {
 } from '../../server/ecsSync';
 import { assertNoServerBooted } from './tick_harness';
 
+import { benchStubHooks } from './stub_hooks';
 const DT = 1 / 30;
 const NOW0 = 1_000_000;
 
@@ -91,37 +92,7 @@ function makePlayer(id: string, x: number, y: number): ServerPlayer {
 
 /** The stub runtime; only the player scheduler is exercised. */
 function makeRuntime(): EcsRuntime {
-    return createEcsRuntime({
-        lookupPlayer: () => undefined,
-        // This bench drives the schedulers directly; the post-movement pipeline
-        // is the game\'s, not the bench\'s.
-        runPlayerPipeline: () => { /* not exercised here */ },
-        runPetalBehaviours: () => { /* not exercised here */ },
-        creditDamage: () => { /* not reachable from the player scheduler */ },
-        onEnemyDamaged: () => { /* ditto */ },
-        onEnemyKilled: () => { /* ditto */ },
-        onPetOutOfView: () => { /* pets are not under test here */ },
-        isNearAnyPlayer: () => true,
-        allocateProjectileNetId: () => 1,
-        resolvePlayerEntity: () => undefined,
-        playerRadiusOf: () => 25,
-        damageMultiplierOf: () => 1,
-        onPlayerHit: () => true,
-        emitEnemyDamaged: () => { /* ditto */ },
-        onProjectileKill: () => { /* ditto */ },
-        onGroundEffectExpired: () => { /* ditto */ },
-        onEnemyPoisonDamaged: () => { /* ditto */ },
-        onPoisonKill: () => { /* ditto */ },
-        tickPlayerPoison: () => { /* ditto */ },
-        onPlayerPoisonLapsed: () => { /* ditto */ },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { /* ditto */ },
-        onSpawnWaves: () => { /* ditto */ },
-        onWorldItemRemoved: () => { /* ditto */ },
-        onMobDespawn: () => { /* ditto */ },
-        onReapEnemy: () => { /* ditto */ },
-    });
+    return createEcsRuntime(benchStubHooks());
 }
 
 /**

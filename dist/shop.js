@@ -4,6 +4,7 @@ exports.ShopManager = void 0;
 const petals_1 = require("./petals");
 const game_icons_net_icons_1 = require("./game-icons-net-icons");
 const text_1 = require("./graphics/text");
+const shapes_1 = require("./graphics/shapes");
 /* -------------------------- Layout constants -------------------------- */
 const PANEL_W = 700;
 const PANEL_PADDING = 20;
@@ -187,7 +188,7 @@ class ShopManager {
         // Background — clear then paint panel fill + border in one rounded path.
         ctx.clearRect(0, 0, cssW, cssH);
         ctx.fillStyle = '#42f563';
-        roundRect(ctx, 0, 0, cssW, cssH, 3);
+        (0, shapes_1.drawRoundedRect)(ctx, 0, 0, cssW, cssH, 3);
         ctx.fill();
         ctx.lineWidth = 4;
         ctx.strokeStyle = '#36d153';
@@ -250,7 +251,7 @@ class ShopManager {
         const cb = { x: cssW - PANEL_PADDING - 24, y: PANEL_PADDING - 4, w: 24, h: 24 };
         const closeHover = this.hover?.kind === 'close';
         ctx.fillStyle = closeHover ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)';
-        roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, cb.x, cb.y, cb.w, cb.h, 4);
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2.5;
@@ -272,7 +273,7 @@ class ShopManager {
         ctx.fillStyle = 'rgba(74, 144, 226, 0.15)';
         ctx.strokeStyle = '#4a90e2';
         ctx.lineWidth = 2;
-        roundRect(ctx, x, y, w, h, 10);
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, w, h, 10);
         ctx.fill();
         ctx.stroke();
         // Title
@@ -292,7 +293,7 @@ class ShopManager {
         ctx.fillStyle = 'rgba(255,255,255,0.1)';
         ctx.strokeStyle = this.codeFocused ? '#ffffff' : (inputHover ? '#7eb9f7' : '#4a90e2');
         ctx.lineWidth = 2;
-        roundRect(ctx, fieldX, fieldY, fieldW, fieldH, 5);
+        (0, shapes_1.drawRoundedRect)(ctx, fieldX, fieldY, fieldW, fieldH, 5);
         ctx.fill();
         ctx.stroke();
         // Text + caret (clipped to field)
@@ -325,7 +326,7 @@ class ShopManager {
         // Redeem button
         const btnHover = this.hover?.kind === 'redeem';
         ctx.fillStyle = btnHover ? '#5fa1ed' : '#4a90e2';
-        roundRect(ctx, buttonX, fieldY, buttonW, fieldH, 5);
+        (0, shapes_1.drawRoundedRect)(ctx, buttonX, fieldY, buttonW, fieldH, 5);
         ctx.fill();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -347,7 +348,7 @@ class ShopManager {
             const active = this.activeTab === t.id;
             const hov = this.hover?.kind === 'tab' && this.hover.payload === t.id;
             ctx.fillStyle = active ? 'rgba(255,255,255,0.25)' : (hov ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)');
-            roundRect(ctx, tx, y, tabW, tabH, 6);
+            (0, shapes_1.drawRoundedRect)(ctx, tx, y, tabW, tabH, 6);
             ctx.fill();
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -412,14 +413,14 @@ class ShopManager {
                 }
                 ctx.fillStyle = rarityColor;
                 ctx.globalAlpha = disabled ? 0.45 : 1;
-                roundRect(ctx, cx, cy, cardSize, cardSize, 4);
+                (0, shapes_1.drawRoundedRect)(ctx, cx, cy, cardSize, cardSize, 4);
                 ctx.fill();
                 ctx.globalAlpha = 1;
                 ctx.restore();
                 // Border
                 ctx.strokeStyle = hov ? '#ffffff' : 'rgba(0,0,0,0.3)';
                 ctx.lineWidth = 2;
-                roundRect(ctx, cx, cy, cardSize, cardSize, 4);
+                (0, shapes_1.drawRoundedRect)(ctx, cx, cy, cardSize, cardSize, 4);
                 ctx.stroke();
                 // Petal icon
                 ctx.save();
@@ -488,7 +489,7 @@ class ShopManager {
             ctx.fillStyle = c.color;
             ctx.strokeStyle = 'rgba(0,0,0,0.3)';
             ctx.lineWidth = 2;
-            roundRect(ctx, x + 6, cursorY, cardW, cardH, 10);
+            (0, shapes_1.drawRoundedRect)(ctx, x + 6, cursorY, cardW, cardH, 10);
             ctx.fill();
             ctx.stroke();
             ctx.textAlign = 'left';
@@ -518,10 +519,10 @@ class ShopManager {
         const thumbY = y + (offset / (total - h)) * (trackH - thumbH);
         const ctx = this.ctx;
         ctx.fillStyle = 'rgba(0,0,0,0.15)';
-        roundRect(ctx, x, y, SCROLLBAR_W, trackH, 3);
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, SCROLLBAR_W, trackH, 3);
         ctx.fill();
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
-        roundRect(ctx, x, thumbY, SCROLLBAR_W, thumbH, 3);
+        (0, shapes_1.drawRoundedRect)(ctx, x, thumbY, SCROLLBAR_W, thumbH, 3);
         ctx.fill();
     }
     drawModal(cssW, cssH) {
@@ -537,7 +538,7 @@ class ShopManager {
         ctx.fillStyle = '#2c3e50';
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2;
-        roundRect(ctx, bx, by, boxW, boxH, 10);
+        (0, shapes_1.drawRoundedRect)(ctx, bx, by, boxW, boxH, 10);
         ctx.fill();
         ctx.stroke();
         // Message — wrap to fit
@@ -564,7 +565,7 @@ class ShopManager {
         for (const b of buttons) {
             const hov = this.hover?.kind === 'modal-button' && this.hover.payload === b.action;
             ctx.fillStyle = hov ? lighten(b.bg, 0.15) : b.bg;
-            roundRect(ctx, bxStart, btnY, btnW, btnH, 6);
+            (0, shapes_1.drawRoundedRect)(ctx, bxStart, btnY, btnW, btnH, 6);
             ctx.fill();
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -866,24 +867,6 @@ class ShopManager {
 }
 exports.ShopManager = ShopManager;
 /* ----------------------------- Helpers ----------------------------- */
-function roundRect(ctx, x, y, w, h, r) {
-    if (typeof ctx.roundRect === 'function') {
-        ctx.beginPath();
-        ctx.roundRect(x, y, w, h, r);
-        return;
-    }
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-}
 function wrapText(ctx, text, cx, y, maxWidth, lineH) {
     // Match the game-standard outlined text style. The caller sets font and
     // fillStyle; capture them so each line routes through the shared drawText.

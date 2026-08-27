@@ -91,6 +91,7 @@ import {
 import * as C from '../components';
 import { assertNoServerBooted } from './tick_harness';
 
+import { benchStubHooks } from './stub_hooks';
 const DT = 1 / 30;
 const NOW0 = 1_700_000_000_000;
 
@@ -184,35 +185,9 @@ function resetWorldSingletons(): void {
 
 function makeRuntime(): EcsRuntime {
     const runtime = createEcsRuntime({
+        ...benchStubHooks(),
         lookupPlayer: (socketId: string) => players[socketId],
-        // This bench drives the schedulers directly; the post-movement pipeline
-        // is the game\'s, not the bench\'s.
-        runPlayerPipeline: () => { /* not exercised here */ },
-        runPetalBehaviours: () => { /* not exercised here */ },
-        creditDamage: () => { /* attribution is not under test here */ },
-        onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
-        onEnemyKilled: () => { /* drops/XP are not under test here */ },
-        onPetOutOfView: () => { /* pets are not under test here */ },
-        isNearAnyPlayer: () => true,
-        allocateProjectileNetId: () => 1,
         resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),
-        playerRadiusOf: () => 25,
-        damageMultiplierOf: () => 1,
-        onPlayerHit: () => true,
-        emitEnemyDamaged: () => { /* broadcast is not under test here */ },
-        onProjectileKill: () => { /* drops/XP are not under test here */ },
-        onGroundEffectExpired: () => { /* wire is not under test here */ },
-        onEnemyPoisonDamaged: () => { /* wire is not under test here */ },
-        onPoisonKill: () => { /* drops/XP are not under test here */ },
-        tickPlayerPoison: () => { /* player poison is not under test here */ },
-        onPlayerPoisonLapsed: () => { /* ditto */ },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { /* spawners are not under test here */ },
-        onSpawnWaves: () => { /* ditto */ },
-        onWorldItemRemoved: () => { /* items are not under test here */ },
-        onMobDespawn: () => { /* despawn is not under test here */ },
-        onReapEnemy: () => { /* drops/XP are not under test here */ },
     });
     configureCutover(runtime);
     // Bot pickup targeting reads drops through the entity registry; point it at

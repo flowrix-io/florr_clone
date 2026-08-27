@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TitleScreenInventoryManager = void 0;
+const inventory_dom_1 = require("../graphics/inventory-dom");
 const petals_1 = require("../petals");
 const inventory_1 = require("../inventory");
 const inventoryCodec_1 = require("../inventoryCodec");
@@ -13,7 +14,9 @@ const preconnect_1 = require("../net/preconnect");
 const preloader_1 = require("../preloader");
 const alt_key_1 = require("../alt_key");
 const tooltip_1 = require("../graphics/tooltip");
+const petal_display_1 = require("../graphics/petal-display");
 const auth_session_1 = require("../auth_session");
+const sprite_data_url_1 = require("./sprite_data_url");
 /**
  * Title Screen Inventory Manager
  * Handles inventory and loadout on the title screen using the preconnected socket.
@@ -116,24 +119,7 @@ class TitleScreenInventoryManager {
                 return entry;
             },
             getPetalStats: (petalType, rarity) => (0, petals_1.getPetalStats)(petalType, rarity),
-            getItemSpriteDataUrl: (itemType) => {
-                const assets = (0, preloader_1.getPreloadedAssets)();
-                if (!assets || !assets.itemSprites)
-                    return null;
-                const img = assets.itemSprites[itemType];
-                if (!img)
-                    return null;
-                try {
-                    const c = document.createElement('canvas');
-                    c.width = img.naturalWidth || 32;
-                    c.height = img.naturalHeight || 32;
-                    c.getContext('2d')?.drawImage(img, 0, 0);
-                    return c.toDataURL('image/png');
-                }
-                catch {
-                    return null;
-                }
-            },
+            getItemSpriteDataUrl: sprite_data_url_1.getItemSpriteDataUrl,
             inventoryManager: this,
         };
         this.canvasLoadoutBar = new loadout_bar_1.CanvasLoadoutBar(adapter);
@@ -631,13 +617,6 @@ class TitleScreenInventoryManager {
         // This method is kept as a no-op for existing callers.
         return;
     }
-    formatPetalName(petalType) {
-        if (!petalType)
-            return "";
-        let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
-        itemName = itemName.replace('_', ' ');
-        return itemName;
-    }
     /** True when the maze biome is selected — edits target the maze loadout preset. */
     isMazeContext() {
         return (localStorage.getItem('spawnBiome') || 'default') === 'maze';
@@ -920,80 +899,16 @@ class TitleScreenInventoryManager {
             `;
             itemElement.appendChild(img);
         }
-        const countLabel = document.createElement('div');
-        countLabel.className = 'item-count';
-        countLabel.textContent = itemCount.toString();
-        countLabel.style.cssText = `
-            position: absolute;
-            top: 2px;
-            right: 4px;
-            color: white;
-            font-size: 12px;
-            font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-        `;
-        itemElement.appendChild(countLabel);
+        itemElement.appendChild((0, inventory_dom_1.createCountLabel)(itemCount));
         if (type.startsWith('petal_')) {
             const petalType = type.replace('petal_', '');
-            const petalName = this.formatPetalName(petalType);
-            if (petalName) {
-                const nameLabel = document.createElement('div');
-                nameLabel.className = 'petal-name';
-                nameLabel.textContent = petalName;
-                nameLabel.style.cssText = `
-                    position: absolute;
-                    bottom: 5px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    color: white;
-                    font-size: 10px;
-                    font-weight: bold;
-                    text-shadow:
-                        -1px -1px 0 #000,
-                        1px -1px 0 #000,
-                        -1px 1px 0 #000,
-                        1px 1px 0 #000,
-                        0 0 3px rgba(0,0,0,0.8);
-                    white-space: nowrap;
-                    pointer-events: none;
-                    z-index: 10;
-                `;
-                itemElement.appendChild(nameLabel);
-            }
+            (0, inventory_dom_1.appendPetalNameLabel)(itemElement, petalType);
             this.setupTooltip(itemElement, petalType, rarity);
         }
         return itemElement;
     }
     createRarityRow(rarity) {
-        const rarityRow = document.createElement('div');
-        rarityRow.className = 'rarity-row';
-        rarityRow.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        `;
-        const rarityLabel = document.createElement('div');
-        rarityLabel.textContent = rarity.toUpperCase();
-        rarityLabel.style.cssText = `
-            color: ${this.ITEM_RARITY_COLORS[rarity]};
-            font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-            padding-left: 5px;
-        `;
-        rarityRow.appendChild(rarityLabel);
-        const grid = document.createElement('div');
-        grid.className = 'inventory-grid';
-        grid.style.cssText = `
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            padding: 5px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 5px;
-            border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
-        `;
-        rarityRow.appendChild(grid);
-        return { row: rarityRow, grid };
+        return (0, inventory_dom_1.createRarityRow)(rarity);
     }
     updateInventoryDisplay() {
         if (!this.inventoryPanel)
@@ -1140,74 +1055,15 @@ class TitleScreenInventoryManager {
         const newB = Math.round(b * factor);
         return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
     }
-    getSkillMultiplier(skillTier) {
-        if (!skillTier)
-            return 1.0;
-        const SKILL_MULTIPLIERS = {
-            common: 1.0,
-            uncommon: 1.1,
-            rare: 1.2,
-            epic: 1.35,
-            legendary: 1.6,
-            mythic: 2.0,
-            ultra: 2.6,
-            super: 3.3,
-            unique: 4.0,
-            apex: 4.8
-        };
-        return SKILL_MULTIPLIERS[skillTier] || 1.0;
-    }
-    abbreviateNumber(value) {
-        if (value < 1000) {
-            return value.toString();
-        }
-        else if (value < 1000000) {
-            const k = value / 1000;
-            return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`;
-        }
-        else if (value < 1000000000) {
-            const m = value / 1000000;
-            return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
-        }
-        else {
-            const b = value / 1000000000;
-            return b % 1 === 0 ? `${b}B` : `${b.toFixed(1)}B`;
-        }
-    }
-    calculateFinalPetalDamage(petalType, rarity) {
-        if (!this.playerData)
-            return 0;
-        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
-        if (!stats)
-            return 0;
-        const baseDamage = stats.damage;
-        const damageSkillMultiplier = this.getSkillMultiplier(this.playerData.skills?.damage);
-        return Math.round(baseDamage * damageSkillMultiplier);
-    }
-    calculateFinalPetalHealth(petalType, rarity) {
-        if (!this.playerData)
-            return 0;
-        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
-        if (!stats)
-            return 0;
-        const baseHealth = stats.health;
-        const petalHealthMultiplier = this.getSkillMultiplier(this.playerData.skills?.petalHealth);
-        return Math.round(baseHealth * petalHealthMultiplier);
-    }
     /** Shows the shared petal tooltip (graphics/tooltip.ts) next to an anchor
      *  rect, with this manager's skill-adjusted final stats. */
     showPetalTooltip(anchor, petalType, rarity) {
-        const stats = (0, petals_1.getPetalStats)(petalType, rarity);
-        if (!stats)
+        if (!this.playerData)
             return;
-        (0, tooltip_1.showTooltip)(anchor, (0, tooltip_1.petalTooltipLines)(stats, rarity, this.calculateFinalPetalHealth(petalType, rarity), this.calculateFinalPetalDamage(petalType, rarity), (n) => this.abbreviateNumber(n)));
+        (0, petal_display_1.showPetalTooltip)(anchor, petalType, rarity, this.playerData.skills);
     }
     hideTooltip() {
-        if (this.tooltipTimeout !== null) {
-            clearTimeout(this.tooltipTimeout);
-            this.tooltipTimeout = null;
-        }
-        (0, tooltip_1.hideTooltip)();
+        this.tooltipTimeout = (0, petal_display_1.clearPetalTooltip)(this.tooltipTimeout);
         this.hoveredElement = null;
     }
     setupTooltip(element, petalType, rarity) {

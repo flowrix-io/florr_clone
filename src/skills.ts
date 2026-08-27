@@ -1,4 +1,5 @@
 import { CanvasSkillsPanel } from './graphics/skills-panel';
+import { EFFECT_SKILL_MULTIPLIERS as SKILL_MULTIPLIERS } from './skill_multipliers';
 
 interface GameInterface {
     getLocalPlayer(): any;
@@ -9,18 +10,6 @@ interface GameInterface {
     graphics?: any;
 }
 
-const SKILL_MULTIPLIERS: Record<string, number> = {
-    common: 1.0,
-    uncommon: 1.1,
-    rare: 1.2,
-    epic: 1.35,
-    legendary: 1.6,
-    mythic: 2.0,
-    ultra: 2.6,
-    super: 3.3,
-    unique: 4.0,
-    apex: 4.8
-};
 
 /** Format a number with k/m suffixes (e.g. 19725 → "19.7k"). */
 function abbreviate(value: number): string {

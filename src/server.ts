@@ -567,39 +567,73 @@ function triggerViewportUpdate() {
     }
     
     // Try to spawn new enemies if we're below the target count
-    const playerCount = Object.keys(players).length;
-    if (playerCount > 0) {
-        // Calculate target enemy count based on current viewport density
-        const viewports = getPlayerViewports();
-        const totalViewportArea = viewports.reduce((total, viewport) => {
-            const extendedViewport = {
-                x: viewport.x - VIEWPORT_BUFFER,
-                y: viewport.y - VIEWPORT_BUFFER,
-                width: viewport.width + (VIEWPORT_BUFFER * 2),
-                height: viewport.height + (VIEWPORT_BUFFER * 2)
-            };
-            return total + (extendedViewport.width * extendedViewport.height);
-        }, 0);
-        
-        const targetDensity = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;
-        const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
-        const currentViewportEnemies = getEnemiesInViewportCount();
-        
-        if (currentViewportEnemies < targetEnemyCount) {
-            // Scale spawn cap with player count so each player's viewport fills at the same rate
-            const enemiesToSpawn = Math.min(5 * playerCount, targetEnemyCount - currentViewportEnemies);
-            let spawned = 0;
-
-            for (let i = 0; i < enemiesToSpawn; i++) {
-                // createEnemy admits the mob itself (entity + liveEnemies()[]).
-                if (createEnemy()) spawned++;
-            }
-
-            if (spawned > 0) {
-                console.log(`[SERVER] Player join spawn: ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
-            }
-        }
+    const reading = measureViewportDensity();
+    const spawned = spawnToViewportDensity(reading, 5);
+    if (spawned > 0) {
+        console.log(`[SERVER] Player join spawn: ${spawned} enemies (target: ${reading.targetEnemyCount}, current: ${reading.currentViewportEnemies})`);
     }
+}
+
+/** How far the players' combined viewport is below its target mob density. */
+interface ViewportDensityReading {
+    playerCount: number;
+    targetEnemyCount: number;
+    currentViewportEnemies: number;
+}
+
+/**
+ * Measures the current open-world mob density against its target.
+ *
+ * Kept separate from the spawn step because the density-maintenance tick takes
+ * its reading BEFORE the arena and maze spawners run, and then spawns against
+ * that pre-arena reading — folding the two together would silently let arena
+ * and maze mobs count towards the open-world target.
+ */
+function measureViewportDensity(): ViewportDensityReading {
+    const playerCount = Object.keys(players).length;
+    if (playerCount === 0) {
+        return { playerCount, targetEnemyCount: 0, currentViewportEnemies: 0 };
+    }
+
+    // Target count follows the current viewport density, buffered on each side.
+    const viewports = getPlayerViewports();
+    const totalViewportArea = viewports.reduce((total, viewport) => {
+        const extendedViewport = {
+            x: viewport.x - VIEWPORT_BUFFER,
+            y: viewport.y - VIEWPORT_BUFFER,
+            width: viewport.width + (VIEWPORT_BUFFER * 2),
+            height: viewport.height + (VIEWPORT_BUFFER * 2)
+        };
+        return total + (extendedViewport.width * extendedViewport.height);
+    }, 0);
+
+    const targetDensity = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;
+    return {
+        playerCount,
+        targetEnemyCount: Math.ceil(targetDensity * totalViewportArea),
+        currentViewportEnemies: getEnemiesInViewportCount(),
+    };
+}
+
+/**
+ * Spawns open-world mobs towards `reading`'s target, capped at
+ * `perPlayerCap` per connected player so each player's viewport fills at the
+ * same rate. Returns how many mobs were admitted.
+ *
+ * The join burst and the maintenance tick carried their own copy of this and
+ * had drifted apart on that cap, which is why it is an explicit argument.
+ */
+function spawnToViewportDensity(reading: ViewportDensityReading, perPlayerCap: number): number {
+    const { playerCount, targetEnemyCount, currentViewportEnemies } = reading;
+    if (playerCount === 0 || currentViewportEnemies >= targetEnemyCount) return 0;
+
+    const enemiesToSpawn = Math.min(perPlayerCap * playerCount, targetEnemyCount - currentViewportEnemies);
+    let spawned = 0;
+    for (let i = 0; i < enemiesToSpawn; i++) {
+        // createEnemy admits the mob itself (entity + liveEnemies()[]).
+        if (createEnemy()) spawned++;
+    }
+    return spawned;
 }
 
 // createSpecialMob moved to enemySpawner module
@@ -2358,50 +2392,25 @@ setInterval(() => {
 
 // Add density maintenance interval (every 0.5 seconds) to spawn enemies as viewport moves
 setInterval(() => {
-    const playerCount = Object.keys(players).length;
-    if (playerCount > 0) {
-        // Calculate target enemy count based on current viewport density
-        const viewports = getPlayerViewports();
-        const totalViewportArea = viewports.reduce((total, viewport) => {
-            const extendedViewport = {
-                x: viewport.x - VIEWPORT_BUFFER,
-                y: viewport.y - VIEWPORT_BUFFER,
-                width: viewport.width + (VIEWPORT_BUFFER * 2),
-                height: viewport.height + (VIEWPORT_BUFFER * 2)
-            };
-            return total + (extendedViewport.width * extendedViewport.height);
-        }, 0);
-        
-        const targetDensity = ORIGINAL_ENEMY_COUNT / TOTAL_WORLD_AREA;
-        const targetEnemyCount = Math.ceil(targetDensity * totalViewportArea);
-        const currentViewportEnemies = getEnemiesInViewportCount();
-        
-        // Keep the PVP arena populated with garden mobs + spiders. These
-        // spawners admit their own mobs now — see server/enemyRegistry.ts.
-        spawnArenaMobs(3);
+    if (Object.keys(players).length === 0) return;
 
-        // Keep the maze corridors populated (tier by depth zone) and its
-        // ultra bosses alive in the deepest rooms. 40 per half-second fills a
-        // fresh maze (~1300-mob target at full world density) in ~17s; at
-        // steady state the target cap throttles this down to a
-        // kill-replacement trickle.
-        spawnMazeMobs(40);
-        spawnMazeBosses();
+    // Read the open-world deficit BEFORE the arena/maze spawners run, so their
+    // mobs never count against the open-world target (matches prior behaviour).
+    const reading = measureViewportDensity();
 
-        if (currentViewportEnemies < targetEnemyCount) {
-            // Scale spawn cap with player count so each player's viewport fills at the same rate
-            const enemiesToSpawn = Math.min(3 * playerCount, targetEnemyCount - currentViewportEnemies);
-            let spawned = 0;
+    // Keep the PVP arena populated with garden mobs + spiders. These
+    // spawners admit their own mobs now — see server/enemyRegistry.ts.
+    spawnArenaMobs(3);
 
-            for (let i = 0; i < enemiesToSpawn; i++) {
-                if (createEnemy()) spawned++;
-            }
+    // Keep the maze corridors populated (tier by depth zone) and its
+    // ultra bosses alive in the deepest rooms. 40 per half-second fills a
+    // fresh maze (~1300-mob target at full world density) in ~17s; at
+    // steady state the target cap throttles this down to a
+    // kill-replacement trickle.
+    spawnMazeMobs(40);
+    spawnMazeBosses();
 
-            // if (spawned > 0) {
-            //     console.log(`[SERVER] Density maintenance: spawned ${spawned} enemies (target: ${targetEnemyCount}, current: ${currentViewportEnemies})`);
-            // }
-        }
-    }
+    spawnToViewportDensity(reading, 3);
 }, 500); // 0.5 seconds
 
 // Spawn-zone manager tick: drives wave-based spawning inside spawn zones.

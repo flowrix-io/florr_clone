@@ -19,6 +19,7 @@ const wire_events_1 = require("./wire_events");
 const wire_fields_1 = require("./wire_fields");
 const inventoryCodec_1 = require("./inventoryCodec");
 const transport_1 = require("./net/transport");
+const wire_event_registry_1 = require("./wire_event_registry");
 /**
  * Guards against a client whose wire format no longer matches the server's.
  *
@@ -70,7 +71,7 @@ function verifyProtocol(serverSig) {
     window.location.reload();
     return false;
 }
-class WSClientSocket {
+class WSClientSocket extends wire_event_registry_1.WireEventRegistry {
     /**
      * Which transport the live connection actually negotiated, or null while
      * disconnected. Surfaced for diagnostics (the debug overlay) — nothing in
@@ -102,12 +103,10 @@ class WSClientSocket {
         return WSClientSocket.VOLATILE_EVENTS.has(event);
     }
     constructor(url, _options) {
+        super();
         this.id = null;
         this.connected = false;
         this.transport = null;
-        this.handlers = new Map();
-        this.onceHandlers = new Map();
-        this.anyHandlers = new Set();
         this.reconnectTimer = null;
         this.shouldReconnect = true;
         this.reconnectDelay = 1000;
@@ -210,60 +209,11 @@ class WSClientSocket {
                 }
                 return;
             }
-            // Fire onAny handlers
-            for (const handler of this.anyHandlers) {
-                handler(eventName, ...args);
-            }
-            // Fire event-specific handlers
-            this.fireEvent(eventName, ...args);
+            this.fireAnyAndEvent(eventName, ...args);
         }
         catch (e) {
             // Ignore malformed messages
         }
-    }
-    fireEvent(event, ...args) {
-        const handlers = this.handlers.get(event);
-        if (handlers) {
-            for (const handler of handlers) {
-                handler(...args);
-            }
-        }
-        const onceHandlers = this.onceHandlers.get(event);
-        if (onceHandlers) {
-            for (const handler of onceHandlers) {
-                handler(...args);
-            }
-            this.onceHandlers.delete(event);
-        }
-    }
-    on(event, handler) {
-        if (!this.handlers.has(event)) {
-            this.handlers.set(event, new Set());
-        }
-        this.handlers.get(event).add(handler);
-        return this;
-    }
-    off(event, handler) {
-        if (handler) {
-            this.handlers.get(event)?.delete(handler);
-            this.onceHandlers.get(event)?.delete(handler);
-        }
-        else {
-            this.handlers.delete(event);
-            this.onceHandlers.delete(event);
-        }
-        return this;
-    }
-    once(event, handler) {
-        if (!this.onceHandlers.has(event)) {
-            this.onceHandlers.set(event, new Set());
-        }
-        this.onceHandlers.get(event).add(handler);
-        return this;
-    }
-    onAny(handler) {
-        this.anyHandlers.add(handler);
-        return this;
     }
     emit(event, ...args) {
         const transport = this.transport;
@@ -288,21 +238,6 @@ class WSClientSocket {
             // Drop volatile messages while disconnected or still handshaking.
         }
         return this;
-    }
-    removeAllListeners(event) {
-        if (event) {
-            this.handlers.delete(event);
-            this.onceHandlers.delete(event);
-        }
-        else {
-            this.handlers.clear();
-            this.onceHandlers.clear();
-            this.anyHandlers.clear();
-        }
-        return this;
-    }
-    listeners(event) {
-        return Array.from(this.handlers.get(event) || []);
     }
     disconnect() {
         this.shouldReconnect = false;

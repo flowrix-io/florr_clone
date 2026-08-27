@@ -97,15 +97,7 @@ function getTileTexturePattern(cfg, ctx, onReady) {
     return null;
 }
 core_1.Graphics.prototype.drawMap = function (world_map_data) {
-    // Calculate viewport accounting for zoom level
-    const scaledWidth = this.viewW / this.zoomLevel;
-    const scaledHeight = this.viewH / this.zoomLevel;
-    const viewport = {
-        left: this.cameraX,
-        top: this.cameraY,
-        right: this.cameraX + scaledWidth,
-        bottom: this.cameraY + scaledHeight
-    };
+    const viewport = this.worldViewport();
     // Wall grid is rendered via the static map cache (see render.ts) —
     // skip it here so we don't redraw it on top per frame.
     // Draw all map elements (spawn areas, biomes, teleporters)

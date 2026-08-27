@@ -63,16 +63,8 @@ const C = __importStar(require("../components"));
 const world_1 = require("../world");
 const prefabs_1 = require("../prefabs");
 const grid_1 = require("../spatial/grid");
+const rng_1 = require("./rng");
 /** Deterministic PRNG so both sides see exactly the same world. */
-function mulberry32(seed) {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 /** Mob mix roughly matching a populated server: mostly small, a few large. */
 const MOB_MIX = [
     { type: 'bee', tier: 'common', weight: 30 },
@@ -100,7 +92,7 @@ function radiusFor(type, tier) {
     return base * (0, mobs_1.getEnemySizeScale)(false, tier, type);
 }
 function buildSpecs(count, extent, seed) {
-    const rng = mulberry32(seed);
+    const rng = (0, rng_1.mulberry32)(seed);
     const specs = [];
     for (let i = 0; i < count; i++) {
         const m = pickMob(rng);
@@ -115,7 +107,7 @@ function buildSpecs(count, extent, seed) {
     return specs;
 }
 function buildQueries(count, extent, radius, seed) {
-    const rng = mulberry32(seed);
+    const rng = (0, rng_1.mulberry32)(seed);
     const qs = [];
     for (let i = 0; i < count; i++) {
         qs.push({ x: (rng() - 0.5) * extent, y: (rng() - 0.5) * extent, radius });

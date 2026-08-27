@@ -6,15 +6,7 @@ const enemy_drawing_1 = require("./enemy-drawing");
 const mobScratch = [];
 const playerScratch = [];
 core_1.Graphics.prototype.drawGameObjects = function (world, items, mobProjectiles, playerProjectiles, currentPlayerId, petalExtension = 1.0) {
-    // Calculate viewport accounting for zoom level
-    const scaledWidth = this.viewW / this.zoomLevel;
-    const scaledHeight = this.viewH / this.zoomLevel;
-    const viewport = {
-        left: this.cameraX,
-        top: this.cameraY,
-        right: this.cameraX + scaledWidth,
-        bottom: this.cameraY + scaledHeight
-    };
+    const viewport = this.worldViewport();
     // Draw enemies first (including pets) - below players and petals
     const mobsT0 = performance.now();
     // Snapshot the camera transform once; drawEnemy composes each mob's
@@ -151,62 +143,39 @@ core_1.Graphics.prototype.drawGameObjects = function (world, items, mobProjectil
     const allGasProjectiles = [];
     const otherProjectiles = [];
     const MAX_GAS_PROJECTILES = 500; // Limit to prevent performance issues
-    // Process mob projectiles
-    for (const projectile of mobProjectiles.values()) {
-        const petalStats = (0, core_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
-        if (!petalStats) {
-            continue;
-        }
-        const projectileSize = projectile.size * 20; // Use projectile's scaled size
-        const cullingBuffer = Math.max(projectileSize, 50);
-        // Viewport culling
-        if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left ||
-            projectile.x - projectileSize / 2 - cullingBuffer > viewport.right ||
-            projectile.y + projectileSize / 2 + cullingBuffer < viewport.top ||
-            projectile.y - projectileSize / 2 - cullingBuffer > viewport.bottom) {
-            continue;
-        }
-        if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
-            if (allGasProjectiles.length < MAX_GAS_PROJECTILES) {
-                allGasProjectiles.push({
-                    x: projectile.x,
-                    y: projectile.y,
-                    radius: projectileSize / 2 // Already uses scaled size
-                });
+    // Mob and player projectiles are sorted identically — only where the
+    // drawn size comes from differs (mob projectiles carry their own scaled
+    // size, player ones take it from the petal's stats).
+    const collectProjectiles = (source, sizeOf) => {
+        for (const projectile of source.values()) {
+            const petalStats = (0, core_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
+            if (!petalStats)
+                continue;
+            const projectileSize = sizeOf(projectile, petalStats);
+            const cullingBuffer = Math.max(projectileSize, 50);
+            // Viewport culling
+            if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left ||
+                projectile.x - projectileSize / 2 - cullingBuffer > viewport.right ||
+                projectile.y + projectileSize / 2 + cullingBuffer < viewport.top ||
+                projectile.y - projectileSize / 2 - cullingBuffer > viewport.bottom) {
+                continue;
+            }
+            if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
+                if (allGasProjectiles.length < MAX_GAS_PROJECTILES) {
+                    allGasProjectiles.push({
+                        x: projectile.x,
+                        y: projectile.y,
+                        radius: projectileSize / 2, // Already uses scaled size
+                    });
+                }
+            }
+            else {
+                otherProjectiles.push({ projectile, petalStats });
             }
         }
-        else {
-            otherProjectiles.push({ projectile, petalStats });
-        }
-    }
-    // Process player projectiles
-    for (const projectile of playerProjectiles.values()) {
-        const petalStats = (0, core_1.getPetalStats)(projectile.petalType, projectile.petalRarity);
-        if (!petalStats) {
-            continue;
-        }
-        const projectileSize = petalStats.size * 20;
-        const cullingBuffer = Math.max(projectileSize, 50);
-        // Viewport culling
-        if (projectile.x + projectileSize / 2 + cullingBuffer < viewport.left ||
-            projectile.x - projectileSize / 2 - cullingBuffer > viewport.right ||
-            projectile.y + projectileSize / 2 + cullingBuffer < viewport.top ||
-            projectile.y - projectileSize / 2 - cullingBuffer > viewport.bottom) {
-            continue;
-        }
-        if (projectile.petalType === 'gas' && projectile.petalRarity === 'common') {
-            if (allGasProjectiles.length < MAX_GAS_PROJECTILES) {
-                allGasProjectiles.push({
-                    x: projectile.x,
-                    y: projectile.y,
-                    radius: projectileSize / 2
-                });
-            }
-        }
-        else {
-            otherProjectiles.push({ projectile, petalStats });
-        }
-    }
+    };
+    collectProjectiles(mobProjectiles, (projectile) => projectile.size * 20);
+    collectProjectiles(playerProjectiles, (_projectile, petalStats) => petalStats.size * 20);
     // Batch draw ALL gas projectiles in a single operation (much faster)
     if (allGasProjectiles.length > 0) {
         this.ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';

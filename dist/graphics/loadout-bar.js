@@ -4,17 +4,7 @@ exports.CanvasLoadoutBar = exports.LOADOUT_SLOT_COUNT = exports.LOADOUT_SECONDAR
 const petals_1 = require("../petals");
 const petal_icon_1 = require("./petal-icon");
 const text_1 = require("./text");
-function darken(hex, percent = 30) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
+const shapes_1 = require("./shapes");
 exports.LOADOUT_PRIMARY_COUNT = 10;
 exports.LOADOUT_SECONDARY_COUNT = 10;
 exports.LOADOUT_SLOT_COUNT = exports.LOADOUT_PRIMARY_COUNT + exports.LOADOUT_SECONDARY_COUNT;
@@ -326,7 +316,7 @@ class CanvasLoadoutBar {
         // (rather than a fill + stroke). line_width = w/12, round_radius = w/20.
         const lineW = rect.w / 12;
         const radius = rect.w / 20;
-        const dark = darken(fill, 20);
+        const dark = (0, shapes_1.darken)(fill, 20);
         ctx.save();
         // Outer rounded fill (darker)
         ctx.fillStyle = dark;
@@ -349,7 +339,7 @@ class CanvasLoadoutBar {
         // animated toward the parent slot's width, and scaled by width/60 at render. Mirror that.
         const rarity = item.rarity && petals_1.ITEM_RARITY_COLORS[item.rarity] ? item.rarity : 'common';
         const c = petals_1.ITEM_RARITY_COLORS[rarity];
-        const cDark = darken(c, 30);
+        const cDark = (0, shapes_1.darken)(c, 30);
         const scale = rect.w / 60;
         const cx = rect.x + rect.w / 2;
         const cy = rect.y + rect.h / 2;

@@ -9,17 +9,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DailyStreakWidget = void 0;
 const text_1 = require("./graphics/text");
-function darken(hex, percent = 30) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
+const shapes_1 = require("./graphics/shapes");
 function formatDuration(ms) {
     if (ms <= 0)
         return '0s';
@@ -235,7 +225,7 @@ class DailyStreakWidget {
 }
 exports.DailyStreakWidget = DailyStreakWidget;
 DailyStreakWidget.PANEL_BG = '#66ffff';
-DailyStreakWidget.PANEL_BORDER = darken(DailyStreakWidget.PANEL_BG);
+DailyStreakWidget.PANEL_BORDER = (0, shapes_1.darken)(DailyStreakWidget.PANEL_BG);
 DailyStreakWidget.PANEL_RADIUS = 3;
 DailyStreakWidget.BORDER_W = 4;
 DailyStreakWidget.WIDTH = 220;

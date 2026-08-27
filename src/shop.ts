@@ -10,6 +10,7 @@ import { Socket } from './socket';
 import { getPetalStats, getAllPetalTypes, isUndroppableEggPetalType, RARITY_LEVELS, Rarity, ITEM_RARITY_COLORS, getShopPrice } from './petals';
 import { GAME_ICONS_NET_ICONS } from './game-icons-net-icons';
 import { drawText } from './graphics/text';
+import { drawRoundedRect as roundRect } from './graphics/shapes';
 
 interface GameInterface {
     getLocalPlayer(): Player | undefined;
@@ -962,24 +963,7 @@ export class ShopManager {
 
 /* ----------------------------- Helpers ----------------------------- */
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-    if (typeof (ctx as any).roundRect === 'function') {
-        ctx.beginPath();
-        (ctx as any).roundRect(x, y, w, h, r);
-        return;
-    }
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-}
+
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, cx: number, y: number, maxWidth: number, lineH: number): void {
     // Match the game-standard outlined text style. The caller sets font and

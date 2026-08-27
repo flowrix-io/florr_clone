@@ -298,15 +298,7 @@ Graphics.prototype.drawUI = function(this: Graphics, world: ClientWorld, socket:
 };
 
 Graphics.prototype.drawBossBars = function(this: Graphics, world: ClientWorld) {
-    // Calculate viewport accounting for zoom level
-    const scaledWidth = this.viewW / this.zoomLevel;
-    const scaledHeight = this.viewH / this.zoomLevel;
-    const viewport = {
-        left: this.cameraX,
-        top: this.cameraY,
-        right: this.cameraX + scaledWidth,
-        bottom: this.cameraY + scaledHeight
-    };
+    const viewport = this.worldViewport();
 
     // Find all super, unique, and apex mobs in view (ultras render with normal mob health bars).
     // The boss candidate list is refreshed at 4Hz instead of scanning the whole

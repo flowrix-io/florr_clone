@@ -25,6 +25,7 @@ import type { UApp } from './server/uws_app';
 import { nextEntityId } from './entity_ids';
 import { encode, decode } from './binary_codec';
 import { WIRE_EVENTS, WIRE_EVENT_IDS } from './wire_events';
+import { WireEventRegistry } from './wire_event_registry';
 
 // Per-event bandwidth profiling. Aggregated across all sockets; reset by the periodic
 // logger in server.ts. The numbers reflect actual wire bytes (encoded length).
@@ -147,12 +148,9 @@ class UwsTransport implements ServerTransport {
     }
 }
 
-export class WSSocket {
+export class WSSocket extends WireEventRegistry {
     id: string;
     private transport: ServerTransport | null;
-    private handlers: Map<string, Set<(...args: any[]) => void>> = new Map();
-    private onceHandlers: Map<string, Set<(...args: any[]) => void>> = new Map();
-    private anyHandlers: Set<(event: string, ...args: any[]) => void> = new Set();
     private server: WSServer;
     private _connected: boolean = true;
     /** Guards _handleClose against firing 'disconnect' twice. */
@@ -201,6 +199,7 @@ export class WSSocket {
     [key: string]: any;
 
     constructor(transport: ServerTransport, id: string, server: WSServer) {
+        super();
         this.transport = transport;
         this.id = id;
         this.server = server;
@@ -261,24 +260,7 @@ export class WSSocket {
             if (typeof msg[0] === 'string') recordBytes(msg[0], bytes.byteLength, 'in');
             const [event, ...args] = msg;
 
-            for (const handler of this.anyHandlers) {
-                handler(event, ...args);
-            }
-
-            const handlers = this.handlers.get(event);
-            if (handlers) {
-                for (const handler of handlers) {
-                    handler(...args);
-                }
-            }
-
-            const onceHandlers = this.onceHandlers.get(event);
-            if (onceHandlers) {
-                for (const handler of onceHandlers) {
-                    handler(...args);
-                }
-                this.onceHandlers.delete(event);
-            }
+            this.fireAnyAndEvent(event, ...args);
         } catch {
             // Ignore malformed messages
         }
@@ -301,27 +283,6 @@ export class WSSocket {
 
     get connected(): boolean {
         return this._connected && this.transport !== null;
-    }
-
-    on(event: string, handler: (...args: any[]) => void): this {
-        if (!this.handlers.has(event)) {
-            this.handlers.set(event, new Set());
-        }
-        this.handlers.get(event)!.add(handler);
-        return this;
-    }
-
-    once(event: string, handler: (...args: any[]) => void): this {
-        if (!this.onceHandlers.has(event)) {
-            this.onceHandlers.set(event, new Set());
-        }
-        this.onceHandlers.get(event)!.add(handler);
-        return this;
-    }
-
-    onAny(handler: (event: string, ...args: any[]) => void): this {
-        this.anyHandlers.add(handler);
-        return this;
     }
 
     emit(event: string, ...args: any[]): boolean {
@@ -354,22 +315,6 @@ export class WSSocket {
         if (status === 2 && event) (this.droppedEvents ??= new Set()).add(event);
         if (event) recordBytes(event, payload.byteLength, 'out');
         return true;
-    }
-
-    removeAllListeners(event?: string): this {
-        if (event) {
-            this.handlers.delete(event);
-            this.onceHandlers.delete(event);
-        } else {
-            this.handlers.clear();
-            this.onceHandlers.clear();
-            this.anyHandlers.clear();
-        }
-        return this;
-    }
-
-    listeners(event: string): Function[] {
-        return Array.from(this.handlers.get(event) || []);
     }
 
     /**

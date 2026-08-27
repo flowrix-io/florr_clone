@@ -3,6 +3,7 @@ import { Item } from '../item';
 import { ITEM_RARITY_COLORS, getEffectivePetalCooldown } from '../petals';
 import { drawPetalGroup } from './petal-icon';
 import { drawText } from './text';
+import { darken } from './shapes';
 
 interface SlotRect { x: number; y: number; w: number; h: number }
 
@@ -16,17 +17,6 @@ interface GameAPI {
 }
 
 
-function darken(hex: string, percent: number = 30): string {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
 
 export const LOADOUT_PRIMARY_COUNT = 10;
 export const LOADOUT_SECONDARY_COUNT = 10;

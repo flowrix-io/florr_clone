@@ -398,16 +398,7 @@ function registerChatHandlers(ctx) {
                     emitSystem('You are not in a guild.');
                 }
                 else {
-                    let squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
-                    if (!squad) {
-                        squad = (0, squadManager_1.createSquad)(socket.id, false);
-                        if (squad) {
-                            const player = (0, gameState_1.getSessionPlayer)(socket.id);
-                            if (player)
-                                player.squadId = squad.id;
-                            io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
-                        }
-                    }
+                    const squad = (0, squadManager_1.getOrCreateSquad)(io, socket.id);
                     if (!squad) {
                         emitSystem('Failed to create a squad.');
                     }
@@ -453,16 +444,7 @@ function registerChatHandlers(ctx) {
                         emitSystem(`${targetUsername} is offline.`);
                     }
                     else {
-                        let squad = (0, squadManager_1.getSquadForPlayer)(socket.id);
-                        if (!squad) {
-                            squad = (0, squadManager_1.createSquad)(socket.id, false);
-                            if (squad) {
-                                const player = (0, gameState_1.getSessionPlayer)(socket.id);
-                                if (player)
-                                    player.squadId = squad.id;
-                                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
-                            }
-                        }
+                        const squad = (0, squadManager_1.getOrCreateSquad)(io, socket.id);
                         if (!squad) {
                             emitSystem('Failed to create a squad.');
                         }

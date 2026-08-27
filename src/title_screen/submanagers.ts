@@ -11,6 +11,7 @@ import { TitleScreenInventoryManager } from './inventory_manager';
 import { Socket } from '../ws_client';
 import { getPreconnectedSocket, getLivePreconnectedSocket } from '../net/preconnect';
 import { getPreloadedAssets } from '../preloader';
+import { getItemSpriteDataUrl } from './sprite_data_url';
 
 export function cloneCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
     const c = document.createElement('canvas');
@@ -62,19 +63,7 @@ export function buildTitleScreenGameInterface(inventoryManager: TitleScreenInven
             }
             return cloneCanvas(entry);
         },
-        getItemSpriteDataUrl: (itemType: string): string | null => {
-            const assets = getPreloadedAssets() as any;
-            if (!assets || !assets.itemSprites) return null;
-            const img = assets.itemSprites[itemType];
-            if (!img) return null;
-            try {
-                const c = document.createElement('canvas');
-                c.width = img.naturalWidth || 32;
-                c.height = img.naturalHeight || 32;
-                c.getContext('2d')?.drawImage(img, 0, 0);
-                return c.toDataURL('image/png');
-            } catch { return null; }
-        },
+        getItemSpriteDataUrl,
     };
 }
 

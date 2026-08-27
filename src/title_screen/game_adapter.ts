@@ -5,6 +5,7 @@ import { applyZoomCompensation } from '../zoom-compensation';
 import { getPetalStats } from '../petals';
 import { getPreconnectedSocket } from '../net/preconnect';
 import { getPreloadedAssets } from '../preloader';
+import { getItemSpriteDataUrl } from './sprite_data_url';
 
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
@@ -67,18 +68,6 @@ export class TitleScreenGameAdapter implements GameInterface {
 
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
     getItemSpriteDataUrl(itemType: string): string | null {
-        const assets = getPreloadedAssets() as any;
-        if (!assets || !assets.itemSprites) return null;
-        const img = assets.itemSprites[itemType];
-        if (!img) return null;
-        try {
-            const c = document.createElement('canvas');
-            c.width = img.naturalWidth || 32;
-            c.height = img.naturalHeight || 32;
-            c.getContext('2d')?.drawImage(img, 0, 0);
-            return c.toDataURL('image/png');
-        } catch {
-            return null;
-        }
+        return getItemSpriteDataUrl(itemType);
     }
 }

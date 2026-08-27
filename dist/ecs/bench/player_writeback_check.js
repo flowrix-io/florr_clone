@@ -50,6 +50,7 @@ exports.main = main;
 const ecsRuntime_1 = require("../../server/ecsRuntime");
 const ecsSync_1 = require("../../server/ecsSync");
 const tick_harness_1 = require("./tick_harness");
+const stub_hooks_1 = require("./stub_hooks");
 const DT = 1 / 30;
 const NOW0 = 1000000;
 /** A flower that walks steadily right, so every tick's integration is visible. */
@@ -84,37 +85,7 @@ function makePlayer(id, x, y) {
 }
 /** The stub runtime; only the player scheduler is exercised. */
 function makeRuntime() {
-    return (0, ecsRuntime_1.createEcsRuntime)({
-        lookupPlayer: () => undefined,
-        // This bench drives the schedulers directly; the post-movement pipeline
-        // is the game\'s, not the bench\'s.
-        runPlayerPipeline: () => { },
-        runPetalBehaviours: () => { },
-        creditDamage: () => { },
-        onEnemyDamaged: () => { },
-        onEnemyKilled: () => { },
-        onPetOutOfView: () => { },
-        isNearAnyPlayer: () => true,
-        allocateProjectileNetId: () => 1,
-        resolvePlayerEntity: () => undefined,
-        playerRadiusOf: () => 25,
-        damageMultiplierOf: () => 1,
-        onPlayerHit: () => true,
-        emitEnemyDamaged: () => { },
-        onProjectileKill: () => { },
-        onGroundEffectExpired: () => { },
-        onEnemyPoisonDamaged: () => { },
-        onPoisonKill: () => { },
-        tickPlayerPoison: () => { },
-        onPlayerPoisonLapsed: () => { },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { },
-        onSpawnWaves: () => { },
-        onWorldItemRemoved: () => { },
-        onMobDespawn: () => { },
-        onReapEnemy: () => { },
-    });
+    return (0, ecsRuntime_1.createEcsRuntime)((0, stub_hooks_1.benchStubHooks)());
 }
 /**
  * One `runSimulationStep` player phase.

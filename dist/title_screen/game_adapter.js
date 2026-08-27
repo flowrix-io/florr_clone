@@ -5,6 +5,7 @@ const zoom_compensation_1 = require("../zoom-compensation");
 const petals_1 = require("../petals");
 const preconnect_1 = require("../net/preconnect");
 const preloader_1 = require("../preloader");
+const sprite_data_url_1 = require("./sprite_data_url");
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
  * Wraps the title screen's player data and preconnected socket.
@@ -60,22 +61,7 @@ class TitleScreenGameAdapter {
     }
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
     getItemSpriteDataUrl(itemType) {
-        const assets = (0, preloader_1.getPreloadedAssets)();
-        if (!assets || !assets.itemSprites)
-            return null;
-        const img = assets.itemSprites[itemType];
-        if (!img)
-            return null;
-        try {
-            const c = document.createElement('canvas');
-            c.width = img.naturalWidth || 32;
-            c.height = img.naturalHeight || 32;
-            c.getContext('2d')?.drawImage(img, 0, 0);
-            return c.toDataURL('image/png');
-        }
-        catch {
-            return null;
-        }
+        return (0, sprite_data_url_1.getItemSpriteDataUrl)(itemType);
     }
 }
 exports.TitleScreenGameAdapter = TitleScreenGameAdapter;

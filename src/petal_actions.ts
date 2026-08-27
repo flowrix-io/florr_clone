@@ -1,4 +1,5 @@
 import { getRarityIndex, getEffectivePetalCooldown, getPetalStats } from './petals';
+import { getEffectSkillMultiplier as getSkillMultiplier } from './skill_multipliers';
 import { damageMob, mobHealth, mobX, mobY, setMobKnockback } from './server/mobFields';
 import { emitToViewers } from './server/scopedEmit';
 import { emitEnemySpawned } from './server/enemyWire';
@@ -102,23 +103,6 @@ const LIGHTNING_CUTTER_MAX_STRIKES: number = 2; // Maximum 2 strikes per second
 
 
 // Skill multipliers based on rarity tier
-const SKILL_MULTIPLIERS: Record<string, number> = {
-    common: 1.0,
-    uncommon: 1.1,
-    rare: 1.2,
-    epic: 1.35,
-    legendary: 1.6,
-    mythic: 2.0,
-    ultra: 2.6,
-    super: 3.3,
-    unique: 4.0,
-    apex: 4.8
-};
-
-function getSkillMultiplier(skillTier: string | undefined): number {
-    if (!skillTier) return 1.0;
-    return SKILL_MULTIPLIERS[skillTier] || 1.0;
-}
 
 // Heal the player
 function healPlayer(player: ServerPlayer, healAmount: number, io: any, context?: ActionContext): void {

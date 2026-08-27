@@ -6,6 +6,8 @@
 import { RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS, ABSORBING_SKILL_MULTIPLIERS } from '../petals';
 import { measureTooltip, paintTooltip, TooltipLine } from './tooltip';
 import { drawText } from './text';
+import { syncCanvasSize } from './panel-common';
+import { darken } from './shapes';
 
 interface GameAPI {
     getLocalPlayer(): any;
@@ -114,17 +116,6 @@ interface NodeRect {
     rz: number;
 }
 
-function darken(hex: string, percent: number = 30): string {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
 
 export class CanvasSkillsPanel {
     private game: GameAPI;
@@ -245,15 +236,7 @@ export class CanvasSkillsPanel {
     }
 
     private syncCanvasSize(): { dpr: number; cssW: number; cssH: number } {
-        const rect = this.canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
-        if (this.canvas.width !== w || this.canvas.height !== h) {
-            this.canvas.width = w;
-            this.canvas.height = h;
-        }
-        return { dpr, cssW: rect.width, cssH: rect.height };
+        return syncCanvasSize(this.canvas);
     }
 
     private layout(cssW: number, cssH: number) {

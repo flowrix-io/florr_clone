@@ -15,6 +15,7 @@ import {
 import { renderCustomSkinShapes } from './graphics/player-skins';
 import { getCurrentGame } from './app_refs';
 import { drawText } from './graphics/text';
+import { drawRoundedRect as roundRect } from './graphics/shapes';
 
 // Skin Studio: a canvas-drawn menu (same lifecycle/style as GuildMenuManager —
 // drawn on the shared title/game canvas, opened from the top icon-button strip).
@@ -982,17 +983,4 @@ function clipToWidth(ctx: CanvasRenderingContext2D, s: string, w: number): strin
     while (out.length > 1 && ctx.measureText(out + '…').width > w) out = out.slice(0, -1);
     return out + '…';
 }
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-    const rad = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
-}
+

@@ -15,7 +15,7 @@ import { rejectIfMuted } from '../chatMute';
 import { filterChatImages, messageHasImage } from '../imageModeration';
 import { MAX_GUILD_SIZE, acceptGuildInvite, broadcastGuildUpdate, buildGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, listGuilds, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
 import { getSessionPlayer } from '../gameState';
-import { MAX_SQUAD_SIZE, acceptInvite, addBotToSquad, createSquad, declineInvite, findBotByName, findPlayerByUsername, getSquadForPlayer, inviteToSquad, joinPublicSquad, leaveSquad as leaveSquadFn, listPublicSquads, sendSquadChatMessage, sendSquadSystemMessage, setSquadVisibility } from '../squadManager';
+import { getOrCreateSquad, MAX_SQUAD_SIZE, acceptInvite, addBotToSquad, createSquad, declineInvite, findBotByName, findPlayerByUsername, getSquadForPlayer, inviteToSquad, joinPublicSquad, leaveSquad as leaveSquadFn, listPublicSquads, sendSquadChatMessage, sendSquadSystemMessage, setSquadVisibility } from '../squadManager';
 import { ConnectionContext } from './context';
 
 export function registerChatHandlers(ctx: ConnectionContext): void {
@@ -367,15 +367,7 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                 if (!guild) {
                     emitSystem('You are not in a guild.');
                 } else {
-                    let squad = getSquadForPlayer(socket.id);
-                    if (!squad) {
-                        squad = createSquad(socket.id, false);
-                        if (squad) {
-                            const player = getSessionPlayer(socket.id);
-                            if (player) player.squadId = squad.id;
-                            io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
-                        }
-                    }
+                    const squad = getOrCreateSquad(io, socket.id);
                     if (!squad) {
                         emitSystem('Failed to create a squad.');
                     } else if (squad.leaderId !== socket.id) {
@@ -412,15 +404,7 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                     if (!targetSid) {
                         emitSystem(`${targetUsername} is offline.`);
                     } else {
-                        let squad = getSquadForPlayer(socket.id);
-                        if (!squad) {
-                            squad = createSquad(socket.id, false);
-                            if (squad) {
-                                const player = getSessionPlayer(socket.id);
-                                if (player) player.squadId = squad.id;
-                                io.to(socket.id).emit('squadUpdate', { squadId: squad.id, memberIds: squad.memberIds, leaderId: squad.leaderId });
-                            }
-                        }
+                        const squad = getOrCreateSquad(io, socket.id);
                         if (!squad) {
                             emitSystem('Failed to create a squad.');
                         } else {

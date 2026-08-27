@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GuildMenuManager = void 0;
 const zoom_compensation_1 = require("./zoom-compensation");
 const text_1 = require("./graphics/text");
+const shapes_1 = require("./graphics/shapes");
 /**
  * Canvas-based guild menu, drawn on the main game canvas (same lifecycle as
  * LeaderboardManager). Styling mirrors the inventory panel: a 4px inset border
@@ -527,17 +528,7 @@ class GuildMenuManager {
         ctx.restore();
     }
     roundRect(ctx, x, y, width, height, radius) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, width, height, radius);
     }
 }
 exports.GuildMenuManager = GuildMenuManager;

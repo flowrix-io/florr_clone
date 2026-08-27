@@ -52,15 +52,8 @@ const enemyRegistry_1 = require("../../server/enemyRegistry");
 const entityRegistry_1 = require("../../server/entityRegistry");
 const C = __importStar(require("../components"));
 const limits_1 = require("./limits");
-function mulberry32(seed) {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
+const rng_1 = require("./rng");
+const stub_hooks_1 = require("./stub_hooks");
 /** A mix that exercises every AI branch the port touches. */
 const MOB_MIX = [
     { type: 'bee', tier: 'common', ai: 'neutral', weight: 25 },
@@ -98,7 +91,7 @@ exports.DEFAULT_CONFIG = {
  * nothing to hand to an importer.
  */
 function buildLegacyWorld(config) {
-    const rng = mulberry32(config.seed);
+    const rng = (0, rng_1.mulberry32)(config.seed);
     const players = [];
     for (let i = 0; i < config.players; i++) {
         players.push({
@@ -126,7 +119,7 @@ function buildLegacyWorld(config) {
 }
 /** Admit the scenario's mobs. Requires a bound world (see buildLegacyWorld). */
 function spawnHarnessMobs(config) {
-    const rng = mulberry32(config.seed ^ 0x9e37);
+    const rng = (0, rng_1.mulberry32)(config.seed ^ 0x9e37);
     const enemies = [];
     let centipedeHead;
     for (let i = 0; i < config.mobs; i++) {
@@ -210,14 +203,7 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
     let netIdCounter = 0;
     let playerHits = 0;
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
-        lookupPlayer: () => undefined,
-        // Harness drives the schedulers directly; the pipeline is the game\'s.
-        runPlayerPipeline: () => { },
-        runPetalBehaviours: () => { },
-        creditDamage: () => { },
-        onEnemyDamaged: () => { },
-        onEnemyKilled: () => { },
-        onPetOutOfView: () => { },
+        ...(0, stub_hooks_1.benchStubHooks)(),
         // Mirrors the real near-a-player test closely enough to exercise the
         // viewport pass: mobs within a viewport-ish radius of a player stay.
         isNearAnyPlayer: (x, y) => {
@@ -229,29 +215,12 @@ function runTickHarness(config = exports.DEFAULT_CONFIG) {
             }
             return false;
         },
-        // --- projectiles ---------------------------------------------------
-        // Wire ids and the player-side hooks are broadcast/legacy concerns; the
-        // harness only needs them to be callable, since what is under test here
-        // is that the systems compose without producing a bad coordinate.
+        // The projectile hooks this harness actually reads: a real id counter,
+        // the world's own player lookup, and a hit tally.
         allocateProjectileNetId: () => ++netIdCounter,
         resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),
         playerRadiusOf: () => PLAYER_HIT_RADIUS,
-        damageMultiplierOf: () => 1,
         onPlayerHit: () => { playerHits++; return true; },
-        emitEnemyDamaged: () => { },
-        onProjectileKill: () => { },
-        onGroundEffectExpired: () => { },
-        onEnemyPoisonDamaged: () => { },
-        onPoisonKill: () => { },
-        tickPlayerPoison: () => { },
-        onPlayerPoisonLapsed: () => { },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { },
-        onSpawnWaves: () => { },
-        onWorldItemRemoved: () => { },
-        onMobDespawn: () => { },
-        onReapEnemy: () => { },
     });
     const now0 = 1000000;
     // Players still import from shells: ServerPlayer is the database's shape and

@@ -24,6 +24,7 @@ const mobFields_1 = require("./mobFields");
 const player_1 = require("../player");
 const petals_1 = require("../petals");
 const constants_1 = require("../constants");
+const skill_multipliers_1 = require("../skill_multipliers");
 const maze_1 = require("../maze");
 const map_data_1 = require("../map_data");
 const gameState_1 = require("./gameState");
@@ -380,6 +381,30 @@ function setInstanceHealth(petal, instanceIndex, petalStats, value) {
  * when it's missing (returning false for this tick) rather than reading
  * "no deadline" as "expired" — see the backstop in the tick loop.
  */
+/** Post-hit invulnerability window, in milliseconds. */
+const POST_HIT_INVULNERABILITY_MS = 50;
+/**
+ * Clears `playerId`'s invulnerability after `delayMs` and tells clients.
+ *
+ * Seven copies of this timer were spread through this file (post-hit windows,
+ * the sponge absorb, PVP contact, second chance and revive), each re-checking
+ * that the player still exists before touching them — they must, since the
+ * timer outlives disconnects.
+ */
+function expireInvulnerabilityAfter(playerId, delayMs) {
+    setTimeout(() => {
+        const target = constants_1.players[playerId];
+        if (!target)
+            return;
+        target.isInvulnerable = false;
+        (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId });
+    }, delayMs);
+}
+/** Marks a player invulnerable for the standard post-hit window. */
+function grantPostHitInvulnerability(player) {
+    player.isInvulnerable = true;
+    expireInvulnerabilityAfter(player.id, POST_HIT_INVULNERABILITY_MS);
+}
 function cooldownDeadlinePassed(petal, instanceIndex, petalStats, currentTime) {
     if (hasIndependentInstances(petalStats)) {
         const count = petalStats.count ?? 1;
@@ -409,21 +434,9 @@ function isInstanceOnCooldown(petal, instanceIndex, petalStats) {
 // PETAL_SPRING_FORCE and friends in ecs/systems/petalRing.ts.
 // Healing-skill multiplier applied to all petal healing (passive and burst).
 // Skills are disabled inside the PVP arena.
-const HEAL_SKILL_MULTIPLIERS = {
-    common: 1.0,
-    uncommon: 1.1,
-    rare: 1.2,
-    epic: 1.35,
-    legendary: 1.6,
-    mythic: 2.0,
-    ultra: 2.6,
-    super: 3.3,
-    unique: 4.0,
-    apex: 4.8
-};
 function getHealingSkillMultiplier(player) {
     return !player.inPvpArena && player.skills?.healingMultiplier
-        ? (HEAL_SKILL_MULTIPLIERS[player.skills.healingMultiplier] || 1.0)
+        ? (skill_multipliers_1.EFFECT_SKILL_MULTIPLIERS[player.skills.healingMultiplier] || 1.0)
         : 1.0;
 }
 function getEffectiveCooldown(petal, petalStats) {
@@ -680,13 +693,7 @@ function applyPetalRingDamage(player, io) {
             const spongeDuration = getSpongeAbsorbDuration(player);
             if (damageToPlayer > 0 && spongeDuration > 0) {
                 queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
-                player.isInvulnerable = true;
-                setTimeout(() => {
-                    if (constants_1.players[player.id]) {
-                        constants_1.players[player.id].isInvulnerable = false;
-                        (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
-                    }
-                }, 50);
+                grantPostHitInvulnerability(player);
             }
             else {
                 player.health -= damageToPlayer;
@@ -695,13 +702,7 @@ function applyPetalRingDamage(player, io) {
                     if (player.health <= 0) {
                         player.killedBy = { type: enemy.type, tier: enemy.tier };
                     }
-                    player.isInvulnerable = true;
-                    setTimeout(() => {
-                        if (constants_1.players[player.id]) {
-                            constants_1.players[player.id].isInvulnerable = false;
-                            (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
-                        }
-                    }, 50);
+                    grantPostHitInvulnerability(player);
                 }
             }
         }
@@ -1013,13 +1014,7 @@ function trySecondChance(player, io) {
     const cooldownSec = SECOND_CHANCE_COOLDOWNS[tier] ?? 60;
     player.secondChanceCooldownUntil = now + cooldownSec * 1000;
     // Grant invulnerability for the skill's duration
-    const durationMs = duration * 1000;
-    setTimeout(() => {
-        if (constants_1.players[player.id]) {
-            constants_1.players[player.id].isInvulnerable = false;
-            (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
-        }
-    }, durationMs);
+    expireInvulnerabilityAfter(player.id, duration * 1000);
     (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
         playerId: player.id,
         health: player.health,
@@ -1043,13 +1038,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
     victim.lastDamagedByPlayerId = attacker.id;
     if (damageToVictim > 0 && spongeDuration > 0) {
         queueSpongeDamage(victim, damageToVictim, spongeDuration, { type: 'player', tier: 'common' }, attacker.id);
-        victim.isInvulnerable = true;
-        setTimeout(() => {
-            if (constants_1.players[victim.id]) {
-                constants_1.players[victim.id].isInvulnerable = false;
-                (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: victim.id });
-            }
-        }, 50);
+        grantPostHitInvulnerability(victim);
     }
     else {
         victim.health -= damageToVictim;
@@ -1060,13 +1049,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
         if (victim.health <= 0) {
             victim.killedBy = { type: 'player', tier: 'common' };
         }
-        victim.isInvulnerable = true;
-        setTimeout(() => {
-            if (constants_1.players[victim.id]) {
-                constants_1.players[victim.id].isInvulnerable = false;
-                (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: victim.id });
-            }
-        }, 50);
+        grantPostHitInvulnerability(victim);
     }
     // Knockback: away from attacker
     const dx = victim.x - attacker.x;
@@ -1402,13 +1385,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                     const spongeDuration = getSpongeAbsorbDuration(player);
                     if (damageToPlayer > 0 && spongeDuration > 0) {
                         queueSpongeDamage(player, damageToPlayer, spongeDuration, { type: enemy.type, tier: enemy.tier });
-                        player.isInvulnerable = true;
-                        setTimeout(() => {
-                            if (constants_1.players[player.id]) {
-                                constants_1.players[player.id].isInvulnerable = false;
-                                (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
-                            }
-                        }, 50);
+                        grantPostHitInvulnerability(player);
                     }
                     else {
                         player.health -= damageToPlayer;
@@ -1420,15 +1397,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                             if (player.health <= 0) {
                                 player.killedBy = { type: enemy.type, tier: enemy.tier };
                             }
-                            player.isInvulnerable = true;
-                            // Set invulnerability timer (50ms after taking damage)
-                            setTimeout(() => {
-                                if (constants_1.players[player.id]) {
-                                    constants_1.players[player.id].isInvulnerable = false;
-                                    // Notify client that invulnerability has ended
-                                    (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
-                                }
-                            }, 50);
+                            grantPostHitInvulnerability(player);
                         }
                     }
                     // Poisonous mobs (evil centipede) leave poison on contact.
@@ -1805,6 +1774,92 @@ function resolvePlayerTeleporters(player, startX, startY, deltaTime, deps) {
  * for the ring's centre — that is what makes petals trail the flower, and the
  * comment inside says not to "fix" it. Preserved verbatim.
  */
+/**
+ * Puts a broken petal on cooldown and schedules its return.
+ *
+ * Two byte-for-byte-equivalent copies of this used to sit inside
+ * resolvePlayerPetals — one on the tick-loop break path, one on the
+ * mob-collision break path — and they had already drifted (only the second
+ * learned to stamp an absolute deadline, which is why petals once reloaded
+ * instantly after a portal transfer). Callers pass their own `cooldownEndsAt`
+ * so each keeps the timestamp source it had.
+ *
+ * Clumped petals (independent instances) drop only the instance that broke and
+ * mark the slot as reloading once every instance is down; everything else drops
+ * the whole slot.
+ */
+function beginPetalCooldown(opts) {
+    const { player, petal, petalStats, loadoutIndex, instanceIndex, ring, cooldownTime, cooldownEndsAt, io } = opts;
+    const broadcastBroken = () => {
+        (0, petalEvents_1.emitPetalBroken)(player.id, {
+            playerId: player.id,
+            slotIndex: loadoutIndex,
+            petalType: petal.petalType,
+            rarity: petal.rarity
+        }, player.x, player.y);
+    };
+    if (hasIndependentInstances(petalStats)) {
+        // Per-instance: only this instance breaks; other instances keep working.
+        ensureInstanceArrays(petal, petalStats);
+        petal.instanceOnCooldown[instanceIndex] = true;
+        const cdCount = petalStats.count ?? 1;
+        if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
+            petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
+        }
+        petal.instanceCooldownEndTime[instanceIndex] = cooldownEndsAt;
+        ring.state.dropInstance(loadoutIndex, instanceIndex);
+        const snapshotPetalType = petal.petalType;
+        const snapshotRarity = petal.rarity;
+        const snapshotMaxHealth = petal.maxHealth;
+        const snapshotPlayerId = player.id;
+        setTimeout(() => {
+            restoreIndependentPetalInstance(snapshotPlayerId, loadoutIndex, instanceIndex, snapshotPetalType, snapshotRarity, snapshotMaxHealth, io);
+        }, cooldownTime);
+        // Slot shows cooldown only when every instance is on cooldown. Tell
+        // clients too, or the loadout slot never draws its reload: nothing else
+        // pushes the slot-level flag out (petalRestored is the only other
+        // carrier, and that's the end of the reload, not the start).
+        if (petal.instanceOnCooldown.every((c) => c)) {
+            petal.onCooldown = true;
+            broadcastBroken();
+        }
+        return;
+    }
+    // Non-clumped: whole slot breaks (legacy behavior).
+    petal.onCooldown = true;
+    petal.cooldownEndTime = cooldownEndsAt;
+    ring.state.dropSlot(loadoutIndex);
+    const originalPetal = {
+        type: petal.type,
+        petalType: petal.petalType,
+        rarity: petal.rarity,
+        maxHealth: petal.maxHealth
+    };
+    const snapshotPetalType = originalPetal.petalType;
+    const snapshotRarity = originalPetal.rarity;
+    setTimeout(() => {
+        const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
+        if (!constants_1.players[player.id] || !current || !current.onCooldown)
+            return;
+        if (current.type !== 'petal' ||
+            current.petalType !== snapshotPetalType ||
+            current.rarity !== snapshotRarity)
+            return;
+        const restoredPetal = {
+            ...originalPetal,
+            health: originalPetal.maxHealth,
+            onCooldown: false
+        };
+        (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
+        player.loadout[loadoutIndex] = restoredPetal;
+        (0, petalEvents_1.emitPetalRestored)(player.id, {
+            playerId: player.id,
+            slotIndex: loadoutIndex,
+            petal: player.loadout[loadoutIndex]
+        });
+    }, cooldownTime);
+    broadcastBroken();
+}
 function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
     const { io, savePlayerProgress } = deps;
     // Recomputed here rather than passed: it is the same one-line derivation the
@@ -1959,86 +2014,12 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                         (0, petal_actions_1.runPetalBreakBehaviour)(petal.petalType, actionContext);
                     }
                     const cooldownTime = getEffectiveCooldown(petal, petalStats);
-                    if (hasIndependentInstances(petalStats)) {
-                        // Per-instance: only this instance breaks; other instances keep working
-                        ensureInstanceArrays(petal, petalStats);
-                        petal.instanceOnCooldown[instanceIndex] = true;
-                        // Absolute restore deadline alongside the setTimeout — the timer
-                        // dies with this process (cross-server portal transfer), the
-                        // stamp travels with the loadout. See the tick-loop backstop.
-                        const cdCount = petalStats.count ?? 1;
-                        if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
-                            petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
-                        }
-                        petal.instanceCooldownEndTime[instanceIndex] = currentTime + cooldownTime;
-                        ring.state.dropInstance(loadoutIndex, instanceIndex);
-                        const snapshotPetalType = petal.petalType;
-                        const snapshotRarity = petal.rarity;
-                        const snapshotMaxHealth = petal.maxHealth;
-                        const snapshotPlayerId = player.id;
-                        setTimeout(() => {
-                            restoreIndependentPetalInstance(snapshotPlayerId, loadoutIndex, instanceIndex, snapshotPetalType, snapshotRarity, snapshotMaxHealth, io);
-                        }, cooldownTime);
-                        // Slot shows cooldown only when every instance is on cooldown
-                        if (petal.instanceOnCooldown.every((c) => c)) {
-                            petal.onCooldown = true;
-                            // Tell clients too, or the loadout slot never draws its
-                            // reload: nothing else pushes the slot-level flag out
-                            // (petalRestored is the only other carrier, and that's
-                            // the end of the reload, not the start).
-                            (0, petalEvents_1.emitPetalBroken)(player.id, {
-                                playerId: player.id,
-                                slotIndex: loadoutIndex,
-                                petalType: petal.petalType,
-                                rarity: petal.rarity
-                            }, player.x, player.y);
-                        }
-                    }
-                    else {
-                        // Non-clumped: whole slot breaks (legacy behavior)
-                        petal.onCooldown = true;
-                        // Absolute restore deadline — survives process handoff where the
-                        // setTimeout below does not. See the tick-loop backstop.
-                        petal.cooldownEndTime = currentTime + cooldownTime;
-                        ring.state.dropSlot(loadoutIndex);
-                        const originalPetal = {
-                            type: petal.type,
-                            petalType: petal.petalType,
-                            rarity: petal.rarity,
-                            maxHealth: petal.maxHealth
-                        };
-                        const snapshotPetalType = originalPetal.petalType;
-                        const snapshotRarity = originalPetal.rarity;
-                        setTimeout(() => {
-                            const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
-                            if (!constants_1.players[player.id] || !current || !current.onCooldown)
-                                return;
-                            if (current.type !== 'petal' ||
-                                current.petalType !== snapshotPetalType ||
-                                current.rarity !== snapshotRarity)
-                                return;
-                            {
-                                const restoredPetal = {
-                                    ...originalPetal,
-                                    health: originalPetal.maxHealth,
-                                    onCooldown: false
-                                };
-                                (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
-                                player.loadout[loadoutIndex] = restoredPetal;
-                                (0, petalEvents_1.emitPetalRestored)(player.id, {
-                                    playerId: player.id,
-                                    slotIndex: loadoutIndex,
-                                    petal: player.loadout[loadoutIndex]
-                                });
-                            }
-                        }, cooldownTime);
-                        (0, petalEvents_1.emitPetalBroken)(player.id, {
-                            playerId: player.id,
-                            slotIndex: loadoutIndex,
-                            petalType: petal.petalType,
-                            rarity: petal.rarity
-                        }, player.x, player.y);
-                    }
+                    beginPetalCooldown({
+                        player, petal, petalStats, loadoutIndex, instanceIndex, ring,
+                        cooldownTime,
+                        cooldownEndsAt: currentTime + cooldownTime,
+                        io,
+                    });
                 }
                 continue;
             }
@@ -2526,82 +2507,12 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                             (0, petal_actions_1.runPetalBreakBehaviour)(petal.petalType, actionContext);
                         }
                         const cooldownTime = getEffectiveCooldown(petal, petalStats);
-                        // Absolute restore deadline alongside the setTimeout. Without it
-                        // the tick-loop backstop has no idea when this cooldown is meant
-                        // to end — and this is the path petals normally break on, so a
-                        // missing stamp meant every petal reloaded instantly.
-                        const cooldownEndsAt = Date.now() + cooldownTime;
-                        if (hasIndependentInstances(petalStats)) {
-                            // Per-instance: only this instance breaks; other instances keep working
-                            ensureInstanceArrays(petal, petalStats);
-                            petal.instanceOnCooldown[instanceIndex] = true;
-                            const cdCount = petalStats.count ?? 1;
-                            if (!Array.isArray(petal.instanceCooldownEndTime) || petal.instanceCooldownEndTime.length !== cdCount) {
-                                petal.instanceCooldownEndTime = new Array(cdCount).fill(undefined);
-                            }
-                            petal.instanceCooldownEndTime[instanceIndex] = cooldownEndsAt;
-                            ring.state.dropInstance(loadoutIndex, instanceIndex);
-                            const snapshotPetalType = petal.petalType;
-                            const snapshotRarity = petal.rarity;
-                            const snapshotMaxHealth = petal.maxHealth;
-                            const snapshotPlayerId = player.id;
-                            setTimeout(() => {
-                                restoreIndependentPetalInstance(snapshotPlayerId, loadoutIndex, instanceIndex, snapshotPetalType, snapshotRarity, snapshotMaxHealth, io);
-                            }, cooldownTime);
-                            if (petal.instanceOnCooldown.every((c) => c)) {
-                                petal.onCooldown = true;
-                                // See the matching emit in the tick-loop break above.
-                                (0, petalEvents_1.emitPetalBroken)(player.id, {
-                                    playerId: player.id,
-                                    slotIndex: loadoutIndex,
-                                    petalType: petal.petalType,
-                                    rarity: petal.rarity
-                                }, player.x, player.y);
-                            }
-                        }
-                        else {
-                            // Non-clumped: whole slot breaks (legacy behavior)
-                            petal.onCooldown = true;
-                            petal.cooldownEndTime = cooldownEndsAt;
-                            ring.state.dropSlot(loadoutIndex);
-                            const originalPetal = {
-                                type: petal.type,
-                                petalType: petal.petalType,
-                                rarity: petal.rarity,
-                                maxHealth: petal.maxHealth
-                            };
-                            const snapshotPetalType = originalPetal.petalType;
-                            const snapshotRarity = originalPetal.rarity;
-                            setTimeout(() => {
-                                const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
-                                if (!constants_1.players[player.id] || !current || !current.onCooldown)
-                                    return;
-                                if (current.type !== 'petal' ||
-                                    current.petalType !== snapshotPetalType ||
-                                    current.rarity !== snapshotRarity)
-                                    return;
-                                {
-                                    const restoredPetal = {
-                                        ...originalPetal,
-                                        health: originalPetal.maxHealth,
-                                        onCooldown: false
-                                    };
-                                    (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
-                                    player.loadout[loadoutIndex] = restoredPetal;
-                                    (0, petalEvents_1.emitPetalRestored)(player.id, {
-                                        playerId: player.id,
-                                        slotIndex: loadoutIndex,
-                                        petal: player.loadout[loadoutIndex]
-                                    });
-                                }
-                            }, cooldownTime);
-                            (0, petalEvents_1.emitPetalBroken)(player.id, {
-                                playerId: player.id,
-                                slotIndex: loadoutIndex,
-                                petalType: petal.petalType,
-                                rarity: petal.rarity
-                            }, player.x, player.y);
-                        }
+                        beginPetalCooldown({
+                            player, petal, petalStats, loadoutIndex, instanceIndex, ring,
+                            cooldownTime,
+                            cooldownEndsAt: Date.now() + cooldownTime,
+                            io,
+                        });
                     }
                     // Check if enemy dies (only process once per enemy)
                     if ((0, mobFields_1.mobHealth)(enemy.entity) <= 0 && !enemy.isDead) {
@@ -2695,12 +2606,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                 revivingPlayerName: player.name
                             });
                             // Give revived player temporary invulnerability
-                            setTimeout(() => {
-                                if (constants_1.players[otherPlayerId]) {
-                                    constants_1.players[otherPlayerId].isInvulnerable = false;
-                                    (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: otherPlayerId });
-                                }
-                            }, constants_1.RESPAWN_INVULNERABILITY_TIME);
+                            expireInvulnerabilityAfter(otherPlayerId, constants_1.RESPAWN_INVULNERABILITY_TIME);
                             if (!player.id.startsWith('bot_') && !otherPlayerId.startsWith('bot_')) {
                                 console.log(`Player ${player.name} automatically revived ${otherPlayer.name} using yggdrasil petal (petal broke)`);
                             }

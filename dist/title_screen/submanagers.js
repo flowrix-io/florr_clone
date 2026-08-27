@@ -12,6 +12,7 @@ const daily_streak_widget_1 = require("../daily_streak_widget");
 const zoom_compensation_1 = require("../zoom-compensation");
 const preconnect_1 = require("../net/preconnect");
 const preloader_1 = require("../preloader");
+const sprite_data_url_1 = require("./sprite_data_url");
 function cloneCanvas(src) {
     const c = document.createElement('canvas');
     c.width = src.width;
@@ -64,24 +65,7 @@ function buildTitleScreenGameInterface(inventoryManager) {
             }
             return cloneCanvas(entry);
         },
-        getItemSpriteDataUrl: (itemType) => {
-            const assets = (0, preloader_1.getPreloadedAssets)();
-            if (!assets || !assets.itemSprites)
-                return null;
-            const img = assets.itemSprites[itemType];
-            if (!img)
-                return null;
-            try {
-                const c = document.createElement('canvas');
-                c.width = img.naturalWidth || 32;
-                c.height = img.naturalHeight || 32;
-                c.getContext('2d')?.drawImage(img, 0, 0);
-                return c.toDataURL('image/png');
-            }
-            catch {
-                return null;
-            }
-        },
+        getItemSpriteDataUrl: sprite_data_url_1.getItemSpriteDataUrl,
     };
 }
 /**

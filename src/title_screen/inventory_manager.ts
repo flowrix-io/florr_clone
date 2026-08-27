@@ -1,3 +1,4 @@
+import { createRarityRow, appendPetalNameLabel, createCountLabel } from '../graphics/inventory-dom';
 import { getPetalStats, ITEM_RARITY_COLORS } from '../petals';
 import { Item } from '../item';
 import { PlayerInventory } from '../player';
@@ -11,13 +12,13 @@ import { getCurrentGame, getTitleScreen } from '../app_refs';
 import { getPreconnectedSocket, getLivePreconnectedSocket } from '../net/preconnect';
 import { getPreloadedAssets } from '../preloader';
 import { installAltKeyTracking } from '../alt_key';
+import { hideTooltip as hideTooltipOverlay, TooltipAnchor } from '../graphics/tooltip';
 import {
-    showTooltip as showTooltipOverlay,
-    hideTooltip as hideTooltipOverlay,
-    petalTooltipLines,
-    TooltipAnchor,
-} from '../graphics/tooltip';
+    showPetalTooltip,
+    clearPetalTooltip,
+} from '../graphics/petal-display';
 import { getSocketAuth } from '../auth_session';
+import { getItemSpriteDataUrl } from './sprite_data_url';
 
 /**
  * Title Screen Inventory Manager
@@ -124,19 +125,7 @@ export class TitleScreenInventoryManager {
                 return entry;
             },
             getPetalStats: (petalType: string, rarity: string): any => getPetalStats(petalType, rarity),
-            getItemSpriteDataUrl: (itemType: string): string | null => {
-                const assets = getPreloadedAssets() as any;
-                if (!assets || !assets.itemSprites) return null;
-                const img = assets.itemSprites[itemType];
-                if (!img) return null;
-                try {
-                    const c = document.createElement('canvas');
-                    c.width = img.naturalWidth || 32;
-                    c.height = img.naturalHeight || 32;
-                    c.getContext('2d')?.drawImage(img, 0, 0);
-                    return c.toDataURL('image/png');
-                } catch { return null; }
-            },
+            getItemSpriteDataUrl,
             inventoryManager: this as any,
         };
         this.canvasLoadoutBar = new CanvasLoadoutBar(adapter);
@@ -644,12 +633,6 @@ export class TitleScreenInventoryManager {
     }
 
     
-    private formatPetalName(petalType: string): string {
-        if (!petalType) return "";
-        let itemName = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
-        itemName = itemName.replace('_', ' ');
-        return itemName;
-    }
     
 
     
@@ -948,47 +931,11 @@ export class TitleScreenInventoryManager {
             itemElement.appendChild(img);
         }
 
-        const countLabel = document.createElement('div');
-        countLabel.className = 'item-count';
-        countLabel.textContent = itemCount.toString();
-        countLabel.style.cssText = `
-            position: absolute;
-            top: 2px;
-            right: 4px;
-            color: white;
-            font-size: 12px;
-            font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-        `;
-        itemElement.appendChild(countLabel);
+        itemElement.appendChild(createCountLabel(itemCount));
 
         if (type.startsWith('petal_')) {
             const petalType = type.replace('petal_', '');
-            const petalName = this.formatPetalName(petalType);
-            if (petalName) {
-                const nameLabel = document.createElement('div');
-                nameLabel.className = 'petal-name';
-                nameLabel.textContent = petalName;
-                nameLabel.style.cssText = `
-                    position: absolute;
-                    bottom: 5px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    color: white;
-                    font-size: 10px;
-                    font-weight: bold;
-                    text-shadow:
-                        -1px -1px 0 #000,
-                        1px -1px 0 #000,
-                        -1px 1px 0 #000,
-                        1px 1px 0 #000,
-                        0 0 3px rgba(0,0,0,0.8);
-                    white-space: nowrap;
-                    pointer-events: none;
-                    z-index: 10;
-                `;
-                itemElement.appendChild(nameLabel);
-            }
+            appendPetalNameLabel(itemElement, petalType);
 
             this.setupTooltip(itemElement, petalType, rarity);
         }
@@ -997,38 +944,7 @@ export class TitleScreenInventoryManager {
     }
 
     private createRarityRow(rarity: string): { row: HTMLElement; grid: HTMLElement } {
-        const rarityRow = document.createElement('div');
-        rarityRow.className = 'rarity-row';
-        rarityRow.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        `;
-
-        const rarityLabel = document.createElement('div');
-        rarityLabel.textContent = rarity.toUpperCase();
-        rarityLabel.style.cssText = `
-            color: ${this.ITEM_RARITY_COLORS[rarity]};
-            font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-            padding-left: 5px;
-        `;
-        rarityRow.appendChild(rarityLabel);
-
-        const grid = document.createElement('div');
-        grid.className = 'inventory-grid';
-        grid.style.cssText = `
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            padding: 5px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 5px;
-            border: 1px solid ${this.ITEM_RARITY_COLORS[rarity]}40;
-        `;
-
-        rarityRow.appendChild(grid);
-        return { row: rarityRow, grid };
+        return createRarityRow(rarity);
     }
 
     private updateInventoryDisplay(): void {
@@ -1183,76 +1099,15 @@ export class TitleScreenInventoryManager {
         return `#${((newR << 16) | (newG << 8) | newB).toString(16).padStart(6, '0')}`;
     }
 
-    private getSkillMultiplier(skillTier: string | undefined): number {
-        if (!skillTier) return 1.0;
-        const SKILL_MULTIPLIERS: Record<string, number> = {
-            common: 1.0,
-            uncommon: 1.1,
-            rare: 1.2,
-            epic: 1.35,
-            legendary: 1.6,
-            mythic: 2.0,
-            ultra: 2.6,
-            super: 3.3,
-            unique: 4.0,
-            apex: 4.8
-        };
-        return SKILL_MULTIPLIERS[skillTier] || 1.0;
-    }
-
-    private abbreviateNumber(value: number): string {
-        if (value < 1000) {
-            return value.toString();
-        } else if (value < 1000000) {
-            const k = value / 1000;
-            return k % 1 === 0 ? `${k}K` : `${k.toFixed(1)}K`;
-        } else if (value < 1000000000) {
-            const m = value / 1000000;
-            return m % 1 === 0 ? `${m}M` : `${m.toFixed(1)}M`;
-        } else {
-            const b = value / 1000000000;
-            return b % 1 === 0 ? `${b}B` : `${b.toFixed(1)}B`;
-        }
-    }
-
-    private calculateFinalPetalDamage(petalType: string, rarity: string): number {
-        if (!this.playerData) return 0;
-        const stats = getPetalStats(petalType, rarity);
-        if (!stats) return 0;
-        const baseDamage = stats.damage;
-        const damageSkillMultiplier = this.getSkillMultiplier(this.playerData.skills?.damage);
-        return Math.round(baseDamage * damageSkillMultiplier);
-    }
-
-    private calculateFinalPetalHealth(petalType: string, rarity: string): number {
-        if (!this.playerData) return 0;
-        const stats = getPetalStats(petalType, rarity);
-        if (!stats) return 0;
-        const baseHealth = stats.health;
-        const petalHealthMultiplier = this.getSkillMultiplier(this.playerData.skills?.petalHealth);
-        return Math.round(baseHealth * petalHealthMultiplier);
-    }
-
     /** Shows the shared petal tooltip (graphics/tooltip.ts) next to an anchor
      *  rect, with this manager's skill-adjusted final stats. */
     private showPetalTooltip(anchor: TooltipAnchor, petalType: string, rarity: string): void {
-        const stats = getPetalStats(petalType, rarity);
-        if (!stats) return;
-        showTooltipOverlay(anchor, petalTooltipLines(
-            stats,
-            rarity,
-            this.calculateFinalPetalHealth(petalType, rarity),
-            this.calculateFinalPetalDamage(petalType, rarity),
-            (n) => this.abbreviateNumber(n),
-        ));
+        if (!this.playerData) return;
+        showPetalTooltip(anchor, petalType, rarity, this.playerData.skills);
     }
 
     private hideTooltip(): void {
-        if (this.tooltipTimeout !== null) {
-            clearTimeout(this.tooltipTimeout);
-            this.tooltipTimeout = null;
-        }
-        hideTooltipOverlay();
+        this.tooltipTimeout = clearPetalTooltip(this.tooltipTimeout);
         this.hoveredElement = null;
     }
 

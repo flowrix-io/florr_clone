@@ -1853,6 +1853,36 @@ function pickBestEnemyTarget(bot, anchor, tetherRadius, preferredTiers, stickyId
         scoreEnemy(boss);
     return best ? { enemy: best, dist: bestDist } : null;
 }
+/**
+ * Picks the boss a raiding bot should converge on: the most recently spawned
+ * mob in `pool`, breaking ties towards whichever is closest to a human player.
+ *
+ * Both boss-raid target pickers ran this identical scan; the tie-break matters,
+ * so it is one function rather than two copies that could drift.
+ * `pool` must be non-empty.
+ */
+function newestClosestBoss(pool) {
+    let best = pool[0];
+    let bestSpawn = (0, mobFields_1.mobSpawnTime)(best.entity) ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(best.entity), (0, mobFields_1.mobY)(best.entity));
+    for (let i = 1; i < pool.length; i++) {
+        const enemy = pool[i];
+        const spawn = (0, mobFields_1.mobSpawnTime)(enemy.entity) ?? 0;
+        if (spawn > bestSpawn) {
+            best = enemy;
+            bestSpawn = spawn;
+            bestDistSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
+        }
+        else if (spawn === bestSpawn) {
+            const distSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
+            if (distSq < bestDistSq) {
+                best = enemy;
+                bestDistSq = distSq;
+            }
+        }
+    }
+    return best;
+}
 /** Reused payload buffer for the pickup scan; see collectWorldItems. */
 const _botItemScratch = [];
 function findPickupTarget(bot, anchor, tetherRadius, stickyId) {
@@ -1933,25 +1963,7 @@ function pickRaidTargetGlobal() {
     }
     if (pool.length === 0)
         return null;
-    let best = pool[0];
-    let bestSpawn = (0, mobFields_1.mobSpawnTime)(best.entity) ?? 0;
-    let bestDistSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(best.entity), (0, mobFields_1.mobY)(best.entity));
-    for (let i = 1; i < pool.length; i++) {
-        const enemy = pool[i];
-        const spawn = (0, mobFields_1.mobSpawnTime)(enemy.entity) ?? 0;
-        if (spawn > bestSpawn) {
-            best = enemy;
-            bestSpawn = spawn;
-            bestDistSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
-        }
-        else if (spawn === bestSpawn) {
-            const distSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
-            if (distSq < bestDistSq) {
-                best = enemy;
-                bestDistSq = distSq;
-            }
-        }
-    }
+    const best = newestClosestBoss(pool);
     return { x: (0, mobFields_1.mobX)(best.entity), y: (0, mobFields_1.mobY)(best.entity), tier: best.tier };
 }
 /**
@@ -2124,25 +2136,7 @@ function findNearestBossForBot(bot) {
     }
     if (pool.length === 0)
         return null;
-    let best = pool[0];
-    let bestSpawn = (0, mobFields_1.mobSpawnTime)(best.entity) ?? 0;
-    let bestDistSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(best.entity), (0, mobFields_1.mobY)(best.entity));
-    for (let i = 1; i < pool.length; i++) {
-        const enemy = pool[i];
-        const spawn = (0, mobFields_1.mobSpawnTime)(enemy.entity) ?? 0;
-        if (spawn > bestSpawn) {
-            best = enemy;
-            bestSpawn = spawn;
-            bestDistSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
-        }
-        else if (spawn === bestSpawn) {
-            const distSq = distSqToNearestHumanPlayer((0, mobFields_1.mobX)(enemy.entity), (0, mobFields_1.mobY)(enemy.entity));
-            if (distSq < bestDistSq) {
-                best = enemy;
-                bestDistSq = distSq;
-            }
-        }
-    }
+    const best = newestClosestBoss(pool);
     const dx = (0, mobFields_1.mobX)(best.entity) - bot.x;
     const dy = (0, mobFields_1.mobY)(best.entity) - bot.y;
     const dist = Math.sqrt(dx * dx + dy * dy);

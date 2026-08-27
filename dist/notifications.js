@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationsManager = void 0;
 const zoom_compensation_1 = require("./zoom-compensation");
 const text_1 = require("./graphics/text");
+const shapes_1 = require("./graphics/shapes");
+const scroll_panel_1 = require("./graphics/scroll-panel");
 const STORAGE_KEY = 'game_notifications_read';
 const NOTIFICATIONS_PER_PAGE = 50;
 class NotificationsManager {
@@ -211,9 +213,8 @@ class NotificationsManager {
                 const rect = this.canvas.getBoundingClientRect();
                 const y = e.clientY - rect.top;
                 const deltaY = y - this.dragStartY;
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
-                const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
-                this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
+                this.scrollY = (0, scroll_panel_1.scrollFromThumbDrag)(this.dragStartScroll, deltaY, this.PANEL_HEIGHT, maxScroll);
             }
         });
         this.canvas.addEventListener('mouseup', () => {
@@ -231,7 +232,7 @@ class NotificationsManager {
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
                 // Load more when scrolled near bottom
                 if (this.scrollY >= maxScroll - 100 && this.hasMore && !this.isLoading) {
@@ -310,7 +311,7 @@ class NotificationsManager {
                 this.contentHeight = currentY - (offsetY + 40 + this.PADDING);
             }
         }
-        const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+        const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
         // Draw panel background
         ctx.fillStyle = '#4a90e2';
@@ -466,17 +467,7 @@ class NotificationsManager {
         ctx.restore();
     }
     roundRect(ctx, x, y, width, height, radius) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, width, height, radius);
     }
     getTimeAgo(timestamp) {
         const now = Date.now();

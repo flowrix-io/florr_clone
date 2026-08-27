@@ -2,6 +2,8 @@
 // It should only be updated when there are major changes
 import { canvasCoords } from './zoom-compensation';
 import { drawText } from './graphics/text';
+import { drawRoundedRect } from './graphics/shapes';
+import { maxScrollFor, scrollFromThumbDrag } from './graphics/scroll-panel';
 
 export interface ChangelogEntry {
     date: string;
@@ -640,9 +642,8 @@ export class ChangelogManager {
 
             if (this.isDragging) {
                 const deltaY = y - this.dragStartY;
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
-                const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
-                this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+                const maxScroll = maxScrollFor(this.contentHeight, this.PANEL_HEIGHT);
+                this.scrollY = scrollFromThumbDrag(this.dragStartScroll, deltaY, this.PANEL_HEIGHT, maxScroll);
                 return;
             }
 
@@ -665,7 +666,7 @@ export class ChangelogManager {
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                const maxScroll = maxScrollFor(this.contentHeight, this.PANEL_HEIGHT);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
             }
         });
@@ -715,7 +716,7 @@ export class ChangelogManager {
         });
         
         this.contentHeight = currentY - (offsetY + 40 + this.PADDING);
-        const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+        const maxScroll = maxScrollFor(this.contentHeight, this.PANEL_HEIGHT);
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
 
         // Draw panel background
@@ -921,17 +922,7 @@ export class ChangelogManager {
 
     private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
         if (!ctx) return;
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        drawRoundedRect(ctx, x, y, width, height, radius);
     }
 
     public toggle(): void {

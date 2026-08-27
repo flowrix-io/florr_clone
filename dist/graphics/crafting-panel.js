@@ -8,25 +8,9 @@ const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
 const petal_icon_1 = require("./petal-icon");
 const text_1 = require("./text");
+const panel_common_1 = require("./panel-common");
 /** Column order for the crafting inventory grid: common on left, no apex. */
 const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
-function darken(hex, percent = 30) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
-function formatPetalName(petalType) {
-    if (!petalType)
-        return '';
-    const name = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
-    return name.replace(/_/g, ' ');
-}
 class CanvasCraftingPanel {
     constructor(game) {
         this.itemRects = [];
@@ -315,15 +299,7 @@ class CanvasCraftingPanel {
     }
     // ----- Canvas size sync -----
     syncCanvasSize() {
-        const rect = this.canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
-        if (this.canvas.width !== w || this.canvas.height !== h) {
-            this.canvas.width = w;
-            this.canvas.height = h;
-        }
-        return { dpr, cssW: rect.width, cssH: rect.height };
+        return (0, panel_common_1.syncCanvasSize)(this.canvas);
     }
     // ----- Layout -----
     layoutCraftingArea(cssW) {
@@ -697,7 +673,7 @@ class CanvasCraftingPanel {
                 ? (petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || emptyBg)
                 : emptyBg;
             const borderColor = slotHasItem
-                ? darken(petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || emptyBorder, 25)
+                ? (0, panel_common_1.darken)(petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || emptyBorder, 25)
                 : emptyBorder;
             ctx.save();
             ctx.fillStyle = borderColor;
@@ -735,7 +711,7 @@ class CanvasCraftingPanel {
             const cx = center.cx;
             const cy = center.cy;
             ctx.save();
-            ctx.fillStyle = darken(rColor, 25);
+            ctx.fillStyle = (0, panel_common_1.darken)(rColor, 25);
             ctx.beginPath();
             ctx.roundRect(cx - resultSize / 2, cy - resultSize / 2, resultSize, resultSize, 8);
             ctx.fill();
@@ -839,8 +815,8 @@ class CanvasCraftingPanel {
             const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
             const nextColor = petals_1.ITEM_RARITY_COLORS[nextRarity] || '';
             btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
-            btnBorder = nextColor ? darken(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
-            btnHover = nextColor ? darken(nextColor, 10) : '#9a8a7a';
+            btnBorder = nextColor ? (0, panel_common_1.darken)(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
+            btnHover = nextColor ? (0, panel_common_1.darken)(nextColor, 10) : '#9a8a7a';
             label = 'Craft';
         }
         ctx.save();
@@ -876,103 +852,7 @@ class CanvasCraftingPanel {
         ctx.restore();
     }
     drawItemSlot(ctx, r, hovered, time) {
-        const baseColor = petals_1.ITEM_RARITY_COLORS[r.rarity] || '#dc7e92';
-        const borderColor = darken(baseColor, 25);
-        const radius = 6;
-        const borderW = 3;
-        // Outer rounded border + inner fill
-        ctx.save();
-        ctx.fillStyle = borderColor;
-        ctx.beginPath();
-        ctx.roundRect(r.x, r.y, r.w, r.h, radius);
-        ctx.fill();
-        ctx.fillStyle = baseColor;
-        ctx.beginPath();
-        ctx.roundRect(r.x + borderW, r.y + borderW, r.w - borderW * 2, r.h - borderW * 2, Math.max(0, radius - 2));
-        ctx.fill();
-        if (hovered) {
-            ctx.globalAlpha = 0.18;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.roundRect(r.x + borderW, r.y + borderW, r.w - borderW * 2, r.h - borderW * 2, Math.max(0, radius - 2));
-            ctx.fill();
-            ctx.globalAlpha = 1;
-        }
-        ctx.restore();
-        // Item icon
-        this.drawItemIcon(ctx, r, time);
-        // Item name
-        const displayName = r.itemType.startsWith('petal_')
-            ? formatPetalName(r.itemType.replace('petal_', ''))
-            : formatPetalName(r.itemType);
-        if (displayName) {
-            ctx.save();
-            let fontSize = 10;
-            ctx.font = `bold ${fontSize}px Ubuntu, sans-serif`;
-            const maxTextW = r.w - 8;
-            let measured = ctx.measureText(displayName).width;
-            if (measured > maxTextW) {
-                fontSize = Math.max(7, (fontSize * maxTextW) / measured);
-                ctx.font = `bold ${fontSize.toFixed(1)}px Ubuntu, sans-serif`;
-            }
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.lineJoin = 'round';
-            const tx = r.x + r.w / 2;
-            const ty = r.y + r.h - 5;
-            (0, text_1.drawText)(ctx, displayName, tx, ty, { font: ctx.font, fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
-            ctx.restore();
-        }
-        // Count badge
-        if (r.count > 1) {
-            const text = `x${r.count}`;
-            ctx.save();
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'top';
-            ctx.lineJoin = 'round';
-            const tx = r.x + r.w - 4;
-            const ty = r.y + 3;
-            (0, text_1.drawText)(ctx, text, tx, ty, { size: 11, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
-            ctx.restore();
-        }
-        // Disabled items (e.g. non-petals in the Absorb tab): grey the slot out
-        // so it reads as unusable; clicks are blocked in handleMouseDown.
-        if (this.isItemDisabled && this.isItemDisabled(r.rarity, r.itemType)) {
-            ctx.save();
-            ctx.globalAlpha = 0.6;
-            ctx.fillStyle = '#3a3a3a';
-            ctx.beginPath();
-            ctx.roundRect(r.x, r.y, r.w, r.h, radius);
-            ctx.fill();
-            ctx.restore();
-        }
-    }
-    drawItemIcon(ctx, r, time) {
-        const cx = r.x + r.w / 2;
-        const cy = r.y + r.h * 0.4;
-        const iconSize = 32;
-        if (r.itemType.startsWith('petal_')) {
-            const petalType = r.itemType.replace('petal_', '');
-            const pc = this.game.getPetalCanvas?.(petalType, r.rarity, time);
-            if (pc) {
-                const stats = this.game.getPetalStats?.(petalType, r.rarity);
-                (0, petal_icon_1.drawPetalGroup)(ctx, pc, stats?.count, cx, cy, iconSize);
-            }
-        }
-        else {
-            const dataUrl = this.game.getItemSpriteDataUrl?.(r.itemType);
-            if (dataUrl) {
-                let img = this.imgCache.get(r.itemType);
-                if (!img) {
-                    img = new Image();
-                    img.src = dataUrl;
-                    this.imgCache.set(r.itemType, img);
-                }
-                if (img.complete && img.naturalWidth > 0) {
-                    ctx.drawImage(img, cx - iconSize / 2, cy - iconSize / 2, iconSize, iconSize);
-                }
-            }
-        }
+        (0, panel_common_1.drawItemSlot)(ctx, r, hovered, time, this.game, this.imgCache, this.isItemDisabled);
     }
     // ----- Input handlers -----
     toLocal(e) {
@@ -999,11 +879,7 @@ class CanvasCraftingPanel {
         return null;
     }
     findItemIndex(rarity, itemType) {
-        for (let i = 0; i < this.itemRects.length; i++) {
-            if (this.itemRects[i].rarity === rarity && this.itemRects[i].itemType === itemType)
-                return i;
-        }
-        return -1;
+        return (0, panel_common_1.findItemIndex)(this.itemRects, rarity, itemType);
     }
 }
 exports.CanvasCraftingPanel = CanvasCraftingPanel;

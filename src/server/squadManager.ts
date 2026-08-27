@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from '../ws_server';
 import { players } from '../constants';
+import { getSessionPlayer } from './gameState';
 
 export const MAX_SQUAD_SIZE = 4;
 
@@ -341,4 +342,29 @@ export function expandEligibleToPlayerIds(eligibleIds: string[]): string[] {
         }
     }
     return playerIds;
+}
+
+/**
+ * Returns the caller's squad, creating a private one if they have none.
+ *
+ * Four copies of this create-then-announce dance lived across the squad chat
+ * commands and the social handlers. The `squadUpdate` emit is part of it: a
+ * squad created implicitly this way is never announced anywhere else, so the
+ * inviter's own client would otherwise not know it exists.
+ */
+export function getOrCreateSquad(io: SocketIOServer, socketId: string): Squad | null {
+    const existing = getSquadForPlayer(socketId);
+    if (existing) return existing;
+
+    const squad = createSquad(socketId, false);
+    if (!squad) return null;
+
+    const player = getSessionPlayer(socketId);
+    if (player) player.squadId = squad.id;
+    io.to(socketId).emit('squadUpdate', {
+        squadId: squad.id,
+        memberIds: squad.memberIds,
+        leaderId: squad.leaderId,
+    });
+    return squad;
 }

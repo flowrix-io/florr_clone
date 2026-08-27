@@ -125,15 +125,7 @@ declare module './core' {
 }
 
 Graphics.prototype.drawMap = function(this: Graphics, world_map_data: MapElement[]) {
-    // Calculate viewport accounting for zoom level
-    const scaledWidth = this.viewW / this.zoomLevel;
-    const scaledHeight = this.viewH / this.zoomLevel;
-    const viewport = {
-        left: this.cameraX,
-        top: this.cameraY,
-        right: this.cameraX + scaledWidth,
-        bottom: this.cameraY + scaledHeight
-    };
+    const viewport = this.worldViewport();
 
     // Wall grid is rendered via the static map cache (see render.ts) —
     // skip it here so we don't redraw it on top per frame.

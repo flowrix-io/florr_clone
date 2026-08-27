@@ -64,6 +64,28 @@ const EQUAL_RARITY_TIER_WEIGHTS: { tier: Enemy['tier'], weight: number }[] = [
 ];
 
 // Helper function to select tier from equal rarity weights
+/** Base chance for a spawning mob to drift one tier up, before luck. */
+const TIER_UPGRADE_CHANCE = 0.02;
+
+/**
+ * Rolls a spawning mob's tier one step up or down, or leaves it alone.
+ *
+ * Four identical copies of this roll lived across createEnemy and
+ * createEnemyInZone, each with the 0.02 base chance written out by hand.
+ * An upgrade is tried first; only if it misses is a downgrade rolled, so the
+ * two can never both apply.
+ */
+function rollTierDrift(tier: Enemy['tier'], luckUpgradeBonus: number): Enemy['tier'] {
+    if (Math.random() < TIER_UPGRADE_CHANCE + luckUpgradeBonus) {
+        return upgradeTier(tier);
+    }
+    const downgradeChance = getMobDowngradeChance(tier);
+    if (downgradeChance > 0 && Math.random() < downgradeChance) {
+        return downgradeTier(tier);
+    }
+    return tier;
+}
+
 function selectEqualRarityTier(): Enemy['tier'] {
     return pickWeighted(EQUAL_RARITY_TIER_WEIGHTS).tier;
 }
@@ -662,15 +684,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): LiveEnemy | null {
         // biome asked for — drifting off it would produce a rarity the
         // one-per-section check never cleared, and dummies are permanent.
         if (mobType !== 'target_dummy') {
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = upgradeTier(tier);
-            } else {
-                const downgradeChance = getMobDowngradeChance(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = downgradeTier(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
     } else {
         // Check if position is in a spawn zone
@@ -705,15 +719,7 @@ export function createEnemy(helpers: EnemySpawnerHelpers): LiveEnemy | null {
             tier = Math.random() < 0.01 ? 'super' : 'ultra';
         } else {
             // Tier upgrade or downgrade
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = upgradeTier(tier);
-            } else {
-                const downgradeChance = getMobDowngradeChance(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = downgradeTier(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
 
         // Select mob type - filter to mobs belonging to this section
@@ -914,15 +920,7 @@ export function createEnemyInZone(
 
         // Target dummies keep the biome's exact rarity (see createEnemy).
         if (mobType !== 'target_dummy') {
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = upgradeTier(tier);
-            } else {
-                const downgradeChance = getMobDowngradeChance(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = downgradeTier(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
     } else {
         // Force the explicit zone we were asked to spawn for, so overlapping
@@ -932,15 +930,7 @@ export function createEnemyInZone(
         if (tier === 'ultra') {
             tier = Math.random() < 0.01 ? 'super' : 'ultra';
         } else {
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = upgradeTier(tier);
-            } else {
-                const downgradeChance = getMobDowngradeChance(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = downgradeTier(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
 
         const allMobTypes = getAllMobTypes();

@@ -98,6 +98,7 @@ const botReach_1 = require("../../server/bots/botReach");
 const petalRing_1 = require("../systems/petalRing");
 const C = __importStar(require("../components"));
 const tick_harness_1 = require("./tick_harness");
+const stub_hooks_1 = require("./stub_hooks");
 const DT = 1 / 30;
 const NOW0 = 1700000000000;
 const failures = [];
@@ -173,35 +174,9 @@ function resetWorldSingletons() {
 }
 function makeRuntime() {
     const runtime = (0, ecsRuntime_1.createEcsRuntime)({
+        ...(0, stub_hooks_1.benchStubHooks)(),
         lookupPlayer: (socketId) => constants_1.players[socketId],
-        // This bench drives the schedulers directly; the post-movement pipeline
-        // is the game\'s, not the bench\'s.
-        runPlayerPipeline: () => { },
-        runPetalBehaviours: () => { },
-        creditDamage: () => { },
-        onEnemyDamaged: () => { },
-        onEnemyKilled: () => { },
-        onPetOutOfView: () => { },
-        isNearAnyPlayer: () => true,
-        allocateProjectileNetId: () => 1,
         resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),
-        playerRadiusOf: () => 25,
-        damageMultiplierOf: () => 1,
-        onPlayerHit: () => true,
-        emitEnemyDamaged: () => { },
-        onProjectileKill: () => { },
-        onGroundEffectExpired: () => { },
-        onEnemyPoisonDamaged: () => { },
-        onPoisonKill: () => { },
-        tickPlayerPoison: () => { },
-        onPlayerPoisonLapsed: () => { },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { },
-        onSpawnWaves: () => { },
-        onWorldItemRemoved: () => { },
-        onMobDespawn: () => { },
-        onReapEnemy: () => { },
     });
     (0, ecsSync_1.configureCutover)(runtime);
     // Bot pickup targeting reads drops through the entity registry; point it at

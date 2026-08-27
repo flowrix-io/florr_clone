@@ -9,6 +9,8 @@ exports.CanvasSkillsPanel = void 0;
 const petals_1 = require("../petals");
 const tooltip_1 = require("./tooltip");
 const text_1 = require("./text");
+const panel_common_1 = require("./panel-common");
+const shapes_1 = require("./shapes");
 const RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
 const RARITY_MULTIPLIERS = {
     common: 1.0,
@@ -58,17 +60,6 @@ const SKILLS = [
         prerequisiteRarity: 'rare',
     },
 ];
-function darken(hex, percent = 30) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
 class CanvasSkillsPanel {
     constructor(game) {
         this.nodes = [];
@@ -238,15 +229,7 @@ class CanvasSkillsPanel {
         this.statBodyDamage = bodyDamage;
     }
     syncCanvasSize() {
-        const rect = this.canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
-        if (this.canvas.width !== w || this.canvas.height !== h) {
-            this.canvas.width = w;
-            this.canvas.height = h;
-        }
-        return { dpr, cssW: rect.width, cssH: rect.height };
+        return (0, panel_common_1.syncCanvasSize)(this.canvas);
     }
     layout(cssW, cssH) {
         if (cssW === this.lastCssW && cssH === this.lastCssH && this.nodes.length > 0)
@@ -538,11 +521,11 @@ class CanvasSkillsPanel {
         let border;
         if (isUnlocked) {
             fill = RARITY_COLORS[node.rarity];
-            border = darken(fill, 30);
+            border = (0, shapes_1.darken)(fill, 30);
         }
         else if (isAvailable) {
             fill = '#ffe65d';
-            border = darken(fill, 30);
+            border = (0, shapes_1.darken)(fill, 30);
         }
         else {
             fill = CanvasSkillsPanel.NODE_LOCKED_BG;

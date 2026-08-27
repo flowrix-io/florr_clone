@@ -2,18 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SkillsManager = void 0;
 const skills_panel_1 = require("./graphics/skills-panel");
-const SKILL_MULTIPLIERS = {
-    common: 1.0,
-    uncommon: 1.1,
-    rare: 1.2,
-    epic: 1.35,
-    legendary: 1.6,
-    mythic: 2.0,
-    ultra: 2.6,
-    super: 3.3,
-    unique: 4.0,
-    apex: 4.8
-};
+const skill_multipliers_1 = require("./skill_multipliers");
 /** Format a number with k/m suffixes (e.g. 19725 → "19.7k"). */
 function abbreviate(value) {
     if (value < 1000)
@@ -108,11 +97,11 @@ class SkillsManager {
             return;
         const player = this.game.getLocalPlayer();
         const baseHealth = player?.maxHealth ?? 0;
-        const healthMult = SKILL_MULTIPLIERS[skills?.playerHealth ?? ''] ?? 1.0;
+        const healthMult = skill_multipliers_1.EFFECT_SKILL_MULTIPLIERS[skills?.playerHealth ?? ''] ?? 1.0;
         const flowerHealth = abbreviate(Math.round(baseHealth * healthMult));
         // Body damage isn't surfaced via player stats; show the damage skill
         // multiplier as the visible "Body Damage" rather than fabricating a value.
-        const damageMult = SKILL_MULTIPLIERS[skills?.damage ?? ''] ?? 1.0;
+        const damageMult = skill_multipliers_1.EFFECT_SKILL_MULTIPLIERS[skills?.damage ?? ''] ?? 1.0;
         const baseBodyDamage = (player?.bodyDamage ?? 25);
         const bodyDamage = abbreviate(Math.round(baseBodyDamage * damageMult));
         this.canvasSkillsPanel.updateState(tp, skills || {}, flowerHealth, bodyDamage);

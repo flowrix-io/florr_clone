@@ -20,7 +20,9 @@ exports.findBotByName = findBotByName;
 exports.handlePlayerDisconnect = handlePlayerDisconnect;
 exports.getPooledDamageContributors = getPooledDamageContributors;
 exports.expandEligibleToPlayerIds = expandEligibleToPlayerIds;
+exports.getOrCreateSquad = getOrCreateSquad;
 const constants_1 = require("../constants");
+const gameState_1 = require("./gameState");
 exports.MAX_SQUAD_SIZE = 4;
 function isBotId(id) {
     return id.startsWith('bot_');
@@ -319,4 +321,29 @@ function expandEligibleToPlayerIds(eligibleIds) {
         }
     }
     return playerIds;
+}
+/**
+ * Returns the caller's squad, creating a private one if they have none.
+ *
+ * Four copies of this create-then-announce dance lived across the squad chat
+ * commands and the social handlers. The `squadUpdate` emit is part of it: a
+ * squad created implicitly this way is never announced anywhere else, so the
+ * inviter's own client would otherwise not know it exists.
+ */
+function getOrCreateSquad(io, socketId) {
+    const existing = getSquadForPlayer(socketId);
+    if (existing)
+        return existing;
+    const squad = createSquad(socketId, false);
+    if (!squad)
+        return null;
+    const player = (0, gameState_1.getSessionPlayer)(socketId);
+    if (player)
+        player.squadId = squad.id;
+    io.to(socketId).emit('squadUpdate', {
+        squadId: squad.id,
+        memberIds: squad.memberIds,
+        leaderId: squad.leaderId,
+    });
+    return squad;
 }

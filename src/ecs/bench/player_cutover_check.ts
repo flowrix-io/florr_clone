@@ -43,7 +43,9 @@ import {
 } from '../../server/ecsSync';
 import * as C from '../components';
 import { assertNoServerBooted } from './tick_harness';
+import { mulberry32 } from './rng';
 
+import { benchStubHooks } from './stub_hooks';
 // ---------------------------------------------------------------------------
 // The oracle: the movement half of updatePlayerState, exactly as it was
 // ---------------------------------------------------------------------------
@@ -125,15 +127,6 @@ function legacyMove(
 // The fixture
 // ---------------------------------------------------------------------------
 
-function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 /**
  * Where the test flowers stand.
@@ -307,37 +300,7 @@ const DT = 1 / 30;
  * builds every scheduler, so the hooks have to be callable.
  */
 function makeRuntime(): EcsRuntime {
-    return createEcsRuntime({
-        lookupPlayer: () => undefined,
-        // This bench drives the schedulers directly; the post-movement pipeline
-        // is the game\'s, not the bench\'s.
-        runPlayerPipeline: () => { /* not exercised here */ },
-        runPetalBehaviours: () => { /* not exercised here */ },
-        creditDamage: () => { /* not reachable from the player scheduler */ },
-        onEnemyDamaged: () => { /* ditto */ },
-        onEnemyKilled: () => { /* ditto */ },
-        onPetOutOfView: () => { /* pets are not under test here */ },
-        isNearAnyPlayer: () => true,
-        allocateProjectileNetId: () => 1,
-        resolvePlayerEntity: () => undefined,
-        playerRadiusOf: () => 25,
-        damageMultiplierOf: () => 1,
-        onPlayerHit: () => true,
-        emitEnemyDamaged: () => { /* ditto */ },
-        onProjectileKill: () => { /* ditto */ },
-        onGroundEffectExpired: () => { /* ditto */ },
-        onEnemyPoisonDamaged: () => { /* ditto */ },
-        onPoisonKill: () => { /* ditto */ },
-        tickPlayerPoison: () => { /* ditto */ },
-        onPlayerPoisonLapsed: () => { /* ditto */ },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { /* ditto */ },
-        onSpawnWaves: () => { /* ditto */ },
-        onWorldItemRemoved: () => { /* ditto */ },
-        onMobDespawn: () => { /* ditto */ },
-        onReapEnemy: () => { /* ditto */ },
-    });
+    return createEcsRuntime(benchStubHooks());
 }
 
 export function runPlayerCutoverCheck(): string[] {

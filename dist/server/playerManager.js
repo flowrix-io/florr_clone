@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RARITY_TP_COSTS = exports.calculatePlayerModifiers = exports.createInitialInventory = exports.hasItem = exports.removeItem = exports.addItem = void 0;
+exports.RARITY_TP_COSTS = exports.calculatePlayerModifiers = exports.getSkillMultiplier = exports.createInitialInventory = exports.hasItem = exports.removeItem = exports.addItem = void 0;
 exports.createInitialBasicPetals = createInitialBasicPetals;
 exports.enterPvpArena = enterPvpArena;
 exports.exitPvpArena = exitPvpArena;
@@ -30,7 +30,6 @@ exports.getOutsideTotalXP = getOutsideTotalXP;
 exports.getMazeTotalXP = getMazeTotalXP;
 exports.getAbsorbingTier = getAbsorbingTier;
 exports.calculateDamageFromLevel = calculateDamageFromLevel;
-exports.getSkillMultiplier = getSkillMultiplier;
 exports.applyPetalHealthBonus = applyPetalHealthBonus;
 exports.recalculatePlayerStats = recalculatePlayerStats;
 exports.addXPToPlayer = addXPToPlayer;
@@ -40,6 +39,8 @@ const mobFields_1 = require("./mobFields");
 const enemyRegistry_1 = require("./enemyRegistry");
 const playerWire_1 = require("./playerWire");
 const petals_1 = require("../petals");
+const skill_multipliers_1 = require("../skill_multipliers");
+Object.defineProperty(exports, "getSkillMultiplier", { enumerable: true, get: function () { return skill_multipliers_1.getStatSkillMultiplier; } });
 const playerModifiers_1 = require("./shared/playerModifiers");
 Object.defineProperty(exports, "calculatePlayerModifiers", { enumerable: true, get: function () { return playerModifiers_1.calculatePlayerModifiers; } });
 const constants_1 = require("../constants");
@@ -840,23 +841,6 @@ function applyTotalXPToLive(player, totalXP) {
 function calculateDamageFromLevel(level) {
     return constants_1.PLAYER_DAMAGE + Math.ceil(Math.pow(level, 1.5) * constants_1.DAMAGE_PER_LEVEL);
 }
-function getSkillMultiplier(skillTier) {
-    if (!skillTier)
-        return 1;
-    const multipliers = {
-        common: 1,
-        uncommon: 1.1,
-        rare: 1.2,
-        epic: 1.3,
-        legendary: 1.4,
-        mythic: 1.5,
-        ultra: 1.6,
-        super: 1.7,
-        unique: 1.8,
-        apex: 1.9
-    };
-    return multipliers[skillTier] || 1;
-}
 function applyPetalHealthBonus(petal, player) {
     if (!petal || petal.type !== 'petal' || !petal.petalType)
         return;
@@ -864,7 +848,7 @@ function applyPetalHealthBonus(petal, player) {
     if (!petalStats)
         return;
     // Skills are disabled inside the PVP arena.
-    const petalHealthMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.petalHealth);
+    const petalHealthMultiplier = player.inPvpArena ? 1 : (0, skill_multipliers_1.getStatSkillMultiplier)(player.skills?.petalHealth);
     const maxHealth = Math.round(petalStats.health * petalHealthMultiplier);
     petal.maxHealth = maxHealth;
     if (petal.health !== undefined) {
@@ -879,8 +863,8 @@ function recalculatePlayerStats(player, io) {
     const baseMaxHealth = calculateMaxHealthFromLevel(player.level);
     const baseDamage = calculateDamageFromLevel(player.level);
     // Apply skill multipliers — disabled in the PVP arena.
-    const healthMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.playerHealth);
-    const damageMultiplier = player.inPvpArena ? 1 : getSkillMultiplier(player.skills?.damage);
+    const healthMultiplier = player.inPvpArena ? 1 : (0, skill_multipliers_1.getStatSkillMultiplier)(player.skills?.playerHealth);
+    const damageMultiplier = player.inPvpArena ? 1 : (0, skill_multipliers_1.getStatSkillMultiplier)(player.skills?.damage);
     // Get petal modifiers
     const petalModifiers = (0, playerModifiers_1.calculatePlayerModifiers)(player);
     // Store old maxHealth to calculate health percentage

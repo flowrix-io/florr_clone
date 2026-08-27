@@ -12,6 +12,91 @@ declare module './core' {
     }
 }
 
+/** One spike laid out along a wall edge. */
+interface EdgeSpike {
+    pos: number;
+    width: number;
+    height: number;
+    isCluster: boolean;
+}
+
+/**
+ * Lays out the spikes along one wall edge, deterministically from `seed`.
+ *
+ * The spikes and their shadows are drawn by two separate passes, and both used
+ * to run their own copy of this loop. They MUST agree exactly — a shadow drawn
+ * from a different layout lands next to nothing — so the layout is computed
+ * once here and both passes consume the same array.
+ */
+function layoutEdgeSpikes(
+    edgeLength: number,
+    seed: number,
+    minHeight: number,
+    maxHeight: number,
+    minWidth: number,
+    maxWidth: number,
+    minSpacing: number,
+    maxSpacing: number,
+    clusterChance: number,
+): EdgeSpike[] {
+    const spikes: EdgeSpike[] = [];
+    let seedOffset = 0;
+
+    let inCluster = false;
+    let clusterSpikeCount = 0;
+    let clusterMaxSpikes = 0;
+    let prevSpikeEnd = 0; // Track where previous spike ends to prevent overlap
+
+    while (prevSpikeEnd < edgeLength) {
+        const rand = seededRandom(seed + seedOffset++);
+
+        // Check if we should start a new cluster
+        if (!inCluster && rand < clusterChance) {
+            inCluster = true;
+            clusterSpikeCount = 0;
+            clusterMaxSpikes = 2 + Math.floor(seededRandom(seed + seedOffset++) * 3); // 2-4 spikes in cluster
+        }
+
+        // Calculate spacing from previous spike end
+        let spacing = 0;
+        if (inCluster && clusterSpikeCount > 0) {
+            // Small spacing within cluster
+            spacing = minSpacing * 0.3 + (minSpacing * 0.5) * seededRandom(seed + seedOffset++);
+        } else if (!inCluster) {
+            // Normal spacing for non-clustered spikes
+            spacing = minSpacing + (maxSpacing - minSpacing) * rand;
+        }
+
+        // Position spike after previous spike with spacing
+        const currentPos = prevSpikeEnd + spacing;
+        if (currentPos >= edgeLength) break;
+
+        const spikeWidth = minWidth + (maxWidth - minWidth) * seededRandom(seed + seedOffset++);
+        const spikeHeight = minHeight + (maxHeight - minHeight) * seededRandom(seed + seedOffset++);
+
+        // Clustered spikes are wider and can vary in height
+        const finalWidth = inCluster ? spikeWidth * (1.3 + seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
+        const finalHeight = inCluster ? spikeHeight * (1.1 + seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
+
+        // Ensure spike doesn't go beyond edge
+        if (currentPos + finalWidth > edgeLength) break;
+
+        spikes.push({ pos: currentPos, width: finalWidth, height: finalHeight, isCluster: inCluster });
+        prevSpikeEnd = currentPos + finalWidth;
+
+        if (inCluster) {
+            clusterSpikeCount++;
+            if (clusterSpikeCount >= clusterMaxSpikes) {
+                inCluster = false;
+                // Add extra spacing after cluster ends
+                prevSpikeEnd += minSpacing * 0.5;
+            }
+        }
+    }
+
+    return spikes;
+}
+
 /**
  * Check if a wall edge is exposed (no adjacent wall)
  */
@@ -254,75 +339,10 @@ Graphics.prototype.drawRandomSpikesOnEdge = function(
     maxSpacing: number,
     clusterChance: number
 ): void {
-    const edgeLength = direction === 'top' || direction === 'bottom' ? edgeWidth : edgeHeight;
-    const spikes: Array<{ pos: number; width: number; height: number; isCluster: boolean }> = [];
-
-    let currentPos = 0;
-    let seedOffset = 0;
-
-    // Generate random spike positions with clustering
-    let inCluster = false;
-    let clusterSpikeCount = 0;
-    let clusterMaxSpikes = 0;
-    let prevSpikeEnd = 0; // Track where previous spike ends to prevent overlap
-
-    while (prevSpikeEnd < edgeLength) {
-        const rand = seededRandom(seed + seedOffset++);
-
-        // Check if we should start a new cluster
-        if (!inCluster && rand < clusterChance) {
-            inCluster = true;
-            clusterSpikeCount = 0;
-            clusterMaxSpikes = 2 + Math.floor(seededRandom(seed + seedOffset++) * 3); // 2-4 spikes in cluster
-        }
-
-        // Calculate spacing from previous spike end
-        let spacing = 0;
-        if (inCluster && clusterSpikeCount > 0) {
-            // Small spacing within cluster
-            spacing = minSpacing * 0.3 + (minSpacing * 0.5) * seededRandom(seed + seedOffset++);
-        } else if (!inCluster) {
-            // Normal spacing for non-clustered spikes
-            spacing = minSpacing + (maxSpacing - minSpacing) * rand;
-        }
-
-        // Position spike after previous spike with spacing
-        currentPos = prevSpikeEnd + spacing;
-
-        if (currentPos >= edgeLength) break;
-
-        const spikeWidth = minWidth + (maxWidth - minWidth) * seededRandom(seed + seedOffset++);
-        const spikeHeight = minHeight + (maxHeight - minHeight) * seededRandom(seed + seedOffset++);
-
-        // Clustered spikes are wider and can vary in height
-        const finalWidth = inCluster ? spikeWidth * (1.3 + seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
-        const finalHeight = inCluster ? spikeHeight * (1.1 + seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
-
-        // Ensure spike doesn't go beyond edge
-        if (currentPos + finalWidth > edgeLength) {
-            break;
-        }
-
-        spikes.push({
-            pos: currentPos,
-            width: finalWidth,
-            height: finalHeight,
-            isCluster: inCluster
-        });
-
-        // Update position to end of current spike
-        prevSpikeEnd = currentPos + finalWidth;
-
-        // Update cluster state
-        if (inCluster) {
-            clusterSpikeCount++;
-            if (clusterSpikeCount >= clusterMaxSpikes) {
-                inCluster = false;
-                // Add extra spacing after cluster ends
-                prevSpikeEnd += minSpacing * 0.5;
-            }
-        }
-    }
+    const spikes = layoutEdgeSpikes(
+        direction === 'top' || direction === 'bottom' ? edgeWidth : edgeHeight,
+        seed, minHeight, maxHeight, minWidth, maxWidth, minSpacing, maxSpacing, clusterChance,
+    );
 
     // Draw the spikes with straight lines (less sharp trapezoid shape)
     spikes.forEach((spike, index) => {
@@ -445,65 +465,10 @@ Graphics.prototype.drawRandomSpikeShadowsOnEdge = function(
     clusterChance: number,
     shadowSize: number
 ): void {
-    const edgeLength = direction === 'top' || direction === 'bottom' ? edgeWidth : edgeHeight;
-    const spikes: Array<{ pos: number; width: number; height: number; isCluster: boolean }> = [];
-
-    let currentPos = 0;
-    let seedOffset = 0;
-
-    // Generate random spike positions with clustering (same logic as drawRandomSpikesOnEdge)
-    let inCluster = false;
-    let clusterSpikeCount = 0;
-    let clusterMaxSpikes = 0;
-    let prevSpikeEnd = 0;
-
-    while (prevSpikeEnd < edgeLength) {
-        const rand = seededRandom(seed + seedOffset++);
-
-        if (!inCluster && rand < clusterChance) {
-            inCluster = true;
-            clusterSpikeCount = 0;
-            clusterMaxSpikes = 2 + Math.floor(seededRandom(seed + seedOffset++) * 3);
-        }
-
-        let spacing = 0;
-        if (inCluster && clusterSpikeCount > 0) {
-            spacing = minSpacing * 0.3 + (minSpacing * 0.5) * seededRandom(seed + seedOffset++);
-        } else if (!inCluster) {
-            spacing = minSpacing + (maxSpacing - minSpacing) * rand;
-        }
-
-        currentPos = prevSpikeEnd + spacing;
-
-        if (currentPos >= edgeLength) break;
-
-        const spikeWidth = minWidth + (maxWidth - minWidth) * seededRandom(seed + seedOffset++);
-        const spikeHeight = minHeight + (maxHeight - minHeight) * seededRandom(seed + seedOffset++);
-
-        const finalWidth = inCluster ? spikeWidth * (1.3 + seededRandom(seed + seedOffset++) * 0.7) : spikeWidth;
-        const finalHeight = inCluster ? spikeHeight * (1.1 + seededRandom(seed + seedOffset++) * 0.2) : spikeHeight;
-
-        if (currentPos + finalWidth > edgeLength) {
-            break;
-        }
-
-        spikes.push({
-            pos: currentPos,
-            width: finalWidth,
-            height: finalHeight,
-            isCluster: inCluster
-        });
-
-        prevSpikeEnd = currentPos + finalWidth;
-
-        if (inCluster) {
-            clusterSpikeCount++;
-            if (clusterSpikeCount >= clusterMaxSpikes) {
-                inCluster = false;
-                prevSpikeEnd += minSpacing * 0.5;
-            }
-        }
-    }
+    const spikes = layoutEdgeSpikes(
+        direction === 'top' || direction === 'bottom' ? edgeWidth : edgeHeight,
+        seed, minHeight, maxHeight, minWidth, maxWidth, minSpacing, maxSpacing, clusterChance,
+    );
 
     // Draw shadows around each spike
     spikes.forEach((spike) => {

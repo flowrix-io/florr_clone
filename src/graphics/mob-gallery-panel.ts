@@ -17,6 +17,9 @@ import { ITEM_RARITY_COLORS, RARITY_LEVELS } from '../petals';
 import { getPreloadedAssets } from '../preloader';
 import { drawText } from './text';
 import { measureTooltip, paintTooltip, capitalizeRarity, TooltipLine, TOOLTIP_STAT_COLOR } from './tooltip';
+import { syncCanvasSize } from './panel-common';
+import { drawRoundedRect as roundedRect } from './shapes';
+import { darken } from './shapes';
 
 // Rarity progression for drop-rarity calculations. Mirrors the order used
 // server-side (server/itemManager.ts) and in the legacy DOM tooltip.
@@ -162,17 +165,6 @@ const CELL_HEIGHT = 60;
 const ROW_GAP = 5;
 const SCROLLBAR_WIDTH = 12;
 
-function darken(hex: string, percent: number = 30): string {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
 
 function abbreviateNumber(n: number): string {
     if (!isFinite(n)) return '∞';
@@ -182,20 +174,7 @@ function abbreviateNumber(n: number): string {
     return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
 }
 
-function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-    const rad = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
-}
+
 
 export class CanvasMobGalleryPanel {
     public canvas: HTMLCanvasElement;
@@ -281,15 +260,7 @@ export class CanvasMobGalleryPanel {
 
     /** Resize the canvas backing buffer to the parent's CSS box. */
     private syncCanvasSize(): { dpr: number; cssW: number; cssH: number } {
-        const rect = this.canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
-        if (this.canvas.width !== w || this.canvas.height !== h) {
-            this.canvas.width = w;
-            this.canvas.height = h;
-        }
-        return { dpr, cssW: rect.width, cssH: rect.height };
+        return syncCanvasSize(this.canvas);
     }
 
     /** Y at which the scrollable content area starts (just below the title). */

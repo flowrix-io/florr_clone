@@ -5,6 +5,7 @@ const core_1 = require("./core");
 const leaderboardScratch = [];
 const constants_1 = require("../constants");
 const text_1 = require("./text");
+const shapes_1 = require("./shapes");
 // Gardn's "???" zone uses a plain medium-gray floor with a faint dark grid.
 // We replicate that inside the arena circle and paint a darker void outside.
 const ARENA_FLOOR_COLOR = '#777777';
@@ -122,7 +123,7 @@ core_1.Graphics.prototype.drawPvpLeaderboard = function (world, currentPlayerId)
     ctx.fillStyle = '#555555';
     ctx.strokeStyle = '#454545';
     ctx.lineWidth = BORDER;
-    roundRect(ctx, x, y, panelW, panelH, RADIUS);
+    (0, shapes_1.drawRoundedRect)(ctx, x, y, panelW, panelH, RADIUS);
     ctx.stroke();
     ctx.fill();
     // Green pill header.
@@ -131,7 +132,7 @@ core_1.Graphics.prototype.drawPvpLeaderboard = function (world, currentPlayerId)
     ctx.fillStyle = '#55bb55';
     ctx.strokeStyle = '#469646';
     ctx.lineWidth = BORDER;
-    roundRect(ctx, headerX, headerY, headerW, HEADER_H, RADIUS);
+    (0, shapes_1.drawRoundedRect)(ctx, headerX, headerY, headerW, HEADER_H, RADIUS);
     ctx.stroke();
     ctx.fill();
     const headerText = arenaPlayers.length === 1 ? '1 Flower' : `${arenaPlayers.length} Flowers`;
@@ -179,17 +180,4 @@ function formatScore(s) {
     if (s >= 1000)
         return (s / 1000).toFixed(s >= 10000 ? 0 : 1) + 'k';
     return Math.floor(s).toString();
-}
-function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
 }

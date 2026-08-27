@@ -5,6 +5,8 @@ const constants_1 = require("./constants");
 const zoom_compensation_1 = require("./zoom-compensation");
 const auth_session_1 = require("./auth_session");
 const text_1 = require("./graphics/text");
+const shapes_1 = require("./graphics/shapes");
+const scroll_panel_1 = require("./graphics/scroll-panel");
 class LeaderboardManager {
     constructor() {
         this.canvas = null;
@@ -136,9 +138,8 @@ class LeaderboardManager {
                 const rect = this.canvas.getBoundingClientRect();
                 const y = e.clientY - rect.top;
                 const deltaY = y - this.dragStartY;
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
-                const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
-                this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
+                this.scrollY = (0, scroll_panel_1.scrollFromThumbDrag)(this.dragStartScroll, deltaY, this.PANEL_HEIGHT, maxScroll);
             }
         });
         this.canvas.addEventListener('mouseup', () => {
@@ -155,7 +156,7 @@ class LeaderboardManager {
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
             }
         });
@@ -349,17 +350,7 @@ class LeaderboardManager {
         return `${xp}`;
     }
     roundRect(ctx, x, y, width, height, radius) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, width, height, radius);
     }
 }
 exports.LeaderboardManager = LeaderboardManager;

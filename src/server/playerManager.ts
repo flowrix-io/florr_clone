@@ -5,6 +5,7 @@ import { ServerPlayer, PlayerInventory, PlayerSkills } from '../player';
 import { sanitizePlayerForClient } from './playerWire';
 import { Item } from '../item';
 import { getPetalStats } from '../petals';
+import { getStatSkillMultiplier as getSkillMultiplier } from '../skill_multipliers';
 import { calculatePlayerModifiers } from './shared/playerModifiers';
 import {
     SCALE_FACTOR,
@@ -899,22 +900,7 @@ export function calculateDamageFromLevel(level: number): number {
     return PLAYER_DAMAGE + Math.ceil(Math.pow(level, 1.5) * DAMAGE_PER_LEVEL);
 }
 
-export function getSkillMultiplier(skillTier: string | undefined): number {
-    if (!skillTier) return 1;
-    const multipliers: Record<string, number> = {
-        common: 1,
-        uncommon: 1.1,
-        rare: 1.2,
-        epic: 1.3,
-        legendary: 1.4,
-        mythic: 1.5,
-        ultra: 1.6,
-        super: 1.7,
-        unique: 1.8,
-        apex: 1.9
-    };
-    return multipliers[skillTier] || 1;
-}
+export { getSkillMultiplier };
 
 export function applyPetalHealthBonus(petal: Item | null, player: ServerPlayer): void {
     if (!petal || petal.type !== 'petal' || !petal.petalType) return;

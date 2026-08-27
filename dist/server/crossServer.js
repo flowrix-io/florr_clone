@@ -134,75 +134,42 @@ async function transferPlayerToServer(player, targetServerPort, targetX, targetY
             rejectUnauthorized: USE_HTTPS ? false : undefined
         };
         return new Promise((resolve) => {
-            const req = USE_HTTPS ?
-                https_1.default.request(options, (res) => {
-                    let responseData = '';
-                    res.on('data', (chunk) => {
-                        responseData += chunk;
-                    });
-                    res.on('end', () => {
-                        try {
-                            const response = JSON.parse(responseData);
-                            if (response.success) {
-                                console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
-                                // Notify client about successful transfer
-                                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTransferred', {
-                                    targetServer: targetServerConfig,
-                                    transferToken: response.transferToken,
-                                    targetX,
-                                    targetY
-                                });
-                                // Remove player from current server immediately
-                                delete constants_1.players[player.id];
-                                delete gameState_1.playerUserIds[player.id];
-                                io.emit('playerLeft', player.id);
-                                resolve(true);
-                            }
-                            else {
-                                console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player: ${response.message}`);
-                                resolve(false);
-                            }
-                        }
-                        catch (error) {
-                            console.error(`[SERVER ${currentServerConfig.name}] Error parsing transfer response:`, error);
-                            resolve(false);
-                        }
-                    });
-                }) :
-                http_1.default.request(options, (res) => {
-                    let responseData = '';
-                    res.on('data', (chunk) => {
-                        responseData += chunk;
-                    });
-                    res.on('end', () => {
-                        try {
-                            const response = JSON.parse(responseData);
-                            if (response.success) {
-                                console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
-                                // Notify client about successful transfer
-                                io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTransferred', {
-                                    targetServer: targetServerConfig,
-                                    transferToken: response.transferToken,
-                                    targetX,
-                                    targetY
-                                });
-                                // Remove player from current server immediately
-                                delete constants_1.players[player.id];
-                                delete gameState_1.playerUserIds[player.id];
-                                io.emit('playerLeft', player.id);
-                                resolve(true);
-                            }
-                            else {
-                                console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player: ${response.message}`);
-                                resolve(false);
-                            }
-                        }
-                        catch (error) {
-                            console.error(`[SERVER ${currentServerConfig.name}] Error parsing transfer response:`, error);
-                            resolve(false);
-                        }
-                    });
+            // http and https expose the same request() surface — pick the
+            // module, not two copies of the response handler.
+            const transport = USE_HTTPS ? https_1.default : http_1.default;
+            const req = transport.request(options, (res) => {
+                let responseData = '';
+                res.on('data', (chunk) => {
+                    responseData += chunk;
                 });
+                res.on('end', () => {
+                    try {
+                        const response = JSON.parse(responseData);
+                        if (!response.success) {
+                            console.error(`[SERVER ${currentServerConfig.name}] Failed to transfer player: ${response.message}`);
+                            resolve(false);
+                            return;
+                        }
+                        console.log(`[SERVER ${currentServerConfig.name}] Successfully transferred player ${player.name} to ${targetServerConfig.name}`);
+                        // Notify client about successful transfer
+                        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('playerTransferred', {
+                            targetServer: targetServerConfig,
+                            transferToken: response.transferToken,
+                            targetX,
+                            targetY
+                        });
+                        // Remove player from current server immediately
+                        delete constants_1.players[player.id];
+                        delete gameState_1.playerUserIds[player.id];
+                        io.emit('playerLeft', player.id);
+                        resolve(true);
+                    }
+                    catch (error) {
+                        console.error(`[SERVER ${currentServerConfig.name}] Error parsing transfer response:`, error);
+                        resolve(false);
+                    }
+                });
+            });
             req.on('error', (error) => {
                 console.error(`[SERVER ${currentServerConfig.name}] Error transferring player:`, error);
                 resolve(false);

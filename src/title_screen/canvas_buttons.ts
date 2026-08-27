@@ -9,6 +9,7 @@
  */
 
 import { GAME_ICONS_NET_ICONS } from '../game-icons-net-icons';
+import { drawRoundedRect } from '../graphics/shapes';
 
 export type TitleButtonId =
     | 'settings'
@@ -114,23 +115,7 @@ function loadIconImage(iconName: string): HTMLImageElement | null {
     return img;
 }
 
-function drawRoundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number, y: number, w: number, h: number, r: number,
-): void {
-    const rad = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
-}
+
 
 export class TitleCanvasButtons {
     private buttons: ButtonRect[];

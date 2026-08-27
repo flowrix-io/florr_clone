@@ -24,6 +24,7 @@ exports.switchPlayer = switchPlayer;
 exports.syncSplitStars = syncSplitStars;
 exports.updatePetalPosition = updatePetalPosition;
 const petals_1 = require("./petals");
+const skill_multipliers_1 = require("./skill_multipliers");
 const mobFields_1 = require("./server/mobFields");
 const scopedEmit_1 = require("./server/scopedEmit");
 const enemyWire_1 = require("./server/enemyWire");
@@ -82,23 +83,6 @@ const lightningCutterStrikeTimes = new Map(); // playerId -> array of strike tim
 const LIGHTNING_CUTTER_RATE_LIMIT_MS = 500; // Minimum 500ms between strikes (2 per second)
 const LIGHTNING_CUTTER_MAX_STRIKES = 2; // Maximum 2 strikes per second
 // Skill multipliers based on rarity tier
-const SKILL_MULTIPLIERS = {
-    common: 1.0,
-    uncommon: 1.1,
-    rare: 1.2,
-    epic: 1.35,
-    legendary: 1.6,
-    mythic: 2.0,
-    ultra: 2.6,
-    super: 3.3,
-    unique: 4.0,
-    apex: 4.8
-};
-function getSkillMultiplier(skillTier) {
-    if (!skillTier)
-        return 1.0;
-    return SKILL_MULTIPLIERS[skillTier] || 1.0;
-}
 // Heal the player
 function healPlayer(player, healAmount, io, context) {
     const oldHealth = player.health;
@@ -114,7 +98,7 @@ function healPlayer(player, healAmount, io, context) {
         }
     }
     // Apply healing multiplier skill bonus
-    const healingMultiplier = getSkillMultiplier(player.skills?.healingMultiplier);
+    const healingMultiplier = (0, skill_multipliers_1.getEffectSkillMultiplier)(player.skills?.healingMultiplier);
     const modifiedHealAmount = healAmount * rarityMultiplier * healingMultiplier * 3;
     player.health = Math.min(player.maxHealth, player.health + modifiedHealAmount);
     if (player.health !== oldHealth) {
@@ -786,7 +770,7 @@ function updatePlayerEffects(player, deltaTime) {
 function getDamageMultiplier(player) {
     let multiplier = 1.0;
     // Apply skill multiplier first
-    const skillMultiplier = getSkillMultiplier(player.skills?.damage);
+    const skillMultiplier = (0, skill_multipliers_1.getEffectSkillMultiplier)(player.skills?.damage);
     multiplier *= skillMultiplier;
     // Then apply petal effect multipliers
     if (player.effects) {

@@ -29,17 +29,10 @@ import { spawnEnemy } from '../../server/enemyRegistry';
 import { bindEntityHost } from '../../server/entityRegistry';
 import * as C from '../components';
 import { MAX_SANE_WORLD_COORD_LIMIT } from './limits';
+import { mulberry32 } from './rng';
 
-function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
+import { benchStubHooks } from './stub_hooks';
 /** A mix that exercises every AI branch the port touches. */
 const MOB_MIX: Array<{ type: string; tier: string; ai: MobAiType; weight: number }> = [
     { type: 'bee', tier: 'common', ai: 'neutral', weight: 25 },
@@ -269,14 +262,7 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     let playerHits = 0;
 
     const runtime = createEcsRuntime({
-        lookupPlayer: () => undefined,
-        // Harness drives the schedulers directly; the pipeline is the game\'s.
-        runPlayerPipeline: () => { /* not exercised here */ },
-        runPetalBehaviours: () => { /* not exercised here */ },
-        creditDamage: () => { /* attribution is exercised elsewhere */ },
-        onEnemyDamaged: () => { /* broadcast batching is not under test here */ },
-        onEnemyKilled: () => { /* drops/XP are not under test here */ },
-        onPetOutOfView: () => { /* pets are not under test here */ },
+        ...benchStubHooks(),
         // Mirrors the real near-a-player test closely enough to exercise the
         // viewport pass: mobs within a viewport-ish radius of a player stay.
         isNearAnyPlayer: (x, y) => {
@@ -287,30 +273,12 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
             }
             return false;
         },
-
-        // --- projectiles ---------------------------------------------------
-        // Wire ids and the player-side hooks are broadcast/legacy concerns; the
-        // harness only needs them to be callable, since what is under test here
-        // is that the systems compose without producing a bad coordinate.
+        // The projectile hooks this harness actually reads: a real id counter,
+        // the world's own player lookup, and a hit tally.
         allocateProjectileNetId: () => ++netIdCounter,
         resolvePlayerEntity: (socketId) => runtime.world.lookup(socketId),
         playerRadiusOf: () => PLAYER_HIT_RADIUS,
-        damageMultiplierOf: () => 1,
         onPlayerHit: () => { playerHits++; return true; },
-        emitEnemyDamaged: () => { /* broadcast is not under test here */ },
-        onProjectileKill: () => { /* drops/XP are not under test here */ },
-        onGroundEffectExpired: () => { /* wire is not under test here */ },
-        onEnemyPoisonDamaged: () => { /* wire is not under test here */ },
-        onPoisonKill: () => { /* drops/XP are not under test here */ },
-        tickPlayerPoison: () => { /* player poison is not under test here */ },
-        onPlayerPoisonLapsed: () => { /* ditto */ },
-        isDespawnProtectedAt: () => false,
-        isItemOutOfBounds: () => false,
-        onSpawnEscort: () => { /* spawners are not under test here */ },
-        onSpawnWaves: () => { /* ditto */ },
-        onWorldItemRemoved: () => { /* items are not under test here */ },
-        onMobDespawn: () => { /* despawn is not under test here */ },
-        onReapEnemy: () => { /* drops/XP are not under test here */ },
     });
 
     const now0 = 1_000_000;

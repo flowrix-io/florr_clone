@@ -1,5 +1,7 @@
 import { getBaseDeviceScale } from './zoom-compensation';
 import { drawText } from './graphics/text';
+import { drawRoundedRect } from './graphics/shapes';
+import { maxScrollFor, scrollFromThumbDrag } from './graphics/scroll-panel';
 
 export interface Notification {
     id: string;
@@ -231,9 +233,8 @@ export class NotificationsManager {
                 const rect = this.canvas!.getBoundingClientRect();
                 const y = e.clientY - rect.top;
                 const deltaY = y - this.dragStartY;
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
-                const scrollRatio = deltaY / (this.PANEL_HEIGHT - 45);
-                this.scrollY = Math.max(0, Math.min(maxScroll, this.dragStartScroll + scrollRatio * maxScroll));
+                const maxScroll = maxScrollFor(this.contentHeight, this.PANEL_HEIGHT);
+                this.scrollY = scrollFromThumbDrag(this.dragStartScroll, deltaY, this.PANEL_HEIGHT, maxScroll);
             }
         });
 
@@ -253,7 +254,7 @@ export class NotificationsManager {
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
-                const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+                const maxScroll = maxScrollFor(this.contentHeight, this.PANEL_HEIGHT);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
                 
                 // Load more when scrolled near bottom
@@ -342,7 +343,7 @@ export class NotificationsManager {
             }
         }
         
-        const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - 40));
+        const maxScroll = maxScrollFor(this.contentHeight, this.PANEL_HEIGHT);
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
 
         // Draw panel background
@@ -530,17 +531,7 @@ export class NotificationsManager {
     }
 
     private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        drawRoundedRect(ctx, x, y, width, height, radius);
     }
 
     private getTimeAgo(timestamp: number): string {

@@ -7,6 +7,7 @@ const skin_format_1 = require("./skin_format");
 const player_skins_1 = require("./graphics/player-skins");
 const app_refs_1 = require("./app_refs");
 const text_1 = require("./graphics/text");
+const shapes_1 = require("./graphics/shapes");
 // Theme matches the purple "skins" icon-button on the title strip
 // (#c45cff bg / #9a3fd0 border in title_screen/canvas_buttons.ts).
 const ACCENT = '#c45cff';
@@ -495,10 +496,10 @@ class SkinStudio {
         ctx.lineJoin = 'round';
         try {
             // Panel
-            roundRect(ctx, this.PX, this.PY, this.PW, this.PH, 8);
+            (0, shapes_1.drawRoundedRect)(ctx, this.PX, this.PY, this.PW, this.PH, 8);
             ctx.fillStyle = BORDER;
             ctx.fill();
-            roundRect(ctx, this.PX + 3, this.PY + 3, this.PW - 6, this.PH - 6, 6);
+            (0, shapes_1.drawRoundedRect)(ctx, this.PX + 3, this.PY + 3, this.PW - 6, this.PH - 6, 6);
             ctx.fillStyle = PANEL_BG;
             ctx.fill();
             this.drawHeader(ctx);
@@ -520,7 +521,7 @@ class SkinStudio {
     }
     drawHeader(ctx) {
         const x = this.PX, y = this.PY, w = this.PW;
-        roundRect(ctx, x + 3, y + 3, w - 6, this.HEADER, 6);
+        (0, shapes_1.drawRoundedRect)(ctx, x + 3, y + 3, w - 6, this.HEADER, 6);
         ctx.fillStyle = PANEL_BG2;
         ctx.fill();
         ctx.textAlign = 'left';
@@ -574,11 +575,11 @@ class SkinStudio {
     drawPreview(ctx) {
         const pr = this.previewRect();
         ctx.save();
-        roundRect(ctx, pr.x, pr.y, pr.w, pr.h, 6);
+        (0, shapes_1.drawRoundedRect)(ctx, pr.x, pr.y, pr.w, pr.h, 6);
         ctx.fillStyle = '#3b7d4f';
         ctx.fill();
         ctx.save();
-        roundRect(ctx, pr.x, pr.y, pr.w, pr.h, 6);
+        (0, shapes_1.drawRoundedRect)(ctx, pr.x, pr.y, pr.w, pr.h, 6);
         ctx.clip();
         ctx.translate(pr.x + pr.w / 2, pr.y + pr.h / 2);
         const s = this.previewScale();
@@ -636,10 +637,10 @@ class SkinStudio {
     }
     drawShapeList(ctx, x, y, w, h) {
         ctx.save();
-        roundRect(ctx, x, y, w, h, 6);
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, w, h, 6);
         ctx.fillStyle = PANEL_BG2;
         ctx.fill();
-        roundRect(ctx, x, y, w, h, 6);
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, w, h, 6);
         ctx.clip();
         const rowH = 26;
         const maxScroll = Math.max(0, this.shapes.length * rowH - h);
@@ -648,7 +649,7 @@ class SkinStudio {
         this.shapes.forEach((s, i) => {
             if (ry + rowH > y && ry < y + h) {
                 const sel = i === this.selected;
-                roundRect(ctx, x + 4, ry, w - 8, rowH - 4, 4);
+                (0, shapes_1.drawRoundedRect)(ctx, x + 4, ry, w - 8, rowH - 4, 4);
                 ctx.fillStyle = sel ? ACCENT_SEL : LIST_ROW;
                 ctx.fill();
                 if (sel) {
@@ -760,7 +761,7 @@ class SkinStudio {
         const by = y + 12, bh = 18, bw = 20;
         const valW = w - bw * 2 - 6;
         this.button(ctx, x, by, bw, bh, '-', false, { k: 'step', field, delta: -step }, ROW_BG, BORDER, TEXT, '12px');
-        roundRect(ctx, x + bw + 3, by, valW, bh, 3);
+        (0, shapes_1.drawRoundedRect)(ctx, x + bw + 3, by, valW, bh, 3);
         ctx.fillStyle = PANEL_BG2;
         ctx.fill();
         ctx.textAlign = 'center';
@@ -798,7 +799,7 @@ class SkinStudio {
             if (cyp + cardH < gridTop || cyp > gridBottom)
                 return;
             const equipped = skin.id === this.equippedId;
-            roundRect(ctx, cx, cyp, cardW, cardH, 6);
+            (0, shapes_1.drawRoundedRect)(ctx, cx, cyp, cardW, cardH, 6);
             ctx.fillStyle = PANEL_BG2;
             ctx.fill();
             if (equipped) {
@@ -809,10 +810,10 @@ class SkinStudio {
             // preview
             const ps = cardW - 20, pcx = cx + cardW / 2, pcy = cyp + 10 + ps / 2;
             ctx.save();
-            roundRect(ctx, cx + 10, cyp + 10, ps, ps, 4);
+            (0, shapes_1.drawRoundedRect)(ctx, cx + 10, cyp + 10, ps, ps, 4);
             ctx.fillStyle = '#3b7d4f';
             ctx.fill();
-            roundRect(ctx, cx + 10, cyp + 10, ps, ps, 4);
+            (0, shapes_1.drawRoundedRect)(ctx, cx + 10, cyp + 10, ps, ps, 4);
             ctx.clip();
             ctx.translate(pcx, pcy);
             (0, player_skins_1.renderCustomSkinShapes)(ctx, skin.shapes, (ps / 2) * (25 / 36));
@@ -844,7 +845,7 @@ class SkinStudio {
     drawTextEditor(ctx) {
         // Backing panel (the live <textarea> sits exactly on top of this).
         const r = this.textAreaRect();
-        roundRect(ctx, r.x, r.y, r.w, r.h, 6);
+        (0, shapes_1.drawRoundedRect)(ctx, r.x, r.y, r.w, r.h, 6);
         ctx.fillStyle = PANEL_BG2;
         ctx.fill();
         // Help / format reference under the preview on the left.
@@ -1023,14 +1024,14 @@ class SkinStudio {
         const hovered = this.hoverKey === actionKey(action);
         const realBg = active ? ACCENT : bg;
         const realFg = active ? ACCENT_FG : fg;
-        roundRect(ctx, x, y, w, h, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, w, h, 4);
         ctx.fillStyle = border;
         ctx.fill();
-        roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 3);
+        (0, shapes_1.drawRoundedRect)(ctx, x + 2, y + 2, w - 4, h - 4, 3);
         ctx.fillStyle = realBg;
         ctx.fill();
         if (hovered) {
-            roundRect(ctx, x, y, w, h, 4);
+            (0, shapes_1.drawRoundedRect)(ctx, x, y, w, h, 4);
             ctx.fillStyle = 'rgba(255,255,255,0.16)';
             ctx.fill();
         }
@@ -1044,10 +1045,10 @@ class SkinStudio {
     iconBtn(ctx, x, y, kind, action) {
         const s = 20;
         const hovered = this.hoverKey === actionKey(action);
-        roundRect(ctx, x, y, s, s, 3);
+        (0, shapes_1.drawRoundedRect)(ctx, x, y, s, s, 3);
         ctx.fillStyle = BORDER;
         ctx.fill();
-        roundRect(ctx, x + 1, y + 1, s - 2, s - 2, 2);
+        (0, shapes_1.drawRoundedRect)(ctx, x + 1, y + 1, s - 2, s - 2, 2);
         ctx.fillStyle = hovered ? ACCENT : ROW_BG;
         ctx.fill();
         ctx.strokeStyle = TEXT;
@@ -1136,18 +1137,4 @@ function clipToWidth(ctx, s, w) {
     while (out.length > 1 && ctx.measureText(out + '…').width > w)
         out = out.slice(0, -1);
     return out + '…';
-}
-function roundRect(ctx, x, y, w, h, r) {
-    const rad = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
 }

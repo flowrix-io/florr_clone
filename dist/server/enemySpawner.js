@@ -47,6 +47,26 @@ const EQUAL_RARITY_TIER_WEIGHTS = [
     { tier: 'super', weight: 0.001 }
 ];
 // Helper function to select tier from equal rarity weights
+/** Base chance for a spawning mob to drift one tier up, before luck. */
+const TIER_UPGRADE_CHANCE = 0.02;
+/**
+ * Rolls a spawning mob's tier one step up or down, or leaves it alone.
+ *
+ * Four identical copies of this roll lived across createEnemy and
+ * createEnemyInZone, each with the 0.02 base chance written out by hand.
+ * An upgrade is tried first; only if it misses is a downgrade rolled, so the
+ * two can never both apply.
+ */
+function rollTierDrift(tier, luckUpgradeBonus) {
+    if (Math.random() < TIER_UPGRADE_CHANCE + luckUpgradeBonus) {
+        return (0, rarity_1.upgradeRarity)(tier);
+    }
+    const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
+    if (downgradeChance > 0 && Math.random() < downgradeChance) {
+        return (0, rarity_1.downgradeRarity)(tier);
+    }
+    return tier;
+}
 function selectEqualRarityTier() {
     return (0, weighted_1.pickWeighted)(EQUAL_RARITY_TIER_WEIGHTS).tier;
 }
@@ -566,16 +586,7 @@ function createEnemy(helpers) {
         // biome asked for — drifting off it would produce a rarity the
         // one-per-section check never cleared, and dummies are permanent.
         if (mobType !== 'target_dummy') {
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = (0, rarity_1.upgradeRarity)(tier);
-            }
-            else {
-                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = (0, rarity_1.downgradeRarity)(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
     }
     else {
@@ -610,16 +621,7 @@ function createEnemy(helpers) {
         }
         else {
             // Tier upgrade or downgrade
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = (0, rarity_1.upgradeRarity)(tier);
-            }
-            else {
-                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = (0, rarity_1.downgradeRarity)(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
         // Select mob type - filter to mobs belonging to this section
         const allMobTypes = (0, mobs_1.getAllMobTypes)();
@@ -806,16 +808,7 @@ function createEnemyInZone(helpers, zone) {
         }
         // Target dummies keep the biome's exact rarity (see createEnemy).
         if (mobType !== 'target_dummy') {
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = (0, rarity_1.upgradeRarity)(tier);
-            }
-            else {
-                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = (0, rarity_1.downgradeRarity)(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
     }
     else {
@@ -826,16 +819,7 @@ function createEnemyInZone(helpers, zone) {
             tier = Math.random() < 0.01 ? 'super' : 'ultra';
         }
         else {
-            const upgradeRoll = Math.random();
-            if (upgradeRoll < 0.02 + luckUpgradeBonus) {
-                tier = (0, rarity_1.upgradeRarity)(tier);
-            }
-            else {
-                const downgradeChance = (0, rarity_1.getMobDowngradeChance)(tier);
-                if (downgradeChance > 0 && Math.random() < downgradeChance) {
-                    tier = (0, rarity_1.downgradeRarity)(tier);
-                }
-            }
+            tier = rollTierDrift(tier, luckUpgradeBonus);
         }
         const allMobTypes = (0, mobs_1.getAllMobTypes)();
         if (allMobTypes.length === 0)

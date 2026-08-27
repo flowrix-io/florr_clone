@@ -408,6 +408,23 @@ class Graphics {
     clear() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
+    /**
+     * The world-space rectangle currently on screen, accounting for zoom.
+     *
+     * drawGameObjects, drawMap and drawBossBars each derived this identically;
+     * they now share this one so a change to the camera model reaches all of
+     * them at once.
+     */
+    worldViewport() {
+        const scaledWidth = this.viewW / this.zoomLevel;
+        const scaledHeight = this.viewH / this.zoomLevel;
+        return {
+            left: this.cameraX,
+            top: this.cameraY,
+            right: this.cameraX + scaledWidth,
+            bottom: this.cameraY + scaledHeight,
+        };
+    }
     setCamera(x, y, zoom = 1.0) {
         this.cameraX = x;
         this.cameraY = y;

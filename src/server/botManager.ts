@@ -2003,6 +2003,36 @@ function pickBestEnemyTarget(
     return best ? { enemy: best, dist: bestDist } : null;
 }
 
+/**
+ * Picks the boss a raiding bot should converge on: the most recently spawned
+ * mob in `pool`, breaking ties towards whichever is closest to a human player.
+ *
+ * Both boss-raid target pickers ran this identical scan; the tie-break matters,
+ * so it is one function rather than two copies that could drift.
+ * `pool` must be non-empty.
+ */
+function newestClosestBoss(pool: Enemy[]): Enemy {
+    let best = pool[0];
+    let bestSpawn = mobSpawnTime(best.entity) ?? 0;
+    let bestDistSq = distSqToNearestHumanPlayer(mobX(best.entity), mobY(best.entity));
+    for (let i = 1; i < pool.length; i++) {
+        const enemy = pool[i];
+        const spawn = mobSpawnTime(enemy.entity) ?? 0;
+        if (spawn > bestSpawn) {
+            best = enemy;
+            bestSpawn = spawn;
+            bestDistSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
+        } else if (spawn === bestSpawn) {
+            const distSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
+            if (distSq < bestDistSq) {
+                best = enemy;
+                bestDistSq = distSq;
+            }
+        }
+    }
+    return best;
+}
+
 /** Reused payload buffer for the pickup scan; see collectWorldItems. */
 const _botItemScratch: WorldItem[] = [];
 
@@ -2081,24 +2111,7 @@ function pickRaidTargetGlobal(): { x: number; y: number; tier: string } | null {
     }
     if (pool.length === 0) return null;
 
-    let best = pool[0];
-    let bestSpawn = mobSpawnTime(best.entity) ?? 0;
-    let bestDistSq = distSqToNearestHumanPlayer(mobX(best.entity), mobY(best.entity));
-    for (let i = 1; i < pool.length; i++) {
-        const enemy = pool[i];
-        const spawn = mobSpawnTime(enemy.entity) ?? 0;
-        if (spawn > bestSpawn) {
-            best = enemy;
-            bestSpawn = spawn;
-            bestDistSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
-        } else if (spawn === bestSpawn) {
-            const distSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
-            if (distSq < bestDistSq) {
-                best = enemy;
-                bestDistSq = distSq;
-            }
-        }
-    }
+    const best = newestClosestBoss(pool);
     return { x: mobX(best.entity), y: mobY(best.entity), tier: best.tier };
 }
 
@@ -2255,24 +2268,7 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     }
     if (pool.length === 0) return null;
 
-    let best = pool[0];
-    let bestSpawn = mobSpawnTime(best.entity) ?? 0;
-    let bestDistSq = distSqToNearestHumanPlayer(mobX(best.entity), mobY(best.entity));
-    for (let i = 1; i < pool.length; i++) {
-        const enemy = pool[i];
-        const spawn = mobSpawnTime(enemy.entity) ?? 0;
-        if (spawn > bestSpawn) {
-            best = enemy;
-            bestSpawn = spawn;
-            bestDistSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
-        } else if (spawn === bestSpawn) {
-            const distSq = distSqToNearestHumanPlayer(mobX(enemy.entity), mobY(enemy.entity));
-            if (distSq < bestDistSq) {
-                best = enemy;
-                bestDistSq = distSq;
-            }
-        }
-    }
+    const best = newestClosestBoss(pool);
     const dx = mobX(best.entity) - bot.x;
     const dy = mobY(best.entity) - bot.y;
     const dist = Math.sqrt(dx * dx + dy * dy);

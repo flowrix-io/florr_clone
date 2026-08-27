@@ -11,6 +11,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TitleCanvasButtons = void 0;
 const game_icons_net_icons_1 = require("../game-icons-net-icons");
+const shapes_1 = require("../graphics/shapes");
 const SLIDE_DURATION_MS = 50;
 const SLIDE_STAGGER_MS = 40;
 function easeOutCubic(t) {
@@ -72,20 +73,6 @@ function loadIconImage(iconName) {
         return null;
     }
     return img;
-}
-function drawRoundedRect(ctx, x, y, w, h, r) {
-    const rad = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
 }
 class TitleCanvasButtons {
     constructor(handlers) {
@@ -215,15 +202,15 @@ class TitleCanvasButtons {
             // A stroke would put the line CENTER on the path, blowing the
             // outer corner radius up to 3 + half-stroke.
             ctx.fillStyle = b.border;
-            drawRoundedRect(ctx, b.x, b.y, b.w, b.h, CORNER_RADIUS);
+            (0, shapes_1.drawRoundedRect)(ctx, b.x, b.y, b.w, b.h, CORNER_RADIUS);
             ctx.fill();
             ctx.fillStyle = b.bg;
-            drawRoundedRect(ctx, b.x + BORDER_WIDTH, b.y + BORDER_WIDTH, b.w - 2 * BORDER_WIDTH, b.h - 2 * BORDER_WIDTH, 0);
+            (0, shapes_1.drawRoundedRect)(ctx, b.x + BORDER_WIDTH, b.y + BORDER_WIDTH, b.w - 2 * BORDER_WIDTH, b.h - 2 * BORDER_WIDTH, 0);
             ctx.fill();
             // Hover/press tint via globalAlpha overlay (matches CSS filter).
             if (hovered || pressed) {
                 ctx.fillStyle = pressed ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)';
-                drawRoundedRect(ctx, b.x, b.y, b.w, b.h, CORNER_RADIUS);
+                (0, shapes_1.drawRoundedRect)(ctx, b.x, b.y, b.w, b.h, CORNER_RADIUS);
                 ctx.fill();
             }
             // Icon centered. Skip if the SVG hasn't decoded yet — the next

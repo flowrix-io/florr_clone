@@ -31,6 +31,7 @@ const uWebSockets_js_1 = __importDefault(require("uWebSockets.js"));
 const entity_ids_1 = require("./entity_ids");
 const binary_codec_1 = require("./binary_codec");
 const wire_events_1 = require("./wire_events");
+const wire_event_registry_1 = require("./wire_event_registry");
 const eventByteStats = new Map();
 function recordBytes(event, bytes, dir) {
     let s = eventByteStats.get(event);
@@ -116,11 +117,9 @@ class UwsTransport {
         this.ws = null;
     }
 }
-class WSSocket {
+class WSSocket extends wire_event_registry_1.WireEventRegistry {
     constructor(transport, id, server) {
-        this.handlers = new Map();
-        this.onceHandlers = new Map();
-        this.anyHandlers = new Set();
+        super();
         this._connected = true;
         /** Guards _handleClose against firing 'disconnect' twice. */
         this._closeFired = false;
@@ -193,22 +192,7 @@ class WSSocket {
             if (typeof msg[0] === 'string')
                 recordBytes(msg[0], bytes.byteLength, 'in');
             const [event, ...args] = msg;
-            for (const handler of this.anyHandlers) {
-                handler(event, ...args);
-            }
-            const handlers = this.handlers.get(event);
-            if (handlers) {
-                for (const handler of handlers) {
-                    handler(...args);
-                }
-            }
-            const onceHandlers = this.onceHandlers.get(event);
-            if (onceHandlers) {
-                for (const handler of onceHandlers) {
-                    handler(...args);
-                }
-                this.onceHandlers.delete(event);
-            }
+            this.fireAnyAndEvent(event, ...args);
         }
         catch {
             // Ignore malformed messages
@@ -231,24 +215,6 @@ class WSSocket {
     }
     get connected() {
         return this._connected && this.transport !== null;
-    }
-    on(event, handler) {
-        if (!this.handlers.has(event)) {
-            this.handlers.set(event, new Set());
-        }
-        this.handlers.get(event).add(handler);
-        return this;
-    }
-    once(event, handler) {
-        if (!this.onceHandlers.has(event)) {
-            this.onceHandlers.set(event, new Set());
-        }
-        this.onceHandlers.get(event).add(handler);
-        return this;
-    }
-    onAny(handler) {
-        this.anyHandlers.add(handler);
-        return this;
     }
     emit(event, ...args) {
         return this.emitWithStatus(event, ...args) !== -1;
@@ -284,21 +250,6 @@ class WSSocket {
         if (event)
             recordBytes(event, payload.byteLength, 'out');
         return true;
-    }
-    removeAllListeners(event) {
-        if (event) {
-            this.handlers.delete(event);
-            this.onceHandlers.delete(event);
-        }
-        else {
-            this.handlers.clear();
-            this.onceHandlers.clear();
-            this.anyHandlers.clear();
-        }
-        return this;
-    }
-    listeners(event) {
-        return Array.from(this.handlers.get(event) || []);
     }
     /**
      * @param graceful Close with a WebSocket close frame (`end`) instead of

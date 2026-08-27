@@ -4,26 +4,14 @@
  * No state, no `this` — safe to call from anywhere.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.drawRoundedRect = drawRoundedRect;
+exports.drawRoundedRect = void 0;
 exports.hsvAdjust = hsvAdjust;
 exports.getButtonFillColor = getButtonFillColor;
 exports.getButtonStrokeColor = getButtonStrokeColor;
 exports.drawGardnButton = drawGardnButton;
 const text_1 = require("../graphics/text");
-/** Draws a rounded rectangle path (caller fills/strokes). */
-function drawRoundedRect(ctx, x, y, width, height, radius) {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-}
+const shapes_1 = require("../graphics/shapes");
+Object.defineProperty(exports, "drawRoundedRect", { enumerable: true, get: function () { return shapes_1.drawRoundedRect; } });
 /**
  * Adjusts a color's brightness via HSV, like gardn's Renderer::HSV.
  * brightness > 1 brightens, < 1 darkens.
@@ -131,7 +119,7 @@ function drawGardnButton(ctx, x, y, width, height, baseColor, isHovered, isPress
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    drawRoundedRect(ctx, x, y, width, height, radius);
+    (0, shapes_1.drawRoundedRect)(ctx, x, y, width, height, radius);
     ctx.fill();
     ctx.stroke();
     if (text) {

@@ -19,6 +19,9 @@ const petals_1 = require("../petals");
 const preloader_1 = require("../preloader");
 const text_1 = require("./text");
 const tooltip_1 = require("./tooltip");
+const panel_common_1 = require("./panel-common");
+const shapes_1 = require("./shapes");
+const shapes_2 = require("./shapes");
 // Rarity progression for drop-rarity calculations. Mirrors the order used
 // server-side (server/itemManager.ts) and in the legacy DOM tooltip.
 const DROP_RARITY_ORDER = [
@@ -132,17 +135,6 @@ const TITLE_MARGIN_BOTTOM = 20;
 const CELL_HEIGHT = 60;
 const ROW_GAP = 5;
 const SCROLLBAR_WIDTH = 12;
-function darken(hex, percent = 30) {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    const f = 1 - percent / 100;
-    const nr = Math.round(r * f);
-    const ng = Math.round(g * f);
-    const nb = Math.round(b * f);
-    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
-}
 function abbreviateNumber(n) {
     if (!isFinite(n))
         return '∞';
@@ -153,20 +145,6 @@ function abbreviateNumber(n) {
     if (n < 1e9)
         return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
     return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
-}
-function roundedRect(ctx, x, y, w, h, r) {
-    const rad = Math.min(r, w / 2, h / 2);
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.lineTo(x + w - rad, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rad);
-    ctx.lineTo(x + w, y + h - rad);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
-    ctx.lineTo(x + rad, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rad);
-    ctx.lineTo(x, y + rad);
-    ctx.quadraticCurveTo(x, y, x + rad, y);
-    ctx.closePath();
 }
 class CanvasMobGalleryPanel {
     constructor() {
@@ -308,15 +286,7 @@ class CanvasMobGalleryPanel {
     }
     /** Resize the canvas backing buffer to the parent's CSS box. */
     syncCanvasSize() {
-        const rect = this.canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        const w = Math.max(1, Math.floor(rect.width * dpr));
-        const h = Math.max(1, Math.floor(rect.height * dpr));
-        if (this.canvas.width !== w || this.canvas.height !== h) {
-            this.canvas.width = w;
-            this.canvas.height = h;
-        }
-        return { dpr, cssW: rect.width, cssH: rect.height };
+        return (0, panel_common_1.syncCanvasSize)(this.canvas);
     }
     /** Y at which the scrollable content area starts (just below the title). */
     contentTop() {
@@ -385,10 +355,10 @@ class CanvasMobGalleryPanel {
         // path centers the line on the path, so a 4px stroke would put the
         // outer corner at 5).
         ctx.fillStyle = PANEL_BORDER;
-        roundedRect(ctx, 0, 0, cssW, cssH, PANEL_RADIUS);
+        (0, shapes_1.drawRoundedRect)(ctx, 0, 0, cssW, cssH, PANEL_RADIUS);
         ctx.fill();
         ctx.fillStyle = PANEL_BG;
-        roundedRect(ctx, PANEL_BORDER_W, PANEL_BORDER_W, cssW - PANEL_BORDER_W * 2, cssH - PANEL_BORDER_W * 2, 0);
+        (0, shapes_1.drawRoundedRect)(ctx, PANEL_BORDER_W, PANEL_BORDER_W, cssW - PANEL_BORDER_W * 2, cssH - PANEL_BORDER_W * 2, 0);
         ctx.fill();
         // Title — white, 24px Ubuntu, with a black outline for readability
         // against the yellow panel.
@@ -402,7 +372,7 @@ class CanvasMobGalleryPanel {
         const cy = PANEL_PAD + (TITLE_HEIGHT - closeSize) / 2;
         this.closeBtnRect = { x: cx, y: cy, w: closeSize, h: closeSize };
         ctx.fillStyle = this.closeBtnHovered ? '#ff6677' : '#cc4455';
-        roundedRect(ctx, cx, cy, closeSize, closeSize, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, cx, cy, closeSize, closeSize, 4);
         ctx.fill();
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2.5;
@@ -436,18 +406,18 @@ class CanvasMobGalleryPanel {
             if (c.killed && c.valid && c.stats) {
                 const rarityColor = petals_1.ITEM_RARITY_COLORS[c.rarity] || '#fff';
                 ctx.fillStyle = rarityColor;
-                ctx.strokeStyle = darken(rarityColor);
+                ctx.strokeStyle = (0, shapes_2.darken)(rarityColor);
                 ctx.lineWidth = 3;
             }
             else {
                 // Locked + invalid: a softly-darkened panel-bg tint with a
                 // matching darker border. Reads as "empty" against the panel
                 // without going as dark as the panel's border accent did.
-                ctx.fillStyle = darken(PANEL_BG, 15);
-                ctx.strokeStyle = darken(PANEL_BG, 30);
+                ctx.fillStyle = (0, shapes_2.darken)(PANEL_BG, 15);
+                ctx.strokeStyle = (0, shapes_2.darken)(PANEL_BG, 30);
                 ctx.lineWidth = 2;
             }
-            roundedRect(ctx, c.x, c.y, c.w, c.h, 5);
+            (0, shapes_1.drawRoundedRect)(ctx, c.x, c.y, c.w, c.h, 5);
             ctx.fill();
             ctx.stroke();
             // Icon / lock / blank.
@@ -471,7 +441,7 @@ class CanvasMobGalleryPanel {
                 const bx = c.x + c.w - tw - 8;
                 const by = c.y + 2;
                 ctx.fillStyle = 'rgba(0,0,0,0.8)';
-                roundedRect(ctx, bx, by, tw + 6, 14, 3);
+                (0, shapes_1.drawRoundedRect)(ctx, bx, by, tw + 6, 14, 3);
                 ctx.fill();
                 (0, text_1.drawText)(ctx, text, bx + 3, by + 2, { size: 10, weight: 'bold', fill: '#fff', strokeWidth: 0 });
             }
@@ -485,7 +455,7 @@ class CanvasMobGalleryPanel {
             if (isHover) {
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 2;
-                roundedRect(ctx, c.x, c.y, c.w, c.h, 5);
+                (0, shapes_1.drawRoundedRect)(ctx, c.x, c.y, c.w, c.h, 5);
                 ctx.stroke();
             }
         }
@@ -497,12 +467,12 @@ class CanvasMobGalleryPanel {
             const trackY = contentY;
             const trackH = contentH;
             ctx.fillStyle = 'rgba(0,0,0,0.15)';
-            roundedRect(ctx, trackX, trackY, SCROLLBAR_WIDTH, trackH, 4);
+            (0, shapes_1.drawRoundedRect)(ctx, trackX, trackY, SCROLLBAR_WIDTH, trackH, 4);
             ctx.fill();
             const thumbH = Math.max(20, trackH * (trackH / this.contentHeight));
             const thumbY = trackY + (this.scrollY / maxScroll) * (trackH - thumbH);
             ctx.fillStyle = '#a89d36';
-            roundedRect(ctx, trackX, thumbY, SCROLLBAR_WIDTH, thumbH, 4);
+            (0, shapes_1.drawRoundedRect)(ctx, trackX, thumbY, SCROLLBAR_WIDTH, thumbH, 4);
             ctx.fill();
         }
         // Tooltip overlay.
@@ -626,11 +596,11 @@ class CanvasMobGalleryPanel {
         const cardX = cellX + (cellW - cardSize) / 2;
         const cardY = cellY;
         ctx.fillStyle = 'rgba(255,255,255,0.05)';
-        roundedRect(ctx, cardX, cardY, cardSize, cardSize, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, cardX, cardY, cardSize, cardSize, 4);
         ctx.fill();
         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
         ctx.lineWidth = 1;
-        roundedRect(ctx, cardX + 0.5, cardY + 0.5, cardSize - 1, cardSize - 1, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, cardX + 0.5, cardY + 0.5, cardSize - 1, cardSize - 1, 4);
         ctx.stroke();
     }
     /** Paint one drop card: rarity-colored rounded square w/ darker border,
@@ -641,11 +611,11 @@ class CanvasMobGalleryPanel {
         const cardY = cellY;
         // Card background + darker border.
         ctx.fillStyle = rarityColor;
-        roundedRect(ctx, cardX, cardY, cardSize, cardSize, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, cardX, cardY, cardSize, cardSize, 4);
         ctx.fill();
-        ctx.strokeStyle = darken(rarityColor);
+        ctx.strokeStyle = (0, shapes_2.darken)(rarityColor);
         ctx.lineWidth = 2;
-        roundedRect(ctx, cardX + 1, cardY + 1, cardSize - 2, cardSize - 2, 4);
+        (0, shapes_1.drawRoundedRect)(ctx, cardX + 1, cardY + 1, cardSize - 2, cardSize - 2, 4);
         ctx.stroke();
         // Item icon — petal canvas for petals, image sprite for everything
         // else. Same lookup pattern the loadout bar uses.

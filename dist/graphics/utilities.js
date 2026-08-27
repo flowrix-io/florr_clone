@@ -249,15 +249,7 @@ core_1.Graphics.prototype.drawUI = function (world, socket) {
     }
 };
 core_1.Graphics.prototype.drawBossBars = function (world) {
-    // Calculate viewport accounting for zoom level
-    const scaledWidth = this.viewW / this.zoomLevel;
-    const scaledHeight = this.viewH / this.zoomLevel;
-    const viewport = {
-        left: this.cameraX,
-        top: this.cameraY,
-        right: this.cameraX + scaledWidth,
-        bottom: this.cameraY + scaledHeight
-    };
+    const viewport = this.worldViewport();
     // Find all super, unique, and apex mobs in view (ultras render with normal mob health bars).
     // The boss candidate list is refreshed at 4Hz instead of scanning the whole
     // enemies Map every frame — bosses (de)spawn rarely; the viewport test below still

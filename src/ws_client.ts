@@ -16,6 +16,7 @@ import { WIRE_EVENTS, WIRE_EVENT_IDS, wireEventsSignature } from './wire_events'
 import { wireFieldsSignature } from './wire_fields';
 import { getInventoryCodecSignature } from './inventoryCodec';
 import { connectTransport, ClientTransport, TransportKind } from './net/transport';
+import { WireEventRegistry } from './wire_event_registry';
 
 /**
  * Guards against a client whose wire format no longer matches the server's.
@@ -74,14 +75,11 @@ function verifyProtocol(serverSig: string): boolean {
 // game.ts reads these via getEventStats() to render a top-consumers overlay.
 export interface EventByteStats { in: number; out: number; }
 
-export class WSClientSocket {
+export class WSClientSocket extends WireEventRegistry {
     id: string | null = null;
     connected: boolean = false;
     private transport: ClientTransport | null = null;
     private url: string;
-    private handlers: Map<string, Set<(...args: any[]) => void>> = new Map();
-    private onceHandlers: Map<string, Set<(...args: any[]) => void>> = new Map();
-    private anyHandlers: Set<(event: string, ...args: any[]) => void> = new Set();
     private reconnectTimer: any = null;
     private shouldReconnect: boolean = true;
     private reconnectDelay: number = 1000;
@@ -132,6 +130,7 @@ export class WSClientSocket {
     }
 
     constructor(url: string, _options?: any) {
+        super();
         this.url = url;
         this.connect();
     }
@@ -231,65 +230,10 @@ export class WSClientSocket {
                 return;
             }
 
-            // Fire onAny handlers
-            for (const handler of this.anyHandlers) {
-                handler(eventName, ...args);
-            }
-
-            // Fire event-specific handlers
-            this.fireEvent(eventName, ...args);
+            this.fireAnyAndEvent(eventName, ...args);
         } catch (e) {
             // Ignore malformed messages
         }
-    }
-
-    private fireEvent(event: string, ...args: any[]): void {
-        const handlers = this.handlers.get(event);
-        if (handlers) {
-            for (const handler of handlers) {
-                handler(...args);
-            }
-        }
-
-        const onceHandlers = this.onceHandlers.get(event);
-        if (onceHandlers) {
-            for (const handler of onceHandlers) {
-                handler(...args);
-            }
-            this.onceHandlers.delete(event);
-        }
-    }
-
-    on(event: string, handler: (...args: any[]) => void): this {
-        if (!this.handlers.has(event)) {
-            this.handlers.set(event, new Set());
-        }
-        this.handlers.get(event)!.add(handler);
-        return this;
-    }
-
-    off(event: string, handler?: (...args: any[]) => void): this {
-        if (handler) {
-            this.handlers.get(event)?.delete(handler);
-            this.onceHandlers.get(event)?.delete(handler);
-        } else {
-            this.handlers.delete(event);
-            this.onceHandlers.delete(event);
-        }
-        return this;
-    }
-
-    once(event: string, handler: (...args: any[]) => void): this {
-        if (!this.onceHandlers.has(event)) {
-            this.onceHandlers.set(event, new Set());
-        }
-        this.onceHandlers.get(event)!.add(handler);
-        return this;
-    }
-
-    onAny(handler: (event: string, ...args: any[]) => void): this {
-        this.anyHandlers.add(handler);
-        return this;
     }
 
     emit(event: string, ...args: any[]): this {
@@ -314,22 +258,6 @@ export class WSClientSocket {
             // Drop volatile messages while disconnected or still handshaking.
         }
         return this;
-    }
-
-    removeAllListeners(event?: string): this {
-        if (event) {
-            this.handlers.delete(event);
-            this.onceHandlers.delete(event);
-        } else {
-            this.handlers.clear();
-            this.onceHandlers.clear();
-            this.anyHandlers.clear();
-        }
-        return this;
-    }
-
-    listeners(event: string): Function[] {
-        return Array.from(this.handlers.get(event) || []);
     }
 
     disconnect(): void {
