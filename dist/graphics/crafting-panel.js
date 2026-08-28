@@ -4,11 +4,12 @@ exports.CanvasCraftingPanel = void 0;
 // Canvas-based crafting panel — replaces the prior DOM crafting implementation.
 // Renders the crafting UI (5 slots, craft button, success chance, inventory grid)
 // into a single <canvas>, following the same pattern as CanvasInventoryPanel.
+const panel_common_1 = require("./panel-common");
 const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
 const petal_icon_1 = require("./petal-icon");
 const text_1 = require("./text");
-const panel_common_1 = require("./panel-common");
+const panel_common_2 = require("./panel-common");
 /** Column order for the crafting inventory grid: common on left, no apex. */
 const CRAFT_RARITY_COLS = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'ultra', 'super', 'unique'];
 class CanvasCraftingPanel {
@@ -17,8 +18,7 @@ class CanvasCraftingPanel {
         this.contentHeight = 0;
         this.scrollY = 0;
         this.hoverIndex = -1;
-        this.rafHandle = 0;
-        this.running = false;
+        this.renderLoop = new panel_common_1.PanelRenderLoop(() => this.draw());
         this.imgCache = new Map();
         // ----- Crafting state (driven by InventoryManager) -----
         /** The items currently placed in the crafting slots. */
@@ -186,26 +186,14 @@ class CanvasCraftingPanel {
         parent.appendChild(this.canvas);
     }
     start() {
-        if (this.running)
-            return;
-        this.running = true;
-        const loop = () => {
-            if (!this.running)
-                return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(loop);
-        };
-        loop();
+        this.renderLoop.start();
     }
     stop() {
-        this.running = false;
-        if (this.rafHandle)
-            cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
         this.hoverIndex = -1;
     }
     isRunning() {
-        return this.running;
+        return this.renderLoop.isRunning;
     }
     destroy() {
         this.stop();
@@ -299,7 +287,7 @@ class CanvasCraftingPanel {
     }
     // ----- Canvas size sync -----
     syncCanvasSize() {
-        return (0, panel_common_1.syncCanvasSize)(this.canvas);
+        return (0, panel_common_2.syncCanvasSize)(this.canvas);
     }
     // ----- Layout -----
     layoutCraftingArea(cssW) {
@@ -675,7 +663,7 @@ class CanvasCraftingPanel {
                 ? (petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || emptyBg)
                 : emptyBg;
             const borderColor = slotHasItem
-                ? (0, panel_common_1.darken)(petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || emptyBorder, 25)
+                ? (0, panel_common_2.darken)(petals_1.ITEM_RARITY_COLORS[displayItem.rarity] || emptyBorder, 25)
                 : emptyBorder;
             ctx.save();
             ctx.fillStyle = borderColor;
@@ -711,7 +699,7 @@ class CanvasCraftingPanel {
             const cx = center.cx;
             const cy = center.cy;
             ctx.save();
-            ctx.fillStyle = (0, panel_common_1.darken)(rColor, 25);
+            ctx.fillStyle = (0, panel_common_2.darken)(rColor, 25);
             ctx.beginPath();
             ctx.roundRect(cx - resultSize / 2, cy - resultSize / 2, resultSize, resultSize, 3);
             ctx.fill();
@@ -804,12 +792,12 @@ class CanvasCraftingPanel {
             const nextRarity = CanvasCraftingPanel.RARITY_UPGRADES[currentRarity] || '';
             const nextColor = petals_1.ITEM_RARITY_COLORS[nextRarity] || '';
             btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
-            btnBorder = nextColor ? (0, panel_common_1.darken)(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
+            btnBorder = nextColor ? (0, panel_common_2.darken)(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
             label = 'Craft';
         }
         // Hover tint is derived from the button's own fill, so it tracks the
         // next-rarity colour instead of being pinned to a hardcoded swatch.
-        const btnHover = (0, panel_common_1.lighten)(btnBg, 15);
+        const btnHover = (0, panel_common_2.lighten)(btnBg, 15);
         ctx.save();
         ctx.fillStyle = btnBorder;
         ctx.beginPath();
@@ -843,7 +831,7 @@ class CanvasCraftingPanel {
         ctx.restore();
     }
     drawItemSlot(ctx, r, hovered, time) {
-        (0, panel_common_1.drawItemSlot)(ctx, r, hovered, time, this.game, this.imgCache, this.isItemDisabled);
+        (0, panel_common_2.drawItemSlot)(ctx, r, hovered, time, this.game, this.imgCache, this.isItemDisabled);
     }
     // ----- Input handlers -----
     toLocal(e) {
@@ -870,7 +858,7 @@ class CanvasCraftingPanel {
         return null;
     }
     findItemIndex(rarity, itemType) {
-        return (0, panel_common_1.findItemIndex)(this.itemRects, rarity, itemType);
+        return (0, panel_common_2.findItemIndex)(this.itemRects, rarity, itemType);
     }
 }
 exports.CanvasCraftingPanel = CanvasCraftingPanel;

@@ -1,6 +1,7 @@
 // Canvas-based crafting panel — replaces the prior DOM crafting implementation.
 // Renders the crafting UI (5 slots, craft button, success chance, inventory grid)
 // into a single <canvas>, following the same pattern as CanvasInventoryPanel.
+import { PanelRenderLoop } from './panel-common';
 import { inventoryToDict, ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ITEM_RARITY_COLORS } from '../petals';
 import { drawPetalGroup } from './petal-icon';
@@ -38,8 +39,7 @@ export class CanvasCraftingPanel {
     private scrollY: number = 0;
     private hoverIndex: number = -1;
 
-    private rafHandle: number = 0;
-    private running: boolean = false;
+    private readonly renderLoop = new PanelRenderLoop(() => this.draw());
     private imgCache: Map<string, HTMLImageElement> = new Map();
 
     // ----- Crafting state (driven by InventoryManager) -----
@@ -156,25 +156,16 @@ export class CanvasCraftingPanel {
     }
 
     public start() {
-        if (this.running) return;
-        this.running = true;
-        const loop = () => {
-            if (!this.running) return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(loop);
-        };
-        loop();
+        this.renderLoop.start();
     }
 
     public stop() {
-        this.running = false;
-        if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
         this.hoverIndex = -1;
     }
 
     public isRunning(): boolean {
-        return this.running;
+        return this.renderLoop.isRunning;
     }
 
     public destroy() {

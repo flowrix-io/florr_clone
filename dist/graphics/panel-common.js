@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.lighten = exports.darken = void 0;
+exports.PanelRenderLoop = exports.lighten = exports.darken = void 0;
 exports.syncCanvasSize = syncCanvasSize;
 exports.findItemIndex = findItemIndex;
 exports.drawItemIcon = drawItemIcon;
@@ -156,3 +156,44 @@ function drawItemSlot(ctx, r, hovered, time, game, imgCache, isItemDisabled) {
         ctx.restore();
     }
 }
+/**
+ * A panel's requestAnimationFrame draw loop.
+ *
+ * The four canvas panels each carried the same `running` flag, `rafHandle` and
+ * start/stop pair. They differed in one detail worth keeping: three drew their
+ * first frame synchronously so the panel is never blank for a frame after
+ * opening, while the mob gallery deferred it to the next rAF — hence `immediate`.
+ */
+class PanelRenderLoop {
+    constructor(draw) {
+        this.draw = draw;
+        this.running = false;
+        this.rafHandle = 0;
+    }
+    get isRunning() {
+        return this.running;
+    }
+    /** No-op if already running. */
+    start(immediate = true) {
+        if (this.running)
+            return;
+        this.running = true;
+        const tick = () => {
+            if (!this.running)
+                return;
+            this.draw();
+            this.rafHandle = requestAnimationFrame(tick);
+        };
+        if (immediate)
+            tick();
+        else
+            this.rafHandle = requestAnimationFrame(tick);
+    }
+    stop() {
+        this.running = false;
+        if (this.rafHandle)
+            cancelAnimationFrame(this.rafHandle);
+        this.rafHandle = 0;
+    }
+}
+exports.PanelRenderLoop = PanelRenderLoop;

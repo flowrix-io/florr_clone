@@ -11,8 +11,7 @@ const core_1 = require("../graphics/core");
 const daily_streak_widget_1 = require("../daily_streak_widget");
 const zoom_compensation_1 = require("../zoom-compensation");
 const preconnect_1 = require("../net/preconnect");
-const preloader_1 = require("../preloader");
-const sprite_data_url_1 = require("./sprite_data_url");
+const preloaded_assets_1 = require("./preloaded_assets");
 function cloneCanvas(src) {
     const c = document.createElement('canvas');
     c.width = src.width;
@@ -52,20 +51,13 @@ function buildTitleScreenGameInterface(inventoryManager) {
         showFloatingText: () => { },
         showFallingStars: () => { },
         canvas: offscreenCanvas,
+        // Cloned: this adapter's consumers draw into the canvas they get back,
+        // and getPetalCanvas hands out the shared cache entry.
         getPetalCanvas: (petalType, rarity, time = Date.now()) => {
-            const assets = (0, preloader_1.getPreloadedAssets)();
-            if (!assets || !assets.petalImages)
-                return null;
-            const entry = assets.petalImages[`${petalType}_${rarity}`];
-            if (!entry)
-                return null;
-            if (Array.isArray(entry)) {
-                const frameIndex = Math.floor((time / 42) % entry.length);
-                return cloneCanvas(entry[frameIndex]);
-            }
-            return cloneCanvas(entry);
+            const entry = (0, preloaded_assets_1.getPetalCanvas)(petalType, rarity, time);
+            return entry ? cloneCanvas(entry) : null;
         },
-        getItemSpriteDataUrl: sprite_data_url_1.getItemSpriteDataUrl,
+        getItemSpriteDataUrl: preloaded_assets_1.getItemSpriteDataUrl,
     };
 }
 /**

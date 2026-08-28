@@ -1,3 +1,7 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getItemSpriteDataUrl = getItemSpriteDataUrl;
+exports.getPetalCanvas = getPetalCanvas;
 /**
  * Lookups into the preloaded asset cache, for the title screen's canvas UI.
  *
@@ -5,28 +9,29 @@
  * the inventory manager's, the submanagers', the floating-petal background's)
  * and each one carried its own copy of these two lookups.
  */
-import { getPreloadedAssets } from '../preloader';
-
+const preloader_1 = require("../preloader");
 /**
  * Returns a PNG data URL for `itemType`'s preloaded sprite, or null when the
  * sprite is missing or the canvas is tainted.
  */
-export function getItemSpriteDataUrl(itemType: string): string | null {
-    const assets = getPreloadedAssets() as any;
-    if (!assets || !assets.itemSprites) return null;
+function getItemSpriteDataUrl(itemType) {
+    const assets = (0, preloader_1.getPreloadedAssets)();
+    if (!assets || !assets.itemSprites)
+        return null;
     const img = assets.itemSprites[itemType];
-    if (!img) return null;
+    if (!img)
+        return null;
     try {
         const c = document.createElement('canvas');
         c.width = img.naturalWidth || 32;
         c.height = img.naturalHeight || 32;
         c.getContext('2d')?.drawImage(img, 0, 0);
         return c.toDataURL('image/png');
-    } catch {
+    }
+    catch {
         return null;
     }
 }
-
 /**
  * The preloaded canvas for one petal at one rarity, or null if it was never
  * preloaded.
@@ -36,17 +41,15 @@ export function getItemSpriteDataUrl(itemType: string): string | null {
  * something which mutates it must clone first — the returned canvas is the
  * shared cache entry.
  */
-export function getPetalCanvas(
-    petalType: string,
-    rarity: string,
-    time: number = Date.now(),
-): HTMLCanvasElement | null {
-    const assets = getPreloadedAssets() as any;
-    if (!assets || !assets.petalImages) return null;
+function getPetalCanvas(petalType, rarity, time = Date.now()) {
+    const assets = (0, preloader_1.getPreloadedAssets)();
+    if (!assets || !assets.petalImages)
+        return null;
     const entry = assets.petalImages[`${petalType}_${rarity}`];
-    if (!entry) return null;
+    if (!entry)
+        return null;
     if (Array.isArray(entry)) {
         return entry[Math.floor((time / 42) % entry.length)];
     }
-    return entry as HTMLCanvasElement;
+    return entry;
 }

@@ -4,8 +4,7 @@ import { GameInterface } from '../inventory';
 import { applyZoomCompensation } from '../zoom-compensation';
 import { getPetalStats } from '../petals';
 import { getPreconnectedSocket } from '../net/preconnect';
-import { getPreloadedAssets } from '../preloader';
-import { getItemSpriteDataUrl } from './sprite_data_url';
+import { getItemSpriteDataUrl, getPetalCanvas } from './preloaded_assets';
 
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
@@ -50,15 +49,7 @@ export class TitleScreenGameAdapter implements GameInterface {
 
     /** Used by CanvasInventoryPanel — pulls petal frames from preloaded assets. */
     getPetalCanvas(petalType: string, rarity: string, _time?: number): HTMLCanvasElement | null {
-        const assets = getPreloadedAssets() as any;
-        if (!assets || !assets.petalImages) return null;
-        const entry = assets.petalImages[`${petalType}_${rarity}`];
-        if (!entry) return null;
-        if (Array.isArray(entry)) {
-            const frameIndex = Math.floor((Date.now() / 42) % entry.length);
-            return entry[frameIndex];
-        }
-        return entry;
+        return getPetalCanvas(petalType, rarity);
     }
 
     /** Used by preview renderers to look up the per-petal spawn count. */

@@ -18,7 +18,7 @@ import {
     clearPetalTooltip,
 } from '../graphics/petal-display';
 import { getSocketAuth } from '../auth_session';
-import { getItemSpriteDataUrl } from './sprite_data_url';
+import { getItemSpriteDataUrl, getPetalCanvas } from './preloaded_assets';
 
 /**
  * Title Screen Inventory Manager
@@ -113,17 +113,7 @@ export class TitleScreenInventoryManager {
             getLocalPlayer: () => ({
                 loadout: this.getActiveLoadout()
             }),
-            getPetalCanvas: (petalType: string, rarity: string, _time?: number): HTMLCanvasElement | null => {
-                const assets = getPreloadedAssets() as any;
-                if (!assets || !assets.petalImages) return null;
-                const entry = assets.petalImages[`${petalType}_${rarity}`];
-                if (!entry) return null;
-                if (Array.isArray(entry)) {
-                    const frameIndex = Math.floor((Date.now() / 42) % entry.length);
-                    return entry[frameIndex];
-                }
-                return entry;
-            },
+            getPetalCanvas,
             getPetalStats: (petalType: string, rarity: string): any => getPetalStats(petalType, rarity),
             getItemSpriteDataUrl,
             inventoryManager: this as any,

@@ -1,6 +1,7 @@
 // Canvas-based inventory panel — replaces the prior DOM grid implementation.
 // Renders rarity-grouped item slots into a single <canvas> and exposes hit
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
+import { PanelRenderLoop } from './panel-common';
 import { inventoryToDict, ITEM_KEY_TO_ID } from '../inventoryCodec';
 import { ITEM_RARITY_COLORS } from '../petals';
 import { drawText } from './text';
@@ -34,8 +35,7 @@ export class CanvasInventoryPanel {
     private scrollY: number = 0;
     private hoverIndex: number = -1;
 
-    private rafHandle: number = 0;
-    private running: boolean = false;
+    private readonly renderLoop = new PanelRenderLoop(() => this.draw());
     private imgCache: Map<string, HTMLImageElement | null> = new Map();
 
     // Canvas size — updated by ResizeObserver, avoiding getBoundingClientRect() every frame.
@@ -232,21 +232,13 @@ export class CanvasInventoryPanel {
     }
 
     public start() {
-        if (this.running) return;
-        this.running = true;
+        if (this.renderLoop.isRunning) return;
         if (this.searchInputEl) this.searchInputEl.style.display = 'block';
-        const loop = () => {
-            if (!this.running) return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(loop);
-        };
-        loop();
+        this.renderLoop.start();
     }
 
     public stop() {
-        this.running = false;
-        if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
         this.hoverIndex = -1;
         if (this.searchInputEl) {
             this.searchInputEl.blur();
@@ -255,7 +247,7 @@ export class CanvasInventoryPanel {
     }
 
     public isRunning(): boolean {
-        return this.running;
+        return this.renderLoop.isRunning;
     }
 
     /** Tear down DOM resources. Call when the panel is destroyed. */

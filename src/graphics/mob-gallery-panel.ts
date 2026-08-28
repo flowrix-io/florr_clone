@@ -12,6 +12,7 @@
  * would otherwise balloon this file. Stats + description are still shown.
  */
 
+import { PanelRenderLoop } from './panel-common';
 import { getAllMobTypes, getMobStats, getMobRarities, MobStats, MOB_DROP_TABLES, Rarity } from '../mobs';
 import { ITEM_RARITY_COLORS, RARITY_LEVELS } from '../petals';
 import { getPreloadedAssets } from '../preloader';
@@ -187,8 +188,7 @@ export class CanvasMobGalleryPanel {
     private contentHeight: number = 0;
     private scrollY: number = 0;
     private hoverIndex: number = -1;
-    private rafHandle: number = 0;
-    private running: boolean = false;
+    private readonly renderLoop = new PanelRenderLoop(() => this.draw());
     private imgCache: Map<string, HTMLImageElement> = new Map();
     private closeBtnRect = { x: 0, y: 0, w: 0, h: 0 };
     private closeBtnHovered: boolean = false;
@@ -238,20 +238,12 @@ export class CanvasMobGalleryPanel {
     }
 
     public start() {
-        if (this.running) return;
-        this.running = true;
-        const tick = () => {
-            if (!this.running) return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(tick);
-        };
-        this.rafHandle = requestAnimationFrame(tick);
+        // Deferred first frame (unlike the other panels) — preserved.
+        this.renderLoop.start(false);
     }
 
     public stop() {
-        this.running = false;
-        if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
     }
 
     public setKills(kills: MobKills | undefined) {

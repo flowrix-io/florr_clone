@@ -4,8 +4,7 @@ exports.TitleScreenGameAdapter = void 0;
 const zoom_compensation_1 = require("../zoom-compensation");
 const petals_1 = require("../petals");
 const preconnect_1 = require("../net/preconnect");
-const preloader_1 = require("../preloader");
-const sprite_data_url_1 = require("./sprite_data_url");
+const preloaded_assets_1 = require("./preloaded_assets");
 /**
  * Adapter that provides a GameInterface for using InventoryManager on the title screen.
  * Wraps the title screen's player data and preconnected socket.
@@ -43,17 +42,7 @@ class TitleScreenGameAdapter {
     }
     /** Used by CanvasInventoryPanel — pulls petal frames from preloaded assets. */
     getPetalCanvas(petalType, rarity, _time) {
-        const assets = (0, preloader_1.getPreloadedAssets)();
-        if (!assets || !assets.petalImages)
-            return null;
-        const entry = assets.petalImages[`${petalType}_${rarity}`];
-        if (!entry)
-            return null;
-        if (Array.isArray(entry)) {
-            const frameIndex = Math.floor((Date.now() / 42) % entry.length);
-            return entry[frameIndex];
-        }
-        return entry;
+        return (0, preloaded_assets_1.getPetalCanvas)(petalType, rarity);
     }
     /** Used by preview renderers to look up the per-petal spawn count. */
     getPetalStats(petalType, rarity) {
@@ -61,7 +50,7 @@ class TitleScreenGameAdapter {
     }
     /** Used by CanvasInventoryPanel — converts a preloaded sprite into a data URL. */
     getItemSpriteDataUrl(itemType) {
-        return (0, sprite_data_url_1.getItemSpriteDataUrl)(itemType);
+        return (0, preloaded_assets_1.getItemSpriteDataUrl)(itemType);
     }
 }
 exports.TitleScreenGameAdapter = TitleScreenGameAdapter;

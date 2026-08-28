@@ -6,10 +6,11 @@ exports.CanvasSkillsPanel = void 0;
 // playerHealth, healingMultiplier), each branch a chain of nine rarity tiers
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
+const panel_common_1 = require("./panel-common");
 const petals_1 = require("../petals");
 const tooltip_1 = require("./tooltip");
 const text_1 = require("./text");
-const panel_common_1 = require("./panel-common");
+const panel_common_2 = require("./panel-common");
 const shapes_1 = require("./shapes");
 const RARITY_COLORS = petals_1.ITEM_RARITY_COLORS;
 const RARITY_MULTIPLIERS = {
@@ -66,8 +67,7 @@ class CanvasSkillsPanel {
         /** Indices into `nodes`, sorted back-to-front for the current rotation. */
         this.drawOrder = [];
         this.hoverIdx = -1;
-        this.rafHandle = 0;
-        this.running = false;
+        this.renderLoop = new panel_common_1.PanelRenderLoop(() => this.draw());
         // ===== 2D rotation state =====
         /** Plane rotation angle (radians). Mouse drag along the X axis spins the
          *  whole talent tree around the flower pivot. */
@@ -189,26 +189,14 @@ class CanvasSkillsPanel {
         parent.appendChild(this.canvas);
     }
     start() {
-        if (this.running)
-            return;
-        this.running = true;
-        const loop = () => {
-            if (!this.running)
-                return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(loop);
-        };
-        loop();
+        this.renderLoop.start();
     }
     stop() {
-        this.running = false;
-        if (this.rafHandle)
-            cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
         this.hoverIdx = -1;
     }
     isRunning() {
-        return this.running;
+        return this.renderLoop.isRunning;
     }
     destroy() {
         this.stop();
@@ -229,7 +217,7 @@ class CanvasSkillsPanel {
         this.statBodyDamage = bodyDamage;
     }
     syncCanvasSize() {
-        return (0, panel_common_1.syncCanvasSize)(this.canvas);
+        return (0, panel_common_2.syncCanvasSize)(this.canvas);
     }
     layout(cssW, cssH) {
         if (cssW === this.lastCssW && cssH === this.lastCssH && this.nodes.length > 0)

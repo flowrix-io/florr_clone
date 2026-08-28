@@ -46,17 +46,24 @@ function withoutRawPetalPositions(player) {
  * nowhere else.
  *
  * Mutates and returns the same object, like withoutRawPetalPositions above.
+ *
+ * Cleared by assigning `undefined` rather than `delete`, for the same reason
+ * withoutRawPetalPositions does: reads are identical (`undefined` either way,
+ * and nothing enumerates a stored player's keys), but nine `delete`s tip the
+ * object out of fast properties into dictionary mode — permanently. This object
+ * is the one the renderer reads for every visible player on every frame, so it
+ * must keep its shape.
  */
 function toClientPlayer(payload) {
-    delete payload.x;
-    delete payload.y;
-    delete payload.angle;
-    delete payload.targetX;
-    delete payload.targetY;
-    delete payload._refX;
-    delete payload._refY;
-    delete payload.eye;
-    delete payload.targetEye;
+    payload.x = undefined;
+    payload.y = undefined;
+    payload.angle = undefined;
+    payload.targetX = undefined;
+    payload.targetY = undefined;
+    payload._refX = undefined;
+    payload._refY = undefined;
+    payload.eye = undefined;
+    payload.targetEye = undefined;
     return payload;
 }
 // After the splitter petal runs, this client owns two flowers — `socket.id` and

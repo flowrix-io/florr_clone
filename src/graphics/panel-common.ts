@@ -188,3 +188,41 @@ export function drawItemSlot(
         ctx.restore();
     }
 }
+
+/**
+ * A panel's requestAnimationFrame draw loop.
+ *
+ * The four canvas panels each carried the same `running` flag, `rafHandle` and
+ * start/stop pair. They differed in one detail worth keeping: three drew their
+ * first frame synchronously so the panel is never blank for a frame after
+ * opening, while the mob gallery deferred it to the next rAF — hence `immediate`.
+ */
+export class PanelRenderLoop {
+    private running = false;
+    private rafHandle = 0;
+
+    constructor(private readonly draw: () => void) {}
+
+    get isRunning(): boolean {
+        return this.running;
+    }
+
+    /** No-op if already running. */
+    start(immediate: boolean = true): void {
+        if (this.running) return;
+        this.running = true;
+        const tick = () => {
+            if (!this.running) return;
+            this.draw();
+            this.rafHandle = requestAnimationFrame(tick);
+        };
+        if (immediate) tick();
+        else this.rafHandle = requestAnimationFrame(tick);
+    }
+
+    stop(): void {
+        this.running = false;
+        if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
+        this.rafHandle = 0;
+    }
+}

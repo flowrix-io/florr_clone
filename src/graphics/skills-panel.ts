@@ -3,6 +3,7 @@
 // playerHealth, healingMultiplier), each branch a chain of nine rarity tiers
 // connected by dashed lines. The center of the panel hosts a small flower-face
 // avatar representing the player; the bottom-right shows derived stat lines.
+import { PanelRenderLoop } from './panel-common';
 import { RARITY_LEVELS, getRarityIndex, Rarity, ITEM_RARITY_COLORS, ABSORBING_SKILL_MULTIPLIERS } from '../petals';
 import { measureTooltip, paintTooltip, TooltipLine } from './tooltip';
 import { drawText } from './text';
@@ -126,8 +127,7 @@ export class CanvasSkillsPanel {
     /** Indices into `nodes`, sorted back-to-front for the current rotation. */
     private drawOrder: number[] = [];
     private hoverIdx: number = -1;
-    private rafHandle: number = 0;
-    private running: boolean = false;
+    private readonly renderLoop = new PanelRenderLoop(() => this.draw());
 
     // ===== 2D rotation state =====
     /** Plane rotation angle (radians). Mouse drag along the X axis spins the
@@ -193,25 +193,16 @@ export class CanvasSkillsPanel {
     }
 
     public start() {
-        if (this.running) return;
-        this.running = true;
-        const loop = () => {
-            if (!this.running) return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(loop);
-        };
-        loop();
+        this.renderLoop.start();
     }
 
     public stop() {
-        this.running = false;
-        if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
         this.hoverIdx = -1;
     }
 
     public isRunning(): boolean {
-        return this.running;
+        return this.renderLoop.isRunning;
     }
 
     public destroy() {

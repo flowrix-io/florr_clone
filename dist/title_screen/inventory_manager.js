@@ -16,7 +16,7 @@ const alt_key_1 = require("../alt_key");
 const tooltip_1 = require("../graphics/tooltip");
 const petal_display_1 = require("../graphics/petal-display");
 const auth_session_1 = require("../auth_session");
-const sprite_data_url_1 = require("./sprite_data_url");
+const preloaded_assets_1 = require("./preloaded_assets");
 /**
  * Title Screen Inventory Manager
  * Handles inventory and loadout on the title screen using the preconnected socket.
@@ -105,21 +105,9 @@ class TitleScreenInventoryManager {
             getLocalPlayer: () => ({
                 loadout: this.getActiveLoadout()
             }),
-            getPetalCanvas: (petalType, rarity, _time) => {
-                const assets = (0, preloader_1.getPreloadedAssets)();
-                if (!assets || !assets.petalImages)
-                    return null;
-                const entry = assets.petalImages[`${petalType}_${rarity}`];
-                if (!entry)
-                    return null;
-                if (Array.isArray(entry)) {
-                    const frameIndex = Math.floor((Date.now() / 42) % entry.length);
-                    return entry[frameIndex];
-                }
-                return entry;
-            },
+            getPetalCanvas: preloaded_assets_1.getPetalCanvas,
             getPetalStats: (petalType, rarity) => (0, petals_1.getPetalStats)(petalType, rarity),
-            getItemSpriteDataUrl: sprite_data_url_1.getItemSpriteDataUrl,
+            getItemSpriteDataUrl: preloaded_assets_1.getItemSpriteDataUrl,
             inventoryManager: this,
         };
         this.canvasLoadoutBar = new loadout_bar_1.CanvasLoadoutBar(adapter);

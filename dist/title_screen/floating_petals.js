@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FloatingPetalManager = void 0;
+const preloaded_assets_1 = require("./preloaded_assets");
 const petals_1 = require("../petals");
-const preloader_1 = require("../preloader");
 const BASE_PETAL_PIXELS = 32;
 const SPAWN_PROBABILITY = 0.02;
 class FloatingPetalManager {
@@ -41,19 +41,6 @@ class FloatingPetalManager {
             petalStats,
         };
     }
-    getPetalCanvas(petalType, rarity) {
-        const assets = (0, preloader_1.getPreloadedAssets)();
-        if (!assets || !assets.petalImages)
-            return null;
-        const entry = assets.petalImages[`${petalType}_${rarity}`];
-        if (!entry)
-            return null;
-        if (Array.isArray(entry)) {
-            const frameIndex = Math.floor((Date.now() / 42) % entry.length);
-            return entry[frameIndex];
-        }
-        return entry;
-    }
     /** Advance + draw all petals. Called once per frame by BackgroundAnimation. */
     draw(ctx, viewportWidth, viewportHeight) {
         if (!this.active)
@@ -73,7 +60,7 @@ class FloatingPetalManager {
             const drawSize = petal.size * BASE_PETAL_PIXELS;
             const cx = petal.x + drawSize / 2;
             const cy = petal.y + drawSize / 2;
-            const sprite = this.getPetalCanvas(petal.petalType, petal.rarity);
+            const sprite = (0, preloaded_assets_1.getPetalCanvas)(petal.petalType, petal.rarity);
             if (!sprite)
                 continue;
             ctx.save();

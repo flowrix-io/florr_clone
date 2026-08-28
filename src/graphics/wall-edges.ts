@@ -97,6 +97,19 @@ function layoutEdgeSpikes(
     return spikes;
 }
 
+/** The four wall edges, with the seed offset and origin each spike run uses. */
+const WALL_EDGES: ReadonlyArray<{
+    direction: 'top' | 'bottom' | 'left' | 'right';
+    seedOffset: number;
+    /** Origin and extent of the run along this edge: [startX, startY, w, h]. */
+    span: (x: number, y: number, width: number, height: number) => [number, number, number, number];
+}> = [
+    { direction: 'top',    seedOffset: 1, span: (x, y, w) => [x, y, w, 0] },
+    { direction: 'bottom', seedOffset: 2, span: (x, y, w, h) => [x, y + h, w, 0] },
+    { direction: 'left',   seedOffset: 3, span: (x, y, _w, h) => [x, y, 0, h] },
+    { direction: 'right',  seedOffset: 4, span: (x, y, w, h) => [x + w, y, 0, h] },
+];
+
 /**
  * Check if a wall edge is exposed (no adjacent wall)
  */
@@ -180,51 +193,13 @@ Graphics.prototype.drawWallSpikes = function(
     this.ctx.save();
     this.ctx.fillStyle = pattern;
 
-    // Top edge spikes
-    if (this.isEdgeExposed(wall, 'top', allWalls)) {
+    for (const edge of WALL_EDGES) {
+        if (!this.isEdgeExposed(wall, edge.direction, allWalls)) continue;
+        const [sx, sy, ew, eh] = edge.span(x, y, width, height);
         this.drawRandomSpikesOnEdge(
-            x, y, width, 0,
-            'top',
-            baseSeed + 1,
-            minSpikeHeight, maxSpikeHeight,
-            minSpikeWidth, maxSpikeWidth,
-            minSpikeSpacing, maxSpikeSpacing,
-            clusterChance
-        );
-    }
-
-    // Bottom edge spikes
-    if (this.isEdgeExposed(wall, 'bottom', allWalls)) {
-        this.drawRandomSpikesOnEdge(
-            x, y + height, width, 0,
-            'bottom',
-            baseSeed + 2,
-            minSpikeHeight, maxSpikeHeight,
-            minSpikeWidth, maxSpikeWidth,
-            minSpikeSpacing, maxSpikeSpacing,
-            clusterChance
-        );
-    }
-
-    // Left edge spikes
-    if (this.isEdgeExposed(wall, 'left', allWalls)) {
-        this.drawRandomSpikesOnEdge(
-            x, y, 0, height,
-            'left',
-            baseSeed + 3,
-            minSpikeHeight, maxSpikeHeight,
-            minSpikeWidth, maxSpikeWidth,
-            minSpikeSpacing, maxSpikeSpacing,
-            clusterChance
-        );
-    }
-
-    // Right edge spikes
-    if (this.isEdgeExposed(wall, 'right', allWalls)) {
-        this.drawRandomSpikesOnEdge(
-            x + width, y, 0, height,
-            'right',
-            baseSeed + 4,
+            sx, sy, ew, eh,
+            edge.direction,
+            baseSeed + edge.seedOffset,
             minSpikeHeight, maxSpikeHeight,
             minSpikeWidth, maxSpikeWidth,
             minSpikeSpacing, maxSpikeSpacing,
@@ -261,54 +236,13 @@ Graphics.prototype.drawWallSpikeShadows = function(
 
     this.ctx.save();
 
-    // Top edge spike shadows
-    if (this.isEdgeExposed(wall, 'top', allWalls)) {
+    for (const edge of WALL_EDGES) {
+        if (!this.isEdgeExposed(wall, edge.direction, allWalls)) continue;
+        const [sx, sy, ew, eh] = edge.span(x, y, width, height);
         this.drawRandomSpikeShadowsOnEdge(
-            x, y, width, 0,
-            'top',
-            baseSeed + 1,
-            minSpikeHeight, maxSpikeHeight,
-            minSpikeWidth, maxSpikeWidth,
-            minSpikeSpacing, maxSpikeSpacing,
-            clusterChance,
-            shadowSize
-        );
-    }
-
-    // Bottom edge spike shadows
-    if (this.isEdgeExposed(wall, 'bottom', allWalls)) {
-        this.drawRandomSpikeShadowsOnEdge(
-            x, y + height, width, 0,
-            'bottom',
-            baseSeed + 2,
-            minSpikeHeight, maxSpikeHeight,
-            minSpikeWidth, maxSpikeWidth,
-            minSpikeSpacing, maxSpikeSpacing,
-            clusterChance,
-            shadowSize
-        );
-    }
-
-    // Left edge spike shadows
-    if (this.isEdgeExposed(wall, 'left', allWalls)) {
-        this.drawRandomSpikeShadowsOnEdge(
-            x, y, 0, height,
-            'left',
-            baseSeed + 3,
-            minSpikeHeight, maxSpikeHeight,
-            minSpikeWidth, maxSpikeWidth,
-            minSpikeSpacing, maxSpikeSpacing,
-            clusterChance,
-            shadowSize
-        );
-    }
-
-    // Right edge spike shadows
-    if (this.isEdgeExposed(wall, 'right', allWalls)) {
-        this.drawRandomSpikeShadowsOnEdge(
-            x + width, y, 0, height,
-            'right',
-            baseSeed + 4,
+            sx, sy, ew, eh,
+            edge.direction,
+            baseSeed + edge.seedOffset,
             minSpikeHeight, maxSpikeHeight,
             minSpikeWidth, maxSpikeWidth,
             minSpikeSpacing, maxSpikeSpacing,

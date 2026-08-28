@@ -14,9 +14,16 @@ exports.scrollFromThumbDrag = scrollFromThumbDrag;
 const PANEL_CHROME_HEIGHT = 40;
 /** Track length used to map a thumb drag onto the content range. */
 const SCROLLBAR_TRACK_INSET = 45;
-/** Furthest the content can scroll before its end reaches the viewport bottom. */
-function maxScrollFor(contentHeight, panelHeight) {
-    return Math.max(0, contentHeight - (panelHeight - PANEL_CHROME_HEIGHT));
+/**
+ * Furthest the content can scroll before its end reaches the viewport bottom.
+ *
+ * `headerHeight` is the chrome above the scrolling body. It defaults to the
+ * common 40px, but must be passed when a panel draws a taller header — the
+ * leaderboard draws 50 and used to clamp against 40, so it scrolled ten pixels
+ * past its own content.
+ */
+function maxScrollFor(contentHeight, panelHeight, headerHeight = PANEL_CHROME_HEIGHT) {
+    return Math.max(0, contentHeight - (panelHeight - headerHeight));
 }
 /**
  * New scroll offset for a scrollbar-thumb drag of `deltaY` pixels, clamped to

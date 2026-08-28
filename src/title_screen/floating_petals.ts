@@ -1,5 +1,5 @@
+import { getPetalCanvas } from './preloaded_assets';
 import { PETAL_CONFIG, RARITY_LEVELS, PetalStats } from '../petals';
-import { getPreloadedAssets } from '../preloader';
 
 export interface FloatingPetal {
     x: number;
@@ -58,17 +58,6 @@ export class FloatingPetalManager {
         };
     }
 
-    private getPetalCanvas(petalType: string, rarity: string): HTMLCanvasElement | null {
-        const assets = getPreloadedAssets() as any;
-        if (!assets || !assets.petalImages) return null;
-        const entry = assets.petalImages[`${petalType}_${rarity}`];
-        if (!entry) return null;
-        if (Array.isArray(entry)) {
-            const frameIndex = Math.floor((Date.now() / 42) % entry.length);
-            return entry[frameIndex];
-        }
-        return entry as HTMLCanvasElement;
-    }
 
     /** Advance + draw all petals. Called once per frame by BackgroundAnimation. */
     public draw(ctx: CanvasRenderingContext2D, viewportWidth: number, viewportHeight: number): void {
@@ -91,7 +80,7 @@ export class FloatingPetalManager {
             const drawSize = petal.size * BASE_PETAL_PIXELS;
             const cx = petal.x + drawSize / 2;
             const cy = petal.y + drawSize / 2;
-            const sprite = this.getPetalCanvas(petal.petalType, petal.rarity);
+            const sprite = getPetalCanvas(petal.petalType, petal.rarity);
             if (!sprite) continue;
             ctx.save();
             ctx.translate(cx, cy);

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LeaderboardManager = void 0;
+const overlay_panel_1 = require("./graphics/overlay-panel");
 const constants_1 = require("./constants");
 const zoom_compensation_1 = require("./zoom-compensation");
 const auth_session_1 = require("./auth_session");
@@ -28,6 +29,11 @@ class LeaderboardManager {
         this.PANEL_HEIGHT = 500;
         this.PADDING = 20;
         this.SCROLLBAR_WIDTH = 10;
+        /** Chrome above the scrolling body. The draw code always used 50 while the
+         *  scroll clamp and scrollbar hit-test used 40, so the list scrolled ten
+         *  pixels past its own end and the scrollbar's grab zone started above the
+         *  visible track. One constant now feeds all three. */
+        this.HEADER_HEIGHT = 50;
         this.ROW_HEIGHT = 40;
         this.isDragging = false;
         this.dragStartY = 0;
@@ -106,25 +112,18 @@ class LeaderboardManager {
             const rect = this.canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            if (this.closeButtonBounds &&
-                x >= this.closeButtonBounds.x && x <= this.closeButtonBounds.x + this.closeButtonBounds.width &&
-                y >= this.closeButtonBounds.y && y <= this.closeButtonBounds.y + this.closeButtonBounds.height) {
+            if ((0, overlay_panel_1.pointInRect)(this.closeButtonBounds, x, y)) {
                 this.hide();
                 return;
             }
-            if (this.refreshButtonBounds &&
-                x >= this.refreshButtonBounds.x && x <= this.refreshButtonBounds.x + this.refreshButtonBounds.width &&
-                y >= this.refreshButtonBounds.y && y <= this.refreshButtonBounds.y + this.refreshButtonBounds.height) {
+            if ((0, overlay_panel_1.pointInRect)(this.refreshButtonBounds, x, y)) {
                 this.loadLeaderboard();
                 return;
             }
             // Scrollbar drag
-            if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
-                const offsetX = this.PANEL_X;
-                const offsetY = this.PANEL_Y;
-                const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
-                if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
-                    y >= offsetY + 40 && y <= offsetY + this.PANEL_HEIGHT - 5) {
+            if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - this.HEADER_HEIGHT) {
+                const layout = (0, overlay_panel_1.scrollbarLayout)(this.PANEL_X, this.PANEL_Y, this.PANEL_WIDTH, this.PANEL_HEIGHT, this.HEADER_HEIGHT, this.SCROLLBAR_WIDTH);
+                if ((0, overlay_panel_1.pointInScrollbar)(layout, this.PANEL_Y + this.PANEL_HEIGHT, x, y)) {
                     this.isDragging = true;
                     this.dragStartY = y;
                     this.dragStartScroll = this.scrollY;
@@ -138,7 +137,7 @@ class LeaderboardManager {
                 const rect = this.canvas.getBoundingClientRect();
                 const y = e.clientY - rect.top;
                 const deltaY = y - this.dragStartY;
-                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
+                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT, this.HEADER_HEIGHT);
                 this.scrollY = (0, scroll_panel_1.scrollFromThumbDrag)(this.dragStartScroll, deltaY, this.PANEL_HEIGHT, maxScroll);
             }
         });
@@ -156,7 +155,7 @@ class LeaderboardManager {
             if (x >= offsetX && x <= offsetX + this.PANEL_WIDTH &&
                 y >= offsetY && y <= offsetY + this.PANEL_HEIGHT) {
                 e.preventDefault();
-                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT);
+                const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT, this.HEADER_HEIGHT);
                 this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY - e.deltaY));
             }
         });
@@ -198,7 +197,6 @@ class LeaderboardManager {
         ctx.textAlign = 'start';
         ctx.textBaseline = 'alphabetic';
         // Calculate content height
-        const headerHeight = 50;
         const columnHeaderHeight = 30;
         if (this.entries.length === 0 && !this.isLoading) {
             this.contentHeight = 40;
@@ -206,18 +204,12 @@ class LeaderboardManager {
         else {
             this.contentHeight = columnHeaderHeight + this.entries.length * this.ROW_HEIGHT;
         }
-        const maxScroll = Math.max(0, this.contentHeight - (this.PANEL_HEIGHT - headerHeight));
+        const maxScroll = (0, scroll_panel_1.maxScrollFor)(this.contentHeight, this.PANEL_HEIGHT, this.HEADER_HEIGHT);
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
         // Panel background
-        ctx.fillStyle = '#e8a023';
-        ctx.strokeStyle = '#c4871a';
-        ctx.lineWidth = 2;
-        this.roundRect(ctx, offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
-        ctx.fill();
-        ctx.stroke();
+        (0, overlay_panel_1.drawPanelBackground)(ctx, offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, '#e8a023', '#c4871a');
         // Header
-        ctx.textBaseline = 'top';
-        (0, text_1.drawText)(ctx, 'Leaderboard', offsetX + this.PADDING, offsetY + this.PADDING, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
+        (0, overlay_panel_1.drawPanelTitle)(ctx, 'Leaderboard', offsetX, offsetY, this.PADDING);
         // Total accounts count and daily active users (DAU only shown to admins)
         if (this.totalAccounts > 0) {
             const statsText = this.dailyActiveUsers !== null
@@ -225,38 +217,14 @@ class LeaderboardManager {
                 : `${this.totalAccounts} accounts`;
             (0, text_1.drawText)(ctx, statsText, offsetX + this.PADDING + 140, offsetY + this.PADDING + 5, { size: 13, fill: 'rgba(255, 255, 255, 0.7)', strokeWidth: 0 });
         }
-        // Refresh button
-        const refreshButtonX = offsetX + this.PANEL_WIDTH - 140;
-        const refreshButtonY = offsetY + 10;
-        const refreshButtonWidth = 80;
-        const refreshButtonHeight = 30;
-        this.refreshButtonBounds = { x: refreshButtonX, y: refreshButtonY, width: refreshButtonWidth, height: refreshButtonHeight };
-        ctx.fillStyle = '#c4871a';
-        this.roundRect(ctx, refreshButtonX, refreshButtonY, refreshButtonWidth, refreshButtonHeight, 5);
-        ctx.fill();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        (0, text_1.drawText)(ctx, 'Refresh', refreshButtonX + refreshButtonWidth / 2, refreshButtonY + refreshButtonHeight / 2, { size: 14, fill: '#FFFFFF', strokeWidth: 0 });
-        ctx.textAlign = 'left';
-        // Close button
-        const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
-        const closeButtonY = offsetY + 10;
-        const closeButtonWidth = 30;
-        const closeButtonHeight = 30;
-        this.closeButtonBounds = { x: closeButtonX, y: closeButtonY, width: closeButtonWidth, height: closeButtonHeight };
-        ctx.fillStyle = '#ff4444';
-        this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
-        ctx.fill();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        (0, text_1.drawText)(ctx, '\u2715', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2, { size: 16, fill: '#FFFFFF', strokeWidth: 0 });
-        ctx.textAlign = 'left';
+        this.refreshButtonBounds = (0, overlay_panel_1.drawPillButton)(ctx, (0, overlay_panel_1.headerButtonRect)(offsetX, offsetY, this.PANEL_WIDTH, 140, 80), 'Refresh', '#c4871a');
+        this.closeButtonBounds = (0, overlay_panel_1.drawCloseButton)(ctx, offsetX, offsetY, this.PANEL_WIDTH);
         // Clip content area
         ctx.save();
         ctx.beginPath();
-        this.roundRect(ctx, offsetX + 5, offsetY + headerHeight, this.PANEL_WIDTH - 10, this.PANEL_HEIGHT - headerHeight - 5, 8);
+        this.roundRect(ctx, offsetX + 5, offsetY + this.HEADER_HEIGHT, this.PANEL_WIDTH - 10, this.PANEL_HEIGHT - this.HEADER_HEIGHT - 5, 8);
         ctx.clip();
-        let contentY = offsetY + headerHeight - this.scrollY;
+        let contentY = offsetY + this.HEADER_HEIGHT - this.scrollY;
         if (this.isLoading && this.entries.length === 0) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
@@ -321,18 +289,15 @@ class LeaderboardManager {
         }
         ctx.restore();
         // Scrollbar
-        if (this.contentHeight > this.PANEL_HEIGHT - headerHeight) {
-            const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
-            const scrollbarTrackY = offsetY + headerHeight;
-            const scrollbarTrackHeight = this.PANEL_HEIGHT - headerHeight - 5;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            this.roundRect(ctx, scrollbarX, scrollbarTrackY, this.SCROLLBAR_WIDTH, scrollbarTrackHeight, 5);
-            ctx.fill();
-            const thumbHeight = (this.PANEL_HEIGHT - headerHeight - 5) * (this.PANEL_HEIGHT - headerHeight) / this.contentHeight;
-            const thumbY = scrollbarTrackY + (this.scrollY / maxScroll) * (scrollbarTrackHeight - thumbHeight);
-            ctx.fillStyle = '#c4871a';
-            this.roundRect(ctx, scrollbarX, thumbY, this.SCROLLBAR_WIDTH, thumbHeight, 5);
-            ctx.fill();
+        if (this.contentHeight > this.PANEL_HEIGHT - this.HEADER_HEIGHT) {
+            (0, overlay_panel_1.drawScrollbar)(ctx, (0, overlay_panel_1.scrollbarLayout)(offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, this.HEADER_HEIGHT, this.SCROLLBAR_WIDTH), {
+                contentHeight: this.contentHeight,
+                panelHeight: this.PANEL_HEIGHT,
+                headerHeight: this.HEADER_HEIGHT,
+                scrollY: this.scrollY,
+                maxScroll,
+                thumbColor: '#c4871a',
+            });
         }
         this.panelBounds = {
             x: offsetX,

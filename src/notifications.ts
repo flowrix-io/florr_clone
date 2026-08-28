@@ -1,3 +1,14 @@
+import {
+    pointInRect,
+    pointInScrollbar,
+    scrollbarLayout,
+    drawScrollbar,
+    drawPanelBackground,
+    drawPanelTitle,
+    drawCloseButton,
+    drawPillButton,
+    headerButtonRect,
+} from './graphics/overlay-panel';
 import { getBaseDeviceScale } from './zoom-compensation';
 import { drawText } from './graphics/text';
 import { drawRoundedRect } from './graphics/shapes';
@@ -189,17 +200,13 @@ export class NotificationsManager {
             const y = e.clientY - rect.top;
 
             // Check close button
-            if (this.closeButtonBounds && 
-                x >= this.closeButtonBounds.x && x <= this.closeButtonBounds.x + this.closeButtonBounds.width &&
-                y >= this.closeButtonBounds.y && y <= this.closeButtonBounds.y + this.closeButtonBounds.height) {
+            if (pointInRect(this.closeButtonBounds, x, y)) {
                 this.hide();
                 return;
             }
 
             // Check mark all read button
-            if (this.markAllReadButtonBounds && 
-                x >= this.markAllReadButtonBounds.x && x <= this.markAllReadButtonBounds.x + this.markAllReadButtonBounds.width &&
-                y >= this.markAllReadButtonBounds.y && y <= this.markAllReadButtonBounds.y + this.markAllReadButtonBounds.height) {
+            if (pointInRect(this.markAllReadButtonBounds, x, y)) {
                 this.markAllAsRead();
                 return;
             }
@@ -215,11 +222,11 @@ export class NotificationsManager {
 
             // Check scrollbar
             if (this.panelBounds && this.contentHeight > this.PANEL_HEIGHT - 40) {
-                const offsetX = this.PANEL_X;
-                const offsetY = this.PANEL_Y;
-                const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
-                if (x >= scrollbarX && x <= scrollbarX + this.SCROLLBAR_WIDTH &&
-                    y >= offsetY + 40 && y <= offsetY + this.PANEL_HEIGHT - 5) {
+                const layout = scrollbarLayout(
+                    this.PANEL_X, this.PANEL_Y, this.PANEL_WIDTH, this.PANEL_HEIGHT,
+                    40, this.SCROLLBAR_WIDTH,
+                );
+                if (pointInScrollbar(layout, this.PANEL_Y + this.PANEL_HEIGHT, x, y)) {
                     this.isDragging = true;
                     this.dragStartY = y;
                     this.dragStartScroll = this.scrollY;
@@ -347,50 +354,16 @@ export class NotificationsManager {
         this.scrollY = Math.max(0, Math.min(maxScroll, this.scrollY));
 
         // Draw panel background
-        ctx.fillStyle = '#4a90e2';
-        ctx.strokeStyle = '#357abd';
-        ctx.lineWidth = 2;
-        this.roundRect(ctx, offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, 10);
-        ctx.fill();
-        ctx.stroke();
+        drawPanelBackground(ctx, offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, '#4a90e2', '#357abd');
 
         // Draw header (before clipping)
-        ctx.textBaseline = 'top';
-        drawText(ctx, 'Notifications', offsetX + this.PADDING, offsetY + this.PADDING, { size: 20, weight: 'bold', fill: '#FFFFFF', strokeWidth: 2 });
+        drawPanelTitle(ctx, 'Notifications', offsetX, offsetY, this.PADDING);
 
-        // Draw mark all read button (before clipping)
-        const markAllReadButtonX = offsetX + this.PANEL_WIDTH - 180;
-        const markAllReadButtonY = offsetY + 10;
-        const markAllReadButtonWidth = 120;
-        const markAllReadButtonHeight = 30;
-        this.markAllReadButtonBounds = { 
-            x: markAllReadButtonX, 
-            y: markAllReadButtonY, 
-            width: markAllReadButtonWidth, 
-            height: markAllReadButtonHeight 
-        };
-        
-        ctx.fillStyle = '#357abd';
-        this.roundRect(ctx, markAllReadButtonX, markAllReadButtonY, markAllReadButtonWidth, markAllReadButtonHeight, 5);
-        ctx.fill();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        drawText(ctx, 'Mark All Read', markAllReadButtonX + markAllReadButtonWidth / 2, markAllReadButtonY + markAllReadButtonHeight / 2, { size: 14, fill: '#FFFFFF', strokeWidth: 0 });
-        ctx.textAlign = 'left';
+        this.markAllReadButtonBounds = drawPillButton(
+            ctx, headerButtonRect(offsetX, offsetY, this.PANEL_WIDTH, 180, 120), 'Mark All Read', '#357abd',
+        );
 
-        // Draw close button (before clipping)
-        const closeButtonX = offsetX + this.PANEL_WIDTH - 50;
-        const closeButtonY = offsetY + 10;
-        const closeButtonWidth = 30;
-        const closeButtonHeight = 30;
-        this.closeButtonBounds = { x: closeButtonX, y: closeButtonY, width: closeButtonWidth, height: closeButtonHeight };
-        
-        ctx.fillStyle = '#ff4444';
-        this.roundRect(ctx, closeButtonX, closeButtonY, closeButtonWidth, closeButtonHeight, 5);
-        ctx.fill();
-        ctx.textAlign = 'center';
-        drawText(ctx, '✕', closeButtonX + closeButtonWidth / 2, closeButtonY + closeButtonHeight / 2, { size: 16, fill: '#FFFFFF', strokeWidth: 0 });
-        ctx.textAlign = 'left';
+        this.closeButtonBounds = drawCloseButton(ctx, offsetX, offsetY, this.PANEL_WIDTH);
 
         // Clip to panel content area (after header and buttons)
         ctx.save();
@@ -502,21 +475,18 @@ export class NotificationsManager {
 
         // Draw scrollbar if needed
         if (this.contentHeight > this.PANEL_HEIGHT - 40) {
-            const scrollbarX = offsetX + this.PANEL_WIDTH - this.SCROLLBAR_WIDTH - 5;
-            const scrollbarTrackY = offsetY + 40;
-            const scrollbarTrackHeight = this.PANEL_HEIGHT - 40 - 5;
-            
-            // Track
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            this.roundRect(ctx, scrollbarX, scrollbarTrackY, this.SCROLLBAR_WIDTH, scrollbarTrackHeight, 5);
-            ctx.fill();
-
-            // Thumb
-            const thumbHeight = (this.PANEL_HEIGHT - 45) * (this.PANEL_HEIGHT - 40) / this.contentHeight;
-            const thumbY = scrollbarTrackY + (this.scrollY / maxScroll) * (scrollbarTrackHeight - thumbHeight);
-            ctx.fillStyle = '#357abd';
-            this.roundRect(ctx, scrollbarX, thumbY, this.SCROLLBAR_WIDTH, thumbHeight, 5);
-            ctx.fill();
+            drawScrollbar(
+                ctx,
+                scrollbarLayout(offsetX, offsetY, this.PANEL_WIDTH, this.PANEL_HEIGHT, 40, this.SCROLLBAR_WIDTH),
+                {
+                    contentHeight: this.contentHeight,
+                    panelHeight: this.PANEL_HEIGHT,
+                    headerHeight: 40,
+                    scrollY: this.scrollY,
+                    maxScroll,
+                    thumbColor: '#357abd',
+                },
+            );
         }
 
         this.panelBounds = {

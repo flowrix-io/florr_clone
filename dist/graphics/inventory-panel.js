@@ -4,11 +4,12 @@ exports.CanvasInventoryPanel = void 0;
 // Canvas-based inventory panel — replaces the prior DOM grid implementation.
 // Renders rarity-grouped item slots into a single <canvas> and exposes hit
 // testing / hover callbacks so InventoryManager can drive drag/drop & tooltips.
+const panel_common_1 = require("./panel-common");
 const inventoryCodec_1 = require("../inventoryCodec");
 const petals_1 = require("../petals");
 const text_1 = require("./text");
 const petal_display_1 = require("./petal-display");
-const panel_common_1 = require("./panel-common");
+const panel_common_2 = require("./panel-common");
 const RARITY_ORDER = ['apex', 'unique', 'super', 'ultra', 'mythic', 'legendary', 'epic', 'rare', 'uncommon', 'common'];
 class CanvasInventoryPanel {
     setStackMode(stack) {
@@ -24,8 +25,7 @@ class CanvasInventoryPanel {
         this.contentHeight = 0;
         this.scrollY = 0;
         this.hoverIndex = -1;
-        this.rafHandle = 0;
-        this.running = false;
+        this.renderLoop = new panel_common_1.PanelRenderLoop(() => this.draw());
         this.imgCache = new Map();
         // Canvas size — updated by ResizeObserver, avoiding getBoundingClientRect() every frame.
         this.cachedCssW = 0;
@@ -320,24 +320,14 @@ class CanvasInventoryPanel {
         parent.appendChild(this.searchInputEl);
     }
     start() {
-        if (this.running)
+        if (this.renderLoop.isRunning)
             return;
-        this.running = true;
         if (this.searchInputEl)
             this.searchInputEl.style.display = 'block';
-        const loop = () => {
-            if (!this.running)
-                return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(loop);
-        };
-        loop();
+        this.renderLoop.start();
     }
     stop() {
-        this.running = false;
-        if (this.rafHandle)
-            cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
         this.hoverIndex = -1;
         if (this.searchInputEl) {
             this.searchInputEl.blur();
@@ -345,7 +335,7 @@ class CanvasInventoryPanel {
         }
     }
     isRunning() {
-        return this.running;
+        return this.renderLoop.isRunning;
     }
     /** Tear down DOM resources. Call when the panel is destroyed. */
     destroy() {
@@ -817,7 +807,7 @@ class CanvasInventoryPanel {
      *  rounded square with a darker border, centered icon, outlined white
      *  name text at the bottom, and an outlined `xN` count in the top-right. */
     drawItemSlot(ctx, r, hovered, time) {
-        (0, panel_common_1.drawItemSlot)(ctx, r, hovered, time, this.game, this.imgCache, this.isItemDisabled);
+        (0, panel_common_2.drawItemSlot)(ctx, r, hovered, time, this.game, this.imgCache, this.isItemDisabled);
     }
     // ===== input handlers =====
     toLocal(e) {
@@ -825,7 +815,7 @@ class CanvasInventoryPanel {
         return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
     findItemIndex(rarity, itemType) {
-        return (0, panel_common_1.findItemIndex)(this.itemRects, rarity, itemType);
+        return (0, panel_common_2.findItemIndex)(this.itemRects, rarity, itemType);
     }
 }
 exports.CanvasInventoryPanel = CanvasInventoryPanel;

@@ -10,8 +10,7 @@ import { applyZoomCompensation } from '../zoom-compensation';
 import { TitleScreenInventoryManager } from './inventory_manager';
 import { Socket } from '../ws_client';
 import { getPreconnectedSocket, getLivePreconnectedSocket } from '../net/preconnect';
-import { getPreloadedAssets } from '../preloader';
-import { getItemSpriteDataUrl } from './sprite_data_url';
+import { getItemSpriteDataUrl, getPetalCanvas } from './preloaded_assets';
 
 export function cloneCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
     const c = document.createElement('canvas');
@@ -52,16 +51,11 @@ export function buildTitleScreenGameInterface(inventoryManager: TitleScreenInven
         showFloatingText: () => {},
         showFallingStars: () => {},
         canvas: offscreenCanvas,
+        // Cloned: this adapter's consumers draw into the canvas they get back,
+        // and getPetalCanvas hands out the shared cache entry.
         getPetalCanvas: (petalType: string, rarity: string, time: number = Date.now()): HTMLCanvasElement | null => {
-            const assets = getPreloadedAssets() as any;
-            if (!assets || !assets.petalImages) return null;
-            const entry = assets.petalImages[`${petalType}_${rarity}`];
-            if (!entry) return null;
-            if (Array.isArray(entry)) {
-                const frameIndex = Math.floor((time / 42) % entry.length);
-                return cloneCanvas(entry[frameIndex]);
-            }
-            return cloneCanvas(entry);
+            const entry = getPetalCanvas(petalType, rarity, time);
+            return entry ? cloneCanvas(entry) : null;
         },
         getItemSpriteDataUrl,
     };

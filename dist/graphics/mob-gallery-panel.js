@@ -14,12 +14,13 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanvasMobGalleryPanel = void 0;
+const panel_common_1 = require("./panel-common");
 const mobs_1 = require("../mobs");
 const petals_1 = require("../petals");
 const preloader_1 = require("../preloader");
 const text_1 = require("./text");
 const tooltip_1 = require("./tooltip");
-const panel_common_1 = require("./panel-common");
+const panel_common_2 = require("./panel-common");
 const shapes_1 = require("./shapes");
 const shapes_2 = require("./shapes");
 // Rarity progression for drop-rarity calculations. Mirrors the order used
@@ -155,8 +156,7 @@ class CanvasMobGalleryPanel {
         this.contentHeight = 0;
         this.scrollY = 0;
         this.hoverIndex = -1;
-        this.rafHandle = 0;
-        this.running = false;
+        this.renderLoop = new panel_common_1.PanelRenderLoop(() => this.draw());
         this.imgCache = new Map();
         this.closeBtnRect = { x: 0, y: 0, w: 0, h: 0 };
         this.closeBtnHovered = false;
@@ -264,29 +264,18 @@ class CanvasMobGalleryPanel {
         parent.appendChild(this.canvas);
     }
     start() {
-        if (this.running)
-            return;
-        this.running = true;
-        const tick = () => {
-            if (!this.running)
-                return;
-            this.draw();
-            this.rafHandle = requestAnimationFrame(tick);
-        };
-        this.rafHandle = requestAnimationFrame(tick);
+        // Deferred first frame (unlike the other panels) — preserved.
+        this.renderLoop.start(false);
     }
     stop() {
-        this.running = false;
-        if (this.rafHandle)
-            cancelAnimationFrame(this.rafHandle);
-        this.rafHandle = 0;
+        this.renderLoop.stop();
     }
     setKills(kills) {
         this.kills = kills || {};
     }
     /** Resize the canvas backing buffer to the parent's CSS box. */
     syncCanvasSize() {
-        return (0, panel_common_1.syncCanvasSize)(this.canvas);
+        return (0, panel_common_2.syncCanvasSize)(this.canvas);
     }
     /** Y at which the scrollable content area starts (just below the title). */
     contentTop() {

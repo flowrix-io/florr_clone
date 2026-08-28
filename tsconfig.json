@@ -1,6 +1,8 @@
 {
+  "//codegen": "target ES2020 + useDefineForClassFields:false keep the emitted JS fast. ES5 downlevelling would turn async into generator state machines and for..of into iterator-protocol calls; [[Define]] class-field semantics (the default from ES2022) add a shape transition per field on per-frame objects. Pinned so a target bump cannot silently change the emit.",
   "compilerOptions": {
     "target": "ES2020",
+    "useDefineForClassFields": false,
     "module": "ES2020",
     "lib": ["ES2020", "DOM"],
     "outDir": "./dist",
