@@ -9,6 +9,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerSessionHandlers = registerSessionHandlers;
+const petalRestore_1 = require("../petalRestore");
 const constants_1 = require("../../constants");
 const database_1 = require("../../database");
 const inventoryCodec_1 = require("../../inventoryCodec");
@@ -26,7 +27,6 @@ const squadManager_1 = require("../squadManager");
 const tempAdmin_1 = require("../tempAdmin");
 const utils_1 = require("../utils");
 const sessionGuard_1 = require("./sessionGuard");
-const petalEvents_1 = require("../petalEvents");
 function registerSessionHandlers(ctx) {
     const { io, socket } = ctx;
     const { respawnPlayer, savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
@@ -326,36 +326,12 @@ function registerSessionHandlers(ctx) {
                             // end if this timer dies with the process).
                             petal.cooldownEndTime = Date.now() + cooldownTime;
                             const timeoutKey = `${socket.id}-${i}`;
-                            // Snapshot identity so a stale timer doesn't clobber a swapped slot
-                            const snapshotPetalType = petal.petalType;
-                            const snapshotRarity = petal.rarity;
                             const timeout = setTimeout(() => {
                                 gameState_1.petalCooldownTimeouts.delete(timeoutKey);
-                                const current = constants_1.players[socket.id]?.loadout[i];
-                                if (!constants_1.players[socket.id] || !current || !current.onCooldown)
-                                    return;
-                                if (current.type !== 'petal' ||
-                                    current.petalType !== snapshotPetalType ||
-                                    current.rarity !== snapshotRarity)
+                                const restored = (0, petalRestore_1.restorePetalSlot)(socket.id, i, petal);
+                                if (!restored)
                                     return;
                                 {
-                                    // Restore petal after cooldown
-                                    const restoredPetal = {
-                                        type: petal.type,
-                                        petalType: petal.petalType,
-                                        rarity: petal.rarity,
-                                        health: petal.maxHealth,
-                                        maxHealth: petal.maxHealth,
-                                        onCooldown: false
-                                    };
-                                    // Apply petal health bonus
-                                    (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, constants_1.players[socket.id]);
-                                    constants_1.players[socket.id].loadout[i] = restoredPetal;
-                                    (0, petalEvents_1.emitPetalRestored)(constants_1.players[socket.id].id, {
-                                        playerId: constants_1.players[socket.id].id,
-                                        slotIndex: i,
-                                        petal: constants_1.players[socket.id].loadout[i]
-                                    });
                                     // Spawn pet when petal is restored (if it has petMobType)
                                     if (petalStats.petMobType && petal.rarity) {
                                         const petMobType = petalStats.petMobType;

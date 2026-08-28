@@ -415,6 +415,146 @@ let _cachedTargetEnemyCount = 0;
 let _cachedViewportEnemies = 0;
 let _spawnedSinceRefresh = 0;
 
+/**
+ * True when a mob of `halfSize` placed at (x, y) would touch any live mob.
+ *
+ * Four copies of this scan lived in createEnemy, createEnemyInZone and
+ * createSpecialMob — two as the final overlap check and one as the wider
+ * spacing test during position search, which is what `extraGap` is for.
+ */
+function overlapsAnyMob(x: number, y: number, halfSize: number, extraGap: number = 0): boolean {
+    return liveEnemies().some((otherEnemy: Enemy) => {
+        const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
+        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
+        const otherHalfSize = otherMobSize / 2;
+        const dx = mobX(otherEnemy.entity) - x;
+        const dy = mobY(otherEnemy.entity) - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < halfSize + otherHalfSize + extraGap;
+    });
+}
+
+/**
+ * Picks a weighted mob type that belongs to (x, y)'s section, or null if the
+ * section has none.
+ *
+ * The four call sites differed only in which tier's stats decide section
+ * membership and whether centipede body segments are excluded — body segments
+ * are spawned as part of their head, never on their own, so every caller that
+ * is choosing a *new* mob excludes them. The one that does not is the biome
+ * spawn table's untyped entry, which is preserved as-is.
+ */
+function pickSectionMobType(
+    x: number,
+    y: number,
+    weightTier: Enemy['tier'],
+    opts: { statsTier?: Enemy['tier']; excludeCentipedeBodies?: boolean } = {},
+): Enemy['type'] | null {
+    const allMobTypes = getAllMobTypes();
+    if (allMobTypes.length === 0) return null;
+
+    const statsTier = opts.statsTier ?? weightTier;
+    const currentSection = getSectionAtPosition(x, y);
+    const eligibleMobTypes = allMobTypes.filter(type => {
+        if (type === 'target_dummy') return false;
+        if (opts.excludeCentipedeBodies && isCentipedeBodyType(type)) return false;
+        const stats = getMobStats(type, statsTier);
+        return stats && stats.section.includes(currentSection);
+    });
+    if (eligibleMobTypes.length === 0) return null;
+
+    return selectWeightedMobType(eligibleMobTypes, weightTier) as Enemy['type'];
+}
+
+/**
+ * Resolves tier + mob type from the biome's spawn table at (x, y).
+ *
+ * Shared verbatim by createEnemy and createEnemyInZone, which both reach this
+ * branch whenever the position falls inside a biome that declares a table.
+ * Returns null when the section has no eligible mob, which both callers treat
+ * as "no spawn this attempt".
+ */
+function selectBiomeSpawn(
+    x: number,
+    y: number,
+    spawnTable: BiomeSpawnEntry[],
+    luckUpgradeBonus: number,
+): { tier: Enemy['tier']; mobType: Enemy['type']; reversed?: boolean } | null {
+    const spawnSelection = selectSpawnFromBiomeTable(spawnTable);
+
+    let tier: Enemy['tier'];
+    let mobType: Enemy['type'] | null;
+    let reversed: boolean | undefined;
+
+    if (spawnSelection) {
+        tier = spawnSelection.tier;
+        reversed = spawnSelection.reversed;
+        mobType = spawnSelection.mobType
+            ? (spawnSelection.mobType as Enemy['type'])
+            : pickSectionMobType(x, y, tier);
+    } else {
+        // No table entry matched: fall back to a common-section mob, still
+        // weighted at the default tier.
+        tier = 'common';
+        mobType = pickSectionMobType(x, y, tier, { statsTier: 'common', excludeCentipedeBodies: true });
+    }
+
+    if (!mobType) return null;
+
+    // Target dummies keep exactly the rarity the biome asked for — drifting off
+    // it would produce a rarity the one-per-section check never cleared, and
+    // dummies are permanent.
+    if (mobType !== 'target_dummy') {
+        tier = rollTierDrift(tier, luckUpgradeBonus);
+    }
+
+    return { tier, mobType, reversed };
+}
+
+/**
+ * The tail both spawn paths share: reject a duplicate target dummy, reject an
+ * overlapping position, admit the mob, then admit whatever it brings with it
+ * (centipede segments, ant-hole guardians).
+ */
+function finalizeMobSpawn(
+    mobType: Enemy['type'],
+    tier: Enemy['tier'],
+    x: number,
+    y: number,
+    reversed: boolean | undefined,
+): LiveEnemy | null {
+    // Checked against the FINAL tier, after any upgrade/downgrade roll.
+    if (mobType === 'target_dummy' && targetDummyExistsInSection(tier, getSectionAtPosition(x, y))) {
+        return null;
+    }
+
+    const mobStats = getMobStats(mobType, tier);
+    if (!mobStats) return null;
+
+    // Final overlap check using the ACTUAL mob size (position search used a
+    // preliminary estimate).
+    if (overlapsAnyMob(x, y, (mobStats.size * 40) / 2)) return null;
+
+    const enemy = spawnEnemy(mobType, tier, x, y, { reversed });
+    if (!enemy) return null;
+
+    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
+
+    // Chain and cluster spawns come AFTER the parent is admitted, so their
+    // leader/hole references resolve to a live entity on the spot instead of
+    // waiting for a second linking pass.
+    if (isCentipedeHeadType(mobType)) {
+        spawnCentipedeBodySegments(enemy);
+    }
+
+    // Pre-spawn configured mobs around this one (e.g. ant-hole guardians).
+    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
+        spawnInitialSpawns(enemy);
+    }
+
+    return enemy;
+}
+
 export function createEnemy(helpers: EnemySpawnerHelpers): LiveEnemy | null {
     const playerCount = Object.keys(players).length;
 
@@ -638,54 +778,9 @@ export function createEnemy(helpers: EnemySpawnerHelpers): LiveEnemy | null {
 
     if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
         // In a biome - use the biome's spawn table
-        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
-
-        if (spawnSelection) {
-            tier = spawnSelection.tier;
-            reversed = spawnSelection.reversed;
-
-            if (spawnSelection.mobType) {
-                mobType = spawnSelection.mobType as Enemy['type'];
-            } else {
-                const allMobTypes = getAllMobTypes();
-                if (allMobTypes.length === 0) {
-                    return null as any;
-                }
-                const currentSection = getSectionAtPosition(x, y);
-                const eligibleMobTypes = allMobTypes.filter(type => {
-                    if (type === 'target_dummy') return false;
-                    const stats = getMobStats(type, tier);
-                    return stats && stats.section.includes(currentSection);
-                });
-                if (eligibleMobTypes.length === 0) {
-                    return null as any;
-                }
-                mobType = selectWeightedMobType(eligibleMobTypes, tier) as Enemy['type'];
-            }
-        } else {
-            const allMobTypes = getAllMobTypes();
-            if (allMobTypes.length === 0) {
-                return null as any;
-            }
-            const currentSection = getSectionAtPosition(x, y);
-            const eligibleMobTypes = allMobTypes.filter(type => {
-                if (type === 'target_dummy') return false;
-                if (isCentipedeBodyType(type)) return false;
-                const stats = getMobStats(type, 'common');
-                return stats && stats.section.includes(currentSection);
-            });
-            if (eligibleMobTypes.length === 0) {
-                return null as any;
-            }
-            mobType = selectWeightedMobType(eligibleMobTypes, tier) as Enemy['type'];
-        }
-
-        // Tier upgrade or downgrade. Target dummies keep exactly the rarity the
-        // biome asked for — drifting off it would produce a rarity the
-        // one-per-section check never cleared, and dummies are permanent.
-        if (mobType !== 'target_dummy') {
-            tier = rollTierDrift(tier, luckUpgradeBonus);
-        }
+        const selection = selectBiomeSpawn(x, y, biome.properties.spawnTable, luckUpgradeBonus);
+        if (!selection) return null as any;
+        ({ tier, mobType, reversed } = selection);
     } else {
         // Check if position is in a spawn zone
         const spawnZoneType = getSpawnZoneType(x, y);
@@ -723,73 +818,17 @@ export function createEnemy(helpers: EnemySpawnerHelpers): LiveEnemy | null {
         }
 
         // Select mob type - filter to mobs belonging to this section
-        const allMobTypes = getAllMobTypes();
-        if (allMobTypes.length === 0) {
-            return null as any;
-        }
-
-        const currentSection = getSectionAtPosition(x, y);
-        const eligibleMobTypes = allMobTypes.filter(type => {
-            if (type === 'target_dummy') return false;
-            if (isCentipedeBodyType(type)) return false;
-            const stats = getMobStats(type, tier);
-            return stats && stats.section.includes(currentSection);
-        });
-
-        if (eligibleMobTypes.length === 0) {
-            return null as any;
-        }
-
-        mobType = selectWeightedMobType(eligibleMobTypes, tier) as Enemy['type'];
+        const picked = pickSectionMobType(x, y, tier, { excludeCentipedeBodies: true });
+        if (!picked) return null as any;
+        mobType = picked;
     }
 
-    // Checked against the FINAL tier, after any upgrade/downgrade roll.
-    if (mobType === 'target_dummy' && targetDummyExistsInSection(tier, getSectionAtPosition(x, y))) {
-        return null as any;
-    }
-
-    // Get mob stats from config
-    let mobStats = getMobStats(mobType, tier);
-    if (!mobStats) {
-        return null as any;
-    }
-
-    // Final overlap check using the ACTUAL mob size (Phase 2 used a preliminary estimate)
-    const actualMobSize = mobStats.size * 40;
-    const actualHalfSize = actualMobSize / 2;
-    const overlapsExistingMob = liveEnemies().some((otherEnemy: Enemy) => {
-        const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-        const otherHalfSize = otherMobSize / 2;
-        const dx = mobX(otherEnemy.entity) - x;
-        const dy = mobY(otherEnemy.entity) - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < actualHalfSize + otherHalfSize;
-    });
-    if (overlapsExistingMob) {
-        return null as any;
-    }
-
-    const enemy = spawnEnemy(mobType, tier, x, y, { reversed });
+    const enemy = finalizeMobSpawn(mobType, tier, x, y, reversed);
     if (!enemy) return null as any;
 
     // Counted against the cached budget above so a burst of calls inside one
     // TTL window stops at the target instead of spawning the full request.
     _spawnedSinceRefresh++;
-
-    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
-
-    // Chain and cluster spawns come AFTER the parent is admitted, so their
-    // leader/hole references resolve to a live entity on the spot instead of
-    // waiting for a second linking pass.
-    if (isCentipedeHeadType(mobType)) {
-        spawnCentipedeBodySegments(enemy);
-    }
-
-    // Pre-spawn configured mobs around this one (e.g. ant-hole guardians).
-    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
-        spawnInitialSpawns(enemy);
-    }
 
     return enemy;
 }
@@ -857,16 +896,7 @@ export function createEnemyInZone(
 
         if (helpers.isPositionInPlayerPetalRange(x, y, PRELIMINARY_MOB_SIZE)) continue;
 
-        const tooClose = liveEnemies().some((otherEnemy: Enemy) => {
-            const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-            const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-            const otherHalfSize = otherMobSize / 2;
-            const dx = mobX(otherEnemy.entity) - x;
-            const dy = mobY(otherEnemy.entity) - y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            return distance < halfPrelimSize + otherHalfSize + MIN_MOB_SPAWN_DISTANCE;
-        });
-        if (tooClose) continue;
+        if (overlapsAnyMob(x, y, halfPrelimSize, MIN_MOB_SPAWN_DISTANCE)) continue;
 
         validPosition = true;
         break;
@@ -885,43 +915,9 @@ export function createEnemyInZone(
     const luckUpgradeBonus = targetLuck * 0.01;
 
     if (biome && biome.properties?.spawnTable && biome.properties.spawnTable.length > 0) {
-        const spawnSelection = selectSpawnFromBiomeTable(biome.properties.spawnTable);
-        if (spawnSelection) {
-            tier = spawnSelection.tier;
-            reversed = spawnSelection.reversed;
-
-            if (spawnSelection.mobType) {
-                mobType = spawnSelection.mobType as Enemy['type'];
-            } else {
-                const allMobTypes = getAllMobTypes();
-                if (allMobTypes.length === 0) return null;
-                const currentSection = getSectionAtPosition(x, y);
-                const eligibleMobTypes = allMobTypes.filter(type => {
-                    if (type === 'target_dummy') return false;
-                    const stats = getMobStats(type, tier);
-                    return stats && stats.section.includes(currentSection);
-                });
-                if (eligibleMobTypes.length === 0) return null;
-                mobType = selectWeightedMobType(eligibleMobTypes, tier) as Enemy['type'];
-            }
-        } else {
-            const allMobTypes = getAllMobTypes();
-            if (allMobTypes.length === 0) return null;
-            const currentSection = getSectionAtPosition(x, y);
-            const eligibleMobTypes = allMobTypes.filter(type => {
-                if (type === 'target_dummy') return false;
-                if (isCentipedeBodyType(type)) return false;
-                const stats = getMobStats(type, 'common');
-                return stats && stats.section.includes(currentSection);
-            });
-            if (eligibleMobTypes.length === 0) return null;
-            mobType = selectWeightedMobType(eligibleMobTypes, tier) as Enemy['type'];
-        }
-
-        // Target dummies keep the biome's exact rarity (see createEnemy).
-        if (mobType !== 'target_dummy') {
-            tier = rollTierDrift(tier, luckUpgradeBonus);
-        }
+        const selection = selectBiomeSpawn(x, y, biome.properties.spawnTable, luckUpgradeBonus);
+        if (!selection) return null;
+        ({ tier, mobType, reversed } = selection);
     } else {
         // Force the explicit zone we were asked to spawn for, so overlapping
         // zones don't get cross-tier spawns from getSpawnZoneType's first-match.
@@ -933,54 +929,12 @@ export function createEnemyInZone(
             tier = rollTierDrift(tier, luckUpgradeBonus);
         }
 
-        const allMobTypes = getAllMobTypes();
-        if (allMobTypes.length === 0) return null;
-        const currentSection = getSectionAtPosition(x, y);
-        const eligibleMobTypes = allMobTypes.filter(type => {
-            if (type === 'target_dummy') return false;
-            if (isCentipedeBodyType(type)) return false;
-            const stats = getMobStats(type, tier);
-            return stats && stats.section.includes(currentSection);
-        });
-        if (eligibleMobTypes.length === 0) return null;
-        mobType = selectWeightedMobType(eligibleMobTypes, tier) as Enemy['type'];
+        const picked = pickSectionMobType(x, y, tier, { excludeCentipedeBodies: true });
+        if (!picked) return null;
+        mobType = picked;
     }
 
-    // Checked against the FINAL tier, after any upgrade/downgrade roll.
-    if (mobType === 'target_dummy' && targetDummyExistsInSection(tier, getSectionAtPosition(x, y))) {
-        return null;
-    }
-
-    const mobStats = getMobStats(mobType, tier);
-    if (!mobStats) return null;
-
-    const actualMobSize = mobStats.size * 40;
-    const actualHalfSize = actualMobSize / 2;
-    const overlapsExistingMob = liveEnemies().some((otherEnemy: Enemy) => {
-        const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-        const otherHalfSize = otherMobSize / 2;
-        const dx = mobX(otherEnemy.entity) - x;
-        const dy = mobY(otherEnemy.entity) - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < actualHalfSize + otherHalfSize;
-    });
-    if (overlapsExistingMob) return null;
-
-    const enemy = spawnEnemy(mobType, tier, x, y, { reversed });
-    if (!enemy) return null;
-
-    // DPS tracking buffers are allocated lazily on first damage event in trackDamage().
-
-    if (isCentipedeHeadType(mobType)) {
-        spawnCentipedeBodySegments(enemy);
-    }
-
-    if (mobStats.initial_spawns && mobStats.initial_spawns.length > 0) {
-        spawnInitialSpawns(enemy);
-    }
-
-    return enemy;
+    return finalizeMobSpawn(mobType, tier, x, y, reversed);
 }
 
 /**
@@ -1208,17 +1162,7 @@ export function createSpecialMob(
     }
 
     // Final overlap check with existing mobs using actual size
-    const halfMobSize = mobSize / 2;
-    const overlapsExistingMob = liveEnemies().some((otherEnemy: Enemy) => {
-        const otherMobStats = getMobStats(otherEnemy.type, otherEnemy.tier);
-        const otherMobSize = otherMobStats ? otherMobStats.size * 40 : 40;
-        const otherHalfSize = otherMobSize / 2;
-        const dx = mobX(otherEnemy.entity) - position.x;
-        const dy = mobY(otherEnemy.entity) - position.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < halfMobSize + otherHalfSize;
-    });
-    if (overlapsExistingMob) {
+    if (overlapsAnyMob(position.x, position.y, mobSize / 2)) {
         return null;
     }
 
@@ -1278,6 +1222,50 @@ export function updateSpecialMobCounts() {
 /**
  * Function to spawn special mobs
  */
+/**
+ * Broadcasts a boss spawn and records it for the boss-event API.
+ *
+ * The super and unique branches of spawnSpecialMobs each carried their own copy
+ * of this, differing only in the tier word — which meant the "somewhere"
+ * wording, the target-dummy suppression and the recorded event could drift
+ * apart per tier. Ultras are deliberately NOT announced (they spawn and die
+ * silently, see sendBossMobDefeatedMessage), so they never reach here.
+ *
+ * Target dummies are a permanent DPS-test fixture, not an event: no message.
+ */
+function announceBossSpawn(
+    tier: 'super' | 'unique',
+    mob: LiveEnemy,
+    mobSection: number,
+    io: SocketIOServer,
+): void {
+    if (mob.type === 'target_dummy') return;
+
+    const mobName = mob.type.replace('_', ' ');
+    const spawnTimestamp = Date.now();
+
+    // Personalised per player: someone standing in the boss's own section is
+    // told it spawned, everyone else that it spawned "somewhere".
+    Object.entries(players).forEach(([playerId, player]) => {
+        const somewhere = getSectionAtPosition(player.x, player.y) === mobSection ? '' : ' somewhere';
+        io.to(playerId).emit('chatMessage', {
+            sender: '',
+            content: `<b style="color: ${ENEMY_TIERS[tier].color};">A ${tier} ${mobName} has spawned${somewhere}!</b>`,
+            timestamp: spawnTimestamp,
+        });
+    });
+
+    recordBossEvent({
+        type: 'spawn',
+        tier,
+        mobType: mob.type,
+        x: mobX(mob.entity),
+        y: mobY(mob.entity),
+        timestamp: spawnTimestamp,
+        message: `A ${tier} ${mobName} has spawned!`,
+    });
+}
+
 export function spawnSpecialMobs(
     helpers: EnemySpawnerHelpers,
     io: SocketIOServer
@@ -1315,33 +1303,7 @@ export function spawnSpecialMobs(
                 superMobCount.value++;
                 setSuperMobInSection(mobSection, superMob.id);
 
-                // Don't send spawn notification for target dummies
-                if (superMob.type !== 'target_dummy') {
-                    const spawnTimestamp = Date.now();
-
-                    // Send personalized message to each player based on their section
-                    Object.entries(players).forEach(([playerId, player]) => {
-                        const playerSection = getSectionAtPosition(player.x, player.y);
-                        const isSameSection = playerSection === mobSection;
-                        const somewhere = isSameSection ? '' : ' somewhere';
-
-                        io.to(playerId).emit('chatMessage', {
-                            sender: '',
-                            content: `<b style="color: ${ENEMY_TIERS.super.color};">A super ${superMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
-                            timestamp: spawnTimestamp
-                        });
-                    });
-
-                    recordBossEvent({
-                        type: 'spawn',
-                        tier: 'super',
-                        mobType: superMob.type,
-                        x: mobX(superMob.entity),
-                        y: mobY(superMob.entity),
-                        timestamp: spawnTimestamp,
-                        message: `A super ${superMob.type.replace('_', ' ')} has spawned!`
-                    });
-                }
+                announceBossSpawn('super', superMob, mobSection, io);
                 console.log(`[SERVER] Spawned super mob in section ${section}: ${superMob.type} at (${mobX(superMob.entity)}, ${mobY(superMob.entity)})`);
             }
         }
@@ -1352,34 +1314,11 @@ export function spawnSpecialMobs(
         const uniqueMob = createSpecialMob('unique', helpers);
         if (uniqueMob) {
             uniqueMobCount.value = 1;
-            // Don't send spawn notification for target dummies
-            if (uniqueMob.type !== 'target_dummy') {
-                const mobSection = getSectionAtPosition(mobX(uniqueMob.entity), mobY(uniqueMob.entity));
-                const spawnTimestamp = Date.now();
-
-                // Send personalized message to each player based on their section
-                Object.entries(players).forEach(([playerId, player]) => {
-                    const playerSection = getSectionAtPosition(player.x, player.y);
-                    const isSameSection = playerSection === mobSection;
-                    const somewhere = isSameSection ? '' : ' somewhere';
-
-                    io.to(playerId).emit('chatMessage', {
-                        sender: '',
-                        content: `<b style="color: ${ENEMY_TIERS.unique.color};">A unique ${uniqueMob.type.replace('_', ' ')} has spawned${somewhere}!</b>`,
-                        timestamp: spawnTimestamp
-                    });
-                });
-
-                recordBossEvent({
-                    type: 'spawn',
-                    tier: 'unique',
-                    mobType: uniqueMob.type,
-                    x: mobX(uniqueMob.entity),
-                    y: mobY(uniqueMob.entity),
-                    timestamp: spawnTimestamp,
-                    message: `A unique ${uniqueMob.type.replace('_', ' ')} has spawned!`
-                });
-            }
+            announceBossSpawn(
+                'unique', uniqueMob,
+                getSectionAtPosition(mobX(uniqueMob.entity), mobY(uniqueMob.entity)),
+                io,
+            );
             console.log(`[SERVER] Spawned unique mob: ${uniqueMob.type} at (${mobX(uniqueMob.entity)}, ${mobY(uniqueMob.entity)})`);
         }
     }

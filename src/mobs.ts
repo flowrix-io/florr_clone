@@ -769,22 +769,29 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
     }
 };
 
+/**
+ * Per-rarity `ai_type: 'neutral'` overrides from `minRarity` upwards.
+ *
+ * Five mobs (bees and the four centipede parts) each listed the same eight
+ * lines by hand, which meant a new rarity tier had to be remembered in five
+ * places. Neutral mobs don't scan for targets but aggro whatever hit them —
+ * trackDamage sets targetPlayerId, which the chase branch treats as provoked.
+ */
+function neutralFromRarity(minRarity: Rarity): { [rarity: string]: RarityOverride } {
+    const overrides: { [rarity: string]: RarityOverride } = {};
+    for (const rarity of RARITY_LEVELS.slice(RARITY_LEVELS.indexOf(minRarity))) {
+        overrides[rarity] = { ai_type: 'neutral' };
+    }
+    return overrides;
+}
+
 // Base mob configurations - only common rarity stats
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride } } = {
     // From rare up, bees defend themselves: neutral doesn't scan for targets but
     // aggros its attacker when hit (trackDamage sets targetPlayerId, which the
     // chase branch treats as provoked). Common/uncommon stay fully passive.
-    bee: {
-        rare: { ai_type: 'neutral' },
-        epic: { ai_type: 'neutral' },
-        legendary: { ai_type: 'neutral' },
-        mythic: { ai_type: 'neutral' },
-        ultra: { ai_type: 'neutral' },
-        super: { ai_type: 'neutral' },
-        unique: { ai_type: 'neutral' },
-        apex: { ai_type: 'neutral' },
-    },
+    bee: neutralFromRarity('rare'),
     soldier_ant: {
         uncommon: {
             range: 500
@@ -1156,42 +1163,10 @@ const RARITY_OVERRIDES: { [mobType: string]: { [rarity: string]: RarityOverride 
         }
     },
     // Above rare, centipedes become neutral: they retaliate when any segment takes damage
-    centipede: {
-        epic: { ai_type: 'neutral' },
-        legendary: { ai_type: 'neutral' },
-        mythic: { ai_type: 'neutral' },
-        ultra: { ai_type: 'neutral' },
-        super: { ai_type: 'neutral' },
-        unique: { ai_type: 'neutral' },
-        apex: { ai_type: 'neutral' }
-    },
-    centipede_body: {
-        epic: { ai_type: 'neutral' },
-        legendary: { ai_type: 'neutral' },
-        mythic: { ai_type: 'neutral' },
-        ultra: { ai_type: 'neutral' },
-        super: { ai_type: 'neutral' },
-        unique: { ai_type: 'neutral' },
-        apex: { ai_type: 'neutral' }
-    },
-    desert_centipede: {
-        epic: { ai_type: 'neutral' },
-        legendary: { ai_type: 'neutral' },
-        mythic: { ai_type: 'neutral' },
-        ultra: { ai_type: 'neutral' },
-        super: { ai_type: 'neutral' },
-        unique: { ai_type: 'neutral' },
-        apex: { ai_type: 'neutral' }
-    },
-    desert_centipede_body: {
-        epic: { ai_type: 'neutral' },
-        legendary: { ai_type: 'neutral' },
-        mythic: { ai_type: 'neutral' },
-        ultra: { ai_type: 'neutral' },
-        super: { ai_type: 'neutral' },
-        unique: { ai_type: 'neutral' },
-        apex: { ai_type: 'neutral' }
-    }
+    centipede: neutralFromRarity('epic'),
+    centipede_body: neutralFromRarity('epic'),
+    desert_centipede: neutralFromRarity('epic'),
+    desert_centipede_body: neutralFromRarity('epic')
 };
 
 // Rarity color mappings

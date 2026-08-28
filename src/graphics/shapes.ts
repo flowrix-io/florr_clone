@@ -50,3 +50,16 @@ export function darken(hex: string, percent: number = 30): string {
     const nb = Math.round(b * f);
     return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
 }
+
+/** Lightens a #rrggbb colour by `percent` (interpolates towards white). */
+export function lighten(hex: string, percent: number = 30): string {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    const f = percent / 100;
+    const nr = Math.round(r + (255 - r) * f);
+    const ng = Math.round(g + (255 - g) * f);
+    const nb = Math.round(b + (255 - b) * f);
+    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
+}

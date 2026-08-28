@@ -50,6 +50,36 @@ const isSaneCoord = (v: number): boolean =>
     Number.isFinite(v) && Math.abs(v) <= MAX_SANE_WORLD_COORD;
 
 // Helper function to send message to admin or console
+/**
+ * Resolves an admin command's `<playerId/username>` argument.
+ *
+ * Socket id first, then a case-insensitive username match — the resolution six
+ * command handlers each open-coded, differing only in which of the id, the
+ * player and the socket they bothered to keep. Returns all three; bots resolve
+ * by id but have no socket.
+ */
+function resolveTargetPlayer(
+    io: SocketIOServer,
+    playerIdentifier: string,
+): { id: string; player: ServerPlayer; socket: AuthenticatedSocket | undefined } | null {
+    const direct = players[playerIdentifier];
+    if (direct) {
+        return {
+            id: playerIdentifier,
+            player: direct,
+            socket: io.sockets.sockets.get(playerIdentifier) as AuthenticatedSocket,
+        };
+    }
+    const wanted = playerIdentifier.toLowerCase();
+    for (const [sid, player] of Object.entries(players)) {
+        const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
+        if (s?.username && s.username.toLowerCase() === wanted) {
+            return { id: sid, player, socket: s };
+        }
+    }
+    return null;
+}
+
 function sendOutput(message: string, socketId?: string, io?: SocketIOServer): void {
     console.log(message);
     if (socketId && io) {
@@ -293,14 +323,10 @@ export function executeServerCommand(
                 targetPlayer = players[playerIdentifier];
                 targetPlayerId = playerIdentifier;
             } else {
-                // Search by username
-                for (const [sid, player] of Object.entries(players)) {
-                    const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
-                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                        targetPlayer = player;
-                        targetPlayerId = sid;
-                        break;
-                    }
+                const resolved = resolveTargetPlayer(io, playerIdentifier);
+                if (resolved) {
+                    targetPlayer = resolved.player;
+                    targetPlayerId = resolved.id;
                 }
             }
 
@@ -475,18 +501,10 @@ export function executeServerCommand(
         // Find player by socket ID first, then by username.
         let targetPlayer: ServerPlayer | undefined;
         let targetSocket: AuthenticatedSocket | undefined;
-        if (players[playerIdentifier]) {
-            targetPlayer = players[playerIdentifier];
-            targetSocket = io.sockets.sockets.get(playerIdentifier) as AuthenticatedSocket;
-        } else {
-            for (const [sid, player] of Object.entries(players)) {
-                const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
-                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                    targetPlayer = player;
-                    targetSocket = s;
-                    break;
-                }
-            }
+        const resolvedSkinTarget = resolveTargetPlayer(io, playerIdentifier);
+        if (resolvedSkinTarget) {
+            targetPlayer = resolvedSkinTarget.player;
+            targetSocket = resolvedSkinTarget.socket;
         }
 
         if (targetPlayer) {
@@ -519,17 +537,7 @@ export function executeServerCommand(
 
         // Same resolution as set_skin: socket id first, then username.
         let targetPlayer: ServerPlayer | undefined;
-        if (players[playerIdentifier]) {
-            targetPlayer = players[playerIdentifier];
-        } else {
-            for (const [sid, player] of Object.entries(players)) {
-                const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
-                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                    targetPlayer = player;
-                    break;
-                }
-            }
-        }
+        targetPlayer = resolveTargetPlayer(io, playerIdentifier)?.player;
 
         if (!targetPlayer) {
             sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
@@ -577,18 +585,10 @@ export function executeServerCommand(
         const playerIdentifier = parts[1];
         let targetId: string | undefined;
         let targetPlayer: ServerPlayer | undefined;
-        if (players[playerIdentifier]) {
-            targetId = playerIdentifier;
-            targetPlayer = players[playerIdentifier];
-        } else {
-            for (const [sid, player] of Object.entries(players)) {
-                const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
-                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                    targetId = sid;
-                    targetPlayer = player;
-                    break;
-                }
-            }
+        const resolvedAdminTarget = resolveTargetPlayer(io, playerIdentifier);
+        if (resolvedAdminTarget) {
+            targetId = resolvedAdminTarget.id;
+            targetPlayer = resolvedAdminTarget.player;
         }
 
         if (!targetId || !targetPlayer) {
@@ -886,15 +886,11 @@ export function executeServerCommand(
                 targetPlayerId = playerIdentifier;
                 targetSocket = io.sockets.sockets.get(playerIdentifier) as AuthenticatedSocket;
             } else {
-                // Search by username
-                for (const [sid, player] of Object.entries(players)) {
-                    const s = io.sockets.sockets.get(sid) as AuthenticatedSocket;
-                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                        targetPlayer = player;
-                        targetPlayerId = sid;
-                        targetSocket = s;
-                        break;
-                    }
+                const resolved = resolveTargetPlayer(io, playerIdentifier);
+                if (resolved) {
+                    targetPlayer = resolved.player;
+                    targetPlayerId = resolved.id;
+                    targetSocket = resolved.socket;
                 }
             }
             

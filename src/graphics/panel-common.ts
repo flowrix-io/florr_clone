@@ -7,7 +7,7 @@ import { ITEM_RARITY_COLORS } from '../petals';
 import { drawPetalGroup } from './petal-icon';
 import { drawText } from './text';
 import { formatPetalName } from './petal-display';
-import { darken } from './shapes';
+import { darken, lighten } from './shapes';
 
 /** One laid-out item cell within a panel's scrollable grid. */
 export interface ItemRect {
@@ -28,7 +28,7 @@ export interface PanelGameAPI {
     getItemSpriteDataUrl?(itemType: string): string | null;
 }
 
-export { darken };
+export { darken, lighten };
 
 /**
  * Matches the canvas backing store to its CSS box at the current device pixel

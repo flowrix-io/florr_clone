@@ -9,6 +9,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.drawRoundedRect = drawRoundedRect;
 exports.darken = darken;
+exports.lighten = lighten;
 /**
  * Builds a rounded-rectangle path; the caller fills or strokes it.
  *
@@ -47,5 +48,17 @@ function darken(hex, percent = 30) {
     const nr = Math.round(r * f);
     const ng = Math.round(g * f);
     const nb = Math.round(b * f);
+    return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
+}
+/** Lightens a #rrggbb colour by `percent` (interpolates towards white). */
+function lighten(hex, percent = 30) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    const f = percent / 100;
+    const nr = Math.round(r + (255 - r) * f);
+    const ng = Math.round(g + (255 - g) * f);
+    const nb = Math.round(b + (255 - b) * f);
     return `#${((nr << 16) | (ng << 8) | nb).toString(16).padStart(6, '0')}`;
 }

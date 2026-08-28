@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CanvasLoadoutBar = exports.LOADOUT_SLOT_COUNT = exports.LOADOUT_SECONDARY_COUNT = exports.LOADOUT_PRIMARY_COUNT = void 0;
+// Canvas-based loadout bar inspired by gardn/Client/Ui/InGame/Loadout
+const petal_display_1 = require("./petal-display");
 const petals_1 = require("../petals");
 const petal_icon_1 = require("./petal-icon");
 const text_1 = require("./text");
@@ -417,7 +419,7 @@ class CanvasLoadoutBar {
         ctx.restore();
         // Petal name text (gardn: translate(0,20), text_width auto-fit to 50px)
         if (item.type === 'petal' && item.petalType) {
-            const name = this.formatPetalName(item.petalType);
+            const name = (0, petal_display_1.formatPetalName)(item.petalType);
             // Fit text to ~50 units wide in design coords; default size = 12
             ctx.font = 'bold 12px Ubuntu, sans-serif';
             const measured = ctx.measureText(name).width;
@@ -441,14 +443,6 @@ class CanvasLoadoutBar {
             ctx.fillRect(rect.x + 4, barY, (rect.w - 8) * pct, barH);
             ctx.restore();
         }
-    }
-    formatPetalName(petalType) {
-        // Turn "dandelion_petal" / "rose" into "Dandelion Petal" / "Rose"
-        return petalType
-            .split(/[_\s]+/)
-            .filter(Boolean)
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-            .join(' ');
     }
 }
 exports.CanvasLoadoutBar = CanvasLoadoutBar;

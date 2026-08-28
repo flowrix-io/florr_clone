@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Canvas Renderer</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    background: #181818;
+    color: white;
+    font-family: Arial, sans-serif;
+}
+
+/* HEADER */
+
+header {
+    height: 50px;
+    flex-shrink: 0;
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 8px 12px;
+
+    background: #222;
+    border-bottom: 1px solid #444;
+}
+
+header h1 {
+    margin: 0;
+    margin-right: auto;
+
+    font-size: 16px;
+    font-weight: 600;
+}
+
+input {
+    width: 75px;
+
+    padding: 6px 8px;
+
+    border: 1px solid #444;
+    border-radius: 4px;
+
+    background: #111;
+    color: white;
+
+    font-family: monospace;
+}
+
+button {
+    padding: 7px 14px;
+
+    border: none;
+    border-radius: 5px;
+
+    background: #4c8bf5;
+    color: white;
+
+    cursor: pointer;
+    font-size: 14px;
+}
+
+button:hover {
+    background: #3978e5;
+}
+
+/* MAIN */
+
+.main {
+    flex: 1;
+    min-height: 0;
+
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.panel {
+    min-width: 0;
+    min-height: 0;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.panel:first-child {
+    border-right: 1px solid #444;
+}
+
+.panel-title {
+    height: 35px;
+    flex-shrink: 0;
+
+    display: flex;
+    align-items: center;
+
+    padding: 0 12px;
+
+    background: #202020;
+    border-bottom: 1px solid #333;
+
+    color: #aaa;
+    font-size: 13px;
+}
+
+/* EDITOR */
+
+.editor {
+    flex: 1;
+    min-height: 0;
+
+    display: flex;
+
+    overflow: hidden;
+
+    background: #111;
+}
+
+.line-numbers {
+    flex-shrink: 0;
+
+    width: 50px;
+
+    padding-top: 15px;
+
+    background: #181818;
+    border-right: 1px solid #333;
+
+    color: #666;
+
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 21px;
+
+    text-align: right;
+    padding-right: 10px;
+
+    overflow: hidden;
+
+    user-select: none;
+}
+
+.line-numbers div {
+    height: 21px;
+}
+
+textarea {
+    flex: 1;
+
+    width: 100%;
+    height: 100%;
+
+    resize: none;
+    border: none;
+    outline: none;
+
+    padding: 15px;
+
+    background: #111;
+    color: #ddd;
+
+    font-family:
+        "SFMono-Regular",
+        Consolas,
+        "Liberation Mono",
+        monospace;
+
+    font-size: 14px;
+    line-height: 21px;
+
+    tab-size: 4;
+
+    white-space: pre;
+    overflow: auto;
+}
+
+/* CANVAS PREVIEW */
+
+.preview {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+
+    overflow: hidden;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 20px;
+
+    background:
+        repeating-conic-gradient(
+            #252525 0% 25%,
+            #202020 0% 50%
+        ) 50% / 20px 20px;
+}
+
+/*
+    This wrapper represents the displayed
+    canvas size. The actual canvas remains
+    at its original resolution.
+*/
+
+.canvas-wrapper {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    max-width: 100%;
+    max-height: 100%;
+}
+
+canvas {
+    display: block;
+
+    background: white;
+
+    box-shadow:
+        0 0 0 1px #555,
+        0 5px 20px rgba(0, 0, 0, 0.4);
+
+    /*
+        This is only the visual size.
+        JavaScript still sees the real
+        canvas.width / canvas.height.
+    */
+
+    max-width: 100%;
+    max-height: 100%;
+
+    width: auto;
+    height: auto;
+}
+
+/* ERROR */
+
+.error {
+    display: none;
+
+    max-height: 150px;
+    overflow: auto;
+
+    padding: 10px;
+
+    background: #301818;
+    border-top: 1px solid #662222;
+
+    color: #ff7777;
+
+    font-family: monospace;
+    font-size: 12px;
+
+    white-space: pre-wrap;
+}
+
+/* MOBILE */
+
+@media (max-width: 700px) {
+
+    .main {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+    }
+
+    .panel:first-child {
+        border-right: none;
+        border-bottom: 1px solid #444;
+    }
+
+    header h1 {
+        display: none;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+
+    <h1>Canvas Renderer</h1>
+
+    <label>
+        W:
+        <input
+            id="width"
+            type="number"
+            value="1000"
+            min="1"
+        >
+    </label>
+
+    <label>
+        H:
+        <input
+            id="height"
+            type="number"
+            value="800"
+            min="1"
+        >
+    </label>
+
+    <button id="resizeButton">
+        Resize
+    </button>
+
+    <button id="renderButton">
+        Render
+    </button>
+
+    <button id="clearButton">
+        Clear
+    </button>
+
+</header>
+
+
+<div class="main">
+
+    <!-- CODE -->
+
+    <div class="panel">
+
+        <div class="panel-title">
+            JavaScript Canvas Commands
+        </div>
+
+        <div class="editor">
+
+            <div
+                id="lineNumbers"
+                class="line-numbers"
+            ></div>
+
+            <textarea
+                id="code"
+                spellcheck="false"
+            >ctx.fillStyle = "red";
+ctx.fillRect(20, 20, 200, 150);
+
+ctx.fillStyle = "blue";
+
+ctx.beginPath();
+ctx.ellipse(
+    300,
+    150,
+    100,
+    70,
+    0,
+    0,
+    Math.PI * 2
+);
+ctx.fill();
+
+ctx.strokeStyle = "black";
+ctx.lineWidth = 10;
+
+ctx.beginPath();
+ctx.moveTo(50, 300);
+ctx.lineTo(700, 300);
+ctx.stroke();
+
+ctx.fillStyle = "black";
+ctx.font = "48px sans-serif";
+ctx.fillText("Hello Canvas!", 50, 400);</textarea>
+
+        </div>
+
+    </div>
+
+
+    <!-- PREVIEW -->
+
+    <div class="panel">
+
+        <div class="panel-title">
+            Canvas Preview
+        </div>
+
+        <div
+            id="preview"
+            class="preview"
+        >
+
+            <div class="canvas-wrapper">
+
+                <canvas
+                    id="canvas"
+                    width="1000"
+                    height="800"
+                ></canvas>
+
+            </div>
+
+        </div>
+
+        <div
+            id="error"
+            class="error"
+        ></div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+"use strict";
+
+
+/* =========================
+   ELEMENTS
+========================= */
+
+const canvas =
+    document.getElementById("canvas");
+
+const ctx =
+    canvas.getContext("2d");
+
+const code =
+    document.getElementById("code");
+
+const lineNumbers =
+    document.getElementById("lineNumbers");
+
+const renderButton =
+    document.getElementById("renderButton");
+
+const clearButton =
+    document.getElementById("clearButton");
+
+const resizeButton =
+    document.getElementById("resizeButton");
+
+const widthInput =
+    document.getElementById("width");
+
+const heightInput =
+    document.getElementById("height");
+
+const error =
+    document.getElementById("error");
+
+
+/* =========================
+   LINE NUMBERS
+========================= */
+
+function updateLineNumbers() {
+
+    const lines =
+        code.value.split("\n");
+
+    let html = "";
+
+    for (
+        let i = 1;
+        i <= lines.length;
+        i++
+    ) {
+        html += `<div>${i}</div>`;
+    }
+
+    lineNumbers.innerHTML = html;
+
+    syncLineNumbers();
+}
+
+
+function syncLineNumbers() {
+
+    lineNumbers.scrollTop =
+        code.scrollTop;
+}
+
+
+/* =========================
+   CANVAS SIZE
+========================= */
+
+function resizeCanvas() {
+
+    const width =
+        Math.max(
+            1,
+            Number(widthInput.value) || 1
+        );
+
+    const height =
+        Math.max(
+            1,
+            Number(heightInput.value) || 1
+        );
+
+    canvas.width = width;
+    canvas.height = height;
+
+    render();
+}
+
+
+/* =========================
+   CLEAR
+========================= */
+
+function clearCanvas() {
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    error.style.display = "none";
+    error.textContent = "";
+}
+
+
+/* =========================
+   RENDER
+========================= */
+
+/*
+    Captured frames load images (SVG overlays, sprites) with await, so
+    the pasted code has to run as an async function body.
+*/
+
+const AsyncFunction =
+    Object.getPrototypeOf(
+        async function () {}
+    ).constructor;
+
+
+async function render() {
+
+    clearCanvas();
+
+    try {
+
+        const userCode =
+            new AsyncFunction(
+                "ctx",
+                "canvas",
+                code.value
+            );
+
+        await userCode(
+            ctx,
+            canvas
+        );
+
+    } catch (err) {
+
+        error.textContent =
+            err.stack || String(err);
+
+        error.style.display =
+            "block";
+    }
+
+    /*
+        Captured code sets canvas.width / canvas.height itself, so the
+        header inputs follow the canvas rather than the other way round.
+    */
+
+    syncSizeInputs();
+}
+
+
+function syncSizeInputs() {
+
+    widthInput.value = canvas.width;
+    heightInput.value = canvas.height;
+}
+
+
+/* =========================
+   EVENTS
+========================= */
+
+renderButton.addEventListener(
+    "click",
+    render
+);
+
+
+clearButton.addEventListener(
+    "click",
+    clearCanvas
+);
+
+
+resizeButton.addEventListener(
+    "click",
+    resizeCanvas
+);
+
+
+code.addEventListener(
+    "input",
+    updateLineNumbers
+);
+
+
+code.addEventListener(
+    "scroll",
+    syncLineNumbers
+);
+
+
+/*
+    Ctrl + Enter / Cmd + Enter
+*/
+
+code.addEventListener(
+    "keydown",
+    function (event) {
+
+        if (
+            (event.ctrlKey || event.metaKey) &&
+            event.key === "Enter"
+        ) {
+
+            event.preventDefault();
+
+            render();
+        }
+
+    }
+);
+
+
+/*
+    TAB indentation
+*/
+
+code.addEventListener(
+    "keydown",
+    function (event) {
+
+        if (event.key === "Tab") {
+
+            event.preventDefault();
+
+            const start =
+                code.selectionStart;
+
+            const end =
+                code.selectionEnd;
+
+            code.value =
+                code.value.substring(0, start) +
+                "    " +
+                code.value.substring(end);
+
+            code.selectionStart =
+                code.selectionEnd =
+                start + 4;
+
+            updateLineNumbers();
+        }
+
+    }
+);
+
+
+/* =========================
+   INITIALIZE
+========================= */
+
+updateLineNumbers();
+
+render();
+
+</script>
+
+</body>
+</html>

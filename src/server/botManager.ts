@@ -690,15 +690,25 @@ function buildBotLoadout(level: number, rng: () => number): any[] {
     return loadout;
 }
 
-function pickPowderRarity(loadout: any[]): string {
+/**
+ * Highest petal rarity index across a bot's loadout, 0 when it holds none.
+ *
+ * Both the powder and yggdrasil rarity pickers ran this scan; they differ only
+ * in the floor they clamp the result to.
+ */
+function maxLoadoutRarityIndex(loadout: any[]): number {
     let maxIdx = 0;
-    if (loadout) {
-        for (const item of loadout) {
-            if (!item || item.type !== 'petal' || !item.rarity) continue;
-            const idx = RARITY_ORDER.indexOf(item.rarity);
-            if (idx > maxIdx) maxIdx = idx;
-        }
+    if (!loadout) return maxIdx;
+    for (const item of loadout) {
+        if (!item || item.type !== 'petal' || !item.rarity) continue;
+        const idx = RARITY_ORDER.indexOf(item.rarity);
+        if (idx > maxIdx) maxIdx = idx;
     }
+    return maxIdx;
+}
+
+function pickPowderRarity(loadout: any[]): string {
+    const maxIdx = maxLoadoutRarityIndex(loadout);
     return RARITY_ORDER[Math.max(POWDER_MIN_RARITY_IDX, maxIdx)];
 }
 
@@ -864,14 +874,7 @@ const YGGDRASIL_REVIVE_SEEK_RANGE = 1500;
 // what they're already wearing, otherwise apex bots would walk around with
 // permanently-rolled apex yggdrasils nobody else can craft.
 function pickYggdrasilRarity(loadout: any[]): string {
-    let maxIdx = 0;
-    if (loadout) {
-        for (const item of loadout) {
-            if (!item || item.type !== 'petal' || !item.rarity) continue;
-            const idx = RARITY_ORDER.indexOf(item.rarity);
-            if (idx > maxIdx) maxIdx = idx;
-        }
-    }
+    const maxIdx = maxLoadoutRarityIndex(loadout);
     return RARITY_ORDER[maxIdx];
 }
 
@@ -2004,6 +2007,26 @@ function pickBestEnemyTarget(
 }
 
 /**
+ * Adds a boss to a raid candidate pool, keeping uniques strictly ahead of
+ * supers: the first unique seen clears any supers already collected, and
+ * supers are ignored from then on. Returns the updated `preferUnique` flag.
+ *
+ * `pool` is mutated in place (cleared, not reassigned) so both callers can keep
+ * holding the same array.
+ */
+function addBossCandidate(pool: Enemy[], enemy: Enemy, preferUnique: boolean): boolean {
+    if (enemy.tier === 'unique') {
+        if (!preferUnique) pool.length = 0;
+        pool.push(enemy);
+        return true;
+    }
+    if (enemy.tier === 'super' && !preferUnique) {
+        pool.push(enemy);
+    }
+    return preferUnique;
+}
+
+/**
  * Picks the boss a raiding bot should converge on: the most recently spawned
  * mob in `pool`, breaking ties towards whichever is closest to a human player.
  *
@@ -2096,18 +2119,13 @@ function distSqToNearestHumanPlayer(x: number, y: number): number {
 // freshly-spawned bosses bothering humans rather than chasing whatever stale
 // boss happens to come first in the enemies array.
 function pickRaidTargetGlobal(): { x: number; y: number; tier: string } | null {
-    let pool: Enemy[] = [];
+    const pool: Enemy[] = [];
     let preferUnique = false;
     for (const enemy of liveEnemies()) {
         if (enemy.ownerId) continue;
         if ((enemy as any).isDead) continue;
         if (enemy.type === 'target_dummy') continue;
-        if (enemy.tier === 'unique') {
-            if (!preferUnique) { pool = []; preferUnique = true; }
-            pool.push(enemy);
-        } else if (enemy.tier === 'super' && !preferUnique) {
-            pool.push(enemy);
-        }
+        preferUnique = addBossCandidate(pool, enemy, preferUnique);
     }
     if (pool.length === 0) return null;
 
@@ -2252,19 +2270,14 @@ function findNearestBossForBot(bot: ServerPlayer): { x: number; y: number; dist:
     // ram every mob in their path because powder mode skips the standoff
     // bands. Among in-range bosses, prefer uniques over supers, then most
     // recently spawned, then proximity to the nearest human player.
-    let pool: Enemy[] = [];
+    const pool: Enemy[] = [];
     let preferUnique = false;
     for (const enemy of bossIndex) {
         if (isMobDead(enemy.entity)) continue; // may have died since the index was built this tick
         const dx = mobX(enemy.entity) - bot.x;
         const dy = mobY(enemy.entity) - bot.y;
         if (dx * dx + dy * dy > BOSS_RAID_RANGE * BOSS_RAID_RANGE) continue;
-        if (enemy.tier === 'unique') {
-            if (!preferUnique) { pool = []; preferUnique = true; }
-            pool.push(enemy);
-        } else if (enemy.tier === 'super' && !preferUnique) {
-            pool.push(enemy);
-        }
+        preferUnique = addBossCandidate(pool, enemy, preferUnique);
     }
     if (pool.length === 0) return null;
 

@@ -44,6 +44,7 @@ exports.adminChangeMaze = adminChangeMaze;
 const ws_server_1 = require("./ws_server");
 const mobFields_1 = require("./server/mobFields");
 const wireOutbox_1 = require("./server/wireOutbox");
+const playerWire_1 = require("./server/playerWire");
 const outbox_1 = require("./ecs/net/outbox");
 const enemyWire_1 = require("./server/enemyWire");
 const uws_app_1 = require("./server/uws_app");
@@ -1305,15 +1306,7 @@ function getEcsRuntime() {
                 (0, petal_actions_1.despawnAllPlayerPets)(player.id, io);
                 (0, wireOutbox_1.getWireOutbox)().all('playerDied', { playerId: player.id });
             }
-            (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-                playerId: player.id,
-                health: player.health,
-                maxHealth: player.maxHealth,
-                isInvulnerable: player.isInvulnerable,
-                knockbackX: 0,
-                knockbackY: 0,
-                damageDealt: dps * deltaTime
-            });
+            (0, playerWire_1.emitPlayerDamaged)(player, { knockbackX: 0, knockbackY: 0, damageDealt: dps * deltaTime });
         },
         onPlayerPoisonLapsed: (victim) => {
             const player = playerFromEntity(victim);
@@ -1553,15 +1546,7 @@ function applyProjectileHitToPlayer(entity, damage, knockbackX, knockbackY, sour
             (0, wireOutbox_1.getWireOutbox)().all('playerDied', { playerId: player.id });
         }
     }
-    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-        playerId: player.id,
-        health: player.health,
-        maxHealth: player.maxHealth,
-        isInvulnerable: player.isInvulnerable,
-        knockbackX,
-        knockbackY,
-        damageDealt,
-    });
+    (0, playerWire_1.emitPlayerDamaged)(player, { knockbackX, knockbackY, damageDealt });
     // Reported back so the rest of an incoming volley skips a flower that just
     // died, exactly as the legacy `if (player.isDead) continue` did.
     return !player.isDead;

@@ -543,7 +543,10 @@ function markPetalForBreak(petalId, context) {
         // Emit petal broken event to clients
         (0, petalEvents_1.emitPetalBroken)(player.id, {
             playerId: player.id,
-            loadoutIndex: loadoutIndex,
+            // `slotIndex`, not `loadoutIndex`: that is the field the client's
+            // petalBroken handler indexes the loadout by. This site used to
+            // send `loadoutIndex`, so the owner's slot never showed its reload.
+            slotIndex: loadoutIndex,
             petalType: petal.petalType
         }, player.x, player.y);
         // Get cooldown time from petal stats
@@ -572,7 +575,10 @@ function markPetalForBreak(petalId, context) {
             // Emit restoration event
             (0, petalEvents_1.emitPetalRestored)(player.id, {
                 playerId: player.id,
-                loadoutIndex: loadoutIndex,
+                // See the matching emitPetalBroken above: the client reads
+                // `slotIndex`, and `loadoutIndex` made it write the restored
+                // petal to loadout[undefined].
+                slotIndex: loadoutIndex,
                 petal: player.loadout[loadoutIndex]
             });
             // Clean up behaviour state, which re-arms a one-shot effect.

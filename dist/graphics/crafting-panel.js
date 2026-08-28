@@ -355,8 +355,8 @@ class CanvasCraftingPanel {
             this.slotRects.push({ x, y, w: slotSize, h: slotSize });
         }
         // Craft button — right of the circle
-        const craftBtnW = 80;
-        const craftBtnH = 32;
+        const craftBtnW = 60;
+        const craftBtnH = 30;
         const craftBtnX = containerCx + containerSize / 2 + 10;
         const craftBtnY = containerCy - craftBtnH / 2;
         this.craftBtnRect = { x: craftBtnX, y: craftBtnY, w: craftBtnW, h: craftBtnH };
@@ -602,13 +602,13 @@ class CanvasCraftingPanel {
             ctx.globalAlpha = 0.45;
         ctx.fillStyle = switchEnabled ? CanvasCraftingPanel.SWITCH_BORDER : '#5a5a5a';
         ctx.beginPath();
-        ctx.roundRect(sb.x, sb.y, sb.w, sb.h, 4);
+        ctx.roundRect(sb.x, sb.y, sb.w, sb.h, 3);
         ctx.fill();
         ctx.fillStyle = switchEnabled
             ? (this.switchBtnHovered ? '#a394e0' : CanvasCraftingPanel.SWITCH_BG)
             : '#8a8a8a';
         ctx.beginPath();
-        ctx.roundRect(sb.x + 2, sb.y + 2, sb.w - 4, sb.h - 4, 3);
+        ctx.roundRect(sb.x + 2, sb.y + 2, sb.w - 4, sb.h - 4, 1);
         ctx.fill();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -620,11 +620,11 @@ class CanvasCraftingPanel {
         ctx.save();
         ctx.fillStyle = CanvasCraftingPanel.CLOSE_BORDER;
         ctx.beginPath();
-        ctx.roundRect(cb.x, cb.y, cb.w, cb.h, 4);
+        ctx.roundRect(cb.x, cb.y, cb.w, cb.h, 3);
         ctx.fill();
         ctx.fillStyle = this.closeBtnHovered ? '#e8a0b0' : CanvasCraftingPanel.CLOSE_BG;
         ctx.beginPath();
-        ctx.roundRect(cb.x + 2, cb.y + 2, cb.w - 4, cb.h - 4, 3);
+        ctx.roundRect(cb.x + 2, cb.y + 2, cb.w - 4, cb.h - 4, 1);
         ctx.fill();
         // X glyph
         ctx.strokeStyle = '#ffffff';
@@ -660,10 +660,12 @@ class CanvasCraftingPanel {
                 this.absorbResultXp = 0;
             }
         }
+        // Number of craft attempts staged — shown as an `xN` badge on each slot.
+        const stackCount = Math.floor(this.craftingItems.length / 5);
         // Draw the slots
         for (let i = 0; i < this.slotRects.length; i++) {
             const s = this.slotRects[i];
-            const radius = 6;
+            const radius = 3;
             const bw = 3;
             // On failure result, empty slots (beyond remaining count) use empty color
             const slotHasItem = hasItems && displayItem && !(this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount);
@@ -689,21 +691,19 @@ class CanvasCraftingPanel {
             const showIcon = hasItems && displayItem && !(this.animState === 'result' && !this.resultSuccess && i >= this.failRemainingCount);
             if (showIcon) {
                 this.drawCraftingSlotIcon(ctx, s, displayItem, now);
+                // Stack count badge: how many craft attempts this slot's stack
+                // covers, drawn in the slot's top-right like inventory slots.
+                if (this.animState === 'idle' && stackCount > 1) {
+                    ctx.save();
+                    ctx.textAlign = 'right';
+                    ctx.textBaseline = 'top';
+                    ctx.lineJoin = 'round';
+                    (0, text_1.drawText)(ctx, `x${stackCount}`, s.x + s.w - 4, s.y + 3, { size: 11, weight: 'bold', fill: '#ffffff', stroke: '#000000', strokeWidth: 3 });
+                    ctx.restore();
+                }
             }
         }
         const center = this.getCraftingCenter(cssW);
-        // Draw multiplier text in center (only when idle with items)
-        if (this.animState === 'idle' && this.craftingItems.length > 0) {
-            const attempts = Math.floor(this.craftingItems.length / 5);
-            if (attempts > 0) {
-                ctx.save();
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.lineJoin = 'round';
-                (0, text_1.drawText)(ctx, `x${attempts}`, center.cx, center.cy, { size: 24, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 });
-                ctx.restore();
-            }
-        }
         // Draw success result in center
         if (this.animState === 'result' && this.resultSuccess && this.successResult) {
             const rColor = petals_1.ITEM_RARITY_COLORS[this.successResult.rarity] || '#7eef6d';
@@ -713,11 +713,11 @@ class CanvasCraftingPanel {
             ctx.save();
             ctx.fillStyle = (0, panel_common_1.darken)(rColor, 25);
             ctx.beginPath();
-            ctx.roundRect(cx - resultSize / 2, cy - resultSize / 2, resultSize, resultSize, 8);
+            ctx.roundRect(cx - resultSize / 2, cy - resultSize / 2, resultSize, resultSize, 3);
             ctx.fill();
             ctx.fillStyle = rColor;
             ctx.beginPath();
-            ctx.roundRect(cx - resultSize / 2 + 3, cy - resultSize / 2 + 3, resultSize - 6, resultSize - 6, 6);
+            ctx.roundRect(cx - resultSize / 2 + 3, cy - resultSize / 2 + 3, resultSize - 6, resultSize - 6, 1);
             ctx.fill();
             const iconSize = 36;
             if (this.successResult.petalType) {
@@ -757,15 +757,6 @@ class CanvasCraftingPanel {
             (0, text_1.drawText)(ctx, `+${this.absorbResultXp} XP`, center.cx, center.cy, { size: 22, weight: 'bold', fill: '#c9ffb3', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 });
             ctx.restore();
         }
-        // Draw "Failed" text in center on failure result
-        if (this.animState === 'result' && !this.resultSuccess) {
-            ctx.save();
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.lineJoin = 'round';
-            (0, text_1.drawText)(ctx, 'Failed!', center.cx, center.cy, { size: 20, weight: 'bold', fill: '#ff4444', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4 });
-            ctx.restore();
-        }
     }
     drawCraftingSlotIcon(ctx, s, item, time) {
         const cx = s.x + s.w / 2;
@@ -799,12 +790,10 @@ class CanvasCraftingPanel {
         const bw = 3;
         let btnBg;
         let btnBorder;
-        let btnHover;
         let label;
         if (this.mode === 'absorb') {
             btnBg = CanvasCraftingPanel.ABSORB_BTN_BG;
             btnBorder = CanvasCraftingPanel.ABSORB_BTN_BORDER;
-            btnHover = '#c284f0';
             label = 'Absorb';
         }
         else {
@@ -816,9 +805,11 @@ class CanvasCraftingPanel {
             const nextColor = petals_1.ITEM_RARITY_COLORS[nextRarity] || '';
             btnBg = nextColor || CanvasCraftingPanel.CRAFT_BTN_BG;
             btnBorder = nextColor ? (0, panel_common_1.darken)(nextColor, 25) : CanvasCraftingPanel.CRAFT_BTN_BORDER;
-            btnHover = nextColor ? (0, panel_common_1.darken)(nextColor, 10) : '#9a8a7a';
             label = 'Craft';
         }
+        // Hover tint is derived from the button's own fill, so it tracks the
+        // next-rarity colour instead of being pinned to a hardcoded swatch.
+        const btnHover = (0, panel_common_1.lighten)(btnBg, 15);
         ctx.save();
         ctx.fillStyle = btnBorder;
         ctx.beginPath();
@@ -832,11 +823,11 @@ class CanvasCraftingPanel {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineJoin = 'round';
-        (0, text_1.drawText)(ctx, label, b.x + b.w / 2, b.y + b.h / 2, { size: 15, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
+        (0, text_1.drawText)(ctx, label, b.x + b.w / 2, b.y + b.h / 2, { size: 13, weight: 'bold', fill: '#ffffff', stroke: 'rgba(0,0,0,0.6)', strokeWidth: 3 });
         ctx.restore();
     }
     drawEmptySlot(ctx, r) {
-        const radius = 6;
+        const radius = 3;
         const bw = 3;
         const border = this.mode === 'absorb' ? CanvasCraftingPanel.ABSORB_SLOT_BORDER : CanvasCraftingPanel.SLOT_BORDER;
         const bg = this.mode === 'absorb' ? CanvasCraftingPanel.ABSORB_SLOT_BG : CanvasCraftingPanel.SLOT_BG;
@@ -888,14 +879,14 @@ CanvasCraftingPanel.SPIN_DURATION = 1500;
 /** Duration to show the result before going back to idle. */
 CanvasCraftingPanel.RESULT_DURATION = 2000;
 // ----- Panel colors -----
-CanvasCraftingPanel.PANEL_BG = '#d8a05d';
-CanvasCraftingPanel.PANEL_BORDER = '#c4914a';
-CanvasCraftingPanel.SLOT_BG = '#b8884a';
-CanvasCraftingPanel.SLOT_BORDER = '#a07040';
-CanvasCraftingPanel.CLOSE_BG = '#dc7e92';
-CanvasCraftingPanel.CLOSE_BORDER = '#b56476';
-CanvasCraftingPanel.CRAFT_BTN_BG = '#8a7a6a';
-CanvasCraftingPanel.CRAFT_BTN_BORDER = '#6a5a4a';
+CanvasCraftingPanel.PANEL_BG = '#db9d5b';
+CanvasCraftingPanel.PANEL_BORDER = '#b17f48';
+CanvasCraftingPanel.SLOT_BG = '#b17f48';
+CanvasCraftingPanel.SLOT_BORDER = '#b17f48';
+CanvasCraftingPanel.CLOSE_BG = '#bb5b61';
+CanvasCraftingPanel.CLOSE_BORDER = '#914b31';
+CanvasCraftingPanel.CRAFT_BTN_BG = '#777777';
+CanvasCraftingPanel.CRAFT_BTN_BORDER = '#555555';
 // Absorb mode — the old talents menu's purple.
 CanvasCraftingPanel.ABSORB_PANEL_BG = '#9d4edd';
 CanvasCraftingPanel.ABSORB_PANEL_BORDER = '#7a3ba8';

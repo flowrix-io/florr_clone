@@ -24,11 +24,22 @@ export interface SkillTiers {
     [key: string]: string | undefined;
 }
 
-/** "blood_leaf" -> "Blood leaf". */
+/**
+ * Title-cases a petal type for display: "blood_leaf" -> "Blood Leaf",
+ * "rose" -> "Rose".
+ *
+ * Every word is capitalised, which is what the loadout bar has always done.
+ * The inventory and the canvas panels used to capitalise only the first word
+ * ("Blood leaf"), so the same petal read differently depending on where you
+ * looked; they now all use this.
+ */
 export function formatPetalName(petalType: string): string {
     if (!petalType) return '';
-    const name = petalType[0].toUpperCase() + petalType.slice(1).toLowerCase();
-    return name.replace(/_/g, ' ');
+    return petalType
+        .split(/[_\s]+/)
+        .filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
 }
 
 /** 1000 -> "1K", 1500 -> "1.5K", up to billions. */

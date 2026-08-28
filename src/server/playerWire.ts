@@ -1,4 +1,5 @@
 import { ServerPlayer, effectiveRenderFlags } from '../player';
+import { getWireOutbox } from './wireOutbox';
 
 /**
  * Fields of ServerPlayer that a client actually consumes from a `playerUpdated`
@@ -128,4 +129,37 @@ function project(player: ServerPlayer, fields: readonly (keyof ServerPlayer)[]):
         if (v !== undefined) out[k] = v;
     }
     return out;
+}
+
+/**
+ * Broadcasts a flower's post-damage state: health, invulnerability and — when
+ * the cause imparts one — the knockback impulse the client should apply.
+ *
+ * Eight sites assembled this payload by hand (mob contact, ring hit, the
+ * petal-vs-player swing, poison ticks, PVP hits, second chance, sponge
+ * absorb...), so a field added to the packet had to be remembered in eight
+ * places. Only the fields a caller actually supplies are included: two sites
+ * deliberately omit knockback and two omit damageDealt, and the wire shape
+ * must not change.
+ */
+export function emitPlayerDamaged(
+    player: ServerPlayer,
+    extra: {
+        knockbackX?: number;
+        knockbackY?: number;
+        damageDealt?: number;
+        /** Overrides the player's current flag (the second-chance grant). */
+        isInvulnerable?: boolean;
+    } = {},
+): void {
+    const payload: Record<string, unknown> = {
+        playerId: player.id,
+        health: player.health,
+        maxHealth: player.maxHealth,
+        isInvulnerable: extra.isInvulnerable ?? player.isInvulnerable,
+    };
+    if (extra.knockbackX !== undefined) payload.knockbackX = extra.knockbackX;
+    if (extra.knockbackY !== undefined) payload.knockbackY = extra.knockbackY;
+    if (extra.damageDealt !== undefined) payload.damageDealt = extra.damageDealt;
+    getWireOutbox().all('playerDamaged', payload);
 }

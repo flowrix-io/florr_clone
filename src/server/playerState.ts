@@ -228,6 +228,8 @@ import { trackDamage, cleanupEnemy, markEnemyDamaged, getOriginalSocketId } from
 import { killEnemy, type KillContext } from './shared/killHandler';
 import { removeEnemy, liveEnemies} from './enemyRegistry';
 import { getWireOutbox } from './wireOutbox';
+import { emitPlayerDamaged } from './playerWire';
+import { restorePetalSlot } from './petalRestore';
 
 /**
  * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
@@ -598,12 +600,7 @@ function updateSpongeDamage(player: ServerPlayer, deltaTime: number, io: SocketI
         player.spongeDamageEffects = [];
     }
 
-    getWireOutbox().all('playerDamaged', {
-        playerId: player.id,
-        health: player.health,
-        maxHealth: player.maxHealth,
-        isInvulnerable: player.isInvulnerable
-    });
+    emitPlayerDamaged(player);
 }
 
 /**
@@ -802,14 +799,7 @@ function applyPetalRingDamage(player: ServerPlayer, io: SocketIOServer): void {
             }
         }
 
-        getWireOutbox().all('playerDamaged', {
-            playerId: player.id,
-            health: player.health,
-            maxHealth: player.maxHealth,
-            isInvulnerable: player.isInvulnerable,
-            knockbackX,
-            knockbackY,
-        });
+        emitPlayerDamaged(player, { knockbackX, knockbackY });
 
         // One ring hit per tick: the cooldown stamp above would swallow the rest
         // anyway, and a second ring should not knock the player twice in a frame.
@@ -1299,12 +1289,7 @@ export function trySecondChance(player: ServerPlayer, io: SocketIOServer): boole
     // Grant invulnerability for the skill's duration
     expireInvulnerabilityAfter(player.id, duration * 1000);
 
-    getWireOutbox().all('playerDamaged', {
-        playerId: player.id,
-        health: player.health,
-        maxHealth: player.maxHealth,
-        isInvulnerable: true,
-    });
+    emitPlayerDamaged(player, { isInvulnerable: true });
 
     return true;
 }
@@ -1358,14 +1343,7 @@ function applyPvpDamage(
     // thrown away by `player.x = newX`. See displacePlayer in server/ecsSync.
     displacePlayer(victim, knockbackX, knockbackY);
 
-    getWireOutbox().all('playerDamaged', {
-        playerId: victim.id,
-        health: victim.health,
-        maxHealth: victim.maxHealth,
-        isInvulnerable: victim.isInvulnerable,
-        knockbackX,
-        knockbackY
-    });
+    emitPlayerDamaged(victim, { knockbackX, knockbackY });
 
     // Killed by attacker: transfer victim's PVP score and full PVP inventory,
     // mark dead now. While in the arena, `inventory` IS the PVP inventory.
@@ -1747,14 +1725,7 @@ for (let _ci = 0; _ci < _candidates.length; _ci++) {
             }
 
             // Always emit knockback (and current health state)
-            getWireOutbox().all('playerDamaged', {
-                playerId: player.id,
-                health: player.health,
-                maxHealth: player.maxHealth,
-                isInvulnerable: player.isInvulnerable,
-                knockbackX: knockbackX,
-                knockbackY: knockbackY
-            });
+            emitPlayerDamaged(player, { knockbackX, knockbackY });
             
             // Track damage dealt by this player (always track, even if enemy is dead)
             trackDamage(enemy, player.id, player.damage);
@@ -2264,33 +2235,16 @@ function beginPetalCooldown(opts: {
     petal.onCooldown = true;
     petal.cooldownEndTime = cooldownEndsAt;
     ring.state.dropSlot(loadoutIndex);
+    // Identity snapshotted here, not read inside the timer: the slot may be
+    // swapped before it fires, and restorePetalSlot compares against this.
     const originalPetal = {
         type: petal.type,
         petalType: petal.petalType,
         rarity: petal.rarity,
         maxHealth: petal.maxHealth
     };
-    const snapshotPetalType = originalPetal.petalType;
-    const snapshotRarity = originalPetal.rarity;
     setTimeout(() => {
-        const current = players[player.id]?.loadout?.[loadoutIndex];
-        if (!players[player.id] || !current || !current.onCooldown) return;
-        if (current.type !== 'petal' ||
-            current.petalType !== snapshotPetalType ||
-            current.rarity !== snapshotRarity) return;
-        const restoredPetal = {
-            ...originalPetal,
-            health: originalPetal.maxHealth,
-            onCooldown: false
-        };
-        applyPetalHealthBonus(restoredPetal, player);
-        player.loadout[loadoutIndex] = restoredPetal;
-
-        emitPetalRestored(player.id, {
-            playerId: player.id,
-            slotIndex: loadoutIndex,
-            petal: player.loadout[loadoutIndex]
-        });
+        restorePetalSlot(player.id, loadoutIndex, originalPetal);
     }, cooldownTime);
 
     broadcastBroken();
@@ -2619,15 +2573,7 @@ if (player.loadout) {
                         if (blockedX && blockedY) break;
                     }
                 }
-                getWireOutbox().all('playerDamaged', {
-                    playerId: player.id,
-                    health: player.health,
-                    maxHealth: player.maxHealth,
-                    isInvulnerable: player.isInvulnerable,
-                    knockbackX: appliedX,
-                    knockbackY: appliedY,
-                    damageDealt: 0
-                });
+                emitPlayerDamaged(player, { knockbackX: appliedX, knockbackY: appliedY, damageDealt: 0 });
             }
             setInstanceHealth(petal, instanceIndex, instancePetalStats!, 0);
             continue;

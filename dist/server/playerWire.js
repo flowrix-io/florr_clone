@@ -3,7 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sanitizePlayerForClient = sanitizePlayerForClient;
 exports.sanitizePublicPlayerForClient = sanitizePublicPlayerForClient;
 exports.sanitizePlayersForClient = sanitizePlayersForClient;
+exports.emitPlayerDamaged = emitPlayerDamaged;
 const player_1 = require("../player");
+const wireOutbox_1 = require("./wireOutbox");
 /**
  * Fields of ServerPlayer that a client actually consumes from a `playerUpdated`
  * event. Everything else on ServerPlayer is either server-internal bookkeeping,
@@ -122,4 +124,30 @@ function project(player, fields) {
             out[k] = v;
     }
     return out;
+}
+/**
+ * Broadcasts a flower's post-damage state: health, invulnerability and — when
+ * the cause imparts one — the knockback impulse the client should apply.
+ *
+ * Eight sites assembled this payload by hand (mob contact, ring hit, the
+ * petal-vs-player swing, poison ticks, PVP hits, second chance, sponge
+ * absorb...), so a field added to the packet had to be remembered in eight
+ * places. Only the fields a caller actually supplies are included: two sites
+ * deliberately omit knockback and two omit damageDealt, and the wire shape
+ * must not change.
+ */
+function emitPlayerDamaged(player, extra = {}) {
+    const payload = {
+        playerId: player.id,
+        health: player.health,
+        maxHealth: player.maxHealth,
+        isInvulnerable: extra.isInvulnerable ?? player.isInvulnerable,
+    };
+    if (extra.knockbackX !== undefined)
+        payload.knockbackX = extra.knockbackX;
+    if (extra.knockbackY !== undefined)
+        payload.knockbackY = extra.knockbackY;
+    if (extra.damageDealt !== undefined)
+        payload.damageDealt = extra.damageDealt;
+    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', payload);
 }

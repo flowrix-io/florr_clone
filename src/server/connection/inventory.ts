@@ -7,6 +7,7 @@
  * server's authoritative copy before anything is persisted.
  */
 
+import { restorePetalSlot } from '../petalRestore';
 import { players } from '../../constants';
 import { Notification, database } from '../../database';
 import { ID_TO_ITEM_KEY, ID_TO_RARITY, getItemCount } from '../../inventoryCodec';
@@ -18,7 +19,6 @@ import { getSessionPlayer, playerUserIds } from '../gameState';
 import { addItem, applyPetalHealthBonus, buildCollection, capLoadoutToCollection, getAbsorbingTier, getMazeAbsorbableCount, hasItem, recalculatePlayerStats, removeItem } from '../playerManager';
 import { sanitizePlayerForClient } from '../playerWire';
 import { ConnectionContext } from './context';
-import { emitPetalRestored } from '../petalEvents';
 import { collectEnemies } from '../enemyRegistry';
 import { LiveEnemy } from '../../server_utils';
 
@@ -401,38 +401,11 @@ export function registerInventoryHandlers(ctx: ConnectionContext): void {
                             petal.cooldownEndTime = Date.now() + cooldownTime;
                             // Capture targetPlayerId in closure for setTimeout
                             const targetId = targetPlayerId;
-                            // Snapshot the petal identity at scheduling time so a stale timer
-                            // cannot overwrite a slot that has since been swapped to a different petal.
-                            const snapshotPetalType = petal.petalType;
-                            const snapshotRarity = petal.rarity;
                             setTimeout(() => {
-                                const current = players[targetId]?.loadout[index];
-                                if (!players[targetId] || !current || !current.onCooldown) return;
-                                // Only restore if the slot still holds the same petal identity
-                                if (current.type !== 'petal' ||
-                                    current.petalType !== snapshotPetalType ||
-                                    current.rarity !== snapshotRarity) {
-                                    return;
-                                }
+                                const restored = restorePetalSlot(targetId, index, petal);
+                                if (!restored) return;
                                 {
-                                    // Restore petal after cooldown
-                                    const restoredPetal = {
-                                        type: petal.type,
-                                        petalType: petal.petalType,
-                                        rarity: petal.rarity,
-                                        health: petal.maxHealth,
-                                        maxHealth: petal.maxHealth,
-                                        onCooldown: false
-                                    };
-                                    // Apply petal health bonus
-                                    applyPetalHealthBonus(restoredPetal, players[targetId]);
-                                    players[targetId].loadout[index] = restoredPetal;
-
-                                    emitPetalRestored(players[targetId].id, {
-                                        playerId: players[targetId].id,
-                                        slotIndex: index,
-                                        petal: players[targetId].loadout[index]
-                                    });
+                                    const restoredPetal = restored.petal;
 
                                     // Check if this petal should spawn a pet when restored
                                     // Get fresh petal stats to ensure we have the latest petMobType

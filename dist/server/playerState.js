@@ -171,6 +171,8 @@ const utils_1 = require("./utils");
 const killHandler_1 = require("./shared/killHandler");
 const enemyRegistry_1 = require("./enemyRegistry");
 const wireOutbox_1 = require("./wireOutbox");
+const playerWire_1 = require("./playerWire");
+const petalRestore_1 = require("./petalRestore");
 /**
  * Adapt the PlayerStateDependencies bag (built in server.ts) to the kill-handler
  * context. The two share the same kill-related fields; this just projects them.
@@ -504,12 +506,7 @@ function updateSpongeDamage(player, deltaTime, io) {
     if (secondChanceTriggered) {
         player.spongeDamageEffects = [];
     }
-    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-        playerId: player.id,
-        health: player.health,
-        maxHealth: player.maxHealth,
-        isInvulnerable: player.isInvulnerable
-    });
+    (0, playerWire_1.emitPlayerDamaged)(player);
 }
 /**
  * Clean up a departing player's petal bookkeeping.
@@ -706,14 +703,7 @@ function applyPetalRingDamage(player, io) {
                 }
             }
         }
-        (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-            playerId: player.id,
-            health: player.health,
-            maxHealth: player.maxHealth,
-            isInvulnerable: player.isInvulnerable,
-            knockbackX,
-            knockbackY,
-        });
+        (0, playerWire_1.emitPlayerDamaged)(player, { knockbackX, knockbackY });
         // One ring hit per tick: the cooldown stamp above would swallow the rest
         // anyway, and a second ring should not knock the player twice in a frame.
         break;
@@ -1015,12 +1005,7 @@ function trySecondChance(player, io) {
     player.secondChanceCooldownUntil = now + cooldownSec * 1000;
     // Grant invulnerability for the skill's duration
     expireInvulnerabilityAfter(player.id, duration * 1000);
-    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-        playerId: player.id,
-        health: player.health,
-        maxHealth: player.maxHealth,
-        isInvulnerable: true,
-    });
+    (0, playerWire_1.emitPlayerDamaged)(player, { isInvulnerable: true });
     return true;
 }
 /**
@@ -1063,14 +1048,7 @@ function applyPvpDamage(attacker, victim, damage, io, savePlayerProgress) {
     // the gap between the movement window and that victim's own commit, and be
     // thrown away by `player.x = newX`. See displacePlayer in server/ecsSync.
     (0, ecsSync_1.displacePlayer)(victim, knockbackX, knockbackY);
-    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-        playerId: victim.id,
-        health: victim.health,
-        maxHealth: victim.maxHealth,
-        isInvulnerable: victim.isInvulnerable,
-        knockbackX,
-        knockbackY
-    });
+    (0, playerWire_1.emitPlayerDamaged)(victim, { knockbackX, knockbackY });
     // Killed by attacker: transfer victim's PVP score and full PVP inventory,
     // mark dead now. While in the arena, `inventory` IS the PVP inventory.
     if (victim.health <= 0 && !secondChanceTriggered && !victim.isDead) {
@@ -1410,14 +1388,7 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                     }
                 }
                 // Always emit knockback (and current health state)
-                (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-                    playerId: player.id,
-                    health: player.health,
-                    maxHealth: player.maxHealth,
-                    isInvulnerable: player.isInvulnerable,
-                    knockbackX: knockbackX,
-                    knockbackY: knockbackY
-                });
+                (0, playerWire_1.emitPlayerDamaged)(player, { knockbackX, knockbackY });
                 // Track damage dealt by this player (always track, even if enemy is dead)
                 (0, utils_1.trackDamage)(enemy, player.id, player.damage);
                 // if (enemy.health - player.damage <= 0) {
@@ -1829,34 +1800,16 @@ function beginPetalCooldown(opts) {
     petal.onCooldown = true;
     petal.cooldownEndTime = cooldownEndsAt;
     ring.state.dropSlot(loadoutIndex);
+    // Identity snapshotted here, not read inside the timer: the slot may be
+    // swapped before it fires, and restorePetalSlot compares against this.
     const originalPetal = {
         type: petal.type,
         petalType: petal.petalType,
         rarity: petal.rarity,
         maxHealth: petal.maxHealth
     };
-    const snapshotPetalType = originalPetal.petalType;
-    const snapshotRarity = originalPetal.rarity;
     setTimeout(() => {
-        const current = constants_1.players[player.id]?.loadout?.[loadoutIndex];
-        if (!constants_1.players[player.id] || !current || !current.onCooldown)
-            return;
-        if (current.type !== 'petal' ||
-            current.petalType !== snapshotPetalType ||
-            current.rarity !== snapshotRarity)
-            return;
-        const restoredPetal = {
-            ...originalPetal,
-            health: originalPetal.maxHealth,
-            onCooldown: false
-        };
-        (0, playerManager_1.applyPetalHealthBonus)(restoredPetal, player);
-        player.loadout[loadoutIndex] = restoredPetal;
-        (0, petalEvents_1.emitPetalRestored)(player.id, {
-            playerId: player.id,
-            slotIndex: loadoutIndex,
-            petal: player.loadout[loadoutIndex]
-        });
+        (0, petalRestore_1.restorePetalSlot)(player.id, loadoutIndex, originalPetal);
     }, cooldownTime);
     broadcastBroken();
 }
@@ -2142,15 +2095,7 @@ function resolvePlayerPetals(player, startX, startY, deltaTime, deps) {
                                 break;
                         }
                     }
-                    (0, wireOutbox_1.getWireOutbox)().all('playerDamaged', {
-                        playerId: player.id,
-                        health: player.health,
-                        maxHealth: player.maxHealth,
-                        isInvulnerable: player.isInvulnerable,
-                        knockbackX: appliedX,
-                        knockbackY: appliedY,
-                        damageDealt: 0
-                    });
+                    (0, playerWire_1.emitPlayerDamaged)(player, { knockbackX: appliedX, knockbackY: appliedY, damageDealt: 0 });
                 }
                 setInstanceHealth(petal, instanceIndex, instancePetalStats, 0);
                 continue;

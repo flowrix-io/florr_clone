@@ -15,7 +15,7 @@ import { rejectIfMuted } from '../chatMute';
 import { filterChatImages, messageHasImage } from '../imageModeration';
 import { MAX_GUILD_SIZE, acceptGuildInvite, broadcastGuildUpdate, buildGuildUpdate, createGuild, declineGuildInvite, findSocketIdByUsername as findGuildSocketIdByUsername, getGuildForUsername, inviteToGuild, kickFromGuild, leaveGuild as leaveGuildFn, listGuilds, sendGuildChatMessage, sendGuildSystemMessage, syncGuildToOnlineMembers } from '../guildManager';
 import { getSessionPlayer } from '../gameState';
-import { getOrCreateSquad, MAX_SQUAD_SIZE, acceptInvite, addBotToSquad, createSquad, declineInvite, findBotByName, findPlayerByUsername, getSquadForPlayer, inviteToSquad, joinPublicSquad, leaveSquad as leaveSquadFn, listPublicSquads, sendSquadChatMessage, sendSquadSystemMessage, setSquadVisibility } from '../squadManager';
+import { inviteGuildmatesToSquad, getOrCreateSquad, MAX_SQUAD_SIZE, acceptInvite, addBotToSquad, createSquad, declineInvite, findBotByName, findPlayerByUsername, getSquadForPlayer, inviteToSquad, joinPublicSquad, leaveSquad as leaveSquadFn, listPublicSquads, sendSquadChatMessage, sendSquadSystemMessage, setSquadVisibility } from '../squadManager';
 import { ConnectionContext } from './context';
 
 export function registerChatHandlers(ctx: ConnectionContext): void {
@@ -373,19 +373,10 @@ export function registerChatHandlers(ctx: ConnectionContext): void {
                     } else if (squad.leaderId !== socket.id) {
                         emitSystem('Only your squad leader can invite guildmates into the squad.');
                     } else {
-                        let invited = 0;
-                        for (const member of guild.memberUsernames) {
-                            if (member.toLowerCase() === socket.username.toLowerCase()) continue;
-                            if (squad.memberIds.length + 1 /* pending */ >= MAX_SQUAD_SIZE) break;
-                            const sid = findGuildSocketIdByUsername(member, io);
-                            if (!sid) continue;
-                            const err = inviteToSquad(socket.id, sid, socket.username);
-                            if (!err) {
-                                invited++;
-                                io.to(sid).emit('squadInviteReceived', { fromUsername: socket.username });
-                                io.to(sid).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`, timestamp: Date.now() });
-                            }
-                        }
+                        const invited = inviteGuildmatesToSquad(
+                            io, squad, socket.id, socket.username,
+                            guild.memberUsernames, findGuildSocketIdByUsername,
+                        );
                         if (invited === 0) {
                             emitSystem('No online guildmates available to invite (or squad is full).');
                         } else {

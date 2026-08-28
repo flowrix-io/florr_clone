@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.darken = void 0;
+exports.lighten = exports.darken = void 0;
 exports.syncCanvasSize = syncCanvasSize;
 exports.findItemIndex = findItemIndex;
 exports.drawItemIcon = drawItemIcon;
@@ -16,6 +16,7 @@ const text_1 = require("./text");
 const petal_display_1 = require("./petal-display");
 const shapes_1 = require("./shapes");
 Object.defineProperty(exports, "darken", { enumerable: true, get: function () { return shapes_1.darken; } });
+Object.defineProperty(exports, "lighten", { enumerable: true, get: function () { return shapes_1.lighten; } });
 /**
  * Matches the canvas backing store to its CSS box at the current device pixel
  * ratio. Returns the ratio and CSS size so the caller can set up its transform.

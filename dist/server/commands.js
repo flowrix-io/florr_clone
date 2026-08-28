@@ -25,6 +25,32 @@ const tempAdmin_1 = require("./tempAdmin");
 // increment their counters, hanging the tick loop at 100% CPU.
 const isSaneCoord = (v) => Number.isFinite(v) && Math.abs(v) <= constants_1.MAX_SANE_WORLD_COORD;
 // Helper function to send message to admin or console
+/**
+ * Resolves an admin command's `<playerId/username>` argument.
+ *
+ * Socket id first, then a case-insensitive username match — the resolution six
+ * command handlers each open-coded, differing only in which of the id, the
+ * player and the socket they bothered to keep. Returns all three; bots resolve
+ * by id but have no socket.
+ */
+function resolveTargetPlayer(io, playerIdentifier) {
+    const direct = constants_1.players[playerIdentifier];
+    if (direct) {
+        return {
+            id: playerIdentifier,
+            player: direct,
+            socket: io.sockets.sockets.get(playerIdentifier),
+        };
+    }
+    const wanted = playerIdentifier.toLowerCase();
+    for (const [sid, player] of Object.entries(constants_1.players)) {
+        const s = io.sockets.sockets.get(sid);
+        if (s?.username && s.username.toLowerCase() === wanted) {
+            return { id: sid, player, socket: s };
+        }
+    }
+    return null;
+}
 function sendOutput(message, socketId, io) {
     console.log(message);
     if (socketId && io) {
@@ -264,14 +290,10 @@ function executeServerCommand(command, executor, deps, socketId) {
                 targetPlayerId = playerIdentifier;
             }
             else {
-                // Search by username
-                for (const [sid, player] of Object.entries(constants_1.players)) {
-                    const s = io.sockets.sockets.get(sid);
-                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                        targetPlayer = player;
-                        targetPlayerId = sid;
-                        break;
-                    }
+                const resolved = resolveTargetPlayer(io, playerIdentifier);
+                if (resolved) {
+                    targetPlayer = resolved.player;
+                    targetPlayerId = resolved.id;
                 }
             }
             if (targetPlayer && targetPlayerId) {
@@ -435,19 +457,10 @@ function executeServerCommand(command, executor, deps, socketId) {
         // Find player by socket ID first, then by username.
         let targetPlayer;
         let targetSocket;
-        if (constants_1.players[playerIdentifier]) {
-            targetPlayer = constants_1.players[playerIdentifier];
-            targetSocket = io.sockets.sockets.get(playerIdentifier);
-        }
-        else {
-            for (const [sid, player] of Object.entries(constants_1.players)) {
-                const s = io.sockets.sockets.get(sid);
-                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                    targetPlayer = player;
-                    targetSocket = s;
-                    break;
-                }
-            }
+        const resolvedSkinTarget = resolveTargetPlayer(io, playerIdentifier);
+        if (resolvedSkinTarget) {
+            targetPlayer = resolvedSkinTarget.player;
+            targetSocket = resolvedSkinTarget.socket;
         }
         if (targetPlayer) {
             targetPlayer.renderFlags = renderFlags;
@@ -480,18 +493,7 @@ function executeServerCommand(command, executor, deps, socketId) {
         }
         // Same resolution as set_skin: socket id first, then username.
         let targetPlayer;
-        if (constants_1.players[playerIdentifier]) {
-            targetPlayer = constants_1.players[playerIdentifier];
-        }
-        else {
-            for (const [sid, player] of Object.entries(constants_1.players)) {
-                const s = io.sockets.sockets.get(sid);
-                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                    targetPlayer = player;
-                    break;
-                }
-            }
-        }
+        targetPlayer = resolveTargetPlayer(io, playerIdentifier)?.player;
         if (!targetPlayer) {
             sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
             return;
@@ -531,19 +533,10 @@ function executeServerCommand(command, executor, deps, socketId) {
         const playerIdentifier = parts[1];
         let targetId;
         let targetPlayer;
-        if (constants_1.players[playerIdentifier]) {
-            targetId = playerIdentifier;
-            targetPlayer = constants_1.players[playerIdentifier];
-        }
-        else {
-            for (const [sid, player] of Object.entries(constants_1.players)) {
-                const s = io.sockets.sockets.get(sid);
-                if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                    targetId = sid;
-                    targetPlayer = player;
-                    break;
-                }
-            }
+        const resolvedAdminTarget = resolveTargetPlayer(io, playerIdentifier);
+        if (resolvedAdminTarget) {
+            targetId = resolvedAdminTarget.id;
+            targetPlayer = resolvedAdminTarget.player;
         }
         if (!targetId || !targetPlayer) {
             sendOutput(`Player "${playerIdentifier}" not found. Use list-players to see available players.`, socketId, io);
@@ -834,15 +827,11 @@ function executeServerCommand(command, executor, deps, socketId) {
                 targetSocket = io.sockets.sockets.get(playerIdentifier);
             }
             else {
-                // Search by username
-                for (const [sid, player] of Object.entries(constants_1.players)) {
-                    const s = io.sockets.sockets.get(sid);
-                    if (s?.username && s.username.toLowerCase() === playerIdentifier.toLowerCase()) {
-                        targetPlayer = player;
-                        targetPlayerId = sid;
-                        targetSocket = s;
-                        break;
-                    }
+                const resolved = resolveTargetPlayer(io, playerIdentifier);
+                if (resolved) {
+                    targetPlayer = resolved.player;
+                    targetPlayerId = resolved.id;
+                    targetSocket = resolved.socket;
                 }
             }
             // Check if it's a consumable item

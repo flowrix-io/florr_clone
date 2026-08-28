@@ -630,7 +630,10 @@ function markPetalForBreak(petalId: string, context: ActionContext): void {
         // Emit petal broken event to clients
         emitPetalBroken(player.id, {
             playerId: player.id,
-            loadoutIndex: loadoutIndex,
+            // `slotIndex`, not `loadoutIndex`: that is the field the client's
+            // petalBroken handler indexes the loadout by. This site used to
+            // send `loadoutIndex`, so the owner's slot never showed its reload.
+            slotIndex: loadoutIndex,
             petalType: petal.petalType
         }, player.x, player.y);
         
@@ -660,7 +663,10 @@ function markPetalForBreak(petalId: string, context: ActionContext): void {
             // Emit restoration event
             emitPetalRestored(player.id, {
                 playerId: player.id,
-                loadoutIndex: loadoutIndex,
+                // See the matching emitPetalBroken above: the client reads
+                // `slotIndex`, and `loadoutIndex` made it write the restored
+                // petal to loadout[undefined].
+                slotIndex: loadoutIndex,
                 petal: player.loadout[loadoutIndex]
             });
 

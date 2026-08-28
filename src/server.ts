@@ -1,6 +1,7 @@
 import { Server } from './ws_server';
 import { mobAngle, mobStatsOf, mobTargetPlayerId, mobX, mobY, setMobCurrentDPS } from './server/mobFields';
 import { bindWireOutbox, getWireOutbox } from './server/wireOutbox';
+import { emitPlayerDamaged } from './server/playerWire';
 import { registerWireOutboxSystem } from './ecs/net/outbox';
 import { emitEnemySpawned } from './server/enemyWire';
 import { createApp, UApp, staticFiles, jsonParser } from './server/uws_app';
@@ -1466,15 +1467,7 @@ function getEcsRuntime(): EcsRuntime {
                 getWireOutbox().all('playerDied', { playerId: player.id });
             }
 
-            getWireOutbox().all('playerDamaged', {
-                playerId: player.id,
-                health: player.health,
-                maxHealth: player.maxHealth,
-                isInvulnerable: player.isInvulnerable,
-                knockbackX: 0,
-                knockbackY: 0,
-                damageDealt: dps * deltaTime
-            });
+            emitPlayerDamaged(player, { knockbackX: 0, knockbackY: 0, damageDealt: dps * deltaTime });
         },
         onPlayerPoisonLapsed: (victim) => {
             const player = playerFromEntity(victim);
@@ -1721,15 +1714,7 @@ function applyProjectileHitToPlayer(
         }
     }
 
-    getWireOutbox().all('playerDamaged', {
-        playerId: player.id,
-        health: player.health,
-        maxHealth: player.maxHealth,
-        isInvulnerable: player.isInvulnerable,
-        knockbackX,
-        knockbackY,
-        damageDealt,
-    });
+    emitPlayerDamaged(player, { knockbackX, knockbackY, damageDealt });
 
     // Reported back so the rest of an incoming volley skips a flower that just
     // died, exactly as the legacy `if (player.isDead) continue` did.

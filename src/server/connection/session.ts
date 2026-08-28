@@ -7,6 +7,7 @@
  * shared by an explicit leaveGame and a dropped socket.
  */
 
+import { restorePetalSlot } from '../petalRestore';
 import { PVP_ARENA_SPAWN_X, PVP_ARENA_SPAWN_Y, RESPAWN_INVULNERABILITY_TIME, SCALE_FACTOR, WORLD_HEIGHT, dots, obstacles, players } from '../../constants';
 import { database } from '../../database';
 import { dictToInventory } from '../../inventoryCodec';
@@ -18,7 +19,7 @@ import { getEffectivePetalCooldown, getPetalStats } from '../../petals';
 import { PlayerSkills, ServerPlayer } from '../../player';
 import { knownMobProjectilesByPlayer, knownPlayerProjectilesByPlayer, lobbyPlayers, petalCooldownTimeouts, petalLastProjectileTime, petalLastRadiationTime, playerUserIds } from '../gameState';
 import { broadcastGuildUpdate, getGuildForUsername, syncGuildToOnlineMembers } from '../guildManager';
-import { applyPetalHealthBonus, calculateCurrentLevelXP, calculateDamageFromLevel, calculateLevelFromTotalXP, calculateMaxHealthFromLevel, calculateXPRequirement, createInitialBasicPetals, createInitialInventory, enterMazeState, enterPvpArena, findSafeSpawnPosition, getMazeSpawnPosition, getSkillMultiplier, getSpawnPositionInBiome, recalculatePlayerStats, reconcileTP } from '../playerManager';
+import { calculateCurrentLevelXP, calculateDamageFromLevel, calculateLevelFromTotalXP, calculateMaxHealthFromLevel, calculateXPRequirement, createInitialBasicPetals, createInitialInventory, enterMazeState, enterPvpArena, findSafeSpawnPosition, getMazeSpawnPosition, getSkillMultiplier, getSpawnPositionInBiome, recalculatePlayerStats, reconcileTP } from '../playerManager';
 import { cleanupPetalPhysicsStates, getEnemiesInViewport200Percent } from '../playerState';
 import { enemySpawnPayload } from '../enemyWire';
 import { sanitizePlayersForClient, sanitizePublicPlayerForClient } from '../playerWire';
@@ -29,7 +30,6 @@ import {} from '../tickBroadcast';
 import { getActivePlayerForSocket } from '../utils';
 import { ConnectionContext } from './context';
 import { kickDuplicateSessions } from './sessionGuard';
-import { emitPetalRestored } from '../petalEvents';
 
 export function registerSessionHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
@@ -349,35 +349,11 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
                             // end if this timer dies with the process).
                             petal.cooldownEndTime = Date.now() + cooldownTime;
                             const timeoutKey = `${socket.id}-${i}`;
-                            // Snapshot identity so a stale timer doesn't clobber a swapped slot
-                            const snapshotPetalType = petal.petalType;
-                            const snapshotRarity = petal.rarity;
                             const timeout = setTimeout(() => {
                                 petalCooldownTimeouts.delete(timeoutKey);
-                                const current = players[socket.id]?.loadout[i];
-                                if (!players[socket.id] || !current || !current.onCooldown) return;
-                                if (current.type !== 'petal' ||
-                                    current.petalType !== snapshotPetalType ||
-                                    current.rarity !== snapshotRarity) return;
+                                const restored = restorePetalSlot(socket.id, i, petal);
+                                if (!restored) return;
                                 {
-                                    // Restore petal after cooldown
-                                    const restoredPetal = {
-                                        type: petal.type,
-                                        petalType: petal.petalType,
-                                        rarity: petal.rarity,
-                                        health: petal.maxHealth,
-                                        maxHealth: petal.maxHealth,
-                                        onCooldown: false
-                                    };
-                                    // Apply petal health bonus
-                                    applyPetalHealthBonus(restoredPetal, players[socket.id]);
-                                    players[socket.id].loadout[i] = restoredPetal;
-
-                                    emitPetalRestored(players[socket.id].id, {
-                                        playerId: players[socket.id].id,
-                                        slotIndex: i,
-                                        petal: players[socket.id].loadout[i]
-                                    });
 
                                     // Spawn pet when petal is restored (if it has petMobType)
                                     if (petalStats.petMobType && petal.rarity) {

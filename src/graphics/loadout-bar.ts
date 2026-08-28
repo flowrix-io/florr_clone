@@ -1,4 +1,5 @@
 // Canvas-based loadout bar inspired by gardn/Client/Ui/InGame/Loadout
+import { formatPetalName } from './petal-display';
 import { Item } from '../item';
 import { ITEM_RARITY_COLORS, getEffectivePetalCooldown } from '../petals';
 import { drawPetalGroup } from './petal-icon';
@@ -470,7 +471,7 @@ export class CanvasLoadoutBar {
 
         // Petal name text (gardn: translate(0,20), text_width auto-fit to 50px)
         if (item.type === 'petal' && item.petalType) {
-            const name = this.formatPetalName(item.petalType);
+            const name = formatPetalName(item.petalType);
             // Fit text to ~50 units wide in design coords; default size = 12
             ctx.font = 'bold 12px Ubuntu, sans-serif';
             const measured = ctx.measureText(name).width;
@@ -498,12 +499,4 @@ export class CanvasLoadoutBar {
         }
     }
 
-    private formatPetalName(petalType: string): string {
-        // Turn "dandelion_petal" / "rose" into "Dandelion Petal" / "Rose"
-        return petalType
-            .split(/[_\s]+/)
-            .filter(Boolean)
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-            .join(' ');
-    }
 }

@@ -21,6 +21,7 @@ exports.handlePlayerDisconnect = handlePlayerDisconnect;
 exports.getPooledDamageContributors = getPooledDamageContributors;
 exports.expandEligibleToPlayerIds = expandEligibleToPlayerIds;
 exports.getOrCreateSquad = getOrCreateSquad;
+exports.inviteGuildmatesToSquad = inviteGuildmatesToSquad;
 const constants_1 = require("../constants");
 const gameState_1 = require("./gameState");
 exports.MAX_SQUAD_SIZE = 4;
@@ -346,4 +347,34 @@ function getOrCreateSquad(io, socketId) {
         leaderId: squad.leaderId,
     });
     return squad;
+}
+/**
+ * Invites every online guildmate into `squad`, up to MAX_SQUAD_SIZE.
+ *
+ * Both the `/squad-invite-guild` chat command and the `squadInviteGuild` socket
+ * handler ran this loop, down to the invite message text. Returns how many
+ * invites were actually sent, which is all either caller reports.
+ */
+function inviteGuildmatesToSquad(io, squad, inviterSocketId, inviterUsername, guildMemberUsernames, findSocketIdByUsername) {
+    let invited = 0;
+    for (const member of guildMemberUsernames) {
+        if (member.toLowerCase() === inviterUsername.toLowerCase())
+            continue;
+        // +1 for the invite already in flight this iteration.
+        if (squad.memberIds.length + 1 >= exports.MAX_SQUAD_SIZE)
+            break;
+        const sid = findSocketIdByUsername(member, io);
+        if (!sid)
+            continue;
+        if (inviteToSquad(inviterSocketId, sid, inviterUsername))
+            continue;
+        invited++;
+        io.to(sid).emit('squadInviteReceived', { fromUsername: inviterUsername });
+        io.to(sid).emit('chatMessage', {
+            sender: 'System',
+            content: `<span style="color: #4fc3f7;">@${inviterUsername} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`,
+            timestamp: Date.now(),
+        });
+    }
+    return invited;
 }

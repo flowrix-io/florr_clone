@@ -218,22 +218,7 @@ function registerSocialHandlers(ctx) {
             io.to(socket.id).emit('chatMessage', { sender: 'System', content: 'Only your squad leader can invite guildmates into the squad.', timestamp: Date.now() });
             return;
         }
-        let invited = 0;
-        for (const member of guild.memberUsernames) {
-            if (member.toLowerCase() === socket.username.toLowerCase())
-                continue;
-            if (squad.memberIds.length + 1 >= squadManager_1.MAX_SQUAD_SIZE)
-                break;
-            const sid = (0, guildManager_1.findSocketIdByUsername)(member, io);
-            if (!sid)
-                continue;
-            const err = (0, squadManager_1.inviteToSquad)(socket.id, sid, socket.username);
-            if (!err) {
-                invited++;
-                io.to(sid).emit('squadInviteReceived', { fromUsername: socket.username });
-                io.to(sid).emit('chatMessage', { sender: 'System', content: `<span style="color: #4fc3f7;">@${socket.username} (guild) invited you to their squad. Use /squad-accept or /squad-decline.</span>`, timestamp: Date.now() });
-            }
-        }
+        const invited = (0, squadManager_1.inviteGuildmatesToSquad)(io, squad, socket.id, socket.username, guild.memberUsernames, guildManager_1.findSocketIdByUsername);
         io.to(socket.id).emit('chatMessage', { sender: 'System', content: invited === 0 ? 'No online guildmates available to invite (or squad is full).' : `<span style="color: #ffb74d;">Sent squad invites to ${invited} online guildmate(s).</span>`, timestamp: Date.now() });
     });
     socket.on('guildChat', (message) => {
