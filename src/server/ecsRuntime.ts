@@ -47,6 +47,7 @@ import {
 import {
     createMobCollisionQueries,
     registerMobCollisionSystem,
+    type CollisionParallel,
 } from '../ecs/systems/mobCollision';
 import {
     applyPoisonStack,
@@ -343,6 +344,13 @@ export interface EcsRuntimeOptions {
      * so it is injected like every other legacy hook.
      */
     onPetOutOfView(pet: Entity): void;
+    /**
+     * Optional worker pool for the mob-separation kernel (see
+     * server/collisionWorkerPool.ts). Omitted — by the benches, the self-tests
+     * and any single-core host — the identical kernel runs inline on the tick
+     * thread and the simulation result is unchanged.
+     */
+    collisionParallel?: CollisionParallel;
     /**
      * Whether a world position is near enough to a live player to count as
      * seen, feeding the unseen-despawn timer.
@@ -680,6 +688,7 @@ export function createEcsRuntime(options: EcsRuntimeOptions): EcsRuntime {
         onDamaged: onEnemyDamaged,
         onKilled: onEnemyKilled,
         activity,
+        parallel: options.collisionParallel,
     });
 
     registerEnemyPassiveSystems(scheduler, createEnemyPassiveQueries(world));

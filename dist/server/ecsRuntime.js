@@ -289,6 +289,7 @@ function createEcsRuntime(options) {
         onDamaged: onEnemyDamaged,
         onKilled: onEnemyKilled,
         activity,
+        parallel: options.collisionParallel,
     });
     (0, enemyPassive_1.registerEnemyPassiveSystems)(scheduler, (0, enemyPassive_1.createEnemyPassiveQueries)(world));
     // The centipede passes take the real tile-grid resolver, so a chain pushed

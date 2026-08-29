@@ -44,6 +44,7 @@ exports.adminChangeMaze = adminChangeMaze;
 const ws_server_1 = require("./ws_server");
 const mobFields_1 = require("./server/mobFields");
 const wireOutbox_1 = require("./server/wireOutbox");
+const collisionWorkerPool_1 = require("./server/collisionWorkerPool");
 const playerWire_1 = require("./server/playerWire");
 const outbox_1 = require("./ecs/net/outbox");
 const enemyWire_1 = require("./server/enemyWire");
@@ -1155,6 +1156,43 @@ function moveEnemies() {
     // Enemies reach clients via enemySpawned/enemyDestroyed, not a bulk update here.
 }
 /**
+ * Brings up the mob-separation worker pool, or returns undefined to run the
+ * kernel inline on the tick thread.
+ *
+ * Mob collision is the largest single item in the tick, and the kernel it runs
+ * is the parallel-safe part of it (see ecs/systems/mobCollisionKernel.ts). The
+ * simulation is identical either way — worker count changes only how long the
+ * pass takes — so this is safe to turn off:
+ *
+ *   COLLISION_WORKERS=0   inline, no workers at all
+ *   COLLISION_WORKERS=n   exactly n workers
+ *   unset                 one per spare core, capped
+ *
+ * Each worker is a V8 isolate costing a few MB of RSS, which is why the default
+ * leaves a core for the main thread and caps out rather than filling a big box.
+ */
+function createCollisionPool() {
+    const requested = process.env.COLLISION_WORKERS;
+    const count = requested !== undefined ? Number(requested) : (0, collisionWorkerPool_1.defaultWorkerCount)();
+    if (!Number.isFinite(count) || count <= 0) {
+        console.log('[SERVER] Mob collision: inline (no worker threads)');
+        return undefined;
+    }
+    try {
+        const pool = new collisionWorkerPool_1.CollisionWorkerPool(count);
+        console.log(`[SERVER] Mob collision: ${count} worker thread(s) + tick thread`);
+        // Workers are unref'd, so they never hold the process open; this is for
+        // an orderly stop so a restart does not leak isolates.
+        const shutdown = () => pool.dispose();
+        process.once('exit', shutdown);
+        return pool;
+    }
+    catch (err) {
+        console.error('[SERVER] Mob collision: worker pool failed, running inline:', err);
+        return undefined;
+    }
+}
+/**
  * The ECS runtime, built on first use so nothing is constructed on servers
  * running with the simulation switched off.
  */
@@ -1163,6 +1201,7 @@ function getEcsRuntime() {
     if (_ecsRuntime)
         return _ecsRuntime;
     _ecsRuntime = (0, ecsRuntime_1.createEcsRuntime)({
+        collisionParallel: createCollisionPool(),
         lookupPlayer: (socketId) => constants_2.players[socketId],
         // The post-movement player pipeline. Iterates `players` in the same
         // order the bare loop did, because that order decides who lands the

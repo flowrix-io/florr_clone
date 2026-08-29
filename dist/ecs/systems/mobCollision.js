@@ -50,6 +50,25 @@ const C = __importStar(require("../components"));
 const entity_1 = require("../entity");
 Object.defineProperty(exports, "entityIndex", { enumerable: true, get: function () { return entity_1.entityIndex; } });
 const system_1 = require("../system");
+const mobCollisionData_1 = require("./mobCollisionData");
+const mobCollisionKernel_1 = require("./mobCollisionKernel");
+function ensureF64(arr, n) {
+    return arr.length >= n ? arr : new Float64Array(Math.max(n, 1024));
+}
+function ensureI32(arr, n) {
+    return arr.length >= n ? arr : new Int32Array(Math.max(n, 4096));
+}
+/** Packs the kernel's read-only view. Allocated per pass; it is one small object. */
+function kernelInput(x, y, radius, head, flags, cellStart, sorted, hashKeys, hashVals, hashMask, count, maxRadius) {
+    return {
+        x, y, radius, head, flags, cellStart, sorted, hashKeys, hashVals, hashMask,
+        count, maxRadius,
+        cellSize: COLLISION_CELL_SIZE,
+        collisionBuffer: MOB_COLLISION_BUFFER,
+        maxPushPerPair: MAX_PUSH_PER_TICK,
+        nullHead: entity_1.NULL_ENTITY,
+    };
+}
 /** Gap maintained between mobs, on top of their radii. */
 const MOB_COLLISION_BUFFER = 5;
 /**
@@ -60,6 +79,22 @@ const MOB_COLLISION_BUFFER = 5;
  * this, so normal contact still resolves fully within the tick.
  */
 const MAX_PUSH_PER_TICK = 10;
+/**
+ * How many per-pair pushes a mob may accumulate in one tick.
+ *
+ * The original clamped each PAIR to MAX_PUSH_PER_TICK and applied them one
+ * after another, so a mob wedged between several others could travel several
+ * times that in a tick — each step shrinking the next overlap, which is what
+ * made it converge. Jacobi computes all its pushes at once, so clamping the sum
+ * to a single MAX_PUSH_PER_TICK would separate a crowd strictly slower than the
+ * old pass did. This headroom restores comparable convergence while still
+ * bounding how far one tick can teleport a mob.
+ */
+// Measured: at 9000 mobs, residual overlapping pairs after 200 ticks were
+// 8737 at 1x, 8277 at 2x, 8184 at 3x, and flat beyond — so 3 is where this
+// stops buying convergence. (Not read from the environment: this file is
+// compiled for the client too, where `process` does not exist.)
+const JACOBI_PUSH_HEADROOM = 3;
 /**
  * Broad-phase cell size. Must exceed the largest collision reach; 512 matches
  * the shared grid and comfortably covers real mob sizes.
@@ -72,15 +107,28 @@ function createMobCollisionQueries(world) {
         mobs: world.query([C.Position, C.Radius, C.Health, C.Damage, C.IsEnemy], [C.IsDead]),
     };
 }
-function cellKey(cx, cy) {
-    return ((cy + 1024) << 16) | ((cx + 1024) & 0xFFFF);
-}
 function mobCollisionSystem(queries, deps) {
     const { resolveWall, noMobCollision, creditDamage, onDamaged, onKilled, activity } = deps;
-    // Reused across ticks so a normal tick allocates nothing.
-    const entries = [];
-    const grid = new Map();
-    const activeBuckets = [];
+    // Reused across ticks so a normal tick allocates nothing. See
+    // mobCollisionData.ts — flat arrays rather than per-mob objects.
+    const set = new mobCollisionData_1.MobCollisionSet();
+    const { parallel } = deps;
+    // Serial-path scratch, grown on demand and reused.
+    let serialDeltaX = new Float64Array(0);
+    let serialDeltaY = new Float64Array(0);
+    let serialContactA = new Int32Array(0);
+    let serialContactB = new Int32Array(0);
+    const serialOut = {
+        deltaX: serialDeltaX, deltaY: serialDeltaY,
+        contactA: serialContactA, contactB: serialContactB,
+        contactCount: 0, contactOverflow: 0,
+    };
+    /** Reused output header for this thread's share of a parallel pass. */
+    const mainOut = {
+        deltaX: serialDeltaX, deltaY: serialDeltaY,
+        contactA: serialContactA, contactB: serialContactB,
+        contactCount: 0, contactOverflow: 0,
+    };
     /** Apply damage, reporting death exactly once. */
     function applyDamage(world, victim, amount, attackerOwner) {
         if (world.has(victim, C.IsDead))
@@ -103,23 +151,26 @@ function mobCollisionSystem(queries, deps) {
     return (ctx) => {
         const world = ctx.world;
         // --- broad phase -------------------------------------------------------
-        entries.length = 0;
-        for (let i = 0; i < activeBuckets.length; i++)
-            activeBuckets[i].length = 0;
-        activeBuckets.length = 0;
-        let maxRadius = 0;
+        set.reset();
         queries.mobs.chunks(chunk => {
             const pos = chunk.cols(C.Position);
             const rad = chunk.cols(C.Radius);
             const dmg = chunk.cols(C.Damage);
             const entities = chunk.entities;
+            // Archetype membership is uniform within a chunk, so these are
+            // hoisted out of the row loop. They used to be `world.has` /
+            // `world.get` per mob — 9000 archetype lookups a tick, and the
+            // largest single cost in this (serial) broad phase.
+            const petOwner = chunk.has(C.PetOwner) ? chunk.cols(C.PetOwner) : null;
+            const segment = chunk.has(C.CentipedeSegment) ? chunk.cols(C.CentipedeSegment) : null;
+            const petFlag = petOwner ? mobCollisionData_1.ENTRY_IS_PET : 0;
             for (let i = 0; i < chunk.count; i++) {
                 const entity = entities[i];
                 const x = pos.x[i];
                 const y = pos.y[i];
                 // A degenerate position makes the cell-range loops below spin
                 // forever (past 2^53, `cx++` is a no-op). Such a mob sits this
-                // pass out — and, because it never enters `entries`, it is also
+                // pass out — and, because it never enters the set, it is also
                 // excluded as a pair target.
                 if (!Number.isFinite(x) || !Number.isFinite(y))
                     continue;
@@ -127,112 +178,129 @@ function mobCollisionSystem(queries, deps) {
                     continue;
                 // Far from every player: sit this tick out, most ticks. Done
                 // here rather than in the narrow phase so a distant mob costs
-                // neither an Entry nor a bucket slot.
+                // neither an entry nor a grid slot.
                 if (!activity.shouldStep(entity, x, y, ctx.tick))
                     continue;
-                const radius = rad.value[i];
-                if (radius > maxRadius)
-                    maxRadius = radius;
-                const isPet = world.has(entity, C.PetOwner);
-                const head = world.has(entity, C.CentipedeSegment)
-                    ? world.get(entity, C.CentipedeSegment, 'head')
-                    : entity_1.NULL_ENTITY;
-                entries.push({
-                    entity,
-                    x,
-                    y,
-                    radius,
-                    order: entries.length,
-                    isPet,
-                    owner: isPet ? world.get(entity, C.PetOwner, 'owner') : entity_1.NULL_ENTITY,
-                    damage: dmg.value[i],
-                    head,
-                    noCollision: noMobCollision(entity),
-                });
+                set.push(entity, x, y, rad.value[i], dmg.value[i], petOwner ? petOwner.owner[i] : entity_1.NULL_ENTITY, segment ? segment.head[i] : entity_1.NULL_ENTITY, petFlag | (noMobCollision(entity) ? mobCollisionData_1.ENTRY_NO_COLLISION : 0));
             }
         });
-        grid.clear();
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
-            const cx = Math.floor(entry.x / COLLISION_CELL_SIZE);
-            const cy = Math.floor(entry.y / COLLISION_CELL_SIZE);
-            const key = cellKey(cx, cy);
-            let bucket = grid.get(key);
-            if (bucket === undefined) {
-                bucket = [];
-                grid.set(key, bucket);
-                activeBuckets.push(bucket);
-            }
-            bucket.push(entry);
+        set.buildGrid(COLLISION_CELL_SIZE);
+        const n = set.count;
+        if (n === 0)
+            return;
+        // --- separation kernel (parallel when a pool is available) -------------
+        //
+        // Jacobi, not the original in-place Gauss-Seidel: every push is computed
+        // from this tick's starting positions and applied afterwards. See
+        // mobCollisionKernel.ts for why, and for why that makes the result the
+        // same whether it runs on one thread or eight.
+        const pool = parallel && parallel.canHandle(n) ? parallel : null;
+        let deltaX;
+        let deltaY;
+        let slabs;
+        let contactA;
+        let contactB;
+        let slabSize;
+        let contactsOf;
+        if (pool) {
+            // Publish this tick's set into the shared buffers, then split the
+            // range across the workers and this thread.
+            pool.x.set(set.x.subarray(0, n));
+            pool.y.set(set.y.subarray(0, n));
+            pool.radius.set(set.radius.subarray(0, n));
+            pool.head.set(set.head.subarray(0, n));
+            pool.flags.set(set.flags.subarray(0, n));
+            pool.sorted.set(set.sorted.subarray(0, n));
+            pool.cellStart.set(set.cellStart.subarray(0, set.cellCount + 1));
+            pool.hashKeys.set(set.hashKeys);
+            pool.hashVals.set(set.hashVals);
+            slabSize = pool.buffers.contactsPerWorker;
+            const input = kernelInput(pool.x, pool.y, pool.radius, pool.head, pool.flags, pool.cellStart, pool.sorted, pool.hashKeys, pool.hashVals, set.hashMask, n, set.maxRadius);
+            pool.run(n, set.maxRadius, COLLISION_CELL_SIZE, MOB_COLLISION_BUFFER, MAX_PUSH_PER_TICK, entity_1.NULL_ENTITY, set.hashMask, (from, to, slab) => {
+                mainOut.deltaX = pool.deltaX;
+                mainOut.deltaY = pool.deltaY;
+                mainOut.contactA = pool.contactA.subarray(slab * slabSize, (slab + 1) * slabSize);
+                mainOut.contactB = pool.contactB.subarray(slab * slabSize, (slab + 1) * slabSize);
+                (0, mobCollisionKernel_1.scanRange)(input, from, to, mainOut);
+            });
+            deltaX = pool.deltaX;
+            deltaY = pool.deltaY;
+            contactA = pool.contactA;
+            contactB = pool.contactB;
+            slabs = pool.workerCount + 1;
+            const mainSlab = pool.workerCount;
+            const mainContacts = mainOut.contactCount;
+            contactsOf = slab => (slab === mainSlab ? mainContacts : pool.contactCount(slab));
         }
-        // --- narrow phase ------------------------------------------------------
-        for (let i = 0; i < entries.length; i++) {
-            const self = entries[i];
-            if (!world.isAlive(self.entity) || world.has(self.entity, C.IsDead))
+        else {
+            // Inline: one range, one slab, same kernel.
+            serialDeltaX = ensureF64(serialDeltaX, n);
+            serialDeltaY = ensureF64(serialDeltaY, n);
+            serialContactA = ensureI32(serialContactA, n * 4);
+            serialContactB = ensureI32(serialContactB, n * 4);
+            serialOut.deltaX = serialDeltaX;
+            serialOut.deltaY = serialDeltaY;
+            serialOut.contactA = serialContactA;
+            serialOut.contactB = serialContactB;
+            (0, mobCollisionKernel_1.scanRange)(kernelInput(set.x, set.y, set.radius, set.head, set.flags, set.cellStart, set.sorted, set.hashKeys, set.hashVals, set.hashMask, n, set.maxRadius), 0, n, serialOut);
+            deltaX = serialDeltaX;
+            deltaY = serialDeltaY;
+            contactA = serialContactA;
+            contactB = serialContactB;
+            slabs = 1;
+            slabSize = serialContactA.length;
+            const c = serialOut.contactCount;
+            contactsOf = () => c;
+        }
+        // --- apply separation --------------------------------------------------
+        const xs = set.x;
+        const ys = set.y;
+        const handles = set.entity;
+        for (let i = 0; i < n; i++) {
+            let dx = deltaX[i];
+            let dy = deltaY[i];
+            if (dx === 0 && dy === 0)
                 continue;
-            // Anything close enough to touch is within this mob's radius plus the
-            // largest radius in play plus the buffer.
-            const reach = self.radius + maxRadius + MOB_COLLISION_BUFFER;
-            const minCX = Math.floor((self.x - reach) / COLLISION_CELL_SIZE);
-            const maxCX = Math.floor((self.x + reach) / COLLISION_CELL_SIZE);
-            const minCY = Math.floor((self.y - reach) / COLLISION_CELL_SIZE);
-            const maxCY = Math.floor((self.y + reach) / COLLISION_CELL_SIZE);
-            for (let cy = minCY; cy <= maxCY; cy++) {
-                for (let cx = minCX; cx <= maxCX; cx++) {
-                    const bucket = grid.get(cellKey(cx, cy));
-                    if (bucket === undefined)
-                        continue;
-                    for (let bi = 0; bi < bucket.length; bi++) {
-                        const other = bucket[bi];
-                        // Each pair is processed once, from the lower-indexed
-                        // side — this replaces the old `j > i` inner loop.
-                        if (other.order <= self.order)
-                            continue;
-                        if (!world.isAlive(other.entity) || world.has(other.entity, C.IsDead))
-                            continue;
-                        // Segments of one centipede never push each other: the
-                        // chain-follow pass keeps them in formation, and physical
-                        // push-apart makes them tangle and spin. The head's AI
-                        // steers around its own body instead.
-                        if (self.head !== entity_1.NULL_ENTITY && self.head === other.head)
-                            continue;
-                        // Mobs flagged no_mob_collision neither push nor are pushed.
-                        if (self.noCollision || other.noCollision)
-                            continue;
-                        const dx = other.x - self.x;
-                        const dy = other.y - self.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        const minDistance = self.radius + other.radius + MOB_COLLISION_BUFFER;
-                        if (!(distance < minDistance && distance > 0))
-                            continue;
-                        const push = Math.min((minDistance - distance) / 2, MAX_PUSH_PER_TICK);
-                        const pushX = (dx / distance) * push;
-                        const pushY = (dy / distance) * push;
-                        self.x -= pushX;
-                        self.y -= pushY;
-                        other.x += pushX;
-                        other.y += pushY;
-                        // Separation must not shove either mob into a wall. This
-                        // pass runs after the per-mob wall pass, so a violation
-                        // would be visible to clients for a full tick.
-                        const w1 = resolveWall(self.x, self.y, self.radius);
-                        self.x = w1.x;
-                        self.y = w1.y;
-                        const w2 = resolveWall(other.x, other.y, other.radius);
-                        other.x = w2.x;
-                        other.y = w2.y;
-                        world.write(self.entity, C.Position, { x: self.x, y: self.y });
-                        world.write(other.entity, C.Position, { x: other.x, y: other.y });
-                        // Pet/wild contact deals damage both ways, every tick,
-                        // with no cooldown. Pet-vs-pet and wild-vs-wild do not.
-                        if (self.isPet === other.isPet)
-                            continue;
-                        const pet = self.isPet ? self : other;
-                        const wild = self.isPet ? other : self;
-                        applyDamage(world, wild.entity, pet.damage, pet.owner);
-                        applyDamage(world, pet.entity, wild.damage, entity_1.NULL_ENTITY);
-                    }
-                }
+            // Jacobi sums every neighbour's push at once, so the total is capped
+            // here rather than per pair. Deep overlaps still ease apart over a
+            // few ticks, which is what MAX_PUSH_PER_TICK has always meant.
+            const cap = MAX_PUSH_PER_TICK * JACOBI_PUSH_HEADROOM;
+            const mag = Math.sqrt(dx * dx + dy * dy);
+            if (mag > cap) {
+                const scale = cap / mag;
+                dx *= scale;
+                dy *= scale;
+            }
+            const entity = handles[i];
+            if (!world.isAlive(entity) || world.has(entity, C.IsDead))
+                continue;
+            // Separation must not shove a mob into a wall. This pass runs after
+            // the per-mob wall pass, so a violation would be visible for a tick.
+            const resolved = resolveWall(xs[i] + dx, ys[i] + dy, set.radius[i]);
+            xs[i] = resolved.x;
+            ys[i] = resolved.y;
+            world.write(entity, C.Position, { x: resolved.x, y: resolved.y });
+        }
+        // --- apply contact damage ----------------------------------------------
+        // Pet/wild contact deals damage both ways, every tick, with no cooldown.
+        // Pet-vs-pet and wild-vs-wild do not. Slabs are walked in worker order
+        // and each slab is in ascending entry order, so this is deterministic.
+        const damages = set.damage;
+        const owners = set.owner;
+        const flags = set.flags;
+        for (let slab = 0; slab < slabs; slab++) {
+            const base = slabs === 1 ? 0 : slab * slabSize;
+            const count = contactsOf(slab);
+            for (let c = 0; c < count; c++) {
+                const i = contactA[base + c];
+                const j = contactB[base + c];
+                const iIsPet = (flags[i] & mobCollisionData_1.ENTRY_IS_PET) !== 0;
+                if (iIsPet === ((flags[j] & mobCollisionData_1.ENTRY_IS_PET) !== 0))
+                    continue;
+                const petIdx = iIsPet ? i : j;
+                const wildIdx = iIsPet ? j : i;
+                applyDamage(world, handles[wildIdx], damages[petIdx], owners[petIdx]);
+                applyDamage(world, handles[petIdx], damages[wildIdx], entity_1.NULL_ENTITY);
             }
         }
     };

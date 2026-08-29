@@ -28,6 +28,8 @@ import { importWorld } from '../../server/ecsBridge';
 import { spawnEnemy } from '../../server/enemyRegistry';
 import { bindEntityHost } from '../../server/entityRegistry';
 import * as C from '../components';
+import type { World, Query } from '../world';
+import { entityIndex, type Entity } from '../entity';
 import { MAX_SANE_WORLD_COORD_LIMIT } from './limits';
 import { mulberry32 } from './rng';
 
@@ -192,6 +194,25 @@ export interface HarnessResult {
     /** Ticks that ran over the 30Hz budget. */
     overBudgetTicks: number;
     heapMB: number;
+    /**
+     * Order-independent hash of every positioned entity's final state.
+     *
+     * The point of this is A/B-ing an implementation change: two runs of the
+     * same seeded config must produce the same hash, so a refactor that claims
+     * to preserve behaviour can be checked rather than asserted. It is summed
+     * per entity rather than accumulated in iteration order, so archetype
+     * reordering alone does not change it.
+     */
+    stateHash: string;
+    /**
+     * Mob pairs still overlapping at the end of the run.
+     *
+     * The separation pass exists to drive this towards zero, so it is the
+     * measure of whether a change to that pass still WORKS — a faster pass that
+     * stopped separating would look like a win on every timing number and be a
+     * total regression. Counted with the same uniform grid the pass uses.
+     */
+    overlappingPairs: number;
     /** Non-finite / absurd coordinate detections. Must be zero. */
     badCoordinates: number;
     firstBadTick: number;
@@ -253,6 +274,74 @@ function percentile(sorted: number[], q: number): number {
     return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))];
 }
 
+/**
+ * Order-independent digest of the simulation's end state.
+ *
+ * Quantised to 1e-4 before hashing: the point is to catch a behavioural change,
+ * not to fail on the last bit of a float that a different summation order can
+ * legitimately move.
+ */
+function hashWorldState(world: World, positioned: Query): string {
+    let acc = 0n;
+    const MOD = (1n << 61n) - 1n;
+    positioned.chunks(chunk => {
+        const pos = chunk.cols(C.Position);
+        const entities = chunk.entities;
+        const hasHealth = chunk.has(C.Health);
+        const health = hasHealth ? chunk.cols(C.Health) : null;
+        for (let i = 0; i < chunk.count; i++) {
+            const id = BigInt(entityIndex(entities[i] as Entity));
+            const qx = BigInt(Math.round(pos.x[i] * 1e4));
+            const qy = BigInt(Math.round(pos.y[i] * 1e4));
+            const qh = health ? BigInt(Math.round(health.current[i] * 1e4)) : 0n;
+            // Mixed per entity, then SUMMED — so the digest does not depend on
+            // the order chunks happen to be visited in.
+            let h = (id * 0x9E3779B97F4A7C15n) ^ (qx * 0xBF58476D1CE4E5B9n)
+                  ^ (qy * 0x94D049BB133111EBn) ^ (qh * 0xD6E8FEB86659FD93n);
+            h &= (1n << 64n) - 1n;
+            acc = (acc + h) % MOD;
+        }
+    });
+    return acc.toString(16).padStart(16, '0');
+}
+
+/** Mob pairs whose circles intersect. See HarnessResult.overlappingPairs. */
+function countOverlaps(world: World): number {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const rs: number[] = [];
+    world.query([C.Position, C.Radius, C.IsEnemy], [C.IsDead]).chunks(chunk => {
+        const pos = chunk.cols(C.Position);
+        const rad = chunk.cols(C.Radius);
+        for (let i = 0; i < chunk.count; i++) {
+            if (!Number.isFinite(pos.x[i]) || !Number.isFinite(pos.y[i])) continue;
+            xs.push(pos.x[i]); ys.push(pos.y[i]); rs.push(rad.value[i]);
+        }
+    });
+    const CELL = 512;
+    const grid = new Map<string, number[]>();
+    for (let i = 0; i < xs.length; i++) {
+        const k = `${Math.floor(xs[i] / CELL)},${Math.floor(ys[i] / CELL)}`;
+        let b = grid.get(k);
+        if (!b) { b = []; grid.set(k, b); }
+        b.push(i);
+    }
+    let overlaps = 0;
+    for (let i = 0; i < xs.length; i++) {
+        const cx = Math.floor(xs[i] / CELL), cy = Math.floor(ys[i] / CELL);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const b = grid.get(`${cx + dx},${cy + dy}`);
+            if (!b) continue;
+            for (const j of b) {
+                if (j <= i) continue;
+                const ddx = xs[j] - xs[i], ddy = ys[j] - ys[i];
+                if (Math.sqrt(ddx * ddx + ddy * ddy) < rs[i] + rs[j]) overlaps++;
+            }
+        }
+    }
+    return overlaps;
+}
+
 export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessResult {
     assertNoServerBooted();
     const { players } = buildLegacyWorld(config);
@@ -261,8 +350,20 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
     let netIdCounter = 0;
     let playerHits = 0;
 
+    // Opt the bench into the worker pool with COLLISION_WORKERS=n, so the
+    // parallel path can be measured and A/B'd against the inline one. Loaded
+    // lazily and by string so the ECS self-test (which has no server tree) is
+    // unaffected.
+    let collisionParallel;
+    const requestedWorkers = Number(process.env.COLLISION_WORKERS ?? 0);
+    if (requestedWorkers > 0) {
+        const mod = require('../../server/collisionWorkerPool');
+        collisionParallel = new mod.CollisionWorkerPool(requestedWorkers);
+    }
+
     const runtime = createEcsRuntime({
         ...benchStubHooks(),
+        collisionParallel,
         // Mirrors the real near-a-player test closely enough to exercise the
         // viewport pass: mobs within a viewport-ish radius of a player stay.
         isNearAnyPlayer: (x, y) => {
@@ -380,6 +481,8 @@ export function runTickHarness(config: HarnessConfig = DEFAULT_CONFIG): HarnessR
 
     return {
         ticks: config.ticks,
+        stateHash: hashWorldState(world, positioned),
+        overlappingPairs: countOverlaps(world),
         startingEntities,
         entities: world.size(),
         msPerTick: totalMs / config.ticks,
