@@ -122,7 +122,6 @@ const BOT_SPAWN_INVULNERABILITY_MS = 3000;
 // and the enemy spawner doesn't inflate mob counts across the map.
 const TETHER_RADIUS = 1400; // bot stays within this of its anchor
 const TETHER_RETURN_RADIUS = 2200; // past this, drop whatever it's doing and regroup
-const SPAWN_JITTER = 500; // jitter radius around spawn anchor
 // Ultra+ bots roam mythic zones looking for boss spawns — wider tether so
 // they can patrol the full zone and engage mobs across it.
 const ULTRA_ROAM_RADIUS = 2400;
@@ -239,7 +238,20 @@ let lastActivePlayerTime = Date.now();
 const BOT_COUNT_JITTER_MIN = -3;
 const BOT_COUNT_JITTER_MAX = 2;
 const BOT_COUNT_JITTER_STEP_CHANCE = 0.35;
+// Minimum wall-clock gap between jitter steps.
+//
+// The step used to be gated only by the 0.35 chance on a MAINTAIN_INTERVAL_MS
+// (1.5s) cadence, i.e. one step every ~4s on average. Each step that moves the
+// target down despawns a bot and each step up creates one, so the population
+// was churning several times a minute. Bot builds are derived from the name and
+// there are only ~75 names for ~20 live bots, so a culled bot regularly came
+// back moments later with the same name, level and loadout at a spawn zone —
+// visually identical to that bot having teleported to spawn without dying.
+// The drift is still there, it just moves on the timescale a player population
+// actually moves on.
+const BOT_COUNT_JITTER_MIN_INTERVAL_MS = 25000;
 let botCountJitter = 0;
+let nextJitterStepAt = 0;
 let forcedRaid = null;
 const FORCED_RAID_DURATION_MS = 45000; // 45s — enough for bots to traverse the map and engage
 // Boss announcements: when a super/unique boss first appears, the nearest bot
@@ -949,64 +961,116 @@ function nearestRealPlayer(x, y) {
     }
     return best;
 }
+/**
+ * Every area a real player can actually appear in, in MAP coordinates.
+ *
+ * The authority for this is the `authenticate` handler in
+ * connection/session.ts, because that is the ONLY live player spawn path: the
+ * death screen's button exits to the title screen and re-entering the game
+ * re-authenticates. (`playerManager.respawnPlayer` used to look like the
+ * authority and is what an earlier version of this function mirrored, but
+ * nothing reached it — no client ever emitted the `requestRespawn` that
+ * triggered it — so its level-banded spawn table had never run. Both it and
+ * that opcode have since been deleted.) What `authenticate` allows is exactly
+ * two things:
+ *
+ *   spawnBiome 'default'  -> a `spawn` zone whose spawnType is 'common'
+ *   spawnBiome <name>     -> a `biome` element of that name that passes
+ *                            isBiomeSafeForSpawn, i.e. whose spawn table holds
+ *                            nothing above uncommon
+ *
+ * So a player NEVER starts in a rare/epic/legendary/mythic/ultra spawn zone
+ * whatever their level, and never on a teleporter pad. The old anchor set was
+ * `type === 'spawn' || type === 'teleporter'` with no filter at all, which is
+ * precisely why bots turned up in places a player cannot spawn — including
+ * deep in mythic territory, where a bot is under attack from the moment it
+ * appears.
+ *
+ * PVP and maze spawns are deliberately excluded: they are separate modes a
+ * player opts into, not places you end up by playing the map.
+ *
+ * The map is static, so this is computed once.
+ */
+let spawnAreaCache = null;
 function getSpawnAnchorElements() {
-    // Spawn zones and teleporters are the natural "entry points" of the map —
-    // real players appear at these, so bots spawning here blend in and stay
-    // close to where humans tend to be.
-    return map_data_1.WORLD_MAP.filter(e => (e.type === 'spawn' || e.type === 'teleporter') && e.width > 0 && e.height > 0);
+    if (spawnAreaCache)
+        return spawnAreaCache;
+    const commonZones = map_data_1.WORLD_MAP.filter(e => e.type === 'spawn' && e.width > 0 && e.height > 0
+        && e.properties?.spawnType === 'common');
+    const safeBiomes = map_data_1.WORLD_MAP.filter(e => e.type === 'biome' && e.width > 0 && e.height > 0
+        && population().isBiomeSafeForSpawn(e));
+    spawnAreaCache = [...commonZones, ...safeBiomes];
+    return spawnAreaCache;
 }
+/**
+ * Where a bot appears on creation and on respawn.
+ *
+ * Every position this returns is INSIDE one of the areas above — unconditionally,
+ * at every fallback step. That is what the old version could not promise: it
+ * jittered up to 600px OUTSIDE the zone rectangle (landing bots in open terrain,
+ * in neighbouring biomes and on teleporter pads), and its last two fallbacks
+ * skipped the safety check entirely, the final one returning an unchecked
+ * uniform-random point anywhere in the 60000×60000 world.
+ *
+ * The checks degrade in three steps, strongest first: the full
+ * `findSafeSpawnPosition` (no wall, no mob overlap, not crowded — the same call
+ * `authenticate` makes), then walls only, then the area's centre. Leaving the
+ * spawnable set is never one of the steps: standing next to a mob for a tick is
+ * recoverable (bots spawn invulnerable), being dropped into mythic territory is
+ * not.
+ *
+ * No level parameter, deliberately. A player's spawn does not depend on their
+ * level — a level 200 flower re-entering the game lands in the same common zone
+ * or safe biome a fresh account does, and then walks out. Bots do the same:
+ * `computeBotMode` sends each one to a farm zone matching its gear band from
+ * wherever it spawned.
+ */
 function pickBotSpawnPosition() {
     const anchors = getSpawnAnchorElements();
     if (anchors.length > 0) {
-        // Try a handful of spawn/portal anchors to find a safe spot nearby.
+        // Try several areas; each gets a real number of attempts because they
+        // are large and can be densely populated with mobs.
         const shuffled = [...anchors].sort(() => Math.random() - 0.5).slice(0, 8);
         for (const anchor of shuffled) {
-            const padding = 20;
+            // Same 50px inset `getSpawnPositionInBiome` uses, so a bot can't be
+            // placed hard against a biome edge.
+            const padding = 50;
             const baseArea = {
                 x: anchor.x + padding,
                 y: anchor.y + padding,
                 width: Math.max(0, anchor.width - padding * 2),
                 height: Math.max(0, anchor.height - padding * 2)
             };
-            // First try inside the zone itself
-            if (baseArea.width > 0 && baseArea.height > 0) {
-                const inside = population().findSafeSpawnPosition(baseArea, 10);
-                if (inside)
-                    return inside;
-            }
-            // Otherwise jitter around the anchor's center (useful for portals
-            // which are small and surrounded by walkable terrain).
-            const cx = anchor.x + anchor.width / 2;
-            const cy = anchor.y + anchor.height / 2;
-            for (let i = 0; i < 6; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const dist = 100 + Math.random() * SPAWN_JITTER;
-                const jitterArea = {
-                    x: cx + Math.cos(angle) * dist - 60,
-                    y: cy + Math.sin(angle) * dist - 60,
-                    width: 120,
-                    height: 120
-                };
-                const safe = population().findSafeSpawnPosition(jitterArea, 4);
-                if (safe)
-                    return safe;
+            if (baseArea.width <= 0 || baseArea.height <= 0)
+                continue;
+            const inside = population().findSafeSpawnPosition(baseArea, 25);
+            if (inside)
+                return inside;
+        }
+        // Every sampled area was crowded — relax to a wall check only.
+        for (const anchor of shuffled) {
+            for (let i = 0; i < 12; i++) {
+                const x = (anchor.x + Math.random() * anchor.width) * constants_1.SCALE_FACTOR;
+                const y = (anchor.y + Math.random() * anchor.height) * constants_1.SCALE_FACTOR;
+                if (!population().isPositionInsideWall(x, y, constants_1.PLAYER_SIZE))
+                    return { x, y };
             }
         }
-        // Final fallback: centre of a random anchor (scaled to world coords)
+        // Last resort: the centre of a random spawnable area.
         const anchor = anchors[Math.floor(Math.random() * anchors.length)];
         return {
             x: (anchor.x + anchor.width / 2) * constants_1.SCALE_FACTOR,
             y: (anchor.y + anchor.height / 2) * constants_1.SCALE_FACTOR
         };
     }
-    // No spawn zones configured — fall back to a world-wide safe spawn
-    const safe = population().findSafeSpawnPosition({ x: 0, y: 0, width: constants_1.ACTUAL_WORLD_WIDTH, height: constants_1.ACTUAL_WORLD_HEIGHT }, 30);
+    // A map with no common spawn zone and no safe biome — nowhere a player
+    // could spawn either. `findSafeSpawnPosition` multiplies the area it is
+    // given by SCALE_FACTOR, so it must be handed MAP coordinates; passing
+    // ACTUAL_WORLD_* (already world-space) double-scaled the search box.
+    const safe = population().findSafeSpawnPosition({ x: 0, y: 0, width: constants_1.ACTUAL_WORLD_WIDTH / constants_1.SCALE_FACTOR, height: constants_1.ACTUAL_WORLD_HEIGHT / constants_1.SCALE_FACTOR }, 50);
     if (safe)
         return safe;
-    return {
-        x: Math.random() * constants_1.ACTUAL_WORLD_WIDTH,
-        y: Math.random() * constants_1.ACTUAL_WORLD_HEIGHT
-    };
+    return { x: constants_1.ACTUAL_WORLD_WIDTH / 2, y: constants_1.ACTUAL_WORLD_HEIGHT / 2 };
 }
 function pickBotName() {
     const base = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
@@ -1148,28 +1212,44 @@ function maintainBotCount(io, realPlayerCount, world) {
     if (realPlayerCount > 0) {
         lastActivePlayerTime = now;
     }
-    else {
+    else if (targetBotCountOverride === null
+        && now - lastActivePlayerTime >= BOT_IDLE_TIMEOUT_MS) {
         // Keep bots running for BOT_IDLE_TIMEOUT_MS after the last human leaves
         // so reconnecting quickly doesn't hit an empty world. Past the timeout,
         // despawn everything to avoid wasted simulation.
-        if (now - lastActivePlayerTime >= BOT_IDLE_TIMEOUT_MS) {
-            if (countBots() > 0)
-                removeAllBots(io);
-            return;
-        }
+        //
+        // Skipped entirely while an explicit `set_bot_count N` override is in
+        // force. This return is BEFORE the spawn/cull block, so with nobody
+        // in-world it used to wipe the bots and then ignore the override on
+        // every subsequent tick — an admin sitting on the title screen (title
+        // sessions live in lobbyPlayers, not `players`, so they do not count as
+        // real players) would run set_bot_count, see nothing happen, and have no
+        // way to tell why. An explicit instruction outranks the idle default;
+        // `set_bot_count default` puts the automatic behaviour back.
+        //
+        // Costs nothing while idle: server.ts returns out of the tick when there
+        // are no authenticated players, so these bots sit inert until someone
+        // joins.
+        if (countBots() > 0)
+            removeAllBots(io);
+        return;
     }
     if (now - lastMaintainTime < MAINTAIN_INTERVAL_MS)
         return;
     lastMaintainTime = now;
     const currentBots = countBots();
-    // Drift the jitter by ±1 each tick so the population wanders slowly instead
-    // of sitting at a fixed target. Bounded so it can't collapse the server.
-    if (Math.random() < BOT_COUNT_JITTER_STEP_CHANCE) {
-        botCountJitter += Math.random() < 0.5 ? -1 : 1;
-        if (botCountJitter < BOT_COUNT_JITTER_MIN)
-            botCountJitter = BOT_COUNT_JITTER_MIN;
-        if (botCountJitter > BOT_COUNT_JITTER_MAX)
-            botCountJitter = BOT_COUNT_JITTER_MAX;
+    // Drift the jitter by ±1 so the population wanders slowly instead of
+    // sitting at a fixed target. Bounded so it can't collapse the server, and
+    // rate-limited so the drift doesn't read as bots blinking in and out.
+    if (now >= nextJitterStepAt) {
+        nextJitterStepAt = now + BOT_COUNT_JITTER_MIN_INTERVAL_MS;
+        if (Math.random() < BOT_COUNT_JITTER_STEP_CHANCE) {
+            botCountJitter += Math.random() < 0.5 ? -1 : 1;
+            if (botCountJitter < BOT_COUNT_JITTER_MIN)
+                botCountJitter = BOT_COUNT_JITTER_MIN;
+            if (botCountJitter > BOT_COUNT_JITTER_MAX)
+                botCountJitter = BOT_COUNT_JITTER_MAX;
+        }
     }
     const desiredBots = targetBotCountOverride !== null
         ? targetBotCountOverride
@@ -1182,10 +1262,33 @@ function maintainBotCount(io, realPlayerCount, world) {
     }
     else if (currentBots > desiredBots) {
         const excess = currentBots - desiredBots;
-        const ids = listBotIds().slice(0, excess);
+        // Cull the bots FARTHEST from any human first. The old `slice(0, excess)`
+        // took whichever bots happened to come first out of the players dict —
+        // routinely one standing next to a player, which simply vanished in
+        // front of them. Dead bots go first regardless of distance: a corpse is
+        // the one bot nobody is interacting with.
+        const ids = listBotIds().sort((a, b) => cullScore(b) - cullScore(a)).slice(0, excess);
         for (const id of ids)
             removeBot(id, io);
     }
+}
+/**
+ * How removable a bot is: higher = cull sooner. Squared distance to the nearest
+ * human, so an unwatched bot on the far side of the map goes before one a
+ * player is standing next to. Dead bots sort above everything alive.
+ */
+function cullScore(id) {
+    const bot = constants_1.players[id];
+    if (!bot)
+        return Number.MAX_SAFE_INTEGER;
+    if (bot.isDead)
+        return Number.MAX_SAFE_INTEGER;
+    const nearest = nearestRealPlayer(bot.x, bot.y);
+    if (!nearest)
+        return 0; // nobody watching anyone — order doesn't matter
+    const dx = nearest.x - bot.x;
+    const dy = nearest.y - bot.y;
+    return dx * dx + dy * dy;
 }
 function respawnBot(bot, io) {
     const pos = pickBotSpawnPosition();
@@ -1197,8 +1300,10 @@ function respawnBot(bot, io) {
     bot.isDead = false;
     bot.isInvulnerable = true;
     bot.killedBy = undefined;
-    // Same rule as a player respawn: the glitch infection doesn't survive it.
-    // Without this every long-lived bot ends up permanently glitched.
+    // Same rule as a human coming back: the glitch infection doesn't survive
+    // it. A human loses it by re-authenticating (the flag isn't persisted); a
+    // bot never re-authenticates, so without this every long-lived bot ends up
+    // permanently glitched.
     bot.glitched = undefined;
     // Refresh any broken petals so the bot is combat-ready
     if (bot.loadout) {
@@ -1326,6 +1431,88 @@ function findInterceptingMob(botX, botY, dirX, dirY, excludeId, range) {
         }
     }
     return best ? { enemy: best, dist: bestDist } : null;
+}
+// --- Mob body avoidance ---
+//
+// Until this existed, NOTHING in bot movement looked at a mob's body. The only
+// mob-aware distance in the whole file was the standoff ring the combat
+// controller holds around the ONE mob it has targeted; `steerAroundWalls`
+// raycasts WALL_GRID and nothing else. So a bot crossing the map to its farm
+// zone, walking to a drop, regrouping, fleeing, following an A* path or just
+// wandering would drive straight through every mob in the way and take the
+// contact damage — which is what "bots run into mobs very often" is.
+//
+// This is a steering BIAS, deliberately, not a hard constraint: it is summed
+// with the requested direction the same way bot-vs-bot separation already is,
+// and its magnitude is capped below 1 so it can bend a heading around a mob but
+// can never reverse the bot's intent and leave it unable to reach a goal that
+// happens to be guarded.
+const MOB_AVOID_MARGIN = 24; // gap kept between the bot's body and a mob's edge
+const MOB_AVOID_LOOKAHEAD = 85; // band outside that gap where steering starts
+const MOB_AVOID_STRENGTH = 1.1; // weight of the repulsion against the requested heading
+const MOB_AVOID_MAX = 0.85; // hard cap: < 1 keeps intent from ever being inverted
+// Broad-phase radius. The grid is fat-inserted (a mob is returned when its
+// HITBOX overlaps the query circle, not just its centre), so a boss with a
+// several-hundred-pixel radius still comes back from a query this size and the
+// per-mob ring test below is what actually decides.
+const MOB_AVOID_QUERY_RADIUS = 200;
+// Its own scratch rather than `_botQueryScratch`: this query runs from inside
+// driveMove, i.e. after the mode/target/intercept queries have handed back
+// Enemy references that the caller is still holding.
+const _avoidQueryScratch = [];
+/**
+ * Repulsion from every mob whose body the bot is about to walk into.
+ *
+ * `exceptId` is the mob the caller is deliberately engaging — the combat
+ * controller already owns the distance to that one, and repelling from it would
+ * fight the standoff ring. Pass null while fleeing, travelling or wandering so
+ * every mob counts.
+ *
+ * Writes into `out` and returns it, so the per-tick per-bot call allocates
+ * nothing.
+ */
+function avoidNearbyMobs(bot, exceptId, out) {
+    out.x = 0;
+    out.y = 0;
+    const near = (0, enemyGrid_1.queryEnemiesNear)(bot.x, bot.y, MOB_AVOID_QUERY_RADIUS, _avoidQueryScratch);
+    for (let i = 0; i < near.length; i++) {
+        const enemy = near[i];
+        if (enemy.id === exceptId)
+            continue;
+        if ((0, mobFields_1.isMobDead)(enemy.entity))
+            continue;
+        // Neither of these can hurt the bot, and steering around item spawners
+        // would push bots off the drops they are walking to.
+        if (enemy.type === 'target_dummy')
+            continue;
+        if (enemy.type === 'item_spawner')
+            continue;
+        // A bot's own pets follow it around and would otherwise shove it.
+        if (enemy.ownerId === bot.id)
+            continue;
+        const dx = bot.x - (0, mobFields_1.mobX)(enemy.entity);
+        const dy = bot.y - (0, mobFields_1.mobY)(enemy.entity);
+        const d2 = dx * dx + dy * dy;
+        if (d2 === 0)
+            continue;
+        const ring = constants_1.PLAYER_SIZE / 2 + getMobRadius(enemy) + MOB_AVOID_MARGIN;
+        const outer = ring + MOB_AVOID_LOOKAHEAD;
+        if (d2 >= outer * outer)
+            continue;
+        const d = Math.sqrt(d2);
+        // 0 at the outer edge, 1 at the ring, >1 (up to 2) once overlapping —
+        // so a bot already touching a mob pushes off far harder than one just
+        // drifting close. Divided by d to normalise (dx, dy) in the same step.
+        const w = Math.min(2, (outer - d) / MOB_AVOID_LOOKAHEAD) / d;
+        out.x += dx * w;
+        out.y += dy * w;
+    }
+    const mag = Math.sqrt(out.x * out.x + out.y * out.y);
+    if (mag > MOB_AVOID_MAX) {
+        out.x = (out.x / mag) * MOB_AVOID_MAX;
+        out.y = (out.y / mag) * MOB_AVOID_MAX;
+    }
+    return out;
 }
 // --- Wall avoidance ---
 // Cheap raycast against WALL_GRID. State 1 = wall, 2 = water — both block.
@@ -1673,7 +1860,7 @@ function findPathAStar(startX, startY, goalX, goalY) {
  * actively moving along a path this tick; false when path isn't available or
  * is finished, so the caller can fall back to simple steering.
  */
-function followPath(bot, state, now, goalX, goalY, speedMult, petalExt) {
+function followPath(bot, state, now, goalX, goalY, speedMult, petalExt, avoidExceptId = null) {
     const goalTx = (0, constants_1.worldToTileX)(goalX);
     const goalTy = (0, constants_1.worldToTileY)(goalY);
     const pathExhausted = !!state.pathNodes
@@ -1758,7 +1945,7 @@ function followPath(bot, state, now, goalX, goalY, speedMult, petalExt) {
     const dx = wp.x - bot.x;
     const dy = wp.y - bot.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    driveMove(bot, dx / d, dy / d, speedMult, petalExt);
+    driveMove(bot, dx / d, dy / d, speedMult, petalExt, 1.0, avoidExceptId);
     return true;
 }
 // Per-bot strafe direction (+1 or -1). Held for several seconds at a time so
@@ -2373,7 +2560,16 @@ function getBotPersona(id) {
 // Speed below which heading changes are instant. A near-stationary player can
 // pivot freely; only a bot already moving has to arc into its new direction.
 const FREE_TURN_SPEED = 55;
-function driveMove(bot, dirX, dirY, speedMult, petalExtension, agility = 1.0) {
+// Reused across every driveMove call so mob avoidance allocates nothing.
+const _avoidVec = { x: 0, y: 0 };
+/**
+ * `avoidExceptId` is the mob this move is deliberately engaging, whose distance
+ * the combat controller already owns. Every OTHER mob near the bot bends the
+ * heading away from its body. Callers that are not holding a standoff ring —
+ * travelling, regrouping, fleeing, pathing, picking up, wandering — pass null
+ * (the default) so nothing is exempt.
+ */
+function driveMove(bot, dirX, dirY, speedMult, petalExtension, agility = 1.0, avoidExceptId = null) {
     // Separation: push away from any other bot inside BOT_SEPARATION_RADIUS,
     // weighted by 1 - dist/radius so near-touches dominate over mid-range
     // neighbors. Keeps squads from collapsing to a single point.
@@ -2400,8 +2596,12 @@ function driveMove(bot, dirX, dirY, speedMult, petalExtension, agility = 1.0) {
     const persona = getBotPersona(bot.id);
     const wobbleX = persona.x * 0.08 + (Math.random() - 0.5) * 0.06;
     const wobbleY = persona.y * 0.08 + (Math.random() - 0.5) * 0.06;
-    let outX = dirX + sepX * BOT_SEPARATION_STRENGTH + wobbleX;
-    let outY = dirY + sepY * BOT_SEPARATION_STRENGTH + wobbleY;
+    // Mob body avoidance, summed in exactly like bot separation. Capped inside
+    // avoidNearbyMobs at MOB_AVOID_MAX < 1, so against a unit-length request it
+    // can steer around an obstacle but never cancel the bot's intent outright.
+    const avoid = avoidNearbyMobs(bot, avoidExceptId, _avoidVec);
+    let outX = dirX + sepX * BOT_SEPARATION_STRENGTH + avoid.x * MOB_AVOID_STRENGTH + wobbleX;
+    let outY = dirY + sepY * BOT_SEPARATION_STRENGTH + avoid.y * MOB_AVOID_STRENGTH + wobbleY;
     const mag = Math.sqrt(outX * outX + outY * outY);
     if (mag > 0) {
         outX /= mag;
@@ -2542,6 +2742,17 @@ const OSC_MIN_STEP = 10; // px in a sample worth calling "movement"
 const OSC_REVERSAL_DOT = -0.30; // cos of the angle between consecutive steps
 const OSC_TRIP_REVERSALS = 3; // ~1.4 s of back-and-forth
 const OSC_STILL_TRIPS = 3; // ~1.4 s of going nowhere
+// Net-displacement test: covers the trajectory the two tests above CANNOT see.
+// A bot going round in a circle never reverses (consecutive 450ms steps sit at
+// a small angle, nowhere near the -0.30 dot the reversal test wants) and is
+// never still (it is moving the whole time), so it can circle indefinitely
+// while the watchdog reports everything is fine. Measured on a 50-bot server:
+// 13.1% of all 3.6s bot windows were "travelled a long way, ended up where it
+// started", 3414 of those 3416 windows with no mob anywhere near the bot — so
+// not combat orbiting — and the worst offender did it for 27 seconds straight.
+const OSC_NET_WINDOW = 8; // samples, ~3.6 s of trajectory
+const OSC_NET_MIN_PATH = 320; // px travelled across the window
+const OSC_NET_MAX_DRIFT = 120; // px of actual progress made
 const UNSTICK_MIN_MS = 900;
 const UNSTICK_MAX_MS = 1700;
 // While escaping, combat targeting is suppressed so the bot doesn't walk
@@ -2563,6 +2774,10 @@ function resetOscillationSampler(bot, state, now) {
     state.oscReversals = 0;
     state.oscPrevDX = undefined;
     state.oscPrevDY = undefined;
+    if (state.oscTrackX)
+        state.oscTrackX.length = 0;
+    if (state.oscTrackY)
+        state.oscTrackY.length = 0;
 }
 function detectOscillation(bot, state, now) {
     if (state.oscSampleAt === undefined) {
@@ -2600,6 +2815,46 @@ function detectOscillation(bot, state, now) {
         state.oscPrevDY = undefined;
         return true;
     }
+    // Net-displacement test — the one that catches circling.
+    //
+    // Only while the bot has nothing to fight or pick up. Circling a mob at the
+    // standoff ring produces exactly this signature (long path, no net drift)
+    // and is the bot doing its job correctly; tripping on it would drag bots out
+    // of every fight they are winning. `targetId`/`pickupId` still hold LAST
+    // tick's decision here (this runs before target selection), which is the
+    // right thing to ask: it says what the bot was doing while it drew the
+    // trajectory being judged.
+    if (state.targetId !== undefined || state.pickupId !== undefined) {
+        if (state.oscTrackX)
+            state.oscTrackX.length = 0;
+        if (state.oscTrackY)
+            state.oscTrackY.length = 0;
+        return false;
+    }
+    let tx = state.oscTrackX;
+    let ty = state.oscTrackY;
+    if (!tx || !ty) {
+        tx = state.oscTrackX = [];
+        ty = state.oscTrackY = [];
+    }
+    tx.push(bot.x);
+    ty.push(bot.y);
+    if (tx.length > OSC_NET_WINDOW) {
+        tx.shift();
+        ty.shift();
+    }
+    if (tx.length === OSC_NET_WINDOW) {
+        let pathLen = 0;
+        for (let i = 1; i < tx.length; i++) {
+            pathLen += Math.sqrt((tx[i] - tx[i - 1]) ** 2 + (ty[i] - ty[i - 1]) ** 2);
+        }
+        const drift = Math.sqrt((tx[tx.length - 1] - tx[0]) ** 2 + (ty[ty.length - 1] - ty[0]) ** 2);
+        if (pathLen > OSC_NET_MIN_PATH && drift < OSC_NET_MAX_DRIFT) {
+            tx.length = 0;
+            ty.length = 0;
+            return true;
+        }
+    }
     return false;
 }
 // Escape direction for a bot that tripped the watchdog. Sidesteps first —
@@ -2616,14 +2871,31 @@ function pickUnstickDirection(bot, state) {
         (Math.PI / 3) * side, -(Math.PI / 3) * side,
         0
     ];
-    for (const off of offsets) {
-        const a = base + off;
-        const dx = Math.cos(a);
-        const dy = Math.sin(a);
-        if (!rayHitsWall(bot.x, bot.y, bot.x + dx * UNSTICK_PROBE_DIST, bot.y + dy * UNSTICK_PROBE_DIST)) {
-            return { x: dx, y: dy };
+    // Full probe distance first, then progressively shorter. In a corner every
+    // direction is blocked at UNSTICK_PROBE_DIST, and the old code answered that
+    // by returning a UNIFORMLY RANDOM heading — which in a corner points back
+    // into a wall more often than not, so the escape achieved nothing and the
+    // bot tripped the watchdog again on the next window. Shortening the probe
+    // asks the smaller question the bot can actually act on: not "where can I
+    // run 260px?" but "which way is there any room at all?".
+    for (const probe of [UNSTICK_PROBE_DIST, UNSTICK_PROBE_DIST / 2, UNSTICK_PROBE_DIST / 4]) {
+        for (const off of offsets) {
+            const a = base + off;
+            const dx = Math.cos(a);
+            const dy = Math.sin(a);
+            if (!rayHitsWall(bot.x, bot.y, bot.x + dx * probe, bot.y + dy * probe)) {
+                return { x: dx, y: dy };
+            }
         }
     }
+    // Genuinely walled in on all eight headings even at close range. Aim at the
+    // middle of the map rather than at random: it is the one direction that is
+    // guaranteed not to be further into the map edge.
+    const cx = constants_1.ACTUAL_WORLD_WIDTH / 2 - bot.x;
+    const cy = constants_1.ACTUAL_WORLD_HEIGHT / 2 - bot.y;
+    const cd = Math.sqrt(cx * cx + cy * cy);
+    if (cd > 1)
+        return { x: cx / cd, y: cy / cd };
     const a = Math.random() * Math.PI * 2;
     return { x: Math.cos(a), y: Math.sin(a) };
 }
@@ -2733,6 +3005,21 @@ function updateBotAI(io, world, now) {
             }
             continue;
         }
+        // The bot is alive, so any pending respawn deadline is void.
+        //
+        // This is not defensive tidying, it is a fix. `respawnBot` used to be
+        // the ONLY place that cleared `respawnAt`, and there is a second way a
+        // dead bot comes back: a yggdrasil petal revives it (playerState sets
+        // `isDead = false` directly and knows nothing about bot AI state). Bots
+        // equip yggdrasil whenever another bot is nearby and actively path to
+        // each other's corpses, so this happens constantly. The revived bot
+        // then carried a `respawnAt` stuck in the past for the rest of its life,
+        // and the next time it died `now >= state.respawnAt` was already true on
+        // the very tick of death: it warped to a spawn zone at full health with
+        // no corpse and no BOT_RESPAWN_DELAY_MS wait. From outside that reads as
+        // a healthy bot randomly teleporting to spawn rather than dying — and it
+        // also made a once-revived bot impossible to revive ever again.
+        state.respawnAt = undefined;
         const persona = getBotPersona(id);
         // Trajectory watchdog. Runs ahead of every decision branch so it also
         // covers bots oscillating in combat, on a path, or while regrouping —
@@ -2950,17 +3237,26 @@ function updateBotAI(io, world, now) {
             // still lands hits. Without this subtraction the safety buffer
             // gets double-counted and bots park just outside actual reach.
             const baseStandoff = petalReach - STANDOFF_SAFETY_BUFFER + mobRadius - 10;
+            const dangerDist = constants_1.PLAYER_SIZE / 2 + mobRadius + 6; // body-touch threshold
             // Per-bot radial bias spreads the equilibrium ring so neighboring
             // bots don't all sit at the same distance and get shoved in and
             // out of it together by separation. Strictly inward: baseStandoff
             // is already the outer edge of what the petals can reach.
-            const standoff = baseStandoff + persona.standoffBias;
-            const dangerDist = constants_1.PLAYER_SIZE / 2 + mobRadius + 6; // body-touch threshold
+            //
+            // Floored above dangerDist. The bias is up to -40px and the reach
+            // of a short-petal build (defend-only petals never extend past the
+            // neutral orbit) is around 98px, so the two together can put the
+            // equilibrium ring INSIDE the mob's collision circle. The
+            // controller then has two branches fighting each other every tick:
+            // dangerDist sprints the bot out, the orbit's radial term pulls it
+            // straight back in, and what that looks like from outside is a bot
+            // repeatedly ramming the mob it is fighting.
+            const standoff = Math.max(dangerDist + 8, baseStandoff + persona.standoffBias);
             if (d < dangerDist) {
                 // Too close — shove off but stay in attack state so petals
                 // remain extended while killing the mob. High agility: this is
                 // the one case where an instant direction change is right.
-                driveMove(bot, -dirX, -dirY, 1.0, extendedPetalExt, 3.0);
+                driveMove(bot, -dirX, -dirY, 1.0, extendedPetalExt, 3.0, target.enemy.id);
                 continue;
             }
             if (d > standoff + 80) {
@@ -2968,11 +3264,11 @@ function updateBotAI(io, world, now) {
                 // use A* to navigate around wall clusters; normal bots use
                 // the cheap steering probe. (No speed-mod compensation: this
                 // is the traversal branch where powder is supposed to help.)
-                if (mode.kind !== 'normal' && followPath(bot, state, now, (0, mobFields_1.mobX)(target.enemy.entity), (0, mobFields_1.mobY)(target.enemy.entity), 0.95, extendedPetalExt)) {
+                if (mode.kind !== 'normal' && followPath(bot, state, now, (0, mobFields_1.mobX)(target.enemy.entity), (0, mobFields_1.mobY)(target.enemy.entity), 0.95, extendedPetalExt, target.enemy.id)) {
                     continue;
                 }
                 const steered = steerAroundWalls(bot.x, bot.y, dirX, dirY);
-                driveMove(bot, steered.x, steered.y, 0.95, extendedPetalExt);
+                driveMove(bot, steered.x, steered.y, 0.95, extendedPetalExt, 1.0, target.enemy.id);
                 continue;
             }
             const strafe = tangentDirection(bot.id, state, now);
@@ -3047,7 +3343,7 @@ function updateBotAI(io, world, now) {
             // ping-pongs across it instead of orbiting.
             const speedMod = getBotSpeedMod(bot);
             const effectiveSpeedMult = speedMod > 1.0 ? speedMult / speedMod : speedMult;
-            driveMove(bot, moveX, moveY, effectiveSpeedMult, extendedPetalExt);
+            driveMove(bot, moveX, moveY, effectiveSpeedMult, extendedPetalExt, 1.0, target.enemy.id);
             continue;
         }
         // No combat target — try to grab a nearby drop we earned

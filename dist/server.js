@@ -765,7 +765,6 @@ function spawnMob(mobType, rarity, x, y, count = 1, stack = false) {
     const stackNote = count > 1 ? (stack ? ' (stacked)' : ' (unstacked)') : '';
     console.log(`Spawned ${count > 1 ? count + 'x ' : ''}${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})${stackNote}`);
 }
-// respawnPlayer moved to playerManager module - using wrapper function defined earlier
 // Helper functions moved to playerManager module - using imports
 // Initialize enemies - now only spawn when players connect
 console.log(`[SERVER] Enemy spawning system initialized - enemies will spawn when players connect`);
@@ -840,10 +839,6 @@ function addMazeXPToPlayer(player, xp, socketId) {
     if (live)
         emitLiveXPGain(player, xp);
     saveAfterXP(player, socketId);
-}
-// Wrapper for respawnPlayer that passes io
-function respawnPlayer(player) {
-    (0, playerManager_1.respawnPlayer)(player, ioInstance);
 }
 // Debounced save mechanism to prevent lag from frequent saves
 const pendingSaves = new Map();
@@ -1062,7 +1057,6 @@ io.on('connection', (socket) => {
         savePlayerProgressImmediate,
         addXPToPlayer,
         addMazeXPToPlayer,
-        respawnPlayer,
         triggerViewportUpdate,
         redeemedCodes: exports.redeemedCodes,
         saveCodeToDatabase,

@@ -110,7 +110,6 @@ export const WIRE_EVENTS = [
     'publishSkin',
     'redeemCode',
     'requestChatHistory',
-    'requestRespawn',
     'resetSkills',
     'runJS',
     'savePlayerProgress',

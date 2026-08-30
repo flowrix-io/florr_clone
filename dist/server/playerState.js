@@ -1353,7 +1353,10 @@ function resolvePlayerMobContact(player, startX, startY, effectivePlayerSize, de
                 newY -= normalizedDy * knockbackDistance;
                 // Glitch mobs infect on TOUCH, so this sits outside the damage
                 // branch below: bouncing off one while invulnerable still counts.
-                // Lasts until the player respawns (cleared in respawnPlayer).
+                // Not persisted, so it lasts until the player re-authenticates —
+                // which is how a human comes back (the death screen exits to the
+                // title). `respawnBot` clears it explicitly for bots, which never
+                // re-authenticate and would otherwise stay glitched forever.
                 if ((0, server_utils_1.isGlitchInfectingType)(enemy.type))
                     player.glitched = true;
                 // Only apply damage when not invulnerable

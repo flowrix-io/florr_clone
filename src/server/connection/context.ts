@@ -28,7 +28,6 @@ export interface ConnectionDependencies {
     savePlayerProgressImmediate: (player: ServerPlayer, userId: string) => void;
     addXPToPlayer: (player: ServerPlayer, xp: number, socketId?: string) => void;
     addMazeXPToPlayer: (player: ServerPlayer, xp: number, socketId?: string) => void;
-    respawnPlayer: (player: ServerPlayer) => void;
     triggerViewportUpdate: () => void;
     /** Redeem codes, keyed by code string; backed by the database. */
     redeemedCodes: Map<string, RedeemedCode>;

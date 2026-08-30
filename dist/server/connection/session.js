@@ -25,11 +25,10 @@ const enemyWire_1 = require("../enemyWire");
 const playerWire_1 = require("../playerWire");
 const squadManager_1 = require("../squadManager");
 const tempAdmin_1 = require("../tempAdmin");
-const utils_1 = require("../utils");
 const sessionGuard_1 = require("./sessionGuard");
 function registerSessionHandlers(ctx) {
     const { io, socket } = ctx;
-    const { respawnPlayer, savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
+    const { savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
     socket.on('playerInput', (inputData) => {
         const player = constants_1.players[socket.id];
         if (player) {
@@ -647,18 +646,6 @@ function registerSessionHandlers(ctx) {
         }
         else {
             socket.connectionQuality = 'good';
-        }
-    });
-    // Handle respawn request
-    socket.on('requestRespawn', () => {
-        // Respawn the half the client is actually driving: when the splitter
-        // clone dies, `players[socket.id]` is the OTHER half and still alive,
-        // so this used to silently do nothing and the death screen never left.
-        const player = (0, utils_1.getActivePlayerForSocket)(socket.id);
-        if (player && player.isDead) {
-            respawnPlayer(player);
-            player.isDead = false;
-            io.emit('playerRespawned', player);
         }
     });
 }

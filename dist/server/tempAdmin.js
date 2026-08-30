@@ -10,8 +10,9 @@
  *     wipes every outstanding grant;
  *   * keyed by socket id, not username, so it belongs to ONE connection and
  *     cannot be carried into a second tab or a later login;
- *   * cleared the moment the player respawns, returns to the title screen or
- *     disconnects (see respawnPlayer and endPlayerSession).
+ *   * cleared the moment the player returns to the title screen or
+ *     disconnects (see endPlayerSession) — which, since the death screen's
+ *     button exits to the title, is also what ends it on death.
  *
  * It only unlocks the `/admin` + `/cmd` console (and the admin section of
  * `/help`). Everything else that keys off admin status — API-key scope, chat
@@ -37,7 +38,7 @@ const grants = new Map();
 function normalizeId(socketId) {
     return socketId.replace('_split1', '').replace('_split2', '');
 }
-/** Give `socketId` the admin console until they respawn or the socket ends. */
+/** Give `socketId` the admin console until the socket ends. */
 function grantTempAdmin(socketId, grantedBy) {
     grants.set(normalizeId(socketId), { grantedBy, grantedAt: Date.now() });
 }

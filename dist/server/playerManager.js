@@ -14,8 +14,8 @@ exports.buildRegularFromMaze = buildRegularFromMaze;
 exports.applyMazeLoadout = applyMazeLoadout;
 exports.getMazeAbsorbableCount = getMazeAbsorbableCount;
 exports.exitMazeState = exitMazeState;
+exports.isPositionInsideWall = isPositionInsideWall;
 exports.findSafeSpawnPosition = findSafeSpawnPosition;
-exports.respawnPlayer = respawnPlayer;
 exports.isBiomeSafeForSpawn = isBiomeSafeForSpawn;
 exports.getSpawnPositionInBiome = getSpawnPositionInBiome;
 exports.calculateXPRequirement = calculateXPRequirement;
@@ -50,7 +50,6 @@ const inventoryCodec_1 = require("../inventoryCodec");
 const inventoryCodec_2 = require("../inventoryCodec");
 const gameState_1 = require("./gameState");
 const utils_1 = require("./utils");
-const tempAdmin_1 = require("./tempAdmin");
 const map_data_1 = require("../map_data");
 const inventoryCodec_3 = require("../inventoryCodec");
 Object.defineProperty(exports, "addItem", { enumerable: true, get: function () { return inventoryCodec_3.addItem; } });
@@ -563,137 +562,27 @@ function findSafeSpawnPosition(spawnArea, maxAttempts = 50) {
     // If no safe position found after maxAttempts, return null
     return null;
 }
-function respawnPlayer(player, io) {
-    let spawnPosition = null;
-    // PVP arena: either the player picked "PVP" on the title screen, or they
-    // died while inside the arena. Either way, drop them at the arena spawn
-    // and start a fresh PVP session.
-    const wantsPvp = player.spawnBiome === 'pvp'
-        || player.inPvpArena
-        || (0, constants_1.isInPvpArena)(player.x, player.y);
-    if (wantsPvp) {
-        spawnPosition = { x: constants_1.PVP_ARENA_SPAWN_X, y: constants_1.PVP_ARENA_SPAWN_Y };
-        // Resets PVP loadout/inventory and applies PVP-fixed max health.
-        // Idempotent — safe whether the player is mid-arena or freshly spawning.
-        enterPvpArena(player, io);
-    }
-    // Maze: players who chose the maze (or died inside it) respawn at the
-    // maze entrance. Petals absorbed in the maze stay in the real inventory.
-    const wantsMaze = !wantsPvp && (player.spawnBiome === 'maze'
-        || player.inMaze
-        || (0, maze_1.isInMazeRegion)(player.x, player.y));
-    if (wantsMaze) {
-        spawnPosition = getMazeSpawnPosition();
-        // Shift the loadout down, strip over-cap slots, snapshot absorb
-        // baseline — all no-ops if already in maze state this session.
-        enterMazeState(player, io);
-    }
-    else {
-        // Not a maze respawn: make sure no maze-term state leaks out (also
-        // converts the live inventory back if the player somehow left the
-        // maze without a re-auth).
-        exitMazeState(player, io);
-    }
-    // First, try to spawn in the biome the player selected on the title screen
-    if (!spawnPosition && player.spawnBiome && player.spawnBiome !== 'default') {
-        spawnPosition = getSpawnPositionInBiome(player.spawnBiome);
-    }
-    // If no spawn found in the player's selected biome, fall back to level-based spawn points
-    if (!spawnPosition) {
-        const validSpawnPoints = map_data_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
-            element.properties?.spawnType === getSpawnTypeForLevel(player.level));
-        if (validSpawnPoints.length > 0) {
-            // Try to find a safe spawn position in valid spawn points
-            // Shuffle spawn points to try different ones
-            const shuffledSpawnPoints = [...validSpawnPoints].sort(() => Math.random() - 0.5);
-            for (const spawn of shuffledSpawnPoints) {
-                const safePosition = findSafeSpawnPosition(spawn);
-                if (safePosition) {
-                    spawnPosition = safePosition;
-                    break;
-                }
-            }
-        }
-        // If no safe position found in spawn points, try fallback
-        if (!spawnPosition) {
-            console.warn('No safe spawn position found in spawn points for level', player.level, '- trying fallback');
-            // Try random positions in the world as fallback
-            for (let attempt = 0; attempt < 50; attempt++) {
-                const x = Math.random() * constants_1.ACTUAL_WORLD_WIDTH;
-                const y = Math.random() * constants_1.ACTUAL_WORLD_HEIGHT;
-                if (isSafeSpawnPosition(x, y)) {
-                    spawnPosition = { x, y };
-                    break;
-                }
-            }
-        }
-        // Final fallback: use first spawn point or center of world (even if not safe)
-        if (!spawnPosition) {
-            console.warn('No safe spawn position found after all attempts - using unsafe fallback');
-            const validSpawnPointsFallback = map_data_1.WORLD_MAP.filter(element => element.type === 'spawn' &&
-                element.properties?.spawnType === getSpawnTypeForLevel(player.level));
-            if (validSpawnPointsFallback.length > 0) {
-                const spawn = validSpawnPointsFallback[0];
-                spawnPosition = {
-                    x: (spawn.x + spawn.width / 2) * constants_1.SCALE_FACTOR,
-                    y: (spawn.y + spawn.height / 2) * constants_1.SCALE_FACTOR
-                };
-            }
-            else {
-                spawnPosition = {
-                    x: constants_1.ACTUAL_WORLD_WIDTH / 2,
-                    y: constants_1.ACTUAL_WORLD_HEIGHT / 2
-                };
-            }
-        }
-    }
-    player.x = spawnPosition.x;
-    player.y = spawnPosition.y;
-    // Recalculate stats so PVP spawns get the fixed PVP max health and regular
-    // spawns get their leveled max health before we full-heal below.
-    recalculatePlayerStats(player, io);
-    player.health = player.maxHealth;
-    player.score = Math.max(0, player.score - 10);
-    player.isInvulnerable = true;
-    player.lastDamageTime = 0;
-    player.isDead = false;
-    player.secondChanceCooldownUntil = undefined; // Reset second chance cooldown on respawn
-    // Poison does not survive death
-    player.poisonDamage = undefined;
-    player.poisonUntil = undefined;
-    player.poisonSource = undefined;
-    // Neither does a glitch mob's infection — this is the only thing that
-    // clears it, so a corpse stays glitched until the player actually respawns.
-    player.glitched = undefined;
-    // A `grant_admin` grant lasts exactly one life. Dying does not end it (the
-    // death screen is still the same session) — coming back does.
-    if ((0, tempAdmin_1.revokeTempAdmin)(player.id)) {
-        io.to((0, utils_1.getOriginalSocketId)(player.id)).emit('chatMessage', {
-            sender: 'System',
-            content: '<span style="color: #ff8866;">Your temporary admin access ended when you respawned.</span>',
-            timestamp: Date.now()
-        });
-    }
-    setTimeout(() => {
-        player.isInvulnerable = false;
-        // Notify client that invulnerability has ended
-        (0, wireOutbox_1.getWireOutbox)().all('playerInvulnerabilityEnded', { playerId: player.id });
-    }, constants_1.RESPAWN_INVULNERABILITY_TIME);
-}
-// Helper function to determine spawn type based on level
-function getSpawnTypeForLevel(level) {
-    if (level <= 5)
-        return 'common';
-    if (level <= 10)
-        return 'uncommon';
-    if (level <= 15)
-        return 'rare';
-    if (level <= 25)
-        return 'epic';
-    if (level <= 40)
-        return 'legendary';
-    return 'mythic';
-}
+/*
+ * `respawnPlayer` and `getSpawnTypeForLevel` used to live here and have been
+ * deleted: nothing could reach either of them.
+ *
+ * `respawnPlayer`'s only caller was a `requestRespawn` socket handler, and no
+ * client ever emitted that event — the death screen's button clicks
+ * `exitButton`, which returns to the title screen, and re-entering the game
+ * re-authenticates. So the LIVE player spawn path is, and has only ever been,
+ * the `authenticate` handler in connection/session.ts. The handler and the
+ * `requestRespawn` wire opcode are gone too.
+ *
+ * That matters beyond dead weight, because the two disagreed. `respawnPlayer`
+ * chose a spawn zone by `getSpawnTypeForLevel(player.level)`, so it read as if
+ * high-level players spawn in high-tier zones. `authenticate` does no such
+ * thing: 'default' picks a `spawnType === 'common'` zone (preferring section 0)
+ * and a named biome goes through `getSpawnPositionInBiome`, which admits only
+ * biomes passing `isBiomeSafeForSpawn`. Level never enters into it. Anything
+ * deriving "where can a player be?" from the deleted function got a wrong
+ * answer — `botManager.getSpawnAnchorElements` did exactly that, which is why
+ * it now mirrors `authenticate` instead.
+ */
 // Helper function to check if a biome only allows mob rarities less than "rare" (common or uncommon)
 function isBiomeSafeForSpawn(biome) {
     // If biome has no spawn table, it uses default spawn logic which can include rare+ tiers

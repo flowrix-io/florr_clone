@@ -27,13 +27,12 @@ import { AuthenticatedSocket } from '../shared/socketTypes';
 import { handlePlayerDisconnect as handleSquadDisconnect } from '../squadManager';
 import { revokeTempAdmin } from '../tempAdmin';
 import {} from '../tickBroadcast';
-import { getActivePlayerForSocket } from '../utils';
 import { ConnectionContext } from './context';
 import { kickDuplicateSessions } from './sessionGuard';
 
 export function registerSessionHandlers(ctx: ConnectionContext): void {
     const { io, socket } = ctx;
-    const { respawnPlayer, savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
+    const { savePlayerProgress, savePlayerProgressImmediate, triggerViewportUpdate } = ctx.deps;
 
     socket.on('playerInput', (inputData: any) => {
         const player = players[socket.id];
@@ -713,16 +712,4 @@ export function registerSessionHandlers(ctx: ConnectionContext): void {
         }
     });
 
-    // Handle respawn request
-    socket.on('requestRespawn', () => {
-        // Respawn the half the client is actually driving: when the splitter
-        // clone dies, `players[socket.id]` is the OTHER half and still alive,
-        // so this used to silently do nothing and the death screen never left.
-        const player = getActivePlayerForSocket(socket.id);
-        if (player && player.isDead) {
-            respawnPlayer(player);
-            player.isDead = false;
-            io.emit('playerRespawned', player);
-        }
-    });
 }

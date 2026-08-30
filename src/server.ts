@@ -125,7 +125,6 @@ import * as EC from './ecs/components';
 import { handleMobDrops as handleMobDropsModule } from './server/itemManager';
 import { registerBotInputSystem, maintainBotCount, initializeBotGuilds } from './server/botManager';
 import {
-    respawnPlayer as respawnPlayerModule,
     calculateLevelFromTotalXP,
     addXPToPlayer as addXPToPlayerModule,
     addMazeXPToPlayer as addMazeXPToPlayerModule,
@@ -894,7 +893,6 @@ function spawnMob(mobType: string, rarity: string, x?: number, y?: number, count
     console.log(`Spawned ${count > 1 ? count + 'x ' : ''}${tier} ${mobType} at (${Math.round(spawnX)}, ${Math.round(spawnY)})${stackNote}`);
 }
 
-// respawnPlayer moved to playerManager module - using wrapper function defined earlier
 
 // Helper functions moved to playerManager module - using imports
 
@@ -979,10 +977,6 @@ export function addMazeXPToPlayer(player: ServerPlayer, xp: number, socketId?: s
     saveAfterXP(player, socketId);
 }
 
-// Wrapper for respawnPlayer that passes io
-function respawnPlayer(player: ServerPlayer) {
-    respawnPlayerModule(player, ioInstance);
-}
 
 // Debounced save mechanism to prevent lag from frequent saves
 const pendingSaves = new Map<string, NodeJS.Timeout>();
@@ -1221,7 +1215,6 @@ io.on('connection', (socket: AuthenticatedSocket) => {
         savePlayerProgressImmediate,
         addXPToPlayer,
         addMazeXPToPlayer,
-        respawnPlayer,
         triggerViewportUpdate,
         redeemedCodes,
         saveCodeToDatabase,

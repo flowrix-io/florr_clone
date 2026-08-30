@@ -138,23 +138,32 @@ function executeServerCommand(command, executor, deps, socketId) {
         }
     }
     else if (trimmedCommand.startsWith('set_bot_count')) {
-        const parts = trimmedCommand.split(' ');
-        if (parts.length === 2 && parts[1].toLowerCase() === 'default') {
+        // Split on runs of whitespace: `split(' ')` turns a double space into an
+        // empty argument, and `parseInt('')` is NaN, so `set_bot_count  20`
+        // silently printed the usage line instead of setting anything.
+        const parts = trimmedCommand.split(/\s+/).filter(p => p.length > 0);
+        const arg = parts[1];
+        if (arg !== undefined && arg.toLowerCase() === 'default') {
             (0, botManager_1.setTargetBotCount)(null);
             sendOutput('Bot count override cleared (using default formula).', socketId, io);
         }
         else {
-            const newCount = parseInt(parts[1]);
-            if (isNaN(newCount) || newCount < 0) {
+            const requested = parseInt(arg ?? '', 10);
+            if (isNaN(requested) || requested < 0) {
                 const current = (0, botManager_1.getTargetBotCount)();
                 sendOutput(`Usage: set_bot_count <0-${botManager_1.MAX_BOT_COUNT}|default> — current override: ${current === null ? 'default' : current}`, socketId, io);
             }
-            else if (newCount > botManager_1.MAX_BOT_COUNT) {
-                sendOutput(`Bot count capped at ${botManager_1.MAX_BOT_COUNT}.`, socketId, io);
-            }
             else {
-                (0, botManager_1.setTargetBotCount)(newCount);
-                sendOutput(`Bot count target set to ${newCount}.`, socketId, io);
+                // Over the cap used to report "capped at N" and then return
+                // WITHOUT calling setTargetBotCount — the message said the value
+                // had been clamped and applied while the override was left
+                // untouched, so `set_bot_count 100` did nothing at all. Clamp and
+                // apply, and say which of the two happened.
+                const applied = Math.min(requested, botManager_1.MAX_BOT_COUNT);
+                (0, botManager_1.setTargetBotCount)(applied);
+                sendOutput(applied === requested
+                    ? `Bot count target set to ${applied}.`
+                    : `Bot count target set to ${applied} (requested ${requested}, capped at ${botManager_1.MAX_BOT_COUNT}).`, socketId, io);
             }
         }
     }
