@@ -9,6 +9,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.spongeSvg = spongeSvg;
+exports.resolveSpongeImage = resolveSpongeImage;
 /**
  * @param bodyColor   Fill for the sponge's outer body.
  * @param detailColor Fill for its pores and outline details.
@@ -317,4 +318,21 @@ function spongeSvg(bodyColor, detailColor, id) {
     M 3.71 -11.41 L 7.71 -11.41 Q 7.71 -9.76 6.54 -8.58 Q 5.37 -7.41 3.71 -7.41 Q 2.05 -7.41 0.88 -8.58 Q -0.29 -9.76 -0.29 -11.41 Q -0.29 -13.07 0.88 -14.24 Q 2.05 -15.41 3.71 -15.41 Q 5.37 -15.41 6.54 -14.24 Q 7.71 -13.07 7.71 -11.41 
     M 6.8 -20.92 L 11.8 -20.92 Q 11.8 -18.85 10.33 -17.39 Q 8.87 -15.92 6.8 -15.92 Q 4.73 -15.92 3.26 -17.39 Q 1.8 -18.85 1.8 -20.92 Q 1.8 -22.99 3.26 -24.46 Q 4.73 -25.92 6.8 -25.92 Q 8.87 -25.92 10.33 -24.46 Q 11.8 -22.99 11.8 -20.92" />
 </svg>`;
+}
+/**
+ * Marker prefix used in place of a spongeSvg() call inside mobs.json /
+ * petals.json.
+ *
+ * JSON cannot call a function, and inlining the artwork at each of the three
+ * use sites is exactly the 23KB duplication this module exists to remove. So
+ * the config files carry only the palette — `$sponge:<body>,<detail>[,<id>]` —
+ * and their loaders expand it through resolveSpongeImage() on startup.
+ */
+const SPONGE_IMAGE_MARKER = '$sponge:';
+/** Expands a `$sponge:` marker into the artwork; any other string is returned as-is. */
+function resolveSpongeImage(image) {
+    if (!image.startsWith(SPONGE_IMAGE_MARKER))
+        return image;
+    const [bodyColor, detailColor, id] = image.slice(SPONGE_IMAGE_MARKER.length).split(',');
+    return spongeSvg(bodyColor, detailColor, id);
 }
