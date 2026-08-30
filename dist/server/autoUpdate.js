@@ -47,7 +47,7 @@ const server_1 = require("../server");
 // Node happily keeps running with its files replaced underneath it (code was
 // loaded at startup), so the overlay is safe to do on a live server.
 const GITHUB_REPO = process.env.FLORR_UPDATE_REPO || 'flowrix-io/florr_clone';
-const GITHUB_BRANCH = process.env.FLORR_UPDATE_BRANCH || 'typescript';
+const GITHUB_BRANCH = process.env.FLORR_UPDATE_BRANCH || 'web';
 const DEFAULT_UPDATE_URL = process.env.FLORR_UPDATE_URL
     || `https://codeload.github.com/${GITHUB_REPO}/zip/refs/heads/${GITHUB_BRANCH}`;
 // Top-level entries in the new build that must never overwrite live state.
