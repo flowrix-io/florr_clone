@@ -128,6 +128,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     combat_ = std::make_unique<CombatSystem>();
     spawning_ = std::make_unique<SpawnSystem>();
     loot_ = std::make_unique<LootSystem>();
+    if (!loot_->loadTables(content(), config.dataDir + "/mob_drops.json", errorOut)) return false;
 
     // Wire ids are unique across the whole server, so the id space belongs
     // here rather than to any one system. A system left unwired still

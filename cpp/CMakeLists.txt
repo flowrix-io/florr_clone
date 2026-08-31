@@ -112,7 +112,9 @@ add_custom_target(flix_data ALL
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mobs.json
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/petals.json
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/mob_drops.json
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/map_bundle.ts
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/land.svg
           ${CMAKE_CURRENT_SOURCE_DIR}/data/mob_xp.json
           ${FLIX_DATA_DIR}/
   COMMENT "Staging game content")

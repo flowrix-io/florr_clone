@@ -1,6 +1,9 @@
 #include "server/systems/loot.h"
 
 #include <algorithm>
+#include <fstream>
+
+#include "shared/core/json.h"
 
 namespace flr {
 
@@ -9,46 +12,133 @@ namespace flr {
 // ---------------------------------------------------------------------------
 
 bool DropTables::linkedTo(const ContentRegistry& content) const {
-    return content_ == &content && contentHash_ == content.contentHash();
+    return loaded_ && content_ == &content && contentHash_ == content.contentHash();
+}
+
+bool DropTables::load(const ContentRegistry& content, const std::string& path, std::string& errorOut) {
+    Json root;
+    std::string parseError;
+    if (!Json::parseFile(path, root, parseError)) {
+        errorOut = path + ": " + parseError;
+        return false;
+    }
+    if (!root.isObject()) {
+        errorOut = path + ": top level is not an object";
+        return false;
+    }
+
+    std::vector<SourceEntry> loaded;
+    for (const std::string& mobId : root.keys()) {
+        const Json& table = root[mobId];
+        if (!table.isObject() || !table["drops"].isArray()) {
+            errorOut = path + ": table for '" + mobId + "' must contain a drops array";
+            return false;
+        }
+
+        for (const Json& entry : table["drops"].items()) {
+            if (!entry.isObject()) {
+                errorOut = path + ": a drop for '" + mobId + "' is not an object";
+                return false;
+            }
+            // The TypeScript game also understands consumables. The native
+            // inventory deliberately holds only petals, so leave those lines
+            // in the shared data but do not reinterpret them as a petal.
+            if (entry["type"].asString() != "petal") continue;
+
+            const std::string petalId = entry["itemType"].asString();
+            const std::string rarity = entry["rarity"].asString();
+            if (petalId.empty() || rarity.empty() || !entry["probability"].isNumber()) {
+                errorOut = path + ": petal drop for '" + mobId + "' is missing itemType, rarity, or probability";
+                return false;
+            }
+
+            int rarityOffset = -1;
+            for (int i = 0; i < kRarityCount; ++i) {
+                if (rarity == kRarityNames[static_cast<std::size_t>(i)]) {
+                    rarityOffset = i;
+                    break;
+                }
+            }
+            if (rarityOffset < 0) {
+                errorOut = path + ": petal drop '" + petalId + "' for '" + mobId + "' has an unknown rarity";
+                return false;
+            }
+
+            SourceEntry source;
+            source.mobId = mobId;
+            source.petalId = petalId;
+            source.rarityOffset = rarityOffset;
+            source.probability = clamp(entry["probability"].asDouble(), 0.0, 1.0);
+            source.minCount = std::max(1, entry["minQuantity"].asInt(1));
+            source.maxCount = std::max(source.minCount, entry["maxQuantity"].asInt(source.minCount));
+            loaded.push_back(std::move(source));
+        }
+    }
+
+    source_ = std::move(loaded);
+    loaded_ = true;
+    content_ = nullptr;
+    contentHash_ = 0;
+    resolve(content);
+    errorOut.clear();
+    return true;
+}
+
+void DropTables::loadDefault(const ContentRegistry& content) {
+    static constexpr const char* kCandidates[] = {
+        "data/mob_drops.json",
+        "src/mob_drops.json",
+        "../src/mob_drops.json",
+        "../../src/mob_drops.json",
+    };
+
+    for (const char* candidate : kCandidates) {
+        std::ifstream probe(candidate, std::ios::binary);
+        if (!probe) continue;
+        std::string ignored;
+        if (load(content, candidate, ignored)) return;
+    }
+
+    // A standalone system test can have no data directory at all. Mark the
+    // attempt so the steady-state tick does not repeatedly hit the filesystem.
+    loaded_ = true;
+    resolve(content);
 }
 
 void DropTables::link(const ContentRegistry& content) {
+    if (!loaded_) loadDefault(content);
     if (linkedTo(content)) return;
+    resolve(content);
+}
+
+void DropTables::resolve(const ContentRegistry& content) {
     content_ = &content;
     contentHash_ = content.contentHash();
 
     byMob_.assign(content.mobCount(), std::vector<Entry>{});
     unresolved_.clear();
 
-    for (const MobDropRow& row : kMobDropTable) {
-        const std::uint16_t mobIndex = content.mobIndex(row.mobId);
+    for (const SourceEntry& source : source_) {
+        const std::uint16_t mobIndex = content.mobIndex(source.mobId);
         if (mobIndex == kInvalidIndex || mobIndex >= byMob_.size()) {
-            unresolved_.push_back(std::string("mob '") + row.mobId +
+            unresolved_.push_back(std::string("mob '") + source.mobId +
                                   "' has a drop table but no config");
             continue;
         }
 
-        std::vector<Entry>& out = byMob_[mobIndex];
-        for (const DropEntry& entry : row.entries) {
-            // A short table leaves the tail of the row zero-initialised; the
-            // null id is the terminator.
-            if (entry.petalId == nullptr) break;
+        const std::uint16_t petalIndex = content.petalIndex(source.petalId);
+        // A few web-only rows name an egg or a special Random item that this
+        // petal-only native inventory does not expose. Ignore only those
+        // unsupported items; the authored JSON stays valid for the web game.
+        if (petalIndex == kInvalidIndex) continue;
 
-            const std::uint16_t petalIndex = content.petalIndex(entry.petalId);
-            if (petalIndex == kInvalidIndex) {
-                unresolved_.push_back(std::string("petal '") + entry.petalId + "' dropped by '" +
-                                      row.mobId + "' is not in the content");
-                continue;
-            }
-
-            Entry resolved;
-            resolved.petalIndex = petalIndex;
-            resolved.rarityOffset = entry.rarityOffset;
-            resolved.probability = clamp(entry.probability, 0.0, 1.0);
-            resolved.minCount = std::max(1, entry.minCount);
-            resolved.maxCount = std::max(resolved.minCount, entry.maxCount);
-            out.push_back(resolved);
-        }
+        Entry resolved;
+        resolved.petalIndex = petalIndex;
+        resolved.rarityOffset = source.rarityOffset;
+        resolved.probability = source.probability;
+        resolved.minCount = source.minCount;
+        resolved.maxCount = source.maxCount;
+        byMob_[mobIndex].push_back(resolved);
     }
 }
 

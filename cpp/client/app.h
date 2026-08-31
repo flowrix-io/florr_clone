@@ -6,10 +6,12 @@
 // immediate-mode pass is simpler to follow and impossible to leave stale.
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "canvas.h"
+#include "svg.h"
 #include "window.h"
 
 #include "client/camera.h"
@@ -79,11 +81,16 @@ private:
 
     void drawLogin(Canvas&, double time);
     void drawLobby(Canvas&, double time);
+    void drawInventory(Canvas&, double time);
+    /// Draws the scrolling title texture behind all non-game screens.
+    void drawTitleBackground(Canvas&, double time);
     void drawHud(Canvas&, double time);
     void drawDeathCard(Canvas&, double time);
     void drawChat(Canvas&, double time);
     void drawNotices(Canvas&, double time);
     void drawConnectionState(Canvas&, double time);
+    /// Handles the modal's scroll, drag/drop, equip and crafting controls.
+    void updateInventory();
 
     /// Builds this frame's input from the keyboard and mouse, applies it to the
     /// local prediction, and sends it.
@@ -106,6 +113,7 @@ private:
     Camera camera_;
     Prediction prediction_;
     SpriteCache sprites_;
+    std::shared_ptr<SvgDocument> titleBackground_;
     WorldRenderer renderer_;
 
     Screen screen_ = Screen::Connecting;
@@ -114,7 +122,8 @@ private:
     // -- login form --------------------------------------------------------
     std::string usernameField_;
     std::string passwordField_;
-    int focusedField_ = 0;        ///< 0 username, 1 password
+    std::string confirmPasswordField_;
+    int focusedField_ = 0;        ///< username, password, then confirmation while registering
     bool registering_ = false;
     std::string loginMessage_;
 
@@ -129,8 +138,16 @@ private:
 
     // -- panels ------------------------------------------------------------
     bool inventoryOpen_ = false;
-    /// The inventory stack the player picked up, while dragging it to a slot.
+    /// The inventory stack currently being dragged to a loadout slot.
     int draggingStack_ = -1;
+    /// The loadout slot currently being dragged to another slot or back into
+    /// the inventory. Only one of the drag indices may be non-negative.
+    int draggingLoadoutSlot_ = -1;
+    /// Selection is stable across profile updates: a server update may reorder
+    /// its sparse stacks, so an index would point at the wrong petal.
+    std::uint16_t selectedPetalIndex_ = 0xFFFF;
+    Rarity selectedRarity_ = Rarity::Common;
+    double inventoryScroll_ = 0;
 
     // -- input -------------------------------------------------------------
     std::uint32_t inputSequence_ = 0;
