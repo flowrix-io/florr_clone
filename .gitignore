@@ -18,6 +18,8 @@ Thumbs.db
 dist_ecs_test/
 dist_bench/
 
+cpp/build/
+
 # Auto-generated localhost development certificate (src/server/devCert.ts).
 # The server regenerates it whenever it expires; never commit the key.
 dev-cert.crt

@@ -1,0 +1,358 @@
+#include "window.h"
+
+#include <algorithm>
+#include <array>
+#include <cstring>
+
+#ifndef __EMSCRIPTEN__
+#include <SDL.h>
+#endif
+
+namespace {
+
+#ifndef __EMSCRIPTEN__
+Key fromScancode(SDL_Scancode code) {
+  switch (code) {
+    case SDL_SCANCODE_A: return Key::A; case SDL_SCANCODE_B: return Key::B;
+    case SDL_SCANCODE_C: return Key::C; case SDL_SCANCODE_D: return Key::D;
+    case SDL_SCANCODE_E: return Key::E; case SDL_SCANCODE_F: return Key::F;
+    case SDL_SCANCODE_G: return Key::G; case SDL_SCANCODE_H: return Key::H;
+    case SDL_SCANCODE_I: return Key::I; case SDL_SCANCODE_J: return Key::J;
+    case SDL_SCANCODE_K: return Key::K; case SDL_SCANCODE_L: return Key::L;
+    case SDL_SCANCODE_M: return Key::M; case SDL_SCANCODE_N: return Key::N;
+    case SDL_SCANCODE_O: return Key::O; case SDL_SCANCODE_P: return Key::P;
+    case SDL_SCANCODE_Q: return Key::Q; case SDL_SCANCODE_R: return Key::R;
+    case SDL_SCANCODE_S: return Key::S; case SDL_SCANCODE_T: return Key::T;
+    case SDL_SCANCODE_U: return Key::U; case SDL_SCANCODE_V: return Key::V;
+    case SDL_SCANCODE_W: return Key::W; case SDL_SCANCODE_X: return Key::X;
+    case SDL_SCANCODE_Y: return Key::Y; case SDL_SCANCODE_Z: return Key::Z;
+    case SDL_SCANCODE_0: return Key::Num0; case SDL_SCANCODE_1: return Key::Num1;
+    case SDL_SCANCODE_2: return Key::Num2; case SDL_SCANCODE_3: return Key::Num3;
+    case SDL_SCANCODE_4: return Key::Num4; case SDL_SCANCODE_5: return Key::Num5;
+    case SDL_SCANCODE_6: return Key::Num6; case SDL_SCANCODE_7: return Key::Num7;
+    case SDL_SCANCODE_8: return Key::Num8; case SDL_SCANCODE_9: return Key::Num9;
+    case SDL_SCANCODE_SPACE: return Key::Space;
+    case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER: return Key::Enter;
+    case SDL_SCANCODE_ESCAPE: return Key::Escape;
+    case SDL_SCANCODE_BACKSPACE: return Key::Backspace;
+    case SDL_SCANCODE_TAB: return Key::Tab;
+    case SDL_SCANCODE_LEFT: return Key::Left; case SDL_SCANCODE_RIGHT: return Key::Right;
+    case SDL_SCANCODE_UP: return Key::Up; case SDL_SCANCODE_DOWN: return Key::Down;
+    case SDL_SCANCODE_LSHIFT: return Key::LeftShift; case SDL_SCANCODE_RSHIFT: return Key::RightShift;
+    case SDL_SCANCODE_LCTRL: return Key::LeftCtrl; case SDL_SCANCODE_RCTRL: return Key::RightCtrl;
+    case SDL_SCANCODE_LALT: return Key::LeftAlt; case SDL_SCANCODE_RALT: return Key::RightAlt;
+    case SDL_SCANCODE_MINUS: return Key::Minus; case SDL_SCANCODE_EQUALS: return Key::Equals;
+    case SDL_SCANCODE_COMMA: return Key::Comma; case SDL_SCANCODE_PERIOD: return Key::Period;
+    case SDL_SCANCODE_SLASH: return Key::Slash; case SDL_SCANCODE_BACKSLASH: return Key::Backslash;
+    case SDL_SCANCODE_SEMICOLON: return Key::Semicolon; case SDL_SCANCODE_APOSTROPHE: return Key::Apostrophe;
+    case SDL_SCANCODE_F1: return Key::F1; case SDL_SCANCODE_F2: return Key::F2;
+    case SDL_SCANCODE_F3: return Key::F3; case SDL_SCANCODE_F4: return Key::F4;
+    case SDL_SCANCODE_F5: return Key::F5; case SDL_SCANCODE_F6: return Key::F6;
+    case SDL_SCANCODE_F7: return Key::F7; case SDL_SCANCODE_F8: return Key::F8;
+    case SDL_SCANCODE_F9: return Key::F9; case SDL_SCANCODE_F10: return Key::F10;
+    case SDL_SCANCODE_F11: return Key::F11; case SDL_SCANCODE_F12: return Key::F12;
+    default: return Key::Unknown;
+  }
+}
+#endif
+
+constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::Count);
+constexpr std::size_t kButtonCount = static_cast<std::size_t>(MouseButton::Count);
+
+} // namespace
+
+struct Window::Impl {
+#ifndef __EMSCRIPTEN__
+  SDL_Window* window = nullptr;
+  SDL_Renderer* renderer = nullptr;
+  SDL_Texture* texture = nullptr;
+  std::vector<std::uint8_t> rgba;
+  Uint64 startCounter = 0, lastFrameCounter = 0;
+#endif
+  std::unique_ptr<Canvas> canvas;
+  int width = 0, height = 0;
+  bool shouldClose = false;
+
+  std::array<bool, kKeyCount> down{}, pressed{}, released{};
+  std::array<bool, kButtonCount> mouseHeld{}, mouseDownEdge{}, mouseUpEdge{};
+  float mouseX = 0, mouseY = 0, wheel = 0;
+  std::string typed;
+  bool shift = false, ctrl = false, alt = false;
+
+  void clearEdges() {
+    pressed.fill(false);
+    released.fill(false);
+    mouseDownEdge.fill(false);
+    mouseUpEdge.fill(false);
+    wheel = 0;
+    typed.clear();
+  }
+};
+
+Window::Window() : impl_(std::make_unique<Impl>()) {}
+Window::~Window() { close(); }
+
+bool Window::open(int width, int height, const std::string& title, std::string& errorOut) {
+#ifdef __EMSCRIPTEN__
+  (void)width; (void)height; (void)title;
+  errorOut = "Window is a native-only facility";
+  return false;
+#else
+  close();
+  if (SDL_Init(SDL_INIT_VIDEO) != 0) { errorOut = SDL_GetError(); return false; }
+
+  impl_->window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                   width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+  if (!impl_->window) { errorOut = SDL_GetError(); SDL_Quit(); return false; }
+
+  impl_->renderer = SDL_CreateRenderer(impl_->window, -1,
+                                       SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+  if (!impl_->renderer) {
+    // Software is slow but correct; a missing GPU path must not be fatal.
+    impl_->renderer = SDL_CreateRenderer(impl_->window, -1, SDL_RENDERER_SOFTWARE);
+  }
+  if (!impl_->renderer) {
+    errorOut = SDL_GetError();
+    SDL_DestroyWindow(impl_->window); impl_->window = nullptr; SDL_Quit();
+    return false;
+  }
+
+  // The drawable size is not the window size on a HiDPI display; drawing at
+  // window size there gives a blurry upscaled image.
+  int drawableW = width, drawableH = height;
+  SDL_GetRendererOutputSize(impl_->renderer, &drawableW, &drawableH);
+  impl_->width = drawableW;
+  impl_->height = drawableH;
+
+  impl_->texture = SDL_CreateTexture(impl_->renderer, SDL_PIXELFORMAT_ABGR8888,
+                                     SDL_TEXTUREACCESS_STREAMING, drawableW, drawableH);
+  if (!impl_->texture) {
+    errorOut = SDL_GetError();
+    close();
+    return false;
+  }
+
+  impl_->canvas = std::make_unique<Canvas>(drawableW, drawableH);
+  impl_->rgba.assign(static_cast<std::size_t>(drawableW) * drawableH * 4, 0);
+  impl_->startCounter = SDL_GetPerformanceCounter();
+  impl_->lastFrameCounter = impl_->startCounter;
+
+  SDL_StartTextInput();
+  open_ = true;
+  return true;
+#endif
+}
+
+void Window::close() {
+#ifndef __EMSCRIPTEN__
+  if (impl_->texture) { SDL_DestroyTexture(impl_->texture); impl_->texture = nullptr; }
+  if (impl_->renderer) { SDL_DestroyRenderer(impl_->renderer); impl_->renderer = nullptr; }
+  if (impl_->window) { SDL_DestroyWindow(impl_->window); impl_->window = nullptr; SDL_Quit(); }
+#endif
+  impl_->canvas.reset();
+  open_ = false;
+}
+
+bool Window::pump() {
+#ifdef __EMSCRIPTEN__
+  return false;
+#else
+  if (!open_) return false;
+  impl_->clearEdges();
+
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    switch (event.type) {
+      case SDL_QUIT:
+        impl_->shouldClose = true;
+        break;
+
+      case SDL_WINDOWEVENT:
+        if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+            event.window.event == SDL_WINDOWEVENT_RESIZED) {
+          int w = 0, h = 0;
+          SDL_GetRendererOutputSize(impl_->renderer, &w, &h);
+          if (w > 0 && h > 0 && (w != impl_->width || h != impl_->height)) {
+            impl_->width = w;
+            impl_->height = h;
+            // Canvas cannot be resized in place, so the backing surfaces are
+            // rebuilt. This is why callers must not hold canvas() across pump().
+            impl_->canvas = std::make_unique<Canvas>(w, h);
+            impl_->rgba.assign(static_cast<std::size_t>(w) * h * 4, 0);
+            if (impl_->texture) SDL_DestroyTexture(impl_->texture);
+            impl_->texture = SDL_CreateTexture(impl_->renderer, SDL_PIXELFORMAT_ABGR8888,
+                                               SDL_TEXTUREACCESS_STREAMING, w, h);
+          }
+        }
+        break;
+
+      case SDL_KEYDOWN: {
+        // repeat != 0 is the OS auto-repeating a held key: it must feed text
+        // fields but must not read as a fresh press to game logic.
+        const Key k = fromScancode(event.key.keysym.scancode);
+        const std::size_t i = static_cast<std::size_t>(k);
+        if (i < kKeyCount) {
+          if (!event.key.repeat) impl_->pressed[i] = true;
+          impl_->down[i] = true;
+        }
+        if (event.key.repeat && event.key.keysym.scancode == SDL_SCANCODE_BACKSPACE) {
+          impl_->pressed[static_cast<std::size_t>(Key::Backspace)] = true;
+        }
+        break;
+      }
+
+      case SDL_KEYUP: {
+        const std::size_t i = static_cast<std::size_t>(fromScancode(event.key.keysym.scancode));
+        if (i < kKeyCount) { impl_->down[i] = false; impl_->released[i] = true; }
+        break;
+      }
+
+      case SDL_TEXTINPUT:
+        impl_->typed += event.text.text;
+        break;
+
+      case SDL_MOUSEMOTION: {
+        // Event coordinates are in window units; the canvas is in drawable
+        // units, which differ on HiDPI.
+        int windowW = 1, windowH = 1;
+        SDL_GetWindowSize(impl_->window, &windowW, &windowH);
+        const float scaleX = windowW > 0 ? static_cast<float>(impl_->width) / windowW : 1.0f;
+        const float scaleY = windowH > 0 ? static_cast<float>(impl_->height) / windowH : 1.0f;
+        impl_->mouseX = event.motion.x * scaleX;
+        impl_->mouseY = event.motion.y * scaleY;
+        break;
+      }
+
+      case SDL_MOUSEBUTTONDOWN:
+      case SDL_MOUSEBUTTONUP: {
+        std::size_t index = kButtonCount;
+        if (event.button.button == SDL_BUTTON_LEFT) index = static_cast<std::size_t>(MouseButton::Left);
+        else if (event.button.button == SDL_BUTTON_MIDDLE) index = static_cast<std::size_t>(MouseButton::Middle);
+        else if (event.button.button == SDL_BUTTON_RIGHT) index = static_cast<std::size_t>(MouseButton::Right);
+        if (index < kButtonCount) {
+          const bool downNow = event.type == SDL_MOUSEBUTTONDOWN;
+          impl_->mouseHeld[index] = downNow;
+          (downNow ? impl_->mouseDownEdge : impl_->mouseUpEdge)[index] = true;
+        }
+        break;
+      }
+
+      case SDL_MOUSEWHEEL:
+        impl_->wheel += event.wheel.preciseY != 0 ? event.wheel.preciseY
+                                                  : static_cast<float>(event.wheel.y);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  const SDL_Keymod mods = SDL_GetModState();
+  impl_->shift = (mods & KMOD_SHIFT) != 0;
+  impl_->ctrl = (mods & (KMOD_CTRL | KMOD_GUI)) != 0;
+  impl_->alt = (mods & KMOD_ALT) != 0;
+
+  return !impl_->shouldClose;
+#endif
+}
+
+Canvas& Window::canvas() { return *impl_->canvas; }
+int Window::width() const { return impl_->width; }
+int Window::height() const { return impl_->height; }
+
+void Window::present() {
+#ifndef __EMSCRIPTEN__
+  if (!open_ || !impl_->canvas || !impl_->texture) return;
+
+  // getImageData is the Canvas API's only pixel accessor, and it already
+  // composites onto opaque; taking the whole surface once per frame is one
+  // copy, which the upload would cost anyway.
+  const std::vector<std::uint8_t> pixels =
+      impl_->canvas->getImageData(0, 0, impl_->width, impl_->height);
+  if (pixels.size() == impl_->rgba.size()) {
+    std::memcpy(impl_->rgba.data(), pixels.data(), pixels.size());
+  }
+
+  SDL_UpdateTexture(impl_->texture, nullptr, impl_->rgba.data(), impl_->width * 4);
+  SDL_RenderClear(impl_->renderer);
+  SDL_RenderCopy(impl_->renderer, impl_->texture, nullptr, nullptr);
+  SDL_RenderPresent(impl_->renderer);
+#endif
+}
+
+double Window::frameDelay(double targetFps) {
+#ifdef __EMSCRIPTEN__
+  (void)targetFps;
+  return 1.0 / 60.0;
+#else
+  const Uint64 frequency = SDL_GetPerformanceFrequency();
+  const Uint64 now = SDL_GetPerformanceCounter();
+  const double elapsed = static_cast<double>(now - impl_->lastFrameCounter) / frequency;
+
+  if (targetFps > 0) {
+    const double target = 1.0 / targetFps;
+    if (elapsed < target) {
+      const double remaining = target - elapsed;
+      // Sleep the bulk and spin the last millisecond: SDL_Delay's resolution
+      // is coarse enough that sleeping the whole remainder overshoots and
+      // makes the frame rate visibly uneven.
+      if (remaining > 0.002) SDL_Delay(static_cast<Uint32>((remaining - 0.001) * 1000.0));
+      while (static_cast<double>(SDL_GetPerformanceCounter() - impl_->lastFrameCounter) / frequency < target) {}
+    }
+  }
+
+  const Uint64 frameEnd = SDL_GetPerformanceCounter();
+  const double dt = static_cast<double>(frameEnd - impl_->lastFrameCounter) / frequency;
+  impl_->lastFrameCounter = frameEnd;
+  // Clamp: a breakpoint or a paused window otherwise returns a dt of minutes,
+  // which teleports everything the caller integrates.
+  return std::min(dt, 0.25);
+#endif
+}
+
+double Window::timeSeconds() const {
+#ifdef __EMSCRIPTEN__
+  return 0;
+#else
+  return static_cast<double>(SDL_GetPerformanceCounter() - impl_->startCounter) /
+         SDL_GetPerformanceFrequency();
+#endif
+}
+
+bool Window::keyDown(Key k) const {
+  const std::size_t i = static_cast<std::size_t>(k);
+  return i < kKeyCount && impl_->down[i];
+}
+bool Window::keyPressed(Key k) const {
+  const std::size_t i = static_cast<std::size_t>(k);
+  return i < kKeyCount && impl_->pressed[i];
+}
+bool Window::keyReleased(Key k) const {
+  const std::size_t i = static_cast<std::size_t>(k);
+  return i < kKeyCount && impl_->released[i];
+}
+bool Window::mouseDown(MouseButton b) const {
+  const std::size_t i = static_cast<std::size_t>(b);
+  return i < kButtonCount && impl_->mouseHeld[i];
+}
+bool Window::mousePressed(MouseButton b) const {
+  const std::size_t i = static_cast<std::size_t>(b);
+  return i < kButtonCount && impl_->mouseDownEdge[i];
+}
+bool Window::mouseReleased(MouseButton b) const {
+  const std::size_t i = static_cast<std::size_t>(b);
+  return i < kButtonCount && impl_->mouseUpEdge[i];
+}
+float Window::mouseX() const { return impl_->mouseX; }
+float Window::mouseY() const { return impl_->mouseY; }
+float Window::wheelDelta() const { return impl_->wheel; }
+const std::string& Window::typedText() const { return impl_->typed; }
+bool Window::shiftHeld() const { return impl_->shift; }
+bool Window::ctrlHeld() const { return impl_->ctrl; }
+bool Window::altHeld() const { return impl_->alt; }
+
+void Window::setCursorVisible(bool visible) {
+#ifndef __EMSCRIPTEN__
+  SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
+#endif
+}

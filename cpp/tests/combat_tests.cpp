@@ -1,0 +1,869 @@
+#include "test.h"
+
+#include "server/systems/combat.h"
+#include "shared/core/world.h"
+#include "shared/game/components.h"
+#include "shared/game/config.h"
+#include "shared/game/spatial.h"
+
+#include <sys/stat.h>
+
+#include <cmath>
+#include <cstdlib>
+#include <fstream>
+#include <string>
+
+using namespace flr;
+
+namespace {
+
+// The world plus everything run() needs, so a test spends its lines on the
+// behaviour under test rather than on assembling four collaborators.
+struct Arena {
+    World world;
+    SpatialGrid grid;
+    CommandBuffer commands{world};
+    EventQueue events;
+    CombatSystem combat;
+    /// No content loaded: every petal reads as the registry's placeholder,
+    /// which is inert. Tests that need real petal stats pass their own.
+    ContentRegistry noContent;
+    Query<Transform, Body> collidable{world};
+
+    Entity actor(Vec2 at, double radius, double health, Team team, double mass = 1.0) {
+        const Entity e = world.create();
+        world.add<Transform>(e, Transform{at, 0.0});
+        world.add<Motion>(e);
+        world.add<Body>(e, Body{radius, mass});
+        world.add<Health>(e, Health{health, health, 0.0, 0.0});
+        world.add<Faction>(e, Faction{team, false});
+        return e;
+    }
+
+    Entity player(Vec2 at) {
+        const Entity e = actor(at, 20.0, 100.0, Team::Players);
+        world.add<PlayerTag>(e);
+        world.add<PlayerProgress>(e);
+        return e;
+    }
+
+    Entity mob(Vec2 at, double health, double xp = 0.0, double radius = 20.0) {
+        const Entity e = actor(at, radius, health, Team::Hostiles);
+        world.add<MobTag>(e);
+        Bounty bounty;
+        bounty.xp = xp;
+        world.add<Bounty>(e, std::move(bounty));
+        return e;
+    }
+
+    // The server rebuilds the broadphase at the top of every tick; a test that
+    // forgets to would see combat find nothing and pass for the wrong reason.
+    void rebuildGrid() {
+        grid.clear();
+        collidable.each([&](Entity e, Transform& transform, Body& body) {
+            grid.insert(e, transform.position, body.radius);
+        });
+    }
+
+    void step(double nowMillis, const ContentRegistry& content, double dt = net::kTickSeconds) {
+        rebuildGrid();
+        combat.run(world, grid, content, nowMillis, dt, commands, events);
+    }
+    void step(double nowMillis) { step(nowMillis, noContent); }
+
+    double health(Entity e) { return world.get<Health>(e).current; }
+};
+
+double slowFactorOf(World& world, Entity e) {
+    const Afflictions* afflictions = world.tryGet<Afflictions>(e);
+    return afflictions != nullptr ? afflictions->slowFactor : 1.0;
+}
+
+// --- synthetic content ------------------------------------------------------
+//
+// Hand-written rather than the shipped tables: these tests assert on exact
+// numbers, and pinning them to whatever balance mobs.json currently ships
+// would make a tuning change look like a combat regression.
+
+std::string tempDir() {
+    const char* env = std::getenv("TMPDIR");
+    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
+    if (base.back() != '/') base.push_back('/');
+    base += "flr_combat_tests";
+    mkdir(base.c_str(), 0755);   // already exists is fine
+    return base;
+}
+
+bool writeText(const std::string& path, const std::string& text) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << text;
+    return out.good();
+}
+
+struct Fixture {
+    ContentRegistry registry;
+    std::string error;
+    bool ok = false;
+    std::uint16_t sting = kInvalidIndex;
+    std::uint16_t venom = kInvalidIndex;
+    std::uint16_t frost = kInvalidIndex;
+};
+
+const Fixture& fixture() {
+    static const Fixture state = [] {
+        Fixture f;
+        const std::string mobs = tempDir() + "/mobs.json";
+        const std::string petals = tempDir() + "/petals.json";
+        // `poison` is per MILLISECOND in the JSON, so 0.01 is 10/second.
+        const bool wrote =
+            writeText(mobs, R"({"grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":1,"section":[0]}})") &&
+            writeText(petals, R"({
+              "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},
+              "sting":{"name":"Sting","damage":10,"health":5,"size":1,"knockback":2,"damageCooldown":500},
+              "venom":{"name":"Venom","damage":1,"health":5,"size":1,"poison":0.01,"poisonDuration":2000}
+            })");
+        if (!wrote) {
+            f.error = "cannot write the fixture content";
+            return f;
+        }
+        f.ok = f.registry.loadFiles(mobs, petals, std::string(), f.error);
+        f.sting = f.registry.petalIndex("sting");
+        f.venom = f.registry.petalIndex("venom");
+        f.frost = f.registry.petalIndex("frost");
+        return f;
+    }();
+    return state;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// applyDamage: the single path
+// ---------------------------------------------------------------------------
+
+TEST(damage_reduces_health_and_death_marks_dead_exactly_once) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0, 60.0);
+
+    const DamageResult first = a.combat.applyDamage(a.world, mob, player, 30.0, 1000.0);
+    CHECK(!first.refused);
+    CHECK(!first.killed);
+    CHECK_NEAR(first.applied, 30.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 70.0, 1e-9);
+    // The white flash is set by the hit, not by a separate system.
+    CHECK(a.world.get<Health>(mob).flashUntilMillis > 1000.0);
+    CHECK(!a.world.has<Dead>(mob));
+
+    // Overkill is clamped to what was actually left, so the ledger records
+    // damage dealt and not damage swung.
+    const DamageResult killing = a.combat.applyDamage(a.world, mob, player, 500.0, 1010.0);
+    CHECK(killing.killed);
+    CHECK_NEAR(killing.applied, 70.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 0.0, 1e-9);
+    CHECK(a.world.has<Dead>(mob));
+    CHECK_EQ(a.world.get<Dead>(mob).killer, player);
+
+    // A corpse is not a target: a second killing blow would pay the bounty twice.
+    const DamageResult afterwards = a.combat.applyDamage(a.world, mob, player, 10.0, 1020.0);
+    CHECK(afterwards.refused);
+    CHECK(!afterwards.killed);
+    CHECK_EQ(a.combat.deaths().size(), std::size_t(1));
+    CHECK_EQ(a.combat.deaths()[0].entity, mob);
+    CHECK(!a.combat.deaths()[0].wasPlayer);
+}
+
+TEST(an_invulnerable_target_takes_nothing_until_protection_lapses) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity player = a.player({1000, 1000});
+    a.world.get<Health>(player).invulnerableUntilMillis = 5000.0;
+
+    const DamageResult blocked = a.combat.applyDamage(a.world, player, mob, 50.0, 4999.0);
+    CHECK(blocked.refused);
+    CHECK_NEAR(blocked.applied, 0.0, 1e-12);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    // Not even a flash: a refused hit leaves no trace at all.
+    CHECK_NEAR(a.world.get<Health>(player).flashUntilMillis, 0.0, 1e-12);
+
+    // The bound is exclusive, so the tick it expires on already lands.
+    const DamageResult landed = a.combat.applyDamage(a.world, player, mob, 50.0, 5000.0);
+    CHECK(!landed.refused);
+    CHECK_NEAR(a.health(player), 50.0, 1e-9);
+}
+
+TEST(non_finite_and_non_positive_damage_is_refused) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+
+    const double nan = std::nan("");
+    CHECK(a.combat.applyDamage(a.world, mob, player, nan, 0.0).refused);
+    CHECK(a.combat.applyDamage(a.world, mob, player, INFINITY, 0.0).refused);
+    CHECK(a.combat.applyDamage(a.world, mob, player, -5.0, 0.0).refused);
+    CHECK(a.combat.applyDamage(a.world, mob, player, 0.0, 0.0).refused);
+    // A NaN that got through would sit below zero forever and never compare
+    // its way back out.
+    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+    CHECK(!a.world.has<Dead>(mob));
+}
+
+TEST(a_target_with_no_health_component_cannot_be_damaged) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity scenery = a.world.create();
+    a.world.add<Transform>(scenery, Transform{{1000, 1000}, 0.0});
+    CHECK(a.combat.applyDamage(a.world, scenery, player, 10.0, 0.0).refused);
+    CHECK(!a.world.has<Dead>(scenery));
+}
+
+// ---------------------------------------------------------------------------
+// Factions
+// ---------------------------------------------------------------------------
+
+TEST(same_team_damage_is_refused_but_pvp_friendly_fire_lands) {
+    Arena a;
+    const Entity first = a.player({1000, 1000});
+    const Entity second = a.player({1000, 1000});
+
+    CHECK(!CombatSystem::canDamage(a.world, first, second));
+    CHECK(a.combat.applyDamage(a.world, second, first, 25.0, 0.0).refused);
+    CHECK_NEAR(a.health(second), 100.0, 1e-9);
+
+    // One side being in a PvP region is enough: a duellist's pets carry no
+    // flag of their own and would otherwise be unable to fight.
+    a.world.get<Faction>(first).friendlyFireEnabled = true;
+    CHECK(CombatSystem::canDamage(a.world, first, second));
+    CHECK(!a.combat.applyDamage(a.world, second, first, 25.0, 0.0).refused);
+    CHECK_NEAR(a.health(second), 75.0, 1e-9);
+
+    // Wild mobs never hurt each other whatever the players are doing.
+    const Entity mobA = a.mob({1000, 1000}, 50.0);
+    const Entity mobB = a.mob({1000, 1000}, 50.0);
+    CHECK(!CombatSystem::canDamage(a.world, mobA, mobB));
+    CHECK(CombatSystem::canDamage(a.world, mobA, first));
+}
+
+TEST(nothing_can_damage_itself_or_what_it_owns) {
+    Arena a;
+    const Entity owner = a.player({1000, 1000});
+    a.world.get<Faction>(owner).friendlyFireEnabled = true;   // even in PvP
+
+    const Entity petal = a.world.create();
+    a.world.add<PetalTag>(petal);
+    a.world.add<PetalInstance>(petal, PetalInstance{owner, 0, Rarity::Common, 0, 0, 1, 0.0, 0.0});
+    a.world.add<Transform>(petal, Transform{{1000, 1000}, 0.0});
+    a.world.add<Body>(petal, Body{8.0, 1.0});
+
+    const Entity pet = a.world.create();
+    a.world.add<Pet>(pet, Pet{owner, 0});
+    a.world.add<Health>(pet, Health{50.0, 50.0, 0.0, 0.0});
+    a.world.add<Faction>(pet, Faction{Team::Players, true});
+
+    CHECK(!CombatSystem::canDamage(a.world, petal, owner));
+    CHECK(!CombatSystem::canDamage(a.world, petal, pet));    // resolves to the same flower
+    CHECK(!CombatSystem::canDamage(a.world, owner, owner));
+    CHECK(a.combat.applyDamage(a.world, owner, petal, 40.0, 0.0).refused);
+    CHECK_NEAR(a.health(owner), 100.0, 1e-9);
+}
+
+TEST(a_hazard_with_no_faction_hurts_everything) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    // NULL_ENTITY is the environment. Refusing here instead would silently
+    // disarm anything that forgot to give its source a Faction.
+    CHECK(CombatSystem::canDamage(a.world, NULL_ENTITY, player));
+    CHECK(!a.combat.applyDamage(a.world, player, NULL_ENTITY, 10.0, 0.0).refused);
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Contact damage
+// ---------------------------------------------------------------------------
+
+TEST(contact_damage_is_gated_by_the_hit_cooldown) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1010, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+
+    // Resting contact must not deal damage every tick.
+    for (int tick = 1; tick <= 10; ++tick) a.step(tick * net::kTickMillis);
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+
+    a.step(500.0);
+    CHECK_NEAR(a.health(player), 80.0, 1e-9);
+}
+
+TEST(contact_damage_needs_an_actual_overlap) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});          // radius 20
+    const Entity mob = a.mob({1000, 1000}, 100.0);         // radius 20
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+
+    // Same broadphase cell, well outside touching range: the grid hands over
+    // candidates, and the exact circle test is what decides.
+    a.world.get<Transform>(mob).position = Vec2{1200, 1000};
+    a.step(0.0);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+
+    a.world.get<Transform>(mob).position = Vec2{1035, 1000};
+    a.step(1000.0);
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+}
+
+TEST(a_dead_body_stops_dealing_contact_damage_in_the_same_tick) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1005, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+    a.combat.applyDamage(a.world, mob, player, 500.0, 0.0);
+    CHECK(a.world.has<Dead>(mob));
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Knockback
+// ---------------------------------------------------------------------------
+
+TEST(knockback_accumulates_and_is_scaled_by_mass) {
+    Arena a;
+    const Entity light = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
+    const Entity heavy = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 4.0);
+
+    a.combat.applyKnockback(a.world, light, Vec2{5, 0}, 5.0);
+    a.combat.applyKnockback(a.world, light, Vec2{5, 0}, 5.0);
+    // Two pushes from one tick add up rather than the last one winning.
+    CHECK_NEAR(a.world.get<Knockback>(light).impulse.x, 2.0 * 5.0 * kKnockbackScale, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(light).impulse.y, 0.0, 1e-12);
+
+    a.combat.applyKnockback(a.world, heavy, Vec2{5, 0}, 5.0);
+    CHECK_NEAR(a.world.get<Knockback>(heavy).impulse.x, 5.0 * kKnockbackScale / 4.0, 1e-9);
+
+    // The push is a direction, not a displacement: a distant hit does not push
+    // harder than a touching one.
+    const Entity other = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
+    a.combat.applyKnockback(a.world, other, Vec2{0, 400}, 5.0);
+    CHECK_NEAR(a.world.get<Knockback>(other).impulse.y, 5.0 * kKnockbackScale, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(other).impulse.x, 0.0, 1e-12);
+}
+
+TEST(knockback_is_capped_and_skips_what_cannot_move) {
+    Arena a;
+    const Entity mover = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 0.001);
+    a.combat.applyKnockback(a.world, mover, Vec2{1, 0}, 1e6);
+    CHECK_NEAR(a.world.get<Knockback>(mover).impulse.x, kMaxKnockbackImpulse, 1e-9);
+
+    // A nest has no Motion; pushing it would only cost an archetype move.
+    const Entity nest = a.world.create();
+    a.world.add<Transform>(nest, Transform{{1000, 1000}, 0.0});
+    a.world.add<Body>(nest, Body{30.0, 100.0});
+    a.combat.applyKnockback(a.world, nest, Vec2{1, 0}, 50.0);
+    CHECK(!a.world.has<Knockback>(nest));
+
+    // Exactly co-located: there is no direction to push along.
+    const Entity stacked = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
+    a.combat.applyKnockback(a.world, stacked, Vec2{0, 0}, 50.0);
+    CHECK(!a.world.has<Knockback>(stacked));
+}
+
+TEST(a_contact_hit_pushes_the_victim_away_from_the_attacker) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({980, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    CHECK(a.world.has<Knockback>(player));
+    CHECK(a.world.get<Knockback>(player).impulse.x > 0.0);   // shoved away from the mob
+    CHECK_NEAR(a.world.get<Knockback>(player).impulse.y, 0.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Afflictions
+// ---------------------------------------------------------------------------
+
+TEST(poison_ticks_over_time_and_then_expires) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000.0);
+    a.combat.applyPoison(a.world, mob, player, 10.0, 1000.0, 0.0);
+
+    // 25 ticks of 40ms is one second: 10/second lands 10 damage in total.
+    for (int tick = 0; tick < 25; ++tick) a.step(tick * net::kTickMillis);
+    CHECK_NEAR(a.health(mob), 990.0, 1e-6);
+
+    // Past its duration the affliction clears itself, so the replicated state
+    // bit stops claiming the mob is poisoned.
+    a.step(1000.0);
+    a.step(1040.0);
+    CHECK_NEAR(a.health(mob), 990.0, 1e-6);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 0.0, 1e-12);
+    CHECK(!a.world.get<Afflictions>(mob).poisoned(1040.0));
+}
+
+TEST(a_poison_kill_still_credits_its_source) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 2.0, 100.0);
+    a.combat.applyPoison(a.world, mob, player, 10.0, 5000.0, 0.0);
+
+    for (int tick = 0; tick < 10 && !a.world.has<Dead>(mob); ++tick) {
+        a.step(tick * net::kTickMillis);
+    }
+    CHECK(a.world.has<Dead>(mob));
+    CHECK_EQ(a.world.get<Dead>(mob).killer, player);
+    // The whole bounty, because the poison did every point of the damage.
+    CHECK_NEAR(a.world.get<PlayerProgress>(player).totalXp, 100.0, 1e-9);
+}
+
+TEST(a_stronger_poison_replaces_a_weaker_one_but_not_the_other_way) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000.0);
+
+    a.combat.applyPoison(a.world, mob, player, 5.0, 1000.0, 0.0);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 5.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 1000.0, 1e-9);
+
+    // Stronger but shorter: takes over the rate, and must not cut the timer.
+    a.combat.applyPoison(a.world, mob, player, 20.0, 200.0, 0.0);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 20.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 1000.0, 1e-9);
+
+    // Weaker but longer: must not dilute the rate, and does extend the timer.
+    a.combat.applyPoison(a.world, mob, player, 1.0, 3000.0, 0.0);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 20.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 3000.0, 1e-9);
+
+    // Once it has lapsed, any strength takes hold again.
+    a.combat.applyPoison(a.world, mob, player, 1.0, 500.0, 4000.0);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 1.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 4500.0, 1e-9);
+}
+
+TEST(a_stronger_slow_replaces_a_weaker_one_but_not_the_other_way) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+
+    a.combat.applySlow(a.world, mob, 0.8, 1000.0, Rarity::Common, 0.0);
+    CHECK_NEAR(slowFactorOf(a.world, mob), 0.8, 1e-9);
+
+    // Lower factor is a deeper slow.
+    a.combat.applySlow(a.world, mob, 0.3, 200.0, Rarity::Common, 0.0);
+    CHECK_NEAR(slowFactorOf(a.world, mob), 0.3, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).slowUntilMillis, 1000.0, 1e-9);
+
+    a.combat.applySlow(a.world, mob, 0.95, 4000.0, Rarity::Common, 0.0);
+    CHECK_NEAR(slowFactorOf(a.world, mob), 0.3, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).slowUntilMillis, 4000.0, 1e-9);
+
+    // A factor of 1 is not a slow at all and must not create an affliction.
+    const Entity fresh = a.mob({1000, 1000}, 100.0);
+    a.combat.applySlow(a.world, fresh, 1.0, 1000.0, Rarity::Common, 0.0);
+    CHECK(!a.world.has<Afflictions>(fresh));
+}
+
+TEST(an_expired_slow_is_cleared_by_the_tick) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.combat.applySlow(a.world, mob, 0.5, 100.0, Rarity::Common, 0.0);
+    a.step(0.0);
+    CHECK(a.world.get<Afflictions>(mob).slowed(0.0));
+
+    a.step(200.0);
+    CHECK_NEAR(slowFactorOf(a.world, mob), 1.0, 1e-12);
+    CHECK(!a.world.get<Afflictions>(mob).slowed(200.0));
+}
+
+TEST(stall_power_thins_a_slow_landed_on_a_higher_tier_mob) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<MobType>(mob, MobType{0, Rarity::Rare, 1.0});
+
+    // Two tiers up: a ninth of the slow lands, so 0.1 becomes 1 - 0.9/9.
+    a.combat.applySlow(a.world, mob, 0.1, 1000.0, Rarity::Common, 0.0);
+    CHECK_NEAR(slowFactorOf(a.world, mob), 1.0 - 0.9 / 9.0, 1e-9);
+
+    // Out-tiering it buys reliability, never a deeper slow than the petal has.
+    const Entity common = a.mob({1000, 1000}, 100.0);
+    a.world.add<MobType>(common, MobType{0, Rarity::Common, 1.0});
+    a.combat.applySlow(a.world, common, 0.1, 1000.0, Rarity::Mythic, 0.0);
+    CHECK_NEAR(slowFactorOf(a.world, common), 0.1, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Bounty
+// ---------------------------------------------------------------------------
+
+TEST(xp_splits_across_contributors_in_proportion_to_damage) {
+    Arena a;
+    const Entity first = a.player({1000, 1000});
+    const Entity second = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0, 120.0);
+
+    a.combat.applyDamage(a.world, mob, first, 75.0, 0.0);
+    // Overkill: the excess must not inflate the last hitter's share.
+    a.combat.applyDamage(a.world, mob, second, 900.0, 10.0);
+    CHECK(a.world.has<Dead>(mob));
+
+    CHECK_NEAR(a.world.get<PlayerProgress>(first).totalXp, 90.0, 1e-9);
+    CHECK_NEAR(a.world.get<PlayerProgress>(second).totalXp, 30.0, 1e-9);
+}
+
+TEST(a_mob_killed_by_another_mob_pays_nobody) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity killer = a.mob({1000, 1000}, 100.0);
+    const Entity victim = a.mob({1000, 1000}, 100.0);
+    a.world.get<Faction>(victim).team = Team::Neutral;
+
+    a.combat.applyDamage(a.world, victim, killer, 500.0, 0.0);
+    CHECK(a.world.has<Dead>(victim));
+    CHECK_NEAR(a.world.get<PlayerProgress>(player).totalXp, 0.0, 1e-12);
+}
+
+TEST(crossing_an_xp_threshold_flags_the_level_up) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 10.0, 250.0);
+
+    a.combat.applyDamage(a.world, mob, player, 10.0, 0.0);
+    const PlayerProgress& progress = a.world.get<PlayerProgress>(player);
+    CHECK_NEAR(progress.totalXp, 250.0, 1e-9);
+    CHECK_EQ(progress.level, levelFromTotalXp(250.0).level);
+    CHECK(progress.level > 1);
+    CHECK(progress.leveledThisTick);
+
+    // The flag is owned by combat and cleared at the top of the next tick, so
+    // replication cannot emit the same level-up twice.
+    a.step(40.0);
+    CHECK(!a.world.get<PlayerProgress>(player).leveledThisTick);
+}
+
+TEST(a_pets_kill_credits_its_owner) {
+    Arena a;
+    const Entity owner = a.player({1000, 1000});
+    const Entity pet = a.actor({1000, 1000}, 15.0, 50.0, Team::Players);
+    a.world.add<MobTag>(pet);
+    a.world.add<Pet>(pet, Pet{owner, 0});
+    const Entity mob = a.mob({1000, 1000}, 40.0, 80.0);
+
+    CHECK_EQ(CombatSystem::creditedPlayer(a.world, pet), owner);
+    a.combat.applyDamage(a.world, mob, pet, 100.0, 0.0);
+    CHECK(a.world.has<Dead>(mob));
+    // The owner, not the pet: XP has to reach an account.
+    CHECK_EQ(a.world.get<Dead>(mob).killer, owner);
+    CHECK_NEAR(a.world.get<PlayerProgress>(owner).totalXp, 80.0, 1e-9);
+}
+
+TEST(a_players_death_is_reported_and_pays_no_bounty) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity player = a.player({1000, 1000});
+    Bounty bounty;
+    bounty.xp = 500.0;
+    a.world.add<Bounty>(player, std::move(bounty));
+
+    a.combat.applyDamage(a.world, player, mob, 200.0, 0.0);
+    CHECK(a.world.has<Dead>(player));
+    CHECK_EQ(a.combat.deaths().size(), std::size_t(1));
+    CHECK(a.combat.deaths()[0].wasPlayer);
+    CHECK_EQ(a.combat.deaths()[0].killer, mob);
+    // Nothing is handed out for killing a flower here: the account keeps what
+    // it had and the Died message is the whole of the consequence.
+    CHECK_NEAR(a.world.get<PlayerProgress>(player).totalXp, 0.0, 1e-12);
+}
+
+// ---------------------------------------------------------------------------
+// Projectiles
+// ---------------------------------------------------------------------------
+
+namespace {
+
+Entity spawnShot(Arena& a, Vec2 at, Vec2 velocity, double damage, double range,
+                 Entity owner, Entity creditTo) {
+    const Entity e = a.world.create();
+    a.world.add<ProjectileTag>(e);
+    Projectile projectile;
+    projectile.owner = owner;
+    projectile.creditTo = creditTo;
+    projectile.damage = damage;
+    projectile.remainingDistance = range;
+    a.world.add<Projectile>(e, projectile);
+    a.world.add<Transform>(e, Transform{at, 0.0});
+    a.world.add<Motion>(e, Motion{velocity});
+    a.world.add<Body>(e, Body{5.0, 0.1});
+    return e;
+}
+
+} // namespace
+
+TEST(a_projectile_hits_the_nearest_target_once_and_expires) {
+    Arena a;
+    const Entity player = a.player({500, 1000});
+    const Entity near = a.mob({1000, 1000}, 100.0, 40.0);
+    const Entity far = a.mob({1030, 1000}, 100.0, 40.0);
+    const Entity shot = spawnShot(a, {1005, 1000}, {1000, 0}, 25.0, 500.0, player, player);
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(near), 75.0, 1e-9);
+    CHECK_NEAR(a.health(far), 100.0, 1e-9);   // consumed by the first thing it met
+    CHECK(a.world.has<Dead>(shot));
+
+    // Already marked: a second tick must not deal the damage again.
+    a.step(40.0);
+    CHECK_NEAR(a.health(near), 75.0, 1e-9);
+}
+
+TEST(a_projectile_expires_when_its_range_runs_out) {
+    Arena a;
+    const Entity player = a.player({500, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    // 1000 units/second for 40ms is 40 units of travel, against 5 of range.
+    const Entity shot = spawnShot(a, {1000, 1000}, {1000, 0}, 25.0, 5.0, player, player);
+
+    a.step(0.0);
+    CHECK(a.world.has<Dead>(shot));
+    // Range ran out first, so the overlapping mob is untouched.
+    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+}
+
+TEST(a_projectile_passes_through_its_own_side) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity pet = a.actor({1000, 1000}, 15.0, 50.0, Team::Players);
+    a.world.add<Pet>(pet, Pet{player, 0});
+    // Fired by the pet, credited to the flower: neither of them is a target.
+    const Entity shot = spawnShot(a, {1000, 1000}, {100, 0}, 25.0, 500.0, pet, player);
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.health(pet), 50.0, 1e-9);
+    CHECK(!a.world.has<Dead>(shot));
+    CHECK_NEAR(a.world.get<Projectile>(shot).remainingDistance, 500.0 - 4.0, 1e-9);
+}
+
+TEST(a_mob_shot_credits_nobody_and_still_kills) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity player = a.player({1000, 1000});
+    a.world.get<Health>(player).current = 10.0;
+    const Entity shot = spawnShot(a, {1000, 1000}, {100, 0}, 25.0, 500.0, mob, NULL_ENTITY);
+    a.world.add<Faction>(shot, Faction{Team::Hostiles, false});
+
+    a.step(0.0);
+    CHECK(a.world.has<Dead>(player));
+    // The mob behind the shot is the killer, which is what the Died message
+    // needs to name.
+    CHECK_EQ(a.world.get<Dead>(player).killer, mob);
+}
+
+// ---------------------------------------------------------------------------
+// Ground effects
+// ---------------------------------------------------------------------------
+
+TEST(a_ground_effect_damages_and_slows_only_what_stands_in_it) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity inside = a.mob({1050, 1000}, 100.0);
+    const Entity outside = a.mob({1300, 1000}, 100.0);
+
+    const Entity field = a.world.create();
+    a.world.add<GroundEffectTag>(field);
+    a.world.add<GroundEffect>(field, GroundEffect{GroundEffectKind::Poison, player, 100.0,
+                                                  50.0, 0.5, Rarity::Common});
+    a.world.add<Transform>(field, Transform{{1000, 1000}, 0.0});
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(inside), 98.0, 1e-9);      // 50/second for one 40ms tick
+    CHECK_NEAR(a.health(outside), 100.0, 1e-9);
+    CHECK_NEAR(slowFactorOf(a.world, inside), 0.5, 1e-9);
+    CHECK_NEAR(slowFactorOf(a.world, outside), 1.0, 1e-12);
+    // The owner is on the field's own side and is never hurt by it.
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+
+    // The slow is refreshed every tick inside and lapses shortly after leaving.
+    a.world.get<Transform>(inside).position = Vec2{1300, 1000};
+    a.step(40.0);
+    a.step(40.0 + kGroundEffectSlowLingerMillis + net::kTickMillis);
+    CHECK_NEAR(slowFactorOf(a.world, inside), 1.0, 1e-12);
+}
+
+// ---------------------------------------------------------------------------
+// Petals, against real config
+// ---------------------------------------------------------------------------
+
+namespace {
+
+Entity equipPetal(Arena& a, Entity owner, std::uint16_t configIndex, Rarity rarity, Vec2 at) {
+    const Entity e = a.world.create();
+    a.world.add<PetalTag>(e);
+    PetalInstance instance;
+    instance.owner = owner;
+    instance.configIndex = configIndex;
+    instance.rarity = rarity;
+    a.world.add<PetalInstance>(e, instance);
+    a.world.add<Transform>(e, Transform{at, 0.0});
+    a.world.add<Body>(e, Body{8.0, 0.2});
+    return e;
+}
+
+} // namespace
+
+TEST(a_petal_hits_with_its_config_stats_and_its_own_cooldown) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1040, 1000}, 200.0, 60.0);
+    const Entity petal = equipPetal(a, player, f.sting, Rarity::Common, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 190.0, 1e-9);          // sting: 10 damage at common
+    CHECK(a.world.get<Knockback>(mob).impulse.x > 0.0);
+    // Damage dealt by a petal is answerable to the flower wearing it.
+    CHECK_EQ(CombatSystem::creditedPlayer(a.world, petal), player);
+    CHECK_NEAR(a.world.get<Bounty>(mob).contributors.at(0).damage, 10.0, 1e-9);
+    CHECK_EQ(a.world.get<Bounty>(mob).contributors.at(0).player, player);
+
+    // damageCooldown of 500ms, not the tick rate.
+    a.step(net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(mob), 190.0, 1e-9);
+    a.step(500.0, f.registry);
+    CHECK_NEAR(a.health(mob), 180.0, 1e-9);
+}
+
+TEST(rarity_scales_a_petals_damage_off_the_config) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1040, 1000}, 5000.0);
+    equipPetal(a, player, f.sting, Rarity::Rare, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    // Two tiers up the flat 3x ladder: 10 -> 90.
+    CHECK_NEAR(a.health(mob), 5000.0 - 90.0, 1e-9);
+}
+
+TEST(a_petals_damage_bonus_comes_from_its_flower) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.add<PlayerModifiers>(player);
+    a.world.get<PlayerModifiers>(player).damageScale = 2.5;
+    const Entity mob = a.mob({1040, 1000}, 200.0);
+    equipPetal(a, player, f.sting, Rarity::Common, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 175.0, 1e-9);
+}
+
+TEST(a_petal_lands_the_poison_and_slow_its_config_carries) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity poisoned = a.mob({1040, 1000}, 500.0);
+    const Entity chilled = a.mob({1040, 1200}, 500.0);
+    equipPetal(a, player, f.venom, Rarity::Common, {1025, 1000});
+    equipPetal(a, player, f.frost, Rarity::Common, {1025, 1200});
+
+    a.step(0.0, f.registry);
+    const Afflictions& venomed = a.world.get<Afflictions>(poisoned);
+    CHECK_NEAR(venomed.poisonPerSecond, 10.0, 1e-9);      // 0.01/ms in the JSON
+    CHECK_NEAR(venomed.poisonUntilMillis, 2000.0, 1e-9);
+    // Attributed to the flower, so a kill after the petal breaks still pays.
+    CHECK_EQ(venomed.poisonSource, player);
+    CHECK_NEAR(slowFactorOf(a.world, chilled), 0.5, 1e-9);
+
+    // The direct hit is 1; the rest of the loss over the next tick is poison.
+    CHECK_NEAR(a.health(poisoned), 499.0, 1e-9);
+    a.step(net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(poisoned), 499.0 - 10.0 * net::kTickSeconds, 1e-6);
+}
+
+TEST(a_petal_never_hits_its_own_flower) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    equipPetal(a, player, f.sting, Rarity::Common, {1000, 1000});   // sitting on top of it
+
+    for (int tick = 0; tick < 20; ++tick) a.step(tick * net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+TEST(a_direct_hit_emits_a_damage_event_and_a_poison_tick_does_not) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.add<NetId>(player, NetId{8});
+    // Far from everything else, so the only thing happening to it is poison.
+    const Entity poisoned = a.mob({1000, 5000}, 500.0);
+    a.world.add<NetId>(poisoned, NetId{7});
+
+    const Entity attacker = a.mob({1010, 1000}, 100.0);
+    a.world.add<ContactDamage>(attacker, ContactDamage{5.0, 500.0});
+    a.world.add<NetId>(attacker, NetId{9});
+
+    a.combat.applyPoison(a.world, poisoned, player, 10.0, 2000.0, 0.0);
+    a.events.clear();
+    a.step(0.0);
+
+    // The poison did land -- it just did not narrate itself.
+    CHECK(a.health(poisoned) < 500.0);
+    CHECK_NEAR(a.health(player), 95.0, 1e-9);
+
+    std::size_t damageEvents = 0;
+    std::uint32_t reported = 0;
+    double amount = 0;
+    for (const WireEvent& event : a.events.events()) {
+        if (event.kind != net::EventKind::Damage) continue;
+        ++damageEvents;
+        reported = event.netId;
+        amount = event.amount;
+    }
+    // One floating number, for the hit that matters. Twenty-five poison ticks
+    // a second would bury it.
+    CHECK_EQ(damageEvents, std::size_t(1));
+    CHECK_EQ(reported, std::uint32_t(8));
+    CHECK_NEAR(amount, 5.0, 1e-9);
+}
+
+TEST(the_hit_cooldown_list_is_pruned_rather_than_growing_without_bound) {
+    Arena a;
+    const Entity attacker = a.mob({1000, 1000}, 1000.0);
+    a.world.add<ContactDamage>(attacker, ContactDamage{1.0, 100.0});
+    HitCooldowns cooldowns;
+    for (int i = 0; i < 64; ++i) {
+        cooldowns.arm(makeEntity(static_cast<std::uint32_t>(1000 + i), 1), 50.0);
+    }
+    a.world.add<HitCooldowns>(attacker, std::move(cooldowns));
+
+    for (int tick = 0; tick <= kCooldownPruneTicks; ++tick) {
+        a.step(tick * net::kTickMillis);
+    }
+    // Every entry expired long before the sweep; none of them survive it.
+    CHECK_EQ(a.world.get<HitCooldowns>(attacker).entries.size(), std::size_t(0));
+}

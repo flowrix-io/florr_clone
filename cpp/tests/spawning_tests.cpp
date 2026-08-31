@@ -1,0 +1,1010 @@
+#include "test.h"
+
+#include "server/systems/loot.h"
+#include "server/systems/spawning.h"
+
+#include <sys/stat.h>
+
+#include <cstdlib>
+#include <fstream>
+#include <string>
+#include <vector>
+
+using namespace flr;
+
+namespace {
+
+// The test binary runs from wherever ctest puts it, so every content path is
+// derived from this source file's own location rather than from the working
+// directory. Same trick as config_tests.cpp.
+std::string testsDir() {
+    const std::string path = __FILE__;
+    const std::size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
+}
+
+std::string firstExisting(const std::vector<std::string>& candidates) {
+    for (const std::string& candidate : candidates) {
+        std::ifstream probe(candidate, std::ios::binary);
+        if (probe) return candidate;
+    }
+    return {};
+}
+
+const ContentRegistry& shipped() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        std::string error;
+        r.loadFiles(firstExisting({testsDir() + "/../../src/mobs.json", "data/mobs.json",
+                                   "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}),
+                    firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
+                                   "../src/petals.json", "../../src/petals.json", "src/petals.json"}),
+                    firstExisting({testsDir() + "/../data/mob_xp.json", "data/mob_xp.json",
+                                   "../data/mob_xp.json", "cpp/data/mob_xp.json"}),
+                    error);
+        return r;
+    }();
+    return registry;
+}
+
+std::string tempPath(const char* name) {
+    const char* env = std::getenv("TMPDIR");
+    std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
+    if (base.back() != '/') base.push_back('/');
+    base += "flr_spawning_tests";
+    mkdir(base.c_str(), 0755);
+    return base + "/" + name;
+}
+
+bool writeText(const std::string& path, const std::string& text) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << text;
+    return out.good();
+}
+
+/// A registry over four invented mobs, so the weighted roll can be measured
+/// against numbers a test chose rather than against whatever the shipped data
+/// happens to say this week.
+const ContentRegistry& synthetic() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        const std::string mobs = tempPath("mobs.json");
+        const std::string petals = tempPath("petals.json");
+        writeText(mobs, R"({
+            "alpha": {"name":"Alpha","health":10,"damage":1,"size":1,"speed":1,
+                      "section":[0],"spawn_weight":1},
+            "beta":  {"name":"Beta","health":10,"damage":1,"size":1,"speed":1,
+                      "section":[0],"spawn_weight":3},
+            "gamma": {"name":"Gamma","health":10,"damage":1,"size":1,"speed":1,
+                      "section":[0],"spawn_weight":6},
+            "delta": {"name":"Delta","health":10,"damage":1,"size":1,"speed":1,
+                      "section":[1],"spawn_weight":100},
+            "ghost": {"name":"Ghost","health":10,"damage":1,"size":1,"speed":1,
+                      "section":[0],"spawn_weight":0}
+        })");
+        writeText(petals, R"({
+            "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
+        })");
+        std::string error;
+        r.loadFiles(mobs, petals, "", error);
+        return r;
+    }();
+    return registry;
+}
+
+/// A world plus everything the spawner needs to be driven one tick at a time.
+struct Sim {
+    World world;
+    CommandBuffer commands{world};
+    Terrain terrain;
+    SpawnSystem spawner;
+    Rng rng{0xC0FFEEu};
+    double now = 0;
+
+    void tick(const std::vector<Vec2>& players) {
+        spawner.run(world, terrain, shipped(), players, rng, now, net::kTickSeconds, commands);
+        commands.flush();
+        now += net::kTickMillis;
+    }
+
+    /// Advances the clock without simulating the gap. Used to reach a timeout
+    /// without paying for the thousand ticks in between.
+    void jump(double millis, const std::vector<Vec2>& players) {
+        now += millis;
+        spawner.run(world, terrain, shipped(), players, rng, now, 0.0, commands);
+        commands.flush();
+    }
+
+    int mobCount() {
+        Query<MobTag> mobs{world};
+        return static_cast<int>(mobs.count());
+    }
+
+    int mobsWithin(Vec2 centre, double radius) {
+        Query<MobTag, Transform> mobs{world};
+        int n = 0;
+        const double r2 = radius * radius;
+        mobs.each([&](Entity, MobTag&, Transform& t) {
+            if (distanceSq(t.position, centre) <= r2) ++n;
+        });
+        return n;
+    }
+};
+
+/// The centre of section 4, comfortably away from every section border.
+const Vec2 kCentre{30000.0, 30000.0};
+
+void rebuildGrid(World& world, SpatialGrid& grid) {
+    grid.clear();
+    Query<Transform, Body> bodies{world};
+    bodies.each([&](Entity e, Transform& t, Body& b) { grid.insert(e, t.position, b.radius); });
+}
+
+Entity makePlayer(World& world, Vec2 position, double magnetism = 0.0, std::uint32_t netId = 0) {
+    const Entity e = world.create();
+    world.add<PlayerTag>(e);
+    world.add<Transform>(e, Transform{position, 0.0});
+    world.add<Body>(e, Body{kPlayerBaseRadius, 1.0});
+    world.add<Health>(e, Health{100.0, 100.0, 0.0, 0.0});
+    PlayerModifiers mods;
+    mods.magnetism = magnetism;
+    world.add<PlayerModifiers>(e, mods);
+    if (netId != 0) world.add<NetId>(e, NetId{netId});
+    return e;
+}
+
+/// A mob standing at `at`, already dead, with `contributors` credited.
+Entity makeCorpse(World& world, std::uint16_t mobIndex, Rarity rarity, Vec2 at, Entity killer,
+                  const std::vector<Entity>& contributors) {
+    const Entity e = world.create();
+    world.add<MobTag>(e);
+    world.add<Transform>(e, Transform{at, 0.0});
+    world.add<MobType>(e, MobType{mobIndex, rarity, 1.0});
+    Bounty bounty;
+    for (const Entity c : contributors) bounty.credit(c, 10.0);
+    world.add<Bounty>(e, std::move(bounty));
+    world.add<Dead>(e, Dead{killer});
+    return e;
+}
+
+std::vector<Entity> liveDrops(World& world) {
+    Query<DropTag, DropItem> drops{world};
+    return drops.collect();
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Content sanity -- everything below is meaningless without it
+// ---------------------------------------------------------------------------
+
+TEST(spawning_tests_have_content) {
+    CHECK(shipped().loaded());
+    CHECK(synthetic().loaded());
+    CHECK_EQ(synthetic().mobCount(), std::size_t(5));
+}
+
+// ---------------------------------------------------------------------------
+// Type and tier selection
+// ---------------------------------------------------------------------------
+
+TEST(weighted_choice_matches_the_configured_weights) {
+    const ContentRegistry& content = synthetic();
+    SpawnSystem spawner;
+    Rng rng(4242);
+
+    const std::uint16_t alpha = content.mobIndex("alpha");
+    const std::uint16_t beta = content.mobIndex("beta");
+    const std::uint16_t gamma = content.mobIndex("gamma");
+    const std::uint16_t ghost = content.mobIndex("ghost");
+
+    constexpr int kSamples = 60000;
+    int counts[3] = {0, 0, 0};
+    int ghostCount = 0;
+    for (int i = 0; i < kSamples; ++i) {
+        const std::uint16_t picked = spawner.chooseMobType(content, 0, rng);
+        if (picked == alpha) ++counts[0];
+        else if (picked == beta) ++counts[1];
+        else if (picked == gamma) ++counts[2];
+        else if (picked == ghost) ++ghostCount;
+    }
+
+    // 1 : 3 : 6 out of a total of 10.
+    CHECK_NEAR(counts[0] / double(kSamples), 0.10, 0.01);
+    CHECK_NEAR(counts[1] / double(kSamples), 0.30, 0.015);
+    CHECK_NEAR(counts[2] / double(kSamples), 0.60, 0.015);
+    // A zero spawn_weight is how the data says "never rolled" -- that is what
+    // keeps centipede body segments from spawning as loose mobs.
+    CHECK_EQ(ghostCount, 0);
+}
+
+TEST(a_section_with_nothing_in_it_yields_no_mob_type) {
+    const ContentRegistry& content = synthetic();
+    SpawnSystem spawner;
+    Rng rng(1);
+    // Section 1 holds only delta; sections 2..8 hold nothing at all.
+    CHECK_EQ(spawner.chooseMobType(content, 1, rng), content.mobIndex("delta"));
+    for (int section = 2; section < kSectionCount; ++section) {
+        CHECK_EQ(spawner.chooseMobType(content, section, rng), kInvalidIndex);
+    }
+    // Out-of-range section indices are answered, not asserted on: the caller
+    // derives them from a position that may be outside the map.
+    CHECK_EQ(spawner.chooseMobType(content, -1, rng), kInvalidIndex);
+    CHECK_EQ(spawner.chooseMobType(content, kSectionCount, rng), kInvalidIndex);
+}
+
+TEST(natural_rarity_never_exceeds_mythic) {
+    const ContentRegistry& content = shipped();
+    const MobConfig& bee = content.mob(content.mobIndex("bee"));
+    Rng rng(9001);
+
+    bool sawCommon = false;
+    bool sawMythic = false;
+    for (int i = 0; i < 20000; ++i) {
+        const Rarity r = SpawnSystem::rollRarity(bee, rng);
+        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Mythic));
+        sawCommon = sawCommon || r == Rarity::Common;
+        sawMythic = sawMythic || r == Rarity::Mythic;
+    }
+    // The tails of the table are reachable, so the ceiling above is a real
+    // bound and not an artefact of never rolling high.
+    CHECK(sawCommon);
+    CHECK(sawMythic);
+}
+
+TEST(natural_rarity_respects_min_rarity) {
+    const ContentRegistry& content = shipped();
+    const MobConfig& evil = content.mob(content.mobIndex("evil_centipede"));
+    CHECK_EQ(evil.minRarity, Rarity::Rare);
+
+    Rng rng(77);
+    for (int i = 0; i < 5000; ++i) {
+        const Rarity r = SpawnSystem::rollRarity(evil, rng);
+        CHECK(rarityIndex(r) >= rarityIndex(Rarity::Rare));
+        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Mythic));
+    }
+}
+
+TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
+    Sim sim;
+    const std::uint16_t evil = shipped().mobIndex("evil_centipede");
+    const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), evil, Rarity::Common,
+                                          kCentre, 0.0, sim.rng);
+    CHECK(e != NULL_ENTITY);
+    CHECK_EQ(sim.world.get<MobType>(e).rarity, Rarity::Rare);
+    // ...and a tier above it is left alone.
+    const Entity high = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), evil,
+                                             Rarity::Legendary, kCentre, 0.0, sim.rng);
+    CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
+}
+
+TEST(an_unknown_mob_index_spawns_nothing) {
+    Sim sim;
+    CHECK_EQ(sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), kInvalidIndex, Rarity::Common,
+                                  kCentre, 0.0, sim.rng),
+             NULL_ENTITY);
+    CHECK_EQ(sim.world.size(), std::size_t(0));
+}
+
+// ---------------------------------------------------------------------------
+// Population control
+// ---------------------------------------------------------------------------
+
+TEST(population_converges_to_the_target_near_a_player) {
+    Sim sim;
+    const std::vector<Vec2> players{kCentre};
+
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+
+    const int near = sim.mobsWithin(kCentre, kMobDespawnRadius);
+    CHECK(near >= kMobsPerPlayer);
+    // Nest escorts can push a little past the target; nothing may push past the
+    // section cap.
+    CHECK(near <= kMaxMobsPerSection);
+    CHECK(sim.spawner.census().mobs <= kSectionTargetPopulation);
+
+    // And it holds: a converged population does not keep creeping upward.
+    const int settled = sim.mobCount();
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+    CHECK(sim.mobCount() <= settled + kMaxNestChildren);
+}
+
+TEST(nothing_spawns_inside_the_players_view) {
+    Sim sim;
+    // Section 6 (the sewers) is the one neighbourhood with no nests in it, so
+    // every mob here came from the ambient roll and the ring bound is exact --
+    // an escort is deliberately placed next to its nest and would not be.
+    const Vec2 sewers{10000.0, 50000.0};
+    const std::vector<Vec2> players{sewers};
+    for (int i = 0; i < 200; ++i) sim.tick(players);
+
+    Query<MobTag, Transform> mobs{sim.world};
+    int checked = 0;
+    mobs.each([&](Entity, MobTag&, Transform& t) {
+        ++checked;
+        const double d = distance(t.position, sewers);
+        // Outside the diagonal of a 1920x1080 viewport, so nothing was ever
+        // seen to appear...
+        CHECK(d >= kMinSpawnDistance);
+        // ...and inside the simulated neighbourhood, plus whatever the terrain
+        // search was allowed to nudge it by.
+        CHECK(d <= kSpawnRingMax + kSpawnScatterRadius);
+    });
+    CHECK(checked > 0);
+}
+
+TEST(a_crowd_of_players_cannot_exceed_the_global_cap) {
+    Sim sim;
+    std::vector<Vec2> players;
+    for (int y = 0; y < 6; ++y) {
+        for (int x = 0; x < 6; ++x) {
+            players.push_back(Vec2{4000.0 + x * 9000.0, 4000.0 + y * 9000.0});
+        }
+    }
+    // Thirty-six neighbourhoods want 1620 mobs between them.
+    CHECK(static_cast<int>(players.size()) * kMobsPerPlayer > kMaxLiveMobs);
+
+    for (int i = 0; i < 600; ++i) sim.tick(players);
+
+    CHECK(sim.mobCount() <= kMaxLiveMobs + kMaxNestChildren);
+    CHECK(sim.spawner.census().mobs > kMobsPerPlayer);
+    for (int section = 0; section < kSectionCount; ++section) {
+        CHECK(sim.spawner.census().perSection[static_cast<std::size_t>(section)] <= kMaxMobsPerSection);
+    }
+}
+
+TEST(mobs_nobody_has_been_near_are_recycled) {
+    Sim sim;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 200; ++i) sim.tick(players);
+    const int populated = sim.mobCount();
+    CHECK(populated > 0);
+
+    // The player leaves. Nothing goes immediately -- a mob must survive a
+    // player stepping out of range for a moment.
+    const std::vector<Vec2> nobody;
+    sim.tick(nobody);
+    CHECK_EQ(sim.mobCount(), populated);
+
+    // Twice: nests are ticked before the census, so a nest on the way out can
+    // still have placed one escort this pass, and that escort's own grace
+    // period starts now.
+    sim.jump(kMobDespawnDelayMillis + 1000.0, nobody);
+    sim.jump(kMobDespawnDelayMillis + 1000.0, nobody);
+    CHECK_EQ(sim.mobCount(), 0);
+    CHECK(sim.spawner.census().despawnedTotal >= populated);
+}
+
+TEST(section_filtering_follows_the_config) {
+    Sim sim;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 300; ++i) sim.tick(players);
+
+    Query<MobTag, MobType> mobs{sim.world};
+    int checked = 0;
+    mobs.each([&](Entity, MobTag&, MobType& type) {
+        ++checked;
+        const MobConfig& config = shipped().mob(type.configIndex);
+        // Section 4 is the whole neighbourhood: the spawn ring is 2400 units
+        // and the section is 20000 across.
+        CHECK((config.sectionMask & (1u << 4)) != 0);
+    });
+    CHECK(checked > 0);
+}
+
+TEST(no_mob_is_placed_inside_a_wall) {
+    Sim sim;
+    // A solid block of wall that the spawn ring overlaps. Solid rather than
+    // scattered so the test asserts the invariant instead of the push-out
+    // solver's tolerance for pathological geometry.
+    for (int ty = 96; ty <= 104; ++ty) {
+        for (int tx = 103; tx <= 109; ++tx) sim.terrain.setTile(tx, ty, Tile::Wall);
+    }
+    const Vec2 player = Terrain::tileCenter(100, 100);
+    const std::vector<Vec2> players{player};
+
+    for (int i = 0; i < 300; ++i) sim.tick(players);
+
+    Query<MobTag, Transform> mobs{sim.world};
+    int checked = 0;
+    mobs.each([&](Entity, MobTag&, Transform& t) {
+        ++checked;
+        CHECK(!sim.terrain.blocked(t.position));
+    });
+    CHECK(checked > 0);
+
+    // The same holds for a caller that asks for a spot in the middle of the
+    // wall: a request is a request, not a promise.
+    const std::uint16_t ant = shipped().mobIndex("soldier_ant");
+    for (int i = 0; i < 100; ++i) {
+        const Vec2 inWall = Terrain::tileCenter(106, 100) + sim.rng.insideCircle(200.0);
+        const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), ant,
+                                              Rarity::Common, inWall, 0.0, sim.rng);
+        CHECK(e != NULL_ENTITY);
+        CHECK(!sim.terrain.blocked(sim.world.get<Transform>(e).position));
+    }
+}
+
+TEST(a_spawned_mob_carries_everything_the_simulation_needs) {
+    Sim sim;
+    const std::uint16_t bee = shipped().mobIndex("bee");
+    const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), bee, Rarity::Rare,
+                                          kCentre, 1234.0, sim.rng);
+    CHECK(e != NULL_ENTITY);
+    CHECK(sim.world.has<MobTag>(e));
+    CHECK(sim.world.has<Motion>(e));
+    CHECK(sim.world.has<Knockback>(e));
+    CHECK(sim.world.has<HitCooldowns>(e));
+    CHECK(sim.world.has<Afflictions>(e));
+    CHECK(sim.world.has<AmbientMob>(e));
+
+    const MobStats stats = shipped().mobStats(bee, Rarity::Rare);
+    CHECK_NEAR(sim.world.get<Health>(e).max, stats.health, 1e-9);
+    CHECK_NEAR(sim.world.get<Health>(e).current, stats.health, 1e-9);
+    CHECK_NEAR(sim.world.get<Body>(e).radius, stats.radius, 1e-9);
+    CHECK_NEAR(sim.world.get<Bounty>(e).xp, stats.xp, 1e-9);
+    CHECK_EQ(sim.world.get<Replicated>(e).kind, net::EntityKind::Mob);
+    CHECK_EQ(sim.world.get<Replicated>(e).typeIndex, bee);
+    // No allocator wired up: the mob simulates and simply is not replicated.
+    CHECK(!sim.world.has<NetId>(e));
+    CHECK_NEAR(sim.world.get<AmbientMob>(e).lastNearPlayerMillis, 1234.0, 1e-9);
+}
+
+TEST(random_size_jitters_the_body_and_nothing_else) {
+    Sim sim;
+    // `sandstorm` ships random_size [1, 2].
+    const std::uint16_t sandstorm = shipped().mobIndex("sandstorm");
+    const MobConfig& config = shipped().mob(sandstorm);
+    CHECK(config.randomSizeMax > config.randomSizeMin);
+
+    const MobStats stats = shipped().mobStats(sandstorm, Rarity::Common);
+    bool sawSmall = false;
+    bool sawLarge = false;
+    for (int i = 0; i < 200; ++i) {
+        const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), sandstorm,
+                                              Rarity::Common, kCentre, 0.0, sim.rng);
+        const double jitter = sim.world.get<MobType>(e).sizeJitter;
+        CHECK(jitter >= config.randomSizeMin);
+        CHECK(jitter <= config.randomSizeMax);
+        CHECK_NEAR(sim.world.get<Body>(e).radius, stats.radius * jitter, 1e-9);
+        // Mass is area: it takes the square of a diameter multiplier.
+        CHECK_NEAR(sim.world.get<Body>(e).mass, stats.mass * jitter * jitter, 1e-9);
+        sawSmall = sawSmall || jitter < 1.3;
+        sawLarge = sawLarge || jitter > 1.7;
+    }
+    CHECK(sawSmall);
+    CHECK(sawLarge);
+
+    // A mob with no random_size gets exactly its configured size.
+    const Entity bee = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(),
+                                            shipped().mobIndex("bee"), Rarity::Common, kCentre,
+                                            0.0, sim.rng);
+    CHECK_NEAR(sim.world.get<MobType>(bee).sizeJitter, 1.0, 1e-12);
+}
+
+// ---------------------------------------------------------------------------
+// Nests
+// ---------------------------------------------------------------------------
+
+TEST(a_nest_places_its_initial_escorts) {
+    Sim sim;
+    const std::uint16_t hole = shipped().mobIndex("ant_hole");
+    const MobConfig& config = shipped().mob(hole);
+    CHECK(config.initialSpawns.size() == std::size_t(6));
+
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), hole,
+                                             Rarity::Common, kCentre, 0.0, sim.rng);
+    CHECK(nest != NULL_ENTITY);
+    CHECK_EQ(sim.mobCount(), 1 + static_cast<int>(config.initialSpawns.size()));
+    CHECK(sim.world.has<NestWaves>(nest));
+    // The nest itself is still addressable after spawning six escorts, which is
+    // the archetype-relocation trap this ordering exists to avoid.
+    CHECK_EQ(sim.world.get<MobType>(nest).configIndex, hole);
+}
+
+TEST(a_nest_sends_its_waves_in_order_and_holds_at_the_last) {
+    Sim sim;
+    const std::uint16_t hole = shipped().mobIndex("ant_hole");
+    const std::size_t waveCount = shipped().mob(hole).spawnWaves.size();
+    CHECK(waveCount > 0);
+
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), hole,
+                                             Rarity::Common, kCentre, 0.0, sim.rng);
+    const std::vector<Vec2> players{kCentre};
+    const int afterInitial = sim.mobCount();
+
+    // Well short of the interval: nothing yet.
+    sim.now = kNestWaveIntervalMillis - 1.0;
+    sim.tick(players);
+    CHECK_EQ(sim.world.get<NestWaves>(nest).nextWave, 0);
+
+    sim.now = kNestWaveIntervalMillis + 1.0;
+    sim.tick(players);
+    CHECK_EQ(sim.world.get<NestWaves>(nest).nextWave, 1);
+    CHECK(sim.mobCount() > afterInitial);
+
+    // Run past the end of the list; the index holds at the last wave rather
+    // than falling off it, and the nest keeps producing. The escorts are
+    // cleared between waves because a nest at its child cap deliberately skips
+    // a wave rather than advancing past one it never sent.
+    for (std::size_t i = 0; i < waveCount + 3; ++i) {
+        const std::vector<Entity> escorts = sim.world.get<NestWaves>(nest).children;
+        for (const Entity escort : escorts) sim.world.destroy(escort);
+        sim.now += kNestWaveIntervalMillis + 1.0;
+        sim.tick(players);
+    }
+    CHECK_EQ(sim.world.get<NestWaves>(nest).nextWave, static_cast<std::uint16_t>(waveCount - 1));
+    CHECK(static_cast<int>(sim.world.get<NestWaves>(nest).children.size()) <= kMaxNestChildren);
+}
+
+TEST(a_periodic_nest_holds_its_escort_cap_and_expires_them) {
+    Sim sim;
+    const std::uint16_t queen = shipped().mobIndex("queen_ant");
+    const PeriodicSpawnSpec& spec = shipped().mob(queen).periodicSpawn;
+    CHECK(spec.present);
+    CHECK(spec.maxAlive > 0);
+    CHECK(spec.lifetimeMillis > 0);
+
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), queen,
+                                             Rarity::Rare, kCentre, 0.0, sim.rng);
+    CHECK(sim.world.has<Spawner>(nest));
+    const std::vector<Vec2> players{kCentre};
+
+    // Long enough for many intervals; the cap must hold regardless.
+    for (int i = 0; i < 1500; ++i) sim.tick(players);
+    const int live = static_cast<int>(sim.world.get<Spawner>(nest).children.size());
+    CHECK(live <= spec.maxAlive);
+    CHECK(live > 0);
+
+    // Escorts carry a lifetime, and it is this system that runs it down.
+    Query<Pet> pets{sim.world};
+    CHECK_EQ(pets.count(), std::size_t(0));
+    Query<AmbientMob, Lifetime> timed{sim.world};
+    CHECK(timed.count() > 0);
+}
+
+TEST(a_dead_nest_stops_producing) {
+    Sim sim;
+    const std::uint16_t queen = shipped().mobIndex("queen_ant");
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), queen,
+                                             Rarity::Rare, kCentre, 0.0, sim.rng);
+    sim.world.add<Dead>(nest, Dead{NULL_ENTITY});
+
+    const std::vector<Vec2> players{kCentre};
+    const int before = sim.mobCount();
+    for (int i = 0; i < 200; ++i) sim.tick(players);
+    // The ambient roll keeps working, but the corpse spawned none of it: its
+    // own escort list never grew.
+    CHECK_EQ(sim.world.get<Spawner>(nest).children.size(), std::size_t(0));
+    CHECK(sim.mobCount() >= before);
+}
+
+// ---------------------------------------------------------------------------
+// Drop tables
+// ---------------------------------------------------------------------------
+
+TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
+    DropTables tables;
+    tables.link(shipped());
+    // Every id in the table is one the content defines. A line that does not
+    // resolve is a data bug, not something to discover at runtime.
+    if (!tables.unresolved().empty()) {
+        std::printf("    (unresolved: %s)\n", tables.unresolved().front().c_str());
+    }
+    CHECK(tables.unresolved().empty());
+
+    CHECK_EQ(tables.forMob(shipped().mobIndex("bee")).size(), std::size_t(3));
+    CHECK_EQ(tables.forMob(shipped().mobIndex("starfish")).size(), std::size_t(1));
+    // A mob with no table drops nothing, and so does an index off the end.
+    CHECK(tables.forMob(shipped().mobIndex("dust")).empty());
+    CHECK(tables.forMob(kInvalidIndex).empty());
+
+    CHECK(tables.linkedTo(shipped()));
+    tables.link(shipped());   // idempotent
+    CHECK(tables.unresolved().empty());
+}
+
+TEST(drop_rarity_moves_at_most_one_tier_and_luck_raises_the_upgrade_rate) {
+    Rng rng(31337);
+    int upgradesWithoutLuck = 0;
+    int upgradesWithLuck = 0;
+    constexpr int kSamples = 40000;
+
+    for (int i = 0; i < kSamples; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, 0, 0.0, rng);
+        const int delta = rarityIndex(r) - rarityIndex(Rarity::Rare);
+        CHECK(delta >= -1 && delta <= 1);
+        if (delta > 0) ++upgradesWithoutLuck;
+    }
+    for (int i = 0; i < kSamples; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, 0, 2.0, rng);
+        if (rarityIndex(r) > rarityIndex(Rarity::Rare)) ++upgradesWithLuck;
+    }
+    CHECK(upgradesWithoutLuck > 0);
+    CHECK(upgradesWithLuck > upgradesWithoutLuck);
+
+    // The entry offset shifts the whole roll up before the tier drift.
+    int atLeastEpic = 0;
+    for (int i = 0; i < 2000; ++i) {
+        if (rarityIndex(LootSystem::rollDropRarity(Rarity::Rare, 1, 0.0, rng)) >=
+            rarityIndex(Rarity::Epic)) {
+            ++atLeastEpic;
+        }
+    }
+    CHECK(atLeastEpic > 0);
+}
+
+TEST(drop_rarity_saturates_at_both_ends_of_the_ladder) {
+    Rng rng(5);
+    for (int i = 0; i < 2000; ++i) {
+        // Common cannot be downgraded, so a common mob never drops below it.
+        CHECK(rarityIndex(LootSystem::rollDropRarity(Rarity::Common, 0, 0.0, rng)) >= 0);
+        // Apex cannot be upgraded, and stacked luck must not push past the top.
+        CHECK(rarityIndex(LootSystem::rollDropRarity(Rarity::Apex, 0, 10.0, rng)) <=
+              rarityIndex(Rarity::Apex));
+        // A wild offset is clamped rather than read off the end of the table.
+        CHECK(rarityIndex(LootSystem::rollDropRarity(Rarity::Common, 99, 0.0, rng)) <
+              kRarityCount);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Loot: drops, eligibility, pickup, expiry
+// ---------------------------------------------------------------------------
+
+TEST(a_killed_mob_drops_from_its_own_table) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(11);
+
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const std::uint16_t starfishPetal = shipped().petalIndex("starfish");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+
+    for (int i = 0; i < 40; ++i) {
+        makeCorpse(world, starfish, Rarity::Uncommon, kCentre, player, {player});
+    }
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::vector<Entity> drops = liveDrops(world);
+    // starfish drops exactly one starfish petal, always.
+    CHECK_EQ(drops.size(), std::size_t(40));
+    for (const Entity drop : drops) {
+        const DropItem& item = world.get<DropItem>(drop);
+        CHECK_EQ(item.configIndex, starfishPetal);
+        // Reserved for the one player who fought it.
+        CHECK_EQ(item.eligible.size(), std::size_t(1));
+        CHECK_EQ(item.eligible.front(), player);
+        CHECK_NEAR(item.freeForAllAtMillis, 1000.0 + kDropReservationSeconds * 1000.0, 1e-9);
+        CHECK(distance(world.get<Transform>(drop).position, kCentre) <= kDropScatterRadius + 1e-9);
+        CHECK(world.has<DropTag>(drop));
+        CHECK_EQ(world.get<Replicated>(drop).kind, net::EntityKind::Drop);
+    }
+}
+
+TEST(a_mob_pays_out_exactly_once_however_long_its_corpse_lingers) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(12);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    makeCorpse(world, shipped().mobIndex("starfish"), Rarity::Common, kCentre, player, {player});
+
+    loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+    commands.flush();
+    const std::size_t first = liveDrops(world).size();
+    CHECK_EQ(first, std::size_t(1));
+
+    for (int i = 0; i < 5; ++i) {
+        loot.run(world, grid, shipped(), rng, 40.0 * i, net::kTickSeconds, commands, events);
+        commands.flush();
+    }
+    CHECK_EQ(liveDrops(world).size(), first);
+}
+
+TEST(a_pet_dying_is_not_loot) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(13);
+
+    const Entity owner = makePlayer(world, kCentre);
+    const Entity pet = makeCorpse(world, shipped().mobIndex("starfish"), Rarity::Common, kCentre,
+                                  owner, {owner});
+    world.add<Pet>(pet, Pet{owner, 0});
+
+    loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+    commands.flush();
+    CHECK_EQ(liveDrops(world).size(), std::size_t(0));
+}
+
+TEST(no_mob_produces_more_drops_than_the_cap) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(14);
+
+    // glitch_flower can roll 2 + 1 + 1 + 1 = five items from its table.
+    const std::uint16_t flower = shipped().mobIndex("glitch_flower");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+
+    int mostSeen = 0;
+    for (int i = 0; i < 300; ++i) {
+        makeCorpse(world, flower, Rarity::Common, kCentre, player, {player});
+        loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+        commands.flush();
+        const int produced = static_cast<int>(liveDrops(world).size());
+        mostSeen = std::max(mostSeen, produced);
+        CHECK(produced <= kMaxDropsPerMob);
+        for (const Entity drop : liveDrops(world)) world.destroy(drop);
+    }
+    // If the cap never bound, the test proved nothing.
+    CHECK_EQ(mostSeen, kMaxDropsPerMob);
+}
+
+TEST(a_non_contributor_must_wait_out_the_reservation) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(15);
+
+    const Entity fighter = makePlayer(world, kCentre + Vec2{4000, 0}, 0.0, 1);
+    const Entity bystander = makePlayer(world, kCentre, 0.0, 2);
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Rare, kCentre,
+                                       {fighter}, 0.0);
+    CHECK(drop != NULL_ENTITY);
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 100.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    CHECK(world.isAlive(drop));
+
+    // Once the window lapses it is anyone's.
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, kDropReservationSeconds * 1000.0 + 1.0, 0.0, commands,
+             events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK_EQ(loot.pickups().front().player, bystander);
+    CHECK_EQ(loot.pickups().front().petalIndex, shipped().petalIndex("rose"));
+    CHECK_EQ(loot.pickups().front().rarity, Rarity::Rare);
+    CHECK(!world.isAlive(drop));
+}
+
+TEST(a_contributor_may_take_a_reserved_drop_at_once) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(16);
+    NetIdAllocator ids;
+    loot.netIds = &ids;
+
+    const Entity fighter = makePlayer(world, kCentre, 0.0, 7);
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common,
+                                       kCentre, {fighter}, 0.0);
+    // A wired allocator is what makes a drop visible to a client at all.
+    CHECK(world.has<NetId>(drop));
+    const std::uint32_t dropNetId = world.get<NetId>(drop).value;
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 10.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK_EQ(loot.pickups().front().player, fighter);
+    // The event carries both ids so the client can fly the item to the flower.
+    CHECK_EQ(events.events().size(), std::size_t(1));
+    if (!events.events().empty()) {
+        CHECK_EQ(events.events().front().kind, net::EventKind::PickedUp);
+        CHECK_EQ(events.events().front().netId, dropNetId);
+        CHECK_EQ(events.events().front().otherNetId, 7u);
+    }
+}
+
+TEST(an_unreserved_drop_is_free_for_anyone) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(17);
+
+    const Entity passerby = makePlayer(world, kCentre);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, {}, 0.0);
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK_EQ(loot.pickups().front().player, passerby);
+}
+
+TEST(two_players_cannot_take_the_same_drop) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(18);
+
+    makePlayer(world, kCentre, 0.0, 1);
+    makePlayer(world, kCentre, 0.0, 2);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, {}, 0.0);
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK_EQ(liveDrops(world).size(), std::size_t(0));
+}
+
+TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(19);
+
+    const Vec2 dropAt = kCentre + Vec2{300.0, 0.0};
+    const Entity player = makePlayer(world, kCentre, 0.0);
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, dropAt,
+                                       {}, 0.0);
+    CHECK(300.0 > kDropPickupRadius);
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    // Out of reach and untouched: nothing dragged it toward the player.
+    CHECK(world.get<Transform>(drop).position == dropAt);
+
+    world.get<PlayerModifiers>(player).magnetism = 400.0;
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    // Still where it was dropped at the moment it was claimed -- the destroy is
+    // deferred, so this reads the drop as the pickup left it.
+    CHECK(world.get<Transform>(drop).position == dropAt);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK(!world.isAlive(drop));
+}
+
+TEST(a_dead_player_picks_nothing_up) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(20);
+
+    const Entity player = makePlayer(world, kCentre);
+    world.get<Health>(player).current = 0.0;
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre, {}, 0.0);
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+}
+
+TEST(drops_expire) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(21);
+
+    const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre,
+                                       {}, 0.0);
+    CHECK_NEAR(world.get<Lifetime>(drop).remainingSeconds, kDropLifetimeSeconds, 1e-12);
+
+    double now = 0.0;
+    const int ticks = static_cast<int>(kDropLifetimeSeconds * net::kTicksPerSecond) - 2;
+    for (int i = 0; i < ticks; ++i) {
+        loot.run(world, grid, shipped(), rng, now, net::kTickSeconds, commands, events);
+        commands.flush();
+        now += net::kTickMillis;
+    }
+    CHECK(world.isAlive(drop));
+
+    for (int i = 0; i < 4; ++i) {
+        loot.run(world, grid, shipped(), rng, now, net::kTickSeconds, commands, events);
+        commands.flush();
+        now += net::kTickMillis;
+    }
+    CHECK(!world.isAlive(drop));
+}
+
+TEST(a_drop_survives_the_tick_it_was_created_in) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(22);
+
+    // The player is standing on the corpse, with magnetism to spare.
+    const Entity player = makePlayer(world, kCentre, 500.0, 1);
+    makeCorpse(world, shipped().mobIndex("starfish"), Rarity::Common, kCentre, player, {player});
+    rebuildGrid(world, grid);
+
+    loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+    commands.flush();
+    // Nothing picked up yet: the item has to reach a client before it can be
+    // taken, or the pickup effect has nothing to animate.
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    CHECK_EQ(liveDrops(world).size(), std::size_t(1));
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 40.0, net::kTickSeconds, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+}
+
+TEST(the_pickup_callback_sees_what_the_list_sees) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(23);
+
+    std::vector<LootSystem::Pickup> seen;
+    loot.onPickup = [&](const LootSystem::Pickup& p) { seen.push_back(p); };
+
+    const Entity player = makePlayer(world, kCentre);
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Epic, kCentre, {}, 0.0);
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
+    commands.flush();
+
+    CHECK_EQ(seen.size(), std::size_t(1));
+    CHECK_EQ(seen.front().player, player);
+    CHECK_EQ(seen.front().rarity, Rarity::Epic);
+    CHECK_EQ(loot.pickups().size(), seen.size());
+
+    // The list is per-run, not cumulative: a runtime that drains it every tick
+    // must never be handed yesterday's pickups again.
+    loot.run(world, grid, shipped(), rng, 40.0, 0.0, commands, events);
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+}
+
+TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(24);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity turret = world.create();   // something that damages but is not a player
+    world.add<MobTag>(turret);
+
+    const Entity corpse = makeCorpse(world, shipped().mobIndex("starfish"), Rarity::Common, kCentre,
+                                     player, {player, turret});
+    (void)corpse;
+    loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::vector<Entity> drops = liveDrops(world);
+    CHECK_EQ(drops.size(), std::size_t(1));
+    CHECK_EQ(world.get<DropItem>(drops.front()).eligible.size(), std::size_t(1));
+    CHECK_EQ(world.get<DropItem>(drops.front()).eligible.front(), player);
+}
