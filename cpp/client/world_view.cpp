@@ -1,6 +1,7 @@
 #include "client/world_view.h"
 
 #include <chrono>
+#include <cmath>
 
 namespace flr {
 
@@ -54,12 +55,15 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         double radius;
         double healthFraction;
         std::uint8_t state;
+        std::uint8_t faceFlags;
+        std::uint8_t equipFlags;
+        std::uint32_t renderFlags;
         std::string name;
     };
     std::vector<Spawn> spawns;
     spawns.reserve(spawnCount);
     for (std::uint16_t i = 0; i < spawnCount; ++i) {
-        Spawn s;
+        Spawn s{};
         s.netId = reader.u32();
         s.kind = static_cast<net::EntityKind>(reader.u8());
         s.typeIndex = reader.u16();
@@ -70,6 +74,11 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         s.radius = reader.f32();
         s.healthFraction = reader.unitShort();
         s.state = reader.u8();
+        if (s.kind == net::EntityKind::Player) {
+            s.faceFlags = reader.u8();
+            s.equipFlags = reader.u8();
+            s.renderFlags = reader.u32();
+        }
         if (s.flags & net::SpawnHasName) s.name = reader.str();
         spawns.push_back(std::move(s));
         if (!reader.ok()) return false;
@@ -83,6 +92,9 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         double healthFraction;
         std::uint8_t state;
         double radius;
+        std::uint8_t faceFlags;
+        std::uint8_t equipFlags;
+        std::uint32_t renderFlags;
     };
     std::vector<Update> updates;
     updates.reserve(updateCount);
@@ -95,6 +107,11 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         if (u.mask & net::FieldHealth) u.healthFraction = reader.unitShort();
         if (u.mask & net::FieldState) u.state = reader.u8();
         if (u.mask & net::FieldSize) u.radius = reader.f32();
+        if (u.mask & net::FieldPlayerVisuals) {
+            u.faceFlags = reader.u8();
+            u.equipFlags = reader.u8();
+            u.renderFlags = reader.u32();
+        }
         updates.push_back(u);
         if (!reader.ok()) return false;
     }
@@ -151,6 +168,9 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.radius = s.radius;
         e.healthFraction = s.healthFraction;
         e.state = s.state;
+        e.faceFlags = s.faceFlags;
+        e.equipFlags = s.equipFlags;
+        e.renderFlags = s.renderFlags;
         e.fresh = true;
         if (s.flags & net::SpawnIsSelf) self_.netId = s.netId;
         entities_[s.netId] = std::move(e);
@@ -179,6 +199,11 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         if (u.mask & net::FieldHealth) e.healthFraction = u.healthFraction;
         if (u.mask & net::FieldState) e.state = u.state;
         if (u.mask & net::FieldSize) e.radius = u.radius;
+        if (u.mask & net::FieldPlayerVisuals) {
+            e.faceFlags = u.faceFlags;
+            e.equipFlags = u.equipFlags;
+            e.renderFlags = u.renderFlags;
+        }
 
         e.sampleStartMillis = previousArrivalMillis_;
         e.sampleEndMillis = lastArrivalMillis_;
@@ -212,20 +237,21 @@ void WorldView::interpolate(double nowMillis) {
         if (e.fresh || e.sampleEndMillis <= e.sampleStartMillis) {
             e.position = e.targetPosition;
             e.angle = e.targetAngle;
-            continue;
+        } else {
+            double t = (renderTime - e.sampleStartMillis) / (e.sampleEndMillis - e.sampleStartMillis);
+            // Clamping rather than extrapolating: when snapshots stop arriving the
+            // entity holds still, which reads as lag. Extrapolating instead sends
+            // it drifting through walls and then snapping back.
+            t = clamp(t, 0.0, 1.0);
+
+            e.position = {
+                lerp(e.previousPosition.x, e.targetPosition.x, t),
+                lerp(e.previousPosition.y, e.targetPosition.y, t),
+            };
+            e.angle = lerpAngle(e.previousAngle, e.targetAngle, t);
         }
-
-        double t = (renderTime - e.sampleStartMillis) / (e.sampleEndMillis - e.sampleStartMillis);
-        // Clamping rather than extrapolating: when snapshots stop arriving the
-        // entity holds still, which reads as lag. Extrapolating instead sends
-        // it drifting through walls and then snapping back.
-        t = clamp(t, 0.0, 1.0);
-
-        e.position = {
-            lerp(e.previousPosition.x, e.targetPosition.x, t),
-            lerp(e.previousPosition.y, e.targetPosition.y, t),
-        };
-        e.angle = lerpAngle(e.previousAngle, e.targetAngle, t);
+        e.eyeX += (std::cos(e.angle) * 2.0 - e.eyeX) * 0.15;
+        e.eyeY += (std::sin(e.angle) * 4.4 - e.eyeY) * 0.15;
     }
 }
 

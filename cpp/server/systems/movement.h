@@ -70,10 +70,6 @@ inline constexpr double kMaxCollisionRadius = kTileSize * 4.0;
 /// invisible and makes the push-out well defined for every body.
 inline constexpr double kMinCollisionRadius = 0.5;
 
-/// Floor on Body::mass when dividing an impulse by it. A zero or NaN mass is
-/// a data bug; it must not become an infinite velocity.
-inline constexpr double kMinKnockbackMass = 0.05;
-
 // ---------------------------------------------------------------------------
 // The step
 // ---------------------------------------------------------------------------

@@ -51,8 +51,12 @@ void panel(Canvas&, Rect r, double alpha = 1.0);
 
 struct ButtonStyle {
     std::uint32_t fill = kAccent;
+    /// 0xffffffff derives the TypeScript gardn outline as fill * 0.8.
+    std::uint32_t outline = 0xFFFFFFFFu;
+    double outlineWidth = 5.0;
     double radius = kButtonRadius;
     double textSize = kBodySize;
+    double textStrokeWidth = 3.0;
     bool enabled = true;
 };
 
@@ -75,8 +79,19 @@ void scrim(Canvas&, double alpha = 0.45);
 
 /// A text field's box and contents, with a blinking caret when focused.
 /// `masked` renders the value as bullets, for passwords.
+struct TextFieldStyle {
+    std::uint32_t fill = kPanelDark;
+    std::uint32_t outline = kInk;
+    std::uint32_t focusedOutline = kAccent;
+    double radius = 6.0;
+    double outlineWidth = -1.0;
+    double focusedOutlineWidth = -1.0;
+    double textStrokeWidth = 0.0;
+};
+
 void textField(Canvas&, Rect r, const std::string& value, const std::string& placeholder,
-               bool focused, bool masked, double timeSeconds);
+               bool focused, bool masked, double timeSeconds,
+               const TextFieldStyle& style = {});
 
 /// True when `point` is inside `r`. Here so every screen hit-tests the same way.
 inline bool hit(Rect r, Vec2 point) { return r.contains(point); }

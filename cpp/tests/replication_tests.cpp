@@ -172,6 +172,56 @@ TEST(attack_and_defend_reach_the_client) {
     CHECK((state & net::StateAttacking) == 0);
 }
 
+TEST(player_visual_flags_round_trip_and_update_independently) {
+    Fixture f;
+    f.world.add<PlayerVisuals>(f.viewer, PlayerVisuals{
+        static_cast<std::uint8_t>(FaceDandelioned | FaceSquareEyes | FaceHasCorruption),
+        static_cast<std::uint8_t>(EquipCutter | EquipThirdEye | EquipObserver |
+                                  EquipAntennae | EquipTest1),
+        static_cast<std::uint32_t>(PlayerRenderPumpkin | PlayerRenderRobot),
+        true,
+    });
+    f.world.add<Afflictions>(f.viewer, Afflictions{1, 2000, NULL_ENTITY});
+    f.world.add<Dead>(f.viewer);
+    f.world.get<PlayerInput>(f.viewer).current.flags = net::InputDefend;
+
+    WorldView client;
+    f.tick(client, 1, 1000);
+    const RemoteEntity& first = client.entities().at(client.self().netId);
+    // Face flags combine stored effects with live poison, death and action.
+    CHECK((first.faceFlags & FacePoisoned) != 0);
+    CHECK((first.faceFlags & FaceDandelioned) != 0);
+    CHECK((first.faceFlags & FaceDeadEyes) != 0);
+    CHECK((first.faceFlags & FaceSquareEyes) != 0);
+    CHECK((first.faceFlags & FaceDefending) != 0);
+    CHECK((first.faceFlags & FaceHasCorruption) != 0);
+    CHECK_EQ(first.equipFlags, static_cast<std::uint8_t>(EquipCutter | EquipThirdEye |
+                                                          EquipObserver | EquipAntennae |
+                                                          EquipTest1));
+    CHECK_EQ(first.renderFlags, static_cast<std::uint32_t>(PlayerRenderPumpkin |
+                                                            PlayerRenderRobot |
+                                                            PlayerRenderGlitch));
+
+    // Visual updates use their own snapshot field: movement and health can
+    // remain unchanged while the renderer receives a new face/skin state.
+    PlayerVisuals& visuals = f.world.get<PlayerVisuals>(f.viewer);
+    visuals.faceFlags = FaceNone;
+    visuals.equipFlags = EquipNone;
+    visuals.renderFlags = PlayerRenderRobot;
+    visuals.glitched = false;
+    f.world.get<Afflictions>(f.viewer).poisonUntilMillis = 0;
+    f.world.get<PlayerInput>(f.viewer).current.flags = net::InputAttack;
+    f.world.remove<Dead>(f.viewer);
+    f.tick(client, 2, 1040);
+    const RemoteEntity& second = client.entities().at(client.self().netId);
+    CHECK((second.faceFlags & FaceAttacking) != 0);
+    CHECK((second.faceFlags & FaceDefending) == 0);
+    CHECK((second.faceFlags & (FacePoisoned | FaceDeadEyes | FaceDandelioned |
+                               FaceSquareEyes | FaceHasCorruption)) == 0);
+    CHECK_EQ(second.equipFlags, std::uint8_t(EquipNone));
+    CHECK_EQ(second.renderFlags, std::uint32_t(PlayerRenderRobot));
+}
+
 TEST(entities_leaving_view_are_removed) {
     Fixture f;
     const Entity mob = f.addMob({1100, 1000});

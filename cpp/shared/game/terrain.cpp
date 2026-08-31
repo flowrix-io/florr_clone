@@ -5,7 +5,10 @@
 #include <cmath>
 #include <cstdlib>
 #include <deque>
+#include <fstream>
+#include <iterator>
 #include <limits>
+#include <string>
 
 namespace flr {
 namespace {
@@ -77,6 +80,34 @@ struct NoiseSet {
 inline double ridge(double n) { return std::fabs(n - 0.5); }
 
 inline int wrapMod(int v, int m) { return ((v % m) + m) % m; }
+
+int base64Value(unsigned char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+bool decodeBase64(const std::string& encoded, std::vector<std::uint8_t>& out) {
+    out.clear();
+    out.reserve(encoded.size() * 3 / 4);
+    std::uint32_t bits = 0;
+    int bitCount = 0;
+    for (const unsigned char c : encoded) {
+        if (c == '=') break;
+        const int value = base64Value(c);
+        if (value < 0) return false;
+        bits = (bits << 6) | static_cast<std::uint32_t>(value);
+        bitCount += 6;
+        if (bitCount >= 8) {
+            bitCount -= 8;
+            out.push_back(static_cast<std::uint8_t>((bits >> bitCount) & 0xFFu));
+        }
+    }
+    return true;
+}
 
 Tile classifyGarden(int tx, int ty, const NoiseSet& n) {
     if (n.altMedium.at(tx, ty) > 0.84) return Tile::Wall;      // boulders
@@ -200,6 +231,83 @@ void Terrain::generate(std::uint64_t seed) {
     spawnTile_ = chooseGardenSpawn();
     connectAll();
     assert(isConnected());
+}
+
+bool Terrain::loadMapBundle(const std::string& path, std::string& errorOut) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        errorOut = "could not open TypeScript map bundle: " + path;
+        return false;
+    }
+    const std::string source((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    constexpr const char* kMarker = "export const MAP_TILE_RLE = \"";
+    const std::size_t beginMarker = source.find(kMarker);
+    if (beginMarker == std::string::npos) {
+        errorOut = "MAP_TILE_RLE is missing from " + path;
+        return false;
+    }
+    const std::size_t begin = beginMarker + std::char_traits<char>::length(kMarker);
+    const std::size_t end = source.find('"', begin);
+    if (end == std::string::npos) {
+        errorOut = "MAP_TILE_RLE is unterminated in " + path;
+        return false;
+    }
+
+    std::vector<std::uint8_t> compressed;
+    if (!decodeBase64(source.substr(begin, end - begin), compressed)) {
+        errorOut = "MAP_TILE_RLE is not valid base64 in " + path;
+        return false;
+    }
+
+    std::vector<std::uint8_t> decoded;
+    decoded.reserve(kTotalTiles);
+    std::size_t at = 0;
+    while (at < compressed.size()) {
+        const std::uint8_t header = compressed[at++];
+        std::size_t count = header >> 1;
+        if (header & 1u) {
+            if (at + 2 > compressed.size()) {
+                errorOut = "MAP_TILE_RLE has a truncated extended run";
+                return false;
+            }
+            count += (static_cast<std::size_t>(compressed[at]) << 8) |
+                     static_cast<std::size_t>(compressed[at + 1]);
+            at += 2;
+        }
+        if (at >= compressed.size() || count == 0 ||
+            decoded.size() + count > static_cast<std::size_t>(kTotalTiles)) {
+            errorOut = "MAP_TILE_RLE contains an invalid run";
+            return false;
+        }
+        const std::uint8_t tile = compressed[at++];
+        if (tile > static_cast<std::uint8_t>(Tile::Block)) {
+            errorOut = "MAP_TILE_RLE contains an unsupported tile id";
+            return false;
+        }
+        decoded.insert(decoded.end(), count, tile);
+    }
+    if (decoded.size() != static_cast<std::size_t>(kTotalTiles)) {
+        errorOut = "MAP_TILE_RLE decoded to " + std::to_string(decoded.size()) +
+                   " tiles; expected " + std::to_string(kTotalTiles);
+        return false;
+    }
+    if (!setTiles(decoded)) {
+        errorOut = "could not install decoded TypeScript wall grid";
+        return false;
+    }
+    seed_ = 0;
+    return true;
+}
+
+bool Terrain::setTiles(const std::vector<std::uint8_t>& tiles) {
+    if (tiles.size() != static_cast<std::size_t>(kTotalTiles)) return false;
+    for (const std::uint8_t tile : tiles) {
+        if (tile > static_cast<std::uint8_t>(Tile::Block)) return false;
+    }
+    tiles_ = tiles;
+    spawnTile_ = chooseGardenSpawn();
+    return !tileBlocks(atTile(spawnTile_ % kAxis, spawnTile_ / kAxis));
 }
 
 void Terrain::generateSections(Rng& rng) {

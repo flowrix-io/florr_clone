@@ -118,7 +118,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
 
     rng_.reseed(config.worldSeed);
     terrain_ = std::make_unique<Terrain>();
-    terrain_->generate(config.worldSeed);
+    if (!terrain_->loadMapBundle(config.dataDir + "/map_bundle.ts", errorOut)) return false;
 
     movement_ = std::make_unique<MovementSystem>();
     // The AI caches queries against one world and wanders from its own
@@ -641,6 +641,10 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
     w.u32(world_.get<NetId>(entity).value);
     w.position(world_.get<Transform>(entity).position);
     w.u32(tick_);
+    // This is the exact decoded TypeScript wall grid. Forty kilobytes once per
+    // join is comfortably below the frame cap and cannot drift from collision.
+    w.u16(static_cast<std::uint16_t>(terrain_->tileCount()));
+    w.raw(terrain_->tiles(), terrain_->tileCount());
     connection.send(w);
 
     broadcastChat(net::ChatChannel::System, "", session.username + " joined");
@@ -816,6 +820,7 @@ Entity GameServer::spawnPlayer(Session& session) {
     world_.add<PlayerInput>(entity);
     world_.add<PlayerLocation>(entity);
     world_.add<PlayerModifiers>(entity);
+    world_.add<PlayerVisuals>(entity);
     world_.add<Loadout>(entity);
     world_.add<PetalRing>(entity);
     world_.add<HitCooldowns>(entity);
@@ -846,6 +851,10 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
     state.totalXp = record.totalXp;
     state.level = progress.level;
     state.stars = record.stars;
+
+    // Cosmetic skin bits are account data. The temporary glitch bit stays on
+    // PlayerVisuals and is intentionally not reset by a loadout edit.
+    world_.ensure<PlayerVisuals>(entity).renderFlags = record.renderFlags;
 
     Body& body = world_.ensure<Body>(entity);
     body.radius = playerRadiusForLevel(progress.level);

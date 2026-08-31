@@ -48,6 +48,9 @@ public:
         double healthFraction = -1;   ///< -1 so the first update always sends it
         double radius = -1;
         std::uint8_t state = 0xFF;    ///< 0xFF is not a valid state, forcing a first send
+        std::uint8_t faceFlags = 0xFF;
+        std::uint8_t equipFlags = 0xFF;
+        std::uint32_t renderFlags = 0xFFFFFFFFu;
         bool seenThisTick = false;
     };
 
@@ -171,5 +174,16 @@ private:
 /// Derives the EntityState bits the client draws from. Called once per
 /// replicated entity per tick.
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis);
+
+/// The player-specific flag families that define the flower sprite. Keeping
+/// these separate from EntityState lets ordinary entities retain their compact
+/// generic state while players track the TypeScript renderer exactly.
+struct PlayerVisualState {
+    std::uint8_t faceFlags = FaceNone;
+    std::uint8_t equipFlags = EquipNone;
+    std::uint32_t renderFlags = PlayerRenderNone;
+};
+
+PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis);
 
 } // namespace flr

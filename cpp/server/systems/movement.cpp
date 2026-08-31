@@ -63,19 +63,24 @@ Vec2 clampToWorld(Vec2 p, double sanitizedRadius) {
             clamp(p.y, sanitizedRadius, kWorldSize - sanitizedRadius)};
 }
 
-/// Drains an entity's accumulated knockback into a velocity delta.
+/// Drains the pending positional offset written by combat.
 ///
-/// Applied AFTER the tick's friction rather than before it, so a hit lands at
-/// full strength on the tick it happened and only then starts bleeding off.
-/// Folding it in first would quietly eat a third of every shove.
-Vec2 takeKnockback(World& world, Entity e, double mass) {
+/// TypeScript's mob knockback is not velocity: it is `x += knockbackX`, then
+/// `y += knockbackY` on the next movement step. Clearing it here makes the
+/// effect one-shot and lets the normal movement velocity continue unchanged.
+Vec2 takeKnockback(World& world, Entity e) {
     Knockback* kb = world.tryGet<Knockback>(e);
     if (!kb) return {0, 0};
     const Vec2 impulse = kb->impulse;
     kb->impulse = {0, 0};
     if (!std::isfinite(impulse.x) || !std::isfinite(impulse.y)) return {0, 0};
-    const double m = mass > kMinKnockbackMass ? mass : kMinKnockbackMass;
-    return impulse / m;
+    return impulse;
+}
+
+void applyPendingKnockback(World& world, Entity e, Transform& transform) {
+    const Vec2 displacement = takeKnockback(world, e);
+    if (!std::isfinite(displacement.x) || !std::isfinite(displacement.y)) return;
+    transform.position += displacement;
 }
 
 /// The velocity to store after a step.
@@ -210,7 +215,8 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         integrateVelocity(state, desiredVelocity(input.current.moveAngle,
                                                  input.current.moveStrength, maxSpeed), dt);
 
-        Vec2 velocity = sanitizeMovementVelocity(state.velocity + takeKnockback(world, e, body.mass));
+        applyPendingKnockback(world, e, transform);
+        const Vec2 velocity = sanitizeMovementVelocity(state.velocity);
         const StepOutcome out = stepCollide(terrain, transform.position, velocity, body.radius, dt);
         motion.velocity = velocityAfterStep(velocity, out, dt, 1.0);
     });
@@ -219,7 +225,8 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
 void MovementSystem::moveMobs(World& world, const Terrain& terrain,
                               double nowMillis, double dt) {
     queries_->mobs.each([&](Entity e, MobTag&, Transform& transform, Motion& motion, Body& body) {
-        Vec2 velocity = sanitizeMovementVelocity(motion.velocity + takeKnockback(world, e, body.mass));
+        applyPendingKnockback(world, e, transform);
+        const Vec2 velocity = sanitizeMovementVelocity(motion.velocity);
 
         // Unlike a player's, a mob's slow and water penalty scale the DISPLACEMENT
         // and are not written back into Motion. The AI publishes the velocity it
@@ -239,9 +246,8 @@ void MovementSystem::moveMobs(World& world, const Terrain& terrain,
 
         // No friction is applied here. The AI phase runs the shared
         // integrateVelocity() against its desired heading and so owns a mob's
-        // acceleration and its coast-down -- including how a knockback still
-        // sitting in the velocity bleeds off. A second decay in this phase
-        // would compound with that one and cost every mob 58% of its speed.
+        // acceleration and coast-down. A TypeScript knockback is positional,
+        // so it does not alter this stored velocity at all.
         motion.velocity = velocityAfterStep(attempted, out, dt, envScale);
     });
 }

@@ -117,15 +117,6 @@ struct PetalModifiers {
     bool any = false;   ///< set when the JSON carried a playerModifiers block
 };
 
-/// Behaviour a petal switches on that is not expressible as a number.
-enum EquipFlag : std::uint8_t {
-    EquipNone     = 0,
-    EquipCutter   = 1 << 0,
-    EquipThirdEye = 1 << 1,
-    EquipAntennae = 1 << 2,
-    EquipObserver = 1 << 3,
-};
-
 // ---------------------------------------------------------------------------
 // MobConfig
 // ---------------------------------------------------------------------------
@@ -216,7 +207,9 @@ struct PetalConfig {
 
     PetalModifiers modifiers;
 
-    double knockback = 0;
+    /// Mirrors the web game's default: petals without an explicit knockback
+    /// field still push for 5.  Zero is reserved for petals that opt out.
+    double knockback = 5;
     ProjectileSpec projectile;
     double range = 0;           ///< reach for the petals that have one
     std::uint8_t equipFlags = EquipNone;

@@ -23,7 +23,7 @@ void usage(const char* program) {
         "  --port <number>    listen port (default 4242)\n"
         "  --data <dir>       directory holding mobs.json and petals.json (default data)\n"
         "  --db <path>        account database (default inventory.json)\n"
-        "  --seed <number>    world generation seed\n"
+        "  --seed <number>    simulation random seed\n"
         "  --max-players <n>  connection limit\n",
         program);
 }

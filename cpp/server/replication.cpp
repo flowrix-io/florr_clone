@@ -25,6 +25,29 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
     return state;
 }
 
+PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis) {
+    PlayerVisualState out;
+    if (!world.has<PlayerTag>(e)) return out;
+
+    if (const PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(e)) {
+        out.faceFlags = visuals->faceFlags;
+        out.equipFlags = visuals->equipFlags;
+        out.renderFlags = visuals->renderFlags;
+        if (visuals->glitched) out.renderFlags |= PlayerRenderGlitch;
+    }
+    if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
+        if (afflictions->poisoned(nowMillis)) out.faceFlags |= FacePoisoned;
+    }
+    if (const PlayerInput* input = world.tryGet<PlayerInput>(e)) {
+        // The ring itself gives defend precedence when both keys are held, so
+        // the face must make the same choice rather than advertising a lunge.
+        if (input->current.defending()) out.faceFlags |= FaceDefending;
+        else if (input->current.attacking()) out.faceFlags |= FaceAttacking;
+    }
+    if (world.has<Dead>(e)) out.faceFlags |= FaceDeadEyes;
+    return out;
+}
+
 void Replicator::build(World& world, Entity viewer, ClientView& view,
                        const Frame& frame, ByteWriter& out) {
     const Transform* viewerTransform = world.tryGet<Transform>(viewer);
@@ -145,6 +168,13 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         const Health* spawnHealth = world.tryGet<Health>(candidate.entity);
         out.unitShort(spawnHealth ? spawnHealth->fraction() : 1.0);
         out.u8(computeEntityState(world, candidate.entity, frame.nowMillis));
+        const PlayerVisualState visuals =
+            computePlayerVisuals(world, candidate.entity, frame.nowMillis);
+        if (info.kind == net::EntityKind::Player) {
+            out.u8(visuals.faceFlags);
+            out.u8(visuals.equipFlags);
+            out.u32(visuals.renderFlags);
+        }
         if (flags & net::SpawnHasName) out.str(account->username);
         ++spawnCount;
 
@@ -157,6 +187,9 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.seenThisTick = true;
         tracked.healthFraction = spawnHealth ? spawnHealth->fraction() : 1.0;
         tracked.state = computeEntityState(world, candidate.entity, frame.nowMillis);
+        tracked.faceFlags = visuals.faceFlags;
+        tracked.equipFlags = visuals.equipFlags;
+        tracked.renderFlags = visuals.renderFlags;
         view.tracked.emplace(candidate.netId, tracked);
     }
     out.patchU16(spawnCountAt, spawnCount);
@@ -170,6 +203,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         const Health* health = world.tryGet<Health>(candidate.entity);
         const Body* body = world.tryGet<Body>(candidate.entity);
         const std::uint8_t state = computeEntityState(world, candidate.entity, frame.nowMillis);
+        const PlayerVisualState visuals =
+            computePlayerVisuals(world, candidate.entity, frame.nowMillis);
 
         std::uint8_t mask = 0;
         if (distanceSq(transform.position, tracked.position) >
@@ -186,6 +221,12 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         if (state != tracked.state) mask |= net::FieldState;
         if (body && std::fabs(body->radius - tracked.radius) > tolerances.radius) {
             mask |= net::FieldSize;
+        }
+        if (world.get<Replicated>(candidate.entity).kind == net::EntityKind::Player &&
+            (visuals.faceFlags != tracked.faceFlags ||
+             visuals.equipFlags != tracked.equipFlags ||
+             visuals.renderFlags != tracked.renderFlags)) {
+            mask |= net::FieldPlayerVisuals;
         }
         if (mask == 0) continue;
 
@@ -210,6 +251,14 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         if (mask & net::FieldSize) {
             out.f32(static_cast<float>(body->radius));
             tracked.radius = body->radius;
+        }
+        if (mask & net::FieldPlayerVisuals) {
+            out.u8(visuals.faceFlags);
+            out.u8(visuals.equipFlags);
+            out.u32(visuals.renderFlags);
+            tracked.faceFlags = visuals.faceFlags;
+            tracked.equipFlags = visuals.equipFlags;
+            tracked.renderFlags = visuals.renderFlags;
         }
         ++updateCount;
     }

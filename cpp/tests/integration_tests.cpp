@@ -30,6 +30,13 @@ std::string tempPath(const char* name) {
 /// project root, and from ctest, and all three must work.
 const std::string& dataDir() {
     static const std::string resolved = [] {
+#ifdef FLR_TEST_DATA_DIR
+        {
+            const std::string staged = FLR_TEST_DATA_DIR;
+            std::ifstream mapProbe(staged + "/map_bundle.ts", std::ios::binary);
+            if (mapProbe) return staged;
+        }
+#endif
         const std::string here = __FILE__;
         const std::size_t slash = here.find_last_of('/');
         const std::string tests = slash == std::string::npos ? std::string(".") : here.substr(0, slash);
@@ -132,6 +139,12 @@ TEST(a_client_connects_registers_and_joins) {
 
     client.joinGame(1280, 720);
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    // Rendering uses this local copy, so it must be byte-for-byte the server
+    // terrain that movement and collisions are using.
+    CHECK(std::equal(client.terrain().tiles(),
+                     client.terrain().tiles() + client.terrain().tileCount(),
+                     h.server.terrain().tiles()));
 
     CHECK(h.stepUntil({&client}, [&] { return client.view().self().netId != 0; }));
     CHECK(client.view().self().maxHealth > 0);
@@ -387,7 +400,9 @@ TEST(mobs_spawn_and_are_replicated_to_a_player) {
     CHECK(connectClient(h, client));
     client.requestRegister("erin", "password5");
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
-    client.joinGame(1280, 720);
+    // Use the largest accepted viewport so newly spawned ring mobs enter the
+    // replication prefetch region without relying on random AI movement.
+    client.joinGame(2600, 2600);
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
 
     const bool sawMobs = h.stepUntil({&client}, [&] {

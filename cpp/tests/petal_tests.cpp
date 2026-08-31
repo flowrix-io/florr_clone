@@ -29,6 +29,7 @@ const char* const kPetalsJson = R"JSON({
   "peas":     {"name":"Peas","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":3,"spreadAngle":0.5,"speed":800,"distance":1000},"color":"#00FF00"},
   "lucky":    {"name":"Lucky","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"luck":2,"speed":1.5,"magnetism":50},"color":"#FFD700"},
   "reacher":  {"name":"Reacher","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"range":1.5},"color":"#00FFFF"},
+  "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
   "summoner": {"name":"Summoner","damage":1,"health":4,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petMobRarity":"common","petCount":2,"color":"#AA00AA"},
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"}
 })JSON";
@@ -256,12 +257,14 @@ TEST(attacking_and_defending_move_the_ring_smoothly) {
     rig.equip(0, "basic");
     rig.tick();
 
-    const double rest = kPlayerBaseRadius * kPetalOrbitRest;
+    const double rest = kPetalOrbitRestRadius;
+    CHECK_NEAR(rest, 60.0, 1e-9);
     CHECK_NEAR(rig.ring().radius, rest, 1e-9);
 
     rig.setFlags(net::InputAttack);
     rig.tick();
-    const double attackTarget = kPlayerBaseRadius * kPetalOrbitAttack;
+    const double attackTarget = kPetalOrbitRestRadius * kPetalOrbitAttackExtension;
+    CHECK_NEAR(attackTarget, 120.0, 1e-9);
     CHECK_NEAR(rig.ring().targetRadius, attackTarget, 1e-9);
     // Eased: one tick moves toward the target without arriving at it.
     CHECK(rig.ring().radius > rest);
@@ -276,7 +279,8 @@ TEST(attacking_and_defending_move_the_ring_smoothly) {
 
     rig.setFlags(net::InputDefend);
     rig.tick();
-    const double defendTarget = kPlayerBaseRadius * kPetalOrbitDefend;
+    const double defendTarget = kPetalOrbitRestRadius * kPetalOrbitDefendExtension;
+    CHECK_NEAR(defendTarget, 42.0, 1e-9);
     CHECK_NEAR(rig.ring().targetRadius, defendTarget, 1e-9);
     CHECK(rig.ring().radius < attackTarget);
     CHECK(rig.ring().radius > defendTarget);
@@ -294,9 +298,23 @@ TEST(a_range_modifier_widens_the_ring) {
     Rig rig;
     rig.equip(0, "reacher");
     rig.tick();
-    CHECK_NEAR(rig.ring().targetRadius, kPlayerBaseRadius * kPetalOrbitRest * 1.5, 1e-9);
+    CHECK_NEAR(rig.ring().targetRadius, kPetalOrbitRestRadius * 1.5, 1e-9);
     rig.tick(200);
-    CHECK_NEAR(rig.ring().radius, kPlayerBaseRadius * kPetalOrbitRest * 1.5, 1e-6);
+    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius * 1.5, 1e-6);
+}
+
+TEST(a_player_radius_modifier_scales_the_body_and_preserves_petal_clearance) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "inflator");
+    rig.tick();
+
+    const double playerRadius = rig.world.get<Body>(rig.player).radius;
+    CHECK_NEAR(playerRadius, kPlayerBaseRadius * 1.5, 1e-9);
+    // TypeScript grows the neutral ring from 60 to 70, not to 90: the extra
+    // body radius is added once, preserving the gap from the flower's edge.
+    CHECK_NEAR(rig.ring().targetRadius,
+               kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius, 1e-9);
 }
 
 TEST(a_clumped_slot_spawns_a_cluster_around_one_ring_position) {
@@ -334,7 +352,7 @@ TEST(an_empty_loadout_places_nothing_and_leaves_modifiers_neutral) {
     CHECK_EQ(rig.petals().size(), std::size_t(0));
     CHECK_NEAR(rig.modifiers().speedScale, 1.0, 1e-12);
     CHECK_NEAR(rig.modifiers().luck, 0.0, 1e-12);
-    CHECK_NEAR(rig.ring().radius, kPlayerBaseRadius * kPetalOrbitRest, 1e-9);
+    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius, 1e-9);
 }
 
 // ---------------------------------------------------------------------------

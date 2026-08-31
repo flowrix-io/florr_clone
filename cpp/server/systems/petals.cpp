@@ -418,10 +418,16 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
                                                        Entity player) {
     Aggregate aggregate;
     aggregate.modifiers.magnetism = kBaseMagnetism;
+    std::uint8_t equipFlags = EquipNone;
 
     if (const Loadout* loadout = world.tryGet<Loadout>(player)) {
         for (int i = 0; i < kLoadoutSlots; ++i) {
             const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+            if (!slot.empty()) {
+                // Equipment is worn for the whole loadout, including while a
+                // petal is reloading; this is the same rule as tickBroadcast.
+                equipFlags |= registry.petal(slot.configIndex).equipFlags;
+            }
             // A broken petal is off the field and grants nothing. Anything else
             // makes breaking a petal free, and makes the ring's gap cosmetic.
             if (slot.empty() || slot.broken) continue;
@@ -434,6 +440,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.maxHealthScale *= mods.maxHealth;
             aggregate.modifiers.speedScale *= mods.speed;
             aggregate.modifiers.damageScale *= mods.damage;
+            aggregate.modifiers.sizeScale *= mods.playerRadius;
             aggregate.modifiers.rangeScale *= mods.range;
             aggregate.modifiers.cameraZoom *= stats.cameraZoom;
             aggregate.spinScale *= mods.rotationSpeed;
@@ -449,6 +456,14 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // incremental version has to unwind exactly what it applied, and one missed
     // unwind is a stat the player keeps for the rest of the session.
     if (PlayerModifiers* out = world.tryGet<PlayerModifiers>(player)) *out = aggregate.modifiers;
+    if (Body* body = world.tryGet<Body>(player)) {
+        const PlayerProgress* progress = world.tryGet<PlayerProgress>(player);
+        const int level = progress ? progress->level : 1;
+        body->radius = playerRadiusForLevel(level) * std::max(0.0, aggregate.modifiers.sizeScale);
+    }
+    if (PlayerVisuals* visuals = world.tryGet<PlayerVisuals>(player)) {
+        visuals->equipFlags = equipFlags;
+    }
     return aggregate;
 }
 
@@ -465,17 +480,20 @@ void PetalSystem::updateRing(World& world, Entity player, const Aggregate& aggre
     if (!ring) return;
     const Body* body = world.tryGet<Body>(player);
     const PlayerInput* input = world.tryGet<PlayerInput>(player);
-    const double base = body ? body->radius : kPlayerBaseRadius;
+    const double playerRadius = body ? body->radius : kPlayerBaseRadius;
+    // Matches TypeScript's `60 + (PLAYER_SIZE / 2) * (sizeMultiplier - 1)`.
+    // `playerRadius` is the equivalent scaled hitbox radius in C++.
+    const double neutralRadius = kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius;
 
     // Defend wins over attack: pulling the ring in is the defensive option, and
     // a player holding both is asking to block.
-    double orbit = kPetalOrbitRest;
+    double extension = 1.0;
     if (input) {
-        if (input->current.defending()) orbit = kPetalOrbitDefend;
-        else if (input->current.attacking()) orbit = kPetalOrbitAttack;
+        if (input->current.defending()) extension = kPetalOrbitDefendExtension;
+        else if (input->current.attacking()) extension = kPetalOrbitAttackExtension;
     }
 
-    ring->targetRadius = base * orbit * std::max(0.0, aggregate.modifiers.rangeScale);
+    ring->targetRadius = neutralRadius * extension * std::max(0.0, aggregate.modifiers.rangeScale);
     // Eased, not snapped. Attack and defend are a push and a pull on the ring;
     // a petal that teleports outward reads as a bug rather than a lunge.
     ring->radius = damp(ring->radius, ring->targetRadius, kPetalRadiusDamp, dt);

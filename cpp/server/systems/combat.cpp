@@ -270,9 +270,28 @@ void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, doub
     Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;   // exactly co-located: no direction to push along
 
-    const double impulse = std::min(strength * kKnockbackScale / mass, kMaxKnockbackImpulse);
-    world.ensure<Knockback>(victim).impulse += direction * impulse;
+    // This mirrors playerState.ts exactly: `effectiveKnockback` is the petal
+    // stat divided by mob mass, and setMobKnockback() REPLACES the old vector.
+    // It is a positional offset, consumed by movement next tick -- no scale,
+    // friction or second mass division is involved.
+    world.ensure<Knockback>(victim).impulse = direction * (strength / mass);
 }
+
+namespace {
+
+/// playerState.ts resolves body contact by moving the flower 25 units away
+/// immediately. It happens before its damage/invulnerability branch, so an
+/// invulnerable player still gets bumped. Petal knockback deliberately does
+/// not use this path: it is queued on the MOB for its next movement pass.
+void applyMobContactKnockback(World& world, Entity player, Vec2 offset) {
+    Transform* transform = world.tryGet<Transform>(player);
+    if (transform == nullptr) return;
+    const Vec2 direction = offset.normalized();
+    if (direction.lengthSq() < 1e-12) return;
+    transform->position += direction * kMobContactKnockback;
+}
+
+} // namespace
 
 void CombatSystem::applyPoison(World& world, Entity victim, Entity source, double perSecond,
                                double durationMillis, double nowMillis) {
@@ -354,6 +373,7 @@ void CombatSystem::run(World& world, const SpatialGrid& grid, const ContentRegis
     tickGroundEffects(world, grid, nowMillis, dt);
 
     melee_.clear();
+    mobContactedPlayers_.clear();
     gatherContact(world, content);
     gatherPetals(world, content);
     resolveMelee(world, grid, nowMillis);
@@ -436,9 +456,9 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         source.radius = body.radius;
         source.damage = contact.amount;
         source.hitIntervalMillis = contact.intervalMillis;
-        // The push scales with the attacker's mass and is divided back out by
-        // the victim's, so what a hit delivers is the ratio between them.
-        source.knockback = kContactKnockback * body.mass;
+        // Contact with a mob moves a player by the fixed TypeScript 25-unit
+        // displacement; resolveMelee handles that special case directly.
+        source.knockback = 0.0;
 
         if (const MobType* type = world.tryGet<MobType>(e)) {
             const MobStats stats = content.mobStats(type->configIndex, type->rarity);
@@ -503,6 +523,28 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             const Vec2 offset = transform->position - source.position;
             const double reach = source.radius + body->radius;
             if (offset.lengthSq() > reach * reach) continue;
+
+            // A TypeScript mob bump is independent of damage: it still lands
+            // during respawn invulnerability, is not throttled by the damage
+            // cooldown, and occurs before a lethal hit is handled.
+            const bool mobTouchesPlayer = world.has<MobTag>(source.attacker) &&
+                                          world.has<PlayerTag>(victim) &&
+                                          !world.has<Dead>(victim) &&
+                                          world.has<Health>(victim) &&
+                                          canDamage(world, source.attacker, victim);
+            if (mobTouchesPlayer) {
+                // resolvePlayerMobContact() breaks after its first collision:
+                // one flower wedged in a pile takes one hit/bump per tick, not
+                // a full stack. Preserve that rule across C++'s source-first
+                // combat loop.
+                if (std::find(mobContactedPlayers_.begin(), mobContactedPlayers_.end(), victim) !=
+                    mobContactedPlayers_.end()) {
+                    continue;
+                }
+                mobContactedPlayers_.push_back(victim);
+                applyMobContactKnockback(world, victim, offset);
+            }
+
             if (!canHit(world, victim, source.attacker, nowMillis)) continue;
 
             // Read, do not create: an attacker that has never landed a hit
@@ -512,12 +554,13 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
 
             const DamageResult hit = applyDamage(world, victim, source.attacker,
                                                  source.damage, nowMillis);
-            // Poison, slow and knockback ride on the CONTACT, not on the
-            // damage number -- a mob whose entire attack is poison deals no
-            // direct damage and must still poison. canHit() above is what
-            // guarantees the contact was legitimate.
+            // Petal knockback is set after the hit using its own stat and the
+            // victim's mass, exactly like playerState.ts. Mob contact already
+            // performed its fixed player displacement above.
             if (!hit.killed) {
-                applyKnockback(world, victim, offset, source.knockback);
+                if (world.has<PetalInstance>(source.attacker)) {
+                    applyKnockback(world, victim, offset, source.knockback);
+                }
                 applyPoison(world, victim, source.attacker, source.poisonPerSecond,
                             source.poisonDurationMillis, nowMillis);
                 applySlow(world, victim, source.slowFactor, source.slowDurationMillis,

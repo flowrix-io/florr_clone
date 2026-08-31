@@ -64,11 +64,12 @@ struct Body {
     double mass = 1;
 };
 
-/// Displacement owed to this entity from hits and collisions this tick.
+/// One pending positional displacement from a knockback-producing hit.
 ///
-/// Separate from Motion so that pushes accumulate from several sources and are
-/// applied once, in a defined place -- rather than each system writing velocity
-/// directly and the last writer silently winning.
+/// This intentionally is not momentum. TypeScript writes the resulting x/y
+/// offset to the mob's Knockback component and the next movement pass applies
+/// it directly, leaving ordinary velocity untouched. A later hit replaces the
+/// previous value rather than launching a mob with an accumulated volley.
 struct Knockback {
     Vec2 impulse;
 };
@@ -211,8 +212,8 @@ struct Loadout {
 /// The orbiting ring's live geometry. On the player, not on each petal, so all
 /// of a flower's petals necessarily agree about where the ring is.
 struct PetalRing {
-    double radius = kPlayerBaseRadius * kPetalOrbitRest;
-    double targetRadius = kPlayerBaseRadius * kPetalOrbitRest;
+    double radius = kPetalOrbitRestRadius;
+    double targetRadius = kPetalOrbitRestRadius;
     double spin = 0;       ///< current ring rotation, radians
 };
 
@@ -242,6 +243,20 @@ struct PlayerProgress {
     bool leveledThisTick = false;
 };
 
+/// Player body presentation that is not implied by a generic entity state.
+///
+/// `faceFlags` holds persistent/special-case bits (dandelion, square eyes and
+/// corruption); poison, attack, defend and death are layered on by snapshot
+/// construction. `equipFlags` is recomputed from the loadout by PetalSystem.
+/// `glitched` is transient and is ORed into renderFlags for the wire, matching
+/// TypeScript's effectiveRenderFlags() rather than persisting an affliction.
+struct PlayerVisuals {
+    std::uint8_t faceFlags = FaceNone;
+    std::uint8_t equipFlags = EquipNone;
+    std::uint32_t renderFlags = PlayerRenderNone;
+    bool glitched = false;
+};
+
 /// Passive bonuses summed from equipped petals each tick.
 ///
 /// Recomputed from scratch rather than applied incrementally on equip: an
@@ -251,6 +266,7 @@ struct PlayerModifiers {
     double maxHealthScale = 1.0;
     double speedScale = 1.0;
     double damageScale = 1.0;
+    double sizeScale = 1.0;
     double luck = 0.0;          ///< adds to drop upgrade rolls
     double magnetism = 0.0;     ///< adds to pickup radius
     double aggroRadiusBonus = 0.0;
@@ -440,6 +456,7 @@ FLR_COMPONENT(flr::PetalRing);
 FLR_COMPONENT(flr::PlayerInput);
 FLR_COMPONENT(flr::PlayerAccount);
 FLR_COMPONENT(flr::PlayerProgress);
+FLR_COMPONENT(flr::PlayerVisuals);
 FLR_COMPONENT(flr::PlayerModifiers);
 FLR_COMPONENT(flr::PlayerLocation);
 FLR_COMPONENT(flr::MobType);

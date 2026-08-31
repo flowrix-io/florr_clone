@@ -12,6 +12,7 @@
 
 #include <cstdint>
 
+#include "shared/game/player_flags.h"
 #include "shared/net/bytebuffer.h"
 
 namespace flr::net {
@@ -20,7 +21,7 @@ namespace flr::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 1;
+inline constexpr std::uint16_t kProtocolVersion = 4;
 
 /// Frames larger than this are refused before allocation, so a bad length
 /// prefix costs a dropped connection rather than a 4GB allocation.
@@ -62,7 +63,7 @@ enum class ServerMessage : std::uint8_t {
     Welcome = 1,        ///< u16 protocolVersion, u8 accepted, str reason
     AuthResult,         ///< u8 status(AuthStatus), str token, str username, str reason
     Profile,            ///< full account state: xp, level, stars, inventory, loadout
-    JoinAccepted,       ///< u32 selfNetId, f32 x, f32 y, u32 tick
+    JoinAccepted,       ///< u32 selfNetId, f32 x, f32 y, u32 tick, u16 tileCount, u8 tiles[]
     Snapshot,           ///< see below
     Chat,               ///< u8 channel, str author, str text
     Notice,             ///< u8 severity, str text
@@ -163,6 +164,9 @@ enum UpdateFields : std::uint8_t {
     FieldHealth   = 1 << 2,   ///< u16 fraction of max
     FieldState    = 1 << 3,   ///< u8 EntityState bits
     FieldSize     = 1 << 4,   ///< f32 radius; changes only on level-up or growth
+    /// u8 face flags, u8 equipment flags, u32 render/skin flags. This is set
+    /// only for players; the payload remains self-contained for decoding.
+    FieldPlayerVisuals = 1 << 5,
 };
 
 /// Transient visual state, refreshed whenever FieldState is set.

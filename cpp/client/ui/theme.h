@@ -13,21 +13,21 @@ namespace flr::ui {
 
 // --- palette ----------------------------------------------------------------
 
-inline constexpr std::uint32_t kInk        = 0x2B2B2Bu;  ///< every outline
+inline constexpr std::uint32_t kInk        = 0x000000u;  ///< every outline
 inline constexpr std::uint32_t kPaper      = 0xFFFFFFu;  ///< text and highlights
-inline constexpr std::uint32_t kPanel      = 0x5A6E7Au;  ///< panel body
-inline constexpr std::uint32_t kPanelDark  = 0x44555Fu;  ///< panel border / inset
-inline constexpr std::uint32_t kSlot       = 0x6E8593u;  ///< empty inventory slot
-inline constexpr std::uint32_t kAccent     = 0x7EEF6Du;  ///< primary action
-inline constexpr std::uint32_t kDanger     = 0xDE1F1Fu;
+inline constexpr std::uint32_t kPanel      = 0x599FDCu;  ///< inventory-blue panel body
+inline constexpr std::uint32_t kPanelDark  = 0x4A8BC2u;  ///< matching panel border
+inline constexpr std::uint32_t kSlot       = 0xEEEEEEu;  ///< empty loadout slot
+inline constexpr std::uint32_t kAccent     = 0x1DD129u;  ///< Ready / primary action
+inline constexpr std::uint32_t kDanger     = 0xFF4444u;
 inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
-inline constexpr std::uint32_t kHealth     = 0x7EEF6Du;
-inline constexpr std::uint32_t kHealthBack = 0x3A3A3Au;
-inline constexpr std::uint32_t kXpBar      = 0xFFE65Du;
+inline constexpr std::uint32_t kHealth     = 0x73FF54u;
+inline constexpr std::uint32_t kHealthBack = 0x000000u;
+inline constexpr std::uint32_t kXpBar      = 0xFAFFC9u;
 inline constexpr std::uint32_t kShade      = 0x000000u;  ///< modal scrim, at low alpha
 
 /// Menus and the title screen sit on this; the world has its own biome ground.
-inline constexpr std::uint32_t kBackdrop   = 0x1D8348u;
+inline constexpr std::uint32_t kBackdrop   = 0x00D885u;
 
 // --- metrics ----------------------------------------------------------------
 

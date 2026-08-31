@@ -41,11 +41,14 @@ enum class Tile : std::uint8_t {
     Ground = 0,
     Wall = 1,     ///< blocks movement
     Water = 2,    ///< passable, slows movement
-    Sand = 3,
-    Stone = 4,
+    Sand = 3,     ///< TypeScript custom tile 3: bridge (passable)
+    Stone = 4,    ///< TypeScript custom tile 4: sewage (solid)
+    Block = 5,    ///< TypeScript custom tile 5: block (solid)
 };
 
-inline constexpr bool tileBlocks(Tile t) { return t == Tile::Wall; }
+inline constexpr bool tileBlocks(Tile t) {
+    return t == Tile::Wall || t == Tile::Stone || t == Tile::Block;
+}
 inline constexpr bool tileIsWater(Tile t) { return t == Tile::Water; }
 
 /// Multiplier applied to top speed while in water. Slow enough to matter,
@@ -77,10 +80,6 @@ inline constexpr double kFrictionReferenceRate = 20.0;
 inline constexpr double kFullSpeedCursorDistance = 200.0;
 
 inline constexpr double kRespawnInvulnerabilitySeconds = 3.0;
-
-/// A hit's knockback decays with the same friction as movement, so being
-/// launched feels like losing control of the flower rather than teleporting.
-inline constexpr double kKnockbackScale = 12.0;
 
 // -- progression -------------------------------------------------------------
 
@@ -141,12 +140,15 @@ inline double playerRadiusForLevel(int level) {
 
 inline constexpr int kLoadoutSlots = 8;
 
-/// Ring radius as a multiple of the flower's radius, at rest / attacking /
-/// defending. Attacking pushes the ring out to reach further; defending pulls
-/// it in tight to block. The gap between them is the whole tactical dial.
-inline constexpr double kPetalOrbitRest = 2.4;
-inline constexpr double kPetalOrbitAttack = 4.2;
-inline constexpr double kPetalOrbitDefend = 1.15;
+/// TypeScript's neutral petal orbit is 60 world units for a normal 20-unit
+/// player hitbox. When the player grows, only the body's added radius grows
+/// the orbit so the gap from its edge remains constant.
+inline constexpr double kPetalOrbitRestRadius = 60.0;
+
+/// TypeScript's fully extended and retracted petal-extension values. Attack
+/// and defend use these as targets; damping below provides the transition.
+inline constexpr double kPetalOrbitAttackExtension = 2.0;
+inline constexpr double kPetalOrbitDefendExtension = 0.7;
 
 /// How fast the ring converges on its target radius, as a fraction of the
 /// remaining gap per second. Fast enough to feel instant, damped enough that

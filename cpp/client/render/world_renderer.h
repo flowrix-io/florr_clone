@@ -6,6 +6,7 @@
 // effect pool here, seeded from the events the server sent.
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -73,6 +74,10 @@ private:
     void drawTerrain(Canvas&, const Camera&) const;
     void drawEntity(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     void drawFlower(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
+    void drawFlowerBody(Canvas&, const RemoteEntity&, double timeSeconds) const;
+    void drawDefaultFlower(Canvas&, const RemoteEntity&, double timeSeconds) const;
+    void drawPumpkin(Canvas&, const RemoteEntity&) const;
+    void drawRobot(Canvas&, const RemoteEntity&) const;
     void drawHealthBar(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     void drawEffects(Canvas&, const Camera&) const;
 
@@ -80,6 +85,12 @@ private:
     const SpriteCache* sprites_ = nullptr;
     const Terrain* terrain_ = nullptr;
     std::vector<Effect> effects_;
+
+    // A single transparent buffer is reused one flower at a time for the
+    // Glitch flag. It grows with the largest on-screen flower and never needs
+    // to survive a frame, so sharing avoids a canvas allocation per player.
+    mutable std::unique_ptr<Canvas> glitchBody_;
+    mutable int glitchSide_ = 0;
 };
 
 } // namespace flr

@@ -240,33 +240,23 @@ TEST(aim_angle_becomes_the_facing_and_the_aim_direction) {
 // Knockback
 // ---------------------------------------------------------------------------
 
-TEST(knockback_displaces_then_decays_to_rest) {
+TEST(knockback_is_a_one_shot_positional_displacement) {
     Fixture fx;
     const Entity player = fx.spawnPlayer({5000, 5000});
     const double startX = fx.positionOf(player).x;
     fx.world.get<Knockback>(player).impulse = {600, 0};
 
     fx.step(1);
-    // The hit lands at full strength on the tick it happened: mass 1, so the
-    // impulse is the velocity.
-    CHECK_NEAR(fx.velocityOf(player).x, 600.0, 1e-9);
-    // ...and the impulse is consumed, not re-applied every tick afterwards.
+    CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 1e-9);
+    // The pending offset is consumed, with no momentum added to the flower.
+    CHECK_NEAR(fx.velocityOf(player).x, 0.0, 1e-9);
     CHECK_NEAR(fx.world.get<Knockback>(player).impulse.x, 0.0, 1e-12);
-    CHECK(fx.positionOf(player).x > startX);
 
-    fx.step(1);
-    CHECK(fx.velocityOf(player).x < 600.0);   // same friction as movement
-    fx.step(200);
-    CHECK_NEAR(fx.velocityOf(player).length(), 0.0, 0.01);
-    const double settled = fx.positionOf(player).x;
-    CHECK(settled > startX);
-
-    // It came to rest instead of coasting forever.
     fx.step(50);
-    CHECK_NEAR(fx.positionOf(player).x, settled, 0.05);
+    CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 1e-9);
 }
 
-TEST(knockback_scales_inversely_with_mass) {
+TEST(knockback_is_consumed_as_a_precalculated_displacement) {
     Fixture fx;
     const Entity light = fx.spawnMob({5000, 5000}, 20.0, 1.0);
     const Entity heavy = fx.spawnMob({5000, 6000}, 20.0, 4.0);
@@ -280,8 +270,11 @@ TEST(knockback_scales_inversely_with_mass) {
     const double lightMoved = fx.positionOf(light).x - 5000.0;
     const double heavyMoved = fx.positionOf(heavy).x - 5000.0;
     CHECK(lightMoved > 0.0);
-    CHECK_NEAR(heavyMoved, lightMoved / 4.0, 1e-9);
-    // A zero mass is a data bug, not a licence to teleport: it is floored.
+    // Combat applies resistance before it queues this displacement. Movement
+    // therefore consumes equal queued values equally; it does not divide by
+    // mass or turn the one-shot position change into velocity.
+    CHECK_NEAR(heavyMoved, lightMoved, 1e-9);
+    // A malformed mass cannot turn an already-valid velocity delta non-finite.
     CHECK(std::isfinite(fx.positionOf(weightless).x));
     CHECK(fx.positionOf(weightless).x < kWorldSize);
 }
@@ -495,13 +488,12 @@ TEST(mob_velocity_is_left_for_the_ai_phase_to_damp) {
     const Entity mob = fx.spawnMob({5000, 5000});
     fx.world.get<Knockback>(mob).impulse = {800, 0};
     fx.step(1);
-    // The shove lands in the velocity and STAYS there. Mob friction belongs to
-    // the AI phase, which eases the velocity toward the heading it wants; a
-    // second decay here would compound with that one and slow every mob.
-    CHECK_NEAR(fx.velocityOf(mob).x, 800.0, 1e-9);
+    // A knockback moves position only; the AI remains the sole owner of a
+    // mob's velocity.
+    CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
     fx.step(1);
-    CHECK_NEAR(fx.velocityOf(mob).x, 800.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(mob).x, 5000.0 + 800.0 * net::kTickSeconds * 2.0, 1e-9);
+    CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, 5800.0, 1e-9);
 }
 
 // ---------------------------------------------------------------------------

@@ -29,11 +29,11 @@ double originX(double x, double width, Align align) {
 
 /// The baseline for a requested vertical anchor. Canvas names these after the
 /// em box; ascent is positive and descent is negative, as the font stores them.
-double baselineY(double y, double size, Baseline baseline) {
+double baselineY(double y, double size, Baseline baseline, bool bold) {
     switch (baseline) {
-        case Baseline::Top: return y + ascent(size);
-        case Baseline::Bottom: return y + descent(size);
-        default: return y + (ascent(size) + descent(size)) * 0.5;
+        case Baseline::Top: return y + ascent(size, bold);
+        case Baseline::Bottom: return y + descent(size, bold);
+        default: return y + (ascent(size, bold) + descent(size, bold)) * 0.5;
     }
 }
 
@@ -51,8 +51,9 @@ void text(Canvas& canvas, const std::string& s, double x, double y, const TextSt
     if (s.empty() || !Fonts::ready()) return;
 
     Path2D glyphs;
-    appendGlyphs(glyphs, s, originX(x, measure(s, style.size), style.align),
-                 baselineY(y, style.size, style.baseline), style.size);
+    appendGlyphs(glyphs, s, originX(x, measure(s, style.size, style.bold), style.align),
+                 baselineY(y, style.size, style.baseline, style.bold), style.size,
+                 style.bold);
     if (glyphs.empty()) return;
 
     const double strokeWidth =
@@ -61,10 +62,8 @@ void text(Canvas& canvas, const std::string& s, double x, double y, const TextSt
     // Stroke first, then fill. The other order eats the glyph with its own
     // outline, which is what every hand-rolled attempt at this gets wrong.
     if (strokeWidth > 0) {
-        // Round joins stop the outline growing spikes at sharp glyph corners,
-        // which at this width is very visible on letters like A, W and M.
-        canvas.setLineJoin("round");
-        canvas.setLineCap("round");
+        canvas.setLineJoin("miter");
+        canvas.setLineCap("butt");
         canvas.setLineWidth(static_cast<float>(strokeWidth));
         setStroke(canvas, style.stroke);
         canvas.stroke(glyphs);
@@ -73,20 +72,10 @@ void text(Canvas& canvas, const std::string& s, double x, double y, const TextSt
     setFill(canvas, style.fill);
     canvas.fill(glyphs, "nonzero");
 
-    if (style.bold) {
-        // Emboldening by stroking in the fill colour, rather than loading a
-        // second face: it matches the game's heavy look and keeps the metrics
-        // identical, so a bold label occupies exactly the space it measured.
-        canvas.setLineJoin("round");
-        canvas.setLineWidth(static_cast<float>(std::max(1.0, style.size * 0.055)));
-        setStroke(canvas, style.fill);
-        canvas.stroke(glyphs);
-    }
 }
 
 double textWidth(Canvas&, const std::string& s, double size, bool bold) {
-    (void)bold;   // emboldening is a stroke, so it does not change the advance
-    return measure(s, size);
+    return measure(s, size, bold);
 }
 
 void plate(Canvas& canvas, Rect r, std::uint32_t fill, double radius,
@@ -115,34 +104,26 @@ void plate(Canvas& canvas, Rect r, std::uint32_t fill, double radius,
 }
 
 void panel(Canvas& canvas, Rect r, double alpha) {
-    plate(canvas, r, kPanel, kPanelRadius, kInk, -1, alpha);
-    // A one-pixel inner highlight along the top edge is what stops a large
-    // flat panel reading as a hole in the screen.
-    setStroke(canvas, lighten(kPanel, 0.18), alpha);
-    canvas.setLineWidth(2.0f);
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(r.x + kPanelRadius), static_cast<float>(r.y + 4));
-    canvas.lineTo(static_cast<float>(r.right() - kPanelRadius), static_cast<float>(r.y + 4));
-    canvas.stroke();
+    plate(canvas, r, kPanel, kPanelRadius, kPanelDark, 4.0, alpha);
 }
 
 void button(Canvas& canvas, Rect r, const std::string& label, bool hovered, bool pressed,
             const ButtonStyle& style) {
     std::uint32_t fill = style.fill;
     if (!style.enabled) fill = shade(fill, 0.45);
-    else if (pressed) fill = darken(fill, 0.22);
-    else if (hovered) fill = lighten(fill, 0.14);
+    else if (pressed) fill = shade(fill, 0.9);
+    else if (hovered) fill = shade(fill, 1.1);
 
-    Rect box = r;
-    // Pressing sinks the button rather than only darkening it; the movement is
-    // what makes the click feel like it landed.
-    if (pressed && style.enabled) { box.y += 2; box.h -= 2; }
-
-    plate(canvas, box, fill, style.radius);
+    const Rect box = r;
+    const std::uint32_t outline = style.outline == 0xFFFFFFFFu
+        ? shade(style.fill, 0.8)
+        : style.outline;
+    plate(canvas, box, fill, style.radius, outline, style.outlineWidth);
 
     TextStyle ts;
     ts.size = style.textSize;
     ts.bold = true;
+    ts.strokeWidth = style.textStrokeWidth;
     ts.align = Align::Centre;
     ts.baseline = Baseline::Middle;
     ts.fill = style.enabled ? kPaper : shade(kPaper, 0.65);
@@ -194,9 +175,11 @@ void scrim(Canvas& canvas, double alpha) {
 }
 
 void textField(Canvas& canvas, Rect r, const std::string& value, const std::string& placeholder,
-               bool focused, bool masked, double timeSeconds) {
-    plate(canvas, r, focused ? lighten(kPanelDark, 0.10) : kPanelDark, 6.0,
-          focused ? kAccent : kInk);
+               bool focused, bool masked, double timeSeconds,
+               const TextFieldStyle& style) {
+    const double width = focused ? style.focusedOutlineWidth : style.outlineWidth;
+    plate(canvas, r, style.fill, style.radius,
+          focused ? style.focusedOutline : style.outline, width);
 
     const double padding = 10.0;
     const double textSize = std::min(kBodySize + 2.0, r.h * 0.5);
@@ -207,10 +190,10 @@ void textField(Canvas& canvas, Rect r, const std::string& value, const std::stri
     TextStyle ts;
     ts.size = textSize;
     ts.baseline = Baseline::Middle;
-    ts.strokeWidth = 0;   // on a known flat field the outline only muddies it
+    ts.strokeWidth = style.textStrokeWidth;
 
     if (shown.empty() && !focused) {
-        ts.fill = shade(kPaper, 0.55);
+        ts.fill = style.textStrokeWidth > 0 ? kPaper : shade(kPaper, 0.55);
         text(canvas, placeholder, r.x + padding, r.y + r.h * 0.5, ts);
         return;
     }

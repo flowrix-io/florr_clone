@@ -300,10 +300,10 @@ AiKind parseAi(Ctx& ctx, const std::string& text) {
 std::uint8_t parseEquipFlags(const std::string& text) {
     if (text == "Cutter") return EquipCutter;
     if (text == "ThirdEye") return EquipThirdEye;
-    if (text == "Antennae") return EquipAntennae;
     if (text == "Observer") return EquipObserver;
-    // Anything else is a development marker (`Test1`); a petal with no special
-    // behaviour is a perfectly good outcome, so this is not worth a warning.
+    if (text == "Antennae") return EquipAntennae;
+    if (text == "Test1") return EquipTest1;
+    // No flag is a perfectly good outcome for an ordinary petal.
     return EquipNone;
 }
 
@@ -588,7 +588,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
 
     p.modifiers = parseModifiers(ctx, src);
 
-    p.knockback = ctx.range(src, "knockback", 0.0, -kMaxBaseStat, kMaxBaseStat);
+    p.knockback = ctx.range(src, "knockback", p.knockback, -kMaxBaseStat, kMaxBaseStat);
     p.projectile = parseProjectile(ctx, src, nullptr);
     p.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
     p.equipFlags = parseEquipFlags(ctx.text(src, "equipFlags"));
@@ -898,9 +898,17 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.heal = c.burstHeal * heal;
     s.healChargeMillis = c.burstHealChargeMillis;
     s.passiveHealPerSecond = c.passiveHeal * heal;
-    // Knockback tracks damage: a hit that does not push at all stops feeling
-    // like a hit once the mobs it lands on are ten tiers heavier.
-    s.knockback = c.knockback * stat;
+    // TypeScript keeps ordinary petal knockback flat across rarities. Jelly is
+    // the one intentional exception: its per-rarity values are literal
+    // overrides in petals.ts, not another copy of the damage multiplier.
+    s.knockback = c.knockback;
+    if (c.id == "jelly") {
+        static constexpr std::array<double, kRarityCount> kJellyKnockback = {
+            15.0, 50.0, 100.0, 250.0, 500.0,
+            1800.0, 10000.0, 25000.0, 50000.0, 100000.0,
+        };
+        s.knockback = kJellyKnockback[static_cast<std::size_t>(rarityIndex(tier))];
+    }
     s.shield = c.burstShield * heal;
     // A slow's rarity is spent on landing it at all (stallPower), not on
     // making it deeper, so the factor and its duration are flat.

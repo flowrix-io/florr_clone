@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "client/world_view.h"
+#include "shared/game/terrain.h"
 #include "shared/net/protocol.h"
 #include "shared/net/transport.h"
 
@@ -95,6 +96,8 @@ public:
     // -- state -------------------------------------------------------------
     WorldView& view() { return view_; }
     const WorldView& view() const { return view_; }
+    /// Locally regenerated from the authoritative seed in JoinAccepted.
+    const Terrain& terrain() const { return terrain_; }
     const Profile& profile() const { return profile_; }
     const std::string& sessionToken() const { return sessionToken_; }
     const std::vector<ChatLine>& chat() const { return chat_; }
@@ -140,6 +143,7 @@ private:
     std::string lastError_;
 
     WorldView view_;
+    Terrain terrain_;
     Profile profile_;
     std::string sessionToken_;
     std::vector<ChatLine> chat_;

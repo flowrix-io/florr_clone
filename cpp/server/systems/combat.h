@@ -35,15 +35,9 @@ namespace flr {
 /// sustained beating stays lit without anything having to track that.
 inline constexpr double kHurtFlashMillis = 120.0;
 
-/// Knockback a touching body delivers, per unit of the attacker's mass. The
-/// victim's mass divides it back out in applyKnockback(), so what survives is
-/// the mass RATIO -- a boss shoves a flower, a flower barely nudges a boss.
-inline constexpr double kContactKnockback = 4.0;
-
-/// Ceiling on one hit's contribution to Knockback::impulse, in units/second.
-/// Without it the mass ratio between an apex mob and a common petal launches
-/// the victim clean off the map in a single touch.
-inline constexpr double kMaxKnockbackImpulse = 600.0;
+/// TypeScript's fixed player-vs-mob contact displacement, in world units.
+/// It is neither mass-scaled nor converted into velocity.
+inline constexpr double kMobContactKnockback = 25.0;
 
 /// How long a ground effect's slow outlives standing in it. Refreshed every
 /// tick while inside, so this is only the tail after walking out -- long
@@ -107,8 +101,9 @@ public:
     DamageResult applyDamage(World& world, Entity victim, Entity source, double amount,
                              double nowMillis, DamageKind kind = DamageKind::Direct);
 
-    /// Adds to what the victim is owed this tick. Movement owns velocity and
-    /// consumes this; writing velocity here would fight it and lose.
+    /// Queue the TypeScript petal/projectile mob push: direction times
+    /// `strength / victimMass`. This REPLACES a prior queued push, matching
+    /// `setMobKnockback()` rather than accumulating momentum.
     void applyKnockback(World& world, Entity victim, Vec2 offset, double strength);
 
     /// Poison and slow both follow one stacking rule: while an effect is live,
@@ -214,6 +209,9 @@ private:
     std::vector<ShotSource> shots_;
     std::vector<PoisonTick> poison_;
     std::vector<Entity> candidates_;
+    /// TypeScript stops after the first legitimate mob body-contact for a
+    /// player each tick. Reused rather than allocated in resolveMelee().
+    std::vector<Entity> mobContactedPlayers_;
     std::vector<DeathRecord> deaths_;
 
     std::uint64_t tick_ = 0;

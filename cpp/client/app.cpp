@@ -44,7 +44,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
 
     // Without this every text call silently draws nothing, which looks like a
     // layout bug rather than a missing font.
-    if (!Fonts::init(errorOut)) {
+    if (!Fonts::init(config.dataDir, errorOut)) {
         errorOut = "no usable font: " + errorOut;
         return false;
     }
@@ -62,6 +62,9 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
 
     renderer_.setContent(&content());
     renderer_.setSprites(&sprites_);
+    // NetClient keeps this object alive for the entire connection and replaces
+    // its grid with the authoritative TypeScript map when a game is joined.
+    renderer_.setTerrain(&net_.terrain());
     net_.contentHash = content().contentHash();
 
     loadSessionToken();
@@ -352,12 +355,13 @@ void App::updatePlaying(double dt) {
 
 void App::updateDead(double dt) {
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
-    const Rect card = centred(360, 220, window_.width(), window_.height());
-    const Rect respawn{card.x + 24, card.y + 130, card.w - 48, kButtonHeight};
-    const Rect toTitle{card.x + 24, card.y + 180, card.w - 48, 28};
+    const double centreX = window_.width() * 0.5;
+    const double centreY = window_.height() * 0.5;
+    const Rect respawn{centreX - 100, centreY + 30, 200, 50};
+    const Rect toTitle{centreX - 70, centreY + 95, 140, 36};
 
-    if (window_.mouseReleased(MouseButton::Left)) {
-        if (hit(respawn, mouse)) {
+    if (window_.keyPressed(Key::Enter) || window_.mouseReleased(MouseButton::Left)) {
+        if (window_.keyPressed(Key::Enter) || hit(respawn, mouse)) {
             net_.requestRespawn();
             prediction_.reset(net_.view().self().position);
             screen_ = Screen::Playing;
@@ -402,9 +406,7 @@ void App::drawLogin(Canvas& canvas, double time) {
     title.size = kTitleSize;
     title.align = Align::Centre;
     title.bold = true;
-    text(canvas, "florr", canvas.width() * 0.5, box.y - 48, title);
-
-    panel(canvas, box);
+    text(canvas, "flowrix beta 2", canvas.width() * 0.5, box.y - 48, title);
 
     TextStyle heading;
     heading.size = kHeadingSize;
@@ -413,14 +415,24 @@ void App::drawLogin(Canvas& canvas, double time) {
     text(canvas, registering_ ? "Create an account" : "Log in",
          box.x + box.w * 0.5, box.y + 40, heading);
 
+    TextFieldStyle authField;
+    authField.fill = 0x18CE18u;
+    authField.outline = shade(authField.fill, 0.8);
+    authField.focusedOutline = authField.outline;
+    authField.radius = 3.0;
+    authField.outlineWidth = 4.0;
+    authField.focusedOutlineWidth = 5.0;
+    authField.textStrokeWidth = 2.0;
     textField(canvas, {box.x + 24, box.y + 86, box.w - 48, kFieldHeight},
-              usernameField_, "Username", focusedField_ == 0, false, time);
+              usernameField_, "Username", focusedField_ == 0, false, time, authField);
     textField(canvas, {box.x + 24, box.y + 140, box.w - 48, kFieldHeight},
-              passwordField_, "Password", focusedField_ == 1, true, time);
+              passwordField_, "Password", focusedField_ == 1, true, time, authField);
 
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
     const Rect action{box.x + 24, box.y + 200, box.w - 48, kButtonHeight};
     ButtonStyle actionStyle;
+    actionStyle.fill = 0x8A2BE2u;
+    actionStyle.radius = 5.0;
     actionStyle.enabled = !usernameField_.empty() && !passwordField_.empty();
     actionStyle.textSize = kHeadingSize - 4;
     button(canvas, action, registering_ ? "Register" : "Log in",
@@ -452,7 +464,7 @@ void App::drawLobby(Canvas& canvas, double time) {
     title.size = kTitleSize;
     title.align = Align::Centre;
     title.bold = true;
-    text(canvas, "florr", canvas.width() * 0.5, canvas.height() * 0.18, title);
+    text(canvas, "flowrix beta 2", canvas.width() * 0.5, canvas.height() * 0.18, title);
 
     TextStyle who;
     who.size = kHeadingSize;
@@ -470,7 +482,8 @@ void App::drawLobby(Canvas& canvas, double time) {
     for (std::size_t i = 0; i < slots; ++i) {
         const Rect slot{x, y, slotSize, slotSize};
         const bool filled = i < profile.loadout.size() && !profile.loadout[i].empty();
-        plate(canvas, slot, filled ? rarityColor(profile.loadout[i].rarity) : kSlot, kSlotRadius);
+        const std::uint32_t fill = filled ? rarityColor(profile.loadout[i].rarity) : kSlot;
+        plate(canvas, slot, fill, kSlotRadius, shade(fill, 0.8));
         if (filled) {
             sprites_.drawPetal(canvas, profile.loadout[i].petalIndex,
                                slot.x + slot.w * 0.5, slot.y + slot.h * 0.5,
@@ -538,8 +551,8 @@ void App::drawHud(Canvas& canvas, double time) {
     for (std::size_t i = 0; i < slots; ++i) {
         const Rect slot{x, y, slotSize, slotSize};
         const bool filled = i < profile.loadout.size() && !profile.loadout[i].empty();
-        plate(canvas, slot, filled ? rarityColor(profile.loadout[i].rarity) : kSlot,
-              kSlotRadius, kInk, -1, 0.9);
+        const std::uint32_t fill = filled ? rarityColor(profile.loadout[i].rarity) : kSlot;
+        plate(canvas, slot, fill, kSlotRadius, shade(fill, 0.8), -1, 0.9);
         if (filled) {
             sprites_.drawPetal(canvas, profile.loadout[i].petalIndex,
                                slot.x + slot.w * 0.5, slot.y + slot.h * 0.5,
@@ -629,34 +642,54 @@ void App::drawNotices(Canvas& canvas, double time) {
 }
 
 void App::drawDeathCard(Canvas& canvas, double time) {
-    scrim(canvas, 0.5);
-    const Rect card = centred(360, 220, canvas.width(), canvas.height());
-    panel(canvas, card);
+    scrim(canvas, 0.65);
+    const double centreX = canvas.width() * 0.5;
+    const double centreY = canvas.height() * 0.5;
 
     TextStyle heading;
-    heading.size = kHeadingSize + 6;
+    heading.size = 48;
     heading.align = Align::Centre;
     heading.bold = true;
     heading.fill = kDanger;
-    text(canvas, "You died", card.x + card.w * 0.5, card.y + 46, heading);
+    heading.strokeWidth = 5;
+    text(canvas, "You Died!", centreX, centreY - 60, heading);
 
-    if (!net_.killerName().empty()) {
-        TextStyle by;
-        by.size = kBodySize;
-        by.align = Align::Centre;
-        text(canvas, "killed by " + net_.killerName(), card.x + card.w * 0.5, card.y + 84, by);
-    }
+    TextStyle by;
+    by.size = 22;
+    by.align = Align::Centre;
+    by.strokeWidth = 3;
+    const std::string killer = net_.killerName().empty()
+        ? "A mysterious entity"
+        : net_.killerName();
+    text(canvas, "You were destroyed by: " + killer, centreX, centreY - 10, by);
 
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
-    const Rect respawn{card.x + 24, card.y + 130, card.w - 48, kButtonHeight};
-    button(canvas, respawn, "Respawn", hit(respawn, mouse),
-           window_.mouseDown(MouseButton::Left) && hit(respawn, mouse));
+    const Rect respawn{centreX - 100, centreY + 30, 200, 50};
+    ButtonStyle continueStyle;
+    continueStyle.fill = 0x4A8E3Au;
+    continueStyle.outline = 0x2D5A22u;
+    continueStyle.outlineWidth = 3;
+    continueStyle.radius = 10;
+    continueStyle.textSize = 22;
+    button(canvas, respawn, "Continue", hit(respawn, mouse),
+           window_.mouseDown(MouseButton::Left) && hit(respawn, mouse), continueStyle);
 
-    TextStyle back;
-    back.size = kSmallSize;
-    back.align = Align::Centre;
-    back.fill = shade(kPaper, 0.8);
-    text(canvas, "or return to the menu", card.x + card.w * 0.5, card.y + 194, back);
+    const Rect close{centreX - 70, centreY + 95, 140, 36};
+    ButtonStyle closeStyle;
+    closeStyle.fill = 0x666666u;
+    closeStyle.outline = 0x444444u;
+    closeStyle.outlineWidth = 3;
+    closeStyle.radius = 10;
+    closeStyle.textSize = 16;
+    button(canvas, close, "Close", hit(close, mouse),
+           window_.mouseDown(MouseButton::Left) && hit(close, mouse), closeStyle);
+
+    TextStyle hint;
+    hint.size = 14;
+    hint.align = Align::Centre;
+    hint.fill = shade(kPaper, 0.6);
+    hint.strokeWidth = 0;
+    text(canvas, "Press ENTER to continue", centreX, close.bottom() + 25, hint);
     (void)time;
 }
 

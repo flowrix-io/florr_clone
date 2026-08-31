@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(florr_cpp LANGUAGES CXX)
+project(flowrix_cpp LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,7 +27,7 @@ target_compile_options(cpp_canvas PRIVATE -w)   # third-party: not ours to lint
 target_link_libraries(cpp_canvas PUBLIC PkgConfig::SDL2)
 
 # --- shared: engine core linked by both binaries -----------------------------
-add_library(flr_shared STATIC
+add_library(flix_shared STATIC
   shared/core/world.cpp
   shared/core/json.cpp
   shared/net/transport.cpp
@@ -36,10 +36,10 @@ add_library(flr_shared STATIC
   shared/game/terrain.cpp
   shared/game/spatial.cpp
 )
-target_include_directories(flr_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # --- server ------------------------------------------------------------------
-add_library(flr_server STATIC
+add_library(flix_server STATIC
   server/game_server.cpp
   server/replication.cpp
   server/session.cpp
@@ -52,13 +52,13 @@ add_library(flr_server STATIC
   server/systems/spawning.cpp
   server/systems/loot.cpp
 )
-target_link_libraries(flr_server PUBLIC flr_shared)
+target_link_libraries(flix_server PUBLIC flix_shared)
 
-add_executable(florr_server server/main.cpp)
-target_link_libraries(florr_server PRIVATE flr_server)
+add_executable(flowrix_server server/main.cpp)
+target_link_libraries(flowrix_server PRIVATE flix_server)
 
 # --- client ------------------------------------------------------------------
-add_library(flr_client STATIC
+add_library(flix_client STATIC
   client/app.cpp
   client/net_client.cpp
   client/prediction.cpp
@@ -68,36 +68,70 @@ add_library(flr_client STATIC
   client/render/sprites.cpp
   client/render/world_renderer.cpp
 )
-target_link_libraries(flr_client PUBLIC flr_shared cpp_canvas)
+target_link_libraries(flix_client PUBLIC flix_shared cpp_canvas)
 
-add_executable(florr_client client/main.cpp)
-target_link_libraries(florr_client PRIVATE flr_client)
+add_executable(flowrix_client client/main.cpp)
+target_link_libraries(flowrix_client PRIVATE flix_client)
 
 # --- runtime data ------------------------------------------------------------
-# src/*.json stays the single source of truth; this stages it beside the
-# binaries so both programs find one content directory.
-add_custom_target(flr_data ALL
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/data
+# The browser build loads these exact faces from Google Fonts. Stage pinned
+# copies for the native client so its typography does not depend on whatever
+# sans-serif happens to be installed on the host OS.
+set(FLIX_DATA_DIR ${CMAKE_CURRENT_BINARY_DIR}/data)
+file(MAKE_DIRECTORY ${FLIX_DATA_DIR})
+set(FLIX_GOOGLE_FONTS_REV ade3d1533e06b2b1462ffcde8e08b129627ca360)
+set(FLIX_GOOGLE_FONTS_ROOT
+    "https://raw.githubusercontent.com/google/fonts/${FLIX_GOOGLE_FONTS_REV}/ufl/ubuntu")
+
+function(flix_stage_font filename sha256)
+  set(destination "${FLIX_DATA_DIR}/${filename}")
+  if(EXISTS "${destination}")
+    file(SHA256 "${destination}" existing_hash)
+    if(existing_hash STREQUAL sha256)
+      return()
+    endif()
+  endif()
+  file(DOWNLOAD "${FLIX_GOOGLE_FONTS_ROOT}/${filename}" "${destination}"
+       EXPECTED_HASH "SHA256=${sha256}" TLS_VERIFY ON STATUS download_status)
+  list(GET download_status 0 download_code)
+  list(GET download_status 1 download_message)
+  if(NOT download_code EQUAL 0)
+    message(FATAL_ERROR "Could not stage ${filename}: ${download_message}")
+  endif()
+endfunction()
+
+flix_stage_font(Ubuntu-Regular.ttf
+               3128df86a31805618436d0ae5651ba4285d0c9de0a39057d025f64ee33bceb64)
+flix_stage_font(Ubuntu-Bold.ttf
+               679b5c1e09cab3156bb8ef529735f9382bf31ca7ac737382ab959297f8d82ad4)
+
+# The src data stays the single source of truth; stage it beside the binaries
+# so both programs find one content directory.
+add_custom_target(flix_data ALL
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${FLIX_DATA_DIR}
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mobs.json
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/petals.json
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/map_bundle.ts
           ${CMAKE_CURRENT_SOURCE_DIR}/data/mob_xp.json
-          ${CMAKE_CURRENT_BINARY_DIR}/data/
+          ${FLIX_DATA_DIR}/
   COMMENT "Staging game content")
-add_dependencies(florr_server flr_data)
-add_dependencies(florr_client flr_data)
+add_dependencies(flowrix_server flix_data)
+add_dependencies(flowrix_client flix_data)
 
 # --- tools -------------------------------------------------------------------
 add_executable(svg_smoke tools/svg_smoke.cpp)
-target_link_libraries(svg_smoke PRIVATE flr_shared cpp_canvas)
+target_link_libraries(svg_smoke PRIVATE flix_shared cpp_canvas)
 
 # --- tests -------------------------------------------------------------------
 enable_testing()
 # Globbed deliberately: tests are added often and a stale list is a test that
 # silently stops running. CONFIGURE_DEPENDS re-globs when the directory changes.
-file(GLOB FLR_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
-add_executable(flr_tests ${FLR_TEST_SOURCES})
+file(GLOB FLIX_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
+add_executable(flix_tests ${FLIX_TEST_SOURCES})
 # Tests cover both halves, including the end-to-end ones that run a real
 # server and real clients over loopback.
-target_link_libraries(flr_tests PRIVATE flr_server flr_client)
-add_test(NAME flr_tests COMMAND flr_tests)
+target_link_libraries(flix_tests PRIVATE flix_server flix_client)
+target_compile_definitions(flix_tests PRIVATE FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
+add_dependencies(flix_tests flix_data)
+add_test(NAME flix_tests COMMAND flix_tests)

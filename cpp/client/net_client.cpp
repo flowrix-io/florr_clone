@@ -272,10 +272,20 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     const std::uint32_t selfNetId = reader.u32();
     const Vec2 spawn = reader.position();
     reader.u32();   // tick, informational
+    const std::uint16_t tileCount = reader.u16();
+    std::vector<std::uint8_t> tiles;
+    tiles.reserve(tileCount);
+    for (std::uint16_t i = 0; i < tileCount; ++i) tiles.push_back(reader.u8());
     if (!reader.ok()) return;
 
     (void)selfNetId;
     (void)spawn;
+    if (!terrain_.setTiles(tiles)) {
+        status_ = Status::Failed;
+        lastError_ = "Server sent an invalid terrain grid";
+        dialer_.disconnect();
+        return;
+    }
     status_ = Status::Playing;
     dead_ = false;
     view_.clear();

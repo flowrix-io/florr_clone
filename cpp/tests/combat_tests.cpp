@@ -105,6 +105,8 @@ struct Fixture {
     std::string error;
     bool ok = false;
     std::uint16_t sting = kInvalidIndex;
+    std::uint16_t plain = kInvalidIndex;
+    std::uint16_t jelly = kInvalidIndex;
     std::uint16_t venom = kInvalidIndex;
     std::uint16_t frost = kInvalidIndex;
 };
@@ -120,6 +122,8 @@ const Fixture& fixture() {
             writeText(petals, R"({
               "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},
               "sting":{"name":"Sting","damage":10,"health":5,"size":1,"knockback":2,"damageCooldown":500},
+              "plain":{"name":"Plain","damage":10,"health":5,"size":1},
+              "jelly":{"name":"Jelly","damage":1,"health":5,"size":1,"knockback":15},
               "venom":{"name":"Venom","damage":1,"health":5,"size":1,"poison":0.01,"poisonDuration":2000}
             })");
         if (!wrote) {
@@ -128,6 +132,8 @@ const Fixture& fixture() {
         }
         f.ok = f.registry.loadFiles(mobs, petals, std::string(), f.error);
         f.sting = f.registry.petalIndex("sting");
+        f.plain = f.registry.petalIndex("plain");
+        f.jelly = f.registry.petalIndex("jelly");
         f.venom = f.registry.petalIndex("venom");
         f.frost = f.registry.petalIndex("frost");
         return f;
@@ -284,7 +290,9 @@ TEST(a_hazard_with_no_faction_hurts_everything) {
 TEST(contact_damage_is_gated_by_the_hit_cooldown) {
     Arena a;
     const Entity player = a.player({1000, 1000});
-    const Entity mob = a.mob({1010, 1000}, 100.0);
+    // Co-located deliberately: TypeScript's 25-unit contact push separates
+    // ordinary overlaps, while this test isolates the damage cooldown.
+    const Entity mob = a.mob({1000, 1000}, 100.0);
     a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
 
     a.step(0.0);
@@ -331,33 +339,34 @@ TEST(a_dead_body_stops_dealing_contact_damage_in_the_same_tick) {
 // Knockback
 // ---------------------------------------------------------------------------
 
-TEST(knockback_accumulates_and_is_scaled_by_mass) {
+TEST(knockback_replaces_the_pending_displacement_and_is_scaled_by_mass) {
     Arena a;
     const Entity light = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
     const Entity heavy = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 4.0);
 
     a.combat.applyKnockback(a.world, light, Vec2{5, 0}, 5.0);
     a.combat.applyKnockback(a.world, light, Vec2{5, 0}, 5.0);
-    // Two pushes from one tick add up rather than the last one winning.
-    CHECK_NEAR(a.world.get<Knockback>(light).impulse.x, 2.0 * 5.0 * kKnockbackScale, 1e-9);
+    // setMobKnockback() replaces rather than accumulates, so a dense petal
+    // ring does not launch a mob farther for each overlapping instance.
+    CHECK_NEAR(a.world.get<Knockback>(light).impulse.x, 5.0, 1e-9);
     CHECK_NEAR(a.world.get<Knockback>(light).impulse.y, 0.0, 1e-12);
 
     a.combat.applyKnockback(a.world, heavy, Vec2{5, 0}, 5.0);
-    CHECK_NEAR(a.world.get<Knockback>(heavy).impulse.x, 5.0 * kKnockbackScale / 4.0, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(heavy).impulse.x, 5.0 / 4.0, 1e-9);
 
     // The push is a direction, not a displacement: a distant hit does not push
     // harder than a touching one.
     const Entity other = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 1.0);
     a.combat.applyKnockback(a.world, other, Vec2{0, 400}, 5.0);
-    CHECK_NEAR(a.world.get<Knockback>(other).impulse.y, 5.0 * kKnockbackScale, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(other).impulse.y, 5.0, 1e-9);
     CHECK_NEAR(a.world.get<Knockback>(other).impulse.x, 0.0, 1e-12);
 }
 
-TEST(knockback_is_capped_and_skips_what_cannot_move) {
+TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
     Arena a;
     const Entity mover = a.actor({1000, 1000}, 10.0, 100.0, Team::Hostiles, 0.001);
     a.combat.applyKnockback(a.world, mover, Vec2{1, 0}, 1e6);
-    CHECK_NEAR(a.world.get<Knockback>(mover).impulse.x, kMaxKnockbackImpulse, 1e-9);
+    CHECK_NEAR(a.world.get<Knockback>(mover).impulse.x, 1e9, 1e-3);
 
     // A nest has no Motion; pushing it would only cost an archetype move.
     const Entity nest = a.world.create();
@@ -379,9 +388,35 @@ TEST(a_contact_hit_pushes_the_victim_away_from_the_attacker) {
     a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
 
     a.step(0.0);
-    CHECK(a.world.has<Knockback>(player));
-    CHECK(a.world.get<Knockback>(player).impulse.x > 0.0);   // shoved away from the mob
-    CHECK_NEAR(a.world.get<Knockback>(player).impulse.y, 0.0, 1e-9);
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1025.0, 1e-9);
+    CHECK_NEAR(a.world.get<Transform>(player).position.y, 1000.0, 1e-9);
+}
+
+TEST(a_mob_contact_knocks_an_invulnerable_player_back) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.get<Health>(player).invulnerableUntilMillis = 1000.0;
+    const Entity mob = a.mob({980, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    // playerState.ts performs this displacement before its invulnerability
+    // branch. Damage is refused; the 25-unit push is not.
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1025.0, 1e-9);
+}
+
+TEST(only_the_first_mob_contact_lands_per_player_per_tick) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity first = a.mob({1000, 1000}, 100.0);
+    const Entity second = a.mob({1000, 1000}, 100.0);
+    a.world.add<ContactDamage>(first, ContactDamage{10.0, 500.0});
+    a.world.add<ContactDamage>(second, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    // playerState.ts breaks out of the candidate loop after the first contact.
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
 }
 
 // ---------------------------------------------------------------------------
@@ -739,6 +774,30 @@ TEST(a_petal_hits_with_its_config_stats_and_its_own_cooldown) {
     CHECK_NEAR(a.health(mob), 190.0, 1e-9);
     a.step(500.0, f.registry);
     CHECK_NEAR(a.health(mob), 180.0, 1e-9);
+}
+
+TEST(a_petal_without_a_knockback_field_uses_the_game_default) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // The web implementation defaults an omitted knockback to 5.  Most
+    // ordinary petals omit the JSON field, so reading it as zero silently
+    // removed their push in the native game.
+    CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Common).knockback, 5.0, 1e-9);
+    // Unlike damage, ordinary knockback does not use the rarity multiplier.
+    CHECK_NEAR(f.registry.petalStats(f.sting, Rarity::Mythic).knockback, 2.0, 1e-9);
+    // Jelly is the one TypeScript rarity-override table for this stat.
+    CHECK_NEAR(f.registry.petalStats(f.jelly, Rarity::Rare).knockback, 100.0, 1e-9);
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1040, 1000}, 100.0);
+    equipPetal(a, player, f.plain, Rarity::Common, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    CHECK(a.world.has<Knockback>(mob));
+    CHECK(a.world.get<Knockback>(mob).impulse.x > 0.0);
 }
 
 TEST(rarity_scales_a_petals_damage_off_the_config) {

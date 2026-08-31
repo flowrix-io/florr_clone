@@ -425,6 +425,9 @@ TEST(enums_and_colours_are_parsed_not_stored_as_text) {
 
     CHECK_EQ(r.petal(r.petalIndex("cutter")).equipFlags, std::uint8_t(EquipCutter));
     CHECK_EQ(r.petal(r.petalIndex("third_eye")).equipFlags, std::uint8_t(EquipThirdEye));
+    CHECK_EQ(r.petal(r.petalIndex("observer")).equipFlags, std::uint8_t(EquipObserver));
+    CHECK_EQ(r.petal(r.petalIndex("antennae")).equipFlags, std::uint8_t(EquipAntennae));
+    CHECK_EQ(r.petal(r.petalIndex("sparkle")).equipFlags, std::uint8_t(EquipTest1));
     CHECK_EQ(r.petal(r.petalIndex("basic")).equipFlags, std::uint8_t(EquipNone));
 }
 

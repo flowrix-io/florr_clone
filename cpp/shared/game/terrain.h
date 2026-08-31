@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "shared/core/types.h"
@@ -69,9 +70,8 @@ public:
     /// map. Systems can run against one, which is what tests want.
     Terrain();
 
-    /// Builds the map for `seed`. Equal seeds give byte-identical grids -- the
-    /// client draws terrain it generated itself, so the two sides must agree
-    /// exactly and only the seed crosses the wire.
+    /// Builds the legacy procedural map for `seed`. Equal seeds give
+    /// byte-identical grids; production instead loads map_bundle.ts below.
     ///
     /// Ends by flood-filling from the spawn and carving a corridor to anything
     /// the noise walled off, so the postcondition is always isConnected().
@@ -81,6 +81,13 @@ public:
     /// both with -ffp-contract=off, or the odd tile will land on the other
     /// side of a threshold.
     void generate(std::uint64_t seed);
+
+    /// Loads MAP_TILE_RLE from TypeScript's generated map_bundle.ts. The
+    /// bundle remains the single map source used by both implementations.
+    bool loadMapBundle(const std::string& path, std::string& errorOut);
+
+    /// Replaces the grid with an authoritative network copy.
+    bool setTiles(const std::vector<std::uint8_t>& tiles);
 
     std::uint64_t seed() const { return seed_; }
 

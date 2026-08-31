@@ -46,6 +46,16 @@ struct RemoteEntity {
     double radius = 10;
     std::uint8_t state = 0;
 
+    /// The three flag families used only by the player sprite. They arrive for
+    /// player records in a snapshot and remain zero for all other entity kinds.
+    std::uint8_t faceFlags = FaceNone;
+    std::uint8_t equipFlags = EquipNone;
+    std::uint32_t renderFlags = PlayerRenderNone;
+
+    /// Smoothed eye-pupil offset in the flower's radius=25 local space.
+    double eyeX = 0;
+    double eyeY = 0;
+
     /// Set on the tick a spawn record arrived, so the renderer can play a
     /// pop-in and so interpolation knows not to blend from a stale origin.
     bool fresh = true;
