@@ -36,6 +36,8 @@ Key fromScancode(SDL_Scancode code) {
     case SDL_SCANCODE_ESCAPE: return Key::Escape;
     case SDL_SCANCODE_BACKSPACE: return Key::Backspace;
     case SDL_SCANCODE_TAB: return Key::Tab;
+    case SDL_SCANCODE_DELETE: return Key::Delete;
+    case SDL_SCANCODE_HOME: return Key::Home; case SDL_SCANCODE_END: return Key::End;
     case SDL_SCANCODE_LEFT: return Key::Left; case SDL_SCANCODE_RIGHT: return Key::Right;
     case SDL_SCANCODE_UP: return Key::Up; case SDL_SCANCODE_DOWN: return Key::Down;
     case SDL_SCANCODE_LSHIFT: return Key::LeftShift; case SDL_SCANCODE_RSHIFT: return Key::RightShift;
@@ -58,6 +60,7 @@ Key fromScancode(SDL_Scancode code) {
 
 constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::Count);
 constexpr std::size_t kButtonCount = static_cast<std::size_t>(MouseButton::Count);
+constexpr std::size_t kCursorCount = static_cast<std::size_t>(CursorShape::Count);
 
 } // namespace
 
@@ -78,6 +81,34 @@ struct Window::Impl {
   float mouseX = 0, mouseY = 0, wheel = 0;
   std::string typed;
   bool shift = false, ctrl = false, alt = false;
+
+#ifndef __EMSCRIPTEN__
+  // Built on first use and kept: SDL_CreateSystemCursor allocates, and a
+  // window that asks for a shape asks for it every frame.
+  std::array<SDL_Cursor*, kCursorCount> cursors{};
+#endif
+  CursorShape cursorRequested = CursorShape::Arrow;
+  // Count means "nothing has been pushed to the OS yet".
+  CursorShape cursorApplied = CursorShape::Count;
+
+#ifndef __EMSCRIPTEN__
+  void applyCursor() {
+    if (cursorRequested == cursorApplied) return;
+    const auto slot = static_cast<std::size_t>(cursorRequested);
+    if (slot >= kCursorCount) return;
+    if (!cursors[slot]) {
+      SDL_SystemCursor system = SDL_SYSTEM_CURSOR_ARROW;
+      if (cursorRequested == CursorShape::Hand) system = SDL_SYSTEM_CURSOR_HAND;
+      else if (cursorRequested == CursorShape::Text) system = SDL_SYSTEM_CURSOR_IBEAM;
+      cursors[slot] = SDL_CreateSystemCursor(system);
+      // A shape the platform will not make is not retried every frame; the
+      // pointer keeps whatever it already had.
+      if (!cursors[slot]) { cursorApplied = cursorRequested; return; }
+    }
+    SDL_SetCursor(cursors[slot]);
+    cursorApplied = cursorRequested;
+  }
+#endif
 
   void clearEdges() {
     pressed.fill(false);
@@ -147,6 +178,11 @@ void Window::close() {
 #ifndef __EMSCRIPTEN__
   if (impl_->texture) { SDL_DestroyTexture(impl_->texture); impl_->texture = nullptr; }
   if (impl_->renderer) { SDL_DestroyRenderer(impl_->renderer); impl_->renderer = nullptr; }
+  for (SDL_Cursor*& cursor : impl_->cursors) {
+    if (cursor) { SDL_FreeCursor(cursor); cursor = nullptr; }
+  }
+  impl_->cursorRequested = CursorShape::Arrow;
+  impl_->cursorApplied = CursorShape::Count;
   if (impl_->window) { SDL_DestroyWindow(impl_->window); impl_->window = nullptr; SDL_Quit(); }
 #endif
   impl_->canvas.reset();
@@ -195,8 +231,10 @@ bool Window::pump() {
           if (!event.key.repeat) impl_->pressed[i] = true;
           impl_->down[i] = true;
         }
-        if (event.key.repeat && event.key.keysym.scancode == SDL_SCANCODE_BACKSPACE) {
-          impl_->pressed[static_cast<std::size_t>(Key::Backspace)] = true;
+        // The two erase keys are the ones a text field must see repeat on:
+        // holding either has to keep deleting, as it does in the browser.
+        if (event.key.repeat && (k == Key::Backspace || k == Key::Delete)) {
+          impl_->pressed[i] = true;
         }
         break;
       }
@@ -262,7 +300,12 @@ int Window::height() const { return impl_->height; }
 
 void Window::present() {
 #ifndef __EMSCRIPTEN__
-  if (!open_ || !impl_->canvas || !impl_->texture) return;
+  if (!open_) return;
+  // Here rather than in setCursorShape: the shape is asserted by whatever is
+  // under the pointer during the frame, and only the last word of the frame
+  // should reach the OS.
+  impl_->applyCursor();
+  if (!impl_->canvas || !impl_->texture) return;
 
   // getImageData is the Canvas API's only pixel accessor, and it already
   // composites onto opaque; taking the whole surface once per frame is one
@@ -351,8 +394,35 @@ bool Window::shiftHeld() const { return impl_->shift; }
 bool Window::ctrlHeld() const { return impl_->ctrl; }
 bool Window::altHeld() const { return impl_->alt; }
 
+std::string Window::clipboardText() const {
+#ifdef __EMSCRIPTEN__
+  return {};
+#else
+  if (!SDL_HasClipboardText()) return {};
+  // SDL hands over a buffer it allocated; it is the caller's to free, and
+  // leaking one per paste would be a slow leak in a long session.
+  char* text = SDL_GetClipboardText();
+  if (!text) return {};
+  std::string out(text);
+  SDL_free(text);
+  return out;
+#endif
+}
+
+void Window::setClipboardText(const std::string& text) {
+#ifndef __EMSCRIPTEN__
+  SDL_SetClipboardText(text.c_str());
+#else
+  (void)text;
+#endif
+}
+
 void Window::setCursorVisible(bool visible) {
 #ifndef __EMSCRIPTEN__
   SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
 #endif
+}
+
+void Window::setCursorShape(CursorShape shape) {
+  if (shape < CursorShape::Count) impl_->cursorRequested = shape;
 }

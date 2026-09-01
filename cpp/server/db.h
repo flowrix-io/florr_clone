@@ -28,6 +28,7 @@
 #include "server/crypto.h"
 #include "shared/core/json.h"
 #include "shared/game/rarity.h"
+#include "shared/game/skills.h"
 
 namespace flr {
 
@@ -76,6 +77,10 @@ struct PlayerRecord {
     /// mob type -> rarity name -> count.
     Json mobKills = Json::object();
 
+    /// The talent tree. Stored as tiers only: the point balance is derived
+    /// from the level, so there is nothing here that can disagree with it.
+    SkillSet skills;
+
     /// One entry per loadout slot; an empty slot is a JSON null.
     std::vector<std::optional<StoredItem>> loadout;
 
@@ -91,6 +96,9 @@ struct PlayerRecord {
 
     int killCount(const std::string& mobType, Rarity rarity) const;
     void recordKill(const std::string& mobType, Rarity rarity);
+
+    /// Unspent talent points, from the level this record's XP buys.
+    int talentPoints() const;
 };
 
 /// A registered account. `passwordHash` is a bcrypt string; see verifyPassword
@@ -113,6 +121,24 @@ struct Account {
     std::string mutedBy;
 
     Json extra = Json::object();
+};
+
+/// What one authentication's daily-login award came to.
+///
+/// The rule is the browser build's: the first login of each UTC day pays
+/// `((streak - 1) % 5) + 1` stars, a missed day resets the streak to 1, and the
+/// two timestamps are what the title screen's streak card counts down to.
+struct DailyStreakResult {
+    int starsAwarded = 0;
+    int streak = 0;
+    /// True when THIS call is the one that claimed today.
+    bool newDay = false;
+    /// Unix millis when the next claim window opens: the next UTC midnight if
+    /// today is already claimed, otherwise now.
+    std::int64_t nextClaimAtMillis = 0;
+    /// Unix millis when an unclaimed streak lapses -- the end of the day after
+    /// the next claim window.
+    std::int64_t streakExpiresAtMillis = 0;
 };
 
 enum class CreateStatus : std::uint8_t {
@@ -300,6 +326,12 @@ public:
     /// anything and must call markDirty().
     PlayerRecord& progress(const std::string& userId);
     const PlayerRecord* findProgress(const std::string& userId) const;
+
+    /// Claims today's daily-login reward for `userId`, if it is not claimed
+    /// already, and reports the resulting streak. Called once per successful
+    /// authentication; calling it twice on the same UTC day is a no-op that
+    /// still reports the current state, which is what a reconnect needs.
+    DailyStreakResult processDailyStreak(const std::string& userId);
     std::size_t playerCount() const { return players_.size(); }
 
     void setClock(ClockFn fn) { clock_ = fn; }
@@ -309,6 +341,24 @@ public:
     /// The whole database as JSON, in the shape and key order it is stored in.
     /// Exposed because it is exactly what a backup wants.
     Json toJson() const;
+
+    /// One unmodelled top-level table, read exactly as the file stores it.
+    ///
+    /// Separate from rawTable() because that one COERCES its value to an
+    /// object. That is right for the dictionaries it was written for and fatal
+    /// for `notifications`, which the browser build stores as an ARRAY: one
+    /// coercing read would replace the whole feed with `{}`. Returns a null
+    /// Json when the table is absent.
+    const Json& storedTable(const std::string& key) const { return otherTop_[key]; }
+
+    /// One of the top-level tables this build does not model, as raw JSON.
+    ///
+    /// The star codes are genuinely a dictionary of open-ended records that
+    /// only one handler ever reads, and a typed mirror of them would be a
+    /// lossy copy of the file's own shape. Creates the table -- and its place
+    /// in the key order, or a save would drop it again -- on first access; the
+    /// caller marks the database dirty.
+    Json& rawTable(const std::string& key);
 
 private:
     void reset();

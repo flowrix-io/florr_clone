@@ -29,7 +29,12 @@ void Path2D::arcTo(float a,float b,float c,float d,float e) { segments_.push_bac
 void Path2D::ellipse(float a,float b,float c,float d,float e,float f,float g,bool h) { segments_.push_back(segment(Command::Ellipse,{a,b,c,d,e,f,g},h)); }
 void Path2D::rect(float a,float b,float c,float d) { segments_.push_back(segment(Command::Rect,{a,b,c,d})); }
 void Path2D::roundRect(float a,float b,float c,float d,float e) { segments_.push_back(segment(Command::RoundRect,{a,b,c,d,e})); }
-void Path2D::addPath(const Path2D& other) { segments_.insert(segments_.end(), other.segments_.begin(), other.segments_.end()); }
+void Path2D::addPath(const Path2D& other) {
+    segments_.insert(segments_.end(), other.segments_.begin(), other.segments_.end());
+    // A path that has absorbed glyphs is a glyph path: losing the mark here
+    // would silently drop the text gamma on any composed run.
+    glyphOutlines_ = glyphOutlines_ || other.glyphOutlines_;
+}
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -76,6 +81,15 @@ EM_JS(double, c2d_measure, (int id,const char* text), { return Module.cppCanvasC
 EM_JS(void, c2d_draw, (int dst,int src,double a,double b,double c,double d,int sized), { const x=Module.cppCanvasContexts[dst].ctx, image=Module.cppCanvasContexts[src].surface; sized ? x.drawImage(image,a,b,c,d) : x.drawImage(image,a,b); });
 EM_JS(int, c2d_get_pixels, (int id,int x,int y,int w,int h,std::uint8_t* out), { const d=Module.cppCanvasContexts[id].ctx.getImageData(x,y,w,h).data; HEAPU8.set(d,out); return d.length; });
 EM_JS(void, c2d_put_pixels, (int id,const std::uint8_t* data,int sw,int sh,int dx,int dy), { const d=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+sw*sh*4)),sw,sh); Module.cppCanvasContexts[id].ctx.putImageData(d,dx,dy); });
+EM_JS(void, c2d_image, (int id,const std::uint8_t* data,int iw,int ih,double dx,double dy,double dw,double dh,double alpha), {
+  const pixels=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+iw*ih*4)),iw,ih);
+  // putImageData ignores the transform, so the pixels go to a scratch surface
+  // first and reach the destination through drawImage, which does not.
+  const scratch = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(iw,ih) : document.createElement('canvas');
+  scratch.width=iw; scratch.height=ih; scratch.getContext('2d').putImageData(pixels,0,0);
+  const ctx=Module.cppCanvasContexts[id].ctx, was=ctx.globalAlpha;
+  ctx.globalAlpha=was*alpha; ctx.drawImage(scratch,dx,dy,dw,dh); ctx.globalAlpha=was;
+});
 #define OP(code,a,b,c,d,e,f,g,h,s) c2d_op(contextId_,code,a,b,c,d,e,f,g,h,s)
 #else
 #define OP(code,a,b,c,d,e,f,g,h,s) ((void)0)
@@ -768,6 +782,78 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
     }
 #endif
 }
+void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,float dw,float dh,float alpha) {
+#ifdef __EMSCRIPTEN__
+  c2d_image(contextId_,rgba,iw,ih,dx,dy,dw,dh,alpha);
+#else
+  if (!rgba || iw<=0 || ih<=0 || dw==0 || dh==0 || state_.alpha<=0 || alpha<=0) return;
+  // One matrix from image pixels straight to device pixels: the image->box
+  // scale folded into the current transform. Inverting THAT (rather than
+  // mapping the box's corners forward) is what keeps a rotated image sampled
+  // along its own axes.
+  const auto& t=state_.matrix;
+  const float ux=dw/iw, uy=dh/ih;
+  const float ma=t[0]*ux, mb=t[1]*ux, mc=t[2]*uy, md=t[3]*uy;
+  const float me=t[0]*dx+t[2]*dy+t[4], mf=t[1]*dx+t[3]*dy+t[5];
+  const float det=ma*md-mb*mc;
+  if (!(std::abs(det)>1e-12f)) return;
+  const float ia=md/det, ib=-mb/det, ic=-mc/det, id=ma/det;
+  const float ie=(mc*mf-md*me)/det, iff=(mb*me-ma*mf)/det;
+  float lo=1e30f,hi=-1e30f,top=1e30f,bottom=-1e30f;
+  const float cw=static_cast<float>(iw), ch=static_cast<float>(ih);
+  const float corners[4][2]={{0,0},{cw,0},{cw,ch},{0,ch}};
+  for (const auto& c : corners) {
+    const float px=ma*c[0]+mc*c[1]+me, py=mb*c[0]+md*c[1]+mf;
+    if (!(std::isfinite(px)&&std::isfinite(py))) return;
+    lo=std::min(lo,px); hi=std::max(hi,px); top=std::min(top,py); bottom=std::max(bottom,py);
+  }
+  const int x0=std::max(0,static_cast<int>(std::floor(lo))), x1=std::min(width_,static_cast<int>(std::ceil(hi))+1);
+  const int y0=std::max(0,static_cast<int>(std::floor(top))), y1=std::min(height_,static_cast<int>(std::ceil(bottom))+1);
+  if (x0>=x1||y0>=y1) return;
+  // Minification is where a point sample turns detailed artwork into noise, so
+  // the subsample grid tracks how many image pixels land under one device
+  // pixel; magnification needs none, and the bilinear fetch below carries it.
+  const float stepX=std::hypot(ma,mb), stepY=std::hypot(mc,md);
+  const float shrink=std::max(stepX>1e-6f?1.f/stepX:1.f, stepY>1e-6f?1.f/stepY:1.f);
+  const int grid=std::clamp(static_cast<int>(std::ceil(shrink)),1,4);
+  const float slice=1.f/grid;
+  const int samples=grid*grid;
+  for (int y=y0;y<y1;++y) for (int x=x0;x<x1;++x) {
+    const float clip=clipAt(x,y);
+    if (clip<=0.f) continue;
+    float sumR=0,sumG=0,sumB=0,sumA=0;
+    for (int sy=0;sy<grid;++sy) for (int sx=0;sx<grid;++sx) {
+      const float px=x+(sx+0.5f)*slice, py=y+(sy+0.5f)*slice;
+      const float u=ia*px+ic*py+ie, v=ib*px+id*py+iff;
+      if (u<0||v<0||u>=cw||v>=ch) continue;
+      // Texel centres sit at +0.5, so the bilinear weights are measured from
+      // there; sampling at u,v directly shifts the whole image half a pixel.
+      const float fu=u-0.5f, fv=v-0.5f;
+      const int bx=static_cast<int>(std::floor(fu)), by=static_cast<int>(std::floor(fv));
+      const float tx=fu-bx, ty=fv-by;
+      const int lx=std::clamp(bx,0,iw-1), rx=std::clamp(bx+1,0,iw-1);
+      const int ty0=std::clamp(by,0,ih-1), ty1=std::clamp(by+1,0,ih-1);
+      const std::uint8_t* p00=rgba+(static_cast<std::size_t>(ty0)*iw+lx)*4;
+      const std::uint8_t* p10=rgba+(static_cast<std::size_t>(ty0)*iw+rx)*4;
+      const std::uint8_t* p01=rgba+(static_cast<std::size_t>(ty1)*iw+lx)*4;
+      const std::uint8_t* p11=rgba+(static_cast<std::size_t>(ty1)*iw+rx)*4;
+      const float w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
+      // Interpolated PREMULTIPLIED: blending straight colour across a
+      // transparent texel drags its (undefined) rgb into the visible edge.
+      const float a00=p00[3]*(1.f/255.f), a10=p10[3]*(1.f/255.f), a01=p01[3]*(1.f/255.f), a11=p11[3]*(1.f/255.f);
+      sumR+=w00*p00[0]*a00+w10*p10[0]*a10+w01*p01[0]*a01+w11*p11[0]*a11;
+      sumG+=w00*p00[1]*a00+w10*p10[1]*a10+w01*p01[1]*a01+w11*p11[1]*a11;
+      sumB+=w00*p00[2]*a00+w10*p10[2]*a10+w01*p01[2]*a01+w11*p11[2]*a11;
+      sumA+=w00*a00+w10*a10+w01*a01+w11*a11;
+    }
+    if (sumA<=1e-4f) continue;
+    const Color color{static_cast<std::uint8_t>(std::clamp(std::lround(sumR/sumA),0L,255L)),
+                      static_cast<std::uint8_t>(std::clamp(std::lround(sumG/sumA),0L,255L)),
+                      static_cast<std::uint8_t>(std::clamp(std::lround(sumB/sumA),0L,255L)), 255};
+    paint(x,y,color,(sumA/samples)*alpha*state_.alpha*clip);
+  }
+#endif
+}
 std::vector<std::uint8_t> Canvas::getImageData(int a,int b,int c,int d)const {
   std::vector<std::uint8_t>r(std::max(0,c)*std::max(0,d)*4);
 #ifdef __EMSCRIPTEN__
@@ -846,14 +932,45 @@ void Canvas::paint(int x,int y,Color c,float coverage) {
           static_cast<std::uint8_t>(std::lround(oa*255))};
 }
 void Canvas::blendPixel(int x,int y,Color c) { paint(x,y,c,1.f); }
+namespace {
+// The browser blends a SHAPE's coverage linearly -- a rect straddling a pixel
+// at 0.7 coverage lands on 179, dead on the ladder -- but it does not blend a
+// FILLED GLYPH's that way: its mask rasterizer pushes partial coverage up a
+// ramp (a stroked glyph is a path, and stays linear -- see strokeDevice), so
+// the edge of a white stem reaches full brightness instead of stopping at
+// mid-grey. Rasterizing the bundled Ubuntu faces in Chrome and here, then
+// pairing the two bitmaps pixel for pixel, puts that ramp at coverage^(1/3.2)
+// (linear rasterizing is 21.8 rms off Chrome across four glyph sizes, 1/2.2 is
+// 11.8 off, 1/3.2 is 10.1). Applying it to shapes too would fatten every
+// petal, wall and button edge in the client away from the reference.
+constexpr float kTextGamma = 3.2f;
+inline float textCoverage(float cov, bool glyph) {
+  return glyph && cov > 0.f && cov < 1.f ? std::pow(cov, 1.f/kTextGamma) : cov;
+}
+} // namespace
 void Canvas::fillDevice(const Path2D& path, bool evenOdd, Color color) {
   if (color.a==0 || state_.alpha<=0 || path.segments().empty()) return;
+  const bool glyph=path.glyphOutlines();
   flatten(path, state_.matrix, matrixScale(state_.matrix), gFlat);
-  scanFill(gFlat, evenOdd, width_, height_, [&](int x,int y,float cov){ paint(x,y,color,cov*state_.alpha*clipAt(x,y)); });
+  scanFill(gFlat, evenOdd, width_, height_, [&](int x,int y,float cov){ paint(x,y,color,textCoverage(cov,glyph)*state_.alpha*clipAt(x,y)); });
 }
 void Canvas::strokeDevice(const Path2D& path) {
   if (state_.stroke.a==0 || state_.alpha<=0 || state_.lineWidth<=0 || path.segments().empty()) return;
   const float scale=matrixScale(state_.matrix);
+  // No text gamma here, even for glyph outlines. The browser rasterizes a
+  // FILLED glyph through its mask pipeline, where coverage goes up the ramp
+  // kTextGamma models -- but a STROKED one is converted to a path and stroked
+  // like any other shape, with plain linear coverage. Ramping it here made a
+  // 12px outline rasterize as if it were several times wider: every
+  // partial-coverage pixel along both edges of the outline jumped most of the
+  // way to opaque, so the outline both spread outward and ate into the white
+  // core the fill puts back on top. Measured against Chrome on the bundled
+  // Ubuntu Bold -- 'o'/'H'/'S'/'e'/'A'/'n' at 12..40px and lineWidth 2..8 --
+  // the ramp overshot total outline ink by 5% at lineWidth 8 and 28% at
+  // lineWidth 2 (the excess tracks edge length, not area, which is what makes
+  // it worse the thinner the line); dropping it lands every case within 1%
+  // and halves per-pixel rms, 17.4 -> 7.0, level with a plain shape stroke's
+  // 8.5 against the same reference.
   flatten(path, Matrix{1,0,0,1,0,0}, scale, gFlat);
   const Poly* source=&gFlat;
   if (!state_.dash.empty()) { applyDash(gFlat, state_.dash, state_.dashOffset, gDash); source=&gDash; }

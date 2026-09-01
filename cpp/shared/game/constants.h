@@ -138,7 +138,16 @@ inline double playerRadiusForLevel(int level) {
 // Petals
 // ---------------------------------------------------------------------------
 
-inline constexpr int kLoadoutSlots = 8;
+/// Loadout slots an account holds and the wire carries. Twenty, matching the
+/// browser build, which pads every profile's loadout to that width.
+inline constexpr int kLoadoutSlots = 20;
+
+/// How many of those slots are ACTUALLY equipped -- the ring, the modifiers,
+/// the passive heals. The rest is storage a player carries and swaps from.
+/// The browser draws the same two rows and stops every gameplay loop at ten
+/// (`PRIMARY_LOADOUT_SLOTS`, src/server/shared/playerModifiers.ts:36); a ring
+/// built from all twenty would give a second row of petals for free.
+inline constexpr int kLoadoutActiveSlots = 10;
 
 /// TypeScript's neutral petal orbit is 60 world units for a normal 20-unit
 /// player hitbox. When the player grows, only the body's added radius grows

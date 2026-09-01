@@ -11,6 +11,9 @@
 #include <vector>
 
 #include "client/world_view.h"
+#include "shared/game/config.h"
+#include "shared/game/skin_format.h"
+#include "shared/game/skills.h"
 #include "shared/game/terrain.h"
 #include "shared/net/protocol.h"
 #include "shared/net/transport.h"
@@ -37,6 +40,105 @@ struct Profile {
         bool empty() const { return petalIndex == 0xFFFF; }
     };
     std::vector<Slot> loadout;
+
+    /// The cosmetic bit currently worn, or PlayerRenderNone.
+    std::uint32_t renderFlags = 0;
+
+    SkillSet skills;
+
+    /// Kills per mob and tier, flattened as `mobIndex * kRarityCount + tier`.
+    /// A dense grid rather than a map: the gallery reads every cell of it once
+    /// per frame, and there are only a few hundred.
+    std::vector<std::uint32_t> mobKills;
+
+    std::uint32_t killCount(std::uint16_t mobIndex, Rarity rarity) const {
+        const std::size_t at = static_cast<std::size_t>(mobIndex) * kRarityCount + rarityIndex(rarity);
+        return at < mobKills.size() ? mobKills[at] : 0;
+    }
+
+    /// Unspent talent points. Derived from the level exactly as the server
+    /// derives it, so the panel never shows a balance the server would refuse.
+    int talentPoints() const { return availableTalentPoints(level, skills); }
+
+    /// How many of one petal at one tier the account holds.
+    std::uint32_t stackCount(std::uint16_t petalIndex, Rarity rarity) const {
+        for (const Stack& stack : inventory) {
+            if (stack.petalIndex == petalIndex && stack.rarity == rarity) return stack.count;
+        }
+        return 0;
+    }
+};
+
+/// One row of the account leaderboard.
+struct LeaderboardRow {
+    std::string name;
+    int level = 1;
+    double totalXp = 0;
+};
+
+/// One entry of the global notification feed.
+struct NotificationEntry {
+    /// The server's own id string. It is what the read set is keyed on, so it
+    /// travels verbatim rather than being re-derived from the timestamp.
+    std::string id;
+    net::NotificationKind kind = net::NotificationKind::Generic;
+    std::string message;
+    /// Unix milliseconds, so "3 days ago" can be measured against a wall clock
+    /// rather than against this process's uptime.
+    double timestampMillis = 0;
+};
+
+/// The player's guild, as the last GuildUpdate described it.
+///
+/// `joined` false is the browser's `guildUpdate null`: the panel's no-guild
+/// view, not merely "not fetched yet".
+struct GuildState {
+    bool joined = false;
+    std::string name;
+    std::string leader;
+    std::vector<std::string> members;
+    /// The subset of `members` currently connected. Kept as names rather than
+    /// as flags on the member list because that is the shape the panel sorts by.
+    std::vector<std::string> online;
+};
+
+/// A guild invitation waiting on an answer.
+struct GuildInvite {
+    bool waiting = false;
+    std::string guildName;
+    std::string fromUsername;
+    /// Raised when an invite lands, so the menu system can force the panel
+    /// open once and then clear it. Separate from `waiting`, which stays set
+    /// for as long as the invite is unanswered.
+    bool justArrived = false;
+};
+
+/// The outcome of the last craft, for the crafting panel's result animation.
+struct CraftOutcome {
+    bool pending = false;      ///< a result arrived that the panel has not read
+    bool success = false;
+    std::uint16_t petalIndex = 0;
+    Rarity rarity = Rarity::Common;
+    /// How many upgrades the whole staged pool produced. The panel's result
+    /// caption counts these, so a staged x3 that landed twice reads "x2".
+    int crafted = 0;
+    /// The sub-batch tail the pool could not spend, 0-4. The ring keeps this
+    /// many slots filled when nothing was crafted.
+    int petalsReturned = 0;
+    std::string reason;
+};
+
+/// The shop's own reply channel: what came back from a purchase or a code.
+///
+/// Separate from the notice stream because the reference answers both in a
+/// modal on the shop card -- "Purchase failed: ..." / "Code redemption failed:
+/// ..." -- and a chat line is not that.
+struct ShopOutcome {
+    bool pending = false;      ///< a result arrived that the panel has not read
+    bool redeem = false;       ///< false for a purchase
+    bool ok = false;
+    int stars = 0;             ///< what a redeemed code paid
+    std::string message;
 };
 
 struct ChatLine {
@@ -44,12 +146,28 @@ struct ChatLine {
     std::string author;
     std::string text;
     double receivedAtMillis = 0;
+    /// Unix milliseconds, for the "[3:04:05 PM]" stamp the transcript prints.
+    /// Separate from `receivedAtMillis`, which is monotonic uptime and so
+    /// cannot be turned into a wall-clock time of day.
+    std::int64_t wallClockMillis = 0;
 };
 
-struct Notice {
-    net::NoticeSeverity severity = net::NoticeSeverity::Info;
-    std::string text;
-    double receivedAtMillis = 0;
+/// The daily-login streak, as the server computed it at authentication. The
+/// title screen's streak card is the only reader; it counts down to the two
+/// timestamps, which are Unix millis and so are comparable with the wall clock
+/// rather than with the app's own uptime.
+struct DailyStreak {
+    /// False until an authentication has answered. The card does not paint
+    /// before then, because "Day 0" is not a thing it can say.
+    bool known = false;
+    int streak = 0;
+    /// True when this login is the one that claimed today. Latched for the
+    /// session, exactly as the browser build latches it, so the card keeps its
+    /// brighter star until the next login.
+    bool newDay = false;
+    int starsAwarded = 0;
+    std::int64_t nextClaimAtMillis = 0;
+    std::int64_t streakExpiresAtMillis = 0;
 };
 
 class NetClient : public net::TransportHandler {
@@ -83,7 +201,10 @@ public:
     void requestRegister(const std::string& username, const std::string& password);
     void requestLogin(const std::string& username, const std::string& password);
     void resumeSession(const std::string& token);
-    void joinGame(int viewportWidth, int viewportHeight);
+    /// `spawnBiome` is empty (or "default") for the beginner ground.
+    /// `playerName` is the flower's nameplate; empty spawns as "Unnamed".
+    void joinGame(int viewportWidth, int viewportHeight,
+                  const std::string& spawnBiome = {}, const std::string& playerName = {});
     void leaveGame();
     void sendInput(const net::InputFrame&);
     void sendChat(const std::string& text);
@@ -92,6 +213,37 @@ public:
     void requestCraft(std::uint16_t petalIndex, Rarity rarity, int count);
     void requestRespawn();
     void sendPing();
+    /// Buys the NEXT tier of a branch. The server refuses anything else, so
+    /// the panel never has to guess whether a jump would be allowed.
+    void requestUpgradeSkill(SkillId skill, int tier);
+    void requestResetSkills();
+    void requestBuyPetal(std::uint16_t petalIndex, Rarity rarity);
+    /// Redeems a star code. The answer lands in shopOutcome().
+    void requestRedeemCode(const std::string& code);
+    void requestSkin(std::uint32_t renderFlags);
+    /// Offers an authored skin to the shared catalog. The server re-sanitizes
+    /// and assigns the id, so nothing here is authoritative -- the studio runs
+    /// the same check first only so a rejection is instant.
+    void publishSkin(const std::string& name, const std::vector<SkinShape>& shapes);
+    /// Wears a published skin, or takes the current one off when `id` is empty.
+    /// The local field moves immediately: the reference equips optimistically
+    /// and the server's answer is the persistence, not the confirmation.
+    void equipSkin(const std::string& id);
+    void deleteSkin(const std::string& id);
+    void requestLeaderboard();
+    /// Asks for one page of the global notification feed, newest first.
+    /// `beforeMillis` of 0 asks for the newest page; anything else pages back
+    /// past the oldest entry already held, as the browser's `?before=` does.
+    void requestNotifications(int limit, double beforeMillis);
+
+    void requestGuildCreate(const std::string& name);
+    void requestGuildInvite(const std::string& username);
+    void requestGuildAccept();
+    void requestGuildDecline();
+    void requestGuildKick(const std::string& username);
+    void requestGuildLeave();
+    void requestGuildSquadAll();
+    void requestGuildInviteToSquad(const std::string& username);
 
     // -- state -------------------------------------------------------------
     WorldView& view() { return view_; }
@@ -101,10 +253,63 @@ public:
     const Profile& profile() const { return profile_; }
     const std::string& sessionToken() const { return sessionToken_; }
     const std::vector<ChatLine>& chat() const { return chat_; }
-    std::vector<Notice>& notices() { return notices_; }
+    const DailyStreak& dailyStreak() const { return dailyStreak_; }
+
+    /// Every published skin the server has told this client about, the one this
+    /// account is wearing, and whether it may take other people's skins down.
+    ///
+    /// One registry for two readers: the studio's Browse tab lists it, and the
+    /// world renderer resolves a wearer's id through it. A skin nobody has been
+    /// sent cannot be drawn, which is why the catalog arrives at login rather
+    /// than when the studio opens.
+    const std::vector<CustomSkin>& skinCatalog() const { return skinCatalog_; }
+    const CustomSkin* findSkin(const std::string& id) const;
+    const std::string& equippedSkinId() const { return equippedSkinId_; }
+    bool isSkinAdmin() const { return skinAdmin_; }
+
+    /// Puts a locally generated System line in the transcript. There is no
+    /// separate notice or toast layer: every announcement the reference makes,
+    /// its own included, is a chat line.
+    void addSystemMessage(const std::string& text);
+    /// The same, under a chosen sender. The studio reports its own failures as
+    /// lines from "Skins", exactly as the reference does, so the author is not
+    /// always "System".
+    void addLocalChat(const std::string& author, const std::string& text);
 
     /// Round-trip time in milliseconds, from the last Ping/Pong exchange.
     double pingMillis() const { return pingMillis_; }
+
+    const std::vector<LeaderboardRow>& leaderboard() const { return leaderboard_; }
+    /// True between asking for the board and the answer arriving.
+    bool leaderboardPending() const { return leaderboardPending_; }
+    /// How many accounts the server holds, and how many of them authenticated
+    /// in the last day. The second is 0 for a non-admin, which is how the
+    /// browser's payload leaves the field out.
+    std::uint32_t totalAccounts() const { return totalAccounts_; }
+    std::uint32_t dailyActiveUsers() const { return dailyActiveUsers_; }
+
+    const std::vector<NotificationEntry>& notifications() const { return notifications_; }
+    /// True between asking for a page and the answer arriving.
+    bool notificationsPending() const { return notificationsPending_; }
+    /// True while there may be an older page to ask for. Starts true and is
+    /// only ever answered by a reply, exactly as the reference's `hasMore` is:
+    /// a panel opening for the first time draws its loading footer on the
+    /// strength of it.
+    bool notificationsHaveMore() const { return notificationsMore_; }
+
+    const GuildState& guild() const { return guild_; }
+    /// Mutable because the panel answers an invite locally the moment it sends
+    /// the reply, exactly as the reference clears `pendingInvite` on click.
+    GuildInvite& guildInvite() { return guildInvite_; }
+    const GuildInvite& guildInvite() const { return guildInvite_; }
+
+    /// The last craft result. The panel clears `pending` once it has started
+    /// the animation for it.
+    CraftOutcome& craftOutcome() { return craftOutcome_; }
+
+    /// The last purchase or code redemption. The shop panel clears `pending`
+    /// once it has raised the modal for it.
+    ShopOutcome& shopOutcome() { return shopOutcome_; }
 
     /// Set when the server reports the player died; cleared by respawning.
     bool dead() const { return dead_; }
@@ -134,9 +339,21 @@ private:
     void handleJoinAccepted(ByteReader&);
     void handleChat(ByteReader&);
     void handleNotice(ByteReader&);
+    /// Appends one line and trims the transcript to its cap.
+    void pushChat(net::ChatChannel, std::string author, std::string text);
     void handleDied(ByteReader&);
+    void handleCraftResult(ByteReader&);
+    void handleShopResult(ByteReader&);
+    void handleLeaderboard(ByteReader&);
+    void handleNotifications(ByteReader&);
+    void handleGuildUpdate(ByteReader&);
+    void handleGuildInviteReceived(ByteReader&);
     void handlePong(ByteReader&);
     void handleKick(ByteReader&);
+    void handleDailyStreak(ByteReader&);
+    void handleSkinCatalog(ByteReader&);
+    void handleSkinPublished(ByteReader&);
+    void handleSkinDeleted(ByteReader&);
 
     net::Dialer dialer_;
     Status status_ = Status::Offline;
@@ -147,7 +364,29 @@ private:
     Profile profile_;
     std::string sessionToken_;
     std::vector<ChatLine> chat_;
-    std::vector<Notice> notices_;
+    DailyStreak dailyStreak_;
+
+    std::vector<CustomSkin> skinCatalog_;
+    std::string equippedSkinId_;
+    bool skinAdmin_ = false;
+
+    std::vector<LeaderboardRow> leaderboard_;
+    bool leaderboardPending_ = false;
+    std::uint32_t totalAccounts_ = 0;
+    std::uint32_t dailyActiveUsers_ = 0;
+
+    std::vector<NotificationEntry> notifications_;
+    bool notificationsPending_ = false;
+    bool notificationsMore_ = true;
+    /// Whether the request in flight asked for an OLDER page. A page from the
+    /// newest end replaces the feed; one from behind the oldest entry appends
+    /// to it, and only the request knows which this is.
+    bool notificationsPaging_ = false;
+
+    GuildState guild_;
+    GuildInvite guildInvite_;
+    CraftOutcome craftOutcome_;
+    ShopOutcome shopOutcome_;
 
     double pingMillis_ = 0;
     bool dead_ = false;

@@ -1,11 +1,24 @@
 #pragma once
 // World <-> screen mapping.
 //
-// The camera follows the player with a spring rather than rigidly, so that a
-// knockback or a fast direction change moves the world under the flower
-// instead of snapping the whole scene. Zoom is derived from the window size so
-// a large window shows more world rather than the same world drawn bigger --
-// otherwise widening the window would be a competitive advantage.
+// Two decisions here look wrong in isolation and are not: the browser client
+// is the reference, and it does both of these on purpose.
+//
+//  * Zoom is resolution-independent. `Graphics.zoomLevel` (src/graphics/
+//    core.ts) is a flat 1.0 -- the player's zoom setting times whatever a
+//    petal asks for -- and the world transform is nothing but
+//    ctx.scale(zoomLevel, zoomLevel) (src/graphics/render.ts). A bigger window
+//    therefore shows MORE world at the same pixel scale rather than the same
+//    world drawn bigger. Scaling zoom by viewportHeight/1080 instead, as this
+//    camera used to, shrank every world-unit metric in the renderer to 0.667x
+//    at 720p while the HUD stayed put.
+//
+//  * The camera is pinned to the flower, never eased toward it. src/game.ts's
+//    updateCamera writes the camera straight from the flower's *drawn*
+//    position each frame, so the flower sits exactly on the screen centre.
+//    That is load-bearing: the mouse control law reads the cursor's offset
+//    from the screen centre and treats it as the offset from the flower, so a
+//    lagging camera would skew steering, not just drift the flower off centre.
 
 #include "shared/core/types.h"
 
@@ -13,37 +26,19 @@ namespace flr {
 
 class Camera {
 public:
-    /// Follows `target`, easing toward it. `dt` in seconds.
-    void follow(Vec2 target, double dt) {
-        if (!initialised_) {
-            centre_ = target;
-            initialised_ = true;
-            return;
-        }
-        // Frame-rate independent easing; a fixed per-frame lerp would make the
-        // camera lag more on a slow machine.
-        centre_.x = damp(centre_.x, target.x, followRate, dt);
-        centre_.y = damp(centre_.y, target.y, followRate, dt);
-    }
-
-    /// Jumps the camera outright. For respawn and teleport, where easing would
-    /// pan the whole map past the player.
-    void snapTo(Vec2 target) {
-        centre_ = target;
-        initialised_ = true;
-    }
+    /// Centres the camera on `target`. The only way the camera moves: it is
+    /// called every frame with the flower's drawn position, and again on
+    /// respawn and teleport.
+    void snapTo(Vec2 target) { centre_ = target; }
 
     void setViewport(int width, int height) {
         viewportWidth_ = width;
         viewportHeight_ = height;
     }
 
-    /// Zoom that keeps a constant amount of world visible vertically, so the
-    /// game plays identically at any window size.
-    double zoom() const {
-        const double base = viewportHeight_ / referenceHeight;
-        return base * userZoom;
-    }
+    /// World units -> pixels. Independent of the window size, so widening the
+    /// window reveals more map instead of magnifying what is already there.
+    double zoom() const { return userZoom; }
 
     Vec2 worldToScreen(Vec2 world) const {
         const double z = zoom();
@@ -74,21 +69,13 @@ public:
     int viewportWidth() const { return viewportWidth_; }
     int viewportHeight() const { return viewportHeight_; }
 
-    /// World units visible vertically at zoom 1. Sets how much of the map a
-    /// player sees, which is a balance decision, not a display one.
-    double referenceHeight = 1080.0;
-
     /// Player-controlled zoom, and the transient zoom some petals apply.
     double userZoom = 1.0;
-
-    /// Fraction of the remaining distance the camera closes per second.
-    double followRate = 0.9999;
 
 private:
     Vec2 centre_;
     int viewportWidth_ = 1280;
     int viewportHeight_ = 720;
-    bool initialised_ = false;
 };
 
 } // namespace flr

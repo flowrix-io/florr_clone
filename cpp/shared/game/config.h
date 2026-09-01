@@ -235,7 +235,10 @@ struct PetalConfig {
     bool hasFixedDirection = false;
     double fixedDirection = 0;
 
-    /// Draw offset along the flower's up axis.
+    /// Draw offset in the petal's own rotated frame. Both axes, because the
+    /// reference translates by both after the rotation and a petal that
+    /// declares only an X offset would otherwise be drawn on the ring centre.
+    double visualOffsetX = 0;
     double visualOffsetY = 0;
     /// The petal is not drawn at all. Three entries express this in the JSON
     /// with a visualOffsetY of -1e100, which is a way of shoving the sprite
@@ -355,6 +358,13 @@ public:
     std::size_t mobCount() const { return mobs_.size(); }
     std::size_t petalCount() const { return petals_.size(); }
 
+    /// Every petal index in CATALOGUE order: petals.json's own key order, then
+    /// the generated eggs in mobs.json's order. This is what the browser's
+    /// `Object.keys(PETAL_CONFIG)` yields, and what any surface that lists
+    /// petals must walk -- the indices themselves are sorted so that the wire
+    /// stays stable, which is a different order and the wrong one to paint.
+    const std::vector<std::uint16_t>& petalDisplayOrder() const { return petalOrder_; }
+
     /// FNV-1a folded over the raw bytes of every file loaded, in a fixed
     /// order. Compared in the connect handshake.
     std::uint32_t contentHash() const { return hash_; }
@@ -373,6 +383,7 @@ private:
     std::vector<PetalConfig> petals_;
     std::unordered_map<std::string, std::uint16_t> mobIds_;
     std::unordered_map<std::string, std::uint16_t> petalIds_;
+    std::vector<std::uint16_t> petalOrder_;
     std::vector<std::string> warnings_;
     std::uint32_t hash_ = 0;
 };

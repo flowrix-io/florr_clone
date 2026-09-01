@@ -22,6 +22,7 @@
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
 #include "shared/game/rarity.h"
+#include "shared/game/skills.h"
 #include "shared/net/protocol.h"
 
 namespace flr {
@@ -232,6 +233,15 @@ struct PlayerAccount {
     std::string username;
     net::ConnectionId connection = 0;
     bool admin = false;
+};
+
+/// The talent tree as the simulation sees it.
+///
+/// A copy of the account's tree rather than a pointer into the database: the
+/// tick must not reach into storage, and a tree only changes when the player
+/// buys a tier, at which point the owner writes this component too.
+struct PlayerSkillTree {
+    SkillSet skills;
 };
 
 struct PlayerProgress {
@@ -455,6 +465,7 @@ FLR_COMPONENT(flr::Loadout);
 FLR_COMPONENT(flr::PetalRing);
 FLR_COMPONENT(flr::PlayerInput);
 FLR_COMPONENT(flr::PlayerAccount);
+FLR_COMPONENT(flr::PlayerSkillTree);
 FLR_COMPONENT(flr::PlayerProgress);
 FLR_COMPONENT(flr::PlayerVisuals);
 FLR_COMPONENT(flr::PlayerModifiers);

@@ -1,0 +1,587 @@
+#include "client/ui/menu_widgets.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+
+#include "client/ui/text.h"
+
+namespace flr::ui {
+
+namespace {
+
+/// Body text on a panel: white, outlined hard enough to read over a saturated
+/// fill or a mob sprite, and never over-stroked at small sizes.
+TextStyle labelStyle(double size, bool bold, std::uint32_t fill, double stroke) {
+    TextStyle style;
+    style.size = size;
+    style.bold = bold;
+    style.fill = fill;
+    style.stroke = kInk;
+    style.strokeWidth = stroke;
+    return style;
+}
+
+/// The gap the overlay panels leave between the bottom of the scrollbar track
+/// and the bottom of the card. Mirrors menu_leaderboard.cpp's own constant;
+/// scrollbar() needs it to recover the viewport height from the track.
+constexpr double kTrackBottomInset = 5.0;
+
+} // namespace
+
+// ---------------------------------------------------------------------------
+// Chrome
+// ---------------------------------------------------------------------------
+
+void inlaid(Canvas& canvas, Rect r, std::uint32_t fill, std::uint32_t border, double borderWidth,
+            double radius, double alpha) {
+    if (r.w <= 0 || r.h <= 0) return;
+    canvas.setGlobalAlpha(static_cast<float>(clamp(alpha, 0.0, 1.0)));
+    setFill(canvas, border);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h), static_cast<float>(radius));
+    canvas.fill();
+
+    const double inset = std::min(borderWidth, std::min(r.w, r.h) * 0.5);
+    setFill(canvas, fill);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x + inset), static_cast<float>(r.y + inset),
+                     static_cast<float>(r.w - inset * 2), static_cast<float>(r.h - inset * 2),
+                     static_cast<float>(std::max(0.0, radius - 2.0)));
+    canvas.fill();
+    canvas.setGlobalAlpha(1.0f);
+}
+
+void panelCard(Canvas& canvas, Rect r, const PanelSkin& skin, double borderWidth, double radius) {
+    inlaid(canvas, r, skin.fill, skin.border, borderWidth, radius);
+}
+
+void panelTitle(Canvas& canvas, Rect panel, const std::string& title,
+                const std::string& subtitle) {
+    // Round-joined: every panel sets ctx.lineJoin = 'round' before its title
+    // and drawText inherits it. At a 4px stroke a miter grows spikes off the
+    // sharp corners of 'v' and 'y'.
+    TextStyle heading = labelStyle(kMenuTitleSize, true, kPaper, 4.0);
+    heading.align = Align::Centre;
+    heading.baseline = Baseline::Top;
+    heading.roundJoin = true;
+    text(canvas, title, panel.x + panel.w * 0.5, panel.y + kMenuPadding, heading);
+
+    if (subtitle.empty()) return;
+    TextStyle sub = labelStyle(kMenuSubtitleSize, true, kPaper, 3.0);
+    sub.align = Align::Centre;
+    sub.baseline = Baseline::Top;
+    sub.roundJoin = true;
+    text(canvas, subtitle, panel.x + panel.w * 0.5, panel.y + kMenuPadding + 28.0, sub);
+}
+
+void panelHeading(Canvas& canvas, Rect panel, const std::string& title) {
+    TextStyle heading = labelStyle(20.0, true, kPaper, 2.0);
+    heading.baseline = Baseline::Top;
+    text(canvas, title, panel.x + kMenuPadding + 6.0, panel.y + kMenuPadding + 6.0, heading);
+}
+
+Rect overlayCloseRect(Rect panel) {
+    return {panel.right() - 50.0, panel.y + 10.0, 30.0, 30.0};
+}
+
+void pillButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t fill,
+                double textSize) {
+    setFill(canvas, fill);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h), 5.0f);
+    canvas.fill();
+
+    TextStyle caption = labelStyle(textSize, false, kPaper, 0.0);
+    caption.align = Align::Centre;
+    text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
+}
+
+Rect closeButtonRect(Rect panel) {
+    return {panel.right() - kMenuPadding - kCloseSize, panel.y + kMenuPadding - 4.0, kCloseSize,
+            kCloseSize};
+}
+
+void closeButton(Canvas& canvas, Rect r, bool hovered, const PanelSkin& skin, double radius,
+                 double innerRadius) {
+    // Not inlaid(): that derives the inner corner as radius - 2, and neither
+    // reference panel uses that relationship (inventory 4/3, forge 3/1).
+    const double inner = innerRadius < 0 ? std::max(0.0, radius - 1.0) : innerRadius;
+    setFill(canvas, skin.closeBorder);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h), static_cast<float>(radius));
+    canvas.fill();
+    // A literal swatch, not a tint of the skin: both reference panels hover to
+    // the same light rose regardless of the button's own pink, and deriving it
+    // from #bb5b61 lands on a desaturated brown instead.
+    setFill(canvas, hovered ? 0xE8A0B0u : skin.close);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x + 2.0), static_cast<float>(r.y + 2.0),
+                     static_cast<float>(r.w - 4.0), static_cast<float>(r.h - 4.0),
+                     static_cast<float>(inner));
+    canvas.fill();
+
+    // A drawn glyph rather than the "x" character: the cross has to stay
+    // square and centred at any size, and a font's x does neither.
+    setStroke(canvas, kPaper);
+    canvas.setLineWidth(2.5f);
+    canvas.setLineCap("round");
+    const double pad = r.w * 0.27;
+    canvas.beginPath();
+    canvas.moveTo(static_cast<float>(r.x + pad), static_cast<float>(r.y + pad));
+    canvas.lineTo(static_cast<float>(r.right() - pad), static_cast<float>(r.bottom() - pad));
+    canvas.moveTo(static_cast<float>(r.right() - pad), static_cast<float>(r.y + pad));
+    canvas.lineTo(static_cast<float>(r.x + pad), static_cast<float>(r.bottom() - pad));
+    canvas.stroke();
+    canvas.setLineCap("butt");
+}
+
+void chip(Canvas& canvas, Rect r, const std::string& label, bool hovered, const ChipStyle& style) {
+    const std::uint32_t hoverFill =
+        style.hoverFill == 0xFFFFFFFFu ? lighten(style.fill, 0.15) : style.hoverFill;
+    const std::uint32_t fill = style.enabled ? (hovered ? hoverFill : style.fill) : 0x8A8A8Au;
+    const std::uint32_t border = style.enabled ? style.border : 0x5A5A5Au;
+    inlaid(canvas, r, fill, border, 2.0, style.radius, style.enabled ? 1.0 : 0.45);
+
+    TextStyle caption = labelStyle(style.textSize, true, kPaper, 3.0);
+    caption.align = Align::Centre;
+    text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
+}
+
+void toggleBox(Canvas& canvas, Rect r, double lerpAmount) {
+    setFill(canvas, kControlDark);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h), 5.0f);
+    canvas.fill();
+
+    const double t = clamp(lerpAmount, 0.0, 1.0);
+    const auto mix = [t](std::uint32_t shift) {
+        const double off = static_cast<double>((kControlMid >> shift) & 0xFF);
+        const double on = static_cast<double>((kControlLit >> shift) & 0xFF);
+        return static_cast<std::uint32_t>(off + (on - off) * t + 0.5);
+    };
+    setFill(canvas, (mix(16) << 16) | (mix(8) << 8) | mix(0));
+    const double inset = 4.0;
+    canvas.fillRect(static_cast<float>(r.x + inset), static_cast<float>(r.y + inset),
+                    static_cast<float>(r.w - inset * 2), static_cast<float>(r.h - inset * 2));
+}
+
+void inputField(Canvas& canvas, Rect r, const std::string& value, const std::string& placeholder,
+                bool focused, double timeSeconds) {
+    setFill(canvas, kControlDark);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h), 5.0f);
+    canvas.fill();
+    setFill(canvas, kControlField);
+    canvas.fillRect(static_cast<float>(r.x + 4), static_cast<float>(r.y + 4),
+                    static_cast<float>(r.w - 8), static_cast<float>(r.h - 8));
+
+    const double size = 13.0;
+    // The browser floats a real <input> over this plate at r.x + 4 and gives it
+    // `padding: 0 8px`, so its first glyph starts 12px in, not 8.
+    const double inset = 12.0;
+    // Show the TAIL of an overlong value: the caret is at the end, and a field
+    // that scrolls its own start out of view is the one people expect.
+    std::string shown = value;
+    while (!shown.empty() && measure(shown, size, false) > r.w - inset * 2) {
+        shown.erase(shown.begin());
+    }
+
+    TextStyle style = labelStyle(size, false, value.empty() ? 0x8A8A8Au : kInk, 0.0);
+    text(canvas, value.empty() ? placeholder : shown, r.x + inset, r.y + r.h * 0.5, style);
+
+    if (!focused) return;
+    // A one-second cycle at an even duty and a one-pixel bar: this stands in
+    // for the native <input> caret the browser shows here, and the platform
+    // blink is a second, not the 1.06 an earlier pass guessed.
+    if (std::fmod(timeSeconds, 1.0) < 0.5) {
+        const double caretX = r.x + inset + measure(shown, size, false) + 1.0;
+        setFill(canvas, kInk);
+        canvas.fillRect(static_cast<float>(caretX), static_cast<float>(r.y + 6),
+                        1.0f, static_cast<float>(r.h - 12));
+    }
+}
+
+void scrollbar(Canvas& canvas, Rect view, double contentHeight, double scroll,
+               std::uint32_t thumb, double width) {
+    // The track stops 5px short of the panel's bottom edge, but the VIEWPORT
+    // -- what decides both the thumb's length and how far it may travel -- is
+    // the full body height. `view` is the track, so the viewport is 5px taller
+    // than it; using the track for both makes the thumb short and leaves it a
+    // pixel clear of the bottom at full scroll.
+    const double viewport = view.h + kTrackBottomInset;
+    if (contentHeight <= viewport || view.h <= 0) return;
+    const double travel = contentHeight - viewport;
+    // Proportional, and deliberately unfloored: the reference has no minimum,
+    // and one would only bite on a list far longer than any panel shows.
+    const double thumbHeight = view.h * (viewport / contentHeight);
+    const double thumbY = view.y + clamp(scroll / travel, 0.0, 1.0) * (view.h - thumbHeight);
+    // A 5px radius on the browser's 10px track: a full pill instead reads as
+    // a different control at any other width.
+    const double radius = std::min(5.0, width * 0.5);
+
+    // A white track rather than a black one: it has to read on the saturated
+    // panel colours, and a dark groove disappears into the settings grey.
+    setFill(canvas, kPaper, 0.1);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(view.right() - width), static_cast<float>(view.y),
+                     static_cast<float>(width), static_cast<float>(view.h),
+                     static_cast<float>(radius));
+    canvas.fill();
+
+    setFill(canvas, thumb);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(view.right() - width), static_cast<float>(thumbY),
+                     static_cast<float>(width), static_cast<float>(thumbHeight),
+                     static_cast<float>(radius));
+    canvas.fill();
+}
+
+// ---------------------------------------------------------------------------
+// Item cells
+// ---------------------------------------------------------------------------
+
+Rect itemCellPlate(Canvas& canvas, Rect r, const CellStyle& style) {
+    const std::uint32_t base = style.empty ? style.emptyFill : rarityColor(style.rarity);
+    const std::uint32_t border = style.empty ? style.emptyBorder : darken(base, 0.25);
+    inlaid(canvas, r, base, style.selected ? kPaper : border, 3.0, 6.0);
+
+    if (style.hovered && !style.empty) {
+        setFill(canvas, kPaper, 0.18);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(r.x + 3), static_cast<float>(r.y + 3),
+                         static_cast<float>(r.w - 6), static_cast<float>(r.h - 6), 4.0f);
+        canvas.fill();
+    }
+
+    const double iconSize = std::min(32.0, r.w * 0.6);
+    return {r.x + (r.w - iconSize) * 0.5, r.y + r.h * 0.4 - iconSize * 0.5, iconSize, iconSize};
+}
+
+void itemCellLabels(Canvas& canvas, Rect r, const CellStyle& style) {
+    if (!style.label.empty()) {
+        // Shrink rather than clip: a five-column grid has to hold names like
+        // "Lightning Cutter" and an ellipsis there reads as a different petal.
+        double size = 10.0;
+        const double available = r.w - 8.0;
+        const double measured = measure(style.label, size, true);
+        if (measured > available && measured > 0) {
+            size = std::max(7.0, size * available / measured);
+        }
+        TextStyle name = labelStyle(size, true, kPaper, 3.0);
+        name.align = Align::Centre;
+        name.baseline = Baseline::Bottom;
+        name.roundJoin = true;
+        text(canvas, style.label, r.x + r.w * 0.5, r.bottom() - 5.0, name);
+    }
+
+    if (!style.badge.empty()) {
+        TextStyle badge = labelStyle(11.0, true, kPaper, 3.0);
+        badge.align = Align::Right;
+        badge.baseline = Baseline::Top;
+        badge.roundJoin = true;
+        text(canvas, style.badge, r.right() - 4.0, r.y + 3.0, badge);
+    }
+
+    if (style.disabled) {
+        setFill(canvas, 0x3A3A3Au, 0.6);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                         static_cast<float>(r.h), 6.0f);
+        canvas.fill();
+    }
+}
+
+Rect itemCell(Canvas& canvas, Rect r, const CellStyle& style) {
+    const Rect icon = itemCellPlate(canvas, r, style);
+    itemCellLabels(canvas, r, style);
+    return icon;
+}
+
+void drawPetalGroup(Canvas& canvas, const SpriteCache& sprites, std::uint16_t petalIndex,
+                    int count, double cx, double cy, double size, double timeSeconds) {
+    // A configured count below one means "not a stack" -- third eye, antennae
+    // and the observer all declare zero and are drawn as a single icon.
+    const int drawCount = count >= 1 ? count : 1;
+    if (drawCount == 1) {
+        sprites.drawPetal(canvas, petalIndex, cx, cy, size, 0.0, timeSeconds);
+        return;
+    }
+
+    double subSize = size * 0.40;
+    double ringRadius = size * 0.36;
+    if (drawCount == 2) {
+        subSize = size * 0.62;
+        ringRadius = size * 0.22;
+    } else if (drawCount <= 4) {
+        subSize = size * 0.55;
+        ringRadius = size * 0.30;
+    } else if (drawCount <= 6) {
+        subSize = size * 0.48;
+        ringRadius = size * 0.34;
+    }
+
+    // First copy at the top, each rotated to its own angle so the ring reads
+    // as petals facing outward rather than a row of identical stamps.
+    for (int i = 0; i < drawCount; ++i) {
+        const double angle = -kPi * 0.5 + (static_cast<double>(i) / drawCount) * kPi * 2.0;
+        sprites.drawPetal(canvas, petalIndex, cx + std::cos(angle) * ringRadius,
+                          cy + std::sin(angle) * ringRadius, subSize, angle, timeSeconds);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tooltips
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr double kTooltipPadX = 10.0;
+constexpr double kTooltipPadY = 8.0;
+constexpr double kTooltipLineGap = 2.0;
+constexpr double kTooltipRadius = 6.0;
+
+double rowHeight(double size) { return std::ceil(size * 1.2); }
+
+/// One laid-out row: a tooltip line after alt substitution and word wrapping,
+/// with its top offset from the content's top edge.
+struct TooltipRow {
+    const TooltipLine* line;
+    std::string text;
+    double y;
+};
+
+struct TooltipLayout {
+    std::vector<TooltipRow> rows;
+    double textWidth = 0;
+    double textHeight = 0;
+};
+
+/// One tooltip row: an OPAQUE outline under a fill that carries the row's
+/// alpha.
+///
+/// ui::text() fills at whatever alpha the canvas is on, so dimming a stat row
+/// with globalAlpha would fade its black outline too. The browser passes the
+/// alpha in the fill colour alone -- TOOLTIP_STAT_COLOR is
+/// rgba(255,255,255,0.56) -- while drawText strokes with solid #000000, which
+/// is why those rows stay crisply outlined over the half-black box.
+///
+/// It builds the path itself because that is the only seam where the two
+/// passes can differ. Every row goes through here, dimmed or not, so one
+/// anchor governs the whole box; `x, y` is the top-left corner, the only
+/// alignment the painter ever asks for, resolved exactly as draw.cpp resolves
+/// Baseline::Top.
+void paintRow(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
+              double fillAlpha) {
+    if (s.empty() || !Fonts::ready()) return;
+    Path2D glyphs;
+    appendGlyphs(glyphs, s, x, y + ascent(style.size, style.bold), style.size, style.bold);
+    if (glyphs.empty()) return;
+
+    const double strokeWidth =
+        style.strokeWidth < 0 ? style.size * kTextStrokeRatio : style.strokeWidth;
+    if (strokeWidth > 0) {
+        canvas.save();
+        canvas.setLineJoin(style.roundJoin ? "round" : "miter");
+        canvas.setLineCap("butt");
+        canvas.setLineWidth(static_cast<float>(strokeWidth));
+        setStroke(canvas, style.stroke);
+        canvas.stroke(glyphs);
+        canvas.restore();
+    }
+    setFill(canvas, style.fill, fillAlpha);
+    canvas.fill(glyphs, "nonzero");
+}
+
+/// Resolves alt variants, wraps long lines and stacks the result top-down.
+///
+/// Measurement and painting both run this, rather than each doing its own
+/// arithmetic: a wrap that the box did not account for is a tooltip whose text
+/// hangs out of its own background.
+TooltipLayout layoutRows(const std::vector<TooltipLine>& lines, bool alt) {
+    TooltipLayout out;
+    double y = 0;
+    for (const TooltipLine& line : lines) {
+        const std::string& body = (alt && !line.altText.empty()) ? line.altText : line.text;
+        y += line.gapBefore;
+
+        // Greedy wrap on spaces, as the browser does. A single word wider than
+        // the limit still gets its own row and overflows -- breaking mid-word
+        // would be worse to read than a slightly wide box.
+        std::vector<std::string> pieces;
+        if (line.maxWidth > 0 && measure(body, line.size, line.bold) > line.maxWidth) {
+            std::string current;
+            std::size_t at = 0;
+            while (at <= body.size()) {
+                const std::size_t space = body.find(' ', at);
+                const std::string word = body.substr(at, space == std::string::npos
+                                                             ? std::string::npos
+                                                             : space - at);
+                const std::string candidate = current.empty() ? word : current + " " + word;
+                if (!current.empty() && measure(candidate, line.size, line.bold) > line.maxWidth) {
+                    pieces.push_back(current);
+                    current = word;
+                } else {
+                    current = candidate;
+                }
+                if (space == std::string::npos) break;
+                at = space + 1;
+            }
+            if (!current.empty()) pieces.push_back(current);
+        }
+        if (pieces.empty()) pieces.push_back(body);
+
+        for (std::string& piece : pieces) {
+            out.textWidth = std::max(out.textWidth, measure(piece, line.size, line.bold));
+            out.rows.push_back({&line, std::move(piece), y});
+            y += rowHeight(line.size) + kTooltipLineGap;
+        }
+    }
+    out.textHeight = std::max(0.0, y - kTooltipLineGap);
+    return out;
+}
+
+} // namespace
+
+bool TooltipDelay::update(int index, double timeSeconds, bool pointerDown) {
+    if (index != hovered) {
+        hovered = index;
+        since = timeSeconds;
+        suppressed = false;
+    }
+    // A press cancels the tooltip and keeps it cancelled until the pointer
+    // moves on: the browser clears the pending timer on mousedown and never
+    // re-arms it for the cell being clicked or dragged.
+    if (pointerDown) suppressed = true;
+    if (index < 0 || suppressed) return false;
+    return timeSeconds - since >= kDelaySeconds;
+}
+
+Vec2 measureTooltip(const std::vector<TooltipLine>& lines, double minWidth, double extraHeight,
+                    bool alt) {
+    const TooltipLayout layout = layoutRows(lines, alt);
+    return {std::max(layout.textWidth, minWidth) + kTooltipPadX * 2,
+            layout.textHeight + extraHeight + kTooltipPadY * 2};
+}
+
+Rect paintTooltip(Canvas& canvas, double x, double y, const std::vector<TooltipLine>& lines,
+                  double minWidth, double extraHeight, bool alt) {
+    const TooltipLayout layout = layoutRows(lines, alt);
+    const Vec2 size{std::max(layout.textWidth, minWidth) + kTooltipPadX * 2,
+                    layout.textHeight + extraHeight + kTooltipPadY * 2};
+
+    // Scoped, because the painter is called from the middle of a panel's own
+    // draw: leaving the half-black fill and the round join set behind would
+    // restyle whatever the panel draws next.
+    canvas.save();
+
+    // Half-black, no border. The box has to sit over arbitrary panel colours
+    // and over the world; a border would fight whichever it lands on.
+    setFill(canvas, kInk, 0.5);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(x), static_cast<float>(y), static_cast<float>(size.x),
+                     static_cast<float>(size.y), static_cast<float>(kTooltipRadius));
+    canvas.fill();
+
+    for (const TooltipRow& row : layout.rows) {
+        // Outline width tracks the font size (2.4px at 20, 1.44px at 12); a
+        // flat 3px swallows the body rows and reads as a different typeface.
+        // No align or baseline: paintRow only knows top-left, which is the
+        // only anchor a tooltip row has ever been drawn at.
+        TextStyle style = labelStyle(row.line->size, row.line->bold, row.line->color, -1.0);
+        style.roundJoin = true;
+        paintRow(canvas, row.text, x + kTooltipPadX, y + kTooltipPadY + row.y, style,
+                 row.line->alpha);
+    }
+    canvas.restore();
+
+    const double textBottom = y + kTooltipPadY + layout.textHeight;
+    return {x + kTooltipPadX, textBottom, size.x - kTooltipPadX * 2,
+            y + size.y - kTooltipPadY - textBottom};
+}
+
+Vec2 tooltipAnchor(Vec2 cursor, Vec2 size, double viewWidth, double viewHeight) {
+    double x = cursor.x + 16.0;
+    double y = cursor.y + 16.0;
+    // Flip rather than clamp: a box pinned against the right edge covers the
+    // cell it is describing, which is the one thing it must not do.
+    if (x + size.x > viewWidth - 8.0) x = cursor.x - size.x - 12.0;
+    if (y + size.y > viewHeight - 8.0) y = viewHeight - size.y - 8.0;
+    return {std::max(8.0, x), std::max(8.0, y)};
+}
+
+Vec2 tooltipAnchor(Rect anchor, Vec2 size, double viewWidth, double viewHeight) {
+    double x = anchor.right() + 10.0;
+    if (x + size.x > viewWidth) x = anchor.x - size.x - 10.0;
+    double y = anchor.y;
+    if (y + size.y > viewHeight) y = viewHeight - size.y - 10.0;
+    if (y < 0) y = 10.0;
+    return {x, y};
+}
+
+// ---------------------------------------------------------------------------
+// Text helpers
+// ---------------------------------------------------------------------------
+
+std::string titleCase(const std::string& id) {
+    std::string out;
+    bool capitalise = true;
+    for (const unsigned char raw : id) {
+        if (raw == '_' || raw == ' ' || raw == '-') {
+            if (!out.empty() && out.back() != ' ') out += ' ';
+            capitalise = true;
+            continue;
+        }
+        out += static_cast<char>(capitalise ? std::toupper(raw) : std::tolower(raw));
+        capitalise = false;
+    }
+    return out;
+}
+
+std::string abbreviate(double value) {
+    if (!std::isfinite(value)) return "inf";
+    const double magnitude = std::fabs(value);
+    char buffer[32];
+    if (magnitude < 1000.0) {
+        std::snprintf(buffer, sizeof buffer, "%.0f", value);
+    } else if (magnitude < 1e6) {
+        std::snprintf(buffer, sizeof buffer, "%.1fK", value / 1e3);
+    } else if (magnitude < 1e9) {
+        std::snprintf(buffer, sizeof buffer, "%.1fM", value / 1e6);
+    } else if (magnitude < 1e12) {
+        std::snprintf(buffer, sizeof buffer, "%.1fB", value / 1e9);
+    } else {
+        std::snprintf(buffer, sizeof buffer, "%.1eT", value / 1e12);
+    }
+    std::string out = buffer;
+    // "1.0k" reads worse than "1k", and the trailing zero is never news.
+    const std::size_t dot = out.find(".0");
+    if (dot != std::string::npos) out.erase(dot, 2);
+    return out;
+}
+
+std::string withSeparators(double value) {
+    char buffer[48];
+    std::snprintf(buffer, sizeof buffer, "%.0f", std::fabs(value));
+    std::string digits = buffer;
+    std::string out;
+    for (std::size_t i = 0; i < digits.size(); ++i) {
+        if (i > 0 && (digits.size() - i) % 3 == 0) out += ',';
+        out += digits[i];
+    }
+    return value < 0 ? "-" + out : out;
+}
+
+std::string ellipsize(const std::string& text, double size, bool bold, double width) {
+    if (measure(text, size, bold) <= width) return text;
+    std::string out = text;
+    while (!out.empty() && measure(out + "...", size, bold) > width) out.pop_back();
+    return out + "...";
+}
+
+} // namespace flr::ui

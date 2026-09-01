@@ -33,6 +33,8 @@ add_library(flix_shared STATIC
   shared/net/transport.cpp
   shared/game/rarity.cpp
   shared/game/config.cpp
+  shared/game/skin_format.cpp
+  shared/game/map_elements.cpp
   shared/game/terrain.cpp
   shared/game/spatial.cpp
 )
@@ -65,6 +67,20 @@ add_library(flix_client STATIC
   client/world_view.cpp
   client/ui/draw.cpp
   client/ui/text.cpp
+  client/ui/menu_widgets.cpp
+  client/ui/menus.cpp
+  client/ui/menu_inventory.cpp
+  client/ui/menu_crafting.cpp
+  client/ui/menu_gallery.cpp
+  client/ui/menu_guild.cpp
+  client/ui/menu_talents.cpp
+  client/ui/menu_shop.cpp
+  client/ui/menu_skins.cpp
+  client/ui/menu_leaderboard.cpp
+  client/ui/menu_notifications.cpp
+  client/ui/menu_changelog.cpp
+  client/ui/menu_settings.cpp
+  client/ui/tutorial.cpp
   client/render/sprites.cpp
   client/render/world_renderer.cpp
 )
@@ -115,6 +131,12 @@ add_custom_target(flix_data ALL
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mob_drops.json
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/map_bundle.ts
           ${CMAKE_CURRENT_SOURCE_DIR}/../src/land.svg
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/desert.svg
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/ocean.svg
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/hel.svg
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/ant_hell.svg
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/sewers.svg
+          ${CMAKE_CURRENT_SOURCE_DIR}/../src/jungle.svg
           ${CMAKE_CURRENT_SOURCE_DIR}/data/mob_xp.json
           ${FLIX_DATA_DIR}/
   COMMENT "Staging game content")

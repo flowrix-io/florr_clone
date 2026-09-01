@@ -20,6 +20,9 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
         if (input->current.attacking()) state |= net::StateAttacking;
         if (input->current.defending()) state |= net::StateDefending;
     }
+    if (const MobAi* ai = world.tryGet<MobAi>(e)) {
+        if (ai->target != NULL_ENTITY) state |= net::StateChasing;
+    }
     if (world.has<Dead>(e)) state |= net::StateDead;
 
     return state;
@@ -45,6 +48,20 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
         else if (input->current.attacking()) out.faceFlags |= FaceAttacking;
     }
     if (world.has<Dead>(e)) out.faceFlags |= FaceDeadEyes;
+    if (const PlayerProgress* progress = world.tryGet<PlayerProgress>(e)) {
+        out.level = static_cast<std::uint16_t>(std::max(1, progress->level));
+    }
+    if (const Loadout* loadout = world.tryGet<Loadout>(e)) {
+        // The best rarity ANYWHERE in the loadout, empty slots ignored: the
+        // level label under the flower is tinted with it, which is how a
+        // passing flower advertises what it is carrying.
+        for (const LoadoutSlot& slot : loadout->slots) {
+            if (slot.empty()) continue;
+            if (static_cast<int>(slot.rarity) > static_cast<int>(out.bestRarity)) {
+                out.bestRarity = slot.rarity;
+            }
+        }
+    }
     return out;
 }
 
@@ -174,6 +191,21 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u8(visuals.faceFlags);
             out.u8(visuals.equipFlags);
             out.u32(visuals.renderFlags);
+            out.u16(visuals.level);
+            out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
+        }
+        if (info.kind == net::EntityKind::Petal) {
+            // Petals are placed on an absolute ring around the owner's SERVER
+            // position every tick, while the owner is drawn at its own eased
+            // or predicted one. Without the owner's id the client cannot put
+            // the two back together and the ring visibly trails the flower.
+            std::uint32_t ownerNetId = 0;
+            if (const PetalInstance* instance = world.tryGet<PetalInstance>(candidate.entity)) {
+                if (const NetId* ownerId = world.tryGet<NetId>(instance->owner)) {
+                    ownerNetId = ownerId->value;
+                }
+            }
+            out.u32(ownerNetId);
         }
         if (flags & net::SpawnHasName) out.str(account->username);
         ++spawnCount;
@@ -190,6 +222,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.faceFlags = visuals.faceFlags;
         tracked.equipFlags = visuals.equipFlags;
         tracked.renderFlags = visuals.renderFlags;
+        tracked.level = visuals.level;
+        tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
         view.tracked.emplace(candidate.netId, tracked);
     }
     out.patchU16(spawnCountAt, spawnCount);
@@ -225,7 +259,9 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         if (world.get<Replicated>(candidate.entity).kind == net::EntityKind::Player &&
             (visuals.faceFlags != tracked.faceFlags ||
              visuals.equipFlags != tracked.equipFlags ||
-             visuals.renderFlags != tracked.renderFlags)) {
+             visuals.renderFlags != tracked.renderFlags ||
+             visuals.level != tracked.level ||
+             static_cast<std::uint8_t>(visuals.bestRarity) != tracked.bestRarity)) {
             mask |= net::FieldPlayerVisuals;
         }
         if (mask == 0) continue;
@@ -256,9 +292,13 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u8(visuals.faceFlags);
             out.u8(visuals.equipFlags);
             out.u32(visuals.renderFlags);
+            out.u16(visuals.level);
+            out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
             tracked.faceFlags = visuals.faceFlags;
             tracked.equipFlags = visuals.equipFlags;
             tracked.renderFlags = visuals.renderFlags;
+            tracked.level = visuals.level;
+            tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
         }
         ++updateCount;
     }

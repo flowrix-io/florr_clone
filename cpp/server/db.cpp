@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "shared/game/constants.h"
+
 namespace flr {
 namespace {
 
@@ -15,6 +17,52 @@ std::string toLower(std::string text) {
         if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
     }
     return text;
+}
+
+/// Days since the Unix epoch for a proleptic-Gregorian y/m/d, and back again.
+/// Hinnant's civil-calendar algorithms: the streak rule is per UTC calendar
+/// day, and going through the C library's time functions would drag in a
+/// timezone and a locale to answer a question that is pure arithmetic.
+std::int64_t daysFromCivil(int y, unsigned m, unsigned d) {
+    y -= m <= 2;
+    const std::int64_t era = (y >= 0 ? y : y - 399) / 400;
+    const auto yoe = static_cast<unsigned>(y - era * 400);
+    const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + static_cast<std::int64_t>(doe) - 719468;
+}
+
+std::string civilFromDays(std::int64_t days) {
+    days += 719468;
+    const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+    const auto doe = static_cast<std::uint64_t>(days - era * 146097);
+    const std::uint64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const std::int64_t y = static_cast<std::int64_t>(yoe) + era * 400;
+    const std::uint64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const std::uint64_t mp = (5 * doy + 2) / 153;
+    const std::uint64_t d = doy - (153 * mp + 2) / 5 + 1;
+    const std::uint64_t m = mp + (mp < 10 ? 3 : -9);
+    char buffer[16];
+    std::snprintf(buffer, sizeof buffer, "%04lld-%02llu-%02llu",
+                  static_cast<long long>(y + (m <= 2)),
+                  static_cast<unsigned long long>(m), static_cast<unsigned long long>(d));
+    return buffer;
+}
+
+/// Days since the epoch for a stored "YYYY-MM-DD", or nullopt when the record
+/// holds something else. A record written by hand, or by a version that stored
+/// a timestamp, must reset the streak rather than crash the login.
+std::optional<std::int64_t> parseUtcDate(const std::string& text) {
+    if (text.size() != 10 || text[4] != '-' || text[7] != '-') return std::nullopt;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (i == 4 || i == 7) continue;
+        if (text[i] < '0' || text[i] > '9') return std::nullopt;
+    }
+    const int year = std::stoi(text.substr(0, 4));
+    const int month = std::stoi(text.substr(5, 2));
+    const int day = std::stoi(text.substr(8, 2));
+    if (month < 1 || month > 12 || day < 1 || day > 31) return std::nullopt;
+    return daysFromCivil(year, static_cast<unsigned>(month), static_cast<unsigned>(day));
 }
 
 bool fileExists(const std::string& path) {
@@ -77,6 +125,18 @@ PlayerRecord playerFromJson(const Json& value) {
 
     if (value["inventory"].isObject()) record.inventory = value["inventory"];
     if (value["mobKills"].isObject()) record.mobKills = value["mobKills"];
+    if (value["skills"].isObject()) {
+        // Branches this build does not know are dropped rather than kept as
+        // raw JSON: a tier only means something to the code that applies it,
+        // and round-tripping one would let it silently reappear as a bonus.
+        const Json& skills = value["skills"];
+        for (const std::string& key : skills.keys()) {
+            const SkillId id = skillFromKey(key);
+            if (id == SkillId::Count) continue;
+            const int tier = rarityIndex(parseRarity(skills[key].asString()));
+            if (tier < skillTierCount(id)) record.skills.set(id, tier);
+        }
+    }
     if (value["loadout"].isArray()) {
         for (const Json& slot : value["loadout"].items()) {
             if (slot.isObject()) record.loadout.push_back(StoredItem::fromJson(slot));
@@ -85,7 +145,7 @@ PlayerRecord playerFromJson(const Json& value) {
     }
 
     collectExtras(value, {"totalXP", "stars", "dailyStreak", "lastStreakDate", "renderFlags",
-                          "equippedSkinId", "inventory", "mobKills", "loadout"},
+                          "equippedSkinId", "inventory", "mobKills", "loadout", "skills", "tp"},
                   record.extra);
     return record;
 }
@@ -102,6 +162,18 @@ Json playerToJson(const PlayerRecord& record) {
         out["loadout"] = slots;
     }
     if (record.mobKills.isObject() && record.mobKills.size() > 0) out["mobKills"] = record.mobKills;
+    Json skills = Json::object();
+    for (int i = 0; i < kSkillCount; ++i) {
+        const int tier = record.skills.tier[static_cast<std::size_t>(i)];
+        if (tier < 0) continue;
+        skills[kSkillKeys[static_cast<std::size_t>(i)]] = std::string(rarityName(clampRarity(tier)));
+    }
+    if (skills.size() > 0) {
+        out["skills"] = skills;
+        // `tp` is derived here and never read back, but the TypeScript build
+        // and every backup tool expect to find it beside `skills`.
+        out["tp"] = record.talentPoints();
+    }
     // Optional fields are written only when they carry information. A missing
     // key and an explicit 0/false read identically to every consumer, and this
     // file has one record per account -- the noise is not free.
@@ -248,6 +320,10 @@ void PlayerRecord::recordKill(const std::string& mobType, Rarity rarity) {
     mobKills[mobType][tier] = killCount(mobType, rarity) + 1;
 }
 
+int PlayerRecord::talentPoints() const {
+    return availableTalentPoints(levelFromTotalXp(totalXp).level, skills);
+}
+
 // ---------------------------------------------------------------------------
 // Database: lifecycle and persistence
 // ---------------------------------------------------------------------------
@@ -344,6 +420,15 @@ bool Database::parseRoot(const Json& root, std::string& errorOut) {
         }
     }
     return true;
+}
+
+Json& Database::rawTable(const std::string& key) {
+    Json& table = otherTop_[key];
+    if (!table.isObject()) table = Json::object();
+    if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), key) == topKeyOrder_.end()) {
+        topKeyOrder_.push_back(key);
+    }
+    return table;
 }
 
 Json Database::toJson() const {
@@ -696,6 +781,38 @@ PlayerRecord& Database::progress(const std::string& userId) {
 
 const PlayerRecord* Database::findProgress(const std::string& userId) const {
     return players_.find(userId);
+}
+
+DailyStreakResult Database::processDailyStreak(const std::string& userId) {
+    constexpr std::int64_t kMillisPerDay = 86400000;
+    PlayerRecord& record = progress(userId);
+
+    const std::int64_t now = nowMillis();
+    // Floor division: before 1970 the truncating form would round the wrong
+    // way and hand out a second reward on the same day.
+    const std::int64_t today = (now >= 0 ? now : now - (kMillisPerDay - 1)) / kMillisPerDay;
+    const std::int64_t todayMillis = today * kMillisPerDay;
+    const std::string todayText = civilFromDays(today);
+
+    DailyStreakResult result;
+    result.streak = record.dailyStreak;
+
+    if (record.lastStreakDate != todayText) {
+        const std::optional<std::int64_t> last = parseUtcDate(record.lastStreakDate);
+        // Exactly one day ago continues the run; anything else -- a gap, a
+        // first login, or an unreadable date -- starts a new one.
+        result.streak = (last && *last == today - 1) ? record.dailyStreak + 1 : 1;
+        result.starsAwarded = ((result.streak - 1) % 5) + 1;
+        record.dailyStreak = result.streak;
+        record.lastStreakDate = todayText;
+        record.stars += result.starsAwarded;
+        result.newDay = true;
+        markDirty();
+    }
+
+    result.nextClaimAtMillis = todayMillis + kMillisPerDay;
+    result.streakExpiresAtMillis = todayMillis + 2 * kMillisPerDay;
+    return result;
 }
 
 } // namespace flr

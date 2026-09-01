@@ -52,6 +52,25 @@ struct RemoteEntity {
     std::uint8_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
 
+    /// Player-only: what the plate under the flower reads. `bestRarity` is the
+    /// highest rarity anywhere in that flower's loadout, which is what tints
+    /// the level label.
+    std::uint16_t level = 1;
+    Rarity bestRarity = Rarity::Common;
+
+    /// The guild whose tag hangs under this flower's health bar. Nothing sets
+    /// it yet: there is no guild protocol, exactly as menu_guild.cpp records,
+    /// so the tag draws for nobody -- which is what the reference draws for a
+    /// player in no guild. The plate reads the field rather than the transport
+    /// so the wire lands in one place when it exists.
+    std::string guildName;
+
+    /// Petal-only: the flower this petal orbits. The server places petals on a
+    /// ring around the owner's tick position while the owner is DRAWN at its
+    /// eased or predicted one, so the ring has to be re-anchored to whatever
+    /// the owner was actually drawn at or it visibly trails the flower.
+    std::uint32_t ownerNetId = 0;
+
     /// Smoothed eye-pupil offset in the flower's radius=25 local space.
     double eyeX = 0;
     double eyeY = 0;

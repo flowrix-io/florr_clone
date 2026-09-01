@@ -1,0 +1,1215 @@
+#include "client/ui/menus.h"
+
+#include <SDL.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+
+#include "client/ui/menu_icons.h"
+#include "client/ui/menu_theme.h"
+#include "client/ui/text.h"
+#include "shared/game/config.h"
+
+namespace flr {
+
+using namespace flr::ui;
+
+namespace {
+
+struct MenuMeta {
+    const char* label;
+    Key defaultKey;
+};
+
+/// Indexed by MenuId. Only the label and the key live here: which strip a menu
+/// hangs off, and in what order, is the strip's business and not the enum's.
+const std::array<MenuMeta, kMenuCount> kMenus = {{
+    {"", Key::Unknown},                 // MenuId::None
+    {"Inventory", Key::Z},
+    {"Craft", Key::C},
+    {"Talents", Key::X},
+    {"Mob Gallery", Key::G},
+    {"Shop", Key::B},
+    {"Skins", Key::V},
+    {"Leaderboard", Key::L},
+    {"Settings", Key::O},
+    // The three overlay panels are reached from the strip only, exactly as in
+    // the browser build, which binds no key to any of them.
+    {"Changelog", Key::Unknown},
+    {"Notifications", Key::Unknown},
+    {"Guild", Key::Unknown},
+    {"Debug", Key::J},
+}};
+
+/// The browser build's `gardn-icon-btn`: a 42px square with a 4px border and a
+/// 3px outer radius, spaced 10 apart and inset 20 from the corner it hangs off.
+constexpr double kIconButton = 42.0;
+constexpr double kIconGap = 10.0;
+constexpr double kIconInset = 20.0;
+constexpr double kIconBorder = 4.0;
+constexpr double kIconRadius = 3.0;
+constexpr double kIconGlyph = 24.0;
+
+/// The strip cascades in from the left on its first frame: each button slides
+/// its own distance from the edge in 50ms, 40ms apart down the table.
+constexpr double kIconSlideSeconds = 0.050;
+constexpr double kIconStaggerSeconds = 0.040;
+/// The changelog button rocks +/-12 degrees on an 800ms sine while unread.
+constexpr double kShakePeriodSeconds = 0.8;
+constexpr double kShakeRadians = 12.0 * kPi / 180.0;
+
+/// The browser's hit test is inclusive on all four edges; Rect::contains is
+/// half-open. On a 42px button that is a whole row of pixels that looks
+/// clickable and is not.
+bool insideInclusive(Rect r, Vec2 p) {
+    return r.w > 0 && r.h > 0 && p.x >= r.x && p.x <= r.right() && p.y >= r.y && p.y <= r.bottom();
+}
+
+int menuIndex(MenuId id) { return static_cast<int>(id); }
+
+/// A native client has no tab to open, so the browser's `window.open` becomes
+/// the desktop's own handler for the link. Reported rather than swallowed on
+/// failure: a button that silently does nothing is worse than a log line.
+void openExternalLink(const char* url) {
+    if (SDL_OpenURL(url) == 0) return;
+    std::fprintf(stderr, "flowrix: could not open %s (%s)\n", url, SDL_GetError());
+}
+
+// --- the loadout bar --------------------------------------------------------
+
+/// The browser's two HContainers, in design px at scale 1: 70px primary slots
+/// 20 apart over 50px secondary slots 15 apart, with the trash appended to the
+/// second row. `kLoadoutBottomPad` is NOT scaled -- it is the phone-keyboard
+/// gap, and the browser leaves it at 34 whatever the slots do.
+constexpr double kLoadoutPrimarySize = 70.0;
+constexpr double kLoadoutSecondarySize = 50.0;
+constexpr double kLoadoutPrimaryGap = 20.0;
+constexpr double kLoadoutSecondaryGap = 15.0;
+constexpr double kLoadoutPrimaryMargin = 5.0;
+constexpr double kLoadoutSecondaryMargin = 10.0;
+constexpr double kLoadoutBottomPad = 34.0;
+
+/// The title screen hands the bar a fixed box below centre rather than the
+/// whole window, so it sits under the biome buttons instead of on the bottom
+/// edge. In game it owns the viewport at three-quarter scale.
+constexpr double kTitleLoadoutWidth = 900.0;
+constexpr double kTitleLoadoutHeight = 210.0;
+constexpr double kTitleLoadoutDrop = 50.0;
+constexpr double kInGameLoadoutScale = 0.75;
+
+/// The captions above the primary row. Bracketed, as gardn draws them, and
+/// ending on [0] because the tenth slot is the zero key.
+constexpr const char* kLoadoutKeyCaps[kLoadoutBarPrimary] = {"[1]", "[2]", "[3]", "[4]", "[5]",
+                                                             "[6]", "[7]", "[8]", "[9]", "[0]"};
+
+constexpr std::uint32_t kLoadoutSlotFill = 0xEEEEEEu;
+constexpr std::uint32_t kLoadoutTrashFill = 0xCF8888u;
+/// Every slot's design space is 60x60; the plate, the icon offset and the name
+/// position are all expressed in it and scaled by `rect.w / 60`.
+constexpr double kSlotDesign = 60.0;
+
+struct LoadoutLayout {
+    std::array<Rect, kLoadoutBarSlots> slots{};
+    Rect trash{};
+};
+
+LoadoutLayout layoutLoadout(Rect box, double scale) {
+    const double primarySize = kLoadoutPrimarySize * scale;
+    const double secondarySize = kLoadoutSecondarySize * scale;
+    const double primaryGap = kLoadoutPrimaryGap * scale;
+    const double secondaryGap = kLoadoutSecondaryGap * scale;
+    const double primaryMargin = kLoadoutPrimaryMargin * scale;
+    const double secondaryMargin = kLoadoutSecondaryMargin * scale;
+    const int cols = kLoadoutBarPrimary;
+
+    const double primaryRowW = cols * primarySize + (cols - 1) * primaryGap;
+    // The secondary row's width counts the trash, which is why the two rows do
+    // not share a start x.
+    const double secondaryRowW =
+        cols * secondarySize + (cols - 1) * secondaryGap + secondaryGap + secondarySize;
+    const double primaryStartX = box.x + (box.w - primaryRowW) * 0.5;
+    const double secondaryStartX = box.x + (box.w - secondaryRowW) * 0.5;
+
+    const double bottomPad = kLoadoutBottomPad + secondaryMargin;
+    const double secondaryY = box.y + box.h - bottomPad - secondarySize;
+    const double primaryY = secondaryY - secondaryMargin - primaryMargin - primarySize;
+
+    LoadoutLayout out;
+    for (int i = 0; i < cols; ++i) {
+        out.slots[static_cast<std::size_t>(i)] = {primaryStartX + i * (primarySize + primaryGap),
+                                                  primaryY, primarySize, primarySize};
+        out.slots[static_cast<std::size_t>(cols + i)] = {
+            secondaryStartX + i * (secondarySize + secondaryGap), secondaryY, secondarySize,
+            secondarySize};
+    }
+    out.trash = {secondaryStartX + cols * (secondarySize + secondaryGap), secondaryY,
+                 secondarySize, secondarySize};
+    return out;
+}
+
+/// One slot's chrome: a darker rounded plate with a SHARP inner fill, never a
+/// stroke. Both insets are proportions of the slot so the secondary row reads
+/// as the same object at a smaller size.
+void drawLoadoutSlot(Canvas& canvas, Rect r, std::uint32_t fill, bool highlighted) {
+    const double lineW = r.w / 12.0;
+    const double radius = r.w / 20.0;
+    setFill(canvas, shade(fill, 0.80));
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h), static_cast<float>(radius));
+    canvas.fill();
+
+    const auto inner = [&] {
+        canvas.fillRect(static_cast<float>(r.x + lineW), static_cast<float>(r.y + lineW),
+                        static_cast<float>(r.w - lineW * 2), static_cast<float>(r.h - lineW * 2));
+    };
+    setFill(canvas, fill);
+    inner();
+    if (!highlighted) return;
+    setFill(canvas, kPaper, 0.12);
+    inner();
+}
+
+/// The bracketed key caption above a primary slot, and the [T] beside the
+/// trash. Slightly translucent, which is what keeps it from competing with the
+/// petal names inside the slots.
+void drawKeyLabel(Canvas& canvas, const std::string& label, double x, double y, Align align) {
+    TextStyle style;
+    style.size = 16.0;
+    style.bold = true;
+    style.fill = kPaper;
+    style.stroke = kInk;
+    style.strokeWidth = 3.0;
+    style.align = align;
+    style.baseline = Baseline::Middle;
+    canvas.setGlobalAlpha(0.85f);
+    text(canvas, label, x, y, style);
+    canvas.setGlobalAlpha(1.0f);
+}
+
+/// The rarity plate, icon and name inside one filled slot.
+///
+/// Everything is laid out in the browser's 60x60 design space and scaled by
+/// `rect.w / 60`, which is what keeps the primary and secondary rows -- and
+/// the title screen and the in-game bar -- exactly the same object at four
+/// different sizes.
+void drawLoadoutPetal(Canvas& canvas, const SpriteCache& sprites, Rect rect,
+                      std::uint16_t petalIndex, Rarity rarity, double timeSeconds) {
+    const std::uint32_t base = rarityColor(rarity);
+    const double scale = rect.w / kSlotDesign;
+
+    canvas.save();
+    canvas.translate(static_cast<float>(rect.x + rect.w * 0.5),
+                     static_cast<float>(rect.y + rect.h * 0.5));
+    canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+
+    // The plate covers the whole slot: a filled 60x60 in the darker shade with
+    // a SHARP 50x50 of the rarity colour inside it, so the visible border is
+    // 5 design units -- the same rect.w/12 the empty slot uses.
+    setFill(canvas, shade(base, 0.70));
+    canvas.beginPath();
+    canvas.roundRect(-30.0f, -30.0f, 60.0f, 60.0f, 3.0f);
+    canvas.fill();
+    setFill(canvas, base);
+    canvas.fillRect(-25.0f, -25.0f, 50.0f, 50.0f);
+
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(-25.0f, -25.0f, 50.0f, 50.0f);
+    canvas.clip();
+
+    // Lifted 5 units and drawn at 50/60 of the design size, which is what
+    // leaves room for the name along the bottom of the plate.
+    const PetalConfig& config = content().petal(petalIndex);
+    // The ring's size is a per-RARITY stat, not a base one: a mythic light is
+    // five icons where a common one is a single icon.
+    const int count = content().petalStats(petalIndex, rarity).count;
+    drawPetalGroup(canvas, sprites, petalIndex, count, 0.0, -5.0, kSlotDesign * 0.833,
+                   timeSeconds);
+
+    const std::string name = titleCase(config.name);
+    if (!name.empty()) {
+        TextStyle label;
+        label.bold = true;
+        label.size = 12.0;
+        const double measured = measure(name, label.size, true);
+        // Shrink to the plate's inner width rather than clipping: a truncated
+        // petal name reads as a different petal.
+        if (measured > 50.0) label.size = std::max(6.0, 12.0 * 50.0 / measured);
+        label.fill = kPaper;
+        label.stroke = kInk;
+        // In design units, so the outline lands at a constant 3 screen px
+        // whatever size the slot is.
+        label.strokeWidth = 3.0 / scale;
+        label.align = Align::Centre;
+        label.baseline = Baseline::Middle;
+        text(canvas, name, 0.0, 20.0, label);
+    }
+
+    canvas.restore();
+    canvas.restore();
+}
+
+/// Advances the secondary selection to the next non-empty slot in `step`'s
+/// direction, or -1 when the whole row is empty.
+int cycleSecondary(const Profile& profile, int current, int step) {
+    int cur = current < 0 ? -1 : current;
+    for (int i = 0; i < kLoadoutBarPrimary; ++i) {
+        cur = (cur + step + kLoadoutBarPrimary) % kLoadoutBarPrimary;
+        const auto at = static_cast<std::size_t>(kLoadoutBarPrimary + cur);
+        if (at < profile.loadout.size() && !profile.loadout[at].empty()) return cur;
+    }
+    return -1;
+}
+
+} // namespace
+
+const char* menuLabel(MenuId id) {
+    const int i = menuIndex(id);
+    return (i >= 0 && i < kMenuCount) ? kMenus[static_cast<std::size_t>(i)].label : "";
+}
+
+const char* keyName(Key key) {
+    switch (key) {
+        case Key::A: return "A"; case Key::B: return "B"; case Key::C: return "C";
+        case Key::D: return "D"; case Key::E: return "E"; case Key::F: return "F";
+        case Key::G: return "G"; case Key::H: return "H"; case Key::I: return "I";
+        case Key::J: return "J"; case Key::K: return "K"; case Key::L: return "L";
+        case Key::M: return "M"; case Key::N: return "N"; case Key::O: return "O";
+        case Key::P: return "P"; case Key::Q: return "Q"; case Key::R: return "R";
+        case Key::S: return "S"; case Key::T: return "T"; case Key::U: return "U";
+        case Key::V: return "V"; case Key::W: return "W"; case Key::X: return "X";
+        case Key::Y: return "Y"; case Key::Z: return "Z";
+        case Key::Num0: return "0"; case Key::Num1: return "1"; case Key::Num2: return "2";
+        case Key::Num3: return "3"; case Key::Num4: return "4"; case Key::Num5: return "5";
+        case Key::Num6: return "6"; case Key::Num7: return "7"; case Key::Num8: return "8";
+        case Key::Num9: return "9";
+        case Key::Space: return "Space"; case Key::Enter: return "Enter";
+        case Key::Tab: return "Tab"; case Key::Escape: return "Esc";
+        case Key::Minus: return "-"; case Key::Equals: return "=";
+        case Key::Comma: return ","; case Key::Period: return ".";
+        case Key::Slash: return "/"; case Key::Backslash: return "\\";
+        case Key::Semicolon: return ";"; case Key::Apostrophe: return "'";
+        case Key::Left: return "Left"; case Key::Right: return "Right";
+        case Key::Up: return "Up"; case Key::Down: return "Down";
+        case Key::F1: return "F1"; case Key::F2: return "F2"; case Key::F3: return "F3";
+        case Key::F4: return "F4"; case Key::F5: return "F5"; case Key::F6: return "F6";
+        default: return "Unbound";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+ClientSettings::ClientSettings() {
+    for (int i = 0; i < kMenuCount; ++i) {
+        hotkeys[static_cast<std::size_t>(i)] = kMenus[static_cast<std::size_t>(i)].defaultKey;
+    }
+}
+
+bool ClientSettings::load(const std::string& path) {
+    std::ifstream file(path);
+    if (!file) return false;
+    std::string key;
+    std::string value;
+    // A settings file is a comfort, not a contract: an unreadable line is
+    // skipped and the default kept, rather than the whole file being rejected.
+    while (file >> key >> value) {
+        const int number = std::atoi(value.c_str());
+        if (key == "names") render.names = number != 0;
+        else if (key == "healthBars") render.healthBars = number != 0;
+        else if (key == "damageNumbers") render.damageNumbers = number != 0;
+        else if (key == "hitboxes") render.hitboxes = number != 0;
+        else if (key == "chat") showChat = number != 0;
+        else if (key == "menuBar") showMenuBar = number != 0;
+        else if (key == "debugButton") showDebugButton = number != 0;
+        else if (key == "changelogSeen") changelogSeen = number;
+        else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), 0.6, 1.6);
+        else if (key == "biome") spawnBiome = (value == "-" ? std::string() : value);
+        else if (key == "tutorialDone") tutorialCompleted = number != 0;
+        else if (key == "tutorialStep") tutorialStep = number;
+        else if (key == "notifRead") readNotifications.push_back(value);
+        else if (key.rfind("key.", 0) == 0) {
+            const int slot = std::atoi(key.c_str() + 4);
+            if (slot > 0 && slot < kMenuCount && number > 0 &&
+                number < static_cast<int>(Key::Count)) {
+                hotkeys[static_cast<std::size_t>(slot)] = static_cast<Key>(number);
+            }
+        }
+    }
+    return true;
+}
+
+bool ClientSettings::save(const std::string& path) const {
+    std::ofstream file(path, std::ios::trunc);
+    if (!file) return false;
+    file << "names " << (render.names ? 1 : 0) << '\n'
+         << "healthBars " << (render.healthBars ? 1 : 0) << '\n'
+         << "damageNumbers " << (render.damageNumbers ? 1 : 0) << '\n'
+         << "hitboxes " << (render.hitboxes ? 1 : 0) << '\n'
+         << "chat " << (showChat ? 1 : 0) << '\n'
+         << "menuBar " << (showMenuBar ? 1 : 0) << '\n'
+         << "debugButton " << (showDebugButton ? 1 : 0) << '\n'
+         << "changelogSeen " << changelogSeen << '\n'
+         << "zoom " << zoom << '\n'
+         // A dash rather than an empty field: the reader splits on whitespace,
+         // and an empty value would swallow the next key as its own.
+         << "biome " << (spawnBiome.empty() ? std::string("-") : spawnBiome) << '\n'
+         << "tutorialDone " << (tutorialCompleted ? 1 : 0) << '\n'
+         << "tutorialStep " << tutorialStep << '\n';
+    // Capped at the server's own retention: it keeps the last thousand
+    // notifications, so a read mark older than that can never be asked about
+    // again and would only grow this file forever. The tail is the newest.
+    constexpr std::size_t kReadMarkCap = 1000;
+    const std::size_t firstMark =
+        readNotifications.size() > kReadMarkCap ? readNotifications.size() - kReadMarkCap : 0;
+    for (std::size_t i = firstMark; i < readNotifications.size(); ++i) {
+        file << "notifRead " << readNotifications[i] << '\n';
+    }
+    for (int i = 1; i < kMenuCount; ++i) {
+        file << "key." << i << ' ' << static_cast<int>(hotkeys[static_cast<std::size_t>(i)])
+             << '\n';
+    }
+    return static_cast<bool>(file);
+}
+
+// ---------------------------------------------------------------------------
+// MenuSystem
+// ---------------------------------------------------------------------------
+
+void MenuSystem::toggle(MenuId id) {
+    // Opening a second menu closes the first. They share an anchor, so two at
+    // once would be one menu with another hidden behind it.
+    const bool opening = open_ != id;
+    open_ = opening ? id : MenuId::None;
+    drag_.clear();
+    // A panel opens at the top of its list, with no search text and nothing
+    // staged. Reopening onto whatever was left behind is how a player ends up
+    // staring at an empty grid because a filter they forgot is still applied.
+    if (!opening) return;
+    // From below the viewport every time, even when the card it replaces was
+    // already seated: the browser shell it mirrors starts each open from
+    // `translateY(100vh)`.
+    panelSlide_ = 0.0;
+    switch (id) {
+        case MenuId::Inventory:   inventory_.reset(); break;
+        case MenuId::Crafting:    crafting_.reset(); break;
+        case MenuId::Talents:     talents_.reset(); break;
+        case MenuId::Gallery:     gallery_.reset(); break;
+        case MenuId::Shop:        shop_.reset(); break;
+        case MenuId::Skins:       skins_.reset(); break;
+        case MenuId::Leaderboard: leaderboard_.reset(); break;
+        case MenuId::Settings:    settings_panel_.reset(); break;
+        case MenuId::Changelog:   changelog_.reset(); break;
+        case MenuId::Notifications: notifications_.reset(); break;
+        case MenuId::Guild:       guild_.reset(); break;
+        case MenuId::Debug:       debug_.reset(); break;
+        default: break;
+    }
+}
+
+void MenuSystem::close() {
+    open_ = MenuId::None;
+    drag_.clear();
+}
+
+bool MenuSystem::handleKeys(Window& window) {
+    // A settings row waiting for a key must swallow every key: binding the
+    // inventory to G should not also open the bestiary on the way past.
+    if (settings_panel_.capturingKey()) return true;
+    if (wantsText_) return false;
+
+    if (window.keyPressed(Key::Escape)) {
+        // Escape drops the secondary selection as well as closing a panel, so
+        // one press always undoes whatever the last one armed.
+        const bool hadSelection = selectedSecondary_ >= 0;
+        selectedSecondary_ = -1;
+        if (anyOpen()) {
+            close();
+            return true;
+        }
+        if (hadSelection) return true;
+    }
+
+    // The loadout keys are recorded rather than acted on: only drawLoadoutBar
+    // has the network client and the account's loadout to act with.
+    //
+    // And they are the game screen's alone. The browser binds Q/E/T and the
+    // number row inside Game's own keydown; the title screen's inventory
+    // manager has no keyboard path to the bar at all, only drag and drop.
+    if (inGame_) {
+        if (window.keyPressed(Key::E)) { pendingCycle_ = 1; return true; }
+        if (window.keyPressed(Key::Q)) { pendingCycle_ = -1; return true; }
+        if (window.keyPressed(Key::T)) { pendingSecondaryDelete_ = true; return true; }
+        static constexpr Key kLoadoutKeys[kLoadoutBarPrimary] = {
+            Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5,
+            Key::Num6, Key::Num7, Key::Num8, Key::Num9, Key::Num0,
+        };
+        for (int i = 0; i < kLoadoutBarPrimary; ++i) {
+            if (window.keyPressed(kLoadoutKeys[i])) {
+                pendingSwapSlot_ = i;
+                return true;
+            }
+        }
+    }
+
+    for (int i = 1; i < kMenuCount; ++i) {
+        const Key key = settings_.hotkeys[static_cast<std::size_t>(i)];
+        if (key == Key::Unknown || !window.keyPressed(key)) continue;
+        // The bug button is the only way into the debug panel in the browser,
+        // and its key is gated on the same switch.
+        if (static_cast<MenuId>(i) == MenuId::Debug && !settings_.showDebugButton) continue;
+        toggle(static_cast<MenuId>(i));
+        return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Panel geometry
+// ---------------------------------------------------------------------------
+//
+// The browser build gives every panel its own box; there is no shared anchor.
+// The tall lists are `position: fixed; top: 33.33vh; left: 100px; height:
+// 66.67vh` DOM shells whose width is the only thing that differs between them,
+// and the overlays are canvas panels pinned at a literal (20, 72) under the
+// top icon row at a fixed size. Both live here rather than in the panels so
+// the twelve anchors can be read against each other.
+
+namespace {
+
+/// A tall list beside the bottom icon column, as wide as its content needs.
+///
+/// Nothing here is clamped to the window. Every one of these panels is a
+/// `position: fixed; top: 33.33vh; left: 100px; height: 66.67vh` shell with a
+/// literal width, and a viewport too narrow for one simply lets it overflow --
+/// it does not narrow the card and re-centre it, which would move a panel a
+/// player has learnt the position of.
+Rect listPanel(double width, int, int viewHeight) {
+    return {kMenuInsetX, static_cast<double>(viewHeight) * kMenuListTopFraction, width,
+            static_cast<double>(viewHeight) * kMenuListHeightFraction};
+}
+
+/// An overlay pinned under the top icon row, at a literal size. Also unclamped:
+/// these are canvas panels drawn from fixed PANEL_X/PANEL_Y/PANEL_WIDTH
+/// constants, and clamping the rect would leave the mouse-capture box smaller
+/// than the card the panel paints for itself.
+Rect cornerPanel(double width, double height, double top, int, int) {
+    return {kMenuCornerX, top, width, height};
+}
+
+} // namespace
+
+Rect InventoryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
+Rect CraftingPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
+Rect TalentsPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
+Rect GalleryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
+Rect ShopPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
+
+Rect SkinsPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 540.0, 72.0, w, h); }
+Rect LeaderboardPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
+}
+// Settings and debug sit two pixels higher than the other overlays, which is
+// what the browser does; not worth "correcting" into disagreement with it.
+Rect SettingsPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, 70.0, w, h); }
+Rect DebugPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, 70.0, w, h); }
+Rect ChangelogPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
+}
+Rect NotificationsPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
+}
+Rect GuildPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, 72.0, w, h); }
+
+Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
+    switch (id) {
+        case MenuId::Inventory:     return InventoryPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Crafting:      return CraftingPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Talents:       return TalentsPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Gallery:       return GalleryPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Shop:          return ShopPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Skins:         return SkinsPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Leaderboard:   return LeaderboardPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Settings:      return SettingsPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Changelog:     return ChangelogPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Notifications: return NotificationsPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Guild:         return GuildPanel::bounds(viewWidth, viewHeight);
+        case MenuId::Debug:         return DebugPanel::bounds(viewWidth, viewHeight);
+        default:                    return listPanel(380.0, viewWidth, viewHeight);
+    }
+}
+
+const SvgDocument* MenuSystem::icon(int index) {
+    if (index < 0 || index >= ui::kMenuIconCount) return nullptr;
+    // Compiled on first use rather than in a constructor: the fonts and the
+    // sprite cache are already loaded by then, and a client that never opens a
+    // menu never pays for the artwork.
+    if (icons_.empty()) icons_.resize(static_cast<std::size_t>(ui::kMenuIconCount));
+    std::shared_ptr<SvgDocument>& slot = icons_[static_cast<std::size_t>(index)];
+    if (!slot) {
+        slot = std::make_shared<SvgDocument>(
+            SvgDocument::fromString(ui::kMenuIcons[static_cast<std::size_t>(index)].svg));
+    }
+    return slot->empty() ? nullptr : slot.get();
+}
+
+const std::array<MenuSystem::StripSlot, kStripSlotCount>& MenuSystem::strip() {
+    using A = StripAction;
+    static const std::array<StripSlot, kStripSlotCount> kSlots = {{
+        {MenuId::Settings,      A::OpenMenu, "settings",      true,  0xB3B3B3u, 0x8F8F8Fu},
+        {MenuId::Changelog,     A::OpenMenu, "changelog",     true,  0x00DB3Eu, 0x00AF32u},
+        {MenuId::Notifications, A::OpenMenu, "notifications", true,  0x4A90E2u, 0x3B73B5u},
+        {MenuId::Leaderboard,   A::OpenMenu, "leaderboard",   true,  0xE8A023u, 0xBA801Cu},
+        {MenuId::Guild,         A::OpenMenu, "guild",         true,  0x27DADEu, 0x1FB3B0u},
+        {MenuId::Skins,         A::OpenMenu, "skins",         true,  0xC45CFFu, 0x9A3FD0u},
+        {MenuId::None,          A::Discord,  "discord",       true,  0x5865F2u, 0x4752C4u},
+        {MenuId::Debug,         A::OpenMenu, "debug",         true,  0x666666u, 0x4D4D4Du},
+        {MenuId::None,          A::Exit,     "exit_button",   true,  0xFF0000u, 0xCC0000u},
+        {MenuId::Inventory,     A::OpenMenu, "inventory",     false, 0x00B3FFu, 0x008FCCu},
+        {MenuId::Talents,       A::OpenMenu, "skills",        false, 0x9D4EDDu, 0x7E3EB1u},
+        {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   false, 0xD6C206u, 0xAB9B05u},
+        {MenuId::Shop,          A::OpenMenu, "stars",         false, 0x36D153u, 0x2BA742u},
+        {MenuId::Crafting,      A::OpenMenu, "craft",         false, 0xFF9D00u, 0xCC7E00u},
+    }};
+    return kSlots;
+}
+
+void MenuSystem::activateStripSlot(int index) {
+    const StripSlot& slot = strip()[static_cast<std::size_t>(index)];
+    switch (slot.action) {
+        case StripAction::Exit: exitRequested_ = true; return;
+        case StripAction::Discord: openExternalLink(kDiscordInvite); return;
+        case StripAction::OpenMenu: break;
+    }
+    // Opening the panel is what marks the changelog read, which is what stops
+    // the button shaking -- the same gesture, not a separate acknowledgement.
+    if (slot.menu == MenuId::Changelog) settings_.changelogSeen = changelogEntries_;
+    toggle(slot.menu);
+}
+
+void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSeconds) {
+    stripRects_.fill(Rect{});
+
+    const Vec2 mouse{window.mouseX(), window.mouseY()};
+    const bool pressed = window.mousePressed(MouseButton::Left);
+    const bool released = window.mouseReleased(MouseButton::Left);
+
+    // Hidden slots collapse out of the layout rather than leaving a gap, so
+    // the exit button lands where the row ends and not at a reserved position.
+    std::array<bool, kStripSlotCount> visible{};
+    for (int i = 0; i < kStripSlotCount; ++i) {
+        const StripSlot& slot = strip()[static_cast<std::size_t>(i)];
+        if (slot.action == StripAction::Exit) visible[static_cast<std::size_t>(i)] = inGame_;
+        else if (slot.menu == MenuId::Debug)
+            visible[static_cast<std::size_t>(i)] = settings_.showDebugButton;
+        else visible[static_cast<std::size_t>(i)] = true;
+    }
+
+    // Lay both groups out first: the slide-in offset is a per-button distance
+    // from the left edge, so it needs the final x before anything is drawn.
+    double x = kIconInset;
+    int columnCount = 0;
+    for (int i = 0; i < kStripSlotCount; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        if (!visible[at]) continue;
+        if (!strip()[at].topRow) { ++columnCount; continue; }
+        stripRects_[at] = {x, kIconInset, kIconButton, kIconButton};
+        x += kIconButton + kIconGap;
+    }
+    double y = canvas.height() - kIconInset - columnCount * kIconButton -
+               std::max(0, columnCount - 1) * kIconGap;
+    for (int i = 0; i < kStripSlotCount; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        if (!visible[at] || strip()[at].topRow) continue;
+        stripRects_[at] = {kIconInset, y, kIconButton, kIconButton};
+        y += kIconButton + kIconGap;
+    }
+
+    // First frame: stagger every visible button so the strip cascades in.
+    // After that only a false->true edge starts a slide, which is what makes
+    // the exit and debug buttons sweep in when they appear.
+    if (!stripSeeded_) {
+        stripSeeded_ = true;
+        slideStart_.fill(-1.0);
+        double stagger = 0;
+        for (int i = 0; i < kStripSlotCount; ++i) {
+            if (!visible[static_cast<std::size_t>(i)]) continue;
+            slideStart_[static_cast<std::size_t>(i)] = timeSeconds + stagger;
+            stagger += kIconStaggerSeconds;
+        }
+    } else {
+        for (int i = 0; i < kStripSlotCount; ++i) {
+            const auto at = static_cast<std::size_t>(i);
+            if (visible[at] && !stripVisible_[at]) slideStart_[at] = timeSeconds;
+            else if (!visible[at]) slideStart_[at] = -1.0;
+        }
+    }
+    stripVisible_ = visible;
+
+    for (int i = 0; i < kStripSlotCount; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        if (!visible[at]) continue;
+        const StripSlot& slot = strip()[at];
+        const Rect r = stripRects_[at];
+        // Against the UN-translated rect: neither the slide nor the shake may
+        // move a button out from under the cursor that is already on it.
+        const bool hovered = insideInclusive(r, mouse);
+        if (pressed && hovered) pressedSlot_ = i;
+
+        canvas.save();
+        if (slideStart_[at] >= 0) {
+            const double elapsed = timeSeconds - slideStart_[at];
+            const double travel = -(r.x + kIconButton);
+            if (elapsed < 0) {
+                canvas.translate(static_cast<float>(travel), 0.0f);
+            } else if (elapsed < kIconSlideSeconds) {
+                const double progress = elapsed / kIconSlideSeconds;
+                const double eased = 1.0 - std::pow(1.0 - progress, 3.0);
+                canvas.translate(static_cast<float>(travel * (1.0 - eased)), 0.0f);
+            } else {
+                slideStart_[at] = -1.0;
+            }
+        }
+        if (slot.menu == MenuId::Changelog && changelogUnread()) {
+            const double phase = std::fmod(timeSeconds, kShakePeriodSeconds) / kShakePeriodSeconds;
+            const double cx = r.x + r.w * 0.5;
+            const double cy = r.y + r.h * 0.5;
+            canvas.translate(static_cast<float>(cx), static_cast<float>(cy));
+            canvas.rotate(static_cast<float>(std::sin(phase * kTau) * kShakeRadians));
+            canvas.translate(static_cast<float>(-cx), static_cast<float>(-cy));
+        }
+
+        // Two filled rects rather than a stroke: CSS puts the outer corner at
+        // radius 3 and clamps the inner one to 0 (radius minus border width),
+        // where a centred stroke would blow the outer radius out to 3 + 2.
+        setFill(canvas, slot.border);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y),
+                         static_cast<float>(r.w), static_cast<float>(r.h),
+                         static_cast<float>(kIconRadius));
+        canvas.fill();
+        setFill(canvas, slot.fill);
+        canvas.fillRect(static_cast<float>(r.x + kIconBorder),
+                        static_cast<float>(r.y + kIconBorder),
+                        static_cast<float>(r.w - kIconBorder * 2),
+                        static_cast<float>(r.h - kIconBorder * 2));
+
+        // Press wins over hover, and it follows the button the press began on
+        // even once the cursor has left it.
+        if (hovered || pressedSlot_ == i) {
+            setFill(canvas, pressedSlot_ == i ? kInk : kPaper, 0.15);
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y),
+                             static_cast<float>(r.w), static_cast<float>(r.h),
+                             static_cast<float>(kIconRadius));
+            canvas.fill();
+        }
+
+        // After the tint, so the glyph is never washed out by it.
+        if (const SvgDocument* glyph = icon(ui::menuIconIndex(slot.icon))) {
+            glyph->renderFitted(canvas, static_cast<float>(r.x + (r.w - kIconGlyph) * 0.5),
+                                static_cast<float>(r.y + (r.h - kIconGlyph) * 0.5),
+                                static_cast<float>(kIconGlyph), static_cast<float>(timeSeconds));
+        }
+        canvas.restore();
+
+        // A release only counts when the press landed on the same button; a
+        // drag that started on empty canvas must not activate what it ends on.
+        if (released && hovered && pressedSlot_ == i) activateStripSlot(i);
+    }
+    if (released) pressedSlot_ = -1;
+}
+
+void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
+                                const SpriteCache& sprites, double timeSeconds) {
+    const Profile& profile = net.profile();
+    const int owned = static_cast<int>(profile.loadout.size());
+
+    // Rises into place over its first frames and sinks back the same way. A
+    // plain per-frame lerp with no time term, as in the browser: the ratio is
+    // the feel, and a dt-corrected version overshoots at the frame rates this
+    // has to survive. The target is whether there is a loadout to show at all,
+    // which is the browser's own show()/hide() rule.
+    const double target = owned > 0 ? 1.0 : 0.0;
+    loadoutSlide_ += (target - loadoutSlide_) * 0.2;
+    if (std::fabs(loadoutSlide_ - target) < 0.005) loadoutSlide_ = target;
+    if (loadoutSlide_ <= 0.005) {
+        // Nothing painted means nothing to hit: a bar that has sunk off-screen
+        // must not go on answering for clicks where it used to be, and it has
+        // no selection or queued keystroke to carry into the next screen.
+        loadoutHovered_ = -1;
+        loadoutGrabbable_ = false;
+        selectedSecondary_ = -1;
+        pendingCycle_ = 0;
+        pendingSwapSlot_ = -1;
+        pendingSecondaryDelete_ = false;
+        return;
+    }
+
+    // The title screen gives the bar a fixed box below centre; in game it owns
+    // the viewport and every metric shrinks to three quarters.
+    const double scale = inGame_ ? kInGameLoadoutScale : 1.0;
+    const Rect box = inGame_
+        ? Rect{0.0, 0.0, static_cast<double>(canvas.width()),
+               static_cast<double>(canvas.height())}
+        : Rect{(canvas.width() - kTitleLoadoutWidth) * 0.5,
+               canvas.height() * 0.5 + kTitleLoadoutDrop, kTitleLoadoutWidth,
+               kTitleLoadoutHeight};
+    const LoadoutLayout layout = layoutLoadout(box, scale);
+
+    // Q/E/T and the number keys were recorded by handleKeys, which has no
+    // network client; this is the first place that can act on them.
+    if (selectedSecondary_ >= 0 && timeSeconds - lastSelectTime_ > 5.0) selectedSecondary_ = -1;
+    if (pendingCycle_ != 0) {
+        // Q with nothing selected behaves as E: there is no "previous" to step
+        // back to, and doing nothing would read as a dead key.
+        const int step = (pendingCycle_ < 0 && selectedSecondary_ < 0) ? 1 : pendingCycle_;
+        selectedSecondary_ = cycleSecondary(profile, selectedSecondary_, step);
+        lastSelectTime_ = timeSeconds;
+        pendingCycle_ = 0;
+    }
+    if (pendingSecondaryDelete_) {
+        pendingSecondaryDelete_ = false;
+        if (selectedSecondary_ >= 0) {
+            const int slot = kLoadoutBarPrimary + selectedSecondary_;
+            if (slot < owned) net.setLoadoutSlot(slot, kNoPetal, Rarity::Common);
+            selectedSecondary_ = cycleSecondary(profile, selectedSecondary_, 1);
+            lastSelectTime_ = timeSeconds;
+        }
+    }
+    if (pendingSwapSlot_ >= 0) {
+        const int primary = pendingSwapSlot_;
+        pendingSwapSlot_ = -1;
+        // With a secondary armed the number key swaps into THAT slot and
+        // advances the selection; otherwise it swaps with the slot below.
+        const int secondary =
+            kLoadoutBarPrimary + (selectedSecondary_ >= 0 ? selectedSecondary_ : primary);
+        if (primary < owned && secondary < owned) net.swapLoadoutSlots(primary, secondary);
+        if (selectedSecondary_ >= 0) {
+            selectedSecondary_ = cycleSecondary(profile, selectedSecondary_, 1);
+            lastSelectTime_ = timeSeconds;
+        }
+    }
+
+    const Vec2 mouse{window.mouseX(), window.mouseY()};
+    int hovered = -1;
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        if (insideInclusive(layout.slots[static_cast<std::size_t>(i)], mouse)) hovered = i;
+    }
+    if (hovered < 0 && insideInclusive(layout.trash, mouse)) hovered = kLoadoutTrashSlot;
+    loadoutHovered_ = hovered;
+    // The browser intercepts a press on the bar only to begin a drag, so this
+    // is exactly the condition under which the click is the bar's at all.
+    loadoutGrabbable_ = hovered >= 0 && hovered < kLoadoutBarSlots && hovered < owned &&
+                        !profile.loadout[static_cast<std::size_t>(hovered)].empty();
+
+    canvas.save();
+    canvas.translate(0.0f, static_cast<float>((1.0 - loadoutSlide_) * 120.0));
+
+    drawLoadoutSlot(canvas, layout.trash, kLoadoutTrashFill, hovered == kLoadoutTrashSlot);
+    drawKeyLabel(canvas, "[T]", layout.trash.right() + 16.0,
+                 layout.trash.y + layout.trash.h * 0.5, Align::Left);
+    if (drag_.active()) {
+        TextStyle del;
+        del.size = std::round(layout.trash.h / 4.0);
+        del.bold = true;
+        del.fill = kPaper;
+        del.stroke = kInk;
+        del.strokeWidth = 3.0;
+        del.align = Align::Centre;
+        del.baseline = Baseline::Middle;
+        text(canvas, "Delete", layout.trash.x + layout.trash.w * 0.5,
+             layout.trash.y + layout.trash.h * 0.5, del);
+    }
+
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        const Rect slot = layout.slots[static_cast<std::size_t>(i)];
+        const bool selected = i >= kLoadoutBarPrimary &&
+                              i - kLoadoutBarPrimary == selectedSecondary_;
+        drawLoadoutSlot(canvas, slot, kLoadoutSlotFill, hovered == i || selected);
+        // The bracketed captions belong to the primary row only; the second
+        // row is reached with Q/E, not with a key of its own.
+        if (i < kLoadoutBarPrimary) {
+            drawKeyLabel(canvas, kLoadoutKeyCaps[i], slot.x + slot.w * 0.5, slot.y - 15.0,
+                         Align::Centre);
+        }
+    }
+
+    if (selectedSecondary_ >= 0) {
+        const Rect slot = layout.slots[static_cast<std::size_t>(kLoadoutBarPrimary +
+                                                                selectedSecondary_)];
+        const double cx = slot.x + slot.w * 0.5;
+        const double cy = slot.y + slot.h * 0.5;
+        canvas.save();
+        canvas.translate(static_cast<float>(cx), static_cast<float>(cy));
+        canvas.rotate(static_cast<float>(std::sin(timeSeconds * 1000.0 / 150.0) * 0.06));
+        setStroke(canvas, kPaper);
+        canvas.setLineWidth(4.0f);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(-slot.w * 0.5 - 6.0),
+                         static_cast<float>(-slot.h * 0.5 - 6.0),
+                         static_cast<float>(slot.w + 12.0), static_cast<float>(slot.h + 12.0),
+                         static_cast<float>(slot.w / 20.0 + 2.0));
+        canvas.stroke();
+        canvas.restore();
+    }
+
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        if (i >= owned) break;
+        const auto at = static_cast<std::size_t>(i);
+        if (profile.loadout[at].empty()) continue;
+        // The slot a petal is being dragged out of renders as a plain empty
+        // slot: only its icon is lifted, not the chrome.
+        if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot == i) continue;
+        drawLoadoutPetal(canvas, sprites, layout.slots[at], profile.loadout[at].petalIndex,
+                         profile.loadout[at].rarity, timeSeconds);
+    }
+    canvas.restore();
+}
+
+void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
+    const Profile& profile = net.profile();
+    const int owned = static_cast<int>(profile.loadout.size());
+    const int hovered = loadoutHovered_;
+
+    // Picking a petal up off the bar. Nothing is sent yet: a drag that ends
+    // back where it started must not have unequipped anything on the way.
+    if (window.mousePressed(MouseButton::Left) && hovered >= 0 && hovered < kLoadoutBarSlots &&
+        !drag_.active()) {
+        const auto at = static_cast<std::size_t>(hovered);
+        if (hovered < owned && !profile.loadout[at].empty()) {
+            drag_.source = DragState::Source::LoadoutSlot;
+            drag_.petalIndex = profile.loadout[at].petalIndex;
+            drag_.rarity = profile.loadout[at].rarity;
+            drag_.slot = hovered;
+        }
+    }
+
+    if (!window.mouseReleased(MouseButton::Left) || !drag_.active()) return;
+
+    if (hovered >= 0 && hovered < kLoadoutBarSlots) {
+        if (hovered < owned) {
+            if (drag_.source == DragState::Source::Inventory) {
+                net.setLoadoutSlot(hovered, drag_.petalIndex, drag_.rarity);
+            } else if (drag_.slot != hovered) {
+                net.swapLoadoutSlots(drag_.slot, hovered);
+            }
+        }
+        drag_.clear();
+        return;
+    }
+
+    // Anywhere that is not a slot sends the petal back to the inventory --
+    // including the trash, and including a drop over an open panel.
+    if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot < owned) {
+        net.setLoadoutSlot(drag_.slot, kNoPetal, Rarity::Common);
+    }
+    drag_.clear();
+}
+
+void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& sprites,
+                             double timeSeconds) {
+    if (!drag_.active() || drag_.petalIndex == kNoPetal) return;
+    const int count = content().petalStats(drag_.petalIndex, drag_.rarity).count;
+    if (!inGame_) {
+        // The title screen's drag is the browser's native HTML5 one, and its
+        // drag image is a throwaway 40x40 canvas holding the sprite alone --
+        // no rarity plate, no outline, no transparency -- with the cursor at
+        // its centre.
+        drawPetalGroup(canvas, sprites, drag_.petalIndex, count, window.mouseX(), window.mouseY(),
+                       40.0, timeSeconds);
+        return;
+    }
+
+    const double size = 50.0;
+    const Rect ghost{window.mouseX() - size * 0.5, window.mouseY() - size * 0.5, size, size};
+    const std::uint32_t fill = rarityColor(drag_.rarity);
+
+    canvas.save();
+    canvas.setGlobalAlpha(0.85f);
+    setFill(canvas, fill);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(ghost.x + 1.5), static_cast<float>(ghost.y + 1.5),
+                     static_cast<float>(size - 3.0), static_cast<float>(size - 3.0), 5.0f);
+    canvas.fill();
+    setStroke(canvas, shade(fill, 0.70));
+    canvas.setLineWidth(3.0f);
+    canvas.stroke();
+    drawPetalGroup(canvas, sprites, drag_.petalIndex, count, ghost.x + size * 0.5,
+                   ghost.y + size * 0.5, 30.0, timeSeconds);
+    canvas.restore();
+}
+
+// ---------------------------------------------------------------------------
+// DebugPanel
+// ---------------------------------------------------------------------------
+//
+// Lives here rather than in a file of its own: it is the one panel with no
+// game content behind it, and it exists mainly so the strip's bug button has
+// somewhere to go.
+
+double DebugPanel::preferredWidth() { return 420.0; }
+
+void DebugPanel::reset() {
+    frameMillis_.clear();
+    sampleAge_ = 0;
+    sampleTotal_ = 0;
+    sampleCount_ = 0;
+}
+
+bool DebugPanel::render(MenuContext& ctx) {
+    Canvas& canvas = ctx.canvas;
+    const Rect panel = ctx.bounds;
+    const Vec2 mouse = ctx.mouse();
+    constexpr double kPad = 15.0;
+    constexpr double kHeader = 30.0;
+
+    // Averaged over a whole second before it is kept: a per-frame trace is all
+    // scheduler noise and says nothing about where the time went.
+    sampleTotal_ += ctx.dt * 1000.0;
+    ++sampleCount_;
+    sampleAge_ += ctx.dt;
+    if (sampleAge_ >= 1.0 && sampleCount_ > 0) {
+        frameMillis_.push_back(sampleTotal_ / sampleCount_);
+        if (static_cast<int>(frameMillis_.size()) > kHistory) frameMillis_.erase(frameMillis_.begin());
+        sampleAge_ = 0;
+        sampleTotal_ = 0;
+        sampleCount_ = 0;
+    }
+
+    inlaid(canvas, panel, kDebugSkin.fill, kDebugSkin.border, 4.0, 5.0);
+
+    TextStyle heading;
+    heading.size = 20.0;
+    heading.bold = true;
+    heading.strokeWidth = 3.0;
+    text(canvas, "Debug", panel.x + kPad, panel.y + kPad + kHeader * 0.5, heading);
+
+    const Rect closeRect{panel.right() - kPad - 28.0, panel.y + kPad, 28.0, 28.0};
+    ButtonStyle close;
+    close.fill = 0xCC4444u;
+    close.outlineWidth = 3.0;
+    close.textSize = 16.0;
+    button(canvas, closeRect, "X", closeRect.contains(mouse), ctx.window.mouseDown(MouseButton::Left),
+           close);
+
+    const Rect graph{panel.x + kPad, panel.y + kPad + kHeader + 23.0, panel.w - kPad * 2, 74.0};
+    TextStyle caption;
+    caption.size = 13.0;
+    caption.bold = true;
+    caption.strokeWidth = 2.0;
+    const double latest = frameMillis_.empty() ? 0.0 : frameMillis_.back();
+    text(canvas, latest > 0 ? "Client Frame Time  " + abbreviate(latest) + " ms  (" +
+                                  abbreviate(1000.0 / latest) + " FPS)"
+                            : "Client Frame Time  collecting...",
+         graph.x, graph.y - 11.0, caption);
+
+    setFill(canvas, kInk, 0.35);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(graph.x), static_cast<float>(graph.y),
+                     static_cast<float>(graph.w), static_cast<float>(graph.h), 4.0f);
+    canvas.fill();
+
+    if (frameMillis_.size() >= 2) {
+        double peak = 1.0;
+        for (const double sample : frameMillis_) peak = std::max(peak, sample);
+        const double step = graph.w / static_cast<double>(kHistory - 1);
+        setStroke(canvas, 0x5A9FDBu);
+        canvas.setLineWidth(2.0f);
+        canvas.beginPath();
+        for (std::size_t i = 0; i < frameMillis_.size(); ++i) {
+            const double px = graph.x + static_cast<double>(i) * step;
+            const double py = graph.bottom() - (frameMillis_[i] / peak) * (graph.h - 4.0) - 2.0;
+            if (i == 0) canvas.moveTo(static_cast<float>(px), static_cast<float>(py));
+            else canvas.lineTo(static_cast<float>(px), static_cast<float>(py));
+        }
+        canvas.stroke();
+    }
+
+    return !ctx.clicked(closeRect);
+}
+
+namespace {
+
+/// The tall list panels are DOM shells that rise from `translateY(100vh)` over
+/// 300ms; the corner overlays are canvas panels drawn straight at (20, 72) with
+/// no transition at all, so only these five animate.
+bool slidesUp(MenuId id) {
+    return id == MenuId::Inventory || id == MenuId::Crafting || id == MenuId::Talents ||
+           id == MenuId::Gallery || id == MenuId::Shop;
+}
+
+constexpr double kPanelSlideSeconds = 0.30;
+
+} // namespace
+
+MenuSystem::PanelLayer MenuSystem::panelLayer(MenuId id, bool inGame) {
+    // Settings and the debug panel are the pair that does not follow the rest,
+    // and the two screens are exact mirrors of each other. On the title screen
+    // renderCanvasUI paints them before drawTitleLoadout and the strip, while
+    // renderInGameMenusOverlay paints every other card after both. In game it
+    // is the other way round: graphics.render() paints the changelog,
+    // notifications, leaderboard, guild and skin cards, then the strip, and
+    // only once render() has returned does Game paint the loadout bar and the
+    // settings and debug overlays over the top of it.
+    const bool oddPair = id == MenuId::Settings || id == MenuId::Debug;
+    if (oddPair) return inGame ? PanelLayer::Over : PanelLayer::Under;
+    return inGame ? PanelLayer::Under : PanelLayer::Over;
+}
+
+void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
+                                 const SpriteCache& sprites, const WorldRenderer& renderer,
+                                 double timeSeconds, double dt) {
+    if (drawn_ == MenuId::None) return;
+    MenuContext ctx{canvas,    window,      net, sprites,    renderer, settings_,
+                    drag_,     timeSeconds, dt,  panelRect_, false};
+    bool keepOpen = true;
+    switch (drawn_) {
+        case MenuId::Inventory:   keepOpen = inventory_.render(ctx); break;
+        case MenuId::Crafting:    keepOpen = crafting_.render(ctx); break;
+        case MenuId::Talents:     keepOpen = talents_.render(ctx); break;
+        case MenuId::Gallery:     keepOpen = gallery_.render(ctx); break;
+        case MenuId::Shop:        keepOpen = shop_.render(ctx); break;
+        case MenuId::Skins:       keepOpen = skins_.render(ctx); break;
+        case MenuId::Leaderboard: keepOpen = leaderboard_.render(ctx); break;
+        case MenuId::Settings:    keepOpen = settings_panel_.render(ctx); break;
+        case MenuId::Changelog:   keepOpen = changelog_.render(ctx); break;
+        case MenuId::Notifications: keepOpen = notifications_.render(ctx); break;
+        case MenuId::Guild:       keepOpen = guild_.render(ctx); break;
+        case MenuId::Debug:       keepOpen = debug_.render(ctx); break;
+        default: break;
+    }
+    // A card on its way out still paints, but it has no say any more: it is
+    // already closed, and a search field it happened to hold would go on
+    // eating the chat box's keystrokes all the way down.
+    if (open_ == MenuId::None) return;
+    wantsText_ = ctx.wantsText;
+    if (!keepOpen) close();
+}
+
+void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const SpriteCache& sprites,
+                        const WorldRenderer& renderer, double timeSeconds, double dt,
+                        const OverlayFn& overStripUnderBar) {
+    wantsText_ = false;
+    panelRect_ = Rect{};
+
+    // A guild invitation raises the guild panel over whatever was open. It is
+    // the one thing in this build that opens a menu without a click, so the
+    // flag is consumed here -- once per invitation, not once per frame it is
+    // still unanswered.
+    if (net.guildInvite().justArrived) {
+        net.guildInvite().justArrived = false;
+        if (open_ != MenuId::Guild) toggle(MenuId::Guild);
+    }
+
+    // What is painted is `drawn_`, which outlives `open_` for as long as the
+    // card takes to slide back down.
+    if (open_ != MenuId::None) {
+        drawn_ = open_;
+        panelSlide_ = slidesUp(open_) ? std::min(1.0, panelSlide_ + dt / kPanelSlideSeconds) : 1.0;
+    } else if (drawn_ != MenuId::None) {
+        panelSlide_ = slidesUp(drawn_) ? std::max(0.0, panelSlide_ - dt / kPanelSlideSeconds) : 0.0;
+        if (panelSlide_ <= 0.0) drawn_ = MenuId::None;
+    }
+
+    if (drawn_ != MenuId::None) {
+        panelRect_ = panelBounds(drawn_, canvas.width(), canvas.height());
+        // `transform: translateY(100vh)` -> `translateY(0)` over 300ms
+        // `ease-out`, which is cubic-bezier(0, 0, 0.58, 1). 1-(1-t)^1.7 tracks
+        // that curve to within a percent the whole way along, where the cubic
+        // the strip's slide-in uses would be a fifth too far ahead at the
+        // halfway point.
+        const double eased = 1.0 - std::pow(1.0 - panelSlide_, 1.7);
+        panelRect_.y += (1.0 - eased) * canvas.height();
+    }
+    const PanelLayer layer = panelLayer(drawn_, inGame_);
+
+    if (layer == PanelLayer::Under) {
+        renderOpenPanel(canvas, window, net, sprites, renderer, timeSeconds, dt);
+    }
+    // The bar and the strip trade places between the screens. The title screen
+    // runs drawTitleLoadout and then canvasButtons.draw; in game the strip is
+    // the last thing graphics.render() paints and the bar is the first thing
+    // Game paints after it, which is what puts the hotbar over the corner
+    // cards -- and over the death scrim, the one thing that ever falls in
+    // between the two.
+    if (inGame_) {
+        drawIconStrip(canvas, window, timeSeconds);
+        if (overStripUnderBar) overStripUnderBar();
+        drawLoadoutBar(canvas, window, net, sprites, timeSeconds);
+    } else {
+        drawLoadoutBar(canvas, window, net, sprites, timeSeconds);
+        drawIconStrip(canvas, window, timeSeconds);
+    }
+    if (layer == PanelLayer::Over) {
+        renderOpenPanel(canvas, window, net, sprites, renderer, timeSeconds, dt);
+    }
+
+    // Input last, and after the panel has had the same click whichever layer it
+    // was painted on -- in game included, where the bar is painted OVER the
+    // card. Paint order and input order are deliberately not the same thing
+    // here: a press the card is standing on stays the card's, and a drop into
+    // the card must reach the card before the bar decides it landed on
+    // nothing. The two only ever overlap across the bar's caption strip, which
+    // answers for no click at all.
+    updateLoadoutInput(window, net);
+    drawDragged(canvas, window, sprites, timeSeconds);
+}
+
+void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeconds) {
+    // The login screen has the strip and nothing else. Whatever the last
+    // screen left in the panel and bar state is cleared rather than carried
+    // over, or a card nobody is painting would still be swallowing clicks.
+    wantsText_ = false;
+    panelRect_ = Rect{};
+    loadoutHovered_ = -1;
+    loadoutGrabbable_ = false;
+    drawIconStrip(canvas, window, timeSeconds);
+}
+
+double MenuSystem::reservedTop() const {
+    double right = 0;
+    for (int i = 0; i < kStripSlotCount; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        if (strip()[at].topRow && stripRects_[at].w > 0) {
+            right = std::max(right, stripRects_[at].right());
+        }
+    }
+    return right > 0 ? right + kIconGap : 0.0;
+}
+
+double MenuSystem::reservedLeft() const {
+    double right = 0;
+    for (int i = 0; i < kStripSlotCount; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        if (!strip()[at].topRow && stripRects_[at].w > 0) {
+            right = std::max(right, stripRects_[at].right());
+        }
+    }
+    return right > 0 ? right + kIconGap : 0.0;
+}
+
+double MenuSystem::stripBottom() const { return kIconInset + kIconButton + kIconGap; }
+
+bool MenuSystem::capturesMouse(Vec2 mouse) const {
+    if (panelRect_.w > 0 && panelRect_.contains(mouse)) return true;
+    // The bar takes the click for one thing only: lifting a petal out of a
+    // filled slot. An empty slot, the trash, the gaps between the rows and the
+    // caption strip above them all fall through and fire an attack, so no
+    // bounding box around the bar answers here. Read off the hover scan rather
+    // than `mouse`, because only that pass has the account's loadout to say
+    // whether the slot holds anything.
+    if (loadoutGrabbable_) return true;
+    for (const Rect& button : stripRects_) {
+        if (insideInclusive(button, mouse)) return true;
+    }
+    return false;
+}
+
+} // namespace flr

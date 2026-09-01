@@ -140,6 +140,9 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     // destroying one cannot touch the columns held below.
     PetalSlotState& state = world.ensure<PetalSlotState>(player);
     Loadout& loadout = world.get<Loadout>(player);
+    const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
+    const double petalHealthScale =
+        tree ? tree->skills.statScale(SkillId::PetalHealth) : 1.0;
 
     // Bucket the live petals by slot, dropping the handles the world has
     // already reaped and the ones combat killed this tick. Both count as
@@ -154,7 +157,9 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     }
     loadout.spawned.resize(kept);
 
-    for (int i = 0; i < kLoadoutSlots; ++i) {
+    // Only the primary row is equipped. Slots 10..19 are the storage the bar's
+    // second row shows: they hold a petal, they never spawn one.
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         const auto index = static_cast<std::size_t>(i);
         const auto slotId = static_cast<std::uint8_t>(i);
         LoadoutSlot& slot = loadout.slots[index];
@@ -174,7 +179,13 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         }
 
         const PetalConfig& config = registry.petal(slot.configIndex);
-        const PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
+        PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
+        // The Petal Health talent is folded in HERE, before the pool is sized,
+        // rather than at each of the four places a pool figure is written. A
+        // petal's health reaches the field through poolMax, poolHealth,
+        // syncedHealth and spawnHealth; scaling one of them and not the rest is
+        // how a talent turns into a petal that reloads to more than its own max.
+        stats.health *= petalHealthScale;
         const int count = std::max(0, stats.count);
         const double reload = reloadMillisFor(stats);
 
@@ -421,7 +432,9 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     std::uint8_t equipFlags = EquipNone;
 
     if (const Loadout* loadout = world.tryGet<Loadout>(player)) {
-        for (int i = 0; i < kLoadoutSlots; ++i) {
+        // Storage grants nothing: the browser breaks out of this same sum at
+        // PRIMARY_LOADOUT_SLOTS, so a stashed clover is not a worn one.
+        for (int i = 0; i < kLoadoutActiveSlots; ++i) {
             const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
             if (!slot.empty()) {
                 // Equipment is worn for the whole loadout, including while a
@@ -450,6 +463,16 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.aggroRadiusBonus += mods.aggroRadius;
             aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
         }
+    }
+
+    // Talents multiply what the loadout already produces, so they are applied
+    // to the finished aggregate: a tree bonus is one factor over the whole
+    // build, never a per-slot bonus that a five-petal loadout collects five
+    // times over.
+    if (const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player)) {
+        aggregate.modifiers.damageScale *= tree->skills.statScale(SkillId::Damage);
+        aggregate.modifiers.maxHealthScale *= tree->skills.statScale(SkillId::PlayerHealth);
+        aggregate.modifiers.passiveHealPerSecond *= tree->skills.effectScale(SkillId::Healing);
     }
 
     // Written wholesale. The component is never edited in place on equip: an
@@ -515,9 +538,9 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     // eight slots, and not among the petal entities. A broken petal therefore
     // leaves its gap open instead of making the rest of the ring lurch round to
     // close it, and a clump counts once because it occupies one slot.
-    std::array<int, kLoadoutSlots> ordinal{};
+    std::array<int, kLoadoutActiveSlots> ordinal{};
     int occupied = 0;
-    for (int i = 0; i < kLoadoutSlots; ++i) {
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         ordinal[static_cast<std::size_t>(i)] = occupied;
         if (!loadout->slots[static_cast<std::size_t>(i)].empty()) ++occupied;
     }
@@ -527,7 +550,9 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     for (const Entity petal : loadout->spawned) {
         PetalInstance* instance = world.tryGet<PetalInstance>(petal);
         Transform* transform = world.tryGet<Transform>(petal);
-        if (!instance || !transform || instance->slot >= kLoadoutSlots) continue;
+        // Bounded by the ACTIVE row, not the loadout: `ordinal` is only that
+        // wide, and nothing outside it was ever spawned.
+        if (!instance || !transform || instance->slot >= kLoadoutActiveSlots) continue;
         const PetalConfig& config = registry.petal(instance->configIndex);
         const int subCount = std::max<int>(1, instance->subCount);
 
@@ -601,7 +626,11 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             fireProjectiles(world, player, petal, config, stats, configIndex, rarity);
         }
         if (stats.heal > 0.0) {
-            healPlayer(world, player, stats.heal);
+            // The Healing talent scales the burst as it scales the passive one,
+            // so a rose is worth the same fraction more either way.
+            const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
+            const double scale = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
+            healPlayer(world, player, stats.heal * scale);
         }
         if (config.radiation.present) {
             // The field is re-laid at the petal's feet every interval rather
@@ -694,6 +723,10 @@ void PetalSystem::emitGroundEffect(World& world, Entity player, Vec2 at, GroundE
 
     Replicated replicated;
     replicated.kind = net::EntityKind::Effect;
+    // The kind IS the artwork for a ground effect -- a web field and a
+    // radiation patch share every other replicated field -- so it rides in
+    // typeIndex, which no other Effect uses.
+    replicated.typeIndex = static_cast<std::uint16_t>(kind);
     replicated.rarity = rarity;
     world.add<Replicated>(effect, replicated);
     assignNetId(world, effect);

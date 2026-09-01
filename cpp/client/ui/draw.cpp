@@ -3,6 +3,7 @@
 #include "client/ui/text.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace flr::ui {
@@ -33,8 +34,32 @@ double baselineY(double y, double size, Baseline baseline, bool bold) {
     switch (baseline) {
         case Baseline::Top: return y + ascent(size, bold);
         case Baseline::Bottom: return y + descent(size, bold);
+        case Baseline::Alphabetic: return y;
         default: return y + (ascent(size, bold) + descent(size, bold)) * 0.5;
     }
+}
+
+/// The rounded box every gardn-style control is built from: fill the path,
+/// then stroke it CENTRED, exactly as `drawGardnButton` does. The stroke sits
+/// half outside `r`, which is why nothing here insets first -- a control that
+/// shrank to fit its own outline would no longer line up with the browser's.
+void strokedBox(Canvas& canvas, Rect r, double radius, std::uint32_t fill, double fillAlpha,
+                std::uint32_t outline, double outlineWidth, double outlineAlpha) {
+    if (r.w <= 0 || r.h <= 0) return;
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                     static_cast<float>(r.h),
+                     static_cast<float>(std::min(radius, std::min(r.w, r.h) * 0.5)));
+    setFill(canvas, fill, fillAlpha);
+    canvas.fill();
+    if (outlineWidth <= 0) return;
+    canvas.save();
+    canvas.setLineCap("round");
+    canvas.setLineJoin("round");
+    canvas.setLineWidth(static_cast<float>(outlineWidth));
+    setStroke(canvas, outline, outlineAlpha);
+    canvas.stroke();
+    canvas.restore();
 }
 
 } // namespace
@@ -61,12 +86,18 @@ void text(Canvas& canvas, const std::string& s, double x, double y, const TextSt
 
     // Stroke first, then fill. The other order eats the glyph with its own
     // outline, which is what every hand-rolled attempt at this gets wrong.
+    //
+    // Scoped: leaking a join and a cap out of a text call silently restyles
+    // whatever shape is stroked next, which is a bug that only ever shows up
+    // several draw calls away from its cause.
     if (strokeWidth > 0) {
-        canvas.setLineJoin("miter");
+        canvas.save();
+        canvas.setLineJoin(style.roundJoin ? "round" : "miter");
         canvas.setLineCap("butt");
         canvas.setLineWidth(static_cast<float>(strokeWidth));
         setStroke(canvas, style.stroke);
         canvas.stroke(glyphs);
+        canvas.restore();
     }
 
     setFill(canvas, style.fill);
@@ -109,25 +140,40 @@ void panel(Canvas& canvas, Rect r, double alpha) {
 
 void button(Canvas& canvas, Rect r, const std::string& label, bool hovered, bool pressed,
             const ButtonStyle& style) {
+    // Brightness in HSV, matching the browser build exactly: press 0.9, hover
+    // 1.1, outline 0.8. A linear channel scale agrees with these everywhere
+    // except a clamped brighten, which is where the two visibly diverge.
     std::uint32_t fill = style.fill;
-    if (!style.enabled) fill = shade(fill, 0.45);
-    else if (pressed) fill = shade(fill, 0.9);
-    else if (hovered) fill = shade(fill, 1.1);
+    if (!style.enabled) fill = hsvScale(fill, 0.45);
+    else if (pressed) fill = hsvScale(fill, 0.9);
+    else if (hovered) fill = hsvScale(fill, 1.1);
 
-    const Rect box = r;
+    // The outline is derived from the BASE colour, not the hover/press shade,
+    // so a button's edge holds still while its face lights up.
     const std::uint32_t outline = style.outline == 0xFFFFFFFFu
-        ? shade(style.fill, 0.8)
+        ? hsvScale(style.fill, 0.8)
         : style.outline;
-    plate(canvas, box, fill, style.radius, outline, style.outlineWidth);
+    strokedBox(canvas, r, style.radius, fill, 1.0, outline, style.outlineWidth, 1.0);
 
     TextStyle ts;
     ts.size = style.textSize;
+    // Only when the call site asks. `drawGardnButton` has no measuring step at
+    // all -- a label wider than its box simply runs out of both ends of it --
+    // and shrinking by default made "Computer Lab" render at 11.4px beside a
+    // row of 14px siblings, which is visible without a reference to hand.
+    if (style.shrinkToFit) {
+        const double available = r.w - style.outlineWidth * 2 - 6.0;
+        const double measured = measure(label, ts.size, true);
+        if (measured > available && available > 0) {
+            ts.size = std::max(8.0, ts.size * available / measured);
+        }
+    }
     ts.bold = true;
     ts.strokeWidth = style.textStrokeWidth;
     ts.align = Align::Centre;
     ts.baseline = Baseline::Middle;
     ts.fill = style.enabled ? kPaper : shade(kPaper, 0.65);
-    text(canvas, label, box.x + box.w * 0.5, box.y + box.h * 0.5, ts);
+    text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, ts);
 }
 
 void bar(Canvas& canvas, Rect r, double fraction, std::uint32_t fill,
@@ -177,44 +223,55 @@ void scrim(Canvas& canvas, double alpha) {
 void textField(Canvas& canvas, Rect r, const std::string& value, const std::string& placeholder,
                bool focused, bool masked, double timeSeconds,
                const TextFieldStyle& style) {
-    const double width = focused ? style.focusedOutlineWidth : style.outlineWidth;
-    plate(canvas, r, style.fill, style.radius,
-          focused ? style.focusedOutline : style.outline, width);
+    const std::uint32_t outlineBase = focused ? style.focusedOutline : style.outline;
+    const std::uint32_t outline =
+        outlineBase == 0xFFFFFFFFu ? hsvScale(style.fill, 0.8) : outlineBase;
+    strokedBox(canvas, r, style.radius, style.fill, style.fillAlpha, outline,
+               focused ? style.focusedOutlineWidth : style.outlineWidth, style.outlineAlpha);
 
-    const double padding = 10.0;
-    const double textSize = std::min(kBodySize + 2.0, r.h * 0.5);
+    // A field shorter than its own type scale would otherwise clip its glyphs
+    // against its outline; the browser never hits this because every one of
+    // its fields is 42px tall.
+    const double textSize = std::min(style.textSize, r.h * 0.6);
 
     std::string shown = value;
     if (masked) shown.assign(value.size(), '*');
 
     TextStyle ts;
     ts.size = textSize;
+    ts.bold = style.bold;
     ts.baseline = Baseline::Middle;
     ts.strokeWidth = style.textStrokeWidth;
+    // Set before the placeholder branch so both strings are outlined alike;
+    // the reference draws them through the same call, under the join its plate
+    // left ambient.
+    ts.roundJoin = style.roundJoin;
 
+    // An empty focused field shows nothing, not the placeholder: the caret is
+    // already saying where the text will go.
     if (shown.empty() && !focused) {
-        ts.fill = style.textStrokeWidth > 0 ? kPaper : shade(kPaper, 0.55);
-        text(canvas, placeholder, r.x + padding, r.y + r.h * 0.5, ts);
+        ts.fill = style.textStrokeWidth > 0 ? style.textFill : shade(style.textFill, 0.55);
+        text(canvas, placeholder, r.x + style.padding, r.y + r.h * 0.5, ts);
         return;
     }
 
-    ts.fill = kPaper;
-    text(canvas, shown, r.x + padding, r.y + r.h * 0.5, ts);
+    ts.fill = style.textFill;
+    text(canvas, shown, r.x + style.padding, r.y + r.h * 0.5, ts);
 
-    if (focused) {
-        // A caret that blinks on a wall-clock cycle, so it keeps a steady
-        // rhythm regardless of frame rate.
-        const bool visible = std::fmod(timeSeconds, 1.0) < 0.5;
-        if (visible) {
-            const double caretX = r.x + padding + textWidth(canvas, shown, textSize);
-            setStroke(canvas, kPaper);
-            canvas.setLineWidth(2.0f);
-            canvas.beginPath();
-            canvas.moveTo(static_cast<float>(caretX + 1), static_cast<float>(r.y + 8));
-            canvas.lineTo(static_cast<float>(caretX + 1), static_cast<float>(r.bottom() - 8));
-            canvas.stroke();
-        }
-    }
+    if (!focused) return;
+    // `Math.floor(Date.now() / 500) % 2 === 0`, to the millisecond: phasing the
+    // blink on the epoch rather than on the caller's frame clock is what keeps
+    // two clients -- and a client and the browser -- pulsing in step, instead
+    // of each starting its cycle wherever its own process happened to launch.
+    // Filled rather than stroked: a stroked line straddles its path and lands
+    // half a pixel off the glyph it follows.
+    const auto epochMillis = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    if ((epochMillis / 500) % 2 != 0) return;
+    const double caretX = r.x + style.padding + textWidth(canvas, shown, textSize, style.bold);
+    setFill(canvas, style.caret);
+    canvas.fillRect(static_cast<float>(caretX), static_cast<float>(r.y + 10), 2.0f,
+                    static_cast<float>(std::max(2.0, r.h - 20.0)));
 }
 
 } // namespace flr::ui

@@ -165,9 +165,69 @@ TEST(shipped_content_loads) {
     if (!s.ok) std::printf("    (load error: %s)\n", s.error.c_str());
     CHECK(s.ok);
     CHECK_EQ(s.registry.mobCount(), std::size_t(51));
-    CHECK_EQ(s.registry.petalCount(), std::size_t(74));
+    // 74 written in petals.json plus one generated egg for each of the 49 mobs
+    // that is not a pet and has no hand-written egg -- exactly what the browser
+    // build appends to BASE_PETAL_CONFIGS at import time.
+    CHECK_EQ(s.registry.petalCount(), std::size_t(123));
     CHECK(s.registry.loaded());
     CHECK(s.registry.contentHash() != 0u);
+}
+
+TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
+    const ContentRegistry& r = shipped().registry;
+    const std::vector<std::uint16_t>& order = r.petalDisplayOrder();
+    CHECK_EQ(order.size(), r.petalCount());
+
+    // Every index exactly once: a catalogue that repeats or drops an entry is
+    // a shop with a duplicate card or a missing one.
+    std::vector<bool> seen(r.petalCount(), false);
+    for (const std::uint16_t index : order) {
+        CHECK(index < r.petalCount());
+        CHECK(!seen[index]);
+        seen[index] = true;
+    }
+
+    // petals.json's own first two keys, which is what the browser's
+    // Object.keys(PETAL_CONFIG) yields -- NOT the alphabetical order the wire
+    // indices are assigned in, which would open the shop on `air`.
+    CHECK_EQ(r.petal(order[0]).id, std::string("basic"));
+    CHECK_EQ(r.petal(order[1]).id, std::string("rose"));
+
+    // The eggs come last, because that is where the reference appends them.
+    CHECK_EQ(r.petal(order[73]).id, std::string("shell"));
+    CHECK(r.petal(order[74]).id.size() > 4);
+    CHECK_EQ(r.petal(order[74]).id.substr(r.petal(order[74]).id.size() - 4), std::string("_egg"));
+
+    // A generated egg carries the mob's colour in its art and hatches the pet
+    // variant where the mob has one.
+    const std::uint16_t egg = r.petalIndex("soldier_ant_egg");
+    CHECK(egg != kInvalidIndex);
+    const PetalConfig& p = r.petal(egg);
+    CHECK_EQ(p.name, std::string("Soldier Ant Egg"));
+    CHECK_EQ(p.petMobId, std::string("soldier_ant_pet"));
+    CHECK(p.image.find(r.mob(r.mobIndex("soldier_ant")).color) != std::string::npos);
+    CHECK(!p.isAdminPetal);
+    // A pet is not something that lays an egg.
+    CHECK_EQ(r.petalIndex("soldier_ant_pet_egg"), kInvalidIndex);
+}
+
+TEST(light_and_pollen_gain_petals_with_rarity) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t light = r.petalIndex("light");
+    const std::uint16_t pollen = r.petalIndex("pollen");
+    CHECK(light != kInvalidIndex);
+    CHECK(pollen != kInvalidIndex);
+
+    // RARITY_OVERRIDES, not a scaling rule: these are literal per-tier counts.
+    CHECK_EQ(r.petalStats(light, Rarity::Common).count, 1);
+    CHECK_EQ(r.petalStats(light, Rarity::Epic).count, 3);
+    CHECK_EQ(r.petalStats(light, Rarity::Mythic).count, 5);
+    CHECK_EQ(r.petalStats(pollen, Rarity::Legendary).count, 3);
+    CHECK_EQ(r.petalStats(pollen, Rarity::Ultra).count, 5);
+    CHECK_EQ(r.petalStats(pollen, Rarity::Apex).count, 7);
+    // Everything else stays flat across the ladder.
+    const std::uint16_t basic = r.petalIndex("basic");
+    CHECK_EQ(r.petalStats(basic, Rarity::Apex).count, r.petal(basic).count);
 }
 
 TEST(every_shipped_entry_parses_into_something_usable) {
@@ -754,7 +814,7 @@ TEST(global_content_registry_loads_from_one_directory) {
     CHECK(loadContent(dir, error));
     CHECK(error.empty());
     CHECK_EQ(content().mobCount(), std::size_t(51));
-    CHECK_EQ(content().petalCount(), std::size_t(74));
+    CHECK_EQ(content().petalCount(), std::size_t(123));
     // Same three files in the same order as the shipped registry, so the two
     // must agree on every index and on the hash.
     CHECK_EQ(content().contentHash(), shipped().registry.contentHash());

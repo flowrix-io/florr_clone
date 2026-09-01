@@ -28,10 +28,16 @@ enum class Key : std::uint16_t {
     LeftShift, RightShift, LeftCtrl, RightCtrl, LeftAlt, RightAlt,
     Minus, Equals, Comma, Period, Slash, Backslash, Semicolon, Apostrophe,
     F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    // APPEND ONLY, never renumber: a user's hotkeys are persisted by value, so
+    // inserting a name mid-list silently rebinds every key after it.
+    Delete, Home, End,
     Count
 };
 
 enum class MouseButton : std::uint8_t { Left = 0, Middle, Right, Count };
+
+// The pointer's shape. `Text` is the I-beam a text field asks for.
+enum class CursorShape : std::uint8_t { Arrow = 0, Hand, Text, Count };
 
 class Window {
 public:
@@ -93,7 +99,20 @@ public:
     bool ctrlHeld() const;
     bool altHeld() const;
 
+    /// The system clipboard's text, for a field's paste. Empty when the
+    /// clipboard holds no text at all; the caller still has to filter it,
+    /// since what arrives is whatever the user last copied ANYWHERE.
+    std::string clipboardText() const;
+    void setClipboardText(const std::string& text);
+
     void setCursorVisible(bool visible);
+
+    // The pointer's shape over this window. Records a request; the shape
+    // reaches the OS at the next present(), and only when it differs from the
+    // one already showing. That is what lets a frame reset the shape to Arrow
+    // and let whatever is under the pointer overrule it, without the cursor
+    // flickering between the two.
+    void setCursorShape(CursorShape shape);
 
 private:
     struct Impl;

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "canvas.h"
@@ -19,6 +20,9 @@
 #include "client/prediction.h"
 #include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
+#include "client/ui/menus.h"
+#include "client/ui/tutorial.h"
+#include "shared/game/map_elements.h"
 #include "shared/core/types.h"
 
 namespace flr {
@@ -38,9 +42,9 @@ struct AppConfig {
     std::string host = "127.0.0.1";
     std::uint16_t port = 4242;
     std::string dataDir = "data";
-    /// Where the session token is remembered between runs, so a returning
-    /// player is not asked to log in again. Only the token is stored -- never
-    /// the password.
+    /// Where the session token and the chosen flower name are remembered
+    /// between runs, so a returning player is asked for neither again. Only
+    /// the token is stored -- never the password.
     std::string sessionFile = ".florr-session";
     int windowWidth = 1280;
     int windowHeight = 720;
@@ -55,6 +59,33 @@ struct AppConfig {
     /// rather than sitting on the login form.
     std::string autoUsername;
     std::string autoPassword;
+    /// Open this menu on the way in. Only useful with --screenshot: a panel is
+    /// the one part of the client a scripted run cannot otherwise reach.
+    MenuId autoMenu = MenuId::None;
+    /// Whether a scripted login goes straight into a game. Cleared by --lobby,
+    /// which is the only way to photograph the title screen of a client that
+    /// has credentials -- otherwise it joins before the first frame is drawn.
+    bool autoJoin = true;
+    /// Ignore any stored session and start on the login form. The only way to
+    /// photograph the auth screen once a machine has logged in once.
+    bool forceLogin = false;
+    /// Paint the frame/ping/position counters the browser build gates behind
+    /// its `showStats` setting.
+    bool showStats = false;
+    /// Force the death card up as soon as the auto-join lands. There is no
+    /// other way for a scripted run to photograph it: reaching it for real
+    /// means being killed, which a `--frames` run cannot arrange.
+    bool autoDead = false;
+    /// Force the tutorial card up on the way in, whole and on the first frame.
+    ///
+    /// A scripted run gets no tutorial without this. The browser build has the
+    /// same problem from the other side -- the overlay covers a quarter of
+    /// every in-game shot -- and its harness answers it by writing
+    /// `tutorial_completed` before the join and clearing it for the one shot
+    /// that wants the card. This flag is that switch, and a scripted login is
+    /// what it is off for: a real player with no settings file still meets the
+    /// tutorial on their first game.
+    bool autoTutorial = false;
 };
 
 class App {
@@ -81,16 +112,52 @@ private:
 
     void drawLogin(Canvas&, double time);
     void drawLobby(Canvas&, double time);
-    void drawInventory(Canvas&, double time);
+    /// The lobby's name field, Ready button and spawn-biome row, laid out once
+    /// so the interaction pass and the draw pass cannot disagree about where
+    /// they are.
+    struct LobbyLayout {
+        Rect name;
+        Rect ready;
+        std::vector<Rect> biomes;
+    };
+    LobbyLayout lobbyLayout(int viewWidth, int viewHeight) const;
+    /// The title screen's chat line, bottom-left, under the icon column.
+    static Rect titleChatBox(int viewWidth, int viewHeight);
+    void drawTitleChat(Canvas&, double time);
+    /// The daily-login card, top-right. Painted last, over the panels, exactly
+    /// as the browser build's own always-on-top widget is.
+    void drawDailyStreak(Canvas&, double time);
+    /// The frame/ping/position readout in the bottom-right corner. On the
+    /// title screens it is a fixed set of placeholder lines rather than a live
+    /// readout, which is what the reference paints there.
+    void drawStatsCounters(Canvas&, bool titleScreen);
+    /// Every biome the player may start in, "default" first.
+    const std::vector<std::string>& spawnChoices() const { return spawnChoices_; }
     /// Draws the scrolling title texture behind all non-game screens.
     void drawTitleBackground(Canvas&, double time);
+    /// Steps and draws the petals drifting over that texture.
+    void drawTitlePetals(Canvas&, double time);
     void drawHud(Canvas&, double time);
+    /// The 200x200 section map in the top-right corner, its gold border and
+    /// its biome caption.
+    void drawMinimap(Canvas&);
+    /// The static layers of the minimap -- background, ALT spawn bands, wall
+    /// tiles, teleporter dots -- baked once per section rather than rescanned
+    /// every frame. `rarityGlow` is part of the key, not just the paint: the
+    /// bands appear and vanish with ALT, so the bake has to be redone.
+    const Canvas* minimapStatic(int section, bool rarityGlow);
     void drawDeathCard(Canvas&, double time);
     void drawChat(Canvas&, double time);
-    void drawNotices(Canvas&, double time);
+    /// The chat input slot, shared by the title screen and the game so the two
+    /// cannot drift apart.
+    void drawChatField(Canvas&, Rect box, double time);
     void drawConnectionState(Canvas&, double time);
-    /// Handles the modal's scroll, drag/drop, equip and crafting controls.
-    void updateInventory();
+    /// The red strip across the top of a live game whose socket has dropped.
+    /// The world and the HUD keep drawing underneath, as the reference's do.
+    void drawDisconnectBanner(Canvas&);
+    /// Leaves the world for the title screen: what Continue, ENTER and the
+    /// exit button all do.
+    void leaveToTitle();
 
     /// Builds this frame's input from the keyboard and mouse, applies it to the
     /// local prediction, and sends it.
@@ -98,14 +165,46 @@ private:
 
     /// Text entry shared by the login fields and the chat box.
     void editText(std::string& target, std::size_t maxLength);
+    /// One frame of chat editing: typing, the slash-command list's keys, and
+    /// send or cancel. Shared by the lobby and the game so the box behaves
+    /// identically on both.
+    void editChatLine();
 
-    void loadSessionToken();
-    void saveSessionToken() const;
+    /// Runs one of the auth form's actions. Named after the browser build's
+    /// `AuthAction`, so the two forms answer the same set of verbs.
+    void submitAuth(const std::string& action);
+    /// Points the socket at whatever the Advanced Settings field says, if that
+    /// is somewhere else. True when a reconnect has started, in which case the
+    /// caller must wait for the handshake before asking the server anything.
+    bool retargetServer();
+
+    /// Joins with this client's viewport, biome and flower name. One place, so
+    /// the auto-login path and the Ready button cannot send different things.
+    void startGame();
+
+    void loadSession();
+    void saveSession() const;
+
+    /// Where the display switches, the zoom and the menu keys are remembered.
+    std::string settingsPath() const;
 
     /// A token read from disk at startup. Held rather than sent immediately:
     /// the socket is not up yet at load time, and the server refuses anything
     /// before it has answered the handshake.
     std::string storedToken_;
+
+    /// One floating petal of the title backdrop. Position is the sprite's
+    /// TOP-LEFT, as the browser build's is, so a petal enters and leaves the
+    /// screen at the same moment in both.
+    struct TitlePetal {
+        double x = 0;
+        double y = 0;
+        double speedX = 0;      ///< px per FRAME, not per second
+        double size = 0;        ///< drawn diameter, in px
+        double rotation = 0;    ///< degrees
+        double rotationSpeed = 0;   ///< degrees per frame, either sign
+        std::uint16_t petal = 0;
+    };
 
     AppConfig config_;
     Window window_;
@@ -113,19 +212,79 @@ private:
     Camera camera_;
     Prediction prediction_;
     SpriteCache sprites_;
-    std::shared_ptr<SvgDocument> titleBackground_;
+    /// The title backdrop, one document per biome, compiled on first use. The
+    /// picker changes which one tiles behind the menu, exactly as choosing a
+    /// biome does in the browser build.
+    std::unordered_map<std::string, std::shared_ptr<SvgDocument>> titleBackgrounds_;
+    const SvgDocument* titleBackground(const std::string& biomeName);
     WorldRenderer renderer_;
+    /// The map's annotation layer. The client reads the same bundle the server
+    /// does, and needs only one thing from it: which biomes exist to be picked.
+    MapData mapData_;
+    std::vector<std::string> spawnChoices_;
 
     Screen screen_ = Screen::Connecting;
     double timeSeconds_ = 0;
+    /// Frames in the last whole second, for the stats overlay.
+    int framesPerSecond_ = 0;
+    int frameCounter_ = 0;
+    double fpsWindowStart_ = 0;
+    /// The work a frame costs, averaged over the last whole second and rolled
+    /// over beside the frame count. The raw per-frame value twitches far too
+    /// much to read, which is why the reference averages it too.
+    double frameTimeAvgMs_ = 0;
+    double frameTimeAccum_ = 0;
+    int frameTimeSamples_ = 0;
+
+    // -- title backdrop ------------------------------------------------------
+    /// The backdrop's own clock, advanced a fixed step per RENDERED frame. The
+    /// browser build does the same; using wall time instead would make the
+    /// scroll and the petals run at different speeds on a machine that cannot
+    /// hold sixty frames, which is exactly the machine where it would show.
+    double titleBackgroundTime_ = 0;
+    std::vector<TitlePetal> titlePetals_;
+    /// Petal types the backdrop may show: everything that is not an admin
+    /// petal and not an egg, which is the browser build's filter.
+    std::vector<std::uint16_t> titlePetalTypes_;
+    Rng titleRng_{0x5DEECE66Dull};
+    /// The star of the daily-login card, one document per fill colour. Built
+    /// on demand, because the colour depends on the streak.
+    std::unordered_map<std::uint32_t, std::shared_ptr<SvgDocument>> streakStars_;
+    const SvgDocument* streakStar(std::uint32_t fill);
+    /// When the streak card first had a state to draw, which is what its
+    /// post-claim wobble is measured from. Negative until then.
+    double streakSeenAt_ = -1;
 
     // -- login form --------------------------------------------------------
     std::string usernameField_;
     std::string passwordField_;
     std::string confirmPasswordField_;
-    int focusedField_ = 0;        ///< username, password, then confirmation while registering
+    /// The endpoint the Advanced Settings drawer edits, as "host" or
+    /// "host:port". Seeded from the command line and applied on the next
+    /// login, register or guest attempt.
+    std::string serverField_;
+    /// Which field has the caret: -1 for none, then username, password,
+    /// confirmation (registering only) and the server endpoint. Nothing is
+    /// focused until the player clicks, so the form opens showing both
+    /// placeholders rather than a caret.
+    int focusedField_ = -1;
     bool registering_ = false;
+    bool advancedOpen_ = false;
     std::string loginMessage_;
+
+    /// Which control the pointer went down on, by the browser build's own
+    /// button ids. Latched at press: a press that began somewhere else must
+    /// not light a button the pointer is merely dragged across.
+    std::string pressedControl_;
+    /// An auth action waiting for a reconnect to finish.
+    std::string pendingAuth_;
+
+    // -- lobby ---------------------------------------------------------------
+    /// The flower's name, as typed in the field beside Ready. Remembered
+    /// between runs beside the session token, which is where the browser build
+    /// keeps it too (localStorage, not the account).
+    std::string playerName_;
+    bool nameFocused_ = false;
 
     /// Scripted-login progress. A screenshot or smoke run has no one to type,
     /// so it registers, and falls back to logging in when the name is taken.
@@ -135,19 +294,64 @@ private:
     // -- chat --------------------------------------------------------------
     bool chatOpen_ = false;
     std::string chatDraft_;
+    /// Which row of the slash-command list is highlighted, or -1 when the list
+    /// is not up. Reset to 0 every time the list opens, as the reference's is.
+    int chatSuggestion_ = -1;
 
-    // -- panels ------------------------------------------------------------
-    bool inventoryOpen_ = false;
-    /// The inventory stack currently being dragged to a loadout slot.
-    int draggingStack_ = -1;
-    /// The loadout slot currently being dragged to another slot or back into
-    /// the inventory. Only one of the drag indices may be non-negative.
-    int draggingLoadoutSlot_ = -1;
-    /// Selection is stable across profile updates: a server update may reorder
-    /// its sparse stacks, so an index would point at the wrong petal.
-    std::uint16_t selectedPetalIndex_ = 0xFFFF;
-    Rarity selectedRarity_ = Rarity::Common;
-    double inventoryScroll_ = 0;
+    // -- death ---------------------------------------------------------------
+    /// The card can be dismissed with Close while the player stays dead and
+    /// the world keeps rendering, which is the whole difference between Close
+    /// and Continue.
+    bool deathCardVisible_ = true;
+
+    // -- HUD -----------------------------------------------------------------
+    /// When invulnerability last ended, in app seconds; negative before the
+    /// first time it does. The health bar fades from the invulnerable colour
+    /// back to green over half a second from here.
+    double invulEndedAt_ = -1;
+    bool wasInvulnerable_ = false;
+
+    /// The minimap's baked static layer and the section it was baked for.
+    /// Rebuilt only when the player crosses into another section -- the tile
+    /// scan is four and a half thousand cells and does not belong in a frame.
+    std::unique_ptr<Canvas> minimapStatic_;
+    int minimapSection_ = -1;
+    /// Whether the cached bake has the ALT spawn bands in it.
+    bool minimapGlow_ = false;
+
+    // -- scene wipe ----------------------------------------------------------
+    /// The iris that covers a scene change. `Covered` holds the outgoing frame
+    /// whole until the incoming scene has something to show; `Wiping` opens or
+    /// closes the hole over IRIS_DURATION_MS.
+    struct SceneWipe {
+        enum class Phase : std::uint8_t { Idle, Covered, Wiping };
+        Phase phase = Phase::Idle;
+        /// True going INTO the game: the hole grows and the outgoing still is
+        /// what is left outside it. False going back to the title, where the
+        /// still shrinks to a point instead.
+        bool holeGrows = false;
+        double phaseStartSeconds = 0;
+        /// A frozen copy of the outgoing scene. Null means the copy failed, in
+        /// which case the wipe falls through black exactly as the reference's
+        /// snapshot-less path does.
+        std::unique_ptr<Canvas> snapshot;
+    };
+    SceneWipe wipe_;
+    void beginSceneWipe(bool toGame);
+    void drawSceneWipe(Canvas&);
+    /// True once the incoming scene has something worth revealing.
+    bool wipeReadyToReveal() const;
+
+    // -- menus ---------------------------------------------------------------
+    /// Owns every panel, the menu bar, the loadout strip and what is being
+    /// dragged between them. The app's only job is to say when it may run and
+    /// to stop feeding the game input it has taken.
+    MenuSystem menus_;
+
+    // -- tutorial ------------------------------------------------------------
+    /// The onboarding card, which lives and dies with a game exactly as the
+    /// browser's does -- it is built by Game and destroyed with it.
+    ui::Tutorial tutorial_;
 
     // -- input -------------------------------------------------------------
     std::uint32_t inputSequence_ = 0;

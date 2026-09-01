@@ -1,5 +1,6 @@
 #include "client/net_client.h"
 
+#include <algorithm>
 #include <chrono>
 
 namespace flr {
@@ -10,6 +11,14 @@ double nowMillis() {
     using clock = std::chrono::steady_clock;
     static const clock::time_point start = clock::now();
     return std::chrono::duration<double, std::milli>(clock::now() - start).count();
+}
+
+/// Unix milliseconds. A chat line is stamped with the time of day it arrived,
+/// which the monotonic clock above cannot answer.
+std::int64_t wallClockMillis() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
 }
 
 } // namespace
@@ -92,11 +101,14 @@ void NetClient::resumeSession(const std::string& token) {
     send(w);
 }
 
-void NetClient::joinGame(int viewportWidth, int viewportHeight) {
+void NetClient::joinGame(int viewportWidth, int viewportHeight, const std::string& spawnBiome,
+                         const std::string& playerName) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::JoinGame);
     w.u16(static_cast<std::uint16_t>(viewportWidth));
     w.u16(static_cast<std::uint16_t>(viewportHeight));
+    w.str(spawnBiome);
+    w.str(playerName);
     send(w);
 }
 
@@ -147,7 +159,141 @@ void NetClient::requestCraft(std::uint16_t petalIndex, Rarity rarity, int count)
     beginMessage(w, net::ClientMessage::Craft);
     w.u16(petalIndex);
     w.u8(static_cast<std::uint8_t>(rarity));
+    w.u16(static_cast<std::uint16_t>(std::max(0, count)));
+    send(w);
+}
+
+void NetClient::requestUpgradeSkill(SkillId skill, int tier) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::UpgradeSkill);
+    w.u8(static_cast<std::uint8_t>(skill));
+    w.u8(static_cast<std::uint8_t>(tier));
+    send(w);
+}
+
+void NetClient::requestResetSkills() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::ResetSkills);
+    send(w);
+}
+
+void NetClient::requestBuyPetal(std::uint16_t petalIndex, Rarity rarity) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::BuyPetal);
+    w.u16(petalIndex);
+    w.u8(static_cast<std::uint8_t>(rarity));
+    send(w);
+}
+
+void NetClient::requestRedeemCode(const std::string& code) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::RedeemCode);
+    w.str(code);
+    send(w);
+}
+
+void NetClient::requestSkin(std::uint32_t renderFlags) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::SetSkin);
+    w.u32(renderFlags);
+    send(w);
+}
+
+void NetClient::publishSkin(const std::string& name, const std::vector<SkinShape>& shapes) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::PublishSkin);
+    w.str(name);
+    const std::size_t count = std::min(shapes.size(), static_cast<std::size_t>(kMaxSkinShapes));
     w.u8(static_cast<std::uint8_t>(count));
+    for (std::size_t i = 0; i < count; ++i) writeSkinShape(w, shapes[i]);
+    send(w);
+}
+
+void NetClient::equipSkin(const std::string& id) {
+    // Moved before the send, not after the reply: the reference sets its own
+    // equippedId the moment the button is clicked, and the studio's tick is
+    // what the player sees change.
+    equippedSkinId_ = id;
+    if (!id.empty()) profile_.renderFlags = PlayerRenderNone;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::EquipSkin);
+    w.str(id);
+    send(w);
+}
+
+void NetClient::deleteSkin(const std::string& id) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::DeleteSkin);
+    w.str(id);
+    send(w);
+}
+
+void NetClient::requestLeaderboard() {
+    leaderboardPending_ = true;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::RequestLeaderboard);
+    send(w);
+}
+
+void NetClient::requestNotifications(int limit, double beforeMillis) {
+    notificationsPending_ = true;
+    notificationsPaging_ = beforeMillis > 0;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::RequestNotifications);
+    w.u16(static_cast<std::uint16_t>(clamp(limit, 1, 200)));
+    w.f64(beforeMillis);
+    send(w);
+}
+
+void NetClient::requestGuildCreate(const std::string& name) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildCreate);
+    w.str(name);
+    send(w);
+}
+
+void NetClient::requestGuildInvite(const std::string& username) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildInvite);
+    w.str(username);
+    send(w);
+}
+
+void NetClient::requestGuildAccept() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildAccept);
+    send(w);
+}
+
+void NetClient::requestGuildDecline() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildDecline);
+    send(w);
+}
+
+void NetClient::requestGuildKick(const std::string& username) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildKick);
+    w.str(username);
+    send(w);
+}
+
+void NetClient::requestGuildLeave() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildLeave);
+    send(w);
+}
+
+void NetClient::requestGuildSquadAll() {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildSquadAll);
+    send(w);
+}
+
+void NetClient::requestGuildInviteToSquad(const std::string& username) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildInviteToSquad);
+    w.str(username);
     send(w);
 }
 
@@ -177,8 +323,18 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::Chat:         handleChat(reader); break;
         case net::ServerMessage::Notice:       handleNotice(reader); break;
         case net::ServerMessage::Died:         handleDied(reader); break;
+        case net::ServerMessage::CraftResult:  handleCraftResult(reader); break;
+        case net::ServerMessage::Leaderboard:  handleLeaderboard(reader); break;
         case net::ServerMessage::Pong:         handlePong(reader); break;
         case net::ServerMessage::Kick:         handleKick(reader); break;
+        case net::ServerMessage::DailyStreak:  handleDailyStreak(reader); break;
+        case net::ServerMessage::ShopResult:   handleShopResult(reader); break;
+        case net::ServerMessage::SkinCatalog:   handleSkinCatalog(reader); break;
+        case net::ServerMessage::SkinPublished: handleSkinPublished(reader); break;
+        case net::ServerMessage::SkinDeleted:   handleSkinDeleted(reader); break;
+        case net::ServerMessage::Notifications: handleNotifications(reader); break;
+        case net::ServerMessage::GuildUpdate:   handleGuildUpdate(reader); break;
+        case net::ServerMessage::GuildInviteReceived: handleGuildInviteReceived(reader); break;
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and
@@ -262,10 +418,136 @@ void NetClient::handleProfile(ByteReader& reader) {
         next.loadout.push_back(slot);
     }
 
+    next.renderFlags = reader.u32();
+
+    const std::uint16_t skillCount = reader.u16();
+    for (std::uint16_t i = 0; i < skillCount; ++i) {
+        const std::uint8_t id = reader.u8();
+        const std::uint8_t tier = reader.u8();
+        if (id < kSkillCount && tier < kRarityCount) {
+            next.skills.set(static_cast<SkillId>(id), tier);
+        }
+    }
+
+    next.mobKills.assign(content().mobCount() * kRarityCount, 0);
+    const std::uint16_t killEntries = reader.u16();
+    for (std::uint16_t i = 0; i < killEntries; ++i) {
+        const std::uint16_t mobIndex = reader.u16();
+        const Rarity rarity = clampRarity(reader.u8());
+        const std::uint32_t count = reader.u32();
+        const std::size_t at = static_cast<std::size_t>(mobIndex) * kRarityCount + rarityIndex(rarity);
+        if (at < next.mobKills.size()) next.mobKills[at] = count;
+    }
+
     // Replace wholesale only once the whole message decoded. A partially
     // applied inventory is how duplication bugs start.
     if (!reader.ok()) return;
     profile_ = std::move(next);
+}
+
+void NetClient::handleCraftResult(ByteReader& reader) {
+    CraftOutcome outcome;
+    outcome.success = reader.boolean();
+    outcome.petalIndex = reader.u16();
+    outcome.rarity = clampRarity(reader.u8());
+    outcome.crafted = reader.u16();
+    outcome.petalsReturned = reader.u8();
+    outcome.reason = reader.str();
+    if (!reader.ok()) return;
+    outcome.pending = true;
+    craftOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleShopResult(ByteReader& reader) {
+    ShopOutcome outcome;
+    outcome.redeem =
+        static_cast<net::ShopResultKind>(reader.u8()) == net::ShopResultKind::Redeem;
+    outcome.ok = reader.boolean();
+    outcome.stars = static_cast<int>(reader.u32());
+    outcome.message = reader.str();
+    if (!reader.ok()) return;
+    outcome.pending = true;
+    shopOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleLeaderboard(ByteReader& reader) {
+    std::vector<LeaderboardRow> rows;
+    const std::uint8_t count = reader.u8();
+    const std::uint32_t total = reader.u32();
+    const std::uint32_t dau = reader.u32();
+    rows.reserve(count);
+    for (std::uint8_t i = 0; i < count; ++i) {
+        LeaderboardRow row;
+        row.name = reader.str();
+        row.level = reader.u16();
+        row.totalXp = reader.f64();
+        rows.push_back(std::move(row));
+    }
+    if (!reader.ok()) return;
+    leaderboard_ = std::move(rows);
+    totalAccounts_ = total;
+    dailyActiveUsers_ = dau;
+    leaderboardPending_ = false;
+}
+
+void NetClient::handleNotifications(ByteReader& reader) {
+    const bool more = reader.boolean();
+    const std::uint16_t count = reader.u16();
+    std::vector<NotificationEntry> page;
+    page.reserve(count);
+    for (std::uint16_t i = 0; i < count; ++i) {
+        NotificationEntry entry;
+        entry.id = reader.str();
+        entry.kind = static_cast<net::NotificationKind>(reader.u8());
+        entry.message = reader.str();
+        entry.timestampMillis = reader.f64();
+        page.push_back(std::move(entry));
+    }
+    if (!reader.ok()) return;
+
+    // A page asked for from the newest end REPLACES the feed; one asked for
+    // from behind the oldest entry held APPENDS to it. That is the browser's
+    // rule, and it is what lets the panel keep scrolling into older pages
+    // without the newest page arriving twice.
+    if (notificationsPaging_) {
+        notifications_.insert(notifications_.end(), page.begin(), page.end());
+    } else {
+        notifications_ = std::move(page);
+    }
+    notificationsMore_ = more;
+    notificationsPending_ = false;
+}
+
+void NetClient::handleGuildUpdate(ByteReader& reader) {
+    GuildState next;
+    next.joined = reader.boolean();
+    if (next.joined) {
+        next.name = reader.str();
+        next.leader = reader.str();
+        const std::uint16_t count = reader.u16();
+        next.members.reserve(count);
+        for (std::uint16_t i = 0; i < count; ++i) {
+            std::string member = reader.str();
+            const bool online = reader.boolean();
+            if (online) next.online.push_back(member);
+            next.members.push_back(std::move(member));
+        }
+    }
+    if (!reader.ok()) return;
+    guild_ = std::move(next);
+    // Joining answers whatever invitation was outstanding, exactly as
+    // applyGuildUpdate drops `pendingInvite` when it is handed a guild.
+    if (guild_.joined) guildInvite_ = {};
+}
+
+void NetClient::handleGuildInviteReceived(ByteReader& reader) {
+    GuildInvite invite;
+    invite.guildName = reader.str();
+    invite.fromUsername = reader.str();
+    if (!reader.ok()) return;
+    invite.waiting = true;
+    invite.justArrived = true;
+    guildInvite_ = std::move(invite);
 }
 
 void NetClient::handleJoinAccepted(ByteReader& reader) {
@@ -291,13 +573,13 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     view_.clear();
 }
 
-void NetClient::handleChat(ByteReader& reader) {
+void NetClient::pushChat(net::ChatChannel channel, std::string author, std::string text) {
     ChatLine line;
-    line.channel = static_cast<net::ChatChannel>(reader.u8());
-    line.author = reader.str();
-    line.text = reader.str();
+    line.channel = channel;
+    line.author = std::move(author);
+    line.text = std::move(text);
     line.receivedAtMillis = nowMillis();
-    if (!reader.ok()) return;
+    line.wallClockMillis = wallClockMillis();
 
     chat_.push_back(std::move(line));
     if (chat_.size() > kMaxChatLines) {
@@ -306,13 +588,78 @@ void NetClient::handleChat(ByteReader& reader) {
     }
 }
 
-void NetClient::handleNotice(ByteReader& reader) {
-    Notice notice;
-    notice.severity = static_cast<net::NoticeSeverity>(reader.u8());
-    notice.text = reader.str();
-    notice.receivedAtMillis = nowMillis();
+void NetClient::addSystemMessage(const std::string& text) {
+    pushChat(net::ChatChannel::System, "System", text);
+}
+
+void NetClient::addLocalChat(const std::string& author, const std::string& text) {
+    pushChat(net::ChatChannel::System, author, text);
+}
+
+const CustomSkin* NetClient::findSkin(const std::string& id) const {
+    if (id.empty()) return nullptr;
+    for (const CustomSkin& skin : skinCatalog_) {
+        if (skin.id == id) return &skin;
+    }
+    return nullptr;
+}
+
+void NetClient::handleSkinCatalog(ByteReader& reader) {
+    const bool admin = reader.boolean();
+    const std::string equipped = reader.str();
+    const std::uint16_t count = reader.u16();
+    std::vector<CustomSkin> skins;
+    skins.reserve(count);
+    for (std::uint16_t i = 0; i < count; ++i) {
+        CustomSkin skin;
+        if (!readCustomSkin(reader, skin)) break;
+        skins.push_back(std::move(skin));
+    }
     if (!reader.ok()) return;
-    notices_.push_back(std::move(notice));
+    skinCatalog_ = std::move(skins);
+    skinAdmin_ = admin;
+    equippedSkinId_ = equipped;
+}
+
+void NetClient::handleSkinPublished(ByteReader& reader) {
+    CustomSkin skin;
+    if (!readCustomSkin(reader, skin)) return;
+    // Replace in place when it is already known: a republished id is an edit,
+    // and appending it would leave the Browse tab showing the skin twice.
+    for (CustomSkin& known : skinCatalog_) {
+        if (known.id == skin.id) {
+            known = std::move(skin);
+            return;
+        }
+    }
+    skinCatalog_.push_back(std::move(skin));
+}
+
+void NetClient::handleSkinDeleted(ByteReader& reader) {
+    const std::string id = reader.str();
+    if (!reader.ok() || id.empty()) return;
+    skinCatalog_.erase(std::remove_if(skinCatalog_.begin(), skinCatalog_.end(),
+                                      [&](const CustomSkin& s) { return s.id == id; }),
+                       skinCatalog_.end());
+    if (equippedSkinId_ == id) equippedSkinId_.clear();
+}
+
+void NetClient::handleChat(ByteReader& reader) {
+    const auto channel = static_cast<net::ChatChannel>(reader.u8());
+    std::string author = reader.str();
+    std::string text = reader.str();
+    if (!reader.ok()) return;
+    pushChat(channel, std::move(author), std::move(text));
+}
+
+void NetClient::handleNotice(ByteReader& reader) {
+    // The reference has no toast layer: a server announcement is a System line
+    // in the transcript and nothing else, so the severity byte is read to keep
+    // the frame aligned and then dropped.
+    reader.u8();
+    std::string text = reader.str();
+    if (!reader.ok()) return;
+    addSystemMessage(text);
 }
 
 void NetClient::handleDied(ByteReader& reader) {
@@ -336,6 +683,18 @@ void NetClient::handleKick(ByteReader& reader) {
     lastError_ = reason;
     status_ = Status::Failed;
     dialer_.disconnect();
+}
+
+void NetClient::handleDailyStreak(ByteReader& reader) {
+    DailyStreak next;
+    next.streak = reader.u16();
+    next.newDay = reader.boolean();
+    next.starsAwarded = reader.u16();
+    next.nextClaimAtMillis = reader.i64();
+    next.streakExpiresAtMillis = reader.i64();
+    if (!reader.ok()) return;
+    next.known = true;
+    dailyStreak_ = next;
 }
 
 } // namespace flr

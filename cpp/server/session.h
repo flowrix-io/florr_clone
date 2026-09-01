@@ -43,9 +43,25 @@ struct Session {
     /// The player's body, while Playing.
     Entity entity = NULL_ENTITY;
 
+    /// The biome this connection asked to start in, from JoinGame. Empty means
+    /// the beginner ground. Kept on the session rather than passed down so a
+    /// respawn lands where the player chose, not back at the default.
+    std::string spawnBiome;
+
+    /// The flower's name, typed on the title screen and sent with JoinGame.
+    /// Separate from `username`: the account is who you are, this is what the
+    /// nameplate says, and one player may use several. Empty means "Unnamed".
+    std::string displayName;
+
     /// Input sequence already applied. Inputs at or below this are replays and
     /// are dropped, so a duplicated packet cannot move the player twice.
     std::uint32_t lastInputSequence = 0;
+
+    /// Whether this body's death has already been announced. A player's corpse
+    /// KEEPS its Dead tag so the client goes on being sent a dead flower, so
+    /// the reaper sees it again every tick and needs to know it is done with
+    /// it. Cleared when a new body is spawned.
+    bool deathReported = false;
 
     // -- abuse limits ------------------------------------------------------
     //
@@ -82,6 +98,11 @@ bool spend(double& allowance, double cost = 1.0);
 /// padding and unbounded length are all rejected rather than sanitised later.
 bool validUsername(const std::string& name, std::string& reasonOut);
 bool validPassword(const std::string& password, std::string& reasonOut);
+
+/// Strips control characters and clamps a typed flower name to the browser
+/// build's twenty characters. An empty or all-blank name becomes "Unnamed",
+/// because a nameplate has to say something.
+std::string sanitizePlayerName(const std::string& name);
 
 /// Strips control characters and clamps length for anything a player typed
 /// that another player will see.

@@ -3,6 +3,7 @@
 #include "client/net_client.h"
 #include "client/prediction.h"
 #include "server/game_server.h"
+#include "server_harness.h"
 #include "shared/game/config.h"
 
 #include <unistd.h>
@@ -21,99 +22,8 @@ using namespace flr;
 
 namespace {
 
-std::string tempPath(const char* name) {
-    return std::string("/tmp/florr-itest-") + name + "-" + std::to_string(::getpid()) + ".json";
-}
-
-/// The content directory, found relative to THIS source file rather than to
-/// the working directory: the test binary is run from the build tree, from the
-/// project root, and from ctest, and all three must work.
-const std::string& dataDir() {
-    static const std::string resolved = [] {
-#ifdef FLR_TEST_DATA_DIR
-        {
-            const std::string staged = FLR_TEST_DATA_DIR;
-            std::ifstream mapProbe(staged + "/map_bundle.ts", std::ios::binary);
-            if (mapProbe) return staged;
-        }
-#endif
-        const std::string here = __FILE__;
-        const std::size_t slash = here.find_last_of('/');
-        const std::string tests = slash == std::string::npos ? std::string(".") : here.substr(0, slash);
-        const std::string candidates[] = {
-            tests + "/../build/data",   // staged beside the binaries
-            tests + "/../data",         // the checked-in mob_xp.json plus copies
-            "data",
-        };
-        for (const std::string& candidate : candidates) {
-            std::ifstream probe(candidate + "/mobs.json", std::ios::binary);
-            if (probe) return candidate;
-        }
-        return std::string("data");
-    }();
-    return resolved;
-}
-
-/// A server on a free port with an empty database, plus the plumbing to step
-/// it and its clients forward together.
-struct Harness {
-    GameServer server;
-    std::string dbPath;
-    std::uint16_t port = 0;
-    bool ready = false;
-    double clock = 0;
-
-    explicit Harness(const char* dbName) {
-        dbPath = tempPath(dbName);
-        std::remove(dbPath.c_str());
-
-        ServerConfig config;
-        config.dataDir = dataDir();
-        config.databasePath = dbPath;
-        config.worldSeed = 12345;
-
-        std::string error;
-        for (std::uint16_t candidate = 47100; candidate < 47160; ++candidate) {
-            config.port = candidate;
-            if (server.start(config, error)) { port = candidate; ready = true; break; }
-        }
-        if (!ready) std::printf("  harness could not start a server: %s\n", error.c_str());
-    }
-
-    ~Harness() { std::remove(dbPath.c_str()); }
-
-    /// Advances the simulation by `ticks`, servicing both ends each step.
-    ///
-    /// The server's socket and its simulation are stepped separately, exactly
-    /// as run() interleaves them, so a test sees the same ordering production
-    /// does rather than a convenient fiction.
-    void step(int ticks, std::vector<NetClient*> clients) {
-        for (int i = 0; i < ticks; ++i) {
-            for (NetClient* c : clients) c->poll(1);
-            server.serviceNetwork(1);
-            clock += net::kTickMillis;
-            server.tick(clock);
-            server.serviceNetwork(0);
-            for (NetClient* c : clients) c->poll(1);
-        }
-    }
-
-    /// Steps until `done` holds or the budget runs out; returns whether it did.
-    template <class F>
-    bool stepUntil(std::vector<NetClient*> clients, F done, int maxTicks = 400) {
-        for (int i = 0; i < maxTicks; ++i) {
-            step(1, clients);
-            if (done()) return true;
-        }
-        return false;
-    }
-};
-
-bool connectClient(Harness& h, NetClient& client) {
-    client.contentHash = content().contentHash();
-    if (!client.connect("127.0.0.1", h.port)) return false;
-    return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Ready; });
-}
+using flr::testsupport::connectClient;
+using flr::testsupport::Harness;
 
 std::size_t playersVisibleTo(const NetClient& client) {
     std::size_t n = 0;
@@ -205,12 +115,29 @@ TEST(two_players_see_each_other_move) {
                bob.status() == NetClient::Status::LoggedIn;
     }));
 
-    alice.joinGame(1280, 720);
-    bob.joinGame(1280, 720);
+    // The nameplate carries the flower's name, not the account's, so the two
+    // bodies are told apart below by the name sent here.
+    alice.joinGame(1280, 720, {}, "alice");
+    bob.joinGame(1280, 720, {}, "bob");
     CHECK(h.stepUntil({&alice, &bob}, [&] {
         return alice.status() == NetClient::Status::Playing &&
                bob.status() == NetClient::Status::Playing;
     }));
+
+    // Stand them next to each other. Spawns are scattered across the map's
+    // beginner zone, which is thousands of units wide -- far enough apart that
+    // whether two arrivals can see one another is a coin toss, and this test is
+    // about replication, not about where the map puts people.
+    World& world = h.server.world();
+    Entity bobBody = NULL_ENTITY;
+    Vec2 aliceAt{};
+    Query<PlayerTag, PlayerAccount, Transform> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account, Transform& transform) {
+        if (account.username == "alice") aliceAt = transform.position;
+        else if (account.username == "bob") bobBody = e;
+    });
+    CHECK(bobBody != NULL_ENTITY);
+    if (bobBody != NULL_ENTITY) world.get<Transform>(bobBody).position = aliceAt + Vec2{60, 0};
 
     CHECK(h.stepUntil({&alice, &bob}, [&] {
         return playersVisibleTo(alice) >= 2 && playersVisibleTo(bob) >= 2;
@@ -300,12 +227,40 @@ TEST(client_prediction_agrees_with_the_server) {
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
     CHECK(h.stepUntil({&client}, [&] { return client.view().self().netId != 0; }));
 
-    Prediction prediction;
-    prediction.reset(client.view().self().position);
-
     net::InputFrame input;
     input.moveAngle = 0.7;
     input.moveStrength = 1.0;
+
+    // Prediction models movement, not terrain, so this only holds where the
+    // run cannot reach a wall. Spawns land in the map's beginner zone now, and
+    // parts of that are as close as a tile to one -- so put the body somewhere
+    // the whole 60-tick run is provably clear, which is what the assertion
+    // below has always assumed.
+    const double reach = kPlayerMaxSpeed * net::kTickSeconds * 60.0 + kPlayerBaseRadius * 2;
+    const Vec2 heading = Vec2::fromAngle(input.moveAngle, reach);
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, Transform> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, Transform&) { body = e; });
+    CHECK(body != NULL_ENTITY);
+    if (body != NULL_ENTITY) {
+        Vec2 open = world.get<Transform>(body).position;
+        for (int attempt = 0; attempt < 400; ++attempt) {
+            if (!h.server.terrain().blocked(open) &&
+                !h.server.terrain().segmentBlocked(open, open + heading)) {
+                break;
+            }
+            open = h.server.terrain().findOpenSpawn(h.probeRng, {kWorldHalf * 0.2, kWorldHalf * 0.6},
+                                                    4000.0);
+        }
+        world.get<Transform>(body).position = open;
+    }
+    CHECK(h.stepUntil({&client}, [&] {
+        return distance(client.view().self().position, world.get<Transform>(body).position) < 1.0;
+    }));
+
+    Prediction prediction;
+    prediction.reset(client.view().self().position);
 
     double worstCorrection = 0;
     for (int i = 0; i < 60; ++i) {
@@ -342,12 +297,24 @@ TEST(a_disconnect_removes_the_player_from_everyone_else) {
             return alice.status() == NetClient::Status::LoggedIn &&
                    bob.status() == NetClient::Status::LoggedIn;
         }));
-        alice.joinGame(1280, 720);
-        bob.joinGame(1280, 720);
+        alice.joinGame(1280, 720, {}, "alice");
+        bob.joinGame(1280, 720, {}, "bob");
         CHECK(h.stepUntil({&alice, &bob}, [&] {
             return alice.status() == NetClient::Status::Playing &&
                    bob.status() == NetClient::Status::Playing;
         }));
+        // Spawns scatter across a zone thousands of units wide; stand them
+        // together so this tests the disconnect, not the spawn scatter.
+        World& world = h.server.world();
+        Vec2 aliceAt{};
+        Entity bobBody = NULL_ENTITY;
+        Query<PlayerTag, PlayerAccount, Transform> bodies{world};
+        bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account, Transform& transform) {
+            if (account.username == "alice") aliceAt = transform.position;
+            else if (account.username == "bob") bobBody = e;
+        });
+        if (bobBody != NULL_ENTITY) world.get<Transform>(bobBody).position = aliceAt + Vec2{60, 0};
+
         CHECK(h.stepUntil({&alice, &bob}, [&] { return playersVisibleTo(alice) >= 2; }));
         aliceNetId = alice.view().self().netId;
         CHECK(aliceNetId != 0);

@@ -1,0 +1,85 @@
+#pragma once
+// Panel palettes.
+//
+// Every menu in the game is the same object -- a rounded card in a saturated
+// colour, a darker border of the same hue, white outlined text -- and is told
+// apart by that colour alone. A player learns "blue is my petals, tan is the
+// forge, yellow is the bestiary" long before they read a title, so the colours
+// are the identity and belong in one table rather than in eight files.
+
+#include <cstdint>
+
+#include "client/ui/theme.h"
+
+namespace flr::ui {
+
+/// The fill/border pair a panel is built from, plus the colours of the chrome
+/// that sits on it.
+struct PanelSkin {
+    std::uint32_t fill = kPanel;
+    std::uint32_t border = kPanelDark;
+    std::uint32_t close = 0xDC7E92u;
+    std::uint32_t closeBorder = 0xB56476u;
+    /// Divider rules and the scrollbar thumb. Defaults to the border colour,
+    /// which is what makes both read as part of the frame rather than content.
+    std::uint32_t accent = kPanelDark;
+};
+
+inline constexpr PanelSkin kInventorySkin{0x599FDCu, 0x4A8BC2u, 0xDC7E92u, 0xB56476u, 0x4A8BC2u};
+inline constexpr PanelSkin kCraftingSkin{0xDB9D5Bu, 0xB17F48u, 0xBB5B61u, 0x914B31u, 0xB17F48u};
+inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xCC4455u, 0x992F3Cu, 0xA89D36u};
+inline constexpr PanelSkin kTalentsSkin{0xDC7E92u, 0xB56476u, 0x8E4657u, 0x6E3543u, 0xB56476u};
+inline constexpr PanelSkin kShopSkin{0x42F563u, 0x36D153u, 0xBB5B61u, 0x914B31u, 0x36D153u};
+/// The skin studio is the one panel whose border is LIGHTER than its body --
+/// it borrows the strip button's own purple as the frame.
+inline constexpr PanelSkin kSkinsSkin{0x8737B6u, 0x9A3FD0u, 0xBB5B61u, 0x914B31u, 0x9A3FD0u};
+inline constexpr PanelSkin kLeaderboardSkin{0xE8A023u, 0xC4871Au, 0xFF4444u, 0xB33030u, 0xC4871Au};
+/// Settings and the debug panel share one grey card, its border the same grey
+/// at 0.8 HSV value.
+inline constexpr PanelSkin kSettingsSkin{0xAAAAAAu, 0x888888u, 0xCC4444u, 0x993333u, 0x888888u};
+inline constexpr PanelSkin kDebugSkin = kSettingsSkin;
+inline constexpr PanelSkin kChangelogSkin{0x49C46Fu, 0x4CAF50u, 0xFF4444u, 0xB33030u, 0x4CAF50u};
+inline constexpr PanelSkin kNotificationsSkin{0x4A90E2u, 0x357ABDu, 0xFF4444u, 0xB33030u, 0x357ABDu};
+inline constexpr PanelSkin kGuildSkin{0x27DADEu, 0x1FB3B0u, 0xDC7E92u, 0xB56476u, 0x1FB3B0u};
+
+// --- shared panel metrics ---------------------------------------------------
+
+/// Border width and corner radius. Deliberately a thick border on a nearly
+/// square corner: the browser build's `border: 4px solid; border-radius: 3px`.
+inline constexpr double kMenuBorder = 4.0;
+inline constexpr double kMenuRadius = 3.0;
+inline constexpr double kMenuPadding = 14.0;
+
+/// Title, then the line under it that says what to do with the panel.
+inline constexpr double kMenuTitleSize = 22.0;
+inline constexpr double kMenuSubtitleSize = 13.0;
+
+/// The square close button in every panel's top-right corner.
+inline constexpr double kCloseSize = 26.0;
+
+
+/// One inventory/shop/gallery cell. Five of them plus their gaps is what sets
+/// the inventory panel's width, so these two are load-bearing.
+inline constexpr double kCellSize = 56.0;
+inline constexpr double kCellGap = 8.0;
+
+/// The dark chrome the toggle, the search field and the TP badge are made of.
+inline constexpr std::uint32_t kControlDark = 0x3A3A3Au;
+inline constexpr std::uint32_t kControlMid = 0x666666u;
+inline constexpr std::uint32_t kControlLit = 0xCFCFCFu;
+inline constexpr std::uint32_t kControlField = 0xEEEEEEu;
+
+/// The two anchors the browser build hangs panels off.
+///
+/// The tall list panels (inventory, craft, talents, gallery, shop) sit a third
+/// of the way down and 100px in from the left, clear of the bottom icon
+/// column, and run two thirds of the viewport tall. The corner panels
+/// (settings, changelog, notifications, guild, leaderboard, skins, debug) are
+/// pinned directly under the top icon row instead, at their own fixed sizes.
+inline constexpr double kMenuInsetX = 100.0;
+inline constexpr double kMenuListTopFraction = 1.0 / 3.0;
+inline constexpr double kMenuListHeightFraction = 2.0 / 3.0;
+inline constexpr double kMenuCornerX = 20.0;
+inline constexpr double kMenuCornerY = 72.0;
+
+} // namespace flr::ui

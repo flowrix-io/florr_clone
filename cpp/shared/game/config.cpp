@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -38,7 +39,7 @@ constexpr double kMaxSize = 1000.0;
 
 /// Any farther than this and the value is not a draw offset -- it is someone
 /// pushing a sprite off the world to hide it.
-constexpr double kMaxVisualOffsetY = 500.0;
+constexpr double kMaxVisualOffset = 500.0;
 
 constexpr double kMaxSpeedUnits = 1e4;
 constexpr double kMaxDurationMillis = 600000.0;
@@ -619,12 +620,13 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
         p.fixedDirection = wrapAngle(ctx.range(src, "fixedDirection", 0.0, -1e4, 1e4));
     }
 
+    p.visualOffsetX = ctx.range(src, "visualOffsetX", 0.0, -kMaxVisualOffset, kMaxVisualOffset);
     if (src.contains("visualOffsetY")) {
         const Json& node = src["visualOffsetY"];
         const double raw = node.isNumber() ? node.asDouble() : 0.0;
         if (!node.isNumber()) {
             ctx.warn(std::string("visualOffsetY is ") + typeName(node) + "; ignored");
-        } else if (!std::isfinite(raw) || std::fabs(raw) > kMaxVisualOffsetY) {
+        } else if (!std::isfinite(raw) || std::fabs(raw) > kMaxVisualOffset) {
             // -1e100 is not an offset, it is a way of shoving a sprite off the
             // world to hide it. Say what it meant; propagating the number
             // would turn every transform it touches into an infinity.
@@ -657,21 +659,97 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     return p;
 }
 
-/// Sorted list of the object keys whose value is an object, so that indices
-/// are assigned deterministically and no entry can leave a hole in them.
-std::vector<std::string> usableKeys(const Json& doc, const char* what, Ctx& ctx) {
-    std::vector<std::string> keys;
-    keys.reserve(doc.keys().size());
+/// The object keys whose value is an object, twice over.
+///
+/// `sorted` is what indices are assigned from, so that a server and a client
+/// reading the same file necessarily agree on what entry 17 is. `source` is
+/// the file's own key order, which is what the browser iterates when it lays
+/// out a catalogue -- `Object.keys(PETAL_CONFIG)` is insertion order, and a
+/// shop sorted alphabetically is a different shop.
+struct KeySet {
+    std::vector<std::string> sorted;
+    std::vector<std::string> source;
+};
+
+KeySet usableKeys(const Json& doc, const char* what, Ctx& ctx) {
+    KeySet keys;
+    keys.source.reserve(doc.keys().size());
     for (const std::string& key : doc.keys()) {
         if (doc[key].isObject()) {
-            keys.push_back(key);
+            keys.source.push_back(key);
         } else {
             ctx.subject = std::string(what) + " '" + key + "'";
             ctx.warn(std::string("is ") + typeName(doc[key]) + ", not an object; skipped");
         }
     }
-    std::sort(keys.begin(), keys.end());
+    keys.sorted = keys.source;
+    std::sort(keys.sorted.begin(), keys.sorted.end());
     return keys;
+}
+
+bool endsWith(const std::string& text, const char* suffix) {
+    const std::size_t n = std::strlen(suffix);
+    return text.size() >= n && text.compare(text.size() - n, n, suffix) == 0;
+}
+
+/// The browser's darkenColor(hex, 0.7) (src/petals.ts:757-775): each channel
+/// floored to 70%, re-emitted as `#rrggbb`. Only ever fed a mob's own colour,
+/// which every entry in mobs.json writes as six hex digits; anything else
+/// keeps its own value rather than becoming the string "NaN" as the reference
+/// would.
+std::string darkenHex(const std::string& hex) {
+    if (hex.size() != 7 || hex[0] != '#') return hex;
+    char out[8] = "#000000";
+    for (int i = 0; i < 3; ++i) {
+        const int hi = hexDigit(hex[1 + i * 2]);
+        const int lo = hexDigit(hex[2 + i * 2]);
+        if (hi < 0 || lo < 0) return hex;
+        const int channel = static_cast<int>((hi * 16 + lo) * 0.7);
+        static const char kDigits[] = "0123456789abcdef";
+        out[1 + i * 2] = kDigits[(channel >> 4) & 0xF];
+        out[2 + i * 2] = kDigits[channel & 0xF];
+    }
+    return std::string(out);
+}
+
+std::string toLower(std::string text) {
+    for (char& c : text) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return text;
+}
+
+/// One synthesised `<mob>_egg`, exactly as src/petals.ts:784-820 builds it.
+///
+/// The eggs are not in petals.json and never have been: the browser generates
+/// one per non-pet mob at import time, and every surface that lists petals --
+/// the shop, the gallery, the drop tables, the crafting grid -- treats them as
+/// ordinary entries. Generating them here rather than editing the JSON keeps
+/// both builds reading one file.
+PetalConfig eggPetal(const std::string& mobId, const MobConfig& mob,
+                     const std::unordered_map<std::string, std::uint16_t>& mobIds) {
+    PetalConfig p;
+    p.id = mobId + "_egg";
+    p.name = mob.name + " Egg";
+    p.description = "A petal that spawns a " + toLower(mob.name) + " pet";
+    p.color = "#000000";
+    p.colorRgba = 0x000000FFu;
+    p.image = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" "
+              "viewBox=\"0 0 32 32\" fill=\"none\">\n<circle r=\"13\" cx=\"16\" cy=\"16\" fill=\"" +
+              mob.color + "\" stroke=\"" + darkenHex(mob.color) + "\" stroke-width=\"4\"/>\n</svg>";
+    p.damage = 10.0;
+    p.health = 10.0;
+    p.size = 1.0;
+    p.cooldownMillis = 5000.0;
+    p.count = 1;
+    // A pet variant is preferred where the mob has one -- two of them do --
+    // and otherwise the egg hatches the mob itself.
+    const std::string petId = mobId + "_pet";
+    p.petMobId = mobIds.count(petId) != 0 ? petId : mobId;
+    const auto it = mobIds.find(p.petMobId);
+    p.petMobIndex = it == mobIds.end() ? kInvalidIndex : it->second;
+    p.petMobRarity = Rarity::Common;
+    return p;
 }
 
 /// Multiplicative modifier scaled for a tier.
@@ -744,11 +822,31 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     const Json& petalsRoot = petalsDoc;
     const Json& xpRoot = xpDoc;
 
-    const std::vector<std::string> mobKeys = usableKeys(mobsRoot, "mob", ctx);
-    const std::vector<std::string> petalKeys = usableKeys(petalsRoot, "petal", ctx);
-    if (mobKeys.empty()) { errorOut = mobsPath + ": no mob definitions"; return false; }
-    if (petalKeys.empty()) { errorOut = petalsPath + ": no petal definitions"; return false; }
-    if (mobKeys.size() > kInvalidIndex || petalKeys.size() > kInvalidIndex) {
+    const KeySet mobKeys = usableKeys(mobsRoot, "mob", ctx);
+    const KeySet petalKeys = usableKeys(petalsRoot, "petal", ctx);
+    if (mobKeys.sorted.empty()) { errorOut = mobsPath + ": no mob definitions"; return false; }
+    if (petalKeys.sorted.empty()) { errorOut = petalsPath + ": no petal definitions"; return false; }
+
+    // The mobs whose egg petal has to be synthesised, in the mob file's own
+    // order. A pet is not something that lays an egg, and a hand-written
+    // `<mob>_egg` in petals.json wins over a generated one.
+    std::vector<std::string> eggMobIds;
+    for (const std::string& mobId : mobKeys.source) {
+        if (endsWith(mobId, "_pet")) continue;
+        if (std::binary_search(petalKeys.sorted.begin(), petalKeys.sorted.end(), mobId + "_egg")) {
+            continue;
+        }
+        eggMobIds.push_back(mobId);
+    }
+
+    // One index space over the file's petals and the generated eggs together,
+    // still assigned in sorted order so that both ends of the wire agree.
+    std::vector<std::string> petalIdList = petalKeys.sorted;
+    petalIdList.reserve(petalIdList.size() + eggMobIds.size());
+    for (const std::string& mobId : eggMobIds) petalIdList.push_back(mobId + "_egg");
+    std::sort(petalIdList.begin(), petalIdList.end());
+
+    if (mobKeys.sorted.size() > kInvalidIndex || petalIdList.size() > kInvalidIndex) {
         errorOut = "content has more entries than an index can name";
         return false;
     }
@@ -757,22 +855,41 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     // (a nest's escorts, a petal's pet, a mob's ammunition) resolve in one
     // pass instead of needing a fixup afterwards.
     std::unordered_map<std::string, std::uint16_t> mobIds, petalIds;
-    for (std::size_t i = 0; i < mobKeys.size(); ++i) mobIds[mobKeys[i]] = static_cast<std::uint16_t>(i);
-    for (std::size_t i = 0; i < petalKeys.size(); ++i) petalIds[petalKeys[i]] = static_cast<std::uint16_t>(i);
+    for (std::size_t i = 0; i < mobKeys.sorted.size(); ++i) {
+        mobIds[mobKeys.sorted[i]] = static_cast<std::uint16_t>(i);
+    }
+    for (std::size_t i = 0; i < petalIdList.size(); ++i) {
+        petalIds[petalIdList[i]] = static_cast<std::uint16_t>(i);
+    }
 
     std::vector<MobConfig> mobs;
     std::vector<PetalConfig> petals;
-    mobs.reserve(mobKeys.size());
-    petals.reserve(petalKeys.size());
+    mobs.reserve(mobKeys.sorted.size());
+    petals.reserve(petalIdList.size());
 
-    for (const std::string& key : mobKeys) {
+    for (const std::string& key : mobKeys.sorted) {
         ctx.subject = "mob '" + key + "'";
         mobs.push_back(parseMob(ctx, key, mobsRoot[key], mobIds, petalIds));
     }
-    for (const std::string& key : petalKeys) {
-        ctx.subject = "petal '" + key + "'";
-        petals.push_back(parsePetal(ctx, key, petalsRoot[key], mobIds));
+    for (const std::string& key : petalIdList) {
+        if (std::binary_search(petalKeys.sorted.begin(), petalKeys.sorted.end(), key)) {
+            ctx.subject = "petal '" + key + "'";
+            petals.push_back(parsePetal(ctx, key, petalsRoot[key], mobIds));
+            continue;
+        }
+        // Generated: the id is `<mob>_egg` and the mob is one this build has,
+        // because that is the only way the id got onto the list.
+        const std::string mobId = key.substr(0, key.size() - 4);
+        petals.push_back(eggPetal(mobId, mobs[mobIds[mobId]], mobIds));
     }
+
+    // Catalogue order: the file's own keys first, then the eggs in mob-file
+    // order, because that is where the browser appends them to
+    // BASE_PETAL_CONFIGS and therefore where Object.keys() reports them.
+    std::vector<std::uint16_t> petalOrder;
+    petalOrder.reserve(petalIdList.size());
+    for (const std::string& key : petalKeys.source) petalOrder.push_back(petalIds[key]);
+    for (const std::string& mobId : eggMobIds) petalOrder.push_back(petalIds[mobId + "_egg"]);
 
     // XP. A tier the table omits awards 1, except apex: the tables stop at
     // unique, and apex stats are a 3x step above unique everywhere else, so
@@ -816,6 +933,7 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     petals_ = std::move(petals);
     mobIds_ = std::move(mobIds);
     petalIds_ = std::move(petalIds);
+    petalOrder_ = std::move(petalOrder);
     warnings_ = std::move(warnings);
     hash_ = hash;
     errorOut.clear();
@@ -916,7 +1034,23 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.slowDurationMillis = c.slowDurationMillis;
     s.radius = c.size * kPetalRadiusPerSize;
     s.damageIntervalMillis = c.damageIntervalMillis;
+    // `count` is flat for almost every petal, and the two exceptions are
+    // literal per-rarity overrides in the reference's RARITY_OVERRIDES table
+    // (src/petals.ts:307-334 and :699-726) rather than another scaling rule.
+    // They ride here rather than in petals.json because that file is shared
+    // verbatim with the browser build, which reads its overrides from
+    // TypeScript.
     s.count = c.count;
+    if (c.id == "light" || c.id == "pollen") {
+        static constexpr std::array<int, kRarityCount> kLightCount = {
+            1, 2, 2, 3, 3, 5, 5, 5, 5, 5,
+        };
+        static constexpr std::array<int, kRarityCount> kPollenCount = {
+            1, 2, 2, 2, 3, 3, 5, 5, 5, 7,
+        };
+        const auto t = static_cast<std::size_t>(rarityIndex(tier));
+        s.count = c.id == "light" ? kLightCount[t] : kPollenCount[t];
+    }
     s.breakable = c.breakable;
     s.cameraZoom = scaledMultiplier(c.cameraZoom, modifier);
 

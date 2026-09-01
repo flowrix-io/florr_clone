@@ -104,4 +104,32 @@ std::string sanitizeChat(const std::string& text) {
     return out.substr(first, last - first + 1);
 }
 
+std::string sanitizePlayerName(const std::string& name) {
+    // Twenty characters is the browser build's cap (`playerName.slice(0, 20)`),
+    // measured the same way it measures: in code units, not glyphs. A cut that
+    // lands mid-sequence is walked back so the wire never carries broken UTF-8.
+    constexpr std::size_t kMaxPlayerName = 20;
+    std::string out;
+    out.reserve(std::min(name.size(), kMaxPlayerName));
+    for (const unsigned char c : name) {
+        if (out.size() >= kMaxPlayerName) break;
+        if (c < 0x20 || c == 0x7F) continue;
+        out += static_cast<char>(c);
+    }
+    // A cut mid-sequence would put broken UTF-8 on the wire: walk back to the
+    // start of the last character and drop it whole if it did not fit.
+    std::size_t at = out.size();
+    while (at > 0 && (static_cast<unsigned char>(out[at - 1]) & 0xC0) == 0x80) --at;
+    if (at > 0) {
+        const auto lead = static_cast<unsigned char>(out[at - 1]);
+        const std::size_t need = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+        if (at - 1 + need != out.size()) out.resize(at - 1);
+    }
+
+    const auto first = out.find_first_not_of(' ');
+    if (first == std::string::npos) return "Unnamed";
+    const auto last = out.find_last_not_of(' ');
+    return out.substr(first, last - first + 1);
+}
+
 } // namespace flr

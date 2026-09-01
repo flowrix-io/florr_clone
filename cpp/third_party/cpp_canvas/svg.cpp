@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -375,6 +376,328 @@ void parseCss(const std::string& text, std::vector<CssRule>& out) {
     }
 }
 
+// --- embedded raster images -------------------------------------------------
+// An <image> in these documents carries a whole PNG in a data: URI, so the
+// element simply cannot be drawn without decoding one.
+//
+// The decoder is self-contained on purpose. cpp_canvas links nothing but SDL,
+// and taking a zlib dependency so that two mob sprites can draw would push a
+// build change onto every consumer of the library. What is here is the subset
+// PNG actually needs: RFC 1951 DEFLATE, and 8- or 16-bit non-interlaced
+// images. Anything outside that is reported, never guessed at -- a raster
+// decoded wrong is worse than a raster not decoded, because it still paints.
+
+struct Raster {
+    int width = 0, height = 0;
+    std::vector<std::uint8_t> rgba;    // tightly packed, straight (unpremultiplied)
+};
+
+int base64Value(char c) {
+    if (c>='A' && c<='Z') return c-'A';
+    if (c>='a' && c<='z') return c-'a'+26;
+    if (c>='0' && c<='9') return c-'0'+52;
+    if (c=='+' || c=='-') return 62;   // '-' and '_': the URL-safe alphabet
+    if (c=='/' || c=='_') return 63;
+    return -1;
+}
+
+bool base64Decode(const std::string& text, size_t from, std::vector<std::uint8_t>& out) {
+    out.clear();
+    out.reserve((text.size()-from)*3/4 + 3);
+    std::uint32_t group = 0;
+    int filled = 0;
+    for (size_t i=from; i<text.size(); ++i) {
+        const char c = text[i];
+        if (space(c)) continue;
+        if (c=='=') break;
+        const int v = base64Value(c);
+        if (v < 0) return false;
+        group = (group<<6) | static_cast<std::uint32_t>(v);
+        if (++filled == 4) { out.push_back(static_cast<std::uint8_t>(group>>16)); out.push_back(static_cast<std::uint8_t>(group>>8)); out.push_back(static_cast<std::uint8_t>(group)); group=0; filled=0; }
+    }
+    // A trailing group of one is impossible in base64; two and three carry one
+    // and two bytes, the padding '=' only says how many.
+    if (filled == 1) return false;
+    if (filled == 2) out.push_back(static_cast<std::uint8_t>(group>>4));
+    else if (filled == 3) { out.push_back(static_cast<std::uint8_t>(group>>10)); out.push_back(static_cast<std::uint8_t>(group>>2)); }
+    return !out.empty();
+}
+
+// --- DEFLATE (RFC 1951) -----------------------------------------------------
+// Canonical-Huffman decoding as in Mark Adler's `puff`: walk the code lengths
+// one bit at a time rather than building a lookup table. Slower per symbol,
+// but this runs once per document at load, and the table build is the part
+// that gets subtly wrong on hand-written inflaters.
+struct BitStream {
+    const std::uint8_t* data = nullptr;
+    size_t size = 0, pos = 0;
+    std::uint32_t buffer = 0;
+    int filled = 0;
+    bool bad = false;
+    int take(int need) {
+        while (filled < need) {
+            if (pos >= size) { bad = true; return 0; }
+            buffer |= static_cast<std::uint32_t>(data[pos++]) << filled;
+            filled += 8;
+        }
+        const int value = static_cast<int>(buffer & ((1u<<need)-1u));
+        buffer >>= need; filled -= need;
+        return value;
+    }
+};
+
+struct Huffman {
+    std::array<int,16> counts{};
+    std::vector<std::uint16_t> symbols;
+};
+
+bool huffBuild(Huffman& h, const std::uint16_t* lengths, int n) {
+    h.counts.fill(0);
+    for (int i=0;i<n;++i) ++h.counts[lengths[i] & 15];
+    h.counts[0] = 0;
+    // Over-subscribed is corrupt; incomplete is legal (a block whose distance
+    // table holds a single code, say) and simply never decodes that symbol.
+    int left = 1;
+    for (int len=1; len<16; ++len) { left <<= 1; left -= h.counts[len]; if (left < 0) return false; }
+    std::array<int,16> offset{};
+    for (int len=1; len<15; ++len) offset[len+1] = offset[len] + h.counts[len];
+    h.symbols.assign(static_cast<size_t>(n), 0);
+    for (int i=0;i<n;++i) if (lengths[i]) h.symbols[static_cast<size_t>(offset[lengths[i] & 15]++)] = static_cast<std::uint16_t>(i);
+    return true;
+}
+
+int huffDecode(BitStream& s, const Huffman& h) {
+    int code = 0, first = 0, index = 0;
+    for (int len=1; len<16; ++len) {
+        code |= s.take(1);
+        if (s.bad) return -1;
+        const int count = h.counts[len];
+        if (code - first < count) return h.symbols[static_cast<size_t>(index + code - first)];
+        index += count; first = (first + count) << 1; code <<= 1;
+    }
+    return -1;
+}
+
+const std::uint16_t kLengthBase[29]  = {3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258};
+const std::uint16_t kLengthExtra[29] = {0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0};
+const std::uint16_t kDistBase[30]    = {1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577};
+const std::uint16_t kDistExtra[30]   = {0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13};
+
+bool inflateCodes(BitStream& s, const Huffman& lit, const Huffman& dist, std::vector<std::uint8_t>& out, size_t limit) {
+    for (;;) {
+        const int symbol = huffDecode(s, lit);
+        if (symbol < 0) return false;
+        if (symbol == 256) return true;
+        if (symbol < 256) out.push_back(static_cast<std::uint8_t>(symbol));
+        else {
+            const int index = symbol - 257;
+            if (index >= 29) return false;
+            const int length = kLengthBase[index] + s.take(kLengthExtra[index]);
+            const int distSymbol = huffDecode(s, dist);
+            if (distSymbol < 0 || distSymbol >= 30) return false;
+            const size_t distance = static_cast<size_t>(kDistBase[distSymbol]) + static_cast<size_t>(s.take(kDistExtra[distSymbol]));
+            if (s.bad || distance == 0 || distance > out.size()) return false;
+            const size_t from = out.size() - distance;
+            // Byte at a time: an overlapping copy is how run-length encoding
+            // falls out of DEFLATE, so memcpy would read what it is writing.
+            for (int k=0; k<length; ++k) out.push_back(out[from + static_cast<size_t>(k)]);
+        }
+        if (out.size() > limit || s.bad) return false;
+    }
+}
+
+bool inflateRaw(const std::uint8_t* data, size_t size, size_t limit, std::vector<std::uint8_t>& out) {
+    BitStream s{data, size, 0, 0, 0, false};
+    static const std::array<Huffman,2> fixed = []{
+        std::array<Huffman,2> tables;
+        std::uint16_t lengths[288];
+        for (int i=0;i<144;++i) lengths[i]=8;
+        for (int i=144;i<256;++i) lengths[i]=9;
+        for (int i=256;i<280;++i) lengths[i]=7;
+        for (int i=280;i<288;++i) lengths[i]=8;
+        huffBuild(tables[0], lengths, 288);
+        for (int i=0;i<30;++i) lengths[i]=5;
+        huffBuild(tables[1], lengths, 30);
+        return tables;
+    }();
+    for (;;) {
+        const int last = s.take(1);
+        const int type = s.take(2);
+        if (s.bad) return false;
+        if (type == 0) {
+            s.take(s.filled & 7);                      // stored data starts on a byte boundary
+            const int lo = s.take(8), hi = s.take(8);
+            s.take(8); s.take(8);                      // NLEN, the one's complement of LEN
+            const int length = lo | (hi<<8);
+            if (s.bad || out.size() + static_cast<size_t>(length) > limit) return false;
+            for (int i=0;i<length;++i) out.push_back(static_cast<std::uint8_t>(s.take(8)));
+            if (s.bad) return false;
+        } else if (type == 1) {
+            if (!inflateCodes(s, fixed[0], fixed[1], out, limit)) return false;
+        } else if (type == 2) {
+            const int litCount = s.take(5) + 257, distCount = s.take(5) + 1, codeCount = s.take(4) + 4;
+            if (s.bad || litCount > 286 || distCount > 30) return false;
+            static const int kOrder[19] = {16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15};
+            std::uint16_t codeLengths[19] = {0};
+            for (int i=0;i<codeCount;++i) codeLengths[kOrder[i]] = static_cast<std::uint16_t>(s.take(3));
+            Huffman code;
+            if (s.bad || !huffBuild(code, codeLengths, 19)) return false;
+            std::uint16_t lengths[320] = {0};
+            const int total = litCount + distCount;
+            int at = 0;
+            while (at < total) {
+                const int symbol = huffDecode(s, code);
+                if (symbol < 0) return false;
+                if (symbol < 16) lengths[at++] = static_cast<std::uint16_t>(symbol);
+                else {
+                    std::uint16_t value = 0;
+                    int repeat;
+                    if (symbol == 16) { if (at == 0) return false; value = lengths[at-1]; repeat = 3 + s.take(2); }
+                    else if (symbol == 17) repeat = 3 + s.take(3);
+                    else repeat = 11 + s.take(7);
+                    if (s.bad || at + repeat > total) return false;
+                    while (repeat-- > 0) lengths[at++] = value;
+                }
+            }
+            Huffman lit, dist;
+            if (!huffBuild(lit, lengths, litCount) || !huffBuild(dist, lengths + litCount, distCount)) return false;
+            if (!inflateCodes(s, lit, dist, out, limit)) return false;
+        } else return false;
+        if (last) return true;
+    }
+}
+
+// --- PNG --------------------------------------------------------------------
+std::uint32_t beU32(const std::uint8_t* p) {
+    return (static_cast<std::uint32_t>(p[0])<<24) | (static_cast<std::uint32_t>(p[1])<<16) |
+           (static_cast<std::uint32_t>(p[2])<<8) | p[3];
+}
+
+int paeth(int a, int b, int c) {
+    const int p = a + b - c;
+    const int pa = std::abs(p-a), pb = std::abs(p-b), pc = std::abs(p-c);
+    return (pa<=pb && pa<=pc) ? a : (pb<=pc ? b : c);
+}
+
+bool decodePng(const std::vector<std::uint8_t>& file, Raster& out, std::string& error) {
+    static const std::uint8_t kSignature[8] = {137,80,78,71,13,10,26,10};
+    if (file.size() < 8 || !std::equal(kSignature, kSignature+8, file.begin())) { error = "not a PNG"; return false; }
+
+    std::uint32_t width=0, height=0;
+    int depth=0, colorType=0, interlace=0;
+    std::vector<std::uint8_t> deflated, palette, alphaTable;
+    bool sawHeader = false;
+
+    for (size_t at = 8; at + 8 <= file.size();) {
+        const std::uint32_t length = beU32(&file[at]);
+        if (length > file.size() || at + 12 + length > file.size()) { error = "truncated chunk"; return false; }
+        const std::uint8_t* body = &file[at+8];
+        const char* tag = reinterpret_cast<const char*>(&file[at+4]);
+        if (std::equal(tag, tag+4, "IHDR")) {
+            if (length < 13) { error = "short IHDR"; return false; }
+            width = beU32(body); height = beU32(body+4);
+            depth = body[8]; colorType = body[9]; interlace = body[12];
+            if (body[10] != 0 || body[11] != 0) { error = "unknown compression or filter method"; return false; }
+            sawHeader = true;
+        } else if (std::equal(tag, tag+4, "PLTE")) palette.assign(body, body+length);
+        else if (std::equal(tag, tag+4, "tRNS")) alphaTable.assign(body, body+length);
+        else if (std::equal(tag, tag+4, "IDAT")) deflated.insert(deflated.end(), body, body+length);
+        else if (std::equal(tag, tag+4, "IEND")) break;
+        at += 12 + length;
+    }
+    if (!sawHeader || width == 0 || height == 0) { error = "no image header"; return false; }
+    if (width > 8192 || height > 8192) { error = "image too large"; return false; }
+    if (interlace != 0) { error = "interlaced PNGs are not supported"; return false; }
+    if (depth != 1 && depth != 2 && depth != 4 && depth != 8 && depth != 16) { error = "unknown bit depth"; return false; }
+    int channels = 0;
+    if (colorType == 0) channels = 1;
+    else if (colorType == 2) channels = 3;
+    else if (colorType == 3) channels = 1;
+    else if (colorType == 4) channels = 2;
+    else if (colorType == 6) channels = 4;
+    else { error = "unknown colour type"; return false; }
+    if (depth < 8 && colorType != 0 && colorType != 3) { error = "sub-byte samples need greyscale or a palette"; return false; }
+    if (deflated.size() < 3) { error = "no image data"; return false; }
+    // zlib wrapper: two header bytes, and a preset dictionary this never uses.
+    if ((deflated[0] & 0x0F) != 8 || (deflated[1] & 0x20) != 0) { error = "unsupported zlib stream"; return false; }
+
+    const int sampleBytes = depth/8;
+    // The filter's "pixel to the left" is measured in whole bytes, and rounds
+    // UP to one for the sub-byte depths -- getting that wrong decodes every
+    // filtered 1/2/4-bit row into garbage that still looks like an image.
+    const size_t pixelBytes = std::max<size_t>(1, static_cast<size_t>(channels) * sampleBytes);
+    const size_t stride = depth >= 8 ? static_cast<size_t>(width) * pixelBytes
+                                     : (static_cast<size_t>(width) * depth + 7) / 8;
+    const size_t expected = (stride + 1) * height;
+    std::vector<std::uint8_t> raw;
+    raw.reserve(expected);
+    if (!inflateRaw(deflated.data()+2, deflated.size()-2, expected, raw) || raw.size() < expected) {
+        error = "compressed data is corrupt";
+        return false;
+    }
+
+    // Unfilter in place, row by row: every filter refers to the row above it,
+    // so this has to run top to bottom before anything can be sampled.
+    std::vector<std::uint8_t> lines(stride * height);
+    for (std::uint32_t y=0; y<height; ++y) {
+        const std::uint8_t filter = raw[(stride+1)*y];
+        const std::uint8_t* src = &raw[(stride+1)*y + 1];
+        std::uint8_t* line = &lines[stride*y];
+        const std::uint8_t* above = y ? &lines[stride*(y-1)] : nullptr;
+        for (size_t x=0; x<stride; ++x) {
+            const int left = x >= pixelBytes ? line[x-pixelBytes] : 0;
+            const int up = above ? above[x] : 0;
+            const int upLeft = (above && x >= pixelBytes) ? above[x-pixelBytes] : 0;
+            int value = src[x];
+            switch (filter) {
+            case 0: break;
+            case 1: value += left; break;
+            case 2: value += up; break;
+            case 3: value += (left + up)/2; break;
+            case 4: value += paeth(left, up, upLeft); break;
+            default: error = "unknown row filter"; return false;
+            }
+            line[x] = static_cast<std::uint8_t>(value & 0xFF);
+        }
+    }
+
+    out.width = static_cast<int>(width);
+    out.height = static_cast<int>(height);
+    out.rgba.assign(static_cast<size_t>(width) * height * 4, 0);
+    for (std::uint32_t y=0; y<height; ++y) {
+        const std::uint8_t* line = &lines[stride*y];
+        for (std::uint32_t x=0; x<width; ++x) {
+            // 16-bit samples keep their high byte: the canvas is 8-bit, and the
+            // low byte is below anything it can represent.
+            std::uint8_t packed = 0;
+            const std::uint8_t* s = line + static_cast<size_t>(x)*pixelBytes;
+            if (depth < 8) {
+                const size_t bit = static_cast<size_t>(x) * depth;
+                packed = static_cast<std::uint8_t>((line[bit/8] >> (8 - depth - static_cast<int>(bit%8))) & ((1<<depth)-1));
+                s = &packed;
+            }
+            std::uint8_t* d = &out.rgba[(static_cast<size_t>(y)*width + x)*4];
+            if (colorType == 3) {
+                const size_t index = s[0];
+                const bool known = index*3 + 2 < palette.size();
+                d[0] = known ? palette[index*3] : 0;
+                d[1] = known ? palette[index*3+1] : 0;
+                d[2] = known ? palette[index*3+2] : 0;
+                d[3] = index < alphaTable.size() ? alphaTable[index] : 255;
+            } else if (colorType == 0) {
+                // Greyscale below 8 bits spans the same 0..255 range, so the
+                // sample scales rather than shifts: 1-bit white is 255, not 1.
+                const int grey = depth < 8 ? s[0] * 255 / ((1<<depth)-1) : s[0];
+                d[0]=d[1]=d[2]=static_cast<std::uint8_t>(grey); d[3]=255;
+            }
+            else if (colorType == 2) { d[0]=s[0]; d[1]=s[sampleBytes]; d[2]=s[sampleBytes*2]; d[3]=255; }
+            else if (colorType == 4) { d[0]=d[1]=d[2]=s[0]; d[3]=s[sampleBytes]; }
+            else { d[0]=s[0]; d[1]=s[sampleBytes]; d[2]=s[sampleBytes*2]; d[3]=s[sampleBytes*3]; }
+        }
+    }
+    return true;
+}
+
 // --- resolved presentation state -------------------------------------------
 struct Style {
     Color fill{0,0,0,255}, stroke{0,0,0,255};
@@ -408,11 +731,16 @@ struct Node {
     std::vector<float> points;
     std::vector<Anim> anims;
     std::vector<Node> kids;
+    // Decoded <image> pixels. Shared, not copied: the same sprite is compiled
+    // once and the tree is copied into the retained Scene.
+    std::shared_ptr<const Raster> image;
+    float imageBox[4]{0,0,0,0};    ///< where the pixels land, after preserveAspectRatio
+    float imageClip[4]{0,0,0,0};   ///< the declared box; only 'slice' draws outside it
     float geom[6]{0,0,0,0,-1,-1};
     float opacity = 1;
     int clip = -1;
     unsigned char shape = ShapeNone;
-    bool transformed = false, dynamic = false;
+    bool transformed = false, dynamic = false, imageSlice = false;
 };
 
 struct Clip { Path2D path; bool evenOdd = false; };
@@ -895,12 +1223,65 @@ struct Builder {
         return true;
     }
 
+    // Decodes one <image> and resolves where its pixels land. The href must be
+    // an embedded data: URI: an SVG compiled from a string has no base URL to
+    // resolve a file or http reference against, and silently drawing nothing
+    // for one is how a missing sprite turns into a mystery.
+    bool buildImage(const XNode& x, Node& out) {
+        const std::string* href = x.find("href");
+        if (!href || href->empty()) { warn("SVG: <image> without an href"); return false; }
+        const size_t marker = href->find(";base64,");
+        if (href->compare(0, 5, "data:") != 0 || marker == std::string::npos) {
+            warn("SVG: <image> href is not an embedded base64 data: URI");
+            return false;
+        }
+        std::vector<std::uint8_t> bytes;
+        if (!base64Decode(*href, marker + 8, bytes)) { warn("SVG: <image> has malformed base64"); return false; }
+        auto raster = std::make_shared<Raster>();
+        std::string error;
+        if (!decodePng(bytes, *raster, error)) { warn("SVG: <image> could not be decoded: " + error); return false; }
+
+        const float rw = static_cast<float>(raster->width), rh = static_cast<float>(raster->height);
+        const float bx = x.number("x"), by = x.number("y");
+        const float bw = x.find("width") ? x.number("width") : rw;
+        const float bh = x.find("height") ? x.number("height") : rh;
+        if (!(bw > 0 && bh > 0)) { warn("SVG: <image> has an empty box"); return false; }
+
+        // preserveAspectRatio, resolved here rather than at draw time: it is a
+        // property of the document, and the answer never changes per frame.
+        unsigned char align = 4;   // xMidYMid
+        bool meet = true;
+        if (const std::string* par = x.find("preserveAspectRatio")) {
+            const std::string v = trim(*par);
+            if (v.find("none") != std::string::npos) align = 9;
+            else {
+                const size_t at = v.find('x');
+                if (at != std::string::npos && at+7 < v.size()) {
+                    const std::string ax = v.substr(at+1, 3), ay = v.substr(at+5, 3);
+                    align = static_cast<unsigned char>((ax=="Min"?0:ax=="Max"?2:1)*3 + (ay=="Min"?0:ay=="Max"?2:1));
+                }
+            }
+            meet = v.find("slice") == std::string::npos;
+        }
+        float sx = bw/rw, sy = bh/rh;
+        if (align < 9) { const float s = meet ? std::min(sx, sy) : std::max(sx, sy); sx = sy = s; }
+        static const float slot[3] = {0.f, 0.5f, 1.f};
+        const float ox = align < 9 ? (bw - rw*sx) * slot[align/3] : 0.f;
+        const float oy = align < 9 ? (bh - rh*sy) * slot[align%3] : 0.f;
+        out.imageBox[0] = bx + ox; out.imageBox[1] = by + oy;
+        out.imageBox[2] = rw*sx;   out.imageBox[3] = rh*sy;
+        out.imageClip[0] = bx; out.imageClip[1] = by; out.imageClip[2] = bw; out.imageClip[3] = bh;
+        out.imageSlice = !meet && align < 9;
+        out.image = std::move(raster);
+        return true;
+    }
+
     bool build(const XNode& x, const Style& parent, Node& out, int depth) {
         if (depth > 40) { warn("SVG: tree too deep"); return false; }
         const std::string& tag = x.name;
         if (tag=="defs" || tag=="clipPath" || tag=="style" || tag=="title" || tag=="desc" || tag=="metadata" ||
             tag=="symbol" || tag=="mask" || tag=="marker" || tag=="filter" || tag=="pattern" || tag=="script") return false;
-        if (tag=="linearGradient" || tag=="radialGradient" || tag=="image" || tag=="text" || tag=="foreignObject") {
+        if (tag=="linearGradient" || tag=="radialGradient" || tag=="text" || tag=="foreignObject") {
             warn("SVG: unsupported element <" + tag + ">");
             return false;
         }
@@ -928,6 +1309,7 @@ struct Builder {
         else if (tag=="line") { out.shape=ShapeLine; out.geom[0]=x.number("x1"); out.geom[1]=x.number("y1"); out.geom[2]=x.number("x2"); out.geom[3]=x.number("y2"); }
         else if (tag=="polygon" || tag=="polyline") { out.shape = tag=="polygon" ? ShapePolygon : ShapePolyline; if (const std::string* v = x.find("points")) numbersInto(*v, out.points); }
         else if (tag=="path") { out.shape=ShapePath; if (const std::string* d = x.find("d")) { if (parsePathData(*d, out.path) > 0) warn("SVG: malformed path data"); } }
+        else if (tag=="image") { if (!buildImage(x, out)) return false; }
         else if (tag=="use") {
             const std::string* href = x.find("href");
             const size_t hash = href ? href->find('#') : std::string::npos;
@@ -953,7 +1335,7 @@ struct Builder {
             out.kids.emplace_back();
             if (!build(kid, out.style, out.kids.back(), depth+1)) out.kids.pop_back();
         }
-        return out.shape != ShapeNone || !out.kids.empty() || !out.anims.empty();
+        return out.shape != ShapeNone || out.image || !out.kids.empty() || !out.anims.empty();
     }
 };
 
@@ -981,6 +1363,10 @@ void measure(const Node& n, const Mat& parent, Box& box) {
         default: break;
         }
     }
+    if (n.image) {
+        const float* b = n.imageSlice ? n.imageClip : n.imageBox;
+        addPoint(box, m, b[0], b[1]); addPoint(box, m, b[0]+b[2], b[1]+b[3]);
+    }
     for (const Node& kid : n.kids) measure(kid, m, box);
 }
 
@@ -989,13 +1375,14 @@ void measure(const Node& n, const Mat& parent, Box& box) {
 struct SvgDocument::Scene {
     svgc::Node root;
     std::vector<svgc::Clip> clips;
-    Path2D viewport;
     bool spills = false;
 };
 
 namespace svgc {
 
-Path2D gShape;   // one reusable scratch buffer keeps render() allocation-free
+Path2D gShape;         // one reusable scratch buffer keeps render() allocation-free
+Path2D gViewportBox;   // the same, for the viewport clip rect
+Path2D gImageClip;     // and for a sliced <image>'s own box
 
 void drawNode(const Node& n, const std::vector<Clip>& clips, Canvas& canvas, float time, float alpha) {
     Mat m = n.transform;
@@ -1081,6 +1468,19 @@ void drawNode(const Node& n, const std::vector<Clip>& clips, Canvas& canvas, flo
             }
         }
     }
+    if (n.image && n.image->width > 0) {
+        // 'slice' is the one case that draws outside its own box, so it is the
+        // one case that needs a clip; 'meet' always fits inside.
+        if (n.imageSlice) {
+            canvas.save();
+            gImageClip.clear();
+            gImageClip.rect(n.imageClip[0], n.imageClip[1], n.imageClip[2], n.imageClip[3]);
+            canvas.clip(gImageClip, "nonzero");
+        }
+        canvas.drawImage(n.image->rgba.data(), n.image->width, n.image->height,
+                         n.imageBox[0], n.imageBox[1], n.imageBox[2], n.imageBox[3], alpha);
+        if (n.imageSlice) canvas.restore();
+    }
     for (const Node& kid : n.kids) drawNode(kid, clips, canvas, time, alpha);
     canvas.restore();
 }
@@ -1158,13 +1558,15 @@ SvgDocument SvgDocument::fromString(const std::string& source) {
     scene.root.transformed = false;          // the root transform is the viewport mapping
     scene.root.transform = kUnit;
 
+    // Whether a clip is needed at all, asked of the viewBox: the viewport that
+    // actually clips is at least as large, so this over-answers at worst, and
+    // the cost of a clip nothing reaches is one intersected mask.
     Box bounds;
     measure(scene.root, kUnit, bounds);
     const float slack = 0.01f * std::max(document.viewW_, document.viewH_);
     scene.spills = bounds.valid() &&
                    (bounds.x0 < document.viewX_ - slack || bounds.y0 < document.viewY_ - slack ||
                     bounds.x1 > document.viewX_ + document.viewW_ + slack || bounds.y1 > document.viewY_ + document.viewH_ + slack);
-    scene.viewport.rect(document.viewX_, document.viewY_, document.viewW_, document.viewH_);
 
     document.scene_ = std::make_shared<const Scene>(std::move(scene));
     return document;
@@ -1186,8 +1588,18 @@ bool SvgDocument::renderFitted(Canvas& canvas, float x, float y, float width, fl
     if (!scene_ || viewW_ <= 0 || viewH_ <= 0) return false;
     const Mat m = viewportMatrix(viewX_, viewY_, viewW_, viewH_, align_, meet_, x, y, width, height);
     canvas.save();
+    // The SVG viewport, not the viewBox, is what clips: the viewBox is only a
+    // transform, and with 'meet' the viewport is the LARGER of the two. Cutting
+    // at the viewBox instead showed only the letterbox band -- dust and glitch
+    // draw a 32x32 <image> through a 32x10 viewBox, and the browser paints all
+    // of it. Clipping here, before the viewBox transform goes on, is exactly
+    // the target box the caller asked to fill.
+    if (scene_->spills) {
+        gViewportBox.clear();
+        gViewportBox.rect(x, y, width, height);
+        canvas.clip(gViewportBox, "nonzero");
+    }
     canvas.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-    if (scene_->spills) canvas.clip(scene_->viewport, "nonzero");
     drawNode(scene_->root, scene_->clips, canvas, time, 1.f);
     canvas.restore();
     return true;

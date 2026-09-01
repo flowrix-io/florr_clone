@@ -203,6 +203,11 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     if (kind == DamageKind::Direct && events_ != nullptr) {
         if (const NetId* id = world.tryGet<NetId>(victim)) {
             const Transform* transform = world.tryGet<Transform>(victim);
+            // Direct hits only. Damage over time narrating itself once a tick
+            // would bury the hit that matters, which is a decision this system
+            // makes deliberately -- see the events test. The client already
+            // colours and offsets a poison tick the way the reference does, so
+            // the day this reports one, it renders correctly.
             events_->damage(id->value, applied, transform ? transform->position : Vec2{});
         }
     }

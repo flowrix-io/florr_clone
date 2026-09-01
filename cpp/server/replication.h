@@ -51,6 +51,8 @@ public:
         std::uint8_t faceFlags = 0xFF;
         std::uint8_t equipFlags = 0xFF;
         std::uint32_t renderFlags = 0xFFFFFFFFu;
+        std::uint16_t level = 0;      ///< 0 is not a valid level, forcing a first send
+        std::uint8_t bestRarity = 0xFF;
         bool seenThisTick = false;
     };
 
@@ -95,13 +97,16 @@ public:
     void clear() { events_.clear(); }
     void push(const WireEvent& e) { events_.push_back(e); }
 
-    void damage(std::uint32_t netId, double amount, Vec2 at, bool critical = false) {
+    /// `flags` is a net::DamageEventFlags mask. Poison is called out on the
+    /// wire because the client colours and offsets a tick differently from a
+    /// petal hit, and only the server knows which one landed.
+    void damage(std::uint32_t netId, double amount, Vec2 at, std::uint8_t flags = 0) {
         WireEvent e;
         e.kind = net::EventKind::Damage;
         e.netId = netId;
         e.amount = amount;
         e.position = at;
-        e.flag = critical ? 1 : 0;
+        e.flag = flags;
         e.positional = true;
         events_.push_back(e);
     }
@@ -182,6 +187,11 @@ struct PlayerVisualState {
     std::uint8_t faceFlags = FaceNone;
     std::uint8_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
+    /// The plate under every flower reads its own level and tints itself with
+    /// the best rarity anywhere in that flower's loadout, so both belong to
+    /// the viewer of a player rather than to the player being viewed.
+    std::uint16_t level = 1;
+    Rarity bestRarity = Rarity::Common;
 };
 
 PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis);

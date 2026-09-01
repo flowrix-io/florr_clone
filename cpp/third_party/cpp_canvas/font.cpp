@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 
@@ -105,6 +106,22 @@ bool Font::parse() {
     descent_ = i16(data_, hhea + 6);
     lineGap_ = i16(data_, hhea + 8);
     numberOfHMetrics_ = u16(data_, hhea + 34);
+  }
+
+  // Canvas2D's 'top', 'middle' and 'bottom' are edges of the EM BOX, and the
+  // browser splits that box at the baseline in the ratio of the OS/2 sTypo
+  // metrics -- not hhea's. For Ubuntu hhea says 932/-189 per 1000 em while
+  // sTypo says 776/-185, and taking hhea drops every top-anchored string 1-3px.
+  // Only the ratio is kept here; ascent() below does the normalising, and
+  // lineHeight() goes back to hhea, which is a different box again.
+  const std::uint32_t os2 = tableOffset("OS/2");
+  if (os2 && os2 + 72 <= data_.size()) {
+    const std::int16_t typoAscender = i16(data_, os2 + 68);
+    const std::int16_t typoDescender = i16(data_, os2 + 70);
+    if (typoAscender > 0 && typoAscender > typoDescender) {
+      ascent_ = typoAscender;
+      descent_ = typoDescender;
+    }
   }
 
   // Prefer a Unicode subtable: (3,10) full repertoire, then (3,1) BMP, then
@@ -380,6 +397,10 @@ void Font::buildCompositeGlyph(std::uint32_t at, std::uint32_t length, Glyph& ou
 
 void Font::appendText(Path2D& path, const std::string& utf8, float x, float y, float pixelSize) const {
   if (!valid_ || utf8.empty() || pixelSize <= 0) return;
+  // Downstream a glyph is an ordinary path, which is the point -- but the
+  // rasterizer still has to know it is filling text, because the browser gives
+  // glyph coverage a gamma it does not give a shape's.
+  path.markGlyphOutlines();
   const float scale = pixelSize / static_cast<float>(unitsPerEm_);
 
   float penX = 0;
@@ -415,9 +436,36 @@ float Font::measure(const std::string& utf8, float pixelSize) const {
   return width * scale;
 }
 
-float Font::ascent(float pixelSize) const { return ascent_ * pixelSize / unitsPerEm_; }
-float Font::descent(float pixelSize) const { return descent_ * pixelSize / unitsPerEm_; }
+namespace {
+
+// One edge of the em box: the ascent and descent are rescaled so that together
+// they span exactly one em, which is what makes the browser's 'middle' land
+// half an em above its 'top' at every size. Values are snapped to 64ths of a
+// pixel because the browser's metrics come out of 26.6 fixed point; that is
+// what reproduces its baselines to the bit rather than to a hundredth.
+float emBoxEdge(int metric, int span, float pixelSize, int unitsPerEm) {
+  if (span <= 0) return metric * pixelSize / unitsPerEm;
+  return std::round(metric * pixelSize * 64.0f / span) / 64.0f;
+}
+
+} // namespace
+
+float Font::ascent(float pixelSize) const {
+  return emBoxEdge(ascent_, ascent_ - descent_, pixelSize, unitsPerEm_);
+}
+float Font::descent(float pixelSize) const {
+  return emBoxEdge(descent_, ascent_ - descent_, pixelSize, unitsPerEm_);
+}
 float Font::lineHeight(float pixelSize) const {
+  // A `normal` line box is hhea's ascender, descender and gap, NOT the em box
+  // above -- 14px Ubuntu is a 16px row in the browser, and only 932/-189/28
+  // gives that. hhea is re-read here because ascent_/descent_ now hold the
+  // OS/2 pair.
+  const std::uint32_t hhea = tableOffset("hhea");
+  if (hhea) {
+    const int span = i16(data_, hhea + 4) - i16(data_, hhea + 6) + i16(data_, hhea + 8);
+    return span * pixelSize / unitsPerEm_;
+  }
   return (ascent_ - descent_ + lineGap_) * pixelSize / unitsPerEm_;
 }
 
