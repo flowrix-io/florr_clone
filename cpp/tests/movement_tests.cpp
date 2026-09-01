@@ -184,56 +184,67 @@ TEST(an_unset_or_corrupt_speed_modifier_means_unmodified) {
     CHECK(std::isfinite(fx.positionOf(broken).x));
 }
 
-TEST(water_slows_a_player_and_a_slow_stacks_on_top) {
-    Fixture dry, wet, slowed;
-    wet.terrain.fill(Tile::Water);
-    slowed.terrain.fill(Tile::Water);
+TEST(water_blocks_a_player_like_a_wall) {
+    Fixture fx;
+    for (int ty = 0; ty < Terrain::tilesPerAxis(); ++ty) {
+        fx.terrain.setTile(10, ty, Tile::Water);
+    }
+    const Entity player = fx.spawnPlayer({2000, 5000});
+    fx.drive(player, 0.0, 1.0);
+    fx.step(200);
 
-    const Entity a = dry.spawnPlayer({3000, 3000});
-    const Entity b = wet.spawnPlayer({3000, 3000});
-    const Entity c = slowed.spawnPlayer({3000, 3000});
-    dry.drive(a, 0.0, 1.0);
-    wet.drive(b, 0.0, 1.0);
-    slowed.drive(c, 0.0, 1.0);
-
-    Afflictions& afflictions = slowed.world.get<Afflictions>(c);
-    afflictions.slowFactor = 0.5;
-    afflictions.slowUntilMillis = 1e9;
-
-    dry.step(200);
-    wet.step(200);
-    slowed.step(200);
-
-    CHECK_NEAR(dry.velocityOf(a).x, kPlayerMaxSpeed, 0.5);
-    CHECK_NEAR(wet.velocityOf(b).x, kPlayerMaxSpeed * kWaterSpeedScale, 0.5);
-    CHECK(wet.velocityOf(b).x < dry.velocityOf(a).x);
-    // Water and the affliction multiply; the slow does not simply replace it.
-    CHECK_NEAR(slowed.velocityOf(c).x, kPlayerMaxSpeed * kWaterSpeedScale * 0.5, 0.5);
-    CHECK(slowed.velocityOf(c).x < wet.velocityOf(b).x);
+    const Vec2 at = fx.positionOf(player);
+    CHECK(!fx.terrain.blocked(at));
+    CHECK(at.x <= 3000.0 - kPlayerBaseRadius + 1e-6);
+    CHECK(at.x >= 3000.0 - kPlayerBaseRadius - 20.1);
+    // TypeScript resolves position but keeps the attempted velocity while the
+    // input remains held, so the following tick continues pressing the face.
+    CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 1.0);
 }
 
-TEST(an_expired_slow_stops_applying) {
+TEST(a_slow_never_reaches_a_flowers_top_speed) {
     Fixture fx;
     const Entity player = fx.spawnPlayer({3000, 3000});
     Afflictions& afflictions = fx.world.get<Afflictions>(player);
     afflictions.slowFactor = 0.25;
-    afflictions.slowUntilMillis = 500.0;   // fx.nowMillis starts at 0
+    afflictions.slowUntilMillis = 5000.0;   // fx.nowMillis starts at 0
     fx.drive(player, 0.0, 1.0);
 
-    fx.step(10);                            // 400ms: still slowed
-    CHECK(fx.velocityOf(player).x < kPlayerMaxSpeed * 0.5);
-    fx.step(200);                           // long past it
+    // A slow is a MOB affliction over there: its one writer scales a `Speed`
+    // component, a flower has no such component, and the flower's own movement
+    // is `MAX_SPEED * speedFactor` with no slow term anywhere in it. So a
+    // player standing in a web runs at full speed even where an orphaned field
+    // has stamped an Afflictions on them -- and the water penalty below is the
+    // only environmental brake a flower has.
+    fx.step(60);                            // well inside the stall window
+    CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 0.5);
+    fx.step(200);
     CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 0.5);
 }
 
-TEST(aim_angle_becomes_the_facing_and_the_aim_direction) {
+TEST(the_aim_angle_is_the_aim_and_the_walk_heading_is_the_facing) {
     Fixture fx;
     const Entity player = fx.spawnPlayer({3000, 3000});
     fx.world.get<PlayerInput>(player).current.aimAngle = kPi * 0.5;
     fx.step(1);
-    CHECK_NEAR(fx.world.get<Transform>(player).angle, kPi * 0.5, 1e-12);
+    // The cursor is one value with two readers -- movement and the petal ring
+    // -- so the aim direction is derived once, here.
     CHECK_NEAR(fx.world.get<PlayerInput>(player).aimDirection.x, 0.0, 1e-9);
     CHECK_NEAR(fx.world.get<PlayerInput>(player).aimDirection.y, 1.0, 1e-9);
+    // The FACING is not the aim. The reference writes `Math.atan2` of the
+    // movement it is about to apply, and leaves the angle untouched when there
+    // is no movement, so a flower standing still keeps the heading it stopped
+    // on rather than swivelling after a mouse it never followed.
+    CHECK_NEAR(fx.world.get<Transform>(player).angle, 0.0, 1e-12);
+
+    fx.drive(player, kPi * 0.5, 1.0);
+    fx.step(1);
+    CHECK_NEAR(fx.world.get<Transform>(player).angle, kPi * 0.5, 1e-12);
+
+    // Held, not reset, once the input stops.
+    fx.drive(player, 0.0, 0.0);
+    fx.step(5);
+    CHECK_NEAR(fx.world.get<Transform>(player).angle, kPi * 0.5, 1e-12);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +267,7 @@ TEST(knockback_is_a_one_shot_positional_displacement) {
     CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 1e-9);
 }
 
-TEST(knockback_is_consumed_as_a_precalculated_displacement) {
+TEST(a_mobs_knockback_is_a_record_the_movement_pass_never_reads) {
     Fixture fx;
     const Entity light = fx.spawnMob({5000, 5000}, 20.0, 1.0);
     const Entity heavy = fx.spawnMob({5000, 6000}, 20.0, 4.0);
@@ -267,16 +278,18 @@ TEST(knockback_is_consumed_as_a_precalculated_displacement) {
     fx.world.get<Knockback>(weightless).impulse = {400, 0};
     fx.step(1);
 
-    const double lightMoved = fx.positionOf(light).x - 5000.0;
-    const double heavyMoved = fx.positionOf(heavy).x - 5000.0;
-    CHECK(lightMoved > 0.0);
-    // Combat applies resistance before it queues this displacement. Movement
-    // therefore consumes equal queued values equally; it does not divide by
-    // mass or turn the one-shot position change into velocity.
-    CHECK_NEAR(heavyMoved, lightMoved, 1e-9);
-    // A malformed mass cannot turn an already-valid velocity delta non-finite.
-    CHECK(std::isfinite(fx.positionOf(weightless).x));
-    CHECK(fx.positionOf(weightless).x < kWorldSize);
+    // The reference writes a mob's knockback vector on every petal and
+    // projectile hit and then never reads it back into a position -- the
+    // getters exist, the one import of them is unused. A mob walks straight
+    // through a petal ring rather than being shoved out of it, and that sets
+    // both the damage a ring does in contact and the whole feel of melee.
+    CHECK_NEAR(fx.positionOf(light).x, 5000.0, 1e-12);
+    CHECK_NEAR(fx.positionOf(heavy).x, 5000.0, 1e-12);
+    CHECK_NEAR(fx.positionOf(weightless).x, 5000.0, 1e-12);
+    // Nor into a velocity.
+    CHECK_NEAR(fx.velocityOf(light).length(), 0.0, 1e-12);
+    // And the record itself is left standing for whatever wants to report it.
+    CHECK_NEAR(fx.world.get<Knockback>(light).impulse.x, 400.0, 1e-12);
 }
 
 TEST(a_nonsense_impulse_is_dropped_rather_than_propagated) {
@@ -302,12 +315,10 @@ TEST(a_player_driven_at_a_wall_stops_against_it) {
 
     const Vec2 at = fx.positionOf(player);
     CHECK(!fx.terrain.blocked(at));
-    // Resting against the face, not inside it.
+    // Resting against the same deterministic jagged face TypeScript draws.
     CHECK(at.x <= 3000.0 - kPlayerBaseRadius + 1e-6);
-    CHECK(at.x > 3000.0 - kPlayerBaseRadius - 1.0);
-    // Pushing into a wall bleeds speed instead of storing it up, so letting go
-    // does not fire the flower backwards.
-    CHECK_NEAR(fx.velocityOf(player).x, 0.0, 1.0);
+    CHECK(at.x >= 3000.0 - kPlayerBaseRadius - 20.1);
+    CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 1.0);
 }
 
 TEST(a_wall_removes_only_the_velocity_that_points_into_it) {
@@ -448,22 +459,23 @@ TEST(a_mob_moves_at_the_velocity_the_ai_gave_it) {
     CHECK_NEAR(fx.positionOf(mob).x, 5000.0 + 200.0 * dt * 10.0, 1e-6);
 }
 
-TEST(water_costs_a_mob_less_than_it_costs_a_player) {
-    Fixture wet;
-    wet.terrain.fill(Tile::Water);
-    const Entity mob = wet.spawnMob({5000, 5000});
-    const double dt = net::kTickSeconds;
-    wet.world.get<Motion>(mob).velocity = {200, 0};
-    wet.step(1, dt);
+TEST(water_blocks_a_mob_like_a_wall) {
+    Fixture fx;
+    for (int ty = 0; ty < Terrain::tilesPerAxis(); ++ty) {
+        fx.terrain.setTile(10, ty, Tile::Water);
+    }
+    const Entity mob = fx.spawnMob({2000, 5000});
+    for (int i = 0; i < 200; ++i) {
+        fx.world.get<Motion>(mob).velocity = {200, 0};
+        fx.step(1);
+    }
 
-    CHECK_NEAR(wet.positionOf(mob).x - 5000.0, 200.0 * kMobWaterSpeedScale * dt, 1e-9);
-    // The penalty is on the displacement, not on the stored velocity: folding
-    // it in would compound on every tick the AI left the velocity alone, and a
-    // mob that paused in a river would never get out again.
-    CHECK(kMobWaterSpeedScale > kWaterSpeedScale);
+    const Vec2 at = fx.positionOf(mob);
+    CHECK(!fx.terrain.blocked(at));
+    CHECK(at.x <= 3000.0 - 20.0 + 1e-6);
 }
 
-TEST(a_stalled_mob_is_slowed_and_recovers) {
+TEST(movement_does_not_apply_the_ai_owned_mob_slow_twice) {
     Fixture fx;
     const Entity mob = fx.spawnMob({5000, 5000});
     Afflictions& afflictions = fx.world.get<Afflictions>(mob);
@@ -474,7 +486,9 @@ TEST(a_stalled_mob_is_slowed_and_recovers) {
     fx.world.get<Motion>(mob).velocity = {400, 0};
     fx.step(1, dt);
     const double slowedStep = fx.positionOf(mob).x - 5000.0;
-    CHECK_NEAR(slowedStep, 400.0 * 0.25 * dt, 1e-9);
+    // MobAiSystem already scales its desired velocity. Movement consumes the
+    // velocity it is given instead of squaring the slow factor again.
+    CHECK_NEAR(slowedStep, 400.0 * dt, 1e-9);
 
     fx.nowMillis = 5000.0;                  // the stall has expired
     const double before = fx.positionOf(mob).x;
@@ -483,17 +497,24 @@ TEST(a_stalled_mob_is_slowed_and_recovers) {
     CHECK_NEAR(fx.positionOf(mob).x - before, 400.0 * dt, 1e-9);
 }
 
-TEST(mob_velocity_is_left_for_the_ai_phase_to_damp) {
+TEST(mob_velocity_is_left_for_the_ai_phase_to_own) {
     Fixture fx;
     const Entity mob = fx.spawnMob({5000, 5000});
     fx.world.get<Knockback>(mob).impulse = {800, 0};
     fx.step(1);
-    // A knockback moves position only; the AI remains the sole owner of a
-    // mob's velocity.
+    // The AI is the sole owner of a mob's velocity: the movement pass reads it
+    // and integrates it, and writes it only to zero it against a wall. A
+    // knockback record contributes to neither.
     CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
     fx.step(1);
     CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(mob).x, 5800.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, 5000.0, 1e-9);
+
+    // What the AI DOES write is carried, undamped, exactly as handed over.
+    fx.world.get<Motion>(mob).velocity = {600, 0};
+    fx.step(1);
+    CHECK_NEAR(fx.velocityOf(mob).x, 600.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, 5000.0 + 600.0 * net::kTickSeconds, 1e-9);
 }
 
 // ---------------------------------------------------------------------------
@@ -505,9 +526,10 @@ TEST(a_projectile_flies_straight_and_spends_its_range_exactly) {
     const double dt = net::kTickSeconds;
     const Entity shot = fx.spawnProjectile({5000, 5000}, {500, 0}, 30.0);
 
-    fx.step(1, dt);                                   // 20 units of a 30 budget
-    CHECK_NEAR(fx.positionOf(shot).x, 5020.0, 1e-9);
-    CHECK_NEAR(fx.world.get<Projectile>(shot).remainingDistance, 10.0, 1e-9);
+    fx.step(1, dt);                                   // 16 2/3 units of a 30 budget
+    CHECK_NEAR(fx.positionOf(shot).x, 5000.0 + 500.0 * dt, 1e-9);
+    CHECK_NEAR(fx.world.get<Projectile>(shot).remainingDistance,
+               30.0 - 500.0 * dt, 1e-9);
 
     fx.step(1, dt);                                   // the last 10, not 20
     CHECK_NEAR(fx.positionOf(shot).x, 5030.0, 1e-9);
@@ -529,27 +551,35 @@ TEST(a_projectile_that_hits_terrain_is_spent_where_it_hit) {
     CHECK(!fx.terrain.blocked(fx.positionOf(shot)));
 }
 
-TEST(a_homing_projectile_turns_toward_its_target_and_a_dumb_one_does_not) {
+TEST(a_guided_shot_re_aims_once_at_launch_and_then_flies_straight) {
     Fixture fx;
     const double dt = net::kTickSeconds;
-    fx.spawnMob({5400, 5400});                        // bearing +45 degrees
+    const Entity mob = fx.spawnMob({5400, 5400});     // bearing +45 degrees
 
     const Entity homing = fx.spawnProjectile({5000, 5000}, {500, 0}, 5000.0, 1000.0, kPi * 0.5);
     const Entity dumb = fx.spawnProjectile({5000, 4000}, {500, 0}, 5000.0);
 
     fx.step(1, dt);
     const Vec2 turned = fx.velocityOf(homing);
-    // Rate-limited: one tick buys exactly one tick's worth of turn, not a snap.
-    CHECK_NEAR(turned.angle(), kProjectileTurnRate * dt, 1e-9);
-    // ...and homing steers, it does not accelerate.
+    // SNAPPED onto the mob's bearing, on the shot's first step and only there.
+    // Seeking is a launch correction in the reference -- the nearest mob
+    // inside a cone around the firing bearing, chosen once at the firing site
+    // -- and never a guidance system: the client dead-reckons a projectile
+    // along a fixed heading, so a shot that curved in flight would be drawn
+    // somewhere the server does not have it.
+    CHECK_NEAR(turned.angle(), kPi * 0.25, 1e-9);
+    // ...and it steers, it does not accelerate.
     CHECK_NEAR(turned.length(), 500.0, 1e-9);
     CHECK_NEAR(fx.world.get<Transform>(homing).angle, turned.angle(), 1e-12);
 
     CHECK_NEAR(fx.velocityOf(dumb).y, 0.0, 1e-12);
     CHECK_NEAR(fx.velocityOf(dumb).angle(), 0.0, 1e-12);
 
-    // Over several ticks it arcs onto the bearing instead of overshooting.
+    // The correction is spent: dragging the mob elsewhere does not bend the
+    // shot, which holds the bearing it left on.
+    fx.world.get<Transform>(mob).position = Vec2{5000, 4000};
     fx.step(30, dt);
+    CHECK_NEAR(fx.velocityOf(homing).angle(), kPi * 0.25, 1e-9);
     CHECK(fx.positionOf(homing).y > 5100.0);
     CHECK_NEAR(fx.velocityOf(homing).length(), 500.0, 1e-9);
     CHECK_NEAR(fx.velocityOf(dumb).y, 0.0, 1e-12);

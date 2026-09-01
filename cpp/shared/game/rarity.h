@@ -147,7 +147,11 @@ inline double dropUpgradeChance(Rarity mobRarity) {
 inline double dropDowngradeChance(Rarity mobRarity) {
     const int i = rarityIndex(mobRarity);
     if (i <= 0) return 0.0;
-    return 1.0 / (1.0 + craftSuccessChance(static_cast<Rarity>(i - 1)));
+    // The TypeScript formula uses the crafting ladder as a percentage (64,
+    // 32, ...), then uses the result as a probability. craftSuccessChance()
+    // is stored as a fraction for actual crafting, so restore that scale here.
+    return 1.0 /
+           (1.0 + craftSuccessChance(static_cast<Rarity>(i - 1)) * 100.0);
 }
 
 /// How much of a slow lands on a mob: full at equal rarity, a third per tier

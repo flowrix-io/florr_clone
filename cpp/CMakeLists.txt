@@ -147,6 +147,9 @@ add_dependencies(flowrix_client flix_data)
 add_executable(svg_smoke tools/svg_smoke.cpp)
 target_link_libraries(svg_smoke PRIVATE flix_shared cpp_canvas)
 
+add_executable(behavior_oracle tools/behavior_oracle.cpp)
+target_link_libraries(behavior_oracle PRIVATE flix_server)
+
 # --- tests -------------------------------------------------------------------
 enable_testing()
 # Globbed deliberately: tests are added often and a stale list is a test that

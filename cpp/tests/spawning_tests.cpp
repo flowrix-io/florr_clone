@@ -233,23 +233,26 @@ TEST(a_section_with_nothing_in_it_yields_no_mob_type) {
     CHECK_EQ(spawner.chooseMobType(content, kSectionCount, rng), kInvalidIndex);
 }
 
-TEST(natural_rarity_never_exceeds_mythic) {
+TEST(natural_rarity_drift_can_reach_ultra_but_no_higher) {
     const ContentRegistry& content = shipped();
     const MobConfig& bee = content.mob(content.mobIndex("bee"));
     Rng rng(9001);
 
     bool sawCommon = false;
     bool sawMythic = false;
+    bool sawUltra = false;
     for (int i = 0; i < 20000; ++i) {
         const Rarity r = SpawnSystem::rollRarity(bee, rng);
-        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Mythic));
+        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Ultra));
         sawCommon = sawCommon || r == Rarity::Common;
         sawMythic = sawMythic || r == Rarity::Mythic;
+        sawUltra = sawUltra || r == Rarity::Ultra;
     }
     // The tails of the table are reachable, so the ceiling above is a real
     // bound and not an artefact of never rolling high.
     CHECK(sawCommon);
     CHECK(sawMythic);
+    CHECK(sawUltra);
 }
 
 TEST(natural_rarity_respects_min_rarity) {
@@ -261,7 +264,7 @@ TEST(natural_rarity_respects_min_rarity) {
     for (int i = 0; i < 5000; ++i) {
         const Rarity r = SpawnSystem::rollRarity(evil, rng);
         CHECK(rarityIndex(r) >= rarityIndex(Rarity::Rare));
-        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Mythic));
+        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Ultra));
     }
 }
 
@@ -296,7 +299,7 @@ TEST(population_converges_to_the_target_near_a_player) {
 
     for (int i = 0; i < 400; ++i) sim.tick(players);
 
-    const int near = sim.mobsWithin(kCentre, kMobDespawnRadius);
+    const int near = sim.mobsWithin(kCentre, kSpawnRingMax + kSpawnScatterRadius);
     CHECK(near >= kMobsPerPlayer);
     // Nest escorts can push a little past the target; nothing may push past the
     // section cap.
@@ -309,7 +312,7 @@ TEST(population_converges_to_the_target_near_a_player) {
     CHECK(sim.mobCount() <= settled + kMaxNestChildren);
 }
 
-TEST(nothing_spawns_inside_the_players_view) {
+TEST(ambient_mobs_spawn_inside_the_buffered_viewport) {
     Sim sim;
     // Section 6 (the sewers) is the one neighbourhood with no nests in it, so
     // every mob here came from the ambient roll and the ring bound is exact --
@@ -323,12 +326,11 @@ TEST(nothing_spawns_inside_the_players_view) {
     mobs.each([&](Entity, MobTag&, Transform& t) {
         ++checked;
         const double d = distance(t.position, sewers);
-        // Outside the diagonal of a 1920x1080 viewport, so nothing was ever
-        // seen to appear...
         CHECK(d >= kMinSpawnDistance);
-        // ...and inside the simulated neighbourhood, plus whatever the terrain
-        // search was allowed to nudge it by.
-        CHECK(d <= kSpawnRingMax + kSpawnScatterRadius);
+        CHECK(std::abs(t.position.x - sewers.x) <=
+              kSpawnViewportHalfWidth + kSpawnScatterRadius);
+        CHECK(std::abs(t.position.y - sewers.y) <=
+              kSpawnViewportHalfHeight + kSpawnScatterRadius);
     });
     CHECK(checked > 0);
 }
@@ -336,12 +338,12 @@ TEST(nothing_spawns_inside_the_players_view) {
 TEST(a_crowd_of_players_cannot_exceed_the_global_cap) {
     Sim sim;
     std::vector<Vec2> players;
-    for (int y = 0; y < 6; ++y) {
-        for (int x = 0; x < 6; ++x) {
-            players.push_back(Vec2{4000.0 + x * 9000.0, 4000.0 + y * 9000.0});
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            players.push_back(Vec2{3500.0 + x * 7500.0, 3500.0 + y * 7500.0});
         }
     }
-    // Thirty-six neighbourhoods want 1620 mobs between them.
+    // Sixty-four TypeScript-sized neighbourhoods want 1024 mobs between them.
     CHECK(static_cast<int>(players.size()) * kMobsPerPlayer > kMaxLiveMobs);
 
     for (int i = 0; i < 600; ++i) sim.tick(players);
@@ -357,22 +359,34 @@ TEST(mobs_nobody_has_been_near_are_recycled) {
     Sim sim;
     const std::vector<Vec2> players{kCentre};
     for (int i = 0; i < 200; ++i) sim.tick(players);
-    const int populated = sim.mobCount();
+    const int populated = sim.mobsWithin(kCentre, 4000.0);
     CHECK(populated > 0);
+    const int despawnedBefore = sim.spawner.census().despawnedTotal;
 
-    // The player leaves. Nothing goes immediately -- a mob must survive a
-    // player stepping out of range for a moment.
+    // An EMPTY viewer list is permissive, not a purge. The reference's
+    // near-a-player test answers TRUE for every point when it saw no player at
+    // all, so an unattended server keeps its population rather than emptying
+    // itself and handing the next arrival a barren map.
     const std::vector<Vec2> nobody;
-    sim.tick(nobody);
-    CHECK_EQ(sim.mobCount(), populated);
+    sim.jump(kMobDespawnDelayMillis + 1000.0, nobody);
+    sim.jump(kMobDespawnDelayMillis + 1000.0, nobody);
+    CHECK_EQ(sim.mobsWithin(kCentre, 4000.0), populated);
+    CHECK_EQ(sim.spawner.census().despawnedTotal, despawnedBefore);
+
+    // A player who WALKS AWAY is what starts the clock: every flower's own
+    // viewport box is tested, and a mob outside all of them is recycled once
+    // it has been unseen for the grace period.
+    const std::vector<Vec2> elsewhere{Vec2{90000.0, 90000.0}};
+    sim.tick(elsewhere);
+    CHECK_EQ(sim.mobsWithin(kCentre, 4000.0), populated);   // not immediately
 
     // Twice: nests are ticked before the census, so a nest on the way out can
     // still have placed one escort this pass, and that escort's own grace
     // period starts now.
-    sim.jump(kMobDespawnDelayMillis + 1000.0, nobody);
-    sim.jump(kMobDespawnDelayMillis + 1000.0, nobody);
-    CHECK_EQ(sim.mobCount(), 0);
-    CHECK(sim.spawner.census().despawnedTotal >= populated);
+    sim.jump(kMobDespawnDelayMillis + 1000.0, elsewhere);
+    sim.jump(kMobDespawnDelayMillis + 1000.0, elsewhere);
+    CHECK_EQ(sim.mobsWithin(kCentre, 4000.0), 0);
+    CHECK(sim.spawner.census().despawnedTotal >= despawnedBefore + populated);
 }
 
 TEST(section_filtering_follows_the_config) {
@@ -458,19 +472,31 @@ TEST(random_size_jitters_the_body_and_nothing_else) {
     CHECK(config.randomSizeMax > config.randomSizeMin);
 
     const MobStats stats = shipped().mobStats(sandstorm, Rarity::Common);
+    // `random_size` is an ABSOLUTE size range, not a factor, so the reference
+    // divides the roll by the config's own nominal `size` before using it as a
+    // multiplier. Sandstorm is size 1.5 with a [1, 2] range, so its bodies come
+    // out between 0.667x and 1.333x -- not between 1x and 2x.
+    const double lowest = config.randomSizeMin / config.size;
+    const double highest = config.randomSizeMax / config.size;
+    CHECK_NEAR(lowest, 1.0 / 1.5, 1e-12);
+    CHECK_NEAR(highest, 2.0 / 1.5, 1e-12);
+
     bool sawSmall = false;
     bool sawLarge = false;
     for (int i = 0; i < 200; ++i) {
         const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), sandstorm,
                                               Rarity::Common, kCentre, 0.0, sim.rng);
         const double jitter = sim.world.get<MobType>(e).sizeJitter;
-        CHECK(jitter >= config.randomSizeMin);
-        CHECK(jitter <= config.randomSizeMax);
+        CHECK(jitter >= lowest);
+        CHECK(jitter <= highest);
         CHECK_NEAR(sim.world.get<Body>(e).radius, stats.radius * jitter, 1e-9);
-        // Mass is area: it takes the square of a diameter multiplier.
-        CHECK_NEAR(sim.world.get<Body>(e).mass, stats.mass * jitter * jitter, 1e-9);
-        sawSmall = sawSmall || jitter < 1.3;
-        sawLarge = sawLarge || jitter > 1.7;
+        // Mass is NOT jittered. It is derived from the config size and the
+        // rarity step alone (`mass = size * size` in the stat table), so a
+        // sandstorm that rolled a big body is exactly as easy to knock back as
+        // one that rolled a small one.
+        CHECK_NEAR(sim.world.get<Body>(e).mass, stats.mass, 1e-9);
+        sawSmall = sawSmall || jitter < 0.8;
+        sawLarge = sawLarge || jitter > 1.2;
     }
     CHECK(sawSmall);
     CHECK(sawLarge);
@@ -502,39 +528,65 @@ TEST(a_nest_places_its_initial_escorts) {
     CHECK_EQ(sim.world.get<MobType>(nest).configIndex, hole);
 }
 
-TEST(a_nest_sends_its_waves_in_order_and_holds_at_the_last) {
+TEST(a_nest_sends_its_waves_as_it_is_worn_down_and_holds_at_the_last) {
     Sim sim;
     const std::uint16_t hole = shipped().mobIndex("ant_hole");
     const std::size_t waveCount = shipped().mob(hole).spawnWaves.size();
-    CHECK(waveCount > 0);
+    CHECK(waveCount > 1);
+    const int lastWave = static_cast<int>(waveCount) - 1;
 
     const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), hole,
                                              Rarity::Common, kCentre, 0.0, sim.rng);
     const std::vector<Vec2> players{kCentre};
-    const int afterInitial = sim.mobCount();
+    // Counted off the nest rather than off the world: the ambient filler is
+    // running too, and its spawns are nothing to do with this hole.
+    const auto escortCount = [&] {
+        return sim.world.get<NestWaves>(nest).children.size();
+    };
+    const std::size_t afterInitial = escortCount();
 
-    // Well short of the interval: nothing yet.
-    sim.now = kNestWaveIntervalMillis - 1.0;
+    // A hole answers DAMAGE, not a clock. Each wave hangs off an HP threshold
+    // (gardn's kAntHole) and every band crossed on the way down fires, so a
+    // hole nobody is hitting sends nothing however long it stands there.
+    sim.now += kNestWaveIntervalMillis * 5.0;
     sim.tick(players);
+    CHECK_EQ(escortCount(), afterInitial);
     CHECK_EQ(sim.world.get<NestWaves>(nest).nextWave, 0);
 
-    sim.now = kNestWaveIntervalMillis + 1.0;
+    // Half its health off releases every band it crossed on the way there.
+    sim.world.get<Health>(nest).current = sim.world.get<Health>(nest).max * 0.5;
+    sim.now += net::kTickMillis;
     sim.tick(players);
-    CHECK_EQ(sim.world.get<NestWaves>(nest).nextWave, 1);
-    CHECK(sim.mobCount() > afterInitial);
-
-    // Run past the end of the list; the index holds at the last wave rather
-    // than falling off it, and the nest keeps producing. The escorts are
-    // cleared between waves because a nest at its child cap deliberately skips
-    // a wave rather than advancing past one it never sent.
-    for (std::size_t i = 0; i < waveCount + 3; ++i) {
-        const std::vector<Entity> escorts = sim.world.get<NestWaves>(nest).children;
-        for (const Entity escort : escorts) sim.world.destroy(escort);
-        sim.now += kNestWaveIntervalMillis + 1.0;
-        sim.tick(players);
+    const int halfway = static_cast<int>(sim.world.get<NestWaves>(nest).nextWave);
+    CHECK(halfway > 0);
+    CHECK(halfway < lastWave);
+    CHECK(escortCount() > afterInitial);
+    // Every one of them is tethered to the hole that sent it, so leading them
+    // away cannot strip it of its defenders.
+    for (const Entity escort : sim.world.get<NestWaves>(nest).children) {
+        CHECK(sim.world.has<HoleTether>(escort));
+        CHECK_EQ(sim.world.get<HoleTether>(escort).hole, nest);
     }
-    CHECK_EQ(sim.world.get<NestWaves>(nest).nextWave, static_cast<std::uint16_t>(waveCount - 1));
-    CHECK(static_cast<int>(sim.world.get<NestWaves>(nest).children.size()) <= kMaxNestChildren);
+
+    // Healing only moves the mark: a rise in health sends nothing, which is
+    // what stops a regenerating hole from emptying its list into the world.
+    const std::size_t beforeHeal = escortCount();
+    sim.world.get<Health>(nest).current = sim.world.get<Health>(nest).max;
+    sim.now += net::kTickMillis;
+    sim.tick(players);
+    CHECK_EQ(escortCount(), beforeHeal);
+    CHECK_EQ(static_cast<int>(sim.world.get<NestWaves>(nest).nextWave), halfway);
+
+    // Worn to nothing in one blow. The band index is clamped at both ends, so
+    // an overkill that drives health far negative sends the rest of the list
+    // once rather than spinning millions of skipped iterations.
+    const std::vector<Entity> escorts = sim.world.get<NestWaves>(nest).children;
+    for (const Entity escort : escorts) sim.world.destroy(escort);
+    sim.world.get<Health>(nest).current = -1e6;
+    sim.now += net::kTickMillis;
+    sim.tick(players);
+    CHECK_EQ(static_cast<int>(sim.world.get<NestWaves>(nest).nextWave), lastWave);
+    CHECK(escortCount() > 0);
 }
 
 TEST(a_periodic_nest_holds_its_escort_cap_and_expires_them) {
@@ -593,10 +645,11 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     }
     CHECK(tables.unresolved().empty());
 
-    CHECK_EQ(tables.forMob(shipped().mobIndex("bee")).size(), std::size_t(3));
-    CHECK_EQ(tables.forMob(shipped().mobIndex("starfish")).size(), std::size_t(1));
-    // A mob with no table drops nothing, and so does an index off the end.
-    CHECK(tables.forMob(shipped().mobIndex("dust")).empty());
+    CHECK_EQ(tables.forMob(shipped().mobIndex("bee")).size(), std::size_t(4));
+    CHECK_EQ(tables.forMob(shipped().mobIndex("starfish")).size(), std::size_t(2));
+    // TypeScript synthesises a guaranteed common egg even for a mob with no
+    // authored table. Only an index off the end has no table at all.
+    CHECK_EQ(tables.forMob(shipped().mobIndex("dust")).size(), std::size_t(1));
     CHECK(tables.forMob(kInvalidIndex).empty());
 
     CHECK(tables.linkedTo(shipped()));
@@ -604,47 +657,29 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     CHECK(tables.unresolved().empty());
 }
 
-TEST(drop_rarity_moves_at_most_one_tier_and_luck_raises_the_upgrade_rate) {
+TEST(drop_rarity_uses_authored_rows_for_common_and_uncommon_mobs) {
     Rng rng(31337);
-    int upgradesWithoutLuck = 0;
-    int upgradesWithLuck = 0;
-    constexpr int kSamples = 40000;
-
-    for (int i = 0; i < kSamples; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, 0, 0.0, rng);
+    for (int i = 0; i < 40000; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, Rarity::Common, rng);
         const int delta = rarityIndex(r) - rarityIndex(Rarity::Rare);
         CHECK(delta >= -1 && delta <= 1);
-        if (delta > 0) ++upgradesWithoutLuck;
+        const Rarity uncommon =
+            LootSystem::rollDropRarity(Rarity::Common, Rarity::Uncommon, rng);
+        CHECK(rarityIndex(uncommon) >= rarityIndex(Rarity::Common));
+        CHECK(rarityIndex(uncommon) <= rarityIndex(Rarity::Uncommon));
     }
-    for (int i = 0; i < kSamples; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, 0, 2.0, rng);
-        if (rarityIndex(r) > rarityIndex(Rarity::Rare)) ++upgradesWithLuck;
-    }
-    CHECK(upgradesWithoutLuck > 0);
-    CHECK(upgradesWithLuck > upgradesWithoutLuck);
-
-    // The entry offset shifts the whole roll up before the tier drift.
-    int atLeastEpic = 0;
-    for (int i = 0; i < 2000; ++i) {
-        if (rarityIndex(LootSystem::rollDropRarity(Rarity::Rare, 1, 0.0, rng)) >=
-            rarityIndex(Rarity::Epic)) {
-            ++atLeastEpic;
-        }
-    }
-    CHECK(atLeastEpic > 0);
 }
 
-TEST(drop_rarity_saturates_at_both_ends_of_the_ladder) {
+TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
     Rng rng(5);
     for (int i = 0; i < 2000; ++i) {
-        // Common cannot be downgraded, so a common mob never drops below it.
-        CHECK(rarityIndex(LootSystem::rollDropRarity(Rarity::Common, 0, 0.0, rng)) >= 0);
-        // Apex cannot be upgraded, and stacked luck must not push past the top.
-        CHECK(rarityIndex(LootSystem::rollDropRarity(Rarity::Apex, 0, 10.0, rng)) <=
-              rarityIndex(Rarity::Apex));
-        // A wild offset is clamped rather than read off the end of the table.
-        CHECK(rarityIndex(LootSystem::rollDropRarity(Rarity::Common, 99, 0.0, rng)) <
-              kRarityCount);
+        const Rarity rare = LootSystem::rollDropRarity(Rarity::Common, Rarity::Rare, rng);
+        CHECK(rarityIndex(rare) >= rarityIndex(Rarity::Uncommon));
+        CHECK(rarityIndex(rare) <= rarityIndex(Rarity::Rare));
+
+        const Rarity apex = LootSystem::rollDropRarity(Rarity::Apex, Rarity::Apex, rng);
+        CHECK(rarityIndex(apex) >= rarityIndex(Rarity::Super));
+        CHECK(rarityIndex(apex) <= rarityIndex(Rarity::Unique));
     }
 }
 
@@ -662,6 +697,7 @@ TEST(a_killed_mob_drops_from_its_own_table) {
 
     const std::uint16_t starfish = shipped().mobIndex("starfish");
     const std::uint16_t starfishPetal = shipped().petalIndex("starfish");
+    const std::uint16_t starfishEgg = shipped().petalIndex("starfish_egg");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
 
     for (int i = 0; i < 40; ++i) {
@@ -671,19 +707,26 @@ TEST(a_killed_mob_drops_from_its_own_table) {
     commands.flush();
 
     const std::vector<Entity> drops = liveDrops(world);
-    // starfish drops exactly one starfish petal, always.
-    CHECK_EQ(drops.size(), std::size_t(40));
+    // Uncommon mobs drop every row: the authored starfish plus its generated
+    // guaranteed egg.
+    CHECK_EQ(drops.size(), std::size_t(80));
+    int petals = 0;
+    int eggs = 0;
     for (const Entity drop : drops) {
         const DropItem& item = world.get<DropItem>(drop);
-        CHECK_EQ(item.configIndex, starfishPetal);
-        // Reserved for the one player who fought it.
+        if (item.configIndex == starfishPetal) ++petals;
+        if (item.configIndex == starfishEgg) ++eggs;
         CHECK_EQ(item.eligible.size(), std::size_t(1));
         CHECK_EQ(item.eligible.front(), player);
-        CHECK_NEAR(item.freeForAllAtMillis, 1000.0 + kDropReservationSeconds * 1000.0, 1e-9);
-        CHECK(distance(world.get<Transform>(drop).position, kCentre) <= kDropScatterRadius + 1e-9);
+        CHECK(item.pickedUpBy.empty());
+        const Vec2 offset = world.get<Transform>(drop).position - kCentre;
+        CHECK(std::abs(offset.x) <= 50.0);
+        CHECK(std::abs(offset.y) <= 50.0);
         CHECK(world.has<DropTag>(drop));
         CHECK_EQ(world.get<Replicated>(drop).kind, net::EntityKind::Drop);
     }
+    CHECK_EQ(petals, 40);
+    CHECK_EQ(eggs, 40);
 }
 
 TEST(a_mob_pays_out_exactly_once_however_long_its_corpse_lingers) {
@@ -700,7 +743,7 @@ TEST(a_mob_pays_out_exactly_once_however_long_its_corpse_lingers) {
     loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
     commands.flush();
     const std::size_t first = liveDrops(world).size();
-    CHECK_EQ(first, std::size_t(1));
+    CHECK_EQ(first, std::size_t(2));
 
     for (int i = 0; i < 5; ++i) {
         loot.run(world, grid, shipped(), rng, 40.0 * i, net::kTickSeconds, commands, events);
@@ -727,7 +770,7 @@ TEST(a_pet_dying_is_not_loot) {
     CHECK_EQ(liveDrops(world).size(), std::size_t(0));
 }
 
-TEST(no_mob_produces_more_drops_than_the_cap) {
+TEST(common_mobs_roll_each_drop_row_at_most_once) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
@@ -735,9 +778,11 @@ TEST(no_mob_produces_more_drops_than_the_cap) {
     EventQueue events;
     Rng rng(14);
 
-    // glitch_flower can roll 2 + 1 + 1 + 1 = five items from its table.
     const std::uint16_t flower = shipped().mobIndex("glitch_flower");
     const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    DropTables tables;
+    tables.link(shipped());
+    const int rowCount = static_cast<int>(tables.forMob(flower).size());
 
     int mostSeen = 0;
     for (int i = 0; i < 300; ++i) {
@@ -746,14 +791,13 @@ TEST(no_mob_produces_more_drops_than_the_cap) {
         commands.flush();
         const int produced = static_cast<int>(liveDrops(world).size());
         mostSeen = std::max(mostSeen, produced);
-        CHECK(produced <= kMaxDropsPerMob);
+        CHECK(produced <= rowCount);
         for (const Entity drop : liveDrops(world)) world.destroy(drop);
     }
-    // If the cap never bound, the test proved nothing.
-    CHECK_EQ(mostSeen, kMaxDropsPerMob);
+    CHECK_EQ(mostSeen, rowCount);
 }
 
-TEST(a_non_contributor_must_wait_out_the_reservation) {
+TEST(a_non_contributor_can_never_take_an_eligible_players_drop) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
@@ -763,6 +807,7 @@ TEST(a_non_contributor_must_wait_out_the_reservation) {
 
     const Entity fighter = makePlayer(world, kCentre + Vec2{4000, 0}, 0.0, 1);
     const Entity bystander = makePlayer(world, kCentre, 0.0, 2);
+    (void)bystander;
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Rare, kCentre,
                                        {fighter}, 0.0);
     CHECK(drop != NULL_ENTITY);
@@ -773,16 +818,12 @@ TEST(a_non_contributor_must_wait_out_the_reservation) {
     CHECK_EQ(loot.pickups().size(), std::size_t(0));
     CHECK(world.isAlive(drop));
 
-    // Once the window lapses it is anyone's.
+    // Eligibility never turns into a timed free-for-all.
     rebuildGrid(world, grid);
-    loot.run(world, grid, shipped(), rng, kDropReservationSeconds * 1000.0 + 1.0, 0.0, commands,
-             events);
+    loot.run(world, grid, shipped(), rng, 1e9, 0.0, commands, events);
     commands.flush();
-    CHECK_EQ(loot.pickups().size(), std::size_t(1));
-    CHECK_EQ(loot.pickups().front().player, bystander);
-    CHECK_EQ(loot.pickups().front().petalIndex, shipped().petalIndex("rose"));
-    CHECK_EQ(loot.pickups().front().rarity, Rarity::Rare);
-    CHECK(!world.isAlive(drop));
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
+    CHECK(world.isAlive(drop));
 }
 
 TEST(a_contributor_may_take_a_reserved_drop_at_once) {
@@ -831,9 +872,10 @@ TEST(an_unreserved_drop_is_free_for_anyone) {
     commands.flush();
     CHECK_EQ(loot.pickups().size(), std::size_t(1));
     CHECK_EQ(loot.pickups().front().player, passerby);
+    CHECK(world.isAlive(liveDrops(world).front()));
 }
 
-TEST(two_players_cannot_take_the_same_drop) {
+TEST(each_player_can_take_an_unrestricted_drop_once) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
@@ -848,8 +890,13 @@ TEST(two_players_cannot_take_the_same_drop) {
     rebuildGrid(world, grid);
     loot.run(world, grid, shipped(), rng, 0.0, 0.0, commands, events);
     commands.flush();
-    CHECK_EQ(loot.pickups().size(), std::size_t(1));
-    CHECK_EQ(liveDrops(world).size(), std::size_t(0));
+    CHECK_EQ(loot.pickups().size(), std::size_t(2));
+    CHECK_EQ(liveDrops(world).size(), std::size_t(1));
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 1.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
 }
 
 TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {
@@ -863,7 +910,7 @@ TEST(magnetism_widens_the_pickup_radius_without_moving_the_drop) {
     const Vec2 dropAt = kCentre + Vec2{300.0, 0.0};
     const Entity player = makePlayer(world, kCentre, 0.0);
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, dropAt,
-                                       {}, 0.0);
+                                       {player}, 0.0);
     CHECK(300.0 > kDropPickupRadius);
 
     rebuildGrid(world, grid);
@@ -912,10 +959,11 @@ TEST(drops_expire) {
 
     const Entity drop = loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre,
                                        {}, 0.0);
-    CHECK_NEAR(world.get<Lifetime>(drop).remainingSeconds, kDropLifetimeSeconds, 1e-12);
+    constexpr double lifetime = kDropLifetimeByRarity[rarityIndex(Rarity::Common)];
+    CHECK_NEAR(world.get<Lifetime>(drop).remainingSeconds, lifetime, 1e-12);
 
     double now = 0.0;
-    const int ticks = static_cast<int>(kDropLifetimeSeconds * net::kTicksPerSecond) - 2;
+    const int ticks = static_cast<int>(lifetime * net::kTicksPerSecond) - 2;
     for (int i = 0; i < ticks; ++i) {
         loot.run(world, grid, shipped(), rng, now, net::kTickSeconds, commands, events);
         commands.flush();
@@ -931,7 +979,7 @@ TEST(drops_expire) {
     CHECK(!world.isAlive(drop));
 }
 
-TEST(a_drop_survives_the_tick_it_was_created_in) {
+TEST(a_drop_is_collectable_on_the_tick_it_was_created_in) {
     World world;
     CommandBuffer commands{world};
     SpatialGrid grid;
@@ -946,15 +994,21 @@ TEST(a_drop_survives_the_tick_it_was_created_in) {
 
     loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
     commands.flush();
-    // Nothing picked up yet: the item has to reach a client before it can be
-    // taken, or the pickup effect has nothing to animate.
-    CHECK_EQ(loot.pickups().size(), std::size_t(0));
-    CHECK_EQ(liveDrops(world).size(), std::size_t(1));
+    // Taken on the spot. The reference rolls a mob's drops inside the very
+    // player step that then tests pickups -- resolvePlayerPetals kills it and
+    // resolvePlayerItemPickups runs a few lines later in the same function --
+    // so a magnet flower standing on its own kill collects the item before any
+    // snapshot could have carried it. Holding the drop back for a tick would
+    // be a different game: it is the pickup CUE, which carries the drop's
+    // position and look, that gives the client something to animate.
+    CHECK_EQ(loot.pickups().size(), std::size_t(2));
+    CHECK_EQ(liveDrops(world).size(), std::size_t(0));
 
+    // ...and it is taken exactly once: the second pass finds nothing left.
     rebuildGrid(world, grid);
     loot.run(world, grid, shipped(), rng, 40.0, net::kTickSeconds, commands, events);
     commands.flush();
-    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    CHECK_EQ(loot.pickups().size(), std::size_t(0));
 }
 
 TEST(the_pickup_callback_sees_what_the_list_sees) {
@@ -1004,7 +1058,9 @@ TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
     commands.flush();
 
     const std::vector<Entity> drops = liveDrops(world);
-    CHECK_EQ(drops.size(), std::size_t(1));
-    CHECK_EQ(world.get<DropItem>(drops.front()).eligible.size(), std::size_t(1));
-    CHECK_EQ(world.get<DropItem>(drops.front()).eligible.front(), player);
+    CHECK_EQ(drops.size(), std::size_t(2));
+    for (const Entity drop : drops) {
+        CHECK_EQ(world.get<DropItem>(drop).eligible.size(), std::size_t(1));
+        CHECK_EQ(world.get<DropItem>(drop).eligible.front(), player);
+    }
 }

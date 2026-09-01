@@ -65,6 +65,23 @@ inline constexpr std::array<int, kRarityCount> kTierCost = {
 inline constexpr SkillId kSecondChanceParent = SkillId::PlayerHealth;
 inline constexpr Rarity kSecondChanceRequirement = Rarity::Rare;
 
+/// What a Second Chance tier buys: the killing blow leaves the flower at 1 HP
+/// with this much invulnerability, then locks the talent out for the cooldown.
+///
+/// Only two tiers, matching kSkillTiers. The reference's tables define common
+/// and uncommon and nothing else, and its `if (!duration) return false` makes
+/// every higher tier a no-op rather than an extrapolation -- so a tier outside
+/// this range must not revive at all.
+inline constexpr std::array<double, 2> kSecondChanceDurationMillis = {300.0, 1500.0};
+inline constexpr std::array<double, 2> kSecondChanceCooldownMillis = {60000.0, 30000.0};
+
+/// The window and lockout for a tier, or {0, 0} when that tier does nothing.
+inline std::array<double, 2> secondChanceEffect(int tier) {
+    if (tier < 0 || tier >= static_cast<int>(kSecondChanceDurationMillis.size())) return {0.0, 0.0};
+    const std::size_t t = static_cast<std::size_t>(tier);
+    return {kSecondChanceDurationMillis[t], kSecondChanceCooldownMillis[t]};
+}
+
 /// Applied to the player's own numbers: max health, body damage, petal health.
 /// A gentle curve -- these compound with level and with petal modifiers.
 inline constexpr std::array<double, kRarityCount> kStatSkillScale = {

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "shared/core/types.h"
+#include "shared/game/components.h"
 #include "shared/game/rarity.h"
 
 namespace flr {
@@ -51,7 +52,23 @@ struct MapElement {
     std::vector<Rarity> spawnTable;
     bool hasSpawnTable = false;
 
+    /// Teleporters only: where the pad drops the flower. A pad without one is
+    /// scenery -- the reference skips it before it even measures the distance.
+    Vec2 teleportTo;
+    bool hasTeleportTo = false;
+
     Vec2 centre() const { return {bounds.x + bounds.w * 0.5, bounds.y + bounds.h * 0.5}; }
+};
+
+/// One live mob body, as a spawn candidate has to see it.
+///
+/// The annotation layer has no view of the ECS and should not grow one, so a
+/// caller that wants the reference's two crowd tests hands over the discs it
+/// already has. Passing none keeps the geometry test and skips those two,
+/// which is what a mob-less harness and the client want.
+struct MobDisc {
+    Vec2 position;
+    double radius = 0.0;
 };
 
 /// How a biome is named and coloured on the spawn picker.
@@ -89,11 +106,17 @@ public:
     /// should land there rather than wherever the first zone in file order
     /// happens to be. Falls back to the centre of the map when the annotation
     /// layer is missing entirely.
-    Vec2 defaultSpawn(Rng&, const Terrain&) const;
+    ///
+    /// `mobs` is every live mob body the candidate has to be clear of. It is
+    /// optional only because the geometry half is useful without a world; a
+    /// live server that omits it drops fresh flowers on top of whatever is
+    /// standing there.
+    Vec2 defaultSpawn(Rng&, const Terrain&, const std::vector<MobDisc>* mobs = nullptr) const;
 
     /// Where a player who asked for `biomeName` should appear, or false when
     /// that biome has no area safe enough to drop someone into.
-    bool spawnInBiome(const std::string& biomeName, Rng&, const Terrain&, Vec2& out) const;
+    bool spawnInBiome(const std::string& biomeName, Rng&, const Terrain&, Vec2& out,
+                      const std::vector<MobDisc>* mobs = nullptr) const;
 
     /// The biomes spawnInBiome() would actually accept, in map order. This is
     /// the SERVER's list: a destination it can honour without dropping the
@@ -111,11 +134,39 @@ public:
     /// tiers, which go all the way up.
     static bool safeForSpawn(const MapElement&);
 
+    /// What one tick of teleporter interaction did to a flower.
+    struct TeleportStep {
+        /// Where the flower ends up: pulled toward a pad, or on the far side.
+        Vec2 position;
+        /// Element index whose charge-up began this tick, or -1. The caller
+        /// owns the wire event; the pad's dwell and destination are read back
+        /// out of elements()[entered].
+        int entered = -1;
+        /// The jump fired this tick and `position` is the destination.
+        bool teleported = false;
+        /// The flower stepped off the pad it was charging, cancelling it.
+        bool exited = false;
+    };
+
+    /// Runs every pad against one flower for one tick, as the reference's
+    /// per-player teleporter pass does.
+    ///
+    /// A pad is a well, not a trigger: the suction reaches well past the pad
+    /// and is strong enough to beat a mob's shove, the pad has to be HELD for
+    /// a full second, and the jump locks the flower out of every pad -- the
+    /// suction included -- for five, so it does not fall straight back through
+    /// the one it arrived on. Only the first pad the flower is standing on
+    /// gets to act, but every pad's suction is applied on the way there.
+    TeleportStep stepTeleporters(Vec2 centre, double deltaSeconds, double nowMillis,
+                                 TeleporterState& state) const;
+
 private:
-    /// Picks a point inside `area` that is not inside a wall. Null when the
-    /// rectangle is solid, which happens: some zones are drawn over terrain
-    /// that later became a wall.
-    bool findOpenPoint(const Rect& area, Rng&, const Terrain&, Vec2& out) const;
+    /// Picks a point inside `area` a flower can safely be dropped on: no tile
+    /// its BODY would overlap is solid, no mob is standing there, and the spot
+    /// is not already crowded. False when fifty tries found nothing, which
+    /// happens -- some zones are drawn over terrain that later became a wall.
+    bool findOpenPoint(const Rect& area, Rng&, const Terrain&, Vec2& out,
+                       const std::vector<MobDisc>* mobs) const;
 
     std::vector<MapElement> elements_;
     std::vector<std::string> spawnableBiomes_;

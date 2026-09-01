@@ -458,6 +458,8 @@ TEST(craft_and_drop_odds_stay_in_range) {
     }
     CHECK_NEAR(dropUpgradeChance(Rarity::Apex), 0.0, 1e-12);
     CHECK_NEAR(dropDowngradeChance(Rarity::Common), 0.0, 1e-12);
+    CHECK_NEAR(dropDowngradeChance(Rarity::Uncommon), 1.0 / 65.0, 1e-12);
+    CHECK_NEAR(dropDowngradeChance(Rarity::Rare), 1.0 / 33.0, 1e-12);
     // Crafting gets harder, never easier, as tiers climb.
     for (int i = 1; i < kRarityCount; ++i) {
         CHECK(craftSuccessChance(static_cast<Rarity>(i)) <
@@ -490,13 +492,14 @@ TEST(level_curve_is_consistent_with_its_inverse) {
     CHECK_EQ(levelFromTotalXp(1e300).level, kMaxLevel);
 }
 
-TEST(derived_player_stats_grow_with_level) {
-    CHECK_NEAR(maxHealthForLevel(1), kPlayerBaseHealth, 1e-9);
-    CHECK_NEAR(bodyDamageForLevel(1), kPlayerBaseDamage, 1e-9);
+TEST(derived_player_stats_follow_the_typescript_level_curve) {
+    CHECK_NEAR(maxHealthForLevel(1), 110.0, 1e-9);
+    CHECK_NEAR(bodyDamageForLevel(1), 6.0, 1e-9);
     CHECK(maxHealthForLevel(30) > maxHealthForLevel(29));
-    CHECK(playerRadiusForLevel(50) > playerRadiusForLevel(1));
-    // Growth is gentle: a level-100 flower is not a wall.
-    CHECK(playerRadiusForLevel(100) < kPlayerBaseRadius * 1.5);
+    CHECK_NEAR(maxHealthForLevel(30), 1744.0, 1e-9);
+    CHECK_NEAR(bodyDamageForLevel(30), 170.0, 1e-9);
+    // Level changes health and damage; collision size comes only from petals.
+    CHECK_NEAR(playerRadiusForLevel(100), kPlayerBaseRadius, 1e-9);
 }
 
 TEST(movement_converges_to_the_requested_velocity) {

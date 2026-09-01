@@ -181,7 +181,10 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
         static_cast<std::uint32_t>(PlayerRenderPumpkin | PlayerRenderRobot),
         true,
     });
-    f.world.add<Afflictions>(f.viewer, Afflictions{1, 2000, NULL_ENTITY});
+    Afflictions poisoned;
+    poisoned.poisonPerSecond = 1;
+    poisoned.poisonUntilMillis = 2000;
+    f.world.add<Afflictions>(f.viewer, poisoned);
     f.world.add<Dead>(f.viewer);
     f.world.get<PlayerInput>(f.viewer).current.flags = net::InputDefend;
 

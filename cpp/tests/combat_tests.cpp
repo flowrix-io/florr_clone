@@ -79,6 +79,56 @@ double slowFactorOf(World& world, Entity e) {
     return afflictions != nullptr ? afflictions->slowFactor : 1.0;
 }
 
+TEST(shell_shield_reduces_direct_hits_but_not_periodic_damage) {
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    const Entity mob = arena.mob({100, 0}, 100);
+    arena.world.add<ShieldState>(player, ShieldState{10.0, 2000.0});
+
+    arena.combat.applyDamage(arena.world, player, mob, 15.0, 1000.0);
+    CHECK_NEAR(arena.health(player), 95.0, 1e-9);
+
+    arena.combat.applyDamage(arena.world, player, mob, 15.0, 1100.0, DamageKind::Periodic);
+    CHECK_NEAR(arena.health(player), 80.0, 1e-9);
+
+    arena.combat.applyDamage(arena.world, player, mob, 15.0, 3000.0);
+    CHECK_NEAR(arena.health(player), 65.0, 1e-9);
+}
+
+TEST(a_direct_player_hit_grants_the_typescript_fifty_millisecond_window) {
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    const Entity mob = arena.mob({100, 0}, 100);
+
+    CHECK(!arena.combat.applyDamage(arena.world, player, mob, 10.0, 1000.0).refused);
+    CHECK_NEAR(arena.health(player), 90.0, 1e-9);
+    CHECK_NEAR(arena.world.get<Health>(player).invulnerableUntilMillis, 1050.0, 1e-9);
+    CHECK(arena.combat.applyDamage(arena.world, player, mob, 10.0, 1049.0).refused);
+    CHECK_NEAR(arena.health(player), 90.0, 1e-9);
+    CHECK(!arena.combat.applyDamage(arena.world, player, mob, 10.0, 1050.0).refused);
+    CHECK_NEAR(arena.health(player), 80.0, 1e-9);
+}
+
+TEST(a_sponge_queues_a_direct_hit_and_repays_it_after_invulnerability) {
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    const Entity mob = arena.mob({100, 0}, 100);
+    PlayerModifiers modifiers;
+    modifiers.spongeDamageDurationMillis = 1000.0;
+    arena.world.add<PlayerModifiers>(player, modifiers);
+
+    const DamageResult hit = arena.combat.applyDamage(arena.world, player, mob, 10.0, 1000.0);
+    CHECK(!hit.refused);
+    CHECK_NEAR(hit.applied, 0.0, 1e-12);
+    CHECK_NEAR(arena.health(player), 100.0, 1e-9);
+    CHECK_EQ(arena.world.get<SpongeDamageState>(player).effects.size(), std::size_t(1));
+
+    arena.step(1033.0);
+    CHECK_NEAR(arena.health(player), 100.0, 1e-9);
+    arena.step(1066.0);
+    CHECK_NEAR(arena.health(player), 100.0 - 10.0 * net::kTickSeconds, 1e-9);
+}
+
 // --- synthetic content ------------------------------------------------------
 //
 // Hand-written rather than the shipped tables: these tests assert on exact
@@ -198,7 +248,7 @@ TEST(an_invulnerable_target_takes_nothing_until_protection_lapses) {
     CHECK_NEAR(a.health(player), 50.0, 1e-9);
 }
 
-TEST(non_finite_and_non_positive_damage_is_refused) {
+TEST(non_finite_and_zero_damage_are_refused_but_negative_damage_heals_mobs) {
     Arena a;
     const Entity player = a.player({1000, 1000});
     const Entity mob = a.mob({1000, 1000}, 100.0);
@@ -206,11 +256,11 @@ TEST(non_finite_and_non_positive_damage_is_refused) {
     const double nan = std::nan("");
     CHECK(a.combat.applyDamage(a.world, mob, player, nan, 0.0).refused);
     CHECK(a.combat.applyDamage(a.world, mob, player, INFINITY, 0.0).refused);
-    CHECK(a.combat.applyDamage(a.world, mob, player, -5.0, 0.0).refused);
+    CHECK(!a.combat.applyDamage(a.world, mob, player, -5.0, 0.0).refused);
     CHECK(a.combat.applyDamage(a.world, mob, player, 0.0, 0.0).refused);
     // A NaN that got through would sit below zero forever and never compare
     // its way back out.
-    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 105.0, 1e-9);
     CHECK(!a.world.has<Dead>(mob));
 }
 
@@ -257,7 +307,12 @@ TEST(nothing_can_damage_itself_or_what_it_owns) {
 
     const Entity petal = a.world.create();
     a.world.add<PetalTag>(petal);
-    a.world.add<PetalInstance>(petal, PetalInstance{owner, 0, Rarity::Common, 0, 0, 1, 0.0, 0.0});
+    // Named rather than positional: everything past `subCount` wants its own
+    // default, and a positional list silently re-aims at the wrong field the
+    // moment one is inserted above it.
+    PetalInstance instance;
+    instance.owner = owner;
+    a.world.add<PetalInstance>(petal, instance);
     a.world.add<Transform>(petal, Transform{{1000, 1000}, 0.0});
     a.world.add<Body>(petal, Body{8.0, 1.0});
 
@@ -287,23 +342,30 @@ TEST(a_hazard_with_no_faction_hurts_everything) {
 // Contact damage
 // ---------------------------------------------------------------------------
 
-TEST(contact_damage_is_gated_by_the_hit_cooldown) {
+TEST(mob_contact_is_paced_by_the_flowers_post_hit_window_alone) {
     Arena a;
     const Entity player = a.player({1000, 1000});
     // Co-located deliberately: TypeScript's 25-unit contact push separates
-    // ordinary overlaps, while this test isolates the damage cooldown.
+    // ordinary overlaps, while this test isolates the damage cadence.
     const Entity mob = a.mob({1000, 1000}, 100.0);
+    // A per-victim interval on the ATTACKER is not consulted for mob body
+    // contact: the reference's resolvePlayerMobContact carries no cooldown of
+    // its own and leans entirely on the 50 ms invulnerability every hit
+    // grants the flower.
     a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
 
     a.step(0.0);
     CHECK_NEAR(a.health(player), 90.0, 1e-9);
+    CHECK_NEAR(a.world.get<Health>(player).invulnerableUntilMillis,
+               kPostHitInvulnerabilityMillis, 1e-9);
 
-    // Resting contact must not deal damage every tick.
+    // 50 ms spans one 33 ms tick but not two, so resting contact costs a hit
+    // every other tick -- not one a tick, and not one every 500 ms.
     for (int tick = 1; tick <= 10; ++tick) a.step(tick * net::kTickMillis);
-    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+    CHECK_NEAR(a.health(player), 40.0, 1e-9);
 
     a.step(500.0);
-    CHECK_NEAR(a.health(player), 80.0, 1e-9);
+    CHECK_NEAR(a.health(player), 30.0, 1e-9);
 }
 
 TEST(contact_damage_needs_an_actual_overlap) {
@@ -429,8 +491,10 @@ TEST(poison_ticks_over_time_and_then_expires) {
     const Entity mob = a.mob({1000, 1000}, 1000.0);
     a.combat.applyPoison(a.world, mob, player, 10.0, 1000.0, 0.0);
 
-    // 25 ticks of 40ms is one second: 10/second lands 10 damage in total.
-    for (int tick = 0; tick < 25; ++tick) a.step(tick * net::kTickMillis);
+    // Thirty fixed ticks is one second: 10/second lands 10 damage in total.
+    for (int tick = 0; tick < net::kTicksPerSecond; ++tick) {
+        a.step(tick * net::kTickMillis);
+    }
     CHECK_NEAR(a.health(mob), 990.0, 1e-6);
 
     // Past its duration the affliction clears itself, so the replicated state
@@ -457,26 +521,38 @@ TEST(a_poison_kill_still_credits_its_source) {
     CHECK_NEAR(a.world.get<PlayerProgress>(player).totalXp, 100.0, 1e-9);
 }
 
-TEST(a_stronger_poison_replaces_a_weaker_one_but_not_the_other_way) {
+TEST(a_fresh_bite_takes_over_a_mobs_stack_only_when_it_would_outlast_it) {
     Arena a;
     const Entity player = a.player({1000, 1000});
+    const Entity other = a.player({2000, 1000});
     const Entity mob = a.mob({1000, 1000}, 1000.0);
 
     a.combat.applyPoison(a.world, mob, player, 5.0, 1000.0, 0.0);
     CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 5.0, 1e-9);
     CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 1000.0, 1e-9);
 
-    // Stronger but shorter: takes over the rate, and must not cut the timer.
+    // Stronger but SHORTER changes nothing at all. gardn's outlast rule
+    // (Damage.cc) is what the reference ports: a fresh bite takes over its
+    // stack only when it would run longer, rate and all. Without the guard a
+    // pincer landing after an iris wipes the iris poison.
     a.combat.applyPoison(a.world, mob, player, 20.0, 200.0, 0.0);
-    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 20.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 5.0, 1e-9);
     CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 1000.0, 1e-9);
 
-    // Weaker but longer: must not dilute the rate, and does extend the timer.
+    // Weaker but longer DOES take over, and brings its own rate with it.
     a.combat.applyPoison(a.world, mob, player, 1.0, 3000.0, 0.0);
-    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 20.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 1.0, 1e-9);
     CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 3000.0, 1e-9);
 
-    // Once it has lapsed, any strength takes hold again.
+    // The rule is per (victim, source) pair: a second flower's bite is its own
+    // stack and both tick, so two players poisoning one mob is twice the rate.
+    a.combat.applyPoison(a.world, mob, other, 4.0, 2000.0, 0.0);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 5.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 3000.0, 1e-9);
+    // The one culprit named for the client is the strongest of them.
+    CHECK_EQ(a.world.get<Afflictions>(mob).poisonSource, other);
+
+    // Once every stack has lapsed, any strength takes hold again.
     a.combat.applyPoison(a.world, mob, player, 1.0, 500.0, 4000.0);
     CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 1.0, 1e-9);
     CHECK_NEAR(a.world.get<Afflictions>(mob).poisonUntilMillis, 4500.0, 1e-9);
@@ -536,7 +612,7 @@ TEST(stall_power_thins_a_slow_landed_on_a_higher_tier_mob) {
 // Bounty
 // ---------------------------------------------------------------------------
 
-TEST(xp_splits_across_contributors_in_proportion_to_damage) {
+TEST(each_ranked_contributor_receives_the_mobs_full_xp) {
     Arena a;
     const Entity first = a.player({1000, 1000});
     const Entity second = a.player({1000, 1000});
@@ -547,8 +623,8 @@ TEST(xp_splits_across_contributors_in_proportion_to_damage) {
     a.combat.applyDamage(a.world, mob, second, 900.0, 10.0);
     CHECK(a.world.has<Dead>(mob));
 
-    CHECK_NEAR(a.world.get<PlayerProgress>(first).totalXp, 90.0, 1e-9);
-    CHECK_NEAR(a.world.get<PlayerProgress>(second).totalXp, 30.0, 1e-9);
+    CHECK_NEAR(a.world.get<PlayerProgress>(first).totalXp, 120.0, 1e-9);
+    CHECK_NEAR(a.world.get<PlayerProgress>(second).totalXp, 120.0, 1e-9);
 }
 
 TEST(a_mob_killed_by_another_mob_pays_nobody) {
@@ -660,8 +736,9 @@ TEST(a_projectile_expires_when_its_range_runs_out) {
     Arena a;
     const Entity player = a.player({500, 1000});
     const Entity mob = a.mob({1000, 1000}, 100.0);
-    // 1000 units/second for 40ms is 40 units of travel, against 5 of range.
+    // Movement has already spent the shot's five-unit range before combat.
     const Entity shot = spawnShot(a, {1000, 1000}, {1000, 0}, 25.0, 5.0, player, player);
+    a.world.get<Projectile>(shot).remainingDistance = 0.0;
 
     a.step(0.0);
     CHECK(a.world.has<Dead>(shot));
@@ -681,7 +758,8 @@ TEST(a_projectile_passes_through_its_own_side) {
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
     CHECK_NEAR(a.health(pet), 50.0, 1e-9);
     CHECK(!a.world.has<Dead>(shot));
-    CHECK_NEAR(a.world.get<Projectile>(shot).remainingDistance, 500.0 - 4.0, 1e-9);
+    // Combat does not spend range a second time; MovementSystem owns flight.
+    CHECK_NEAR(a.world.get<Projectile>(shot).remainingDistance, 500.0, 1e-9);
 }
 
 TEST(a_mob_shot_credits_nobody_and_still_kills) {
@@ -716,7 +794,7 @@ TEST(a_ground_effect_damages_and_slows_only_what_stands_in_it) {
     a.world.add<Transform>(field, Transform{{1000, 1000}, 0.0});
 
     a.step(0.0);
-    CHECK_NEAR(a.health(inside), 98.0, 1e-9);      // 50/second for one 40ms tick
+    CHECK_NEAR(a.health(inside), 100.0 - 50.0 * net::kTickSeconds, 1e-9);
     CHECK_NEAR(a.health(outside), 100.0, 1e-9);
     CHECK_NEAR(slowFactorOf(a.world, inside), 0.5, 1e-9);
     CHECK_NEAR(slowFactorOf(a.world, outside), 1.0, 1e-12);
@@ -728,6 +806,42 @@ TEST(a_ground_effect_damages_and_slows_only_what_stands_in_it) {
     a.step(40.0);
     a.step(40.0 + kGroundEffectSlowLingerMillis + net::kTickMillis);
     CHECK_NEAR(slowFactorOf(a.world, inside), 1.0, 1e-12);
+}
+
+TEST(a_timed_ground_effect_expires_and_stops_applying) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity field = a.world.create();
+    a.world.add<GroundEffectTag>(field);
+    a.world.add<GroundEffect>(field, GroundEffect{GroundEffectKind::Radiation, player, 100.0,
+                                                  30.0, 1.0, Rarity::Common});
+    a.world.add<Transform>(field, Transform{{1000, 1000}, 0.0});
+    a.world.add<Lifetime>(field, Lifetime{net::kTickSeconds * 1.5});
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(mob), 99.0, 1e-9);
+    a.step(net::kTickMillis);
+    CHECK(a.world.has<Dead>(field));
+    CHECK_NEAR(a.health(mob), 99.0, 1e-9);
+}
+
+TEST(pollen_hits_each_mob_at_most_once_per_half_second) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity field = a.world.create();
+    a.world.add<GroundEffectTag>(field);
+    a.world.add<GroundEffect>(field, GroundEffect{GroundEffectKind::Poison, player, 100.0,
+                                                  0.0, 1.0, Rarity::Common, 7.0, 500.0});
+    a.world.add<Transform>(field, Transform{{1000, 1000}, 0.0});
+
+    a.step(1000.0);
+    CHECK_NEAR(a.health(mob), 93.0, 1e-9);
+    a.step(1200.0);
+    CHECK_NEAR(a.health(mob), 93.0, 1e-9);
+    a.step(1500.0);
+    CHECK_NEAR(a.health(mob), 86.0, 1e-9);
 }
 
 // ---------------------------------------------------------------------------
@@ -815,20 +929,39 @@ TEST(rarity_scales_a_petals_damage_off_the_config) {
     CHECK_NEAR(a.health(mob), 5000.0 - 90.0, 1e-9);
 }
 
-TEST(a_petals_damage_bonus_comes_from_its_flower) {
+TEST(a_petals_damage_takes_the_talent_scale_and_not_the_loadout_one) {
     const Fixture& f = fixture();
     CHECK(f.ok);
     if (!f.ok) return;
 
-    Arena a;
-    const Entity player = a.player({1000, 1000});
-    a.world.add<PlayerModifiers>(player);
-    a.world.get<PlayerModifiers>(player).damageScale = 2.5;
-    const Entity mob = a.mob({1040, 1000}, 200.0);
-    equipPetal(a, player, f.sting, Rarity::Common, {1025, 1000});
+    {
+        // The loadout aggregate scales the FLOWER's own body damage and
+        // nothing a petal does. The reference's getDamageMultiplier is the
+        // damage TALENT times any damage_boost effect, and no petal
+        // `playerModifiers.damage` is folded into the petal side at all.
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        a.world.add<PlayerModifiers>(player);
+        a.world.get<PlayerModifiers>(player).damageScale = 2.5;
+        const Entity mob = a.mob({1040, 1000}, 200.0);
+        equipPetal(a, player, f.sting, Rarity::Common, {1025, 1000});
 
-    a.step(0.0, f.registry);
-    CHECK_NEAR(a.health(mob), 175.0, 1e-9);
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 190.0, 1e-9);      // sting's flat 10, unscaled
+    }
+    {
+        // The talent does reach it, on its own steeper curve -- which is why
+        // the two factors are published as two fields rather than collapsed.
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        a.world.add<PlayerModifiers>(player);
+        a.world.get<PlayerModifiers>(player).petalDamageScale = 2.5;
+        const Entity mob = a.mob({1040, 1000}, 200.0);
+        equipPetal(a, player, f.sting, Rarity::Common, {1025, 1000});
+
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 175.0, 1e-9);
+    }
 }
 
 TEST(a_petal_lands_the_poison_and_slow_its_config_carries) {
@@ -851,10 +984,13 @@ TEST(a_petal_lands_the_poison_and_slow_its_config_carries) {
     CHECK_EQ(venomed.poisonSource, player);
     CHECK_NEAR(slowFactorOf(a.world, chilled), 0.5, 1e-9);
 
-    // The direct hit is 1; the rest of the loss over the next tick is poison.
+    // The direct hit is 1. The next tick costs another 1 -- a petal with no
+    // `damageCooldown` in its config bites on every tick it stays in contact,
+    // which is what makes a ring held on a mob a damage-per-second weapon --
+    // plus one tick of the poison it left behind.
     CHECK_NEAR(a.health(poisoned), 499.0, 1e-9);
     a.step(net::kTickMillis, f.registry);
-    CHECK_NEAR(a.health(poisoned), 499.0 - 10.0 * net::kTickSeconds, 1e-6);
+    CHECK_NEAR(a.health(poisoned), 499.0 - 1.0 - 10.0 * net::kTickSeconds, 1e-6);
 }
 
 TEST(a_petal_never_hits_its_own_flower) {
@@ -874,7 +1010,7 @@ TEST(a_petal_never_hits_its_own_flower) {
 // Events
 // ---------------------------------------------------------------------------
 
-TEST(a_direct_hit_emits_a_damage_event_and_a_poison_tick_does_not) {
+TEST(a_poison_tick_narrates_itself_as_poison_and_a_direct_hit_as_a_hit) {
     Arena a;
     const Entity player = a.player({1000, 1000});
     a.world.add<NetId>(player, NetId{8});
@@ -890,22 +1026,31 @@ TEST(a_direct_hit_emits_a_damage_event_and_a_poison_tick_does_not) {
     a.events.clear();
     a.step(0.0);
 
-    // The poison did land -- it just did not narrate itself.
     CHECK(a.health(poisoned) < 500.0);
     CHECK_NEAR(a.health(player), 95.0, 1e-9);
 
     std::size_t damageEvents = 0;
+    std::size_t poisonEvents = 0;
     std::uint32_t reported = 0;
     double amount = 0;
     for (const WireEvent& event : a.events.events()) {
         if (event.kind != net::EventKind::Damage) continue;
         ++damageEvents;
+        if ((event.flag & net::DamagePoison) != 0) {
+            ++poisonEvents;
+            CHECK_EQ(event.netId, std::uint32_t(7));
+            CHECK_NEAR(event.amount, 10.0 * net::kTickSeconds, 1e-9);
+            continue;
+        }
         reported = event.netId;
         amount = event.amount;
     }
-    // One floating number, for the hit that matters. Twenty-five poison ticks
-    // a second would bury it.
-    CHECK_EQ(damageEvents, std::size_t(1));
+    // Both are narrated. A poison tick reaches the reference's client on the
+    // same batched enemiesDamaged channel a petal hit does -- flagged
+    // `poisonOnly`, which is what lets the client colour it purple and offset
+    // it away from the hit that landed in the same tick.
+    CHECK_EQ(damageEvents, std::size_t(2));
+    CHECK_EQ(poisonEvents, std::size_t(1));
     CHECK_EQ(reported, std::uint32_t(8));
     CHECK_NEAR(amount, 5.0, 1e-9);
 }

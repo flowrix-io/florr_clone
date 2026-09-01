@@ -174,16 +174,76 @@ private:
     /// on leave, on death, and periodically -- a crash must not cost a session
     /// of progress.
     void persistPlayer(const Session&);
+    /// Writes the account's stats, tree and loadout onto a body that already
+    /// exists. Deliberately NOT a spawn: it must not heal, protect or reload
+    /// anything, because it also runs on every loadout edit and talent
+    /// purchase, including one sent from the death screen.
     void applyAccountToEntity(const PlayerRecord&, Entity);
-    /// Credits the mob kills from this tick to whoever landed the last blow:
-    /// the gallery ledger, and the stars a mythic-or-better kill is worth.
+    /// Credits the mob kills from this tick to every player who earned loot
+    /// rights on the corpse: the gallery ledger, and the stars a mythic-or-
+    /// better kill is worth.
     void bankKills();
+    /// The world half of a yggdrasil revival has already happened when this is
+    /// called; the SESSION half is here -- a body whose death was announced
+    /// needs that announcement retracted, or its next death is silent.
+    void onPlayerRevived(Entity revived, Entity reviver);
+
+    /// Every live mob body, for the spawn-placement tests that refuse a point
+    /// standing on one. Rebuilt per call: a spawn is rare and the alternative
+    /// is a cache that has to be kept true.
+    void collectSpawnBlockers(std::vector<MobDisc>& out) const;
+
+    /// Refreshes each live account's leaderboard reward tier from the ranking.
+    /// Cached rather than looked up per kill, as the reference caches it: the
+    /// ranking is a sort of every account and the answer changes slowly.
+    void refreshRankMultipliers(double nowMillis);
+
+    /// Drains the spawner's boss queue into chat. Worded per recipient: a
+    /// player standing in the boss's own section is told it spawned, everyone
+    /// else that it spawned "somewhere".
+    void announceBossSpawns();
 
     Session* sessionFor(net::ConnectionId id);
     Session* sessionForEntity(Entity e);
 
+    // -- bots --------------------------------------------------------------
+    //
+    // A world with one flower in it is not the game the reference serves: it
+    // tops the population up to ~23 with server-owned flowers that fight,
+    // wander and die like anyone else. They are ordinary player entities with
+    // no Session behind them, which is what makes every system -- combat,
+    // loot eligibility, replication, the death reaper -- treat them as players
+    // without knowing they exist.
+    struct Bot {
+        Entity entity = NULL_ENTITY;
+        std::string name;
+        /// The ground this bot calls home. It fights and wanders around this
+        /// point and walks back when it strays, so the population stays spread
+        /// over the map instead of collapsing into one brawl.
+        Vec2 anchor;
+        Vec2 wanderTarget;
+        double nextWanderMillis = 0;
+        /// Wall-clock at which a dead bot's body is replaced. A corpse that
+        /// respawns instantly reads as a flower that never died.
+        double respawnAtMillis = 0;
+    };
+
+    void maintainBots(double nowMillis);
+    void stepBots(double nowMillis);
+    /// Builds one bot body: every component a flower needs, plus the level and
+    /// loadout the NAME seeds -- so a bot called "m28" is the same build every
+    /// time it appears, exactly as it is in the reference.
+    Entity createBotBody(const std::string& name, Vec2 spawn);
+    void destroyBot(Bot& bot);
+    /// How removable a bot is; higher goes first. Squared distance to the
+    /// nearest human, so an unwatched bot on the far side of the map is
+    /// retired before one a player is standing next to.
+    double cullScore(const Bot& bot) const;
+    Vec2 pickBotSpawn();
+
     // -- tick phases -------------------------------------------------------
     void runSystems(double nowMillis, double dt);
+
     /// Moves what the loot system handed out into the owning accounts.
     void bankPickups();
     void replicate(double nowMillis);
@@ -229,10 +289,52 @@ private:
     std::unique_ptr<SpawnSystem> spawning_;
     std::unique_ptr<LootSystem> loot_;
 
-    /// Positions of every live player, rebuilt each tick. Spawning and the mob
-    /// LOD both need it, and recomputing it per system would walk the player
-    /// query several times for no reason.
+    /// Positions of every live flower, bots included, rebuilt each tick. The
+    /// mob LOD counts a bot as an observer, so this is the list it gets.
     std::vector<Vec2> activePlayers_;
+    /// The same, restricted to real connections. The spawner drives population
+    /// and the unseen-despawn census off THIS one: bots must not each pull a
+    /// neighbourhood of mobs into existence, nor keep the whole world alive.
+    std::vector<Vec2> humanPlayers_;
+
+    std::vector<Bot> bots_;
+    /// Broadphase scratch for the bot controller, reused so a per-tick scan
+    /// over two dozen bots does not allocate two dozen times.
+    std::vector<Entity> botCandidates_;
+    /// The world's boss-tier mobs, collected once per bot pass. A boss draws
+    /// bots in from four thousand units away and asking the broadphase for that
+    /// radius once per bot would query most of the map two dozen times a tick.
+    std::vector<Entity> botBosses_;
+    /// Wall-clock of the last tick with a human in the world. Bots outlive an
+    /// empty server by a grace period so a quick reconnect does not land in a
+    /// world that was just emptied.
+    double lastHumanSeenMillis_ = 0;
+    double nextBotMaintainMillis_ = 0;
+    double nextBotJitterMillis_ = 0;
+    int botCountJitter_ = 0;
+
+    /// Simulation delta, low-pass filtered over the real elapsed time between
+    /// ticks and clamped to three nominal steps.
+    ///
+    /// Driving the dt-scaled half off a constant 1/30 makes a flower's real
+    /// speed scale with however fast the server is actually ticking, so it
+    /// crawls under load; feeding the raw sample straight in makes each tick
+    /// advance an uneven amount and the flower stutters. The filter keeps the
+    /// speed honest and the motion smooth, and the clamp keeps a long stall
+    /// from producing one giant step.
+    ///
+    /// Only run() writes it, so a test driving tick() by hand still gets an
+    /// exactly fixed step.
+    double smoothedDeltaSeconds_ = net::kTickSeconds;
+    double lastTickWallMillis_ = 0;
+
+    /// When the next snapshot is due. The wire runs slower than the
+    /// simulation: physics wants 30 Hz resolution, clients do not, and the
+    /// per-recipient encode/cull/delta pass is the most expensive thing in the
+    /// tick that nothing simulated depends on.
+    double nextSnapshotMillis_ = 0;
+
+    double nextRankRefreshMillis_ = 0;
 
     std::uint32_t tick_ = 0;
     double nextPersistMillis_ = 0;

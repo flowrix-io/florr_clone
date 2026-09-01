@@ -2051,9 +2051,8 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
         }
 
         case net::EntityKind::Effect: {
-            // The kind is not on the wire yet -- Replicated::typeIndex is left
-            // at zero for a ground effect -- so everything arrives as Poison
-            // and gets the pollen disc until the server fills it in.
+            // Replicated::typeIndex carries the field kind: pollen, web, or
+            // radiation. The effect's rarity supplies its tier treatment.
             switch (static_cast<GroundEffectKind>(entity.typeIndex)) {
                 case GroundEffectKind::Web: {
                     // Ten spokes out to the rim, then five concentric rings of

@@ -61,11 +61,144 @@ inline std::uint32_t tileColor(int section, Tile tile) {
 }
 
 // ---------------------------------------------------------------------------
+// Maze
+// ---------------------------------------------------------------------------
+//
+// A second world, far off the tile grid, that the daily maze mode plays in.
+// Nothing here touches Terrain's grid: the maze is a corridor lattice of
+// 1000-unit cells whose every corridor/void junction is rounded by a
+// quarter-circle fillet, and its walls are resolved by their own circle
+// solver. The tile grid does not cover these coordinates at all -- which is
+// exactly what the reference does, and why Terrain::blocked() answers "open"
+// there rather than "outside the map, therefore wall".
+//
+// The layouts are authored, not generated. The day number only picks WHICH of
+// the three is active, so a client told nothing but the day builds the same
+// walls the server did, and no wall data ever goes over the wire.
+
+inline constexpr double kMazeOriginX = 200000.0;
+inline constexpr double kMazeOriginY = 200000.0;
+
+/// World units per grid cell, and therefore the corner fillet radius too.
+inline constexpr double kMazeCellSize = 1000.0;
+
+/// Difficulty bands by corridor depth, shallowest first: the zone index a cell
+/// carries is an index into the rarity ladder (0 = common .. 5 = mythic).
+inline constexpr int kMazeZoneCount = 6;
+
+enum class MazeBiome : std::uint8_t { Garden = 0, Desert = 1, Ocean = 2 };
+
+/// Which map section each maze biome borrows its ground colours from, so the
+/// renderer paints a maze the way it paints that biome's overworld.
+inline constexpr std::array<int, 3> kMazeBiomeSections = {{0, 1, 3}};
+
+/// One day's maze: the corner-coded cell grid, its difficulty zones, and the
+/// two places the mode needs to put things (the entrance, and the boss rooms).
+///
+/// Cell values carry their own geometry, exactly as the reference's do:
+///   0        solid void
+///   1        plain floor
+///   4..7     floor with a CONVEX rounded corner (bit0 = top, bit1 = left)
+///   12..15   void with a CONCAVE rounded corner (bit3 set, bit0/bit1 as above)
+/// The same value drives collision and rendering, so what is drawn is what is
+/// collided with.
+class Maze {
+public:
+    explicit Maze(std::int64_t dayNumber = 0) { setDay(dayNumber); }
+
+    /// Rebuilds for a UTC day number. Cheap enough to call per join; the day
+    /// only selects one of three authored templates.
+    void setDay(std::int64_t dayNumber);
+
+    std::int64_t day() const { return day_; }
+    MazeBiome biome() const { return biome_; }
+    int templateDim() const { return templateDim_; }
+    int gridDim() const { return gridDim_; }
+    double worldSize() const { return gridDim_ * kMazeCellSize; }
+
+    /// Centre of the entrance room, where a player joining the maze appears.
+    Vec2 spawn() const { return spawn_; }
+
+    /// Centres of the deepest rooms, where the mode places its bosses.
+    const std::vector<Vec2>& bossSpots() const { return bossSpots_; }
+
+    /// True when a point is inside the maze's coordinate region at all.
+    bool contains(Vec2 p) const {
+        const double span = worldSize();
+        return p.x >= kMazeOriginX && p.x < kMazeOriginX + span &&
+               p.y >= kMazeOriginY && p.y < kMazeOriginY + span;
+    }
+
+    /// Cell value at grid coordinates; outside the grid reads as solid void.
+    std::uint8_t cellValue(int gx, int gy) const;
+
+    /// Difficulty band at a world point, or -1 for void and for outside.
+    int zoneAt(Vec2 p) const;
+
+    /// True when the point is inside solid maze wall, fillets included.
+    bool blocksPoint(Vec2 p) const;
+
+    /// True when the point stands on walkable floor (plain or convex corner).
+    bool isFloor(Vec2 p) const;
+
+    /// Line of sight through the maze: true when the segment crosses wall.
+    bool blocksLine(Vec2 a, Vec2 b) const;
+
+    /// Pushes a circle out of the maze walls, sliding along flat faces and
+    /// radially around the corner fillets. Iterated, like the tile resolver,
+    /// so a corner settles instead of oscillating between its two faces.
+    Vec2 resolveCircle(Vec2 position, double radius, bool* collided = nullptr) const;
+
+    /// Cheap circle-vs-cell overlap for projectiles. Reports the blocking
+    /// cell's world rect, which is what a wall-hit effect is placed against.
+    bool circleWallOverlap(Vec2 position, double radius, Rect& out) const;
+
+private:
+    /// One push-out pass. False when the circle is already clear.
+    bool resolveOnce(Vec2 position, double radius, Vec2& out) const;
+    bool cellBlocksPoint(int gx, int gy, Vec2 world) const;
+
+    std::int64_t day_ = 0;
+    MazeBiome biome_ = MazeBiome::Garden;
+    int templateDim_ = 0;
+    int gridDim_ = 0;
+    std::vector<std::uint8_t> values_;
+    std::vector<std::uint8_t> zones_;
+    Vec2 spawn_;
+    std::vector<Vec2> bossSpots_;
+};
+
+/// The one maze the process is playing today.
+///
+/// A single shared instance rather than a member of anything, because the
+/// reference is a module-level singleton and every part of the game -- wall
+/// resolution deep inside Terrain, line of sight, spawning -- asks it the same
+/// question about the same day. Built for the current UTC day on first use;
+/// the server overrides the day at boot and tells clients which one it picked.
+const Maze& activeMaze();
+void setActiveMazeDay(std::int64_t dayNumber);
+
+/// UTC day number, i.e. whole days since the epoch.
+std::int64_t currentMazeDay();
+
+inline bool isInMazeRegion(Vec2 p) { return activeMaze().contains(p); }
+
+// ---------------------------------------------------------------------------
 // Terrain
 // ---------------------------------------------------------------------------
 
 class Terrain {
 public:
+    /// Segments the reference's sight test cuts the ray into. Every call site
+    /// there goes through the four-argument form, so it is always this.
+    static constexpr int kLineOfSightSamples = 20;
+
+    /// How far every blocking tile is grown for the centre-path test below.
+    /// A path that only grazes the shared corner of a diagonal wall seam does
+    /// cross it, and the graze can be sub-pixel, so the tiles are inflated
+    /// rather than the test loosened.
+    static constexpr double kCenterPathInflation = 0.5;
+
     /// An ungenerated Terrain is all Ground: legal, walkable, and useless as a
     /// map. Systems can run against one, which is what tests want.
     Terrain();
@@ -100,8 +233,14 @@ public:
 
     Tile at(Vec2 p) const { return atTile(toTileCoord(p.x), toTileCoord(p.y)); }
 
-    bool blocked(Vec2 p) const { return tileBlocks(at(p)); }
-    bool inWater(Vec2 p) const { return tileIsWater(at(p)); }
+    /// The maze region is deliberately absent from both answers. The
+    /// reference's wall grid does not cover those coordinates -- a read past
+    /// its bounds is air -- so every caller that asks the raw grid, the mob's
+    /// wander probe most of all, sees open ground inside the maze. Maze walls
+    /// are answered by resolveCircle() and hasLineOfSight(), which is exactly
+    /// where the reference asks them too.
+    bool blocked(Vec2 p) const { return !isInMazeRegion(p) && tileBlocks(at(p)); }
+    bool inWater(Vec2 p) const { return !isInMazeRegion(p) && tileIsWater(at(p)); }
 
     /// Which of the nine sections a point is in, or -1 outside the map.
     int sectionAt(Vec2 p) const { return flr::sectionAt(p); }
@@ -114,20 +253,79 @@ public:
 
     // -- collision ----------------------------------------------------------
 
-    /// Pushes a circle out of every solid tile it overlaps and returns the
-    /// corrected centre. The only tile-collision routine movement uses.
+    /// What one wall resolution did, field for field with the reference's
+    /// resolveEntityWallCollisions return value.
+    struct WallResolution {
+        Vec2 position;             ///< the corrected centre
+        bool collided = false;     ///< at least one pass had to push
+        bool unresolved = false;   ///< four passes ended still overlapping
+    };
+
+    /// The reference's resolveEntityWallCollisions, exactly: four push-out
+    /// passes and one residual check, and nothing else. A centre the passes
+    /// cannot untangle is REPORTED, never relocated.
     ///
-    /// Robust by construction rather than by contract: a centre already inside
-    /// geometry (spawned or teleported into a wall) is ejected to the nearest
-    /// open tile instead of jittering forever, absurd radii are clamped, and
-    /// non-finite input is replaced rather than propagated. Bad input upstream
-    /// costs the caller a shove, never the tick.
+    /// This is the entry point a movement step has to use, because `unresolved`
+    /// is the signal the reference refuses on: accepting a still-overlapping
+    /// result lets per-tile least-penetration ejection flip to a tile's far
+    /// face and ratchet the body through the wall over a few ticks.
+    /// resolveCircle() below cannot report it -- by the time it returns, it has
+    /// already moved the body somewhere the caller did not ask for.
+    ///
+    /// Inside the maze `unresolved` is always false, as it is in the reference:
+    /// the maze resolver's result type has no such field, so a caller that
+    /// refuses unresolved output never refuses a maze wall.
+    WallResolution resolveWall(Vec2 position, double radius) const;
+
+    /// Pushes a circle out of every solid tile it overlaps and returns the
+    /// corrected centre, RESCUING a centre the four passes could not untangle
+    /// by ejecting it to the nearest open tile.
+    ///
+    /// That rescue is not in the reference, and it is why this is the wrong
+    /// call for movement -- see resolveWall() above. It exists for the callers
+    /// that are PLACING a body rather than moving one (spawners, drops, admin
+    /// teleports): they hand over a point that may be deep inside geometry and
+    /// need a usable one back, where a movement step needs the truth.
+    ///
+    /// Robust by construction rather than by contract: absurd radii are
+    /// clamped and non-finite input is replaced rather than propagated. Bad
+    /// input upstream costs the caller a shove, never the tick.
     Vec2 resolveCircle(Vec2 position, double radius) const;
 
-    /// True when the segment crosses any blocking tile -- line of sight, and
-    /// the "can I walk straight there" test the AI asks before pathing. A DDA
-    /// walk: no allocation, and bounded even for nonsense endpoints.
+    /// True when the segment crosses any blocking tile. An exact DDA walk: no
+    /// allocation, and bounded even for nonsense endpoints.
+    ///
+    /// This is the EXACT swept test, and it is not interchangeable with
+    /// hasLineOfSight() below -- the reference's sight test samples, and a
+    /// sparse sample steps over a wall an exact walk stops at. Use this only
+    /// where the question really is "does this segment touch solid".
     bool segmentBlocked(Vec2 a, Vec2 b) const;
+
+    /// True when the straight path between two entity CENTRES touches any
+    /// blocking tile, every tile grown by `eps` first.
+    ///
+    /// Neither a swept body test nor a sight test: this is the containment
+    /// guard the reference's movement step runs on the resolver's own output.
+    /// A push-out is free to choose a tile's far face, and committing one that
+    /// carries the centre across solid is how a body ends up on the other side
+    /// of a wall in a single tick; asking whether the centre's path crossed
+    /// anything is what catches it.
+    ///
+    /// Off-grid tiles are air here, exactly as in the reference's scan, so a
+    /// path outside the map -- the maze region included -- crosses nothing.
+    bool segmentTouchesBlockingTile(Vec2 a, Vec2 b, double eps = kCenterPathInflation) const;
+
+    /// The reference's sight test, sample for sample: endpoints closer than
+    /// ten units always see each other, and otherwise 21 evenly spaced points
+    /// are tested and nothing between them is. Sampling is what mob targeting
+    /// and the wander probe ask, so its blind spots are part of the behaviour
+    /// -- a mob that can shoot across the corner of a wall does so because the
+    /// samples fell either side of it, and matching that is the point.
+    ///
+    /// Outside the grid reads as AIR here, not as wall: the reference's grid
+    /// simply has no entry there, so a ray leaving the map is never blocked by
+    /// having left it.
+    bool hasLineOfSight(Vec2 a, Vec2 b, int sampleCount = kLineOfSightSamples) const;
 
     /// A walkable point within `radius` of `around`, avoiding water when it
     /// can. Falls back to the nearest open tile, so it always returns

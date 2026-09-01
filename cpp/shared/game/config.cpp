@@ -18,17 +18,14 @@ namespace {
 // Sanitisation limits
 // ---------------------------------------------------------------------------
 //
-// The shipped JSON is hand-maintained and contains values that are plainly
-// broken: a null damage, a negative speed, a 34-minute reload, an offset of
-// -1e100. None of them may reach the simulation, because a single infinity
-// propagates through a position and takes an entire region of the world with
-// it. Every limit below exists to stop one of those, and every clamp records
-// a warning naming the entry and the value.
+// The shipped JSON is hand-maintained. Non-finite values must not reach the
+// simulation, but finite values retain TypeScript semantics even when they are
+// unusual (zero-sized placeholder mobs, negative glitch damage, and sparkle's
+// deliberately enormous damage are all observable game content).
 
-/// Nothing in the base tables is a real number this large; `sparkle` asks for
-/// 1e10 damage, which at apex scaling would leave the double range in one
-/// multiply.
-constexpr double kMaxBaseStat = 1e9;
+/// Still far below the point where rarity multiplication threatens a double,
+/// while admitting sparkle's authored 9,999,999,999 exactly.
+constexpr double kMaxBaseStat = 1e12;
 
 /// A petal whose slot takes longer than this to come back is a dead slot, not
 /// a slow one. `yggdrasil` ships 2048000 (34 minutes).
@@ -54,17 +51,14 @@ constexpr double kMaxPoisonPerMillis = 1000.0;
 /// report for a human, and a human stops reading long before this.
 constexpr std::size_t kMaxWarnings = 512;
 
-/// Config `speed` to world units per second. One config point is 2 units per
-/// 20Hz tick in the game this is a rewrite of, which is 40 units a second --
-/// keeping the constant here is what preserves how fast a bee feels.
-constexpr double kMobSpeedUnitsPerSecond = 40.0;
+/// TypeScript applies `speed * 2` once per 30 Hz mob step.
+constexpr double kMobSpeedUnitsPerSecond = 60.0;
 
-/// Config `size` to a petal's own hit radius: `size` is a diameter in 20-unit
-/// units, the same scale mobs use.
-constexpr double kPetalRadiusPerSize = 10.0;
-
-/// Fallback for a petal that poisons for an unstated length of time (`gas`).
-constexpr double kDefaultPoisonDurationMillis = 1000.0;
+/// Config `size` to a petal's own hit radius: `size` is a diameter in 40-unit
+/// units, so the radius is half of that -- exactly the scale mobs use
+/// (kMobBaseRadius). Petals were on half this scale, which cost a basic petal
+/// twenty units of reach and a cutter seventy.
+constexpr double kPetalRadiusPerSize = 20.0;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -326,20 +320,17 @@ ProjectileSpec parseProjectile(Ctx& ctx, const Json& owner,
     spec.distance = ctx.range(node, "distance", 0.0, 0.0, kWorldSize);
     spec.speed = ctx.range(node, "speed", 0.0, 0.0, kMaxSpeedUnits);
     spec.seekRange = ctx.range(node, "seekRange", 0.0, 0.0, kWorldSize);
-    spec.seekCone = ctx.range(node, "seekCone", 0.0, 0.0, kPi);
+    // An omitted cone is a quarter turn, not "home on anything": the reference
+    // defaults it at the firing site and a seeking shot only ever corrects
+    // toward something already roughly ahead of it.
+    spec.seekCone = ctx.range(node, "seekCone", kPi * 0.25, 0.0, kPi);
 
-    // The step between adjacent shots, in radians. `flower` ships 72, which is
-    // a full circle across its five projectiles -- degrees, not radians. More
-    // than a full turn is never a meaningful step, so read it as degrees and
-    // say so rather than fanning the volley into noise.
-    double spread = ctx.range(node, "spreadAngle", 0.0, -1e4, 1e4);
-    if (std::fabs(spread) > kTau) {
-        const double asRadians = spread * kPi / 180.0;
-        ctx.warn("projectile spreadAngle " + num(spread) +
-                 " is more than a full turn; reading it as degrees (" + num(asRadians) + " rad)");
-        spread = clamp(asRadians, -kTau, kTau);
-    }
-    spec.spreadAngle = spread;
+    // The step between adjacent shots, in RADIANS, used exactly as written.
+    // `flower` ships 72, which looks like degrees and is not: the reference
+    // feeds the raw number to cos/sin, so its five shots wrap to roughly
+    // {+0.51, -2.89, 0, +2.89, -0.51} rad off the bearing. Reading it as
+    // degrees produces a tidy five-way star that hits different mobs.
+    spec.spreadAngle = ctx.range(node, "spreadAngle", 0.2, -1e4, 1e4);
 
     if (petalIds != nullptr) {
         spec.ammoPetalId = ctx.text(node, "petalType");
@@ -452,12 +443,12 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.colorRgba = readColor(ctx, src, "color", m.color);
 
     m.damage = ctx.range(src, "damage", 0.0, 0.0, kMaxBaseStat);
-    m.health = ctx.range(src, "health", 1.0, 1.0, kMaxBaseStat);
-    m.size = ctx.range(src, "size", 1.0, kMinSize, kMaxSize);
+    m.health = ctx.range(src, "health", 1.0, 0.0, kMaxBaseStat);
+    m.size = ctx.range(src, "size", 1.0, 0.0, kMaxSize);
     m.speed = ctx.speed(src, "speed");
     m.cooldownMillis = ctx.range(src, "cooldown", 0.0, 0.0, kMaxDurationMillis);
     m.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
-    m.visualScale = ctx.range(src, "visual_scale", 1.0, kMinSize, kMaxSize);
+    m.visualScale = ctx.range(src, "visual_scale", 1.0, 0.0, kMaxSize);
 
     m.ai = parseAi(ctx, ctx.text(src, "ai_type", "neutral"));
 
@@ -484,6 +475,20 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.noEggDrop = ctx.boolean(src, "noEggDrop");
     m.reversed = ctx.boolean(src, "reversed");
     m.noMobCollision = ctx.boolean(src, "no_mob_collision");
+
+    // Three rules the reference states by NAME rather than in the JSON. They
+    // are resolved once here so no spawner, no combat path and no despawn
+    // sweep has to repeat a string compare per tick.
+    m.neverAmbient = id == "target_dummy";
+    m.glitchInfecting = id == "glitch" || id == "glitch_flower";
+    if (id == "digger") {
+        m.petHealthScale = 0.5;
+        m.petDamageScale = 0.5;
+    }
+    if (id == "centipede" || id == "desert_centipede" || id == "evil_centipede") {
+        m.segmentBodyIndex = ctx.link(mobIds, id + "_body", "centipede body");
+        m.segmentCount = m.segmentBodyIndex != kInvalidIndex ? kCentipedeSegmentCount : 0;
+    }
 
     if (src.contains("random_size")) {
         const Json& jitter = src["random_size"];
@@ -545,11 +550,6 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     // affliction site.
     m.poisonPerSecond = ctx.range(src, "poison", 0.0, 0.0, kMaxPoisonPerMillis) * 1000.0;
     m.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
-    if (m.poisonPerSecond > 0.0 && m.poisonDurationMillis <= 0.0) {
-        ctx.warn("poison is set but poisonDuration is not; poison would do nothing, so using " +
-                 num(kDefaultPoisonDurationMillis) + "ms");
-        m.poisonDurationMillis = kDefaultPoisonDurationMillis;
-    }
 
     m.emissive = ctx.boolean(src, "emissive");
     m.lightColorRgba = readColor(ctx, src, "light_color", m.lightColor);
@@ -568,7 +568,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.image = ctx.text(src, "image");
     p.colorRgba = readColor(ctx, src, "color", p.color);
 
-    p.damage = ctx.range(src, "damage", 0.0, 0.0, kMaxBaseStat);
+    p.damage = ctx.range(src, "damage", 0.0, -kMaxBaseStat, kMaxBaseStat);
 
     // A missing or null health is not a petal with no hit points -- ten
     // entries use it to mean "this thing has no health pool at all" (pure
@@ -580,7 +580,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
                  "; treating the petal as unbreakable");
     }
     p.breakable = hasHealthPool;
-    p.health = hasHealthPool ? ctx.range(src, "health", 1.0, 1.0, kMaxBaseStat) : 0.0;
+    p.health = hasHealthPool ? ctx.range(src, "health", 1.0, 0.0, kMaxBaseStat) : 0.0;
 
     p.size = ctx.range(src, "size", 1.0, kMinSize, kMaxSize);
     p.cooldownMillis = ctx.range(src, "cooldown", kDefaultPetalReloadMillis, 0.0, kMaxCooldownMillis);
@@ -596,11 +596,6 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
 
     p.poisonPerSecond = ctx.range(src, "poison", 0.0, 0.0, kMaxPoisonPerMillis) * 1000.0;
     p.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
-    if (p.poisonPerSecond > 0.0 && p.poisonDurationMillis <= 0.0) {
-        ctx.warn("poison is set but poisonDuration is not; poison would do nothing, so using " +
-                 num(kDefaultPoisonDurationMillis) + "ms");
-        p.poisonDurationMillis = kDefaultPoisonDurationMillis;
-    }
 
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
     p.noPhysics = ctx.boolean(src, "noPhysics");
@@ -985,8 +980,41 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.radius = scaledSize * kMobBaseRadius;
     s.mass = scaledSize * scaledSize;
     s.speed = c.speed * kMobSpeedUnitsPerSecond;
+    // These PURSUE at the flower's 300 u/s so a fleeing player cannot outrun
+    // them -- but only while pursuing. Every other branch (the idle drift, a
+    // flee) reads the authored speed, so the override belongs on its own field
+    // rather than on `speed`: folded in, an unprovoked bee cruises at 135 u/s
+    // instead of ~36, and a ladybug at twenty times its reference drift.
+    s.playerSpeedChaser =
+        c.id == "bee" || c.id == "ladybug" || c.id == "shiny_ladybug" ||
+        c.id == "dark_ladybug" || c.id == "soldier_ant" || c.id == "worker_ant" ||
+        c.id == "baby_ant" || c.id == "soldier_fire_ant" ||
+        c.id == "worker_fire_ant" || c.id == "baby_fire_ant";
+    s.chaseSpeed = s.playerSpeedChaser ? kPlayerMaxSpeed : s.speed;
     s.xp = c.xp[t];
     s.aggroRange = c.range;
+    const auto tieredRange = [&](const std::array<double, kRarityCount>& values) {
+        s.aggroRange = values[t];
+    };
+    if (c.id == "soldier_ant" || c.id == "worker_ant" || c.id == "shiny_ladybug" ||
+        c.id == "beetle" || c.id == "hel_beetle" || c.id == "starfish" ||
+        c.id == "hornet" || c.id == "mantis" || c.id == "glitch") {
+        tieredRange({c.range, 500, 600, 750, 900, 1100, 1300, 1500, 1700, c.range});
+    } else if (c.id == "soldier_fire_ant") {
+        tieredRange({c.range, 700, 900, 1100, 1300, 1500, 1700, 1900, 2100, c.range});
+    } else if (c.id == "jellyfish") {
+        tieredRange({c.range, 700, 800, 950, 1100, 1300, 1500, 1700, 1900, c.range});
+    } else if (c.id == "spider") {
+        tieredRange({c.range, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, c.range});
+    } else if (c.id == "glitch_flower") {
+        tieredRange({c.range, 850, 1000, 1150, 1300, 1500, 1700, 1900, 2100, c.range});
+    } else if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare) &&
+               tier < rarityIndex(Rarity::Apex)) {
+        static constexpr std::array<double, 7> kLadybugRange = {
+            350, 500, 700, 900, 1100, 1300, 1500,
+        };
+        s.aggroRange = kLadybugRange[static_cast<std::size_t>(tier - rarityIndex(Rarity::Rare))];
+    }
     s.attackCooldownMillis = c.cooldownMillis;
     // Poison is damage, so it rides the damage ladder; otherwise an apex
     // centipede's bite would tick for exactly what a common one's does.
@@ -994,6 +1022,15 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.poisonDurationMillis = c.poisonDurationMillis;
     s.visualScale = c.visualScale;
     s.spawnWeight = c.spawnWeight;
+    s.ai = c.ai;
+    if (c.id == "bee" && tier >= rarityIndex(Rarity::Rare)) s.ai = AiKind::Neutral;
+    if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare) &&
+        tier < rarityIndex(Rarity::Apex)) s.ai = AiKind::Neutral;
+    if ((c.id == "centipede" || c.id == "centipede_body" ||
+         c.id == "desert_centipede" || c.id == "desert_centipede_body") &&
+        tier >= rarityIndex(Rarity::Epic)) {
+        s.ai = AiKind::Neutral;
+    }
     // min_rarity is enforced in exactly one place: below its tier the mob
     // belongs to no section, and every spawner already filters on that.
     s.sectionMask = tier < rarityIndex(c.minRarity) ? 0 : c.sectionMask;
@@ -1011,6 +1048,18 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.damage = c.damage * stat;
     s.health = c.health * stat;
     s.reloadMillis = c.cooldownMillis;
+    if (c.id == "yggdrasil") {
+        // TypeScript overrides every row: it is always a 1/1 petal and its
+        // cooldown halves at each rarity from 512 seconds.
+        s.damage = 1.0;
+        s.health = 1.0;
+        s.reloadMillis = 512000.0 / std::pow(2.0, rarityIndex(tier));
+    } else if (c.id == "lightning") {
+        s.health = 10.0;
+    } else if (c.id == "bubble") {
+        s.reloadMillis *= std::pow(0.85, rarityIndex(tier));
+        s.reloadMillis = std::max(50.0, s.reloadMillis);
+    }
     s.poisonPerSecond = c.poisonPerSecond * stat;
     s.poisonDurationMillis = c.poisonDurationMillis;
     s.heal = c.burstHeal * heal;
@@ -1032,7 +1081,15 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // making it deeper, so the factor and its duration are flat.
     s.slowFactor = c.slowFactor;
     s.slowDurationMillis = c.slowDurationMillis;
+    if (c.id == "pincer" || c.id == "honey") {
+        s.slowDurationMillis = c.slowDurationMillis * (1.0 + rarityIndex(tier) * 0.375);
+    }
+    s.webRadius = c.webRadius * (1.0 + (rarityIndex(tier) / 8.0) * 1.2);
+    s.spongeDamageDurationMillis =
+        c.spongeDamageDurationMillis * (1.0 + rarityIndex(tier) * 0.5);
+    s.attractionForce = c.attractionForce;
     s.radius = c.size * kPetalRadiusPerSize;
+    s.size = c.size;
     s.damageIntervalMillis = c.damageIntervalMillis;
     // `count` is flat for almost every petal, and the two exceptions are
     // literal per-rarity overrides in the reference's RARITY_OVERRIDES table
@@ -1066,6 +1123,53 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.modifiers.aggroRadius = c.modifiers.aggroRadius * modifier;
     s.modifiers.petalAttractionRadius = c.modifiers.petalAttractionRadius * modifier;
     s.modifiers.poisonArmor = c.modifiers.poisonArmor * modifier;
+
+    const std::size_t ti = static_cast<std::size_t>(rarityIndex(tier));
+    if (c.id == "clover") {
+        static constexpr std::array<double, kRarityCount> values = {
+            0.08, 0.12, 0.17, 0.24, 0.35, 0.5, 0.72, 1.04, 1.5, 2.0,
+        };
+        s.modifiers.luck = values[ti];
+    } else if (c.id == "faster") {
+        static constexpr std::array<double, kRarityCount> values = {
+            1.1, 1.2, 1.3, 1.4, 1.6, 1.8, 2.1, 2.7, 3.5, 4.5,
+        };
+        s.modifiers.rotationSpeed = values[ti];
+    } else if (c.id == "powder") {
+        static constexpr std::array<double, kRarityCount> values = {
+            1.1, 1.1, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8,
+        };
+        s.modifiers.speed = values[ti];
+    } else if (c.id == "soil") {
+        static constexpr std::array<double, kRarityCount> health = {
+            1.1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
+        };
+        static constexpr std::array<double, kRarityCount> speed = {
+            0.95, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.6,
+        };
+        static constexpr std::array<double, kRarityCount> radius = {
+            1.05, 1.05, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8,
+        };
+        s.modifiers.maxHealth = health[ti];
+        s.modifiers.speed = speed[ti];
+        s.modifiers.playerRadius = radius[ti];
+    } else if (c.id == "air") {
+        static constexpr std::array<double, kRarityCount> values = {
+            1.1, 1.2, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0,
+        };
+        s.modifiers.playerRadius = values[ti];
+    } else if (c.id == "lotus") {
+        s.modifiers.poisonArmor = 5.0 * stat;
+    } else if (c.id == "lentil") {
+        static constexpr std::array<double, kRarityCount> radius = {
+            20, 29, 38, 47, 56, 64, 73, 82, 91, 100,
+        };
+        static constexpr std::array<double, kRarityCount> force = {
+            2000, 2889, 3778, 4667, 5556, 6444, 7333, 8222, 9111, 10000,
+        };
+        s.modifiers.petalAttractionRadius = radius[ti];
+        s.attractionForce = force[ti];
+    }
     return s;
 }
 

@@ -154,16 +154,25 @@ public:
 
     ReplicationTolerances tolerances;
 
-    /// Half-extent of the replicated region beyond the client's own viewport.
-    /// A margin means an entity is known slightly before it is visible, so it
-    /// does not pop in at the screen edge, and interpolation has a sample to
-    /// work from the moment it matters.
-    double viewMargin = 400.0;
+    /// Per-AXIS half-extent of the replicated region, as a multiple of the
+    /// client's own reported viewport.
+    ///
+    /// Two decisions live in this one number. It is a RECTANGLE rather than a
+    /// circle, because the screen is one and a radius that covers the corners
+    /// over-serves the edges; and it is two viewports rather than half of one,
+    /// because the reference streams a box four screens wide so an entity is
+    /// known long before it is drawn. Anything tighter pops mobs in at the
+    /// screen edge as soon as the player zooms out or enlarges the window.
+    double viewportReach = 2.0;
 
-    /// Ceiling on entities in one snapshot. A player standing in a swarm must
-    /// not be able to make the server build an unbounded frame; the nearest
-    /// entities win, which is also what they are looking at.
-    std::size_t maxEntities = 900;
+    /// Ceiling on entities in one snapshot.
+    ///
+    /// A frame-size backstop, NOT a cull rule: the reference caps nothing, and
+    /// this sits far above what a four-screen box ever holds, so the nearest-
+    /// wins tiebreak below should never actually fire in play. It exists only
+    /// so a pathological world cannot ask the server to build a frame past the
+    /// transport's limit.
+    std::size_t maxEntities = 8000;
 
 private:
     struct Candidate {

@@ -15,7 +15,8 @@
     "dev": "webpack --mode development --watch",
     "dev:server": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start_nobuild": "node --max-old-space-size=192 --optimize-for-size dist/server.js",
-    "harness:ecs": "node scripts/ecs-tick-harness.js"
+    "harness:ecs": "node scripts/ecs-tick-harness.js",
+    "test:behavior": "node scripts/behavior-parity.js"
   },
   "keywords": [],
   "author": "",

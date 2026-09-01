@@ -14,6 +14,17 @@ namespace {
 /// produce a heading out of pure rounding noise.
 constexpr double kDirectionEpsilonSq = 1e-9;
 
+/// A pet's owner counts as standing still below this, in units per second.
+/// Friction leaves a residual after the keys are released, and a sandstorm pet
+/// shadowing that residual would creep away from a motionless flower.
+constexpr double kOwnerMovingSpeed = 1.0;
+
+/// How often the provocation watermarks are swept for mobs that have since
+/// died. Nothing tells this system a mob was reaped, and a per-tick scan of
+/// the whole table would cost far more than the handful of stale doubles it
+/// reclaims -- ten seconds of them is a few dozen entries.
+constexpr std::uint64_t kLedgerSweepTicks = 300;
+
 bool entityUsable(World& world, Entity e) {
     if (!world.isAlive(e)) return false;
     if (world.tryGet<Dead>(e) != nullptr) return false;
@@ -21,12 +32,114 @@ bool entityUsable(World& world, Entity e) {
     return health == nullptr || health->alive();
 }
 
-bool nearAnyPlayer(Vec2 position, const std::vector<Vec2>& activePlayers) {
+/// Whether a mob is close enough to a player to be worth simulating fully.
+///
+/// An EMPTY list is the permissive case, as it is in the reference: with
+/// nobody connected there is nothing to save the work for, and a caller that
+/// forgot to pass its players gets unmodified behaviour rather than a world
+/// silently running at a fifth speed.
+bool mobActive(Vec2 position, const std::vector<Vec2>& activePlayers) {
+    if (activePlayers.empty()) return true;
     const double reachSq = kMobActiveRadius * kMobActiveRadius;
     for (const Vec2 player : activePlayers) {
         if (distanceSq(position, player) <= reachSq) return true;
     }
     return false;
+}
+
+/// What a web, a honey pool or a pincer leaves of a mob's speed this tick.
+///
+/// A slow changes what the mob ASKS for, not how physics answers it, so it is
+/// folded into the desired speed here rather than into the movement
+/// integrator -- applied in both places it would land twice on one tick.
+double slowFactorOf(World& world, Entity self, double nowMillis) {
+    const Afflictions* afflictions = world.tryGet<Afflictions>(self);
+    if (afflictions == nullptr || !afflictions->slowed(nowMillis)) return 1.0;
+    return clamp(afflictions->slowFactor, 0.0, 1.0);
+}
+
+/// Whether a mob's last decision left it drifting rather than doing something.
+///
+/// The reference keeps this as a tag its AI maintains and its passive
+/// integrator reads, which is exactly what lets that integrator run with no
+/// distance gate. Here it is derived from the same facts the tag is written
+/// from: what the mob is, whether it is holding a target, and whether it walks
+/// to a point instead of hopping.
+bool idleDrifting(World& world, Entity self, const MobAi& ai) {
+    if (ai.kind == AiKind::Stationary || ai.kind == AiKind::Sandstorm) return false;
+    // Chasing something.
+    if (ai.target != NULL_ENTITY) return false;
+    // Marching home to its nest: it has somewhere to be, and the reference
+    // clears the idle tag for exactly this case, so a tethered mob dragged out
+    // of range walks back a stride at a time rather than hopping at full rate.
+    const HoleTether* tether = world.tryGet<HoleTether>(self);
+    if (tether != nullptr && tether->returning) return false;
+    // A chain head strolls to a destination point; the reference does not tag
+    // it idle either, so it stops when its stride does.
+    return !world.has<BodySegment>(self);
+}
+
+/// Both the drift acceleration and the wander range are stated per body.
+///
+/// Mob speed is constant across rarities -- only size grows -- so an unscaled
+/// step that reads as a few body-lengths for a common is a tenth of one for an
+/// apex, which is what makes big mobs look frozen.
+double sizeFactor(double radius) { return radius / kWanderRefRadius; }
+
+/// One projectile, resolved where the mob decided to shoot and assembled at
+/// flush time. Creating the entity from inside the mob walk would relocate the
+/// very columns that walk is holding.
+struct VolleyShot {
+    Vec2 from;
+    double angle = 0;
+    double speed = 0;
+    double radius = 0;
+    double distance = 0;
+    double damage = 0;
+    Entity owner = NULL_ENTITY;
+    Entity creditTo = NULL_ENTITY;
+    Faction faction;
+    double seekRange = 0;
+    double seekCone = 0;
+    std::uint16_t petalIndex = kNoPetal;
+    Rarity rarity = Rarity::Common;
+    std::uint32_t netId = 0;
+    bool identified = false;
+};
+
+/// The same archetype a petal's shot is built with -- a mob's projectile is
+/// the same object fired by the other side, and combat resolves both through
+/// one path.
+void spawnShot(World& world, const VolleyShot& shot) {
+    const Entity e = world.create();
+    world.add<ProjectileTag>(e);
+    world.add<Transform>(e, Transform{shot.from, shot.angle});
+    world.add<Motion>(e, Motion{Vec2::fromAngle(shot.angle, shot.speed)});
+    world.add<Body>(e, Body{shot.radius, 1.0});
+    world.add<Faction>(e, shot.faction);
+
+    Projectile projectile;
+    projectile.owner = shot.owner;
+    projectile.creditTo = shot.creditTo;
+    projectile.damage = shot.damage;
+    projectile.remainingDistance = shot.distance;
+    projectile.petalConfigIndex = shot.petalIndex;
+    projectile.rarity = shot.rarity;
+    projectile.seekRange = shot.seekRange;
+    projectile.seekCone = shot.seekCone;
+    world.add<Projectile>(e, projectile);
+
+    // Distance is the authority on range; the lifetime is the same limit
+    // expressed in time, so a shot that never hits anything still dies on
+    // schedule even if nothing decrements the distance.
+    world.add<Lifetime>(e, Lifetime{shot.distance / shot.speed});
+
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Projectile;
+    replicated.typeIndex = shot.petalIndex;
+    replicated.rarity = shot.rarity;
+    world.add<Replicated>(e, replicated);
+    if (shot.identified) world.add<NetId>(e, NetId{shot.netId});
 }
 
 } // namespace
@@ -57,11 +170,14 @@ double steerFacing(double current, Vec2 travel, bool hideRotation, bool reversed
 // ---------------------------------------------------------------------------
 
 MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
-    : mobs_(world), segments_(world), nests_(world), playerModifiers_(world), rng_(seed) {
-    // A pet is not a wild mob with a different target list; its behaviour
-    // belongs to whatever owns pets. Dead mobs still exist until the reaper
-    // runs, and a corpse must not keep steering.
+    : mobs_(world), pets_(world), segments_(world), nests_(world), playerModifiers_(world),
+      rng_(seed) {
+    // A pet is not a wild mob with a different target list: it follows an
+    // owner, pops back to them and is retired off their screen, so it runs its
+    // own pass below. Dead mobs still exist until the reaper runs, and a corpse
+    // must not keep steering.
     mobs_.without<Dead, Pet>();
+    pets_.without<Dead>();
     segments_.without<Dead>();
     playerModifiers_.without<Dead>();
     // nests_ deliberately keeps Dead spawners: a dying nest is exactly when its
@@ -97,12 +213,50 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         const MobConfig& config = registry.mob(configIndex);
         const MobStats stats = registry.mobStats(configIndex, rarity);
         drive.speed = stats.speed;
+        drive.chaseSpeed = stats.chaseSpeed > 0.0 ? stats.chaseSpeed : stats.speed;
         drive.attackCooldownMillis = stats.attackCooldownMillis;
+        drive.ai = stats.ai;
+        drive.playerSpeedChaser = stats.playerSpeedChaser;
         drive.hideRotation = config.hideRotation;
         drive.reversed = config.reversed;
+        // The one type that cruises instead of hopping. A name test, because
+        // the reference selects the machine by mob type and nothing in the
+        // numbers distinguishes a bee from anything else that flies.
+        drive.beeFlight = config.id == "bee";
+        drive.shoots = config.projectile.present &&
+                       config.projectile.ammoPetalIndex != kInvalidIndex;
         drive.valid = true;
     }
     return drive;
+}
+
+void MobAiSystem::equipBehaviour(World& world, Entity self, const Drive& drive, double nowMillis) {
+    // What the mob is ACTUALLY running, which is what decides the components it
+    // needs: a summon or a test may hand a mob a behaviour its config never
+    // asked for. Read out by value up front because the adds below relocate the
+    // row it comes from.
+    const MobAi* brain = world.tryGet<MobAi>(self);
+    const AiKind kind = brain != nullptr ? brain->kind : drive.ai;
+
+    // Only a mob that can move idles: a hole has nothing to drift with, and
+    // giving it the columns costs an archetype per nest for no behaviour.
+    if (drive.speed > 0.0 && drive.ai != AiKind::Stationary) {
+        if (!world.has<PassiveMotion>(self)) {
+            world.add<PassiveMotion>(self, PassiveMotion{PassiveState::Idle, nowMillis, Vec2{0, 0}});
+        }
+        if (drive.beeFlight && !world.has<Wobble>(self)) {
+            // The phase is per-bee so a field of them weaves out of step with
+            // itself rather than moving as one body.
+            world.add<Wobble>(self, Wobble{rng_.angle()});
+        }
+        // The two movers that walk to a POINT rather than hopping on a
+        // heading: a chain head, whose turns have to stay long enough for the
+        // body to trace, and a storm, which blows toward one.
+        if ((world.has<BodySegment>(self) || kind == AiKind::Sandstorm) &&
+            !world.has<WanderTarget>(self)) {
+            world.add<WanderTarget>(self);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +301,37 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
     return NULL_ENTITY;
 }
 
+Entity MobAiSystem::acquirePetTarget(const Terrain& terrain, Entity self, Vec2 from,
+                                     double range) {
+    if (petList_.empty()) return NULL_ENTITY;
+
+    // Not counted as a target scan: the stat exists to report what the
+    // broadphase cost, and this is a walk over a list a player's summons fit
+    // in twice over.
+    const double reachSq = range * range;
+    candidates_.clear();
+    for (const Candidate& pet : petList_) {
+        if (pet.entity == self) continue;
+        // Strictly inside, and with no aggro bonus applied: a bonus is
+        // something a FLOWER carries to make itself conspicuous, and a summon
+        // carries none of it.
+        const double gapSq = distanceSq(from, pet.position);
+        if (!(gapSq < reachSq)) continue;
+        candidates_.push_back(Candidate{pet.entity, pet.position, gapSq});
+    }
+
+    // Squared distance sorts in the same order the distance does, so the scan
+    // never takes a square root it does not have to.
+    std::sort(candidates_.begin(), candidates_.end(),
+              [](const Candidate& a, const Candidate& b) { return a.score < b.score; });
+    const std::size_t rays = std::min<std::size_t>(candidates_.size(),
+                                                   static_cast<std::size_t>(kTargetLosRayCap));
+    for (std::size_t i = 0; i < rays; ++i) {
+        if (!terrain.segmentBlocked(from, candidates_[i].position)) return candidates_[i].entity;
+    }
+    return NULL_ENTITY;
+}
+
 Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, double radius) const {
     // Bounty is the ledger combat already keeps of who hurt this mob, so
     // working out who to turn on is a walk over a handful of entries rather
@@ -175,15 +360,93 @@ Entity MobAiSystem::nearestAttacker(World& world, Entity self, Vec2 from, double
     return best;
 }
 
-bool MobAiSystem::targetHeld(World& world, Vec2 from, Entity target, double range) const {
+bool MobAiSystem::targetHeld(World& world, const Terrain& terrain, Vec2 from, Entity target) const {
     if (!entityUsable(world, target)) return false;
     const Transform* transform = world.tryGet<Transform>(target);
     if (transform == nullptr) return false;
 
-    const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(target);
-    const double bonus = mods != nullptr ? mods->aggroRadiusBonus : 0.0;
-    const double leash = (range + bonus) * kAggroDropMultiplier;
-    return distanceSq(from, transform->position) <= leash * leash;
+    // Aggro RANGE governs acquisition only. Retention is a flat five viewports
+    // -- it reads neither the mob's own range nor the player's aggro bonus --
+    // and a wall coming between the two drops the target on the spot, which is
+    // what sends the mob back to wandering instead of grinding into geometry.
+    if (distanceSq(from, transform->position) >
+        kMobTargetRetainRadius * kMobTargetRetainRadius) {
+        return false;
+    }
+    return !terrain.segmentBlocked(from, transform->position);
+}
+
+bool MobAiSystem::petTargetHeld(World& world, const Terrain& terrain, Vec2 from, Entity target,
+                                double range) const {
+    if (!world.has<Pet>(target)) return false;
+    if (!entityUsable(world, target)) return false;
+    const Transform* transform = world.tryGet<Transform>(target);
+    if (transform == nullptr) return false;
+
+    // The mob's own aggro range, not the five viewports a flower is chased
+    // across. A summon that walks out of range is simply forgotten, and the
+    // mob goes back to looking for the player it would rather have.
+    if (!(distanceSq(from, transform->position) < range * range)) return false;
+    return !terrain.segmentBlocked(from, transform->position);
+}
+
+void MobAiSystem::collectChain(World& world, Entity self, std::vector<Entity>& out) const {
+    out.clear();
+    out.push_back(self);
+    if (!world.has<BodySegment>(self)) return;
+
+    // Bounded by the number of links that exist rather than by reaching the
+    // tail: repairChains() cuts cycles in the pass AFTER this one, so a chain
+    // that closed on itself this tick must not be walked forever.
+    Entity ahead = self;
+    for (std::size_t links = followerOf_.size(); links > 0; --links) {
+        const auto next = followerOf_.find(ahead);
+        if (next == followerOf_.end()) return;
+        out.push_back(next->second);
+        ahead = next->second;
+    }
+}
+
+Entity MobAiSystem::freshProvoker(World& world, Entity self, Vec2 from) {
+    collectChain(world, self, chainScratch_);
+
+    double total = 0.0;
+    for (const Entity part : chainScratch_) {
+        const Bounty* bounty = world.tryGet<Bounty>(part);
+        if (bounty == nullptr) continue;
+        for (const Bounty::Share& share : bounty->contributors) total += share.damage;
+    }
+    if (!(total > 0.0)) return NULL_ENTITY;
+
+    // No watermark means this mob has never been looked at, and it is looked
+    // at on the first tick of its life, so anything already on the ledger got
+    // there since it was born and counts as fresh.
+    const auto seen = ledgerSeen_.find(self);
+    const double before = seen != ledgerSeen_.end() ? seen->second : 0.0;
+    if (seen != ledgerSeen_.end()) seen->second = total;
+    else ledgerSeen_.emplace(self, total);
+    if (!(total > before)) return NULL_ENTITY;
+
+    // Nearest contributor rather than whichever share grew: the ledger records
+    // how much each player has taken off the animal, never who took it last,
+    // and with one attacker -- which is nearly every fight -- they are the same
+    // player anyway. The radius is a cost bound and not a rule: the reference
+    // provokes from any distance at all, and a provocation from further out
+    // than this is dropped by the retention test on the very same tick.
+    Entity best = NULL_ENTITY;
+    double bestSq = kMobTargetRetainRadius * kMobTargetRetainRadius;
+    for (const Entity part : chainScratch_) {
+        const Entity found = nearestAttacker(world, part, from, kMobTargetRetainRadius);
+        if (found == NULL_ENTITY) continue;
+        const Transform* at = world.tryGet<Transform>(found);
+        if (at == nullptr) continue;
+        const double gapSq = distanceSq(from, at->position);
+        if (gapSq <= bestSq) {
+            bestSq = gapSq;
+            best = found;
+        }
+    }
+    return best;
 }
 
 void MobAiSystem::stampAttack(World& world, Entity self, MobAi& ai, double nowMillis,
@@ -204,137 +467,398 @@ void MobAiSystem::stampAttack(World& world, Entity self, MobAi& ai, double nowMi
     ++stats_.attacks;
 }
 
+void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, MobAi& ai,
+                             const Drive& drive, Vec2 from, double aimAngle, double nowMillis,
+                             CommandBuffer& commands) {
+    const ContentRegistry& registry = content();
+    const ProjectileSpec& spec = registry.mob(type.configIndex).projectile;
+    if (!spec.present || spec.ammoPetalIndex == kInvalidIndex) return;
+
+    // The mob's own cadence. Two thousand milliseconds is the fallback for a
+    // config that states none, not the rate every shooter fires at.
+    const double cooldown = drive.attackCooldownMillis > 0.0 ? drive.attackCooldownMillis
+                                                             : kDefaultVolleyCooldownMillis;
+    if (nowMillis - ai.lastProjectileMillis < cooldown) return;
+
+    // Ammunition is graded at the SHOOTER's tier rather than at the rarity its
+    // config names, so an apex hornet fires apex missiles.
+    const PetalStats ammo = registry.petalStats(spec.ammoPetalIndex, type.rarity);
+    const std::size_t tier = static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
+    const double scaling = kMobSizeScale[tier];
+
+    const double speed = spec.speed > 0.0 ? spec.speed : kDefaultProjectileSpeed;
+    const double reach = spec.distance * scaling / kProjectileDistanceDivisor;
+    if (!(reach > 0.0) || !(speed > 0.0)) return;
+
+    VolleyShot shot;
+    shot.from = from;
+    shot.speed = speed;
+    // The shot is half the ammunition petal's body, then scaled by the
+    // shooter's tier on its own divisor -- reach and size grow at different
+    // rates with rarity.
+    shot.radius = std::max(1.0, ammo.radius * 0.5 * scaling / kProjectileSizeDivisor);
+    shot.distance = reach;
+    shot.damage = ammo.damage;
+    shot.owner = shooter;
+    // A pet's shot is fired by the pet and answerable to the player, so a kill
+    // it lands credits the flower that summoned it.
+    const Pet* pet = world.tryGet<Pet>(shooter);
+    shot.creditTo = pet != nullptr ? pet->owner : shooter;
+    const Faction* own = world.tryGet<Faction>(shooter);
+    shot.faction = own != nullptr ? *own : Faction{Team::Hostiles, false};
+    // Poison, knockback and the slow are NOT stamped on the shot: combat
+    // resolves them from the ammunition index and the tier it was fired at, so
+    // the two sides of a hit can never disagree about what the tier means.
+    shot.seekRange = spec.seekRange;
+    shot.seekCone = spec.seekCone;
+    shot.petalIndex = spec.ammoPetalIndex;
+    shot.rarity = type.rarity;
+
+    ai.lastProjectileMillis = nowMillis;
+    ++stats_.volleys;
+
+    const int count = std::max(1, spec.count);
+    for (int i = 0; i < count; ++i) {
+        // spreadAngle is the STEP between adjacent shots, so a volley is
+        // centred on the bearing and a single shot takes it untouched.
+        shot.angle = count > 1
+                         ? wrapAngle(aimAngle + (i - (count - 1) * 0.5) * spec.spreadAngle)
+                         : wrapAngle(aimAngle);
+        shot.identified = static_cast<bool>(allocateNetId);
+        shot.netId = shot.identified ? allocateNetId() : 0;
+        commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Behaviours
 // ---------------------------------------------------------------------------
 
-Vec2 MobAiSystem::steerWander(const Terrain& terrain, const Transform& transform, MobAi& ai,
-                              double speed, bool decisionDue) {
-    if (!(speed > 0.0)) return Vec2{0, 0};
+void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Motion& motion,
+                               MobAi& ai, double speed, double nowMillis, double dt) {
+    PassiveMotion* passive = world.tryGet<PassiveMotion>(self);
+    // An immobile mob never drifts, and one that was never given the machine
+    // has nothing to run: either way it holds still rather than coasting on
+    // whatever it was doing before.
+    if (passive == nullptr || !(speed > 0.0)) {
+        motion.velocity = Vec2{0, 0};
+        return;
+    }
 
-    if (decisionDue) {
-        const Vec2 fromAnchor = transform.position - ai.anchor;
-        if (fromAnchor.lengthSq() > kMobWanderRadius * kMobWanderRadius) {
-            // Outside its territory: head back, loosely. Without this a mob
-            // shoved by knockback or dragged by a chase colonises wherever it
-            // was abandoned, and a section slowly empties into its neighbours.
-            ai.wanderAngle = wrapAngle((-fromAnchor).angle() + rng_.range(-0.6, 0.6));
-        } else {
-            ai.wanderAngle = wrapAngle(rng_.angle());
+    // Distance per hop is the sum of the accelerations divided by the friction,
+    // so scaling the ACCELERATION by the size factor scales how far a hop
+    // carries while the phase durations stay fixed. That is what makes a big
+    // mob's hop proportional to its body instead of merely slower.
+    const double accel = speed * kPassiveAccelScale * sizeFactor(body.radius);
+    Vec2 push{0, 0};
+
+    if (const Wobble* wobble = world.tryGet<Wobble>(self)) {
+        // Bees do not hop. They cruise, and the heading sways at 1.5 rad/s
+        // scaled by sin(2t) -- which integrates to the +-0.75 rad weave of the
+        // flight line -- around a base heading re-picked every five seconds.
+        if (nowMillis - passive->stateStartMillis >= kBeeHeadingMillis) {
+            ai.wanderAngle = rng_.angle();
+            passive->stateStartMillis = nowMillis;
         }
-        // A heading straight into a wall would be spent pressed against it for
-        // the whole interval.
-        const Vec2 probe = transform.position + Vec2::fromAngle(ai.wanderAngle, kMobWallProbe);
-        if (terrain.segmentBlocked(transform.position, probe)) {
-            ai.wanderAngle = wrapAngle(ai.wanderAngle + kPi);
+        const double t = nowMillis / 1000.0 + wobble->phase;
+        ai.wanderAngle = wrapAngle(ai.wanderAngle + kBeeWobbleRate * std::sin(2.0 * t) * dt);
+
+        // Sustained rather than ramped, and pulsed down for the first third of
+        // every window, which is what gives the cruise its beat.
+        double magnitude = accel * kBeeCruiseAccelScale;
+        if (std::fmod(t * 1000.0, kBeePulsePeriodMillis) < kBeePulseMillis) {
+            magnitude *= kBeePulseScale;
+        }
+        push = Vec2::fromAngle(ai.wanderAngle, magnitude);
+    } else {
+        const double elapsed = nowMillis - passive->stateStartMillis;
+        if (passive->state == PassiveState::Idle) {
+            if (elapsed >= kPassiveIdleMillis) {
+                // The heading is drawn at the transition, so the mob turns to
+                // face it while still standing still and only then sets off.
+                ai.wanderAngle = rng_.angle();
+                passive->state = PassiveState::Moving;
+                passive->stateStartMillis = nowMillis;
+            }
+        } else if (elapsed >= kPassiveMoveMillis) {
+            passive->state = PassiveState::Idle;
+            passive->stateStartMillis = nowMillis;
+        } else if (elapsed >= kPassiveCoastMillis) {
+            // Half a second of coasting on friction alone -- the mob is in the
+            // Moving state but is not being pushed yet -- then a parabolic ramp
+            // peaking halfway through the two seconds after it.
+            const double r = (elapsed - kPassiveCoastMillis) / kPassiveRampMillis;
+            push = Vec2::fromAngle(ai.wanderAngle, accel * 2.0 * (r - r * r));
         }
     }
-    return Vec2::fromAngle(ai.wanderAngle, speed * kMobWanderSpeedScale);
+
+    // Friction is per TICK, not per second: this is a fixed-step integrator and
+    // spreading it over dt changes how far every idle mob in the world travels.
+    // The clamp is what stops radius-proportional acceleration from drifting an
+    // apex mob at several times a player's top speed.
+    passive->velocity =
+        (passive->velocity * (1.0 - kPassiveFriction) + push).clampedLength(kMaxWanderSpeed);
+    motion.velocity = passive->velocity;
 }
 
-Vec2 MobAiSystem::steerSandstorm(const Terrain& terrain, const Transform& transform, MobAi& ai,
-                                 double speed, bool decisionDue) {
+Vec2 MobAiSystem::wanderToPoint(WanderTarget& wander, Vec2 from, const Body& body, double speed,
+                                double nowMillis) {
+    const double factor = sizeFactor(body.radius);
+    if (wander.pickedAtMillis <= 0.0 || nowMillis - wander.pickedAtMillis > kWanderRepickMillis) {
+        const double range = kEnemyWanderRange * factor;
+        wander.destination = from + Vec2{rng_.range(-range, range), rng_.range(-range, range)};
+        wander.pickedAtMillis = nowMillis;
+    }
+    if (!(speed > 0.0)) return Vec2{0, 0};
+
+    const Vec2 offset = wander.destination - from;
+    const double gap = offset.length();
+    // Arrived: stop rather than jitter across the last unit of it.
+    if (!(gap > kWanderArriveDistance)) return Vec2{0, 0};
+    return offset * (std::min(speed * kMobWanderSpeedScale * factor, kMaxWanderSpeed) / gap);
+}
+
+Vec2 MobAiSystem::steerIdle(World& world, Entity self, const Transform& transform, Motion& motion,
+                            const Body& body, MobAi& ai, double speed, double nowMillis, double dt) {
+    // A centipede head keeps the destination wander deliberately: a chain that
+    // stopped dead every second would read as a broken animal rather than a
+    // crawling one, and the head is what the whole body traces.
+    if (world.has<BodySegment>(self)) {
+        if (WanderTarget* wander = world.tryGet<WanderTarget>(self)) {
+            motion.velocity = wanderToPoint(*wander, transform.position, body, speed, nowMillis);
+            return motion.velocity;
+        }
+    }
+
+    driftPassive(world, self, body, motion, ai, speed, nowMillis, dt);
+    // Facing follows the HEADING rather than the velocity here: the machine
+    // turns the mob when it picks a direction, while it is still at rest, and
+    // accelerates along it afterwards.
+    return Vec2::fromAngle(ai.wanderAngle);
+}
+
+Vec2 MobAiSystem::steerSandstorm(World& world, const SpatialGrid& grid, Entity self,
+                                 const MobType& type, const Transform& transform, MobAi& ai,
+                                 double speed, double nowMillis, double dt) {
     // It never had a target and never will; clearing it means nothing that
     // reads MobAi can mistake a sandstorm for something that is hunting.
     ai.target = NULL_ENTITY;
-    ai.fleeUntilMillis = 0;
 
-    if (decisionDue) {
-        // The heading DRIFTS rather than being re-rolled. Re-rolling produces
-        // an animal milling about; a small signed nudge produces weather
-        // crossing the map, which is the whole read of this mob.
-        ai.wanderAngle = wrapAngle(ai.wanderAngle +
-                                   rng_.range(-kSandstormTurnPerDecision, kSandstormTurnPerDecision));
-        const Vec2 probe = transform.position + Vec2::fromAngle(ai.wanderAngle, kMobWallProbe);
-        if (terrain.segmentBlocked(transform.position, probe)) {
-            ai.wanderAngle = wrapAngle(ai.wanderAngle + kPi * 0.75);
-        }
+    WanderTarget* wander = world.tryGet<WanderTarget>(self);
+    // Nothing to blow toward yet -- equipBehaviour hands the storm one on the
+    // first tick it thinks -- and a storm holding still for a tick is better
+    // than one blowing along a heading it never picked.
+    if (wander == nullptr) return Vec2{0, 0};
+
+    // Re-rolled OUTRIGHT, three times a second, on the storm's own clock.
+    // Swinging the previous heading instead is what turns this into a cloud on
+    // a course: the reference's storm doubles back on itself constantly and
+    // covers a fraction of the ground per second that a drifting one does.
+    if (nowMillis >= ai.nextHeadingMillis) {
+        ai.nextHeadingMillis = nowMillis + kSandstormHeadingMillis;
+        ai.wanderAngle = rng_.angle();
+        wander->destination =
+            transform.position + Vec2::fromAngle(ai.wanderAngle, kSandstormWanderRange);
+        wander->pickedAtMillis = nowMillis;
     }
-    if (!(speed > 0.0)) return Vec2{0, 0};
-    return Vec2::fromAngle(ai.wanderAngle, speed);
+
+    Vec2 blow{0, 0};
+    const Vec2 offset = wander->destination - transform.position;
+    const double gap = offset.length();
+    // Weather travels at its FULL speed, not the stroll a mob walks a wander
+    // destination at.
+    if (speed > 0.0 && gap > kWanderArriveDistance) blow = offset * (speed / gap);
+
+    // Measured from where the storm ENDS this tick, which is the order the
+    // reference resolves the two in: it takes its own step and then drags.
+    if (rarityIndex(type.rarity) >= rarityIndex(kSandstormSuckRarity)) {
+        suckPlayers(world, grid, transform.position + blow * dt, dt);
+    }
+    return blow;
 }
 
-Vec2 MobAiSystem::steerPassive(World& world, const Terrain& terrain, Entity self,
-                               const Transform& transform, MobAi& ai, double speed,
-                               double nowMillis, bool decisionDue) {
-    // The damage flash is combat's own record that a hit landed this moment, so
-    // the AI needs no event of its own and cannot miss one to a system ordering.
-    const Health* health = world.tryGet<Health>(self);
-    if (health != nullptr && nowMillis < health->flashUntilMillis) {
-        if (ai.target == NULL_ENTITY) {
-            ai.target = nearestAttacker(world, self, transform.position, kMobRetaliationRadius);
-        }
-        // Refreshed on every hit: a mob under sustained fire keeps running
-        // rather than turning around between two shots.
-        if (ai.target != NULL_ENTITY) ai.fleeUntilMillis = nowMillis + kMobFleeDurationMillis;
-    }
+void MobAiSystem::suckPlayers(World& world, const SpatialGrid& grid, Vec2 from, double dt) {
+    grid.query(from, kSandstormSuckRange, gridScratch_);
+    for (const Entity candidate : gridScratch_) {
+        if (!world.has<PlayerTag>(candidate)) continue;
+        if (!entityUsable(world, candidate)) continue;
+        Transform* at = world.tryGet<Transform>(candidate);
+        if (at == nullptr) continue;
 
-    if (nowMillis < ai.fleeUntilMillis && ai.target != NULL_ENTITY) {
-        const Transform* threat = world.tryGet<Transform>(ai.target);
-        if (threat != nullptr && entityUsable(world, ai.target)) {
-            const Vec2 away = transform.position - threat->position;
-            if (away.lengthSq() > kDirectionEpsilonSq) {
-                // Remembered so that when the flee expires the mob carries on
-                // the way it was going instead of pivoting on the spot.
-                ai.wanderAngle = away.angle();
-                return away.normalized() * speed;
-            }
-            // Standing exactly on the attacker: any direction is away.
-            return Vec2::fromAngle(ai.wanderAngle, speed);
-        }
-    }
+        const Vec2 offset = from - at->position;
+        const double gap = offset.length();
+        if (!(gap > 0.0) || !(gap < kSandstormSuckRange)) continue;
 
-    // The scare is over, or whatever caused it is gone. Drop the target rather
-    // than carry one this mob will never act on.
-    ai.fleeUntilMillis = 0;
-    ai.target = NULL_ENTITY;
-    return steerWander(terrain, transform, ai, speed, decisionDue);
+        // Written straight into the position: the drag is not a force the
+        // flower gets to fight with its own movement, and it does not stop at
+        // walls either -- which is the whole threat of standing near a storm.
+        // Two overlapping storms compound within the tick, because the second
+        // reads the position the first just wrote.
+        const double pull = kSandstormSuckSpeed * (1.0 - gap / kSandstormSuckRange) * dt;
+        at->position += offset * (pull / gap);
+    }
 }
 
-Vec2 MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const SpatialGrid& grid,
-                                  Entity self, const Transform& transform, const Body& body,
-                                  MobAi& ai, const Drive& drive, double speed,
-                                  double nowMillis, bool decisionDue) {
-    const double range = ai.aggroRange > 0.0 ? ai.aggroRange : kMobDefaultAggroRange;
+bool MobAiSystem::walkHome(World& world, Entity self, const Transform& transform, MobAi& ai,
+                           double chaseSpeed, double nowMillis, Vec2& desired,
+                           CommandBuffer& commands) {
+    HoleTether* tether = world.tryGet<HoleTether>(self);
+    if (tether == nullptr) return false;
 
-    // Retaliation is free (a walk over the damage ledger), so it runs the tick
-    // the hit lands. It is gated on having no target so a mob under sustained
-    // fire does not re-decide every tick, and bounded by the leash below so it
-    // can never pick a target the very next statement would throw away.
-    if (ai.target == NULL_ENTITY) {
-        const Health* health = world.tryGet<Health>(self);
-        if (health != nullptr && nowMillis < health->flashUntilMillis) {
-            const double reachable = std::min(kMobRetaliationRadius, range * kAggroDropMultiplier);
-            ai.target = nearestAttacker(world, self, transform.position, reachable);
-        }
+    // The nest is gone, so there is nothing left to defend: the child is
+    // unparented and roams free from here on rather than guarding a hole that
+    // no longer exists. Deferred, because dropping a component relocates the
+    // very rows the mob walk above is holding.
+    if (!entityUsable(world, tether->hole)) {
+        tether->hole = NULL_ENTITY;
+        tether->returning = false;
+        commands.removeComponent<HoleTether>(self);
+        return false;
     }
 
-    // Keeping a target costs a pointer chase, so it is checked every tick and
-    // aggro drops promptly. Gaining one costs a broadphase query and a few
-    // rays, so it waits for the decision clock.
-    if (ai.target != NULL_ENTITY && !targetHeld(world, transform.position, ai.target, range)) {
+    const Transform* nest = world.tryGet<Transform>(tether->hole);
+    // Read live rather than remembered, because a queen carries her brood's
+    // home around with her; the spawn point is only the fallback for a parent
+    // with no position of its own.
+    const Vec2 home = nest != nullptr ? nest->position : tether->home;
+    const Vec2 offset = home - transform.position;
+    const double gap = offset.length();
+
+    if (!tether->returning && gap > kSummonRetreatRadius) {
+        // The target is DROPPED, not merely ignored for the walk: an escort
+        // that kept it would turn round and resume the chase the moment it got
+        // home, which is the kiting this leash exists to stop.
         ai.target = NULL_ENTITY;
+        tether->returning = true;
+    }
+    if (!tether->returning) return false;
+
+    if (gap < kSummonArriveDistance) {
+        tether->returning = false;
+        // Home, and idling from a standing start rather than partway through
+        // whatever hop the machine was in when it was dragged away.
+        if (PassiveMotion* passive = world.tryGet<PassiveMotion>(self)) {
+            passive->state = PassiveState::Idle;
+            passive->stateStartMillis = nowMillis;
+        }
+        return false;
+    }
+
+    // Home at the pace it would chase at: the walk back is a march, and an
+    // escort that ambled would be picked off on the way.
+    desired = offset * (chaseSpeed / gap);
+    return true;
+}
+
+bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const SpatialGrid& grid,
+                                  Entity self, const MobType& type, const Transform& transform,
+                                  const Body& body, MobAi& ai, const Drive& drive,
+                                  double chaseSpeed, double nowMillis, Vec2& desired,
+                                  CommandBuffer& commands) {
+    const double range = ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange;
+
+    // Provocation first, which is where the reference has it: over there it
+    // happens in the damage phase and the AI merely validates what it left
+    // behind, so a mob provoked from behind a wall or from five viewports away
+    // loses the target again on this very tick.
+    //
+    // NEUTRAL only. A hostile mob is not provoked by anything -- it finds its
+    // own targets, inside its own range -- so sniping one from beyond that
+    // range leaves it wandering rather than charging the horizon.
+    if (ai.kind == AiKind::Neutral && ai.target == NULL_ENTITY) {
+        ai.target = freshProvoker(world, self, transform.position);
+    }
+
+    // Both halves run every tick. Keeping a target is a pointer chase, a
+    // distance and one ray; gaining one is a broadphase query and a fan of
+    // rays, and is much the more expensive -- but the reference pays it per
+    // mob per tick, and a mob that only looks on a clock ignores a player who
+    // walks up to it for as long as the clock says, which reads as the whole
+    // field lagging behind the flower. The LOD stride is what bounds this.
+    if (ai.target != NULL_ENTITY) {
+        const bool held =
+            world.has<Pet>(ai.target)
+                ? petTargetHeld(world, terrain, transform.position, ai.target, range)
+                : targetHeld(world, terrain, transform.position, ai.target);
+        if (!held) ai.target = NULL_ENTITY;
     }
     // A neutral mob never goes looking: it only ever has the target that hurt it.
-    if (ai.target == NULL_ENTITY && ai.kind == AiKind::Hostile && decisionDue) {
-        ai.target = acquireTarget(world, terrain, grid, self, transform.position, range);
+    if (ai.kind == AiKind::Hostile) {
+        // The player scan runs even while a pet is being chased: a flower
+        // outranks a summon, so it takes the mob over the moment one comes
+        // into range rather than waiting for the pet to die or walk off.
+        if (ai.target == NULL_ENTITY || world.has<Pet>(ai.target)) {
+            const Entity player =
+                acquireTarget(world, terrain, grid, self, transform.position, range);
+            if (player != NULL_ENTITY) ai.target = player;
+        }
+        // A pet is what is left when no player is in range, which is what lets
+        // a summon soak the aggro it was sent out to soak.
+        if (ai.target == NULL_ENTITY) {
+            ai.target = acquirePetTarget(terrain, self, transform.position, range);
+        }
     }
-    if (ai.target == NULL_ENTITY) return steerWander(terrain, transform, ai, speed, decisionDue);
+    if (ai.target == NULL_ENTITY) return false;
 
     const Transform* threat = world.tryGet<Transform>(ai.target);
     if (threat == nullptr) {
         ai.target = NULL_ENTITY;
-        return steerWander(terrain, transform, ai, speed, decisionDue);
+        return false;
     }
 
+    // Taken BEFORE the mob moves, and the volley is aimed along it: a shot led
+    // by one tick of the shooter's own travel is a different weapon.
     const Vec2 toTarget = threat->position - transform.position;
     const double gap = toTarget.length();
     const Body* threatBody = world.tryGet<Body>(ai.target);
     const double reach = body.radius + (threatBody != nullptr ? threatBody->radius : 0.0) + kMobContactSlack;
     if (gap <= reach) stampAttack(world, self, ai, nowMillis, drive);
 
-    if (!(gap > kDirectionEpsilonSq)) return Vec2{0, 0};
-    return toTarget * (speed / gap);
+    desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
+    if (drive.shoots) {
+        fireVolley(world, self, type, ai, drive, transform.position, toTarget.angle(), nowMillis,
+                   commands);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Level of detail
+// ---------------------------------------------------------------------------
+
+bool MobAiSystem::stepsThisTick(Entity self, Vec2 position,
+                                const std::vector<Vec2>& activePlayers) const {
+    if (mobActive(position, activePlayers)) return true;
+    return (tick_ + entityIndex(self)) % static_cast<std::uint64_t>(kMobFarStride) == 0;
+}
+
+void MobAiSystem::driftUnwatched(World& world, Entity self, double nowMillis, double dt) {
+    Motion* motion = world.tryGet<Motion>(self);
+    if (motion == nullptr) return;
+
+    MobAi* ai = world.tryGet<MobAi>(self);
+    const Body* body = world.tryGet<Body>(self);
+    const MobType* type = world.tryGet<MobType>(self);
+    if (ai == nullptr || body == nullptr || type == nullptr ||
+        !idleDrifting(world, self, *ai)) {
+        // Nothing decided this tick means nothing travelled this tick.
+        motion->velocity = Vec2{0, 0};
+        return;
+    }
+
+    // A mob that has never thought has never been handed the drift machine
+    // either; driftPassive() holds it still until its first step equips it.
+    const Drive drive = driveFor(type->configIndex, type->rarity);
+    driftPassive(world, self, *body, *motion, *ai,
+                 drive.speed * slowFactorOf(world, self, nowMillis), nowMillis, dt);
+
+    // The drift's heading IS the mob's facing over there -- the same ungated
+    // integrator writes both -- so the angle keeps full rate as well, rather
+    // than trailing the heading by up to a stride's worth of ticks.
+    if (Transform* transform = world.tryGet<Transform>(self)) {
+        transform->angle = steerFacing(transform->angle, Vec2::fromAngle(ai->wanderAngle),
+                                       drive.hideRotation, drive.reversed, kPi);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -343,24 +867,31 @@ Vec2 MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
 
 void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGrid& grid,
                            Entity self, Transform& transform, Motion& motion, const Body& body,
-                           const MobType& type, MobAi& ai, double nowMillis, double dt) {
-    const Drive drive = driveFor(type.configIndex, type.rarity);
-
-    double speed = drive.speed;
-    // A slow changes what the mob ASKS for, not how physics answers, so it
-    // belongs here rather than in the movement integrator -- applied in both
-    // places it would land twice on the same tick.
-    if (const Afflictions* afflictions = world.tryGet<Afflictions>(self)) {
-        if (afflictions->slowed(nowMillis)) speed *= clamp(afflictions->slowFactor, 0.0, 1.0);
-    }
-
-    const bool decisionDue = nowMillis >= ai.nextDecisionMillis;
-    if (decisionDue) {
-        ai.nextDecisionMillis = nowMillis + kMobDecisionIntervalMillis +
-                                rng_.range(0.0, kMobDecisionJitterMillis);
-    }
+                           const MobType& type, MobAi& ai, const Drive& drive, double nowMillis,
+                           double dt, CommandBuffer& commands) {
+    // The ten player-speed chasers never read `speed` while pursuing, so the
+    // slow has to reach the override as well or a web slows every mob in the
+    // game except the ones it is for.
+    const double factor = slowFactorOf(world, self, nowMillis);
+    const double speed = drive.speed * factor;
+    const double chaseSpeed = drive.chaseSpeed * factor;
 
     Vec2 desired{0, 0};
+    // True when the mob is actively holding a velocity of its own -- a pursuit,
+    // weather, a march home. False hands both the velocity and the heading to
+    // the idle machines.
+    bool driven = false;
+
+    // Ahead of everything else, exactly where the reference tests it: a child
+    // dragged too far from the nest that made it abandons what it was chasing,
+    // and a tick spent walking home is spent on nothing else.
+    if (walkHome(world, self, transform, ai, chaseSpeed, nowMillis, desired, commands)) {
+        motion.velocity = desired;
+        transform.angle =
+            steerFacing(transform.angle, desired, drive.hideRotation, drive.reversed, kPi);
+        return;
+    }
+
     switch (ai.kind) {
     case AiKind::Stationary:
         // Never moves, and the velocity is CLEARED rather than merely left
@@ -370,38 +901,263 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
         motion.velocity = Vec2{0, 0};
         ai.target = NULL_ENTITY;
         transform.angle = steerFacing(transform.angle, Vec2{0, 0}, drive.hideRotation,
-                                      drive.reversed, kMobTurnRate * dt);
+                                      drive.reversed, kPi);
         return;
 
     case AiKind::Sandstorm:
-        desired = steerSandstorm(terrain, transform, ai, speed, decisionDue);
+        desired = steerSandstorm(world, grid, self, type, transform, ai, speed, nowMillis, dt);
+        driven = true;
         break;
 
     case AiKind::Passive:
-        desired = steerPassive(world, terrain, self, transform, ai, speed, nowMillis, decisionDue);
+        // Nothing to hunt, and nothing to run from either: the reference has no
+        // mob flee state at all, so a passive mob being hit keeps hopping about
+        // on the idle machine and stays where the player's petals can reach it
+        // rather than bolting. The target is cleared because only something
+        // else writing one could have put it there.
+        ai.target = NULL_ENTITY;
         break;
 
     case AiKind::Neutral:
     case AiKind::Hostile:
-        desired = steerAggressive(world, terrain, grid, self, transform, body, ai, drive, speed,
-                                  nowMillis, decisionDue);
+        driven = steerAggressive(world, terrain, grid, self, type, transform, body, ai, drive,
+                                 chaseSpeed, nowMillis, desired, commands);
         break;
     }
 
-    // The shared player step, deliberately: a mob that adopted its desired
-    // velocity outright would reverse instantly, and the whole game reads as
-    // things with weight. It also means a knockback still in the velocity
-    // decays away instead of being overwritten the tick after it landed.
-    MoveState state{transform.position, motion.velocity};
-    integrateVelocity(state, desired, dt);
-    motion.velocity = state.velocity;
+    if (driven) {
+        motion.velocity = desired;
+    } else {
+        desired = steerIdle(world, self, transform, motion, body, ai, speed, nowMillis, dt);
+    }
 
     // Facing follows what the mob is TRYING to do, falling back to what it is
     // actually doing: a mob pinned against a wall or mid-knockback keeps facing
     // its target rather than spinning to face the shove.
+    //
+    // Adopted outright, with no turn limit: the reference assigns the angle
+    // from this tick's movement vector, so a mob that picks a new heading is
+    // already pointing along it. Easing there instead leaves the sprite aimed
+    // at where the mob used to be going for a third of a second, which is most
+    // of a hop and the whole of a turn onto a target that came up behind it.
     const Vec2 travel = desired.lengthSq() > kDirectionEpsilonSq ? desired : motion.velocity;
-    transform.angle = steerFacing(transform.angle, travel, drive.hideRotation, drive.reversed,
-                                  kMobTurnRate * dt);
+    transform.angle = steerFacing(transform.angle, travel, drive.hideRotation, drive.reversed, kPi);
+}
+
+// ---------------------------------------------------------------------------
+// Pets
+// ---------------------------------------------------------------------------
+
+Entity MobAiSystem::acquirePetPrey(World& world, const Terrain& terrain, const SpatialGrid& grid,
+                                   Entity self, Vec2 from, MobAi& ai, bool hasOwner,
+                                   Vec2 ownerPosition, double range) {
+    // With a living owner the pet sees exactly what the owner's SCREEN shows,
+    // not what its own aggro range reaches. An ownerless pet has no screen to
+    // be clipped to and falls back to that range.
+    const auto visible = [&](Vec2 at, double gapSq) {
+        if (!hasOwner) return gapSq < range * range;
+        return std::abs(at.x - ownerPosition.x) <= kPetViewHalfWidth &&
+               std::abs(at.y - ownerPosition.y) <= kPetViewHalfHeight;
+    };
+
+    if (ai.target != NULL_ENTITY) {
+        const Transform* at = world.tryGet<Transform>(ai.target);
+        if (at != nullptr && world.has<MobTag>(ai.target) && !world.has<Pet>(ai.target) &&
+            entityUsable(world, ai.target) &&
+            visible(at->position, distanceSq(from, at->position)) &&
+            !terrain.segmentBlocked(from, at->position)) {
+            return ai.target;
+        }
+        ai.target = NULL_ENTITY;
+    }
+
+    ++stats_.targetScans;
+    // Centred on whatever the clip is stated against, and wide enough to reach
+    // the corner of it: a pet running ahead of its owner must still see
+    // everything the owner can.
+    const Vec2 centre = hasOwner ? ownerPosition : from;
+    const double reach = hasOwner
+                             ? std::sqrt(kPetViewHalfWidth * kPetViewHalfWidth +
+                                         kPetViewHalfHeight * kPetViewHalfHeight)
+                             : range;
+    grid.query(centre, reach, gridScratch_);
+    candidates_.clear();
+    for (const Entity candidate : gridScratch_) {
+        if (candidate == self) continue;
+        // Wild mobs only: pets do not fight each other, and a pet chasing its
+        // owner's other summon is a squad that never reaches anything.
+        if (!world.has<MobTag>(candidate) || world.has<Pet>(candidate)) continue;
+        if (!entityUsable(world, candidate)) continue;
+        const Transform* at = world.tryGet<Transform>(candidate);
+        if (at == nullptr) continue;
+        const double gapSq = distanceSq(from, at->position);
+        if (!visible(at->position, gapSq)) continue;
+        // Scored nearest to the PET even though the clip is the owner's.
+        candidates_.push_back(Candidate{candidate, at->position, gapSq});
+    }
+
+    std::sort(candidates_.begin(), candidates_.end(),
+              [](const Candidate& a, const Candidate& b) { return a.score < b.score; });
+    const std::size_t rays = std::min<std::size_t>(candidates_.size(),
+                                                   static_cast<std::size_t>(kTargetLosRayCap));
+    for (std::size_t i = 0; i < rays; ++i) {
+        if (!terrain.segmentBlocked(from, candidates_[i].position)) return candidates_[i].entity;
+    }
+    return NULL_ENTITY;
+}
+
+bool MobAiSystem::teleportPetToOwner(const Terrain& terrain, Transform& transform,
+                                     Vec2 ownerPosition) {
+    // Eight positions around the owner, taken in order, so a pet recovered from
+    // behind a wall lands in a predictable place rather than wherever a roll
+    // put it.
+    for (int i = 0; i < 8; ++i) {
+        const Vec2 at = ownerPosition + Vec2::fromAngle(kPi * 0.25 * i, kPetTeleportDistance);
+        if (terrain.blocked(at)) continue;
+        if (terrain.segmentBlocked(at, ownerPosition)) continue;
+        transform.position = at;
+        return true;
+    }
+    // Nothing on the ring was clear: the owner's own tile will do, and if even
+    // that is blocked the pet stays where it is and tries again next tick.
+    if (!terrain.blocked(ownerPosition)) {
+        transform.position = ownerPosition;
+        return true;
+    }
+    return false;
+}
+
+void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGrid& grid,
+                           Entity self, Transform& transform, Motion& motion, const Body& body,
+                           const MobType& type, MobAi& ai, Entity owner, bool ownerAlive,
+                           const Drive& drive, double nowMillis, double dt,
+                           CommandBuffer& commands) {
+    const double speed = drive.speed * slowFactorOf(world, self, nowMillis);
+
+    // A tamed neutral has nothing left to be neutral ABOUT -- it fights for its
+    // owner -- so neutral and hostile run the same pet AI. Passive stays
+    // passive, and a sandstorm keeps drifting.
+    const bool attacks = drive.ai == AiKind::Hostile || drive.ai == AiKind::Neutral;
+    const double range = ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange;
+
+    Vec2 desired{0, 0};
+    Vec2 facing{0, 0};
+
+    if (ownerAlive) {
+        const Transform* ownerTransform = world.tryGet<Transform>(owner);
+        if (ownerTransform == nullptr) {
+            // An owner with no position is nothing to follow, and a pet left
+            // holding last tick's velocity would sail off on its own.
+            motion.velocity = Vec2{0, 0};
+            return;
+        }
+        const Vec2 ownerPosition = ownerTransform->position;
+
+        // Passive and sandstorm pets never pop back to the ring: off the
+        // owner's screen they are retired, and the petal that summoned them
+        // hatches a replacement.
+        if (drive.ai == AiKind::Sandstorm || drive.ai == AiKind::Passive) {
+            const Vec2 offset = transform.position - ownerPosition;
+            if (std::abs(offset.x) > kPetViewHalfWidth || std::abs(offset.y) > kPetViewHalfHeight) {
+                commands.destroy(self);
+                return;
+            }
+        }
+
+        if (drive.ai == AiKind::Sandstorm) {
+            // Shadows the owner's heading slightly faster than the owner moves,
+            // which is precisely why it steadily pulls ahead until it leaves
+            // the screen and recycles.
+            const Motion* ownerMotion = world.tryGet<Motion>(owner);
+            if (speed > 0.0 && ownerMotion != nullptr &&
+                ownerMotion->velocity.length() > kOwnerMovingSpeed) {
+                desired = ownerMotion->velocity * kSandstormPetSpeedFactor;
+            }
+        } else if (!terrain.segmentBlocked(transform.position, ownerPosition)) {
+            // Follows directly, with no distance limit at all while sight holds.
+            const Vec2 toOwner = ownerPosition - transform.position;
+            const double gap = toOwner.length();
+            if (gap > 0.0 && speed > 0.0) desired = toOwner * (speed / gap);
+        } else if (drive.ai == AiKind::Passive) {
+            // Sight-blocked passive pet: holds position. The off-screen rule
+            // above is what recovers it, not a teleport.
+        } else if (teleportPetToOwner(terrain, transform, ownerPosition)) {
+            facing = ownerPosition - transform.position;
+        }
+
+        if (attacks && speed > 0.0) {
+            ai.target = acquirePetPrey(world, terrain, grid, self, transform.position, ai, true,
+                                       ownerPosition, range);
+            if (ai.target != NULL_ENTITY) {
+                if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
+                    // Charging the target REPLACES the follow step rather than
+                    // blending with it: a pet that averaged the two would circle
+                    // between its owner and the mob and reach neither.
+                    const Vec2 toPrey = prey->position - transform.position;
+                    const double gap = toPrey.length();
+                    if (gap > 0.0) desired = toPrey * (speed / gap);
+                }
+            }
+        } else {
+            ai.target = NULL_ENTITY;
+        }
+    } else {
+        // Owner dead or gone: wander, straight at the destination.
+        ai.target = NULL_ENTITY;
+        if (attacks && drive.shoots && speed > 0.0) {
+            ai.target = acquirePetPrey(world, terrain, grid, self, transform.position, ai, false,
+                                       Vec2{0, 0}, range);
+        }
+        if (WanderTarget* wander = world.tryGet<WanderTarget>(self)) {
+            desired = wanderToPoint(*wander, transform.position, body, speed, nowMillis);
+        }
+    }
+
+    motion.velocity = desired;
+    if (desired.lengthSq() > kDirectionEpsilonSq) facing = desired;
+
+    if (attacks && drive.shoots && speed > 0.0 && ai.target != NULL_ENTITY) {
+        if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
+            fireVolley(world, self, type, ai, drive, transform.position,
+                       (prey->position - transform.position).angle(), nowMillis, commands);
+        }
+    }
+
+    transform.angle = steerFacing(transform.angle, facing, drive.hideRotation, drive.reversed, kPi);
+}
+
+void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialGrid& grid,
+                            double nowMillis, double dt, CommandBuffer& commands) {
+    // Deliberately not LOD-gated: a pet belongs to a player, and a player is by
+    // definition somewhere someone is looking.
+    pets_.collect(stepList_);
+    for (const Entity self : stepList_) {
+        if (!world.isAlive(self) || world.tryGet<Dead>(self) != nullptr) continue;
+
+        const MobType* type = world.tryGet<MobType>(self);
+        const Pet* pet = world.tryGet<Pet>(self);
+        if (type == nullptr || pet == nullptr) continue;
+        const Drive drive = driveFor(type->configIndex, type->rarity);
+        const Entity owner = pet->owner;
+        const bool ownerAlive = entityUsable(world, owner);
+
+        // Structural, so it happens before any component pointer is taken: only
+        // an ownerless pet needs somewhere to walk to.
+        if (!ownerAlive && !world.has<WanderTarget>(self)) world.add<WanderTarget>(self);
+
+        Transform* transform = world.tryGet<Transform>(self);
+        Motion* motion = world.tryGet<Motion>(self);
+        const Body* body = world.tryGet<Body>(self);
+        const MobType* kind = world.tryGet<MobType>(self);
+        MobAi* ai = world.tryGet<MobAi>(self);
+        if (transform == nullptr || motion == nullptr || body == nullptr || kind == nullptr ||
+            ai == nullptr) {
+            continue;
+        }
+
+        steerPet(world, terrain, grid, self, *transform, *motion, *body, *kind, *ai, owner,
+                 ownerAlive, drive, nowMillis, dt, commands);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -448,8 +1204,13 @@ void MobAiSystem::followChains(World& world, const Terrain& terrain,
         // The chain is still WALKED when nobody is near -- only the placement
         // is skipped. Walking is what marks the segments visited, and a segment
         // the walk never reached is indistinguishable from one in a cycle.
+        //
+        // Placement rides the HEAD's stride, so the body moves on exactly the
+        // ticks the head did. The reference places every segment every tick and
+        // gets the same positions out of it, because a follower re-placed
+        // against a head that has not moved lands where it already was.
         const bool active = headTransform != nullptr &&
-                            nearAnyPlayer(headTransform->position, activePlayers);
+                            stepsThisTick(head, headTransform->position, activePlayers);
 
         visited_.insert(head);
         Entity ahead = head;
@@ -593,29 +1354,75 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     // Written as a failed > so a NaN step takes this branch too. A zero step
     // has nothing to integrate and would hand every mob an infinite turn.
     if (!(dt > 0.0) || !std::isfinite(dt)) return;
+    ++tick_;
 
     maxAggroBonus_ = 0.0;
     playerModifiers_.each([&](Entity, PlayerTag&, PlayerModifiers& mods) {
         if (mods.aggroRadiusBonus > maxAggroBonus_) maxAggroBonus_ = mods.aggroRadiusBonus;
     });
 
+    // Watermarks belong to mobs, and mobs are reaped without telling this
+    // system, so the table is swept rather than pruned on death.
+    if (tick_ % kLedgerSweepTicks == 0) {
+        for (auto it = ledgerSeen_.begin(); it != ledgerSeen_.end();) {
+            if (world.isAlive(it->first)) ++it;
+            else it = ledgerSeen_.erase(it);
+        }
+    }
+
     repairChains(world);
 
-    mobs_.each([&](Entity self, Transform& transform, Motion& motion, Body& body,
-                   MobType& type, MobAi& ai) {
-        ++stats_.considered;
-        // A trailing segment is carried by the chain pass; only the head steers.
-        const BodySegment* segment = world.tryGet<BodySegment>(self);
-        if (segment != nullptr && !segment->head) return;
-
-        if (!nearAnyPlayer(transform.position, activePlayers)) {
-            ++stats_.skipped;
-            return;
-        }
-        ++stats_.thought;
-        steerMob(world, terrain, grid, self, transform, motion, body, type, ai, nowMillis, dt);
+    // Snapshotted before anything moves, which is where the reference builds
+    // it: a wild mob hunts a pet from where it stood at the top of the tick,
+    // not from wherever the pet pass below has since carried it.
+    petList_.clear();
+    pets_.each([&](Entity self, Pet&, Transform& transform, Motion&, Body&, MobType&, MobAi&) {
+        if (!entityUsable(world, self)) return;
+        petList_.push_back(Candidate{self, transform.position, 0.0});
     });
 
+    // Collected rather than walked in place: a mob is handed the behaviour
+    // components its type calls for on the first tick it thinks, and that --
+    // like a volley -- is a structural change, which relocates the very
+    // columns an in-place walk would be holding.
+    mobs_.collect(stepList_);
+    for (const Entity self : stepList_) {
+        if (!world.isAlive(self) || world.tryGet<Dead>(self) != nullptr) continue;
+        ++stats_.considered;
+
+        // A trailing segment is carried by the chain pass; only the head steers.
+        const BodySegment* segment = world.tryGet<BodySegment>(self);
+        if (segment != nullptr && !segment->head) continue;
+
+        const Transform* at = world.tryGet<Transform>(self);
+        const MobType* type = world.tryGet<MobType>(self);
+        if (at == nullptr || type == nullptr) continue;
+        if (!stepsThisTick(self, at->position, activePlayers)) {
+            ++stats_.skipped;
+            driftUnwatched(world, self, nowMillis, dt);
+            continue;
+        }
+        ++stats_.thought;
+
+        const Drive drive = driveFor(type->configIndex, type->rarity);
+        equipBehaviour(world, self, drive, nowMillis);
+
+        // Re-fetched: equipBehaviour may have moved the mob to another
+        // archetype, and every pointer taken before it with the old rows.
+        Transform* transform = world.tryGet<Transform>(self);
+        Motion* motion = world.tryGet<Motion>(self);
+        const Body* body = world.tryGet<Body>(self);
+        const MobType* kind = world.tryGet<MobType>(self);
+        MobAi* ai = world.tryGet<MobAi>(self);
+        if (transform == nullptr || motion == nullptr || body == nullptr || kind == nullptr ||
+            ai == nullptr) {
+            continue;
+        }
+        steerMob(world, terrain, grid, self, *transform, *motion, *body, *kind, *ai, drive,
+                 nowMillis, dt, commands);
+    }
+
+    steerPets(world, terrain, grid, nowMillis, dt, commands);
     followChains(world, terrain, activePlayers);
     driveSpawners(world, terrain, nowMillis, commands);
 }

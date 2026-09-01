@@ -134,7 +134,7 @@ struct Sim {
         world.add<Bounty>(e, Bounty{stats.xp, {}});
 
         MobAi brain;
-        brain.kind = content().mob(index).ai;
+        brain.kind = stats.ai;
         brain.anchor = at;
         brain.aggroRange = stats.aggroRange;
         world.add<MobAi>(e, brain);
@@ -268,15 +268,20 @@ TEST(facing_honours_hide_rotation_and_reversed) {
     CHECK_NEAR(steerFacing(0.0, Vec2{0, 1}, false, true, 10.0), -kPi / 2, 1e-12);
 }
 
-TEST(a_mob_turns_toward_its_target_rather_than_snapping_round) {
+TEST(a_mob_faces_its_new_heading_on_the_tick_it_picks_it) {
     CHECK(contentReady());
     Sim sim;
     const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
     sim.spawnPlayer(kOrigin + Vec2{0, 250});
 
     sim.tickIntent();
-    // One tick of a 9 rad/s limit at 25Hz, not the quarter turn it wanted.
-    CHECK_NEAR(sim.angleOf(mob), kMobTurnRate * net::kTickSeconds, 1e-9);
+    // The reference assigns a mob's facing outright from the vector it is
+    // travelling along -- `Math.atan2(moveY * speed, moveX * speed)`, with no
+    // rate limit anywhere -- so the quarter turn onto the target is paid in
+    // full on the tick the target is picked. Easing there instead would leave
+    // the sprite aimed at where the mob used to be going for a third of a
+    // second, which is most of a hop.
+    CHECK_NEAR(sim.angleOf(mob), kPi / 2, 1e-9);
     sim.tickIntent(20);
     CHECK_NEAR(sim.angleOf(mob), kPi / 2, 0.05);
 }
@@ -306,7 +311,7 @@ TEST(hostile_mob_charges_a_player_inside_its_range) {
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{200, 0});
 
     const double before = sim.gap(mob, player);
-    sim.tick(25);
+    sim.tick(10);
     CHECK_EQ(sim.brainOf(mob).target, player);
     CHECK(sim.velocityOf(mob).x > 0.0);
     CHECK(sim.gap(mob, player) < before - 30.0);
@@ -336,7 +341,7 @@ TEST(a_raised_aggro_radius_is_noticed_from_further_away) {
     CHECK_EQ(sim.brainOf(mob).target, player);
 }
 
-TEST(aggro_drops_past_the_leash_and_holds_inside_it) {
+TEST(aggro_holds_far_outside_the_aggro_range_and_drops_at_five_viewports) {
     CHECK(contentReady());
     Sim sim;
     const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
@@ -344,13 +349,20 @@ TEST(aggro_drops_past_the_leash_and_holds_inside_it) {
     sim.tickIntent(2);
     CHECK_EQ(sim.brainOf(mob).target, player);
 
-    // Leash is 1.6x the 300 range, so 400 is still inside it.
-    sim.world.get<Transform>(player).position = kOrigin + Vec2{400, 0};
+    // There is no leash on the aggro range. The reference keeps an acquired
+    // target while it is within `VIEWPORT_WIDTH * 5` and still visible, so a
+    // soldier ant with 300 units of range follows a flower far past it -- that
+    // is what makes a mob you woke up chase you across the section.
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{5000, 0};
     sim.tickIntent();
     CHECK_EQ(sim.brainOf(mob).target, player);
 
-    sim.world.get<Transform>(player).position = kOrigin + Vec2{600, 0};
-    sim.tickIntent();
+    // Past the retain radius it is dropped, and cannot be re-acquired from
+    // there either. Five ticks because a mob that far from every player is
+    // outside the LOD active radius and thinks one tick in five.
+    sim.world.get<Transform>(player).position =
+        kOrigin + Vec2{kMobTargetRetainRadius + 500.0, 0};
+    sim.tickIntent(5);
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
 }
 
@@ -380,18 +392,22 @@ TEST(a_held_target_costs_no_further_broadphase_queries) {
     CHECK_EQ(sim.totalConsidered, std::uint64_t(50));
 }
 
-TEST(retargeting_runs_on_the_decision_clock_not_every_tick) {
+TEST(a_mob_with_nothing_to_chase_goes_looking_again_every_tick) {
     CHECK(contentReady());
     Sim sim;
     sim.spawnMob("soldier_ant", kOrigin);
     // Visible to LOD, out of aggro range: the mob keeps looking and keeps
-    // failing, which is the case that would scan every tick if it could.
+    // failing, which is the case a decision clock would have throttled.
     sim.spawnPlayer(kOrigin + Vec2{900, 0});
 
     sim.tick(50);                                   // two seconds
     CHECK_EQ(sim.totalConsidered, std::uint64_t(50));
-    CHECK(sim.totalScans >= 2);                     // 500-750ms apart
-    CHECK(sim.totalScans <= 5);
+    // The reference pays the broadphase query per mob per tick whenever the
+    // cached target fails to revalidate; only a HELD target skips it (see
+    // a_held_target_costs_no_further_broadphase_queries). Putting the scan on
+    // a clock instead makes a mob ignore a player who walks up to it for as
+    // long as the clock says, which reads as the field lagging the flower.
+    CHECK_EQ(sim.totalScans, std::uint64_t(50));
 }
 
 // ---------------------------------------------------------------------------
@@ -410,38 +426,45 @@ TEST(passive_mob_never_seeks_a_player_standing_next_to_it) {
     CHECK_EQ(sim.totalAttacks, std::uint64_t(0));
 }
 
-TEST(passive_mob_flees_its_attacker_then_resumes_wandering) {
+TEST(a_passive_mob_that_is_hit_neither_retaliates_nor_bolts) {
     CHECK(contentReady());
     Sim sim;
-    const Entity mob = sim.spawnMob("bee", kOrigin);
+    const Entity mob = sim.spawnMob("bee", kOrigin);            // common bee: passive
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{60, 0});
 
     sim.hurt(mob, player);
     sim.tick(3);
-    CHECK_EQ(sim.brainOf(mob).target, player);
-    CHECK(sim.brainOf(mob).fleeUntilMillis > sim.now);
-    // Attacker is at +x, so the bee is heading -x.
-    CHECK(sim.velocityOf(mob).x < 0.0);
-
-    // Long enough for the scare to expire with no further hits.
-    sim.tick(120);
+    // The reference has no mob flee state at all: `ai_type: passive` never
+    // acquires a target, and being hit provokes only a NEUTRAL mob (which is
+    // what a bee becomes from rare up). A common bee being shot keeps hopping
+    // about on the idle machine -- which is why it stays inside the ring that
+    // is hitting it rather than bolting out of reach.
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
     CHECK_NEAR(sim.brainOf(mob).fleeUntilMillis, 0.0, 1e-12);
+
+    sim.tick(120);
+    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+    // Still drifting around where it was, not four seconds of flight away.
+    CHECK(distance(sim.positionOf(mob), kOrigin) < kEnemyWanderRange * 2.0);
 }
 
-TEST(a_fleeing_mob_keeps_running_while_it_is_still_being_hit) {
+TEST(no_amount_of_damage_turns_a_passive_mob_on_its_attacker) {
     CHECK(contentReady());
     Sim sim;
     const Entity mob = sim.spawnMob("bee", kOrigin);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{60, 0});
 
-    // Hit once per second for four seconds -- longer than one flee window.
+    // Hit once per second for four seconds. Over there this is four more
+    // entries on the damage ledger and nothing else: the provocation path is
+    // gated on `ai_type: neutral`, so a passive mob's ledger is only ever read
+    // to decide who gets the XP.
     for (int i = 0; i < 4; ++i) {
         sim.hurt(mob, player);
         sim.tick(25);
     }
-    CHECK_EQ(sim.brainOf(mob).target, player);
-    CHECK(sim.brainOf(mob).fleeUntilMillis > sim.now);
+    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+    CHECK_NEAR(sim.brainOf(mob).fleeUntilMillis, 0.0, 1e-12);
+    CHECK_EQ(sim.totalScans, std::uint64_t(0));   // and it never went looking
 }
 
 TEST(a_mob_with_no_damage_ledger_has_nobody_to_flee_from) {
@@ -485,36 +508,63 @@ TEST(neutral_mob_loses_interest_when_its_target_runs_far_enough) {
     sim.tickIntent();
     CHECK_EQ(sim.brainOf(mob).target, player);
 
+    // Same retain radius as a hostile mob's: the provoked target is held
+    // until it is five viewports away, not until it leaves the aggro range.
     sim.world.get<Transform>(player).position = kOrigin + Vec2{700, 0};
     sim.tickIntent();
+    CHECK_EQ(sim.brainOf(mob).target, player);
+
+    sim.world.get<Transform>(player).position =
+        kOrigin + Vec2{kMobTargetRetainRadius + 500.0, 0};
+    sim.tickIntent(5);
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
 }
 
-TEST(retaliation_never_picks_a_target_the_leash_would_drop_the_same_tick) {
+TEST(retaliation_reaches_further_than_the_mobs_own_aggro_range) {
     CHECK(contentReady());
     Sim sim;
-    const Entity mob = sim.spawnMob("worker_ant", kOrigin);     // range 300, leash 480
-    const Entity sniper = sim.spawnPlayer(kOrigin + Vec2{900, 0});
-
-    sim.hurt(mob, sniper);
-    sim.tickIntent(3);
-    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
-    CHECK_EQ(sim.totalScans, std::uint64_t(0));
+    Sim far;
+    {
+        // Provocation is not bounded by the aggro range over there: the damage
+        // handler writes the target outright and the AI only ever validates it
+        // against the retain radius. Three times its own range is still a
+        // target a worker ant comes for.
+        const Entity mob = sim.spawnMob("worker_ant", kOrigin);   // range 300
+        const Entity sniper = sim.spawnPlayer(kOrigin + Vec2{900, 0});
+        sim.hurt(mob, sniper);
+        sim.tickIntent(3);
+        CHECK_EQ(sim.brainOf(mob).target, sniper);
+        CHECK_EQ(sim.totalScans, std::uint64_t(0));   // and never a broadphase query
+    }
+    {
+        // Past the retain radius, though, the validator drops it on the very
+        // tick it was adopted: retaliation never leaves a mob charging the
+        // horizon after something it can no longer reach.
+        const Entity mob = far.spawnMob("worker_ant", kOrigin);
+        const Entity sniper =
+            far.spawnPlayer(kOrigin + Vec2{kMobTargetRetainRadius + 500.0, 0});
+        far.hurt(mob, sniper);
+        far.tickIntent(5);
+        CHECK_EQ(far.brainOf(mob).target, NULL_ENTITY);
+        CHECK_EQ(far.totalScans, std::uint64_t(0));
+    }
 }
 
-TEST(a_passive_mob_stops_fleeing_an_attacker_that_died) {
+TEST(a_neutral_mob_lets_go_of_the_provoker_that_died) {
     CHECK(contentReady());
     Sim sim;
-    const Entity mob = sim.spawnMob("bee", kOrigin);
+    const Entity mob = sim.spawnMob("worker_ant", kOrigin);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{60, 0});
     sim.hurt(mob, player);
     sim.tickIntent(2);
     CHECK_EQ(sim.brainOf(mob).target, player);
 
     sim.world.add<Dead>(player, Dead{mob});
-    sim.tickIntent();
+    sim.tickIntent(2);
+    // Dropped by the same revalidation a hostile mob runs -- and NOT picked up
+    // again, because provocation only fires when the damage ledger grows and a
+    // corpse deals no more damage.
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
-    CHECK_NEAR(sim.brainOf(mob).fleeUntilMillis, 0.0, 1e-12);
 }
 
 TEST(a_wandering_mob_drifts_but_stays_near_its_anchor) {
@@ -631,7 +681,7 @@ TEST(the_combat_hit_ledger_gates_the_attack_the_ai_intends) {
 // Level of detail
 // ---------------------------------------------------------------------------
 
-TEST(mobs_further_than_the_active_radius_do_not_think) {
+TEST(mobs_further_than_the_active_radius_think_one_tick_in_five) {
     CHECK(contentReady());
     Sim sim;
     const Entity near = sim.spawnMob("soldier_ant", kOrigin + Vec2{100, 0});
@@ -640,24 +690,35 @@ TEST(mobs_further_than_the_active_radius_do_not_think) {
 
     sim.tick(10);
     CHECK_EQ(sim.totalConsidered, std::uint64_t(20));
-    CHECK_EQ(sim.totalSkipped, std::uint64_t(10));
+    // Not frozen: a distant mob simulates at a FIFTH of the rate, which is
+    // what stops the far world draining into wall lines while nobody is
+    // looking at it. Ten ticks buy the far mob two of them.
+    CHECK_EQ(sim.totalSkipped, std::uint64_t(10 - 10 / kMobFarStride));
     CHECK(sim.velocityOf(near).length() > 0.0);
-    CHECK_NEAR(sim.velocityOf(far).length(), 0.0, 1e-12);
-    CHECK_NEAR(distance(sim.positionOf(far), kOrigin + Vec2{kMobActiveRadius + 500.0, 0}), 0.0, 1e-12);
+    // The near mob has a player to chase; the far one has nothing in range and
+    // stays near where it was put.
+    CHECK(distance(sim.positionOf(far), kOrigin + Vec2{kMobActiveRadius + 500.0, 0}) <
+          kEnemyWanderRange);
 }
 
-TEST(nobody_watching_means_nobody_thinks) {
+TEST(an_empty_activity_field_is_permissive_not_a_freeze) {
     CHECK(contentReady());
     Sim sim;
     const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
-    sim.spawnPlayer(kOrigin + Vec2{100, 0});
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{100, 0});
     sim.autoActive = false;
     sim.active.clear();
 
     sim.tick(10);
-    CHECK_EQ(sim.totalSkipped, std::uint64_t(10));
-    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
-    CHECK_NEAR(sim.velocityOf(mob).length(), 0.0, 1e-12);
+    // An EMPTY activity field means "everything is active", exactly as the
+    // reference's MobActivityField does -- with nobody connected the tick
+    // early-returns anyway, and a test or bench that forgets to publish the
+    // players must see unmodified behaviour rather than a world at a fifth
+    // speed. Only a field that HAS players and does not list this one throttles
+    // (see mobs_further_than_the_active_radius_think_one_tick_in_five).
+    CHECK_EQ(sim.totalSkipped, std::uint64_t(0));
+    CHECK_EQ(sim.brainOf(mob).target, player);
+    CHECK(sim.velocityOf(mob).length() > 0.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -964,19 +1025,19 @@ TEST(a_nest_cannot_overshoot_when_several_ticks_flush_at_once) {
 TEST(a_slow_reduces_the_speed_the_mob_asks_for) {
     CHECK(contentReady());
     Sim sim;
-    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // 2.4 config units = 96 u/s
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);    // player-speed chaser: 300 u/s
     sim.spawnPlayer(kOrigin + Vec2{280, 0});
 
     sim.tickIntent(30);
     const double full = sim.velocityOf(mob).length();
-    CHECK_NEAR(full, 96.0, 1.0);
+    CHECK_NEAR(full, 300.0, 1.0);
 
     Afflictions slow;
     slow.slowFactor = 0.5;
     slow.slowUntilMillis = sim.now + 60000.0;
     sim.world.add<Afflictions>(mob, slow);
     sim.tickIntent(30);
-    CHECK_NEAR(sim.velocityOf(mob).length(), 48.0, 1.0);
+    CHECK_NEAR(sim.velocityOf(mob).length(), 150.0, 1.0);
 }
 
 TEST(a_mob_type_outside_the_content_tables_is_inert_rather_than_undefined) {
@@ -1010,9 +1071,16 @@ TEST(a_pet_is_not_steered_by_the_wild_mob_ai) {
     sim.spawnPlayer(kOrigin + Vec2{100, 0});
 
     sim.tick(20);
+    // The wild pass never sees it -- a pet is on the pet query, and the two do
+    // not overlap.
     CHECK_EQ(sim.totalConsidered, std::uint64_t(0));
+    // And it does not hunt the flower standing next to it: a pet's target is a
+    // wild MOB, and there is not one in this world.
     CHECK_EQ(sim.brainOf(pet).target, NULL_ENTITY);
-    CHECK_NEAR(sim.velocityOf(pet).length(), 0.0, 1e-12);
+    // An ownerless pet is not frozen either -- the reference wanders it, at
+    // the wander step rather than a chase -- so it drifts around where it was
+    // rather than closing on the player.
+    CHECK(distance(sim.positionOf(pet), kOrigin) < kEnemyWanderRange * 2.0);
 }
 
 TEST(a_dead_mob_stops_steering) {

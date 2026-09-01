@@ -1,8 +1,11 @@
 #include "server/systems/movement.h"
 
+#include <algorithm>
 #include <cmath>
 
+#include "shared/game/config.h"
 #include "shared/game/constants.h"
+#include "shared/game/map_elements.h"
 
 namespace flr {
 namespace {
@@ -10,6 +13,11 @@ namespace {
 /// A correction from resolveCircle smaller than this is floating-point noise
 /// from the push-out arithmetic, not contact with a wall.
 constexpr double kContactEpsilon = 1e-6;
+
+/// Every blocking tile is grown by this much before the containment test, so
+/// a path that grazes the shared corner of a diagonal seam -- which it can do
+/// by a fraction of a pixel -- still counts as crossing it.
+constexpr double kCenterPathEpsilon = 0.5;
 
 /// Below this a step is not worth dividing by: a dt of zero (a paused server,
 /// a test stepping with 0) must not turn into a division.
@@ -28,14 +36,6 @@ Vec2 sanitizePosition(Vec2 p) {
     // world; putting it at the centre is recoverable, propagating NaN is not.
     if (!std::isfinite(p.x) || !std::isfinite(p.y)) return {kWorldHalf, kWorldHalf};
     return p;
-}
-
-/// Clamps an affliction multiplier into range. NaN and negatives read as zero
-/// rather than as "unchanged": a corrupt debuff should stop a body, never
-/// launch it, and a slow factor of zero is a legitimate full stall.
-double sanitizeSlowFactor(double factor) {
-    if (!(factor > 0.0)) return 0.0;
-    return factor < 1.0 ? factor : 1.0;
 }
 
 /// Ceiling on a speed modifier, so one bad petal stat cannot make a player
@@ -61,6 +61,62 @@ double substepLength(double sanitizedRadius) {
 Vec2 clampToWorld(Vec2 p, double sanitizedRadius) {
     return {clamp(p.x, sanitizedRadius, kWorldSize - sanitizedRadius),
             clamp(p.y, sanitizedRadius, kWorldSize - sanitizedRadius)};
+}
+
+/// Liang-Barsky: does the segment a->b touch the axis-aligned rect?
+bool segmentTouchesRect(Vec2 a, Vec2 b, double left, double top, double right, double bottom) {
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+    double t0 = 0.0;
+    double t1 = 1.0;
+    const auto clip = [&](double p, double q) {
+        if (p == 0.0) return q >= 0.0;      // parallel to this edge: inside iff q >= 0
+        const double r = q / p;
+        if (p < 0.0) {
+            if (r > t1) return false;
+            if (r > t0) t0 = r;
+        } else {
+            if (r < t0) return false;
+            if (r < t1) t1 = r;
+        }
+        return true;
+    };
+    return clip(-dx, a.x - left) && clip(dx, right - a.x)
+        && clip(-dy, a.y - top) && clip(dy, bottom - a.y)
+        && t0 <= t1;
+}
+
+/// True when the straight path between two body CENTRES touches solid.
+///
+/// The push-out picks a face per tile and is free to choose the far one, so a
+/// centre pressed into a diagonal seam can be ejected into the open quadrant
+/// on the other side of the wall. Accepting that is a teleport through solid,
+/// which is why the caller refuses any ejection this reports.
+///
+/// The raw tile rects, not the jagged outline: this asks whether the path
+/// crossed the WALL, and the jagged edge is a detail of where it rests.
+bool centerPathCrossesWall(const Terrain& terrain, Vec2 a, Vec2 b) {
+    const double eps = kCenterPathEpsilon;
+    // Clamped to the grid for the same reason the collision scan is: off-grid
+    // tiles read as wall, and an unclamped index is an unbounded loop.
+    const int minTx = std::max(0, Terrain::toTileCoord(std::min(a.x, b.x) - eps));
+    const int maxTx = std::min(Terrain::tilesPerAxis() - 1,
+                               Terrain::toTileCoord(std::max(a.x, b.x) + eps));
+    const int minTy = std::max(0, Terrain::toTileCoord(std::min(a.y, b.y) - eps));
+    const int maxTy = std::min(Terrain::tilesPerAxis() - 1,
+                               Terrain::toTileCoord(std::max(a.y, b.y) + eps));
+
+    for (int tileY = minTy; tileY <= maxTy; ++tileY) {
+        for (int tileX = minTx; tileX <= maxTx; ++tileX) {
+            if (!tileBlocks(terrain.atTile(tileX, tileY))) continue;
+            if (segmentTouchesRect(a, b,
+                                   tileX * kTileSize - eps, tileY * kTileSize - eps,
+                                   (tileX + 1) * kTileSize + eps, (tileY + 1) * kTileSize + eps)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 /// Drains the pending positional offset written by combat.
@@ -116,7 +172,8 @@ Vec2 sanitizeMovementVelocity(Vec2 velocity) {
 }
 
 StepOutcome stepCollide(const Terrain& terrain, Vec2& position, Vec2 velocity,
-                        double radius, double dt, bool collideTerrain) {
+                        double radius, double dt, bool collideTerrain,
+                        bool refuseWallCrossing) {
     StepOutcome out;
     const double r = sanitizeCollisionRadius(radius);
     const double hull = r > kMinCollisionRadius ? r : kMinCollisionRadius;
@@ -144,8 +201,23 @@ StepOutcome stepCollide(const Terrain& terrain, Vec2& position, Vec2 velocity,
 
     const Vec2 stepDelta = delta / static_cast<double>(steps);
     for (int i = 0; i < steps; ++i) {
-        const Vec2 want = position + stepDelta;
+        const Vec2 from = position;
+        const Vec2 want = from + stepDelta;
         Vec2 got = collideTerrain ? terrain.resolveCircle(want, hull) : want;
+
+        if (refuseWallCrossing && collideTerrain
+            && distanceSq(got, want) > kContactEpsilon * kContactEpsilon
+            // A centre already inside a blocking tile is exempt: the
+            // resolver's output is its only way out, arbitrary as the
+            // direction may be.
+            && !terrain.blocked(from)
+            && centerPathCrossesWall(terrain, from, got)) {
+            // The ejection would carry the centre across solid. Refuse it and
+            // end the tick's movement where this substep started.
+            out.blocked = true;
+            break;
+        }
+
         got = clampToWorld(got, hull);
         if (distanceSq(got, want) > kContactEpsilon * kContactEpsilon) out.blocked = true;
         position = got;
@@ -161,14 +233,17 @@ StepOutcome stepCollide(const Terrain& terrain, Vec2& position, Vec2 velocity,
 
 MovementSystem::Queries::Queries(World& world)
     : players(world), mobs(world), projectiles(world),
-      playerTargets(world), mobTargets(world) {
+      mobTargets(world), mobBodies(world), playerPositions(world) {
     // A body marked Dead is still in the world so later systems can see it die,
     // but a corpse must not keep walking.
     players.without<Dead>();
     mobs.without<Dead>();
     projectiles.without<Dead>();
-    playerTargets.without<Dead>();
     mobTargets.without<Dead>();
+    mobBodies.without<Dead>();
+    // playerPositions deliberately keeps corpses: a dead flower is about to
+    // respawn where it stands, and letting the mobs around it coast for those
+    // few ticks is the artefact the LOD gate exists to avoid.
 }
 
 void MovementSystem::bind(World& world) {
@@ -178,13 +253,33 @@ void MovementSystem::bind(World& world) {
 }
 
 void MovementSystem::run(World& world, const Terrain& terrain, double nowMillis, double dt) {
+    runPlayerPhase(world, terrain, nowMillis, dt);
+    runWorldPhase(world, terrain, nowMillis, dt);
+}
+
+void MovementSystem::runPlayerPhase(World& world, const Terrain& terrain,
+                                    double nowMillis, double dt) {
+    bind(world);
+    movePlayers(world, terrain, nowMillis, dt);
+    // The pads act on the position the tick has already settled on, which is
+    // what makes the suction able to beat a shove: the reference runs them at
+    // the very end of its per-player pipeline, on the coordinates it is about
+    // to commit.
+    if (mapData) stepTeleporters(world, nowMillis, dt);
+}
+
+void MovementSystem::runWorldPhase(World& world, const Terrain& terrain,
+                                   double nowMillis, double dt) {
     bind(world);
     seekTargetsReady_ = false;
-    movePlayers(world, terrain, nowMillis, dt);
     moveMobs(world, terrain, nowMillis, dt);
-    // Projectiles last: they home on where players and mobs ended up this
-    // tick, so a shot never chases a position that is already stale.
+    // Projectiles after mobs: a shot fired this tick takes its launch bearing
+    // from where the mobs ended up, not from where they were.
     moveProjectiles(world, terrain, dt);
+    // Separation last, once everything has moved -- the reference resolves
+    // mob-vs-mob overlap in its combat phase for the same reason. A pass run
+    // before the movers would have its work undone the same tick.
+    separateMobs(world, terrain);
 }
 
 void MovementSystem::movePlayers(World& world, const Terrain& terrain,
@@ -194,7 +289,18 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         // The cursor is one value with two readers -- movement and petal aim --
         // so it is derived once, here, before anything downstream looks at it.
         input.aimDirection = Vec2::fromAngle(input.current.aimAngle);
-        transform.angle = input.current.aimAngle;
+
+        // Facing is the WALK heading, and it is frozen while the flower is
+        // standing still: it is where the flower went, not where its owner is
+        // pointing. Under cursor control the two are the same value, so this
+        // only reads differently on WASD -- where the client keeps sending the
+        // cursor angle as the aim -- and at rest, where the reference holds
+        // the heading it stopped on. The angle is what both clients ease the
+        // pupils toward, so writing the cursor here makes every flower's eyes
+        // track a mouse the reference never showed them.
+        if (input.current.moveStrength > 0.0) {
+            transform.angle = input.current.moveAngle;
+        }
 
         // Every scale folds into the TARGET speed, never into the velocity
         // that came out of the last tick. That is what the client does, and a
@@ -204,11 +310,10 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         if (const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(e)) {
             maxSpeed *= sanitizeSpeedScale(mods->speedScale);
         }
-        if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
-            if (afflictions->slowed(nowMillis)) {
-                maxSpeed *= sanitizeSlowFactor(afflictions->slowFactor);
-            }
-        }
+        // No slow term. Slows are a mob affliction in the reference -- its one
+        // writer refuses any victim without a mob kind -- so a flower standing
+        // in a web keeps full speed even where an orphaned field can still
+        // stamp an Afflictions onto it.
         if (terrain.inWater(transform.position)) maxSpeed *= kWaterSpeedScale;
 
         MoveState state{transform.position, motion.velocity};
@@ -217,15 +322,52 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
 
         applyPendingKnockback(world, e, transform);
         const Vec2 velocity = sanitizeMovementVelocity(state.velocity);
-        const StepOutcome out = stepCollide(terrain, transform.position, velocity, body.radius, dt);
-        motion.velocity = velocityAfterStep(velocity, out, dt, 1.0);
+        // The containment guard is the flower's alone, as it is in the
+        // reference: it lives in stepPlayerMovement, and mobs and projectiles
+        // take the resolver's word for it. A player arrives here from a
+        // contact knockback that already overlapped wall geometry often
+        // enough that without it, diagonal seams are passable.
+        stepCollide(terrain, transform.position, velocity, body.radius, dt, true, true);
+        // TypeScript's stepPlayerMovement returns the friction-integrated
+        // velocity unchanged when wall resolution alters the position. Keeping
+        // the attempted velocity is observable on the following tick (the
+        // flower continues pressing/sliding); rebuilding it from achieved
+        // displacement changes both acceleration and the wall trajectory.
+        motion.velocity = velocity;
     });
+}
+
+void MovementSystem::stepTeleporters(World& world, double nowMillis, double dt) {
+    teleportPlayers_.clear();
+    queries_->players.each([&](Entity e, PlayerTag&, Transform&, Motion&, Body&, PlayerInput&) {
+        teleportPlayers_.push_back(e);
+    });
+
+    for (const Entity e : teleportPlayers_) {
+        Transform* transform = world.tryGet<Transform>(e);
+        if (!transform) continue;
+        // The state is per flower and starts empty, so it is created on the
+        // first tick this runs for a player rather than by the prefab -- one
+        // more component on every flower for a feature eight pads use.
+        TeleporterState& state = world.ensure<TeleporterState>(e);
+        const MapData::TeleportStep step =
+            mapData->stepTeleporters(transform->position, dt, nowMillis, state);
+        // Committed raw, with no wall resolution and no world clamp, exactly
+        // as the reference commits it: the pull is small and every pad and
+        // destination is authored on open ground.
+        transform->position = step.position;
+    }
 }
 
 void MovementSystem::moveMobs(World& world, const Terrain& terrain,
                               double nowMillis, double dt) {
-    queries_->mobs.each([&](Entity e, MobTag&, Transform& transform, Motion& motion, Body& body) {
-        applyPendingKnockback(world, e, transform);
+    queries_->mobs.each([&](Entity, MobTag&, Transform& transform, Motion& motion, Body& body) {
+        // Knockback is deliberately NOT drained here. The reference writes a
+        // mob's knockback vector on every petal and projectile hit and then no
+        // system ever reads it back into a position -- a mob walks straight
+        // through a petal ring rather than being shoved out of it, and that
+        // sets both the DPS-in-contact and the feel of melee. The component
+        // stays a pure record, which is exactly what it is over there.
         const Vec2 velocity = sanitizeMovementVelocity(motion.velocity);
 
         // Unlike a player's, a mob's slow and water penalty scale the DISPLACEMENT
@@ -235,11 +377,8 @@ void MovementSystem::moveMobs(World& world, const Terrain& terrain,
         // that paused in a river would never get out of it.
         double envScale = 1.0;
         if (terrain.inWater(transform.position)) envScale *= kMobWaterSpeedScale;
-        if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
-            if (afflictions->slowed(nowMillis)) {
-                envScale *= sanitizeSlowFactor(afflictions->slowFactor);
-            }
-        }
+        // Slow already scales the desired speed in MobAiSystem. Applying it
+        // again here squares the factor (a 0.5 web becomes 0.25 speed).
 
         const Vec2 attempted = velocity * envScale;
         const StepOutcome out = stepCollide(terrain, transform.position, attempted, body.radius, dt);
@@ -263,27 +402,23 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
         }
 
         Vec2 velocity = sanitizeMovementVelocity(motion.velocity);
-        const double speed = velocity.length();
 
-        if (projectile.seekRange > 0.0 && speed > kMinProjectileSpeed) {
-            if (!seekTargetsReady_) collectSeekTargets();
-            Team team = Team::Players;
-            if (const Faction* faction = world.tryGet<Faction>(e)) team = faction->team;
-            else if (const Faction* owner = world.tryGet<Faction>(projectile.owner)) team = owner->team;
-
-            const double heading = velocity.angle();
-            const Entity target = findSeekTarget(e, projectile, team, transform.position, heading);
-            if (target != NULL_ENTITY) {
-                const Transform* targetTransform = world.tryGet<Transform>(target);
-                const double bearing = targetTransform
-                    ? (targetTransform->position - transform.position).angle() : heading;
-                // Rate-limited, so the shot arcs onto the bearing. Snapping to
-                // it would make a homing petal unmissable and unreadable.
-                const double turn = clamp(angleDelta(heading, bearing),
-                                          -kProjectileTurnRate * dt, kProjectileTurnRate * dt);
-                velocity = Vec2::fromAngle(heading + turn, speed);
-            }
+        // Seeking is a LAUNCH correction, not a guidance system: the shot
+        // snaps onto the nearest mob inside a cone around the bearing it was
+        // fired on, once, and then flies straight. That is what the reference
+        // does, and it is load-bearing -- the client dead-reckons a projectile
+        // along a fixed heading, so a shot that curves in flight is drawn
+        // somewhere the server does not have it.
+        //
+        // The correction belongs to the volley, and the petal system spawns
+        // the shot on the petal's orbit bearing; this runs on the shot's first
+        // step, before it has moved, so it still measures from the petal's
+        // own position. Consuming seekRange is what makes it one-shot.
+        if (projectile.seekRange > 0.0 && velocity.lengthSq() > kMinProjectileSpeed * kMinProjectileSpeed) {
+            velocity = aimAtLaunch(world, e, transform.position, projectile, velocity);
+            projectile.seekRange = 0.0;
         }
+        const double speed = velocity.length();
 
         // Range is a distance budget, not a timer: the last tick is shortened
         // so a fast shot dies exactly at its stated reach rather than one whole
@@ -319,26 +454,24 @@ void MovementSystem::collectSeekTargets() {
     seekTargets_.clear();
     seekTargetsReady_ = true;
 
-    const auto gather = [this](Entity e, Transform& transform, Faction& faction, Health& health) {
-        if (!health.alive()) return;
-        seekTargets_.push_back({e, transform.position, faction.team});
-    };
-    queries_->playerTargets.each([&](Entity e, PlayerTag&, Transform& t, Faction& f, Health& h) {
-        gather(e, t, f, h);
-    });
+    // Mobs only. The reference's seek walks the shared enemy broadphase, which
+    // deliberately holds no players and no pets, so a guided shot locks onto
+    // wild mobs and nothing else; the team test below is what keeps a pet off
+    // the list here, since a pet is a mob on the players' team.
     queries_->mobTargets.each([&](Entity e, MobTag&, Transform& t, Faction& f, Health& h) {
-        gather(e, t, f, h);
+        if (!h.alive()) return;
+        seekTargets_.push_back({e, t.position, f.team});
     });
 }
 
 Entity MovementSystem::findSeekTarget(Entity self, const Projectile& projectile, Team team,
                                       Vec2 position, double heading) const {
-    // A config that sets a range but no cone means "home on anything in
-    // range": seekRange is the switch, the cone is an optional narrowing, and
-    // a zero cone read literally would produce a missile that can only lock
-    // onto something already exactly ahead of it.
-    const double cone = projectile.seekCone > 0.0 ? projectile.seekCone : kPi;
-    double bestDistanceSq = projectile.seekRange * projectile.seekRange;
+    // A config with a range but no cone re-aims within 45 degrees of the
+    // firing bearing -- the reference's default. A full circle would let a
+    // shot leave along a bearing nothing was ever fired on.
+    const double cone = projectile.seekCone > 0.0 ? projectile.seekCone : kPi * 0.25;
+    const double rangeSq = projectile.seekRange * projectile.seekRange;
+    double bestDistanceSq = 0.0;
     Entity best = NULL_ENTITY;
 
     for (const SeekTarget& candidate : seekTargets_) {
@@ -348,14 +481,158 @@ Entity MovementSystem::findSeekTarget(Entity self, const Projectile& projectile,
 
         const Vec2 toTarget = candidate.position - position;
         const double distanceSquared = toTarget.lengthSq();
-        // A target sitting exactly on the projectile has no bearing to turn to.
-        if (distanceSquared > bestDistanceSq || distanceSquared < 1e-12) continue;
+        // A target sitting exactly on the shot has no bearing to aim at.
+        if (distanceSquared > rangeSq || distanceSquared < 1e-12) continue;
+        // Strictly nearer, so an exact tie keeps the one found first.
+        if (best != NULL_ENTITY && distanceSquared >= bestDistanceSq) continue;
         if (std::fabs(angleDelta(heading, toTarget.angle())) > cone) continue;
 
         bestDistanceSq = distanceSquared;
         best = candidate.entity;
     }
     return best;
+}
+
+Vec2 MovementSystem::aimAtLaunch(World& world, Entity self, Vec2 position,
+                                 const Projectile& projectile, Vec2 velocity) {
+    if (!seekTargetsReady_) collectSeekTargets();
+
+    // A shot inherits its owner's team when it has none of its own, so a mob's
+    // volley does not lock onto the mobs beside it.
+    Team team = Team::Players;
+    if (const Faction* faction = world.tryGet<Faction>(self)) team = faction->team;
+    else if (const Faction* owner = world.tryGet<Faction>(projectile.owner)) team = owner->team;
+
+    const double speed = velocity.length();
+    const double heading = velocity.angle();
+    const Entity target = findSeekTarget(self, projectile, team, position, heading);
+    if (target == NULL_ENTITY) return velocity;
+
+    const Transform* targetTransform = world.tryGet<Transform>(target);
+    if (!targetTransform) return velocity;
+    return Vec2::fromAngle((targetTransform->position - position).angle(), speed);
+}
+
+// ---------------------------------------------------------------------------
+// Mob separation
+// ---------------------------------------------------------------------------
+
+bool MovementSystem::activeForSeparation(Vec2 position) const {
+    // Nobody connected is the PERMISSIVE case, as it is in the reference's
+    // activity field: with no observer there is nothing to save the work for,
+    // and a bench or a test that never adds a player sees the unmodified rule.
+    if (separationPlayers_.empty()) return true;
+    const double reachSq = kMobActiveRadius * kMobActiveRadius;
+    for (const Vec2 player : separationPlayers_) {
+        if (distanceSq(position, player) <= reachSq) return true;
+    }
+    return false;
+}
+
+void MovementSystem::buildSeparationSet(World& world) {
+    separationPlayers_.clear();
+    queries_->playerPositions.each([&](Entity, PlayerTag&, Transform& transform) {
+        if (!std::isfinite(transform.position.x) || !std::isfinite(transform.position.y)) return;
+        separationPlayers_.push_back(transform.position);
+    });
+
+    // Retire last pass's slots before the set they index is dropped. The table
+    // is keyed by entity INDEX, which the world recycles.
+    for (const SeparationEntry& entry : separationSet_) {
+        const std::uint32_t index = entityIndex(entry.entity);
+        if (index < separationSlot_.size()) separationSlot_[index] = kNoSeparationEntry;
+    }
+    separationSet_.clear();
+    separationGrid_.clear();
+
+    const ContentRegistry& registry = content();
+    queries_->mobBodies.each([&](Entity e, MobTag&, Transform& transform, Body& body) {
+        const Vec2 position = transform.position;
+        // A degenerate coordinate makes the cell walks non-terminating and
+        // would put a NaN into every push the mob takes part in. Such a mob
+        // sits the pass out -- and, never entering the set, is excluded as a
+        // push TARGET as well as a pusher.
+        if (!std::isfinite(position.x) || !std::isfinite(position.y)) return;
+        if (std::fabs(position.x) > kMaxSaneWorldCoord) return;
+        if (std::fabs(position.y) > kMaxSaneWorldCoord) return;
+        // Far from every flower: sit this tick out, the same LOD rule the AI
+        // phase applies. A shove nobody is near enough to see is missed
+        // outright rather than applied one-sided.
+        if (!activeForSeparation(position)) return;
+
+        SeparationEntry entry;
+        entry.entity = e;
+        entry.position = position;
+        entry.radius = sanitizeCollisionRadius(body.radius);
+        if (const BodySegment* segment = world.tryGet<BodySegment>(e)) {
+            entry.chainHead = segment->chainHead;
+        }
+        if (const MobType* type = world.tryGet<MobType>(e)) {
+            entry.noCollision = registry.mob(type->configIndex).noMobCollision;
+        }
+
+        const std::uint32_t index = entityIndex(e);
+        if (index >= separationSlot_.size()) {
+            separationSlot_.resize(static_cast<std::size_t>(index) + 1, kNoSeparationEntry);
+        }
+        separationSlot_[index] = static_cast<std::uint32_t>(separationSet_.size());
+        separationSet_.push_back(entry);
+        separationGrid_.insert(e, position, entry.radius);
+    });
+}
+
+void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
+    buildSeparationSet(world);
+    if (separationSet_.empty()) return;
+
+    // Jacobi, not in-place: every push is computed from the positions the pass
+    // started with and applied afterwards, so the outcome does not depend on
+    // the order the set happens to be walked in. Mass plays no part -- the
+    // separation is symmetric and driven purely by the two radii.
+    for (SeparationEntry& self : separationSet_) {
+        if (self.noCollision) continue;
+        // The grid files a mob under every cell its own circle touches, so a
+        // query of this mob's radius plus the buffer already returns every
+        // neighbour that can be inside the sum of the two radii.
+        separationGrid_.query(self.position, self.radius + kMobCollisionBuffer,
+                              separationCandidates_);
+
+        for (const Entity candidate : separationCandidates_) {
+            const std::uint32_t index = entityIndex(candidate);
+            const std::uint32_t slot =
+                index < separationSlot_.size() ? separationSlot_[index] : kNoSeparationEntry;
+            if (slot == kNoSeparationEntry) continue;
+            const SeparationEntry& other = separationSet_[slot];
+            if (other.entity != candidate || other.entity == self.entity) continue;
+            // Segments of one centipede never push each other: the chain pass
+            // holds them in formation, and a physical shove makes them tangle.
+            if (self.chainHead != NULL_ENTITY && self.chainHead == other.chainHead) continue;
+            // The exemption belongs to the PAIR: a mob flagged
+            // no_mob_collision neither pushes nor is pushed.
+            if (other.noCollision) continue;
+
+            const Vec2 toOther = other.position - self.position;
+            const double distance = toOther.length();
+            const double minDistance = self.radius + other.radius + kMobCollisionBuffer;
+            if (!(distance < minDistance && distance > 0.0)) continue;
+
+            const double push = std::min((minDistance - distance) * 0.5, kMobSeparationMaxPushPerPair);
+            self.push -= toOther * (push / distance);
+        }
+    }
+
+    // The cap is on the SUM, not on each pair: a mob wedged in a crowd would
+    // otherwise be moved by every neighbour at once.
+    const double cap = kMobSeparationMaxPushPerPair * kMobSeparationPushHeadroom;
+    for (const SeparationEntry& entry : separationSet_) {
+        if (entry.push.x == 0.0 && entry.push.y == 0.0) continue;
+        Transform* transform = world.tryGet<Transform>(entry.entity);
+        if (!transform) continue;
+        // Separation must not shove a mob into a wall. This runs after the
+        // wall pass, so a violation would be on screen for a whole tick.
+        transform->position =
+            terrain.resolveCircle(entry.position + entry.push.clampedLength(cap), entry.radius);
+    }
 }
 
 } // namespace flr

@@ -133,7 +133,7 @@ public:
     /// How far behind the newest snapshot the render clock sits. One snapshot
     /// interval plus a small cushion: enough that a late packet does not leave
     /// the blend with nothing to aim at, small enough not to feel laggy.
-    double interpolationDelayMillis = net::kTickMillis * 1.5;
+    double interpolationDelayMillis = net::kSnapshotMillis * 1.5;
 
 private:
     std::unordered_map<std::uint32_t, RemoteEntity> entities_;

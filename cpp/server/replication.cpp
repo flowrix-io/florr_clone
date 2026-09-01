@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "shared/game/constants.h"
+
 namespace flr {
 
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
@@ -37,6 +39,10 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
         out.equipFlags = visuals->equipFlags;
         out.renderFlags = visuals->renderFlags;
         if (visuals->glitched) out.renderFlags |= PlayerRenderGlitch;
+        // Corruption is a FACE, not a skin: the flower that cracked a Flower
+        // petal open turns on everyone, and the face is the only warning the
+        // players around it get before its ring starts biting them.
+        if (visuals->corrupted) out.faceFlags |= FaceHasCorruption;
     }
     if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
         if (afflictions->poisoned(nowMillis)) out.faceFlags |= FacePoisoned;
@@ -71,24 +77,42 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     if (!viewerTransform) return;
 
     const Vec2 centre = viewerTransform->position;
-    Vec2 viewport{1920, 1080};
+    Vec2 viewport{kViewportWidth, kViewportHeight};
     if (const PlayerLocation* location = world.tryGet<PlayerLocation>(viewer)) {
         viewport = location->viewport;
     }
-    // A radius over the viewport's half-diagonal covers the corners; anything
-    // less pops entities in and out as the camera rotates the world past them.
-    const double reach = 0.5 * std::sqrt(viewport.x * viewport.x + viewport.y * viewport.y) + viewMargin;
-    const double reachSq = reach * reach;
+    // A RECTANGLE, per axis, sized off the window the client says it is
+    // drawing: the reference builds the same box every frame from the viewport
+    // reported by the latest input packet, so a resize or a zoom widens what is
+    // streamed on the very next tick rather than at the next join. The bound is
+    // exclusive at exactly the edge, as the reference's `>=` test is.
+    const double reachX = viewport.x * viewportReach;
+    const double reachY = viewport.y * viewportReach;
+
+    const auto outsideView = [&](Vec2 at) {
+        const double dx = at.x - centre.x;
+        const double dy = at.y - centre.y;
+        return (dx < 0 ? -dx : dx) >= reachX || (dy < 0 ? -dy : dy) >= reachY;
+    };
 
     // --- gather what is in view ------------------------------------------
     candidates_.clear();
     Query<NetId, Replicated, Transform> replicated{world};
     replicated.each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
-        const double distanceSq = flr::distanceSq(transform.position, centre);
+        if (const DropItem* drop = world.tryGet<DropItem>(e)) {
+            if (!drop->eligible.empty() &&
+                std::find(drop->eligible.begin(), drop->eligible.end(), viewer) == drop->eligible.end()) {
+                return;
+            }
+            if (std::find(drop->pickedUpBy.begin(), drop->pickedUpBy.end(), viewer) !=
+                drop->pickedUpBy.end()) {
+                return;
+            }
+        }
         // The viewer's own body is always replicated, however the camera sits:
         // losing it would leave the client with nothing to anchor prediction to.
-        if (distanceSq > reachSq && e != viewer) return;
-        candidates_.push_back({e, id.value, distanceSq});
+        if (e != viewer && outsideView(transform.position)) return;
+        candidates_.push_back({e, id.value, flr::distanceSq(transform.position, centre)});
     });
 
     if (candidates_.size() > maxEntities) {
@@ -328,7 +352,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // entities keeps a busy fight on the far side of the map from costing
         // every client bytes for numbers they will never see.
         for (const WireEvent& event : frame.events->events()) {
-            if (event.positional && distanceSq(event.position, centre) > reachSq) continue;
+            if (event.positional && outsideView(event.position)) continue;
             out.u8(static_cast<std::uint8_t>(event.kind));
             out.u32(event.netId);
             out.u32(event.otherNetId);

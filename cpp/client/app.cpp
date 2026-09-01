@@ -1222,6 +1222,17 @@ void App::sendInputFrame(double dt) {
     net::InputFrame input;
     input.sequence = ++inputSequence_;
 
+    // What the camera actually draws, in world units rather than pixels: the
+    // render scales by userZoom, so zooming out shows more world through the
+    // same window and the server has to widen what it streams to match. It
+    // rides every frame, including the menu-open one below, so a resize or a
+    // wheel zoom takes effect on the next tick rather than at the next join.
+    const double zoom = camera_.zoom() > 1e-6 ? camera_.zoom() : 1.0;
+    input.viewportWidth = static_cast<std::uint16_t>(
+        std::min(65535.0, std::round(window_.width() / zoom)));
+    input.viewportHeight = static_cast<std::uint16_t>(
+        std::min(65535.0, std::round(window_.height() / zoom)));
+
     // An open menu owns the pointer. Keep sending zero movement so the server
     // and prediction agree that the flower has stopped while an item is being
     // dragged, rather than steering toward the panel under the mouse.

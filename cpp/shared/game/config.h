@@ -52,12 +52,17 @@ struct ProjectileSpec {
     int count = 1;
     double distance = 0;      ///< units travelled before it expires
     double speed = 0;         ///< units per second
-    /// Angular STEP between adjacent projectiles, radians -- not the total fan
-    /// width. Five projectiles at 1.2566 make a closed ring, which is what the
-    /// `flower` petal is for.
-    double spreadAngle = 0;
+    /// Angular STEP between adjacent projectiles, RADIANS -- not the total fan
+    /// width, and not degrees however large it looks. `flower` ships 72, which
+    /// is 72 radians: the five shots wrap to a lopsided pattern rather than the
+    /// clean 72-degree star the number suggests, and the reference fires it
+    /// that way. Reinterpreting it as degrees is a different weapon.
+    double spreadAngle = 0.2;
     double seekRange = 0;     ///< 0 for a projectile that does not home
-    double seekCone = 0;      ///< half-angle it will turn within, radians
+    /// Half-angle around the FIRING bearing that a seeking shot will re-aim
+    /// within, radians. Applied once, at launch: the shot then flies straight,
+    /// which is what keeps the client's dead reckoning exact.
+    double seekCone = kPi * 0.25;
 
     /// A mob fires a named petal as ammunition; a petal fires itself and
     /// leaves this empty.
@@ -156,6 +161,29 @@ struct MobConfig {
     bool reversed = false;       ///< art is mirrored horizontally
     bool noMobCollision = false;
 
+    /// The mob never appears in an ambient spawn roll. `target_dummy` declares
+    /// no spawn_weight and so would otherwise inherit the default 1.0 and take
+    /// a fifth of section 7's spawns; the reference filters it by name and
+    /// places dummies only where a biome table asks for one.
+    bool neverAmbient = false;
+
+    /// Touching this mob -- body, ring or shot -- leaves the flower glitched
+    /// until it next logs in. A property of the family rather than of the
+    /// contact path, so every path infects at once.
+    bool glitchInfecting = false;
+
+    /// A centipede head: `segmentCount` body mobs of type `segmentBodyIndex`
+    /// trail it. Both are derived from the id at load, because the reference
+    /// expresses the head->body link as a naming rule rather than a JSON field
+    /// and every spawn path would otherwise have to repeat it.
+    std::uint16_t segmentBodyIndex = kInvalidIndex;
+    int segmentCount = 0;
+
+    /// Applied when this mob is SUMMONED rather than spawned wild. Only the
+    /// digger is nerfed, and only as a pet: a wild digger keeps its full stats.
+    double petHealthScale = 1.0;
+    double petDamageScale = 1.0;
+
     /// Per-spawn size jitter, multiplying `size`. Equal bounds means none.
     double randomSizeMin = 1.0;
     double randomSizeMax = 1.0;
@@ -245,8 +273,10 @@ struct PetalConfig {
     /// off the world rather than a number anything should compute with.
     bool hidden = false;
 
-    /// Per-victim gap between two hits from this petal. Falls back to
-    /// kPetalHitIntervalMillis.
+    /// The `damageCooldown` key, or kPetalHitIntervalMillis (zero) when the
+    /// petal declares none. Non-zero therefore means exactly what truthiness
+    /// means in the reference: this petal is throttled, and per INSTANCE
+    /// rather than per victim. Three of the seventy-four are.
     double damageIntervalMillis = kPetalHitIntervalMillis;
 
     double cameraZoom = 1.0;    ///< < 1 zooms out
@@ -287,6 +317,13 @@ struct MobStats {
     double radius = 0;          ///< world units
     double mass = 1;            ///< proportional to area
     double speed = 0;           ///< world units per second
+    /// Speed used ONLY while pursuing a target. Ten mob types chase at exactly
+    /// the flower's top speed so a fleeing player can never outrun them, but
+    /// they still WANDER at their authored speed -- folding the override into
+    /// `speed` makes an idle bee cross the screen. A slow scales `speed`, so a
+    /// chase that bypasses it has to re-derive the same ratio.
+    double chaseSpeed = 0;
+    bool playerSpeedChaser = false;
     double xp = 1;
     double aggroRange = 0;
     double attackCooldownMillis = 0;
@@ -294,6 +331,9 @@ struct MobStats {
     double poisonDurationMillis = 0;
     double visualScale = 1.0;
     double spawnWeight = 1.0;
+    /// Some mob behaviours change by rarity (for example rare bees become
+    /// neutral/retaliatory). This is derived alongside the numeric stats.
+    AiKind ai = AiKind::Neutral;
     /// Biome sections this mob may spawn in AT THIS TIER. Empty below
     /// `min_rarity`, which is how that rule is enforced everywhere at once.
     std::uint16_t sectionMask = 0;
@@ -319,7 +359,16 @@ struct PetalStats {
     double shield = 0;
     double slowFactor = 1.0;
     double slowDurationMillis = 0;
+    double webRadius = 0;               ///< rarity-scaled field radius
+    double spongeDamageDurationMillis = 0;
+    double attractionForce = 0;
     double radius = 0;                  ///< world units
+    /// The petal's `size` stat as authored. Several derived reaches are stated
+    /// against it rather than against `radius` -- a projectile is half the
+    /// firing petal's radius, a pollen puff is 6 x size, a wall resolve uses
+    /// 20 x size -- and deriving them by dividing `radius` back out is how the
+    /// two halved by the wrong scale went unnoticed.
+    double size = 1;
     double damageIntervalMillis = kPetalHitIntervalMillis;
     int count = 1;
     bool breakable = true;

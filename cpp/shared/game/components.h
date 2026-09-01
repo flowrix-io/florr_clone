@@ -136,6 +136,19 @@ struct HitCooldowns {
         entries.push_back({victim, readyAtMillis});
     }
 
+    /// A cooldown that names no victim.
+    ///
+    /// A petal with a `damageCooldown` is throttled on the petal INSTANCE
+    /// alone: one glass petal lands one hit per window no matter how many mobs
+    /// it is touching, because the reference keys the throttle on
+    /// `${player}_${slot}_${instance}` with the victim left out entirely
+    /// (src/server/playerState.ts:2729). Per-victim entries would turn the same
+    /// petal into a full-rate area attack in a clump.
+    double nextHitAtMillis = 0;
+
+    bool globalReady(double nowMillis) const { return nowMillis >= nextHitAtMillis; }
+    void armGlobal(double readyAtMillis) { nextHitAtMillis = readyAtMillis; }
+
     /// Drops expired entries. Called on a slow cadence: without it a petal
     /// that has grazed a thousand mobs carries all thousand forever.
     void prune(double nowMillis) {
@@ -145,6 +158,20 @@ struct HitCooldowns {
         }
         entries.resize(out);
     }
+};
+
+/// One poisoner's hold on one victim.
+///
+/// `source` is the credited PLAYER, never the petal: a flower carrying five
+/// blue_iris still owns exactly one stack, while three flowers biting the same
+/// boss own three and their damage ADDS. Keying on the petal would triple a
+/// solo player's poison and keying on the victim alone -- which is what a
+/// single scalar does -- throws away everyone but the strongest poisoner, both
+/// in damage and in the kill credit that decides who gets loot.
+struct PoisonStack {
+    Entity source = NULL_ENTITY;
+    double perSecond = 0;
+    double untilMillis = 0;
 };
 
 /// Damage-over-time and movement debuffs.
@@ -157,11 +184,69 @@ struct Afflictions {
     double poisonUntilMillis = 0;
     Entity poisonSource = NULL_ENTITY;
 
+    /// Concurrent per-source poison. A refresh from a source already in the
+    /// list REPLACES both fields when the new bite outlasts the live one, so a
+    /// weaker-but-longer bite dilutes the rate rather than being merged into
+    /// it, and a shorter bite is ignored outright however strong it is.
+    std::vector<PoisonStack> poisonStacks;
+
     double slowFactor = 1.0;      ///< multiplies speed; 1 = unaffected
     double slowUntilMillis = 0;
 
     bool poisoned(double nowMillis) const { return nowMillis < poisonUntilMillis && poisonPerSecond > 0; }
     bool slowed(double nowMillis) const { return nowMillis < slowUntilMillis && slowFactor < 1.0; }
+
+    /// The live stack owned by `source`, or nullptr. Linear: a victim carries a
+    /// handful of these at most, one per player currently fighting it.
+    PoisonStack* stackFrom(Entity source) {
+        for (PoisonStack& s : poisonStacks) {
+            if (s.source == source) return &s;
+        }
+        return nullptr;
+    }
+
+    /// Drops lapsed stacks. Without this a boss accumulates one entry per
+    /// player who has ever bitten it.
+    void pruneStacks(double nowMillis) {
+        std::size_t out = 0;
+        for (std::size_t i = 0; i < poisonStacks.size(); ++i) {
+            if (poisonStacks[i].untilMillis > nowMillis) poisonStacks[out++] = poisonStacks[i];
+        }
+        poisonStacks.resize(out);
+    }
+};
+
+/// A killing blow the Second Chance talent turned into 1 HP.
+///
+/// Only the lockout is stored: the tier (and therefore the invulnerability
+/// window and the lockout length) is read from the player's own skill tree at
+/// the moment the blow lands. Skills are disabled inside the PvP arena, so the
+/// revive must not fire there either.
+struct SecondChance {
+    double readyAtMillis = 0;
+};
+
+/// Shell's temporary flat reduction for direct hits. It is refreshed rather
+/// than stacked and does not deplete; poison/radiation bypass it.
+struct ShieldState {
+    double amount = 0;
+    double untilMillis = 0;
+
+    bool active(double nowMillis) const {
+        return amount > 0.0 && nowMillis < untilMillis;
+    }
+};
+
+struct SpongeDamageEffect {
+    double remainingDamage = 0;
+    double damagePerSecond = 0;
+    Entity source = NULL_ENTITY;
+};
+
+/// Direct hits accepted while a live sponge is equipped are paid back over
+/// time. Effects stack independently, exactly like ServerPlayer.spongeDamageEffects.
+struct SpongeDamageState {
+    std::vector<SpongeDamageEffect> effects;
 };
 
 /// XP awarded for landing the killing blow, and the ledger of who contributed.
@@ -216,6 +301,12 @@ struct PetalRing {
     double radius = kPetalOrbitRestRadius;
     double targetRadius = kPetalOrbitRestRadius;
     double spin = 0;       ///< current ring rotation, radians
+    /// The multiplier the ring's rest radius is scaled by, 0.7 (defend) to 2.0
+    /// (attack). It is the EXTENSION that ramps -- linearly, at 12 per second
+    /// -- and the radius follows from it; easing the radius instead turns a
+    /// tap-attack that should reach full extension in a twelfth of a second
+    /// into a half-second swell.
+    double extension = 1.0;
 };
 
 struct PlayerInput {
@@ -233,6 +324,14 @@ struct PlayerAccount {
     std::string username;
     net::ConnectionId connection = 0;
     bool admin = false;
+
+    /// This account's leaderboard reward tier, refreshed from the ranking on
+    /// the owner's cadence rather than looked up per kill. The top accounts
+    /// trade XP for drops, and the two halves are resolved differently: the XP
+    /// factor applies per RECIPIENT of a kill, the drop factor once per mob
+    /// from whoever led its damage.
+    double xpMultiplier = 1.0;
+    double dropMultiplier = 1.0;
 };
 
 /// The talent tree as the simulation sees it.
@@ -265,6 +364,10 @@ struct PlayerVisuals {
     std::uint8_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
     bool glitched = false;
+    /// Set by the Flower petal's 5% break outcome. Distinct from `glitched`:
+    /// corruption turns the flower hostile to everyone rather than only
+    /// marking it, which is why it rides faceFlags and not renderFlags.
+    bool corrupted = false;
 };
 
 /// Passive bonuses summed from equipped petals each tick.
@@ -275,14 +378,27 @@ struct PlayerVisuals {
 struct PlayerModifiers {
     double maxHealthScale = 1.0;
     double speedScale = 1.0;
+    /// The flower's BODY damage: equipped petal damage modifiers times the
+    /// Damage talent on the gentle STAT curve (1.0 -> 1.9).
     double damageScale = 1.0;
+    /// What a petal, a pollen puff, a radiation pulse or a projectile is
+    /// multiplied by. A different quantity from `damageScale`: the reference
+    /// puts petal output on the steep EFFECT curve (1.0 -> 4.8) and folds in
+    /// NO petal damage modifier at all, so collapsing the two costs a fully
+    /// talented ring roughly two and a half times its damage.
+    double petalDamageScale = 1.0;
     double sizeScale = 1.0;
-    double luck = 0.0;          ///< adds to drop upgrade rolls
+    double luck = 1.0;          ///< TypeScript's neutral luck value
     double magnetism = 0.0;     ///< adds to pickup radius
     double aggroRadiusBonus = 0.0;
+    double petalAttractionRadius = 30.0; ///< base loose-petal attraction radius
     double rangeScale = 1.0;    ///< petal reach
     double cameraZoom = 1.0;
     double passiveHealPerSecond = 0.0;
+    /// Flat poison DPS absorbed. Multiple lotus petals use the strongest one,
+    /// rather than stacking.
+    double poisonArmor = 0.0;
+    double spongeDamageDurationMillis = 0.0;
 };
 
 /// Where the player is: the open world, or one of the detached regions.
@@ -293,7 +409,29 @@ struct PlayerLocation {
     /// Viewport in world units, reported by the client, used to decide what to
     /// replicate. Clamped server-side -- a client claiming a 40000-unit
     /// viewport is asking to see the whole map.
-    Vec2 viewport{1920, 1080};
+    Vec2 viewport{kViewportWidth, kViewportHeight};
+};
+
+/// Progress toward a teleporter jump.
+///
+/// A pad has to be held, not crossed: the flower is sucked in from well beyond
+/// the pad, has to stay on it for a full second, and is then locked out of
+/// every pad -- suction included -- for five, so it does not bounce straight
+/// back through the one it arrived on.
+struct TeleporterState {
+    /// Index into MapData's element list, or -1 when standing on no pad.
+    int pad = -1;
+    double enteredAtMillis = 0;
+    double cooldownUntilMillis = 0;
+};
+
+/// Per-(player, victim) throttle for the raindrop petal's aura.
+///
+/// A separate component from HitCooldowns even though the shape is identical:
+/// the flower already carries one of those for its own body contact, on a
+/// different clock, and the two must not share entries.
+struct AuraCooldowns {
+    HitCooldowns hits;
 };
 
 // ---------------------------------------------------------------------------
@@ -324,9 +462,67 @@ struct MobAi {
     double aggroRange = 0;
     double wanderAngle = 0;
     double nextDecisionMillis = 0;
+    /// A heading clock independent of the decision clock. A sandstorm re-rolls
+    /// its direction three times a second, far faster than a mob re-decides,
+    /// and sharing one clock turns a churning storm into a smooth sweep.
+    double nextHeadingMillis = 0;
     double lastAttackMillis = 0;
     /// Set while the mob is fleeing after being hurt (passive mobs).
     double fleeUntilMillis = 0;
+    /// When this mob last let a volley go. Kept apart from `lastAttackMillis`,
+    /// which paces contact damage: a hornet shoots on its config cooldown the
+    /// whole way in and touches on a different clock once it arrives.
+    double lastProjectileMillis = 0;
+};
+
+/// Where a mob is walking to, when it walks to a POINT rather than steering on
+/// a heading.
+///
+/// Only three movers use this -- centipede heads, sandstorms and ownerless
+/// pets. Every other mob with no target runs the stop-and-go passive machine
+/// below instead, which has no destination at all.
+struct WanderTarget {
+    Vec2 destination;
+    double pickedAtMillis = 0;
+};
+
+/// The two phases of the idle drift machine.
+enum class PassiveState : std::uint8_t { Idle = 0, Moving };
+
+/// The gardn stop-and-go drift every idle mob runs.
+///
+/// Not a wander heading held at constant speed: the mob sits still for a
+/// second, picks a heading, coasts for half a second under friction alone, then
+/// accelerates through a two-second parabolic ramp and stops. Acceleration
+/// scales with the mob's radius so a big mob's hop covers ground in proportion
+/// to its body rather than crawling.
+struct PassiveMotion {
+    PassiveState state = PassiveState::Idle;
+    double stateStartMillis = 0;
+    /// Drift velocity. Deliberately its own field rather than Motion: this
+    /// integrator owns it, applies its own per-tick friction and its own clamp,
+    /// and nothing else may write it.
+    Vec2 velocity;
+};
+
+/// Per-mob phase offset for the bee cruise, so a field of bees weaves out of
+/// step with itself instead of moving as one body.
+struct Wobble {
+    double phase = 0;
+};
+
+/// A child a nest (or a queen) put into the world, and its leash.
+///
+/// Dragged more than the retreat radius from its parent, the child forgets its
+/// target and walks home at full chase speed, so a hole cannot be stripped of
+/// its defenders by kiting them away. The parent is held as an entity rather
+/// than a point because a queen moves.
+struct HoleTether {
+    Entity hole = NULL_ENTITY;
+    /// Where to walk back to when the parent is gone but the tether has not
+    /// been cleared yet.
+    Vec2 home;
+    bool returning = false;
 };
 
 /// A mob summoned by a player, which fights for them and does not drop loot.
@@ -335,6 +531,11 @@ struct Pet {
     /// Slot index of the petal that summoned it, so a broken petal can recall
     /// exactly the pets it owns.
     std::uint8_t slot = 0;
+    /// The rarity of the petal that summoned it. NOT always the pet's own
+    /// tier: an apex egg opens into three UNIQUE pets rather than one apex
+    /// one, so the summoning tier has to be remembered separately to know how
+    /// large the squad should be.
+    Rarity summonRarity = Rarity::Common;
 };
 
 /// A segmented body (centipedes). Each segment follows the one ahead.
@@ -344,6 +545,12 @@ struct BodySegment {
     /// Distance this segment holds behind the one in front.
     double spacing = 0;
     bool head = false;
+    /// The chain's head, carried by every segment INCLUDING the head itself.
+    /// Two segments of one centipede must not push each other apart, and that
+    /// test has to be a field compare rather than a walk up the chain.
+    Entity chainHead = NULL_ENTITY;
+    /// 0 for the head, 1..n back along the body.
+    int segmentIndex = 0;
 };
 
 /// A nest that periodically produces escorts, up to a live cap.
@@ -372,8 +579,34 @@ struct PetalInstance {
     std::uint8_t subCount = 1;
     /// Angle offset from the ring's rotation, fixed at spawn.
     double ringOffset = 0;
-    /// Next time this petal may fire, heal, or otherwise act.
+    /// Projectile firing has its own attack-gated clock. Keeping it separate
+    /// means an idle ring does not spend a shot cooldown, and an aura on the
+    /// same petal cannot delay its projectile.
+    double nextProjectileMillis = 0;
+    double spawnedAtMillis = 0;
+    bool homing = false;
+    /// Next time this petal may heal, emit a field, or maintain summons.
     double nextActionMillis = 0;
+
+    /// Ring physics. The petal is sprung toward its orbit point rather than
+    /// pinned to it, so `Transform::position` is the integrated position and
+    /// this is the velocity carrying it there.
+    Vec2 ringVelocity;
+    /// While this has not passed the petal eases toward its target with a
+    /// first-order approach instead of the spring: the fly-out from the flower
+    /// when it appears, and the release after a mob it was orbiting dies.
+    double glideUntilMillis = 0;
+    /// The mob this petal is currently whipping around, or NULL_ENTITY. Kept
+    /// so that losing the lock because the mob DIED can arm the release glide,
+    /// while losing it because the mob walked away simply lets the spring pull
+    /// the petal home.
+    Entity attractedTo = NULL_ENTITY;
+
+    /// Set once this petal has run a behaviour that waits for its first mob
+    /// contact -- lightning's strike, a bomb's detonation, the flower petal
+    /// cracking open. Without it the behaviour fires on every overlapping tick
+    /// instead of once per life.
+    bool collisionFired = false;
 };
 
 struct Projectile {
@@ -401,10 +634,10 @@ struct Lifetime {
 struct DropItem {
     std::uint16_t configIndex = 0;
     Rarity rarity = Rarity::Common;
-    /// Only these players may pick it up. Empty means anyone can, which is
-    /// what a drop falls back to once its reservation expires.
+    /// Only these players may pick it up. Each eligible player receives one
+    /// copy; the world entity remains for the others until all have collected.
     std::vector<Entity> eligible;
-    double freeForAllAtMillis = 0;
+    std::vector<Entity> pickedUpBy;
 };
 
 enum class GroundEffectKind : std::uint8_t { Poison = 0, Web = 1, Radiation = 2 };
@@ -416,6 +649,10 @@ struct GroundEffect {
     double damagePerSecond = 0;
     double slowFactor = 1.0;
     Rarity rarity = Rarity::Common;
+    /// Pollen deals one discrete hit per victim on a fixed cadence; radiation
+    /// instead uses damagePerSecond every simulation step.
+    double damagePerHit = 0;
+    double damageIntervalMillis = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -460,6 +697,9 @@ FLR_COMPONENT(flr::Health);
 FLR_COMPONENT(flr::ContactDamage);
 FLR_COMPONENT(flr::HitCooldowns);
 FLR_COMPONENT(flr::Afflictions);
+FLR_COMPONENT(flr::ShieldState);
+FLR_COMPONENT(flr::SpongeDamageState);
+FLR_COMPONENT(flr::SecondChance);
 FLR_COMPONENT(flr::Bounty);
 FLR_COMPONENT(flr::Loadout);
 FLR_COMPONENT(flr::PetalRing);
@@ -470,8 +710,14 @@ FLR_COMPONENT(flr::PlayerProgress);
 FLR_COMPONENT(flr::PlayerVisuals);
 FLR_COMPONENT(flr::PlayerModifiers);
 FLR_COMPONENT(flr::PlayerLocation);
+FLR_COMPONENT(flr::TeleporterState);
+FLR_COMPONENT(flr::AuraCooldowns);
 FLR_COMPONENT(flr::MobType);
 FLR_COMPONENT(flr::MobAi);
+FLR_COMPONENT(flr::WanderTarget);
+FLR_COMPONENT(flr::PassiveMotion);
+FLR_COMPONENT(flr::Wobble);
+FLR_COMPONENT(flr::HoleTether);
 FLR_COMPONENT(flr::Pet);
 FLR_COMPONENT(flr::BodySegment);
 FLR_COMPONENT(flr::Spawner);

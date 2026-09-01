@@ -21,7 +21,7 @@ namespace flr::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 10;
+inline constexpr std::uint16_t kProtocolVersion = 11;
 
 /// Frames larger than this are refused before allocation, so a bad length
 /// prefix costs a dropped connection rather than a 4GB allocation.
@@ -29,14 +29,23 @@ inline constexpr std::uint32_t kMaxFrameBytes = 1u << 20;   // 1 MiB
 
 /// Simulation rate. Fixed, because the physics integrates a constant step:
 /// input, movement and cooldowns are all expressed per tick.
-inline constexpr int kTicksPerSecond = 25;
+// The TypeScript authority advances gameplay at 30 Hz.  This is simulation
+// behaviour, not a transport implementation detail: contact opportunities,
+// fixed-step mob AI and every one-tick transition depend on it.
+inline constexpr int kTicksPerSecond = 30;
 inline constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 inline constexpr double kTickMillis = 1000.0 / kTicksPerSecond;
 
-/// How often each client is sent a snapshot. Equal to the tick rate today;
-/// kept separate so it can be halved for distant or idle clients without the
-/// simulation noticing.
-inline constexpr int kSnapshotsPerSecond = kTicksPerSecond;
+/// How often each client is sent a snapshot.
+///
+/// Deliberately BELOW the tick rate. Physics and combat want 30 Hz resolution;
+/// the wire does not, and the reference server says so in as many words -- the
+/// snapshot broadcast runs on its own 20 Hz timer so the per-recipient
+/// encode/cull/delta pass and its socket writes are not charged to the tick's
+/// 33 ms budget. A client interpolating between snapshots needs its delay
+/// window to cover this interval, not the tick.
+inline constexpr int kSnapshotsPerSecond = 20;
+inline constexpr double kSnapshotMillis = 1000.0 / kSnapshotsPerSecond;
 
 // ---------------------------------------------------------------------------
 // Message ids
@@ -182,12 +191,25 @@ struct InputFrame {
     double aimAngle = 0;       ///< radians, where the petals point
     std::uint8_t flags = 0;
 
+    /// The window the client is actually drawing, in world units.
+    ///
+    /// It rides every input frame rather than being fixed at join because the
+    /// reference refreshes it from every input packet: a window resize or a
+    /// zoom change widens the drawn world, and a server still culling to the
+    /// join-time box would leave the new margins empty of entities that exist.
+    /// Zero on either axis means "unchanged", which is what an older client
+    /// that never learned to report it sends.
+    std::uint16_t viewportWidth = 0;
+    std::uint16_t viewportHeight = 0;
+
     void write(ByteWriter& w) const {
         w.u32(sequence);
         w.angle(moveAngle);
         w.unitByte(moveStrength);
         w.angle(aimAngle);
         w.u8(flags);
+        w.u16(viewportWidth);
+        w.u16(viewportHeight);
     }
 
     static InputFrame read(ByteReader& r) {
@@ -197,6 +219,8 @@ struct InputFrame {
         f.moveStrength = r.unitByte();
         f.aimAngle = r.angle();
         f.flags = r.u8();
+        f.viewportWidth = r.u16();
+        f.viewportHeight = r.u16();
         return f;
     }
 

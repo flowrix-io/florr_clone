@@ -2,13 +2,16 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <string>
+#include <unordered_map>
 
 namespace flr {
 namespace {
@@ -81,6 +84,222 @@ inline double ridge(double n) { return std::fabs(n - 0.5); }
 
 inline int wrapMod(int v, int m) { return ((v % m) + m) % m; }
 
+// ---------------------------------------------------------------------------
+// TypeScript wall-edge geometry
+// ---------------------------------------------------------------------------
+
+constexpr double kJaggedMaxOffset = 20.0;
+constexpr int kJaggedSegments = 7;
+constexpr double kCollisionScanBuffer = 5.0;
+constexpr double kWallResolveEpsilon = 0.01;
+
+struct JaggedPoint {
+    double t = 0.0;
+    double offset = 0.0;
+};
+
+using JaggedPoints = std::array<JaggedPoint, kJaggedSegments + 2>;
+
+double seededRandom(std::int32_t seed) {
+    const double x = std::sin(static_cast<double>(seed)) * 10000.0;
+    return x - std::floor(x);
+}
+
+const JaggedPoints& jaggedPoints(int tileX, int tileY, int edge) {
+    // Points depend only on coordinates and edge, not on which neighbours are
+    // currently exposed. Cache the expensive sin() calls while allowing tests
+    // and editors to change tiles without cache invalidation.
+    static std::unordered_map<std::uint32_t, JaggedPoints> cache;
+    const std::uint32_t key = (static_cast<std::uint32_t>(tileY) << 18) ^
+                              (static_cast<std::uint32_t>(tileX) << 2) ^
+                              static_cast<std::uint32_t>(edge);
+    const auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+
+    JaggedPoints points{};
+    points[0] = {0.0, 0.0};
+    const double segmentLength = kTileSize / (kJaggedSegments + 1.0);
+    const std::uint32_t mixed = static_cast<std::uint32_t>(tileX) * 73856093u ^
+                                static_cast<std::uint32_t>(tileY) * 19349669u;
+    const std::int32_t baseSeed = static_cast<std::int32_t>(mixed) + edge * 1000;
+    for (int i = 1; i <= kJaggedSegments; ++i) {
+        const std::int32_t seed = baseSeed + i;
+        const double jitter = (seededRandom(seed) - 0.5) * segmentLength * 0.4;
+        const double t = clamp(i * segmentLength + jitter, 1.0, kTileSize - 1.0);
+        points[static_cast<std::size_t>(i)] = {
+            t, seededRandom(seed + 100) * kJaggedMaxOffset,
+        };
+    }
+    points.back() = {kTileSize, 0.0};
+    std::sort(points.begin(), points.end(), [](const JaggedPoint& a, const JaggedPoint& b) {
+        return a.t < b.t;
+    });
+    return cache.emplace(key, points).first->second;
+}
+
+double maxJaggedOffset(const JaggedPoints& points, double minT, double maxT) {
+    double result = 0.0;
+    for (const JaggedPoint& point : points) {
+        if (point.t >= minT && point.t <= maxT) result = std::max(result, point.offset);
+    }
+    for (std::size_t i = 0; i + 1 < points.size(); ++i) {
+        const JaggedPoint& a = points[i];
+        const JaggedPoint& b = points[i + 1];
+        if (b.t < minT || a.t > maxT) continue;
+        if (a.t < minT && b.t > minT) {
+            const double f = (minT - a.t) / (b.t - a.t);
+            result = std::max(result, a.offset + f * (b.offset - a.offset));
+        }
+        if (a.t < maxT && b.t > maxT) {
+            const double f = (maxT - a.t) / (b.t - a.t);
+            result = std::max(result, a.offset + f * (b.offset - a.offset));
+        }
+    }
+    return result;
+}
+
+bool jaggedEdgeExposed(const Terrain& terrain, int tileX, int tileY, int edge) {
+    int adjacentX = tileX;
+    int adjacentY = tileY;
+    if (edge == 0) --adjacentY;
+    else if (edge == 1) ++adjacentY;
+    else if (edge == 2) --adjacentX;
+    else ++adjacentX;
+
+    if (adjacentX < 0 || adjacentY < 0 ||
+        adjacentX >= kTilesPerAxis || adjacentY >= kTilesPerAxis) return true;
+    const Tile adjacent = terrain.atTile(adjacentX, adjacentY);
+    if (adjacent == Tile::Ground) return true;
+    const Tile current = terrain.atTile(tileX, tileY);
+    return current == Tile::Wall && adjacent == Tile::Water;
+}
+
+struct JaggedCollision {
+    double left = 0.0;
+    double right = 0.0;
+    double top = 0.0;
+    double bottom = 0.0;
+    double nearDx = 0.0;
+    double nearDy = 0.0;
+};
+
+std::optional<JaggedCollision> findJaggedCollision(const Terrain& terrain,
+                                                   Vec2 position, double radius) {
+    const double reach = radius + kJaggedMaxOffset + kCollisionScanBuffer;
+    const int minX = std::max(0, Terrain::toTileCoord(position.x - reach));
+    const int maxX = std::min(kTilesPerAxis - 1, Terrain::toTileCoord(position.x + reach));
+    const int minY = std::max(0, Terrain::toTileCoord(position.y - reach));
+    const int maxY = std::min(kTilesPerAxis - 1, Terrain::toTileCoord(position.y + reach));
+    const double entityLeft = position.x - radius;
+    const double entityRight = position.x + radius;
+    const double entityTop = position.y - radius;
+    const double entityBottom = position.y + radius;
+    std::optional<JaggedCollision> corner;
+
+    for (int tileY = minY; tileY <= maxY; ++tileY) {
+        for (int tileX = minX; tileX <= maxX; ++tileX) {
+            const Tile tile = terrain.atTile(tileX, tileY);
+            if (!tileBlocks(tile)) continue;
+
+            JaggedCollision hit;
+            hit.left = tileX * kTileSize;
+            hit.right = hit.left + kTileSize;
+            hit.top = tileY * kTileSize;
+            hit.bottom = hit.top + kTileSize;
+
+            if (tile == Tile::Wall || tile == Tile::Water) {
+                if (jaggedEdgeExposed(terrain, tileX, tileY, 0)) {
+                    const double lo = std::max(0.0, entityLeft - tileX * kTileSize);
+                    const double hi = std::min(kTileSize, entityRight - tileX * kTileSize);
+                    if (hi > lo) hit.top -= maxJaggedOffset(jaggedPoints(tileX, tileY, 0), lo, hi);
+                }
+                if (jaggedEdgeExposed(terrain, tileX, tileY, 1)) {
+                    const double lo = std::max(0.0, entityLeft - tileX * kTileSize);
+                    const double hi = std::min(kTileSize, entityRight - tileX * kTileSize);
+                    if (hi > lo) hit.bottom += maxJaggedOffset(jaggedPoints(tileX, tileY, 1), lo, hi);
+                }
+                if (jaggedEdgeExposed(terrain, tileX, tileY, 2)) {
+                    const double lo = std::max(0.0, entityTop - tileY * kTileSize);
+                    const double hi = std::min(kTileSize, entityBottom - tileY * kTileSize);
+                    if (hi > lo) hit.left -= maxJaggedOffset(jaggedPoints(tileX, tileY, 2), lo, hi);
+                }
+                if (jaggedEdgeExposed(terrain, tileX, tileY, 3)) {
+                    const double lo = std::max(0.0, entityTop - tileY * kTileSize);
+                    const double hi = std::min(kTileSize, entityBottom - tileY * kTileSize);
+                    if (hi > lo) hit.right += maxJaggedOffset(jaggedPoints(tileX, tileY, 3), lo, hi);
+                }
+            }
+
+            const double nearX = clamp(position.x, hit.left, hit.right);
+            const double nearY = clamp(position.y, hit.top, hit.bottom);
+            hit.nearDx = position.x - nearX;
+            hit.nearDy = position.y - nearY;
+            const bool inside = hit.nearDx == 0.0 && hit.nearDy == 0.0;
+            if (!inside && hit.nearDx * hit.nearDx + hit.nearDy * hit.nearDy >= radius * radius) {
+                continue;
+            }
+            // Prefer a flat-face hit over an adjacent tile's interior seam.
+            if (hit.nearDx == 0.0 || hit.nearDy == 0.0) return hit;
+            if (!corner) corner = hit;
+        }
+    }
+    return corner;
+}
+
+Vec2 resolveJaggedCollision(Vec2 position, double radius, const JaggedCollision& hit) {
+    const double r = radius + kWallResolveEpsilon;
+    const bool insideX = position.x > hit.left && position.x < hit.right;
+    const bool insideY = position.y > hit.top && position.y < hit.bottom;
+    if (insideX && insideY) {
+        const double left = position.x - hit.left;
+        const double right = hit.right - position.x;
+        const double top = position.y - hit.top;
+        const double bottom = hit.bottom - position.y;
+        const double least = std::min(std::min(left, right), std::min(top, bottom));
+        if (least == left) return {hit.left - r, position.y};
+        if (least == right) return {hit.right + r, position.y};
+        if (least == top) return {position.x, hit.top - r};
+        return {position.x, hit.bottom + r};
+    }
+    if (insideY) return {position.x < hit.left ? hit.left - r : hit.right + r, position.y};
+    if (insideX) return {position.x, position.y < hit.top ? hit.top - r : hit.bottom + r};
+
+    const double cornerX = position.x < hit.left ? hit.left : hit.right;
+    const double cornerY = position.y < hit.top ? hit.top : hit.bottom;
+    Vec2 away = position - Vec2{cornerX, cornerY};
+    double distance = away.length();
+    if (!(distance > 0.0)) { away = {1.0, 0.0}; distance = 1.0; }
+    return {cornerX + away.x * r / distance, cornerY + away.y * r / distance};
+}
+
+/// Liang-Barsky: does the segment touch the axis-aligned rect at all?
+///
+/// Parametric clipping rather than four edge intersections, because a segment
+/// that lies wholly inside the rect crosses no edge and still touches it.
+bool segmentTouchesRect(Vec2 a, Vec2 b, double left, double top, double right, double bottom) {
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+    double t0 = 0.0;
+    double t1 = 1.0;
+    // Narrows [t0, t1] to the part of the segment on the inside of one edge.
+    // A segment parallel to the edge cannot be clipped by it, so it is inside
+    // that edge exactly when it starts inside.
+    const auto clip = [&](double p, double q) -> bool {
+        if (p == 0.0) return q >= 0.0;
+        const double r = q / p;
+        if (p < 0.0) {
+            if (r > t1) return false;
+            if (r > t0) t0 = r;
+        } else {
+            if (r < t0) return false;
+            if (r < t1) t1 = r;
+        }
+        return true;
+    };
+    return clip(-dx, a.x - left) && clip(dx, right - a.x) && clip(-dy, a.y - top) &&
+           clip(dy, bottom - a.y) && t0 <= t1;
+}
+
 int base64Value(unsigned char c) {
     if (c >= 'A' && c <= 'Z') return c - 'A';
     if (c >= 'a' && c <= 'z') return c - 'a' + 26;
@@ -125,8 +344,8 @@ Tile classifyDesert(int tx, int ty, const NoiseSet& n) {
 
 Tile classifyHel(int tx, int ty, const NoiseSet& n) {
     if (ridge(n.medium.at(tx, ty)) < 0.035) return Tile::Wall; // basalt ridges
-    if (n.altCoarse.at(tx, ty) > 0.78) return Tile::Water;     // lava: passable, slow
-    return Tile::Stone;
+    if (n.altCoarse.at(tx, ty) > 0.78) return Tile::Water;     // impassable lava
+    return Tile::Ground;
 }
 
 Tile classifyOcean(int tx, int ty, const NoiseSet& n) {
@@ -154,7 +373,7 @@ Tile classifySewers(int tx, int ty, const NoiseSet& n) {
     if (!lane) return Tile::Wall;
     if (n.fine.at(tx, ty) > 0.90) return Tile::Wall;           // collapsed rubble
     if (mx == 1 || my == 1) return Tile::Water;                // the channel itself
-    return Tile::Stone;                                        // the ledges beside it
+    return Tile::Ground;                                       // the ledges beside it
 }
 
 Tile classifyComputer(int tx, int ty, const NoiseSet&) {
@@ -568,68 +787,87 @@ bool Terrain::nearestOpenTile(Vec2 p, int& outTx, int& outTy) const {
     return false;
 }
 
-Vec2 Terrain::resolveCircle(Vec2 position, double radius) const {
+Terrain::WallResolution Terrain::resolveWall(Vec2 position, double radius) const {
+    WallResolution result;
+
     // Garbage in must not become an unbounded loop or a NaN out. A teleport
     // bug upstream costs the body a shove, never the tick.
     if (!std::isfinite(position.x) || !std::isfinite(position.y)) position = spawnPoint();
     if (!std::isfinite(radius) || radius < 0.0) radius = 0.0;
     radius = std::min(radius, kMaxResolveRadius);
+
+    // The maze is a second world with its own walls, and the tile grid does
+    // not reach it. Answering here, before the clamps below, is what keeps a
+    // body inside the maze instead of being dragged 140000 units back to the
+    // edge of the tile map.
+    if (isInMazeRegion(position)) {
+        result.position = activeMaze().resolveCircle(position, radius, &result.collided);
+        return result;
+    }
+
     // Bound the scan before any tile arithmetic: a coordinate of 1e30 makes
     // the tile loop below run for the rest of the universe.
     position.x = clamp(position.x, -kTileSize, kWorldSize + kTileSize);
     position.y = clamp(position.y, -kTileSize, kWorldSize + kTileSize);
 
-    // A centre inside solid geometry has no push direction -- the closest
-    // point on the tile is the centre itself -- so it is ejected to the
-    // nearest open tile before the usual push-out runs.
-    //
-    // Ejected to the nearest POINT of that tile rather than to its centre: a
-    // petal shoved a hair into a wall should come back a hair, not teleport
-    // 200 units to the middle of the next tile.
-    if (tileBlocks(at(position))) {
-        int tx = 0, ty = 0;
-        if (!nearestOpenTile(position, tx, ty)) return position;   // solid everywhere
-        const Rect open = tileRect(tx, ty);
-        const double inset = std::min(radius, kTileSize * 0.49);
-        position.x = clamp(position.x, open.left() + inset, open.right() - inset);
-        position.y = clamp(position.y, open.top() + inset, open.bottom() - inset);
+    // This is the same four-pass collision solver used by
+    // resolveEntityWallCollisions() in constants.ts. In particular, wall and
+    // water faces use the deterministic jagged outline players see; treating
+    // them as plain 300px rectangles changes both the contact point and the
+    // slide direction.
+    bool cleared = true;
+    for (int pass = 0; pass < kResolvePasses; ++pass) {
+        const std::optional<JaggedCollision> hit = findJaggedCollision(*this, position, radius);
+        if (!hit) {
+            cleared = true;
+            break;
+        }
+        position = resolveJaggedCollision(position, radius, *hit);
+        result.collided = true;
+        cleared = false;
     }
 
-    for (int pass = 0; pass < kResolvePasses; ++pass) {
-        bool moved = false;
-        const int x0 = toTileCoord(position.x - radius);
-        const int x1 = toTileCoord(position.x + radius);
-        const int y0 = toTileCoord(position.y - radius);
-        const int y1 = toTileCoord(position.y + radius);
-        for (int ty = y0; ty <= y1; ++ty) {
-            for (int tx = x0; tx <= x1; ++tx) {
-                if (!tileBlocks(atTile(tx, ty))) continue;
-                const Rect r = tileRect(tx, ty);
-                const double nx = clamp(position.x, r.left(), r.right());
-                const double ny = clamp(position.y, r.top(), r.bottom());
-                const Vec2 away{position.x - nx, position.y - ny};
-                const double d2 = away.lengthSq();
-                if (d2 >= radius * radius) continue;
-                if (d2 > 1e-12) {
-                    const double d = std::sqrt(d2);
-                    position += away * ((radius - d) / d);
-                } else {
-                    // Dead centre on the tile: push through the nearest face,
-                    // which is the shallowest way out of it.
-                    const double toLeft = position.x - r.left() + radius;
-                    const double toRight = r.right() - position.x + radius;
-                    const double toTop = position.y - r.top() + radius;
-                    const double toBottom = r.bottom() - position.y + radius;
-                    const double least = std::min(std::min(toLeft, toRight), std::min(toTop, toBottom));
-                    if (least == toLeft) position.x -= toLeft;
-                    else if (least == toRight) position.x += toRight;
-                    else if (least == toTop) position.y -= toTop;
-                    else position.y += toBottom;
-                }
-                moved = true;
-            }
+    // All four passes pushed, so the last push was never re-checked. This one
+    // extra check -- reached only on deep multi-tile overlap, never on
+    // ordinary wall contact -- is what decides whether the body actually came
+    // out clear, and it is the only thing `unresolved` says.
+    if (!cleared) cleared = !findJaggedCollision(*this, position, radius);
+
+    result.position = position;
+    result.unresolved = !cleared;
+    return result;
+}
+
+Vec2 Terrain::resolveCircle(Vec2 position, double radius) const {
+    if (!std::isfinite(radius) || radius < 0.0) radius = 0.0;
+    radius = std::min(radius, kMaxResolveRadius);
+
+    const WallResolution wall = resolveWall(position, radius);
+    position = wall.position;
+    // The maze answers for itself, rescue and world clamps included: its walls
+    // are 140000 units from anything the tile grid knows about.
+    if (isInMazeRegion(position)) return position;
+
+    // Spawners and admin teleports can place a centre deep inside several
+    // blocking tiles. TypeScript's per-movement caller refuses an unresolved
+    // four-pass result, but these non-movement callers need a usable point.
+    // Fall back only when the exact solver is still embedded; ordinary contact
+    // and sliding keep the TypeScript result above.
+    if (wall.unresolved) {
+        int tx = 0;
+        int ty = 0;
+        if (!nearestOpenTile(position, tx, ty)) position = spawnPoint();
+        else {
+            const Rect open = tileRect(tx, ty);
+            const double inset = std::min(radius + kWallResolveEpsilon, kTileSize * 0.49);
+            position.x = clamp(position.x, open.left() + inset, open.right() - inset);
+            position.y = clamp(position.y, open.top() + inset, open.bottom() - inset);
         }
-        if (!moved) break;
+        for (int pass = 0; pass < kResolvePasses; ++pass) {
+            const std::optional<JaggedCollision> hit = findJaggedCollision(*this, position, radius);
+            if (!hit) break;
+            position = resolveJaggedCollision(position, radius, *hit);
+        }
     }
 
     // Last-resort closure. The out-of-bounds-is-wall rule already keeps a body
@@ -644,6 +882,7 @@ bool Terrain::segmentBlocked(Vec2 a, Vec2 b) const {
     if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y)) {
         return true;
     }
+    if (isInMazeRegion(a) || isInMazeRegion(b)) return activeMaze().blocksLine(a, b);
 
     int tx = toTileCoord(a.x);
     int ty = toTileCoord(a.y);
@@ -692,6 +931,60 @@ bool Terrain::segmentBlocked(Vec2 a, Vec2 b) const {
     return true;
 }
 
+bool Terrain::segmentTouchesBlockingTile(Vec2 a, Vec2 b, double eps) const {
+    // Nonsense endpoints clip to an empty tile range in the reference, which
+    // reports no crossing. Refusing a step on garbage input would be worse
+    // than letting it through: the guard exists to stop a body moving where it
+    // could not have walked, not to stop it moving at all.
+    if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y)) {
+        return false;
+    }
+    if (!std::isfinite(eps) || eps < 0.0) eps = 0.0;
+
+    // Clamped to the grid, as the reference clamps its scan: tiles outside it
+    // are air, so skipping them changes nothing and keeps the loop small.
+    const int minTx = std::max(0, toTileCoord(std::min(a.x, b.x) - eps));
+    const int maxTx = std::min(kTilesPerAxis - 1, toTileCoord(std::max(a.x, b.x) + eps));
+    const int minTy = std::max(0, toTileCoord(std::min(a.y, b.y) - eps));
+    const int maxTy = std::min(kTilesPerAxis - 1, toTileCoord(std::max(a.y, b.y) + eps));
+
+    for (int ty = minTy; ty <= maxTy; ++ty) {
+        for (int tx = minTx; tx <= maxTx; ++tx) {
+            if (!tileBlocks(atTile(tx, ty))) continue;
+            if (segmentTouchesRect(a, b, tx * kTileSize - eps, ty * kTileSize - eps,
+                                   (tx + 1) * kTileSize + eps, (ty + 1) * kTileSize + eps)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool Terrain::hasLineOfSight(Vec2 a, Vec2 b, int sampleCount) const {
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+    const double distance = std::sqrt(dx * dx + dy * dy);
+
+    // Anything this close sees itself, whatever it is standing in. The order
+    // matters: the reference answers the short ray before it even asks which
+    // world the endpoints are in.
+    if (distance < 10.0) return true;
+
+    if (isInMazeRegion(a) || isInMazeRegion(b)) return !activeMaze().blocksLine(a, b);
+
+    const int samples = std::max(1, sampleCount);
+    for (int i = 0; i <= samples; ++i) {
+        const double t = static_cast<double>(i) / samples;
+        const int tx = toTileCoord(a.x + dx * t);
+        const int ty = toTileCoord(a.y + dy * t);
+        // Outside the grid is AIR, not wall -- the reference's grid has no
+        // entry out there, so leaving the map does not by itself break sight.
+        if (tx < 0 || ty < 0 || tx >= kTilesPerAxis || ty >= kTilesPerAxis) continue;
+        if (tileBlocks(atTile(tx, ty))) return false;
+    }
+    return true;
+}
+
 Vec2 Terrain::findOpenSpawn(Rng& rng, Vec2 around, double radius) const {
     if (!std::isfinite(around.x) || !std::isfinite(around.y)) around = spawnPoint();
     radius = std::isfinite(radius) ? clamp(radius, 0.0, kWorldSize) : 0.0;
@@ -714,6 +1007,450 @@ Vec2 Terrain::findOpenSpawn(Rng& rng, Vec2 around, double radius) const {
         return {c.x + rng.range(-j, j), c.y + rng.range(-j, j)};
     }
     return spawnPoint();
+}
+
+// ---------------------------------------------------------------------------
+// Maze
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The authored layouts, one per daily biome, at CORRIDOR resolution: each
+/// character becomes a 2x2 block of cells, which is what leaves room for the
+/// corner fillets. '#' is void; every other letter is corridor and names the
+/// difficulty band it belongs to. 'S' is the entrance, 'B' a boss room.
+constexpr int kMazeTemplateDim = 22;
+constexpr const char* kMazeTemplates[3][kMazeTemplateDim] = {
+    // garden
+    {
+        "######################",
+        "#mmm#mmmm#lll##llllee#",
+        "#m#m#m##m#m#l##l##l#e#",
+        "#m#m#m##m#m#l##l##l#e#",
+        "#m#m#mB#m#m#llll##l#e#",
+        "#m#m####m######l##l#e#",
+        "#m#mmmmmm######l##l#e#",
+        "#m#############m####e#",
+        "#m#####cccuuuu#mmB##e#",
+        "#l#####c##u##u######e#",
+        "#ll##Scc##u##u######e#",
+        "##ll######u##rrrrrree#",
+        "###l######u##r###e##e#",
+        "###ll#rrrrr##r###e##e#",
+        "#l##l#r###r##r###e#ee#",
+        "#l##l#r###rrrr###e####",
+        "#ll#e#r#rrr##r#eeeeee#",
+        "#l##e#r######r#e####e#",
+        "#l##e#r######r#e##l#e#",
+        "#eeeeeeeeeeeer#e##e#e#",
+        "###############eeeeee#",
+        "######################",
+    },
+    // desert
+    {
+        "######################",
+        "#Bmmmm#mmmmmBmmm#mll##",
+        "#mmmm##m#######mmm#ll#",
+        "#mmmm##m############l#",
+        "#mmmm##l##S##l######l#",
+        "#mmmmmll##c##lll####l#",
+        "#mmm###l##c####l#elll#",
+        "#mm####l##c####l#e####",
+        "#m#####l##c####eeee###",
+        "#######l##cc###eeeee##",
+        "#######l##c###eeeeeee#",
+        "#eeeelll#cc##eeeeeeee#",
+        "#e#e###l##c##eeeeeeee#",
+        "#e#####ll#c##eeeeeeee#",
+        "#e###e##l#u##e#eeee#e#",
+        "#eerrre#e#uu#e##ere#e#",
+        "#e##r#e#e#u##e###r##e#",
+        "#e##r#e#e#u##l##rr##e#",
+        "#e##r#eee#u####rr###l#",
+        "#e##r#####u###rr###ll#",
+        "#e##rrrruuuuurr###lll#",
+        "######################",
+    },
+    // ocean
+    {
+        "######################",
+        "#####mmmmmm######Bmm##",
+        "#####m####mmm######m##",
+        "###llm######m######m##",
+        "###l#m######m#mlllmm##",
+        "#lll#m##mmm#m#m#l##m##",
+        "#l###mmmm#B#mmm#l##m##",
+        "#ll#########m###l##m##",
+        "##l#############l##mm#",
+        "##le############l#####",
+        "###e##cccScccc##l#####",
+        "###e##c######c##llll##",
+        "###e##c######c###l####",
+        "###e##c##u###c###eeee#",
+        "#eee##ccccu##cc#####e#",
+        "#e#######u####c#u##ee#",
+        "#e###r###u####uuuu#e##",
+        "#e#rrrr##u######u##ee#",
+        "#r#r#r###u#uuu######e#",
+        "#r#r#u#uuuuu#u#rrr#rr#",
+        "#rrr#uuu#####rrr#rrr##",
+        "######################",
+    },
+};
+
+/// Difficulty band a template character names, or -1 for anything the grid
+/// does not understand. An unknown character is treated as void rather than
+/// rejected: a bad hand-edit must not take the server down on the day the
+/// rotation reaches that biome.
+int mazeZoneOfChar(char c) {
+    switch (c) {
+        case 'c': return 0;
+        case 'u': return 1;
+        case 'r': return 2;
+        case 'e': return 3;
+        case 'l': return 4;
+        case 'm': return 5;
+        case 'S': return 0;   // the entrance room is common
+        case 'B': return 5;   // boss rooms are the deepest band
+        default: return -1;
+    }
+}
+
+Vec2 mazeCellCenter(int tx, int ty) {
+    return {kMazeOriginX + (tx * 2 + 1) * kMazeCellSize,
+            kMazeOriginY + (ty * 2 + 1) * kMazeCellSize};
+}
+
+} // namespace
+
+void Maze::setDay(std::int64_t dayNumber) {
+    day_ = dayNumber;
+    const int pick = static_cast<int>(((dayNumber % 3) + 3) % 3);
+    biome_ = static_cast<MazeBiome>(pick);
+    const char* const* rows = kMazeTemplates[pick];
+
+    const int d = kMazeTemplateDim;
+    templateDim_ = d;
+    gridDim_ = d * 2;
+
+    // Pass one: the corridor lattice, its bands, the entrance and the bosses.
+    std::vector<std::uint8_t> walkable(static_cast<std::size_t>(d) * d, 0);
+    std::vector<std::uint8_t> bands(static_cast<std::size_t>(d) * d, 255);
+    int spawnX = -1;
+    int spawnY = -1;
+    std::vector<int> bossCells;
+    for (int y = 0; y < d; ++y) {
+        for (int x = 0; x < d; ++x) {
+            const char c = rows[y][x];
+            const int zone = mazeZoneOfChar(c);
+            if (zone < 0) continue;
+            walkable[static_cast<std::size_t>(y) * d + x] = 1;
+            bands[static_cast<std::size_t>(y) * d + x] = static_cast<std::uint8_t>(zone);
+            if (c == 'S' && spawnX < 0) { spawnX = x; spawnY = y; }
+            if (c == 'B') bossCells.push_back(y * d + x);
+        }
+    }
+    if (spawnX < 0) {
+        // No entrance authored: the first walkable cell, which client and
+        // server agree on just as readily as an authored one would.
+        for (int i = 0; i < d * d && spawnX < 0; ++i) {
+            if (walkable[static_cast<std::size_t>(i)]) { spawnX = i % d; spawnY = i / d; }
+        }
+    }
+
+    // Pass two: expand each corridor cell to a 2x2 block and code the corners.
+    // A floor cell rounds CONVEX where two voids meet it diagonally; a void
+    // cell rounds CONCAVE where two corridors do. Both codes name the shared
+    // vertex the fillet is centred on, which is what lets one number drive
+    // collision and rendering alike.
+    const int dim = gridDim_;
+    values_.assign(static_cast<std::size_t>(dim) * dim, 0);
+    zones_.assign(static_cast<std::size_t>(dim) * dim, 255);
+    const auto tileAt = [&](int x, int y, int a, int b) -> int {
+        const int nx = x + a;
+        const int ny = y + b;
+        if (nx < 0 || ny < 0 || nx >= d || ny >= d) return 0;
+        return walkable[static_cast<std::size_t>(ny) * d + nx];
+    };
+    const auto setGrid = [&](int gx, int gy, int v) {
+        values_[static_cast<std::size_t>(gy) * dim + gx] = static_cast<std::uint8_t>(v);
+    };
+    for (int y = 0; y < d; ++y) {
+        for (int x = 0; x < d; ++x) {
+            const bool walk = walkable[static_cast<std::size_t>(y) * d + x] != 0;
+            const std::uint8_t zone = bands[static_cast<std::size_t>(y) * d + x];
+            for (int sy = 0; sy < 2; ++sy) {
+                for (int sx = 0; sx < 2; ++sx) {
+                    zones_[static_cast<std::size_t>(y * 2 + sy) * dim + (x * 2 + sx)] = zone;
+                }
+            }
+            const int top = tileAt(x, y, 0, -1);
+            const int bottom = tileAt(x, y, 0, 1);
+            const int left = tileAt(x, y, -1, 0);
+            const int right = tileAt(x, y, 1, 0);
+            if (walk) {
+                if (top == 0) {
+                    setGrid(x * 2, y * 2, left == 0 ? 7 : 1);
+                    setGrid(x * 2 + 1, y * 2, right == 0 ? 5 : 1);
+                } else {
+                    setGrid(x * 2, y * 2, 1);
+                    setGrid(x * 2 + 1, y * 2, 1);
+                }
+                if (bottom == 0) {
+                    setGrid(x * 2, y * 2 + 1, left == 0 ? 6 : 1);
+                    setGrid(x * 2 + 1, y * 2 + 1, right == 0 ? 4 : 1);
+                } else {
+                    setGrid(x * 2, y * 2 + 1, 1);
+                    setGrid(x * 2 + 1, y * 2 + 1, 1);
+                }
+            } else {
+                if (top) {
+                    setGrid(x * 2, y * 2, (left && tileAt(x, y, -1, -1)) ? 15 : 0);
+                    setGrid(x * 2 + 1, y * 2, (right && tileAt(x, y, 1, -1)) ? 13 : 0);
+                } else {
+                    setGrid(x * 2, y * 2, 0);
+                    setGrid(x * 2 + 1, y * 2, 0);
+                }
+                if (bottom) {
+                    setGrid(x * 2, y * 2 + 1, (left && tileAt(x, y, -1, 1)) ? 14 : 0);
+                    setGrid(x * 2 + 1, y * 2 + 1, (right && tileAt(x, y, 1, 1)) ? 12 : 0);
+                } else {
+                    setGrid(x * 2, y * 2 + 1, 0);
+                    setGrid(x * 2 + 1, y * 2 + 1, 0);
+                }
+            }
+        }
+    }
+
+    spawn_ = spawnX < 0 ? Vec2{kMazeOriginX, kMazeOriginY} : mazeCellCenter(spawnX, spawnY);
+    bossSpots_.clear();
+    bossSpots_.reserve(bossCells.size());
+    for (int idx : bossCells) bossSpots_.push_back(mazeCellCenter(idx % d, idx / d));
+}
+
+std::uint8_t Maze::cellValue(int gx, int gy) const {
+    if (gx < 0 || gy < 0 || gx >= gridDim_ || gy >= gridDim_) return 0;
+    return values_[static_cast<std::size_t>(gy) * gridDim_ + gx];
+}
+
+bool Maze::cellBlocksPoint(int gx, int gy, Vec2 world) const {
+    const int value = cellValue(gx, gy);
+    if (value == 0) return true;
+    if (value == 1) return false;
+    // The fillet is a circle of one whole cell centred on the vertex the code
+    // names. A convex floor corner keeps the point INSIDE that circle; a
+    // concave void corner keeps it outside.
+    const double cornerX = kMazeOriginX + (gx + ((value >> 1) & 1)) * kMazeCellSize;
+    const double cornerY = kMazeOriginY + (gy + (value & 1)) * kMazeCellSize;
+    const double dx = world.x - cornerX;
+    const double dy = world.y - cornerY;
+    const bool withinArc = dx * dx + dy * dy <= kMazeCellSize * kMazeCellSize;
+    return value >= 12 ? withinArc : !withinArc;
+}
+
+int Maze::zoneAt(Vec2 p) const {
+    if (!contains(p)) return -1;
+    const int gx = static_cast<int>(std::floor((p.x - kMazeOriginX) / kMazeCellSize));
+    const int gy = static_cast<int>(std::floor((p.y - kMazeOriginY) / kMazeCellSize));
+    if (gx < 0 || gy < 0 || gx >= gridDim_ || gy >= gridDim_) return -1;
+    const std::uint8_t zone = zones_[static_cast<std::size_t>(gy) * gridDim_ + gx];
+    return zone == 255 ? -1 : static_cast<int>(zone);
+}
+
+bool Maze::blocksPoint(Vec2 p) const {
+    if (!contains(p)) return false;
+    const int gx = static_cast<int>(std::floor((p.x - kMazeOriginX) / kMazeCellSize));
+    const int gy = static_cast<int>(std::floor((p.y - kMazeOriginY) / kMazeCellSize));
+    return cellBlocksPoint(gx, gy, p);
+}
+
+bool Maze::isFloor(Vec2 p) const {
+    if (!contains(p)) return false;
+    const int gx = static_cast<int>(std::floor((p.x - kMazeOriginX) / kMazeCellSize));
+    const int gy = static_cast<int>(std::floor((p.y - kMazeOriginY) / kMazeCellSize));
+    const int v = cellValue(gx, gy);
+    return v == 1 || (v >= 4 && v <= 7);
+}
+
+bool Maze::blocksLine(Vec2 a, Vec2 b) const {
+    if (!contains(a) && !contains(b)) return false;
+    // A degenerate endpoint would make the step count NaN or astronomical and
+    // spin this loop; no legitimate sight line spans anywhere near that far.
+    if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y)) {
+        return false;
+    }
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+    const double dist = std::sqrt(dx * dx + dy * dy);
+    const int steps = static_cast<int>(clamp(std::ceil(dist / (kMazeCellSize / 3.0)), 1.0, 1024.0));
+    for (int i = 0; i <= steps; ++i) {
+        const double t = static_cast<double>(i) / steps;
+        if (blocksPoint({a.x + dx * t, a.y + dy * t})) return true;
+    }
+    return false;
+}
+
+bool Maze::resolveOnce(Vec2 position, double radius, Vec2& out) const {
+    const double g = kMazeCellSize;
+    const double u = position.x - kMazeOriginX;
+    const double v = position.y - kMazeOriginY;
+    const int cx = static_cast<int>(std::floor(u / g));
+    const int cy = static_cast<int>(std::floor(v / g));
+
+    const auto val = [&](int a, int b) { return static_cast<int>(cellValue(cx + a, cy + b)); };
+
+    // Push out around a corner vertex given in maze-local units. A convex
+    // floor corner holds the centre within (g - r) of the vertex; a concave
+    // void corner holds it beyond (g + r).
+    const auto curveCheck = [&](double ox, double oy, int inverse, Vec2& hit) {
+        double dx = u - ox;
+        double dy = v - oy;
+        double d = std::sqrt(dx * dx + dy * dy);
+        // A convex corner collides once the centre has strayed OUTSIDE its
+        // arc, a concave one once it has strayed inside. Both are written as
+        // plain comparisons, so a NaN distance reads as clear and no push is
+        // invented for a body that has no position to speak of.
+        const double target = inverse == 0 ? g - radius : g + radius;
+        const bool overlapping = inverse == 0 ? d > target : d < target;
+        if (!overlapping) return false;
+        if (d == 0.0) { dx = 1.0; dy = 0.0; d = 1.0; }
+        const double s = target / d;
+        hit = {kMazeOriginX + ox + dx * s, kMazeOriginY + oy + dy * s};
+        return true;
+    };
+
+    struct Corner { double ox, oy; int inverse; };
+    const auto cornerOf = [&](int tile, int baseX, int baseY) {
+        const int left = (tile >> 1) & 1;
+        const int top = tile & 1;
+        return Corner{(baseX + left) * g, (baseY + top) * g, (tile >> 3) & 1};
+    };
+
+    const int tile0 = val(0, 0);
+    if (tile0 != 1) {
+        if (tile0 == 0) {
+            // The centre is inside solid void. Movement never puts it there,
+            // but an instantaneous shove -- mob contact, petal knockback --
+            // is applied after wall resolution and can. Answering "no
+            // collision" would let the body noclip the whole lattice, so it
+            // is pushed out through the nearest walkable face and the outer
+            // iteration finishes the job.
+            const double lx = u - cx * g;
+            const double ly = v - cy * g;
+            const auto isFloorCell = [&](int a, int b) {
+                const int t = val(a, b);
+                return t == 1 || (t >= 4 && t <= 7);
+            };
+            bool found = false;
+            double bestDepth = 0.0;
+            Vec2 best;
+            const auto consider = [&](double depth, Vec2 q) {
+                if (!found || depth < bestDepth) { found = true; bestDepth = depth; best = q; }
+            };
+            if (isFloorCell(-1, 0)) consider(lx, {kMazeOriginX + cx * g - radius, position.y});
+            if (isFloorCell(1, 0)) consider(g - lx, {kMazeOriginX + (cx + 1) * g + radius, position.y});
+            if (isFloorCell(0, -1)) consider(ly, {position.x, kMazeOriginY + cy * g - radius});
+            if (isFloorCell(0, 1)) consider(g - ly, {position.x, kMazeOriginY + (cy + 1) * g + radius});
+            // Not found only deep inside the wall mass, which one knock cannot
+            // reach.
+            if (found) out = best;
+            return found;
+        }
+        const Corner c = cornerOf(tile0, cx, cy);
+        if (curveCheck(c.ox, c.oy, c.inverse, out)) return true;
+    }
+    if (val(-1, 0) != 1 && u - cx * g < radius) {
+        const int tile = val(-1, 0);
+        if (tile == 0) { out = {kMazeOriginX + cx * g + radius, position.y}; return true; }
+        const Corner c = cornerOf(tile, cx - 1, cy);
+        if (curveCheck(c.ox, c.oy, c.inverse, out)) return true;
+    }
+    if (val(0, -1) != 1 && v - cy * g < radius) {
+        const int tile = val(0, -1);
+        if (tile == 0) { out = {position.x, kMazeOriginY + cy * g + radius}; return true; }
+        const Corner c = cornerOf(tile, cx, cy - 1);
+        if (curveCheck(c.ox, c.oy, c.inverse, out)) return true;
+    }
+    if (val(1, 0) != 1 && (cx + 1) * g - u < radius) {
+        const int tile = val(1, 0);
+        if (tile == 0) { out = {kMazeOriginX + (cx + 1) * g - radius, position.y}; return true; }
+        const Corner c = cornerOf(tile, cx + 1, cy);
+        if (curveCheck(c.ox, c.oy, c.inverse, out)) return true;
+    }
+    if (val(0, 1) != 1 && (cy + 1) * g - v < radius) {
+        const int tile = val(0, 1);
+        if (tile == 0) { out = {position.x, kMazeOriginY + (cy + 1) * g - radius}; return true; }
+        const Corner c = cornerOf(tile, cx, cy + 1);
+        if (curveCheck(c.ox, c.oy, c.inverse, out)) return true;
+    }
+    return false;
+}
+
+Vec2 Maze::resolveCircle(Vec2 position, double radius, bool* collided) const {
+    bool hitAny = false;
+    for (int pass = 0; pass < 4; ++pass) {
+        Vec2 pushed;
+        if (!resolveOnce(position, radius, pushed)) break;
+        position = pushed;
+        hitAny = true;
+    }
+    if (collided) *collided = hitAny;
+    return position;
+}
+
+bool Maze::circleWallOverlap(Vec2 position, double radius, Rect& out) const {
+    if (!contains(position)) return false;
+    const double g = kMazeCellSize;
+    const int minGx = static_cast<int>(std::floor((position.x - radius - kMazeOriginX) / g));
+    const int maxGx = static_cast<int>(std::floor((position.x + radius - kMazeOriginX) / g));
+    const int minGy = static_cast<int>(std::floor((position.y - radius - kMazeOriginY) / g));
+    const int maxGy = static_cast<int>(std::floor((position.y + radius - kMazeOriginY) / g));
+    for (int gy = minGy; gy <= maxGy; ++gy) {
+        for (int gx = minGx; gx <= maxGx; ++gx) {
+            const int v = cellValue(gx, gy);
+            if (v == 1) continue;               // plain floor never blocks
+            const double left = kMazeOriginX + gx * g;
+            const double top = kMazeOriginY + gy * g;
+            const double nearX = std::max(left, std::min(position.x, left + g));
+            const double nearY = std::max(top, std::min(position.y, top + g));
+            const double dx = position.x - nearX;
+            const double dy = position.y - nearY;
+            if (dx * dx + dy * dy > radius * radius) continue;
+            // A corner cell only blocks on the black side of its arc, so the
+            // nearest point decides -- a projectile grazing the open half of a
+            // fillet passes, exactly as the drawn geometry says it should.
+            if (!cellBlocksPoint(gx, gy, {nearX, nearY}) && !cellBlocksPoint(gx, gy, position)) {
+                continue;
+            }
+            out = {left, top, g, g};
+            return true;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+/// The mutable half of the shared maze. Private so that everything outside
+/// this file can read today's maze but only setActiveMazeDay() can change it.
+Maze& mutableActiveMaze() {
+    static Maze maze(currentMazeDay());
+    return maze;
+}
+
+} // namespace
+
+std::int64_t currentMazeDay() {
+    using namespace std::chrono;
+    const auto epochMillis =
+        duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    return static_cast<std::int64_t>(epochMillis / 86400000);
+}
+
+const Maze& activeMaze() { return mutableActiveMaze(); }
+
+void setActiveMazeDay(std::int64_t dayNumber) {
+    if (mutableActiveMaze().day() != dayNumber) mutableActiveMaze().setDay(dayNumber);
 }
 
 } // namespace flr

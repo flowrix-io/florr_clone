@@ -259,11 +259,29 @@ TEST(client_prediction_agrees_with_the_server) {
         return distance(client.view().self().position, world.get<Transform>(body).position) < 1.0;
     }));
 
+    // Prediction models MOVEMENT, and the server's world holds more than
+    // movement: a mob touching the flower displaces it 25 units on the spot,
+    // which is the reference's fixed contact push and is not something the
+    // client can know about. That is a correction the mechanism is FOR, and it
+    // is not what this test measures -- so the lane is swept before every step.
+    const auto clearLane = [&] {
+        if (body == NULL_ENTITY) return;
+        const Vec2 at = world.get<Transform>(body).position;
+        std::vector<Entity> doomed;
+        Query<MobTag, Transform> mobs{world};
+        mobs.each([&](Entity e, MobTag&, Transform& transform) {
+            if (distance(transform.position, at) < 2000.0) doomed.push_back(e);
+        });
+        for (const Entity e : doomed) world.destroy(e);
+    };
+    clearLane();
+
     Prediction prediction;
     prediction.reset(client.view().self().position);
 
     double worstCorrection = 0;
     for (int i = 0; i < 60; ++i) {
+        clearLane();
         input.sequence = static_cast<std::uint32_t>(i + 1);
         prediction.apply(input, kPlayerMaxSpeed, net::kTickSeconds);
         client.sendInput(input);

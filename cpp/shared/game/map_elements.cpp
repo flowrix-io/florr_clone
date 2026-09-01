@@ -1,6 +1,7 @@
 #include "shared/game/map_elements.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 
@@ -27,6 +28,55 @@ constexpr int kSpawnAttempts = 50;
 
 /// Section 0 is the map's top-left, which is where the beginner ground is.
 constexpr int kBeginnerSection = 0;
+
+/// A spot with more mobs than this inside kSpawnCrowdRadius is somewhere a
+/// level-1 flower is surrounded the instant its invulnerability ends, so the
+/// reference throws the candidate away rather than the player.
+constexpr double kSpawnCrowdRadius = 200.0;
+constexpr int kSpawnCrowdMaxMobs = 5;
+
+/// True when any tile the flower's BODY would overlap is solid.
+///
+/// A centre-only test passes a candidate twenty units from a wall face and
+/// then hands the first movement substep a body already inside it. Off-grid
+/// tiles read as air here rather than as wall, because that is what the
+/// reference's grid answers and a zone drawn over the map edge should not be
+/// rejected for tiles that do not exist.
+bool bodyInsideWall(const Terrain& terrain, Vec2 centre, double halfSize) {
+    const int minTx = Terrain::toTileCoord(centre.x - halfSize);
+    const int maxTx = Terrain::toTileCoord(centre.x + halfSize);
+    const int minTy = Terrain::toTileCoord(centre.y - halfSize);
+    const int maxTy = Terrain::toTileCoord(centre.y + halfSize);
+    for (int ty = minTy; ty <= maxTy; ++ty) {
+        for (int tx = minTx; tx <= maxTx; ++tx) {
+            if (tx < 0 || ty < 0 || tx >= Terrain::tilesPerAxis() || ty >= Terrain::tilesPerAxis()) {
+                continue;
+            }
+            if (tileBlocks(terrain.atTile(tx, ty))) return true;
+        }
+    }
+    return false;
+}
+
+bool overlapsMob(const std::vector<MobDisc>& mobs, Vec2 centre, double halfSize) {
+    for (const MobDisc& mob : mobs) {
+        const double minDistance = halfSize + mob.radius;
+        if (distanceSq(mob.position, centre) < minDistance * minDistance) return true;
+    }
+    return false;
+}
+
+/// True once a SIXTH mob is inside the crowd radius: the reference counts up
+/// and refuses on `count > maxMobs`, so exactly five is still a legal spot,
+/// and a mob sitting exactly on the radius counts.
+bool tooManyMobsNearby(const std::vector<MobDisc>& mobs, Vec2 centre) {
+    int count = 0;
+    for (const MobDisc& mob : mobs) {
+        if (distanceSq(mob.position, centre) > kSpawnCrowdRadius * kSpawnCrowdRadius) continue;
+        if (++count > kSpawnCrowdMaxMobs) return true;
+    }
+    return false;
+}
 
 } // namespace
 
@@ -145,6 +195,11 @@ bool MapData::load(const std::string& bundlePath, std::string& errorOut) {
                 element.hasSpawnTier = true;
             }
             element.biomeName = properties["biomeName"].asString();
+            const Json& destination = properties["teleportTo"];
+            if (destination.isObject()) {
+                element.teleportTo = {destination["x"].asDouble(), destination["y"].asDouble()};
+                element.hasTeleportTo = true;
+            }
             const Json& table = properties["spawnTable"];
             if (table.isArray()) {
                 element.hasSpawnTable = true;
@@ -184,7 +239,70 @@ bool MapData::load(const std::string& bundlePath, std::string& errorOut) {
     return true;
 }
 
-bool MapData::findOpenPoint(const Rect& area, Rng& rng, const Terrain& terrain, Vec2& out) const {
+MapData::TeleportStep MapData::stepTeleporters(Vec2 centre, double deltaSeconds, double nowMillis,
+                                               TeleporterState& state) const {
+    TeleportStep step;
+    step.position = centre;
+
+    const bool onCooldown = nowMillis < state.cooldownUntilMillis;
+    int standingOn = -1;
+
+    for (std::size_t i = 0; i < elements_.size(); ++i) {
+        const MapElement& element = elements_[i];
+        if (element.kind != MapElementKind::Teleporter || !element.hasTeleportTo) continue;
+
+        const Vec2 offset = step.position - element.centre();
+        const double distSq = offset.lengthSq();
+
+        // Suction reads the distance from BEFORE its own pull, and the pull of
+        // one pad is carried into the next pad's measurement. Both fall out of
+        // the reference walking the list with a running position; between two
+        // pads close enough to overlap it is the difference between being
+        // dragged onto one and being held between them.
+        if (distSq <= kTeleporterSuctionRadius * kTeleporterSuctionRadius && !onCooldown) {
+            const double dist = std::sqrt(distSq);
+            // A flower exactly on the centre has no direction to be pulled in;
+            // the reference's `|| 1` keeps the division finite and the offset
+            // is zero anyway.
+            const double safe = dist > 0.0 ? dist : 1.0;
+            const double pull =
+                kTeleporterSuctionForce * (1.0 - safe / kTeleporterSuctionRadius) * deltaSeconds;
+            step.position -= offset / safe * pull;
+        }
+
+        if (distSq > kTeleporterRadius * kTeleporterRadius) continue;
+        standingOn = static_cast<int>(i);
+
+        if (state.pad != standingOn) {
+            state.pad = standingOn;
+            state.enteredAtMillis = nowMillis;
+            step.entered = standingOn;
+        }
+        // The cooldown blocks the jump but NOT the charge-up: a flower that
+        // walks back onto the pad it arrived on still spins, it just does not
+        // go anywhere until the five seconds are up.
+        if (nowMillis - state.enteredAtMillis >= kTeleporterDwellMillis && !onCooldown) {
+            state.cooldownUntilMillis = nowMillis + kTeleporterCooldownMillis;
+            state.pad = -1;
+            state.enteredAtMillis = 0;
+            step.position = element.teleportTo;
+            step.teleported = true;
+        }
+        // One pad acts per tick, even when the jump was refused: pads come in
+        // pairs close enough that the far one would otherwise grab the arrival.
+        break;
+    }
+
+    if (standingOn < 0 && state.pad >= 0) {
+        state.pad = -1;
+        state.enteredAtMillis = 0;
+        step.exited = true;
+    }
+    return step;
+}
+
+bool MapData::findOpenPoint(const Rect& area, Rng& rng, const Terrain& terrain, Vec2& out,
+                            const std::vector<MobDisc>* mobs) const {
     const double width = area.w - kSpawnPadding * 2;
     const double height = area.h - kSpawnPadding * 2;
     if (width <= 0 || height <= 0) return false;
@@ -192,15 +310,20 @@ bool MapData::findOpenPoint(const Rect& area, Rng& rng, const Terrain& terrain, 
     for (int attempt = 0; attempt < kSpawnAttempts; ++attempt) {
         const Vec2 candidate{area.x + kSpawnPadding + rng.unit() * width,
                              area.y + kSpawnPadding + rng.unit() * height};
-        if (!terrain.blocked(candidate)) {
-            out = candidate;
-            return true;
-        }
+        // The reference's three-part safety test, in its order: the geometry
+        // the body sits in, then the mob it would be sitting inside, then the
+        // crowd around it.
+        if (bodyInsideWall(terrain, candidate, kPlayerBaseRadius)) continue;
+        if (mobs && overlapsMob(*mobs, candidate, kPlayerBaseRadius)) continue;
+        if (mobs && tooManyMobsNearby(*mobs, candidate)) continue;
+        out = candidate;
+        return true;
     }
     return false;
 }
 
-Vec2 MapData::defaultSpawn(Rng& rng, const Terrain& terrain) const {
+Vec2 MapData::defaultSpawn(Rng& rng, const Terrain& terrain,
+                           const std::vector<MobDisc>* mobs) const {
     // Beginner ground first. Only if the map declares none does this widen to
     // every common zone, and only if it declares none of those does it fall
     // back to the middle -- which is the behaviour this class exists to stop
@@ -222,7 +345,7 @@ Vec2 MapData::defaultSpawn(Rng& rng, const Terrain& terrain) const {
     }
     Vec2 spawn;
     for (const MapElement* zone : zones) {
-        if (findOpenPoint(zone->bounds, rng, terrain, spawn)) return spawn;
+        if (findOpenPoint(zone->bounds, rng, terrain, spawn, mobs)) return spawn;
     }
     if (!zones.empty()) {
         // Every candidate was solid. The zone's centre is still a better guess
@@ -233,7 +356,7 @@ Vec2 MapData::defaultSpawn(Rng& rng, const Terrain& terrain) const {
 }
 
 bool MapData::spawnInBiome(const std::string& biomeName, Rng& rng, const Terrain& terrain,
-                           Vec2& out) const {
+                           Vec2& out, const std::vector<MobDisc>* mobs) const {
     std::vector<const MapElement*> areas;
     for (const MapElement& element : elements_) {
         if (element.kind != MapElementKind::Biome || element.biomeName != biomeName) continue;
@@ -246,7 +369,7 @@ bool MapData::spawnInBiome(const std::string& biomeName, Rng& rng, const Terrain
         std::swap(areas[i - 1], areas[rng.below(static_cast<std::uint32_t>(i))]);
     }
     for (const MapElement* area : areas) {
-        if (findOpenPoint(area->bounds, rng, terrain, out)) return true;
+        if (findOpenPoint(area->bounds, rng, terrain, out, mobs)) return true;
     }
     out = areas.front()->centre();
     return true;

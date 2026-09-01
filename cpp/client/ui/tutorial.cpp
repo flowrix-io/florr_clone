@@ -161,15 +161,38 @@ constexpr double kHheaAscent = 0.932;
 constexpr double kHheaDescent = 0.189;
 constexpr double kHheaLineGap = 0.028;
 
+/// Blink rounds a face's ascent and descent to whole pixels when it builds its
+/// FontMetrics and leaves the line gap fractional, so a `normal` line box is
+/// round(A) + round(D) + gap and not the fractional sum. At 24px that is
+/// 22 + 5 + 0.672, which is the difference between the heading's baseline
+/// landing on 102 where the reference's does and landing on 103.
+double cssAscent(double size) { return std::round(kHheaAscent * size); }
+double cssDescent(double size) { return std::round(kHheaDescent * size); }
+
 double normalLineHeight(double size) {
-    return (kHheaAscent + kHheaDescent + kHheaLineGap) * size;
+    return cssAscent(size) + cssDescent(size) + kHheaLineGap * size;
 }
 
 /// The baseline's offset from the top of a line box of the given height. The
 /// leftover space is split above and below the text, which is what CSS calls
 /// half-leading.
 double baselineIn(double size, double lineHeight) {
-    return (lineHeight - (kHheaAscent + kHheaDescent) * size) * 0.5 + kHheaAscent * size;
+    return (lineHeight - (cssAscent(size) + cssDescent(size))) * 0.5 + cssAscent(size);
+}
+
+/// A text origin as it is really painted. Glyph rasterization is subpixel
+/// across the line and whole-pixel down it, so every baseline in the reference
+/// sits on an integer -- which is why its stems have a hard bottom edge and a
+/// soft top one.
+double baselinePixel(double y) { return std::round(y); }
+
+/// A box as it is really painted. Blink snaps a background's edges to whole
+/// pixels one at a time, so a box does not keep its fractional height either:
+/// the 36.392px buttons come out 36 tall, from 199 to 235.
+Rect snapped(Rect r) {
+    const double x = std::round(r.x);
+    const double y = std::round(r.y);
+    return Rect{x, y, std::round(r.x + r.w) - x, std::round(r.y + r.h) - y};
 }
 
 /// y for a `cubic-bezier(x1, y1, x2, y2)` at time x. Newton against the
@@ -700,23 +723,25 @@ void Tutorial::draw(Canvas& canvas, double nowSeconds, Rect highlightCard) {
         canvas.translate(static_cast<float>(-cx), static_cast<float>(-cy));
     }
 
-    cardPlate(canvas, l.card);
-    text(canvas, step.title, l.contentX, l.titleBaseline, cardText(kHeadSize, kPaper));
+    cardPlate(canvas, snapped(l.card));
+    text(canvas, step.title, l.contentX, baselinePixel(l.titleBaseline),
+         cardText(kHeadSize, kPaper));
 
     double baseline = l.firstBaseline;
     for (const Line& line : l.lines) {
         for (const Piece& piece : line.pieces) {
             const double x = l.contentX + piece.x;
+            const double pen = baselinePixel(baseline);
             if (piece.italic) {
                 canvas.save();
                 // x' = x - shear * (y - baseline): the glyphs lean right above
                 // the baseline and stay put on it.
                 canvas.transform(1.0f, 0.0f, static_cast<float>(-kItalicShear), 1.0f,
-                                 static_cast<float>(kItalicShear * baseline), 0.0f);
-                text(canvas, piece.text, x, baseline, cardText(kCopySize, kPaper));
+                                 static_cast<float>(kItalicShear * pen), 0.0f);
+                text(canvas, piece.text, x, pen, cardText(kCopySize, kPaper));
                 canvas.restore();
             } else {
-                text(canvas, piece.text, x, baseline, cardText(kCopySize, kPaper));
+                text(canvas, piece.text, x, pen, cardText(kCopySize, kPaper));
             }
         }
         baseline += kCopySize * kBodyLeading;
@@ -751,10 +776,11 @@ void Tutorial::draw(Canvas& canvas, double nowSeconds, Rect highlightCard) {
                 canvas.stroke();
             }
         }
-        fillRounded(canvas, box, kPillRadius, kPaper, fill + (hoverFill - fill) * e);
+        fillRounded(canvas, snapped(box), kPillRadius, kPaper, fill + (hoverFill - fill) * e);
         canvas.setGlobalAlpha(static_cast<float>(l.alpha * labelAlpha));
         text(canvas, label, box.x + box.w * 0.5,
-             box.y + kButtonPadY + baselineIn(kLabelSize, normalLineHeight(kLabelSize)),
+             baselinePixel(box.y + kButtonPadY +
+                           baselineIn(kLabelSize, normalLineHeight(kLabelSize))),
              cardText(kLabelSize, labelColour, Align::Centre));
         canvas.restore();
     };
@@ -765,7 +791,8 @@ void Tutorial::draw(Canvas& canvas, double nowSeconds, Rect highlightCard) {
 
     canvas.setGlobalAlpha(static_cast<float>(l.alpha * kCounterAlpha));
     text(canvas, std::to_string(step_ + 1) + " / " + std::to_string(kStepCount),
-         l.contentX + l.contentW, l.counterBaseline, cardText(kCounterSize, kPaper, Align::Right));
+         l.contentX + l.contentW, baselinePixel(l.counterBaseline),
+         cardText(kCounterSize, kPaper, Align::Right));
     canvas.setGlobalAlpha(static_cast<float>(l.alpha));
 
     // The dots are rebuilt with the card's innerHTML on every step, so the
@@ -774,9 +801,14 @@ void Tutorial::draw(Canvas& canvas, double nowSeconds, Rect highlightCard) {
     const double dotsWidth = kStepCount * kDotSize + (kStepCount - 1) * kDotGap;
     const double dotsX = l.card.x + l.card.w * 0.5 - dotsWidth * 0.5;
     for (int i = 0; i < kStepCount; ++i) {
-        const double centreX = dotsX + i * (kDotSize + kDotGap) + kDotSize * 0.5;
-        const double centreY = l.dotsTop + kDotSize * 0.5;
-        const double radius = kDotSize * 0.5 * (i == step_ ? kActiveDotScale : 1.0);
+        // The idle dots are snapped like any other background box; the active
+        // one is a `transform: scale(1.3)` on that same snapped box, and a
+        // transformed element is composited rather than snapped again.
+        const Rect box = snapped(Rect{dotsX + i * (kDotSize + kDotGap), l.dotsTop, kDotSize,
+                                      kDotSize});
+        const double centreX = box.x + box.w * 0.5;
+        const double centreY = box.y + box.h * 0.5;
+        const double radius = box.w * 0.5 * (i == step_ ? kActiveDotScale : 1.0);
         setFill(canvas, kPaper, i == step_ ? 1.0 : kDotIdleAlpha);
         canvas.fillCircle(static_cast<float>(centreX), static_cast<float>(centreY),
                           static_cast<float>(radius));

@@ -486,17 +486,10 @@ TEST(killing_a_mob_credits_the_ledger_and_pays_its_stars) {
     const bool credited = h.stepUntil({&client}, [&] {
         if (client.profile().killCount(mobIndex, Rarity::Mythic) > 0) return true;
         if (!world.isAlive(mob) || world.has<Dead>(mob)) return false;
-        // Park the mob on a petal, one hit from death, every tick until the
-        // ring catches it. The flower itself deals no contact damage in this
-        // build, so a mob sitting on the player would never die.
-        Vec2 blade{};
-        bool found = false;
-        petals.each([&](Entity, PetalInstance& instance, Transform& transform) {
-            if (found || instance.owner != player) return;
-            blade = transform.position;
-            found = true;
-        });
-        if (found) world.get<Transform>(mob).position = blade;
+        // Park the mob on the flower, one hit from death. The TypeScript
+        // player pipeline resolves this body contact before moveEnemies(), so
+        // this is deterministic without predicting next tick's petal angle.
+        world.get<Transform>(mob).position = world.get<Transform>(player).position;
         world.get<Health>(mob).current = 1.0;
         world.get<Health>(mob).invulnerableUntilMillis = 0;
         world.get<Health>(player).current = world.get<Health>(player).max;

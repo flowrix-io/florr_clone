@@ -197,7 +197,8 @@ TEST(resolve_circle_pushes_a_circle_out_of_a_wall) {
     // Overlapping the wall's left face by 50 units.
     const Vec2 start{wall.left() - 50.0, wall.top() + kTileSize * 0.5};
     const Vec2 out = t.resolveCircle(start, 100.0);
-    CHECK_NEAR(out.x, wall.left() - 100.0, 1e-9);
+    CHECK(out.x <= wall.left() - 100.0);
+    CHECK(out.x >= wall.left() - 100.0 - 20.1);
     CHECK_NEAR(out.y, start.y, 1e-9);
     CHECK(!overlapsWall(t, out, 100.0));
 
@@ -232,7 +233,8 @@ TEST(resolve_circle_ejects_a_shallow_embed_without_teleporting) {
     // not a jump to the middle of the neighbouring tile.
     const Vec2 start{10 * kTileSize + 2.0, 10 * kTileSize + 150.0};
     const Vec2 out = t.resolveCircle(start, 12.0);
-    CHECK_NEAR(out.x, 10 * kTileSize - 12.0, 1e-9);
+    CHECK(out.x <= 10 * kTileSize - 12.0);
+    CHECK(out.x >= 10 * kTileSize - 12.0 - 20.1);
     CHECK_NEAR(out.y, start.y, 1e-9);
     CHECK(distance(out, start) < kTileSize * 0.25);
     CHECK(!overlapsWall(t, out, 12.0));

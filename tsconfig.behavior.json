@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "outDir": "./dist_behavior"
+  },
+  "include": [
+    "src/server/behaviorOracle.ts",
+    "src/mobs.ts",
+    "src/mob_configs.ts",
+    "src/mob_drops.ts",
+    "src/petals.ts",
+    "src/petals.json",
+    "src/mobs.json",
+    "src/server/shared/rarity.ts"
+  ]
+}

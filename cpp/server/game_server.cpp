@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <iterator>
+#include <limits>
 #include <optional>
 #include <thread>
 
@@ -35,6 +38,18 @@ constexpr double kMaxViewportAxis = 2600.0;
 
 /// How often account progress is written back from the live entity.
 constexpr double kPersistIntervalMillis = 30000.0;
+
+/// Ceiling on one simulation step, as a multiple of the nominal one. A long
+/// stall must not be paid back as a single giant integration step that walks
+/// every flower through a wall.
+constexpr double kMaxDeltaSeconds = net::kTickSeconds * 3.0;
+/// Low-pass factor on the step, ~a ten-tick time constant.
+constexpr double kDeltaSmoothing = 0.1;
+
+/// How often the leaderboard reward tiers are recomputed. The ranking is a
+/// sort of every account and its answer changes over hours, so it is cached
+/// rather than resolved per kill.
+constexpr double kRankRefreshMillis = 15000.0;
 
 /// The batch a craft consumes.
 constexpr int kCraftBatch = 5;
@@ -77,14 +92,15 @@ void giveToInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity rari
 ///
 /// An empty loadout is a flower that cannot fight anything, which makes the
 /// first minute of the game a walk through a field of mobs that can only hurt
-/// it. Five Basic petals is the smallest kit that is actually playable, plus a
-/// couple of spares so the first break is not also the end of the run.
+/// it. Five Basic petals is the smallest kit that is actually playable, and
+/// the five spares beside them are exactly one craft batch -- a brand-new
+/// account can walk to the crafting panel and roll its first Unusual.
 void grantStarterKit(PlayerRecord& record) {
     const std::uint16_t basic = content().petalIndex("basic");
     if (basic == kInvalidIndex) return;
 
     constexpr int kStartingEquipped = 5;
-    constexpr int kStartingSpares = 3;
+    constexpr int kStartingSpares = 5;
 
     record.loadout.assign(kLoadoutSlots, std::nullopt);
     for (int i = 0; i < kStartingEquipped; ++i) {
@@ -220,8 +236,30 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // simulates -- its entities are simply not replicated, which is what a
     // headless test wants and what this must not be in production.
     petals_->allocateNetId = [this] { return netIds_.next(); };
+    mobAi_->allocateNetId = [this] { return netIds_.next(); };
     spawning_->netIds = &netIds_;
     loot_->netIds = &netIds_;
+
+    // The annotation layer is a read-only service, so the systems that need it
+    // hold a pointer rather than being handed it per call. Left null they fall
+    // back to behaviour with no map at all, which is what every unit test gets.
+    // In production that would silently cost the spawn rectangles, the biome
+    // tiers and every teleporter on the map, so it is wired here, once.
+    spawning_->mapData = &mapData_;
+    movement_->mapData = &mapData_;
+    loot_->terrain = terrain_.get();
+
+    // A revived flower has to be un-announced to its own client, and only the
+    // connection layer can do that.
+    petals_->onPlayerRevived = [this](Entity revived, Entity reviver) {
+        onPlayerRevived(revived, reviver);
+    };
+
+    // The maze is a daily-seeded region of the world with its own walls. Its
+    // geometry is a pure function of the day number, so the server picks the
+    // day once at boot; every collision query inside the region then answers
+    // against the same maze for the whole session.
+    setActiveMazeDay(currentMazeDay());
 
     if (!listener_.start(config.port, errorOut)) return false;
 
@@ -241,15 +279,32 @@ void GameServer::run() {
         const int waitMillis = static_cast<int>(std::max(0.0, nextTickMillis - now));
         serviceNetwork(std::min(waitMillis, 5));
 
-        if (monotonicMillis() >= nextTickMillis) {
-            tick(nextTickMillis);
-            nextTickMillis += net::kTickMillis;
+        const double tickNow = monotonicMillis();
+        if (tickNow >= nextTickMillis) {
+            // Real elapsed time, clamped, then low-pass filtered -- see
+            // smoothedDeltaSeconds_. Sampled before the tick so a slow tick
+            // shows up in the NEXT step's delta, exactly as the reference's
+            // performance.now() sample at the top of its interval does.
+            double raw = lastTickWallMillis_ > 0
+                             ? (tickNow - lastTickWallMillis_) / 1000.0
+                             : net::kTickSeconds;
+            lastTickWallMillis_ = tickNow;
+            if (raw > kMaxDeltaSeconds) raw = kMaxDeltaSeconds;
+            smoothedDeltaSeconds_ += (raw - smoothedDeltaSeconds_) * kDeltaSmoothing;
 
-            // If the server fell far behind (a long stall, a suspended laptop),
-            // give up on catching the missed ticks: replaying them in a burst
-            // would teleport every entity. Resync to now instead.
-            const double drift = monotonicMillis() - nextTickMillis;
-            if (drift > net::kTickMillis * 5) nextTickMillis = monotonicMillis();
+            // The REAL clock, not the scheduled slot. Every absolute deadline
+            // in the world -- poison, slows, reloads, hit cooldowns, despawn --
+            // is compared against this, so handing over a nominal time that
+            // lags wall clock makes all of them fire late and then jump.
+            tick(tickNow);
+
+            nextTickMillis += net::kTickMillis;
+            // A timer never queues up the fires it missed: a tick that overran
+            // simply makes the next one land immediately, it does not run twice
+            // to catch up. Replaying would advance the fixed-step mob half once
+            // per replay while the dt-scaled half, which has just had its delta
+            // reset to almost nothing, stood still.
+            if (nextTickMillis < monotonicMillis()) nextTickMillis = monotonicMillis();
         }
     }
 
@@ -280,27 +335,42 @@ std::size_t GameServer::playerCount() const {
 
 void GameServer::tick(double nowMillis) {
     ++tick_;
-    events_.clear();
 
     for (auto& entry : sessions_) refillAllowances(entry.second, nowMillis);
 
-    // The active-player list is rebuilt once and shared: spawning and the mob
-    // LOD both need it, and walking the player query per system would cost the
-    // same work several times over.
-    activePlayers_.clear();
-    Query<PlayerTag, Transform> players{world_};
-    players.each([&](Entity, PlayerTag&, Transform& transform) {
-        activePlayers_.push_back(transform.position);
-    });
+    // Housekeeping, ABOVE the idle gate: an account registered by somebody
+    // sitting on the title screen is dirty in memory and would otherwise wait
+    // for the next player to actually join before it reached the disk.
+    if (nowMillis >= nextPersistMillis_) {
+        nextPersistMillis_ = nowMillis + kPersistIntervalMillis;
+        for (const auto& entry : sessions_) {
+            if (entry.second.playing()) persistPlayer(entry.second);
+        }
+        database_.pruneExpiredSessions();
+        database_.save();
+    }
 
-    // The broadphase is rebuilt from scratch each tick. Incremental updates
-    // sound cheaper but need every mover to report its old cell, and one missed
-    // report leaves a stale entry that reads as a phantom collision.
-    grid_.clear();
-    Query<Transform, Body> collidable{world_};
-    collidable.each([&](Entity e, Transform& transform, Body& body) {
-        grid_.insert(e, transform.position, body.radius);
-    });
+    // Bot population is maintained on every tick, INCLUDING the idle ones the
+    // gate below returns out of -- that is where the reference calls it, and
+    // it is what lets an empty server retire its bots after the grace period
+    // rather than leaving them simulating for nobody.
+    maintainBots(nowMillis);
+
+    // Nobody in the world means nothing to simulate. The reference returns out
+    // of its tick here and the whole world freezes: mobs stop wandering, nests
+    // stop firing, lifetimes stop burning down and the unseen-despawn census
+    // never runs. Without this gate an idle server quietly empties itself of
+    // every mob it had and the first player back arrives on a bare map.
+    //
+    // The command buffer is still flushed: a disconnect between ticks queues a
+    // destroy, and leaving it queued would keep the departed body in the world
+    // and in every query until somebody joined.
+    if (playerCount() == 0) {
+        events_.clear();
+        commands_.flush();
+        listener_.flush();
+        return;
+    }
 
     // Record which input each player's movement is about to consume. The
     // snapshot reports this back, and it is the whole basis of reconciliation:
@@ -312,35 +382,107 @@ void GameServer::tick(double nowMillis) {
         input.lastAppliedSequence = input.current.sequence;
     });
 
-    runSystems(nowMillis, net::kTickSeconds);
+    runSystems(nowMillis, smoothedDeltaSeconds_);
 
     reapDead(nowMillis);
     commands_.flush();
 
-    replicate(nowMillis);
-    listener_.flush();
-
-    if (nowMillis >= nextPersistMillis_) {
-        nextPersistMillis_ = nowMillis + kPersistIntervalMillis;
-        for (const auto& entry : sessions_) {
-            if (entry.second.playing()) persistPlayer(entry.second);
-        }
-        database_.pruneExpiredSessions();
-        database_.save();
+    // The wire runs slower than the simulation and on its own clock: physics
+    // and combat want 30 Hz, clients do not, and the per-recipient encode/cull/
+    // delta pass is the largest thing in the tick that nothing simulated
+    // depends on. Nothing about WHAT happens changes -- one-shot events are
+    // queued for the frame either way -- only how often it is described.
+    if (nowMillis >= nextSnapshotMillis_) {
+        // Stepped from the deadline, not from now, so the send rate does not
+        // slew with tick jitter; resynced when it falls a whole interval behind
+        // rather than firing a burst of catch-up frames.
+        nextSnapshotMillis_ += net::kSnapshotMillis;
+        if (nextSnapshotMillis_ < nowMillis) nextSnapshotMillis_ = nowMillis + net::kSnapshotMillis;
+        replicate(nowMillis);
+        // One-shot events ride inside the snapshot here, where the reference
+        // has its own per-tick outbox, so they are BANKED across the ticks that
+        // send nothing rather than dropped: a hit that landed on a simulation
+        // tick with no snapshot must still produce its number.
+        events_.clear();
     }
+    listener_.flush();
 }
 
 void GameServer::runSystems(double nowMillis, double dt) {
     // Order matters and is the tick's whole contract:
-    //   intent -> movement -> ring placement -> damage -> lifecycle.
-    // Petals are placed AFTER movement so they orbit where the player ended up
-    // this tick, not where it started; combat runs after both so a petal hits
-    // from its final position.
-    mobAi_->run(world_, *terrain_, grid_, activePlayers_, nowMillis, dt, commands_);
-    movement_->run(world_, *terrain_, nowMillis, dt);
-    petals_->run(world_, content(), nowMillis, dt, commands_);
-    combat_->run(world_, grid_, content(), nowMillis, dt, commands_, events_);
-    spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis, dt, commands_);
+    //   bot intent -> players -> petals -> mob intent/movement -> projectiles
+    //   -> combat -> spawning -> loot.
+    // TypeScript closes the player movement window and runs the player's petal
+    // pipeline before moveEnemies(), then advances projectiles after mobs.
+    //
+    // `dt` is the smoothed real step and drives the dt-SCALED half -- flowers,
+    // petals, projectiles, fields. The mob half is a FIXED per-call step on
+    // both sides (src/server.ts:1321 hands moveEnemies a hard 1/30), so it is
+    // given net::kTickSeconds explicitly below rather than the tick's delta.
+
+    // Bots decide before anything moves, which is where the reference samples
+    // input: their decisions are made against the world as this tick found it
+    // and are consumed by the very next stage, not one tick later.
+    stepBots(nowMillis);
+
+    // Modifiers before movement, as the reference schedules them (its
+    // playerModifiers system sits in Phase.Input, ahead of playerMovement).
+    // Folded only inside the petal phase below, a speed or size petal would not
+    // reach movement until the tick after it was equipped.
+    petals_->foldModifiers(world_, content());
+
+    movement_->runPlayerPhase(world_, *terrain_, nowMillis, dt);
+    petals_->run(world_, content(), nowMillis, dt, commands_, terrain_.get());
+
+    // Mob targeting must see the flowers' newly committed positions. Refresh
+    // both the LOD list and broadphase after player movement instead of asking
+    // AI to make this tick's decision from last tick's coordinates.
+    //
+    // Two lists, because the reference draws the line in two different places.
+    // The mob LOD counts EVERY flower as an observer, bots included -- a bot
+    // fighting a mob is something worth simulating properly. The spawner
+    // counts only real connections: a world that spawns a neighbourhood's
+    // worth of mobs around each of two dozen bots fills up with mobs nobody
+    // asked for, and bots keeping the unseen-despawn census fed would stop the
+    // world ever recycling.
+    activePlayers_.clear();
+    Query<PlayerTag, Transform> players{world_};
+    players.each([&](Entity, PlayerTag&, Transform& transform) {
+        activePlayers_.push_back(transform.position);
+    });
+    humanPlayers_.clear();
+    for (const auto& entry : sessions_) {
+        if (!entry.second.playing()) continue;
+        if (const Transform* transform = world_.tryGet<Transform>(entry.second.entity)) {
+            humanPlayers_.push_back(transform->position);
+        }
+    }
+    grid_.clear();
+    Query<Transform, Body> afterPlayers{world_};
+    afterPlayers.each([&](Entity e, Transform& transform, Body& body) {
+        grid_.insert(e, transform.position, body.radius);
+    });
+
+    // The reference server resolves flower bodies and the petal ring inside
+    // the player pipeline, before moveEnemies(). Keep that temporal boundary:
+    // a mob cannot escape a petal it was already touching by moving first.
+    combat_->beginTick(world_, nowMillis, dt, events_);
+    combat_->runContactPhase(world_, grid_, content(), nowMillis);
+
+    mobAi_->run(world_, *terrain_, grid_, activePlayers_, nowMillis, net::kTickSeconds, commands_);
+    movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
+
+    // Combat exact-tests current transforms, but its candidate set comes from
+    // this grid. Rebuild after mob/projectile flight so a cell crossing cannot
+    // make a real overlap invisible for one tick.
+    grid_.clear();
+    Query<Transform, Body> afterMovement{world_};
+    afterMovement.each([&](Entity e, Transform& transform, Body& body) {
+        grid_.insert(e, transform.position, body.radius);
+    });
+    combat_->runWorldPhase(world_, grid_, content(), nowMillis, dt);
+    spawning_->run(world_, *terrain_, content(), humanPlayers_, rng_, nowMillis, net::kTickSeconds,
+                   commands_);
     loot_->run(world_, grid_, content(), rng_, nowMillis, dt, commands_, events_);
 
     // A pickup is a world event; owning it is an account fact. The loot system
@@ -349,6 +491,85 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // Same reasoning for kills: combat marks the corpse, the account keeps the
     // tally. Runs before the reaper, while MobType is still readable.
     bankKills();
+
+    // The spawner has no view of the socket list, so it queues the bosses it
+    // admitted rather than announcing them.
+    announceBossSpawns();
+
+    // The leaderboard reward tiers ride on the account component, refreshed on
+    // a slow clock rather than resolved per kill.
+    refreshRankMultipliers(nowMillis);
+}
+
+void GameServer::announceBossSpawns() {
+    for (const SpawnSystem::BossSpawn& boss : spawning_->bossSpawns) {
+        // Underscores read as spaces in the reference's wording, so
+        // `soldier_ant` announces itself as "soldier ant".
+        std::string name = content().mob(boss.mobIndex).id;
+        for (char& c : name) {
+            if (c == '_') c = ' ';
+        }
+        const int section = sectionAt(boss.position);
+        const std::string tier = rarityLabel(boss.rarity);
+
+        for (auto& entry : sessions_) {
+            Session& session = entry.second;
+            if (!session.playing()) continue;
+            net::Connection* connection = listener_.find(session.connection);
+            if (connection == nullptr) continue;
+            // Personalised: a player standing in the boss's own section is told
+            // it spawned, everyone else that it spawned "somewhere".
+            const Transform* transform = world_.tryGet<Transform>(session.entity);
+            const bool here = transform != nullptr && sectionAt(transform->position) == section;
+            sendChatTo(*connection, net::ChatChannel::System, "",
+                       "A " + tier + " " + name + " has spawned" +
+                           (here ? "" : " somewhere") + "!");
+        }
+    }
+    spawning_->bossSpawns.clear();
+}
+
+void GameServer::refreshRankMultipliers(double nowMillis) {
+    if (nowMillis < nextRankRefreshMillis_) return;
+    nextRankRefreshMillis_ = nowMillis + kRankRefreshMillis;
+
+    // The ranking is POSITIONAL, not a score threshold: the top ten accounts by
+    // lifetime XP trade half their kill XP for a fifth again as many drops, and
+    // the next ten trade a quarter for a tenth. Staff are off the board, as
+    // they are off the leaderboard panel.
+    struct Row {
+        const std::string* userId;
+        double totalXp;
+    };
+    std::vector<Row> rows;
+    rows.reserve(database_.userCount());
+    for (const std::string& username : database_.usernames()) {
+        const Account* account = database_.findUser(username);
+        if (account == nullptr || account->admin) continue;
+        const PlayerRecord* record = database_.findProgress(account->id);
+        rows.push_back({&account->id, record ? record->totalXp : 0.0});
+    }
+    constexpr std::size_t kTopDrop = 10;
+    constexpr std::size_t kTopHalf = 20;
+    const std::size_t ranked = std::min(kTopHalf, rows.size());
+    std::partial_sort(rows.begin(), rows.begin() + static_cast<long>(ranked), rows.end(),
+                      [](const Row& a, const Row& b) { return a.totalXp > b.totalXp; });
+
+    Query<PlayerTag, PlayerAccount> accounts{world_};
+    accounts.each([&](Entity, PlayerTag&, PlayerAccount& account) {
+        // A guest -- and every bot -- ranks nowhere, which is the reference's
+        // answer for an undefined user id.
+        double xpMultiplier = 1.0;
+        double dropMultiplier = 1.0;
+        for (std::size_t i = 0; i < ranked; ++i) {
+            if (*rows[i].userId != account.userId) continue;
+            if (i < kTopDrop) { xpMultiplier = 0.5; dropMultiplier = 1.2; }
+            else { xpMultiplier = 0.75; dropMultiplier = 1.1; }
+            break;
+        }
+        account.xpMultiplier = xpMultiplier;
+        account.dropMultiplier = dropMultiplier;
+    });
 }
 
 void GameServer::bankPickups() {
@@ -384,7 +605,13 @@ void GameServer::reapDead(double nowMillis) {
         // later tick, so everything below has to happen exactly once.
         if (isPlayer) {
             if (session == nullptr) {
-                // A body whose session has gone has nobody watching through it.
+                // Nobody is watching through this body -- a bot, or a flower
+                // whose connection went away. It leaves no corpse and no death
+                // notice, and its ring goes with it: a petal outliving its
+                // owner orbits a point in space forever.
+                if (const Loadout* loadout = world_.tryGet<Loadout>(e)) {
+                    for (const Entity petal : loadout->spawned) commands_.destroy(petal);
+                }
                 commands_.destroy(e);
                 continue;
             }
@@ -890,6 +1117,17 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
         state->current = input;
         state->aimDirection = Vec2::fromAngle(input.aimAngle);
     }
+
+    // The window the client is drawing rides every input packet, so a resize or
+    // a zoom widens what is replicated on the next tick rather than at the next
+    // join. Zero means "unchanged", which is what a client that never learned
+    // to report it sends.
+    if (input.viewportWidth > 0 && input.viewportHeight > 0) {
+        if (PlayerLocation* location = world_.tryGet<PlayerLocation>(session.entity)) {
+            location->viewport = {clamp(static_cast<double>(input.viewportWidth), 320.0, kMaxViewportAxis),
+                                  clamp(static_cast<double>(input.viewportHeight), 240.0, kMaxViewportAxis)};
+        }
+    }
 }
 
 void GameServer::handleChat(Session& session, net::Connection& connection, ByteReader& reader) {
@@ -993,7 +1231,26 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
     // piling up in the inventory, and it is why the client plays one spin for
     // a staged xN. Bounded: an attempt removes five and returns at most four,
     // so the pool strictly shrinks.
-    const double chance = craftSuccessChance(rarity);
+    // Every equipped clover of the tier being crafted nudges the odds up. The
+    // reference counts the PRIMARY ten slots only -- the storage row behind
+    // them is not equipped and does not help -- and the bonus is stated in
+    // percentage points against a 0..100 roll, which is five ten-thousandths
+    // of the fraction this ladder is expressed in.
+    constexpr double kCloverCraftBonus = 0.0005;
+    const std::uint16_t clover = content().petalIndex("clover");
+    int clovers = 0;
+    if (clover != kInvalidIndex) {
+        const std::size_t equipped =
+            std::min<std::size_t>(record.loadout.size(), kLoadoutActiveSlots);
+        for (std::size_t i = 0; i < equipped; ++i) {
+            if (!record.loadout[i].has_value()) continue;
+            const StoredItem& slot = *record.loadout[i];
+            if (slot.rarity != rarity) continue;
+            if (content().petalIndex(slot.petalType) == clover) ++clovers;
+        }
+    }
+    const double chance =
+        std::min(1.0, craftSuccessChance(rarity) + kCloverCraftBonus * clovers);
     int pool = count;
     int crafted = 0;
     while (pool >= kCraftBatch) {
@@ -1018,39 +1275,83 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
 }
 
 void GameServer::bankKills() {
+    std::vector<Bounty::Share> ranked;
     for (const CombatSystem::DeathRecord& death : combat_->deaths()) {
         if (death.wasPlayer) continue;
         const MobType* type = world_.tryGet<MobType>(death.entity);
         if (type == nullptr) continue;
-        // A pet's kill belongs to the player who summoned it, and the loot
-        // system has already resolved that attribution onto Dead::killer.
-        Session* session = sessionForEntity(death.killer);
-        if (session == nullptr || session->userId.empty()) continue;
 
-        PlayerRecord& record = database_.progress(session->userId);
-        record.recordKill(content().mob(type->configIndex).id, type->rarity);
+        // A credited killing blow is the gate, exactly as it is in the
+        // reference: a mob finished by another mob is nobody's kill and enters
+        // nobody's gallery. A pet's kill belongs to the player who summoned it,
+        // and combat has already resolved that attribution onto Dead::killer.
+        if (death.killer == NULL_ENTITY || !world_.isAlive(death.killer) ||
+            !world_.has<PlayerTag>(death.killer)) {
+            continue;
+        }
 
-        // Stars are the mythic-and-above bounty. Awarded on the live entity
-        // rather than the record so the HUD sees them this tick; persistPlayer
-        // copies them back the same way it does XP.
-        const int stars = starsForKill(type->rarity);
-        if (stars > 0) {
-            if (PlayerProgress* live = world_.tryGet<PlayerProgress>(death.killer)) {
-                live->stars += stars;
-                record.stars = live->stars;
-            } else {
-                record.stars += stars;
-            }
-            if (net::Connection* connection = listener_.find(session->connection)) {
-                sendNotice(*connection, net::NoticeSeverity::Good,
-                           "+" + std::to_string(stars) + " star" + (stars == 1 ? "" : "s") +
-                               " for a " + rarityLabel(type->rarity) + " kill");
+        // The gallery entry and the star bounty go to every player who earned
+        // LOOT rights on the corpse, not to the finisher alone: five flowers
+        // that bring down an apex are five apex kills and five lots of 250
+        // stars. Same ledger, same ranking and same per-tier slot cap the XP
+        // and drop paths already use, so the three cannot disagree about who
+        // was in on a kill.
+        ranked.clear();
+        if (const Bounty* bounty = world_.tryGet<Bounty>(death.entity)) {
+            for (const Bounty::Share& share : bounty->contributors) {
+                if (share.damage <= 0.0) continue;
+                if (world_.isAlive(share.player) && !world_.has<PlayerTag>(share.player)) continue;
+                ranked.push_back(share);
             }
         }
-        database_.markDirty();
+        // Stable, because the ledger is in first-hit order and the reference's
+        // sort is specified stable: on an exact damage tie the slot at the cut
+        // belongs to whoever landed their damage first.
+        std::stable_sort(ranked.begin(), ranked.end(),
+                         [](const Bounty::Share& a, const Bounty::Share& b) {
+                             return a.damage > b.damage;
+                         });
+        int slots = 4;
+        if (type->rarity == Rarity::Ultra) slots = 15;
+        else if (type->rarity == Rarity::Super) slots = 20;
+        else if (type->rarity == Rarity::Unique || type->rarity == Rarity::Apex) slots = 25;
+        if (static_cast<int>(ranked.size()) > slots) {
+            ranked.resize(static_cast<std::size_t>(slots));
+        }
 
-        if (net::Connection* connection = listener_.find(session->connection)) {
-            sendProfile(*session, *connection);
+        const std::string mobId = content().mob(type->configIndex).id;
+        const int stars = starsForKill(type->rarity);
+
+        for (const Bounty::Share& share : ranked) {
+            // A contributor who has left still holds their slot -- nobody is
+            // promoted into the gap -- but there is no account left to pay.
+            Session* session = sessionForEntity(share.player);
+            if (session == nullptr || session->userId.empty()) continue;
+
+            PlayerRecord& record = database_.progress(session->userId);
+            record.recordKill(mobId, type->rarity);
+
+            // Stars are the mythic-and-above bounty. Awarded on the live entity
+            // rather than the record so the HUD sees them this tick;
+            // persistPlayer copies them back the same way it does XP.
+            if (stars > 0) {
+                if (PlayerProgress* live = world_.tryGet<PlayerProgress>(share.player)) {
+                    live->stars += stars;
+                    record.stars = live->stars;
+                } else {
+                    record.stars += stars;
+                }
+                if (net::Connection* connection = listener_.find(session->connection)) {
+                    sendNotice(*connection, net::NoticeSeverity::Good,
+                               "+" + std::to_string(stars) + " star" + (stars == 1 ? "" : "s") +
+                                   " for a " + rarityLabel(type->rarity) + " kill");
+                }
+            }
+            database_.markDirty();
+
+            if (net::Connection* connection = listener_.find(session->connection)) {
+                sendProfile(*session, *connection);
+            }
         }
     }
 }
@@ -1944,8 +2245,563 @@ void GameServer::handlePing(net::Connection& connection, ByteReader& reader) {
 }
 
 // ---------------------------------------------------------------------------
+// Bots
+// ---------------------------------------------------------------------------
+//
+// The reference keeps the world populated whether or not anyone else is
+// online: it tops the flower count up to ~23 with server-owned players that
+// hunt, wander, die and respawn. Without them a solo player meets an empty
+// map -- no company, no competition for aggro or loot, and a leaderboard with
+// one row on it.
+//
+// A bot here is an ORDINARY player entity with no Session behind it. That is
+// the whole trick: combat, loot eligibility, replication and the death reaper
+// all treat it as a flower without knowing bots exist, and the handful of
+// places that need an account (banking a kill, a pickup, a persist) already
+// walk the session table and simply find nothing.
+//
+// What is ported: the population loop -- target, jitter, burst cap, idle
+// retirement -- and the name-seeded level and loadout, so a bot called "m28"
+// is the same build every time it appears, exactly as over there. What is NOT
+// ported is the rest of botManager's 3700 lines: squads, boss raids, group
+// clustering, A* pathing, powder swapping, personas and the stuck-detector.
+// The controller below is the shape of its normal mode -- orbit a target at
+// petal reach, run when badly hurt, wander around an anchor otherwise -- not
+// its full decision tree.
+
+namespace {
+
+/// Total flowers the world aims to hold, bots plus humans.
+constexpr int kTargetTotalPlayers = 23;
+/// Hard ceiling, whatever the target arithmetic says.
+constexpr int kMaxBots = 50;
+/// How often the population is reconsidered.
+constexpr double kBotMaintainMillis = 1500.0;
+/// Bots created per maintenance pass. A deficit is filled over several passes
+/// rather than in one burst, which is what makes a restart look like players
+/// arriving instead of a crowd appearing.
+constexpr int kBotSpawnBurstCap = 4;
+/// Bots outlive an empty server by this long, so a quick reconnect does not
+/// land in a world that was emptied the moment the last player left.
+constexpr double kBotIdleTimeoutMillis = 45000.0;
+
+/// The target wanders by +-1 on a slow clock so the population drifts instead
+/// of sitting on an exact number.
+constexpr int kBotJitterMin = -3;
+constexpr int kBotJitterMax = 2;
+constexpr double kBotJitterStepChance = 0.35;
+constexpr double kBotJitterIntervalMillis = 25000.0;
+
+/// A dead bot's body is replaced after this long. Instant replacement reads as
+/// a flower that never died.
+constexpr double kBotRespawnDelayMillis = 3000.0;
+
+/// How far a bot will chase, by the tier of what it is chasing. A boss is
+/// worth crossing the map for; an ordinary mob is not.
+constexpr double kBotBossAggroRange = 4000.0;
+constexpr double kBotHighTierAggroRange = 900.0;
+constexpr double kBotAggroRange = 500.0;
+
+/// Below this fraction of its health a bot breaks off and runs.
+constexpr double kBotFleeHealthRatio = 0.22;
+/// Padding on the standoff ring, so position jitter still lands hits.
+constexpr double kBotStandoffBuffer = 18.0;
+/// How sharply the orbit controller corrects toward the standoff ring. Larger
+/// is gentler; the correction passes smoothly through zero at the ring, which
+/// is what stops a bot flipping between closing and backing off every tick.
+constexpr double kBotOrbitRadialGain = 90.0;
+
+/// The bot stays inside this of its anchor, and drops whatever it is doing to
+/// walk back past the second one.
+constexpr double kBotTetherRadius = 1400.0;
+constexpr double kBotTetherReturnRadius = 2200.0;
+
+/// The names the reference draws from. Two are deliberately empty: an unnamed
+/// flower is a real sight in the live game.
+const char* const kBotNames[] = {
+    "m28", "M28", "uwu", "67", "Play Zorr.pro", "", "", "petal",
+    "super hunter", "mark m28", "dev", "fake dev", "admin", "pytorch", "urmom",
+    "skibidi", "florrio", "CraftApexPetal", "developer", "hi", "hello", "4167",
+    "florrrrr", "bro", "bruh", "You suck", "pls loot super", "powder",
+    "skibidi ohio rizz", "rizzler", "pro", "noob", "nub", "[YT]", "killer",
+    "flower", "ur mom", "random flower", "centi", "petall", "ygg pls",
+    "SUPER BASIC", "carry pls", "lol", "floor", "ded", "noooo", "nl super",
+    "nah", "m29", "m56", "florr67", "get good", "super raider", "real admin",
+    "not bot", "bot", "scripts", "ban dupers", "absorbed super", "Guest #1234",
+    "Guest #6767", "Guest #4167", "UwU", "m27", "n28", "super petal",
+    "apex petal", "apex crafter", "uniques", "i use scripts", "m28 bad",
+    "guests", "leech squad", "leecher",
+};
+
+/// Only passive petals, yggdrasil and powder: a bot with a bomb would be a
+/// hazard to the players standing next to it.
+const char* const kBotPetalPool[] = {
+    "basic", "stinger", "iris", "faster", "cutter", "missile", "bone", "glass",
+    "dandelion", "yggdrasil", "rock", "third_eye", "powder", "javascript", "soil",
+};
+
+/// djb2-style hash, so a bot with a given name always seeds the same stream and
+/// therefore always has the same build. "A bot named X plays like X" is the
+/// whole point of seeding off the name rather than off the spawn.
+std::uint32_t hashName(const std::string& s) {
+    std::int32_t h = 5381;
+    for (const char c : s) {
+        h = static_cast<std::int32_t>(static_cast<std::uint32_t>(h) * 33u) ^
+            static_cast<std::int32_t>(static_cast<unsigned char>(c));
+    }
+    return static_cast<std::uint32_t>(h);
+}
+
+/// mulberry32, the reference's own generator. Reproduced exactly rather than
+/// swapped for the server's Rng, because the level and loadout a name produces
+/// have to be the same numbers on both servers.
+class BotRng {
+public:
+    explicit BotRng(std::uint32_t seed) : state_(seed) {}
+
+    double unit() {
+        state_ += 0x6d2b79f5u;
+        std::uint32_t t = state_;
+        t = (t ^ (t >> 15)) * (t | 1u);
+        t ^= t + (t ^ (t >> 7)) * (t | 61u);
+        return static_cast<double>((t ^ (t >> 14))) / 4294967296.0;
+    }
+
+private:
+    std::uint32_t state_;
+};
+
+/// Uniform 1..225. Roughly a ninth of bots land at apex tier.
+int rollBotLevel(BotRng& rng) {
+    return static_cast<int>(rng.unit() * 225.0) + 1;
+}
+
+/// One petal rarity for a bot of this level.
+///
+/// Weights by ten-level band, with apex a separate band the level check routes
+/// to rather than a linear extension. The roll itself is the reference's:
+/// `rng*2 + total - 2` lands in the last two units of the cumulative range, so
+/// a bot's petals come from the top of its band's table almost every time --
+/// which is why the rare entries are held down to a weight of one or two.
+Rarity rollBotPetalRarity(int level, BotRng& rng) {
+    struct Entry { Rarity rarity; double weight; };
+    static const std::vector<std::vector<Entry>> kBands = {
+        {{Rarity::Common, 300}, {Rarity::Uncommon, 55}, {Rarity::Rare, 1}},
+        {{Rarity::Common, 40}, {Rarity::Uncommon, 24}, {Rarity::Rare, 15}, {Rarity::Epic, 2}},
+        {{Rarity::Common, 30}, {Rarity::Uncommon, 24}, {Rarity::Rare, 20}, {Rarity::Epic, 5}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 5}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 1}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 4}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 11}},
+        {{Rarity::Common, 18}, {Rarity::Uncommon, 18}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 15}, {Rarity::Mythic, 1}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 2}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 5}},
+        {{Rarity::Common, 40}, {Rarity::Uncommon, 40}, {Rarity::Rare, 40}, {Rarity::Epic, 40}, {Rarity::Legendary, 40}, {Rarity::Mythic, 17}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 11}, {Rarity::Ultra, 1}},
+        {{Rarity::Common, 40}, {Rarity::Uncommon, 40}, {Rarity::Rare, 40}, {Rarity::Epic, 40}, {Rarity::Legendary, 40}, {Rarity::Mythic, 40}, {Rarity::Ultra, 21}, {Rarity::Super, 1}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}},
+        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}, {Rarity::Unique, 1}},
+    };
+    // Level 200 and up draws from its own table, not from the top pre-apex band.
+    static const std::vector<Entry> kApexBand = {
+        {Rarity::Mythic, 10}, {Rarity::Ultra, 20}, {Rarity::Super, 20},
+        {Rarity::Unique, 2}, {Rarity::Apex, 30},
+    };
+    constexpr int kApexLevelThreshold = 200;
+    constexpr int kLevelBandSize = 10;
+
+    const std::vector<Entry>& band =
+        level >= kApexLevelThreshold
+            ? kApexBand
+            : kBands[static_cast<std::size_t>(
+                  std::min<int>(static_cast<int>(kBands.size()) - 1,
+                                std::max(1, level - 1) / kLevelBandSize))];
+
+    double total = 0;
+    for (const Entry& entry : band) total += entry.weight;
+    const double roll = rng.unit() * 2.0 + total - 2.0;
+    double cumulative = 0;
+    for (const Entry& entry : band) {
+        cumulative += entry.weight;
+        if (roll < cumulative) return entry.rarity;
+    }
+    return band.back().rarity;
+}
+
+} // namespace
+
+void GameServer::maintainBots(double nowMillis) {
+    // A human in the world resets the idle clock. Past the grace period with
+    // nobody online the bots are retired: there is nobody to see them, and the
+    // tick gate above has already stopped simulating anyway.
+    if (playerCount() > 0) {
+        lastHumanSeenMillis_ = nowMillis;
+    } else if (nowMillis - lastHumanSeenMillis_ >= kBotIdleTimeoutMillis) {
+        for (Bot& bot : bots_) destroyBot(bot);
+        bots_.clear();
+        return;
+    }
+
+    if (nowMillis < nextBotMaintainMillis_) return;
+    nextBotMaintainMillis_ = nowMillis + kBotMaintainMillis;
+
+    // Retire the bodies the world has already taken away -- a bot killed by a
+    // mob is reaped like any other flower -- and hand the survivors a new one
+    // once their respawn delay is up.
+    for (Bot& bot : bots_) {
+        if (bot.entity != NULL_ENTITY && !world_.isAlive(bot.entity)) {
+            bot.entity = NULL_ENTITY;
+            if (bot.respawnAtMillis <= 0) bot.respawnAtMillis = nowMillis + kBotRespawnDelayMillis;
+        }
+        if (bot.entity == NULL_ENTITY && bot.respawnAtMillis > 0 &&
+            nowMillis >= bot.respawnAtMillis) {
+            // Somewhere else entirely, as the reference respawns them: the
+            // ground it died on is exactly the ground that killed it.
+            bot.anchor = pickBotSpawn();
+            bot.entity = createBotBody(bot.name, bot.anchor);
+            bot.wanderTarget = bot.anchor;
+            bot.nextWanderMillis = 0;
+            bot.respawnAtMillis = 0;
+        }
+    }
+
+    // Drift the target by +-1 on a slow clock, bounded, so the population
+    // wanders instead of sitting on an exact number -- and slowly enough that
+    // the drift does not read as bots blinking in and out.
+    if (nowMillis >= nextBotJitterMillis_) {
+        nextBotJitterMillis_ = nowMillis + kBotJitterIntervalMillis;
+        if (rng_.chance(kBotJitterStepChance)) {
+            botCountJitter_ += rng_.chance(0.5) ? -1 : 1;
+            botCountJitter_ = std::max(kBotJitterMin, std::min(kBotJitterMax, botCountJitter_));
+        }
+    }
+
+    const int humans = static_cast<int>(playerCount());
+    const int desired = std::min(
+        kMaxBots, std::max(0, kTargetTotalPlayers - humans + botCountJitter_));
+    const int current = static_cast<int>(bots_.size());
+
+    if (current < desired) {
+        const int wanted = std::min(desired - current, kBotSpawnBurstCap);
+        for (int i = 0; i < wanted; ++i) {
+            Bot bot;
+            bot.name = kBotNames[rng_.below(static_cast<std::uint32_t>(std::size(kBotNames)))];
+            bot.anchor = pickBotSpawn();
+            bot.wanderTarget = bot.anchor;
+            bot.entity = createBotBody(bot.name, bot.anchor);
+            bots_.push_back(std::move(bot));
+        }
+    } else if (current > desired) {
+        // Cull the bots FARTHEST from any human first. Taking whichever came
+        // first out of the list routinely takes one standing next to a player,
+        // which simply vanishes in front of them.
+        std::vector<std::size_t> order(bots_.size());
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+            return cullScore(bots_[a]) > cullScore(bots_[b]);
+        });
+        const std::size_t excess = static_cast<std::size_t>(current - desired);
+        std::vector<bool> doomed(bots_.size(), false);
+        for (std::size_t i = 0; i < excess && i < order.size(); ++i) doomed[order[i]] = true;
+        std::vector<Bot> kept;
+        kept.reserve(bots_.size() - excess);
+        for (std::size_t i = 0; i < bots_.size(); ++i) {
+            if (doomed[i]) destroyBot(bots_[i]);
+            else kept.push_back(std::move(bots_[i]));
+        }
+        bots_ = std::move(kept);
+    }
+}
+
+double GameServer::cullScore(const Bot& bot) const {
+    // Higher culls sooner. A body the world has already taken, or one nobody
+    // is anywhere near, goes before one a player is standing next to.
+    if (bot.entity == NULL_ENTITY || !world_.isAlive(bot.entity)) {
+        return std::numeric_limits<double>::max();
+    }
+    const Transform* transform = world_.tryGet<Transform>(bot.entity);
+    if (transform == nullptr) return std::numeric_limits<double>::max();
+
+    double nearest = std::numeric_limits<double>::max();
+    for (const auto& entry : sessions_) {
+        const Session& session = entry.second;
+        if (!session.playing()) continue;
+        const Transform* other = world_.tryGet<Transform>(session.entity);
+        if (other == nullptr) continue;
+        nearest = std::min(nearest, distanceSq(other->position, transform->position));
+    }
+    // Nobody watching anyone: the order does not matter.
+    return nearest == std::numeric_limits<double>::max() ? 0.0 : nearest;
+}
+
+Vec2 GameServer::pickBotSpawn() {
+    std::vector<MobDisc> blockers;
+    collectSpawnBlockers(blockers);
+
+    // Spread over the whole map rather than piling into the beginner ground:
+    // the reference samples the spawn anchors, and a population that all lives
+    // in one corner is not the world the player is meant to walk into.
+    const std::vector<std::string>& biomes = mapData_.spawnableBiomes();
+    if (!biomes.empty()) {
+        Vec2 spawn;
+        const std::string& biome = biomes[rng_.below(static_cast<std::uint32_t>(biomes.size()))];
+        if (mapData_.spawnInBiome(biome, rng_, *terrain_, spawn, &blockers)) return spawn;
+    }
+    return mapData_.defaultSpawn(rng_, *terrain_, &blockers);
+}
+
+Entity GameServer::createBotBody(const std::string& name, Vec2 spawn) {
+    // Level and loadout are derived from the NAME, not from the spawn, so a
+    // bot called "m28" is the same flower every time it appears.
+    BotRng rng(hashName(name));
+    const int level = std::min(kMaxLevel, rollBotLevel(rng));
+
+    const Entity entity = world_.create();
+    world_.add<PlayerTag>(entity);
+    world_.add<Transform>(entity, Transform{spawn, 0.0});
+    world_.add<Motion>(entity);
+    world_.add<Knockback>(entity);
+    world_.add<Faction>(entity, Faction{Team::Players, false});
+    world_.add<PlayerInput>(entity);
+    world_.add<PlayerLocation>(entity);
+    world_.add<PlayerModifiers>(entity);
+    world_.add<PlayerVisuals>(entity);
+    world_.add<PlayerSkillTree>(entity);
+    world_.add<Loadout>(entity);
+    world_.add<PetalRing>(entity);
+    world_.add<ContactDamage>(entity, ContactDamage{bodyDamageForLevel(level), 0.0});
+    world_.add<HitCooldowns>(entity);
+    world_.add<Afflictions>(entity);
+    world_.add<ShieldState>(entity);
+    // No userId: a bot owns no account, so every path that banks progress --
+    // kills, stars, pickups, the periodic persist -- walks the session table,
+    // finds nothing, and skips it without needing to know what a bot is.
+    world_.add<PlayerAccount>(entity, PlayerAccount{std::string(), name, 0, false});
+
+    PlayerProgress progress;
+    progress.level = level;
+    for (int l = 1; l < level; ++l) progress.totalXp += xpForNextLevel(l);
+    world_.add<PlayerProgress>(entity, progress);
+
+    Body body;
+    body.radius = playerRadiusForLevel(level);
+    body.mass = 1.0;
+    world_.add<Body>(entity, body);
+
+    Health health;
+    health.max = maxHealthForLevel(level);
+    health.current = health.max;
+    health.invulnerableUntilMillis = monotonicMillis() + kRespawnInvulnerabilitySeconds * 1000.0;
+    world_.add<Health>(entity, health);
+
+    // All ten active slots, matching a real player's maximum: a bot with five
+    // petals reads as a beginner whatever its level says.
+    Loadout& loadout = world_.get<Loadout>(entity);
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const char* id = kBotPetalPool[static_cast<std::size_t>(
+            rng.unit() * static_cast<double>(std::size(kBotPetalPool)))];
+        const Rarity rarity = rollBotPetalRarity(level, rng);
+        std::uint16_t index = content().petalIndex(id);
+        if (index == kInvalidIndex) index = content().petalIndex("basic");
+        if (index == kInvalidIndex) continue;
+        loadout.slots[static_cast<std::size_t>(i)].configIndex = index;
+        loadout.slots[static_cast<std::size_t>(i)].rarity = rarity;
+    }
+
+    world_.add<NetId>(entity, NetId{netIds_.next()});
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Player;
+    world_.add<Replicated>(entity, replicated);
+    return entity;
+}
+
+void GameServer::destroyBot(Bot& bot) {
+    if (bot.entity == NULL_ENTITY) return;
+    if (world_.isAlive(bot.entity)) {
+        // The ring belongs to the body, not to the name, so it goes with it.
+        if (const Loadout* loadout = world_.tryGet<Loadout>(bot.entity)) {
+            for (const Entity petal : loadout->spawned) commands_.destroy(petal);
+        }
+        commands_.destroy(bot.entity);
+    }
+    bot.entity = NULL_ENTITY;
+}
+
+void GameServer::stepBots(double nowMillis) {
+    if (bots_.empty()) return;
+
+    // Bosses are worth crossing the map for, so they are collected once for the
+    // whole pass rather than asked of the broadphase at four thousand units per
+    // bot. There are a handful of them in the world at any time; every other
+    // mob is found in the ordinary cell query below.
+    botBosses_.clear();
+    Query<MobTag, MobType, Transform> bosses{world_};
+    bosses.each([&](Entity e, MobTag&, MobType& type, Transform&) {
+        if (type.rarity >= Rarity::Super && !world_.has<Dead>(e) && !world_.has<Pet>(e)) {
+            botBosses_.push_back(e);
+        }
+    });
+
+    for (Bot& bot : bots_) {
+        if (bot.entity == NULL_ENTITY || !world_.isAlive(bot.entity)) continue;
+        Transform* transform = world_.tryGet<Transform>(bot.entity);
+        PlayerInput* input = world_.tryGet<PlayerInput>(bot.entity);
+        if (transform == nullptr || input == nullptr) continue;
+
+        // A corpse holds still and waits to be replaced. maintainBots owns the
+        // replacement; this only has to stop driving it.
+        if (world_.has<Dead>(bot.entity)) {
+            input->current.moveStrength = 0;
+            input->current.flags = 0;
+            if (bot.respawnAtMillis <= 0) bot.respawnAtMillis = nowMillis + kBotRespawnDelayMillis;
+            continue;
+        }
+
+        const Vec2 at = transform->position;
+        const double ringRadius = world_.tryGet<PetalRing>(bot.entity)
+                                      ? world_.get<PetalRing>(bot.entity).radius
+                                      : kPetalOrbitRestRadius;
+        const double bodyRadius = world_.tryGet<Body>(bot.entity)
+                                      ? world_.get<Body>(bot.entity).radius
+                                      : kPlayerBaseRadius;
+
+        // --- pick something to fight -------------------------------------
+        //
+        // Nearest wins within the range its OWN tier justifies, so a boss pulls
+        // a bot in from across the map and a bee does not pull it out of its
+        // neighbourhood.
+        Entity target = NULL_ENTITY;
+        double targetDistSq = 0;
+        double targetRadius = 0;
+        const auto consider = [&](Entity candidate) {
+            if (!world_.isAlive(candidate) || world_.has<Dead>(candidate)) return;
+            if (!world_.has<MobTag>(candidate) || world_.has<Pet>(candidate)) return;
+            const MobType* type = world_.tryGet<MobType>(candidate);
+            const Transform* other = world_.tryGet<Transform>(candidate);
+            if (type == nullptr || other == nullptr) return;
+
+            double range = kBotAggroRange;
+            if (type->rarity >= Rarity::Super) range = kBotBossAggroRange;
+            else if (type->rarity >= Rarity::Epic) range = kBotHighTierAggroRange;
+
+            const double distSq = distanceSq(other->position, at);
+            if (distSq > range * range) return;
+            if (target != NULL_ENTITY && distSq >= targetDistSq) return;
+            target = candidate;
+            targetDistSq = distSq;
+            targetRadius = world_.tryGet<Body>(candidate) ? world_.get<Body>(candidate).radius : 0.0;
+        };
+
+        botCandidates_.clear();
+        grid_.query(at, kBotHighTierAggroRange, botCandidates_);
+        for (const Entity candidate : botCandidates_) consider(candidate);
+        for (const Entity boss : botBosses_) consider(boss);
+
+        // --- decide ------------------------------------------------------
+        Vec2 heading{0, 0};
+        double strength = 0;
+        bool attacking = false;
+
+        const Health* health = world_.tryGet<Health>(bot.entity);
+        const double healthRatio =
+            health != nullptr && health->max > 0 ? health->current / health->max : 1.0;
+        const double anchorDistSq = distanceSq(bot.anchor, at);
+
+        if (anchorDistSq > kBotTetherReturnRadius * kBotTetherReturnRadius) {
+            // Too far from home: drop whatever it was doing and walk back.
+            heading = bot.anchor - at;
+            strength = 1.0;
+        } else if (target != NULL_ENTITY && healthRatio < kBotFleeHealthRatio) {
+            // Break away at an angle rather than straight back: a dead-straight
+            // retreat line from a chasing mob is a bot tell.
+            const Vec2 away = at - world_.get<Transform>(target).position;
+            const double d = std::max(1e-6, away.length());
+            heading = {away.x / d - (away.y / d) * 0.35, away.y / d + (away.x / d) * 0.35};
+            strength = 1.0;
+        } else if (target != NULL_ENTITY) {
+            const Vec2 toward = world_.get<Transform>(target).position - at;
+            const double d = std::max(1e-6, toward.length());
+            const Vec2 dir{toward.x / d, toward.y / d};
+
+            // Stand where the petals reach and the body does not: the ring's
+            // far edge just touching the mob's edge, less a buffer so position
+            // jitter still lands hits, and never inside the mob's own circle.
+            const double reach = ringRadius * kPetalOrbitAttackExtension;
+            const double danger = bodyRadius + targetRadius + 6.0;
+            const double standoff =
+                std::max(danger + 8.0, reach - kBotStandoffBuffer + targetRadius - 10.0);
+
+            // A continuous orbit controller, not a ladder of distance bands: the
+            // radial correction is proportional to how far off the ring the bot
+            // is and passes smoothly through zero at the ring itself, so there
+            // is nothing for it to flip between when its distance wobbles.
+            const double error = d - standoff;
+            const double radial = clamp(error / kBotOrbitRadialGain, -1.0, 1.0);
+            const double tangential = 1.0 - 0.55 * std::min(1.0, std::fabs(radial));
+            heading = {dir.x * radial - dir.y * tangential, dir.y * radial + dir.x * tangential};
+            strength = d > standoff + 80.0 ? 0.95 : 0.28 + 0.45 * std::min(1.0, std::fabs(error) / 110.0);
+            attacking = true;
+        } else {
+            // Nothing to fight: wander around the anchor, re-picking every few
+            // seconds so the flower reads as looking around rather than
+            // marching between waypoints.
+            if (nowMillis > bot.nextWanderMillis ||
+                distanceSq(bot.wanderTarget, at) < 60.0 * 60.0) {
+                bot.nextWanderMillis = nowMillis + 3000.0 + rng_.unit() * 4000.0;
+                const double angle = rng_.angle();
+                const double distance = 200.0 + rng_.unit() * (kBotTetherRadius - 300.0);
+                const Vec2 pick = bot.anchor + Vec2::fromAngle(angle, distance);
+                bot.wanderTarget = {clamp(pick.x, kWorldBoundaryThreshold, kWorldSize - kWorldBoundaryThreshold),
+                                    clamp(pick.y, kWorldBoundaryThreshold, kWorldSize - kWorldBoundaryThreshold)};
+            }
+            heading = bot.wanderTarget - at;
+            strength = 0.6;
+        }
+
+        const double length = heading.length();
+        if (length < 1e-6) {
+            input->current.moveStrength = 0;
+        } else {
+            input->current.moveAngle = std::atan2(heading.y, heading.x);
+            input->current.moveStrength = clamp(strength, 0.0, 1.0);
+        }
+        // Petals point at what the bot is fighting, or the way it is walking.
+        input->current.aimAngle =
+            target != NULL_ENTITY
+                ? std::atan2(world_.get<Transform>(target).position.y - at.y,
+                             world_.get<Transform>(target).position.x - at.x)
+                : input->current.moveAngle;
+        input->current.flags = attacking ? static_cast<std::uint8_t>(net::InputAttack) : 0;
+        input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Player lifecycle
 // ---------------------------------------------------------------------------
+
+void GameServer::collectSpawnBlockers(std::vector<MobDisc>& out) const {
+    out.clear();
+    Query<MobTag, Transform, Body> mobs{const_cast<World&>(world_)};
+    mobs.each([&](Entity, MobTag&, Transform& transform, Body& body) {
+        out.push_back({transform.position, body.radius});
+    });
+}
+
+void GameServer::onPlayerRevived(Entity revived, Entity reviver) {
+    (void)reviver;
+    Session* session = sessionForEntity(revived);
+    if (session == nullptr) return;
+
+    // The corpse's death has already been announced and the reaper has stopped
+    // looking at it. Clearing the flag is what lets this body die a second
+    // time: without it the next death is silent and the player is left standing
+    // as a corpse nobody told them about.
+    session->deathReported = false;
+    if (net::Connection* connection = listener_.find(session->connection)) {
+        sendNotice(*connection, net::NoticeSeverity::Good, "A yggdrasil pulled you back up.");
+    }
+}
 
 Entity GameServer::spawnPlayer(Session& session) {
     // Where a player appears is a property of the MAP, not of the player.
@@ -1953,10 +2809,17 @@ Entity GameServer::spawnPlayer(Session& session) {
     // as if a high-level flower should start in high-tier ground, and what it
     // actually does is drop everyone into the mythic band in the middle of the
     // world, which nothing can walk out of.
+    // The candidate has to be clear of the mobs standing on it, not only of
+    // the walls: the reference refuses a spawn point that overlaps a body or
+    // that has more than a handful of mobs within 200 units, which is what
+    // stops a fresh flower materialising inside a swarm.
+    std::vector<MobDisc> blockers;
+    collectSpawnBlockers(blockers);
+
     Vec2 spawn;
     if (session.spawnBiome.empty() ||
-        !mapData_.spawnInBiome(session.spawnBiome, rng_, *terrain_, spawn)) {
-        spawn = mapData_.defaultSpawn(rng_, *terrain_);
+        !mapData_.spawnInBiome(session.spawnBiome, rng_, *terrain_, spawn, &blockers)) {
+        spawn = mapData_.defaultSpawn(rng_, *terrain_, &blockers);
     }
 
     const Entity entity = world_.create();
@@ -1972,8 +2835,13 @@ Entity GameServer::spawnPlayer(Session& session) {
     world_.add<PlayerSkillTree>(entity);
     world_.add<Loadout>(entity);
     world_.add<PetalRing>(entity);
+    // A flower's body damages mobs on contact in the TypeScript server. The
+    // zero interval means every separated re-contact may land; the fixed
+    // 25-unit bump normally prevents it from becoming a per-tick damage beam.
+    world_.add<ContactDamage>(entity, ContactDamage{kPlayerBaseDamage, 0.0});
     world_.add<HitCooldowns>(entity);
     world_.add<Afflictions>(entity);
+    world_.add<ShieldState>(entity);
     // The nameplate carries the flower's name, which is what the title screen
     // asked for; the account name stays on the session for chat and for saves.
     world_.add<PlayerAccount>(entity,
@@ -1984,6 +2852,13 @@ Entity GameServer::spawnPlayer(Session& session) {
 
     const PlayerRecord& record = database_.progress(session.userId);
     applyAccountToEntity(record, entity);
+
+    // A FRESH body only: full health and the respawn window. applyAccountToEntity
+    // must never do either -- see the note there -- because it also runs on
+    // every loadout edit and talent purchase, corpse included.
+    Health& health = world_.get<Health>(entity);
+    health.current = health.max;
+    health.invulnerableUntilMillis = monotonicMillis() + kRespawnInvulnerabilitySeconds * 1000.0;
 
     world_.add<NetId>(entity, NetId{netIds_.next()});
     Replicated replicated;
@@ -2025,9 +2900,19 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
     health.max = maxHealthForLevel(progress.level) * record.skills.statScale(SkillId::PlayerHealth);
     // Preserve the FRACTION across a max-health change, so levelling up mid
     // fight neither heals you to full nor leaves you proportionally worse off.
-    health.current = health.max * clamp(previousFraction, 0.0, 1.0);
-    if (health.current <= 0) health.current = health.max;
-    health.invulnerableUntilMillis = monotonicMillis() + kRespawnInvulnerabilitySeconds * 1000.0;
+    //
+    // Clamped DOWNWARD only. This function also runs on every loadout edit and
+    // every talent purchase, including ones sent from the death screen -- the
+    // client keeps its panels live there and a corpse keeps its session. A
+    // rescue that read "empty means full" would refill a dead flower's health
+    // bar in front of everyone watching it, and arming respawn protection here
+    // would hand out three seconds of immunity for the price of swapping two
+    // empty loadout slots, over and over. Both belong to a fresh body, so both
+    // live in spawnPlayer.
+    health.current = clamp(health.max * clamp(previousFraction, 0.0, 1.0), 0.0, health.max);
+
+    world_.ensure<ContactDamage>(entity).amount = bodyDamageForLevel(progress.level);
+    world_.get<ContactDamage>(entity).intervalMillis = 0.0;
 
     Loadout& loadout = world_.ensure<Loadout>(entity);
     for (std::size_t i = 0; i < kLoadoutSlots; ++i) {
@@ -2043,8 +2928,12 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
         }
         loadout.slots[i].configIndex = index;
         loadout.slots[i].rarity = rarity;
-        loadout.slots[i].broken = false;
-        loadout.slots[i].reloadReadyAtMillis = 0;
+        // `broken` and `reloadReadyAtMillis` are deliberately NOT touched. They
+        // are the ring's own bookkeeping: the petal pass arms a full reload on
+        // any slot whose contents changed and leaves an unchanged one alone, so
+        // clearing them here would wipe the timer of a slot the player did not
+        // touch, and would make re-equipping the same petal over one that just
+        // broke a way to dodge its reload entirely.
     }
 }
 

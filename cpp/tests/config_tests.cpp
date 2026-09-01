@@ -237,8 +237,8 @@ TEST(every_shipped_entry_parses_into_something_usable) {
         CHECK(!m.id.empty());
         CHECK(!m.name.empty());
         CHECK(!m.image.empty());          // the SVG survives the load verbatim
-        CHECK(m.health >= 1.0);
-        CHECK(m.size > 0.0);
+        CHECK(m.health >= 0.0);
+        CHECK(m.size >= 0.0);
         CHECK(m.speed >= 0.0);
         CHECK(m.sectionMask < (1u << kSectionCount));
         CHECK_EQ(r.mobIndex(m.id), i);
@@ -248,7 +248,7 @@ TEST(every_shipped_entry_parses_into_something_usable) {
         CHECK(!p.id.empty());
         CHECK(!p.name.empty());
         CHECK(!p.image.empty());
-        CHECK(p.damage >= 0.0);
+        CHECK(std::isfinite(p.damage));
         CHECK(p.size > 0.0);
         CHECK(p.count >= 0);
         CHECK_EQ(r.petalIndex(p.id), i);
@@ -346,9 +346,21 @@ TEST(mob_stats_scale_across_rarities) {
 
 TEST(mob_speed_is_converted_to_units_per_second) {
     const ContentRegistry& r = shipped().registry;
-    // The config states 0.5, which is 20 world units a second.
-    CHECK_NEAR(r.mobStats(r.mobIndex("bee"), Rarity::Common).speed, 20.0, 1e-9);
-    CHECK_NEAR(r.mobStats(r.mobIndex("ant_hole"), Rarity::Common).speed, 0.0, 1e-9);
+    // TypeScript advances a mob by `speed * ENEMY_SPEED_MULTIPLIER` on each of
+    // its 30 ticks a second, and that multiplier is 2 -- so one config point is
+    // 60 world units a second, and a bee's authored 0.5 is 30.
+    const MobStats bee = r.mobStats(r.mobIndex("bee"), Rarity::Common);
+    CHECK_NEAR(bee.speed, 30.0, 1e-9);
+    // Bees are one of the reference's player-speed chasers, but that override
+    // replaces the PURSUIT step only: an unprovoked bee still drifts at its
+    // own 30, which is why the flower's speed lives on a separate field.
+    CHECK(bee.playerSpeedChaser);
+    CHECK_NEAR(bee.chaseSpeed, kPlayerMaxSpeed, 1e-9);
+
+    const MobStats hole = r.mobStats(r.mobIndex("ant_hole"), Rarity::Common);
+    CHECK_NEAR(hole.speed, 0.0, 1e-9);
+    CHECK(!hole.playerSpeedChaser);
+    CHECK_NEAR(hole.chaseSpeed, 0.0, 1e-9);
 }
 
 TEST(petal_stats_scale_across_rarities) {
@@ -380,7 +392,7 @@ TEST(player_modifiers_scale_by_kind) {
     // Additive: clover's luck scales straight up, 1x at common to 4x at unique.
     const std::uint16_t clover = r.petalIndex("clover");
     CHECK_NEAR(r.petalStats(clover, Rarity::Common).modifiers.luck, 0.08, 1e-12);
-    CHECK_NEAR(r.petalStats(clover, Rarity::Unique).modifiers.luck, 0.32, 1e-12);
+    CHECK_NEAR(r.petalStats(clover, Rarity::Unique).modifiers.luck, 1.5, 1e-12);
 
     // Multiplicative: only the bonus above 1.0 scales, so +10% becomes +40%.
     const std::uint16_t cactus = r.petalIndex("cactus");
@@ -398,6 +410,21 @@ TEST(player_modifiers_scale_by_kind) {
     CHECK(!basic.modifiers.any);
     CHECK_NEAR(basic.modifiers.maxHealth, 1.0, 1e-12);
     CHECK_NEAR(basic.modifiers.luck, 0.0, 1e-12);
+}
+
+TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t web = r.petalIndex("web");
+    CHECK_NEAR(r.petalStats(web, Rarity::Common).webRadius, 90.0, 1e-12);
+    CHECK_NEAR(r.petalStats(web, Rarity::Unique).webRadius, 198.0, 1e-12);
+
+    const std::uint16_t sponge = r.petalIndex("sponge");
+    CHECK_NEAR(r.petalStats(sponge, Rarity::Common).spongeDamageDurationMillis, 1000.0, 1e-12);
+    CHECK_NEAR(r.petalStats(sponge, Rarity::Mythic).spongeDamageDurationMillis, 3500.0, 1e-12);
+
+    const std::uint16_t lentil = r.petalIndex("lentil");
+    CHECK_NEAR(r.petalStats(lentil, Rarity::Uncommon).attractionForce, 2889.0, 1e-12);
+    CHECK_NEAR(r.petalStats(lentil, Rarity::Apex).modifiers.petalAttractionRadius, 100.0, 1e-12);
 }
 
 TEST(min_rarity_makes_a_mob_unspawnable_below_its_tier) {
@@ -523,15 +550,13 @@ TEST(dirty_null_damage_and_health_are_caught) {
     CHECK(r.petal(r.petalIndex("basic")).breakable);
 }
 
-TEST(dirty_negative_damage_is_caught) {
+TEST(finite_negative_damage_keeps_typescript_semantics) {
     const ContentRegistry& r = shipped().registry;
     const std::uint16_t glitch = r.petalIndex("glitch");
-    CHECK_NEAR(r.petal(glitch).damage, 0.0, 1e-12);
-    // A negative damage would heal whatever it hit at every tier.
+    CHECK_NEAR(r.petal(glitch).damage, -1.0, 1e-12);
     for (int tier = 0; tier < kRarityCount; ++tier) {
-        CHECK(r.petalStats(glitch, static_cast<Rarity>(tier)).damage >= 0.0);
+        CHECK(r.petalStats(glitch, static_cast<Rarity>(tier)).damage < 0.0);
     }
-    CHECK(warned(r, "petal 'glitch': damage is -1"));
 }
 
 TEST(dirty_enormous_cooldown_is_caught) {
@@ -539,7 +564,9 @@ TEST(dirty_enormous_cooldown_is_caught) {
     const std::uint16_t yggdrasil = r.petalIndex("yggdrasil");
     // 2048000ms is 34 minutes: a dead slot, not a slow one.
     CHECK(r.petal(yggdrasil).cooldownMillis <= 60000.0);
-    CHECK(r.petalStats(yggdrasil, Rarity::Common).reloadMillis <= 60000.0);
+    // The derived TypeScript rarity table deliberately overrides the clamped
+    // authored value with its 512s / 2^tier sequence.
+    CHECK_NEAR(r.petalStats(yggdrasil, Rarity::Common).reloadMillis, 512000.0, 1e-9);
     CHECK(warned(r, "petal 'yggdrasil': cooldown is 2.048e+06"));
 }
 
@@ -552,43 +579,49 @@ TEST(dirty_negative_speed_is_caught) {
     CHECK(warned(r, "mob 'moth': speed is -2.4"));
 }
 
-TEST(dirty_enormous_damage_is_clamped) {
+TEST(finite_enormous_damage_keeps_typescript_semantics) {
     const ContentRegistry& r = shipped().registry;
-    // 9999999999 at apex scaling is a number no combat formula survives.
-    CHECK(r.petal(r.petalIndex("sparkle")).damage <= 1e9);
-    CHECK(warned(r, "petal 'sparkle': damage is 1e+10"));
+    CHECK_NEAR(r.petal(r.petalIndex("sparkle")).damage, 9999999999.0, 1e-9);
 }
 
-TEST(dirty_zero_bodies_are_given_a_usable_size) {
+TEST(finite_zero_placeholder_mobs_keep_typescript_semantics) {
     const ContentRegistry& r = shipped().registry;
-    // Three unfinished mobs ship with every stat at zero. A zero radius is a
-    // hole in the collision grid, so they get the smallest usable body.
     for (const char* id : {"bush", "leafbug", "mantis"}) {
         const MobConfig& m = r.mob(r.mobIndex(id));
-        CHECK(m.size > 0.0);
-        CHECK(m.health >= 1.0);
-        CHECK(r.mobStats(r.mobIndex(id), Rarity::Common).radius > 0.0);
+        CHECK_NEAR(m.size, 0.0, 1e-12);
+        CHECK_NEAR(m.health, 0.0, 1e-12);
+        CHECK_NEAR(m.visualScale, 0.0, 1e-12);
+        CHECK_NEAR(r.mobStats(r.mobIndex(id), Rarity::Common).radius, 0.0, 1e-12);
     }
-    CHECK(warned(r, "mob 'bush': size is 0"));
 }
 
-TEST(dirty_spread_angle_in_degrees_is_recognised) {
+TEST(a_spread_angle_is_read_as_radians_however_odd_the_number_looks) {
     const ContentRegistry& r = shipped().registry;
     const ProjectileSpec& spec = r.petal(r.petalIndex("flower")).projectile;
     CHECK(spec.present);
     CHECK_EQ(spec.count, 5);
-    // 72 was written in degrees: five shots 72 degrees apart close a ring,
-    // while 72 radians is eleven turns of noise.
-    CHECK_NEAR(spec.spreadAngle, 72.0 * kPi / 180.0, 1e-9);
-    CHECK(warned(r, "petal 'flower': projectile spreadAngle 72"));
+    // `flower` ships 72, which LOOKS like degrees and is not. The reference
+    // reads the field as radians (`projectileConfig.spreadAngle || 0.2`) and
+    // hands it straight to `(i - (count - 1) / 2) * spreadAngle`, so its five
+    // shots wrap the circle several times over rather than closing a tidy
+    // five-point star. Converting it here would aim the volley at other mobs,
+    // so the number is taken exactly as written and nothing is warned about.
+    CHECK_NEAR(spec.spreadAngle, 72.0, 1e-9);
+    CHECK(!warned(r, "projectile spreadAngle"));
+
+    // An unstated spread is the reference's 0.2 default, not a zero that would
+    // stack a whole volley on one bearing.
+    const ProjectileSpec& missile = r.petal(r.petalIndex("missile")).projectile;
+    CHECK(missile.present);
+    CHECK_NEAR(missile.spreadAngle, 0.0, 1e-9);   // authored 0, kept at 0
+    CHECK_NEAR(r.petal(r.petalIndex("peas")).projectile.spreadAngle, 1.5708, 1e-9);
 }
 
-TEST(poison_without_a_duration_is_given_one) {
+TEST(poison_without_a_duration_remains_inert_like_typescript) {
     const ContentRegistry& r = shipped().registry;
     const PetalConfig& gas = r.petal(r.petalIndex("gas"));
     CHECK(gas.poisonPerSecond > 0.0);
-    CHECK(gas.poisonDurationMillis > 0.0);   // otherwise the poison does nothing
-    CHECK(warned(r, "petal 'gas': poison is set but poisonDuration is not"));
+    CHECK_NEAR(gas.poisonDurationMillis, 0.0, 1e-12);
 
     // Poison is stated per millisecond in the JSON and per second here.
     const PetalConfig& iris = r.petal(r.petalIndex("iris"));
@@ -653,8 +686,8 @@ TEST(synthetic_dirty_values_are_sanitised) {
 
     const MobConfig& wreck = r.mob(r.mobIndex("wreck"));
     CHECK_NEAR(wreck.damage, 0.0, 1e-12);
-    CHECK(wreck.health >= 1.0);
-    CHECK(wreck.size > 0.0);
+    CHECK_NEAR(wreck.health, 0.0, 1e-12);
+    CHECK_NEAR(wreck.size, 0.0, 1e-12);
     CHECK_NEAR(wreck.speed, 7.0, 1e-12);          // magnitude kept, sign dropped
     CHECK(wreck.cooldownMillis <= 600000.0);
     CHECK_NEAR(wreck.range, 0.0, 1e-12);
@@ -684,8 +717,8 @@ TEST(synthetic_dirty_values_are_sanitised) {
     CHECK(warned(r, "not a colour"));
 
     const PetalConfig& junk = r.petal(r.petalIndex("junk"));
-    CHECK_NEAR(junk.damage, 0.0, 1e-12);
-    CHECK(junk.health >= 1.0);
+    CHECK_NEAR(junk.damage, -5.0, 1e-12);
+    CHECK_NEAR(junk.health, 0.0, 1e-12);
     CHECK(junk.breakable);            // it stated a number, it just stated a bad one
     CHECK(junk.size > 0.0);
     CHECK(junk.cooldownMillis <= 60000.0);
