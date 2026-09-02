@@ -259,13 +259,13 @@ PanelState& panelState() {
 bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
     switch (id) {
         case kShowHitboxes: return &settings.render.hitboxes;
+        case kShowStats: return &settings.showStats;
         case kDebugMenuEnabled: return &settings.showDebugButton;
         // Everything else lands in the panel's own copy, because ClientSettings
         // has no field for it: nothing outside this file could read one, and
         // nothing would write it to disk. A row moves up here the moment a
-        // field exists -- Show Performance Stats and Number Keys Use Items are
-        // the two whose consumers (the stats readout, the lobby's control
-        // hints) are already written and waiting.
+        // field exists -- Number Keys Use Items is the one whose consumer (the
+        // lobby's control hints) is already written and waiting.
         default: return &st.toggles[static_cast<std::size_t>(id)];
     }
 }

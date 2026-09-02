@@ -1,5 +1,7 @@
 #include "server/game_server.h"
 
+#include "shared/core/process_stats.h"
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -296,7 +298,12 @@ void GameServer::run() {
             // in the world -- poison, slows, reloads, hit cooldowns, despawn --
             // is compared against this, so handing over a nominal time that
             // lags wall clock makes all of them fire late and then jump.
+            const double tickStarted = monotonicMillis();
             tick(tickNow);
+            const double tookMillis = monotonicMillis() - tickStarted;
+            debugTickAccumMillis_ += tookMillis;
+            if (tookMillis > debugTickMaxMillis_) debugTickMaxMillis_ = tookMillis;
+            ++debugTickSamples_;
 
             nextTickMillis += net::kTickMillis;
             // A timer never queues up the fires it missed: a tick that overran
@@ -305,6 +312,11 @@ void GameServer::run() {
             // per replay while the dt-scaled half, which has just had its delta
             // reset to almost nothing, stood still.
             if (nextTickMillis < monotonicMillis()) nextTickMillis = monotonicMillis();
+
+            if (tickNow >= nextDebugStatsMillis_) {
+                broadcastDebugStats();
+                nextDebugStatsMillis_ = tickNow + 1000.0;
+            }
         }
     }
 
@@ -1604,6 +1616,31 @@ void GameServer::broadcastToAuthenticated(const ByteWriter& message) {
         const Session* session = sessionFor(connection.id());
         if (session && session->authenticated()) connection.send(message);
     });
+}
+
+void GameServer::broadcastDebugStats() {
+    // Drained whether or not anyone is listening, so a window that spanned an
+    // empty server does not pour its samples into the first client to join.
+    const double avgMillis =
+        debugTickSamples_ > 0 ? debugTickAccumMillis_ / debugTickSamples_ : 0.0;
+    const double maxMillis = debugTickMaxMillis_;
+    debugTickAccumMillis_ = 0;
+    debugTickMaxMillis_ = 0;
+    debugTickSamples_ = 0;
+
+    bool anyone = false;
+    for (const auto& entry : sessions_) {
+        if (entry.second.authenticated()) { anyone = true; break; }
+    }
+    if (!anyone) return;
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::DebugStats));
+    w.f64(static_cast<double>(residentBytes()));
+    w.f64(static_cast<double>(heapBytes()));
+    w.f32(static_cast<float>(avgMillis));
+    w.f32(static_cast<float>(maxMillis));
+    broadcastToAuthenticated(w);
 }
 
 void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) {

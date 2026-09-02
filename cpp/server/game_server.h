@@ -166,6 +166,10 @@ private:
     /// deleted skin changes what EVERY screen must be able to draw, not just
     /// the author's.
     void broadcastToAuthenticated(const ByteWriter& message);
+    /// Memory and tick-time for the client debug menu's graphs, once a second.
+    /// Skipped entirely while nobody is logged in, exactly as the browser
+    /// server's own interval is: an idle server should send nothing.
+    void broadcastDebugStats();
 
     // -- lifecycle ---------------------------------------------------------
     Entity spawnPlayer(Session&);
@@ -327,6 +331,15 @@ private:
     /// exactly fixed step.
     double smoothedDeltaSeconds_ = net::kTickSeconds;
     double lastTickWallMillis_ = 0;
+
+    /// How long tick() itself took, drained once a second into a DebugStats
+    /// broadcast. The mean says what the server costs at rest; the worst
+    /// single tick of the window is the one that shows up as a stutter, and
+    /// averaging it away would hide exactly the thing the graph is for.
+    double debugTickAccumMillis_ = 0;
+    double debugTickMaxMillis_ = 0;
+    int debugTickSamples_ = 0;
+    double nextDebugStatsMillis_ = 0;
 
     /// When the next snapshot is due. The wire runs slower than the
     /// simulation: physics wants 30 Hz resolution, clients do not, and the

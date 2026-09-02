@@ -1,5 +1,7 @@
 #include "client/render/world_renderer.h"
 
+#include <chrono>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -2286,6 +2288,17 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         }
     }
 
+    // Per-layer cost, reported through sectionTiming(). The clock is only read
+    // at layer boundaries -- six reads a frame -- so measuring the frame does
+    // not measurably change it.
+    const auto sectionClock = [] {
+        return std::chrono::duration<double, std::milli>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    };
+    timing_ = SectionTiming{};
+    double layerStarted = sectionClock();
+
     mobLabels_.clear();
     for (const net::EntityKind kind : kOrder) {
         for (const auto& entry : entities) {
@@ -2304,6 +2317,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             }
             if (!onScreen(at, entity.radius)) continue;
 
+            if (kind == net::EntityKind::Drop) ++timing_.itemCount;
             drawEntity(canvas, entity, camera, at, timeSeconds);
             if (options.hitboxes) drawHitbox(canvas, entity, camera, at);
         }
@@ -2340,6 +2354,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
                     scale = 1.0 - t * 0.3;
                 }
                 if (!onScreen(where, kDropBackdropSide)) continue;
+                ++timing_.itemCount;
                 drawDrop(canvas, camera, where, drop.typeIndex, drop.rarity, rotation, scale,
                          alpha);
             }
@@ -2348,6 +2363,19 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         // The mobs the server has already destroyed finish their animation in
         // the same layer the live ones were drawn in, and take no label: a bar
         // over a corpse is the browser build's one suppression here.
+        // Layer boundaries, in the draw order kOrder declares. Petals close
+        // the mob layer because they are drawn onto the flowers they orbit;
+        // splitting them off would report a cost the reference does not.
+        if (kind == net::EntityKind::Petal || kind == net::EntityKind::Drop ||
+            kind == net::EntityKind::Projectile) {
+            const double now = sectionClock();
+            const double spent = now - layerStarted;
+            layerStarted = now;
+            if (kind == net::EntityKind::Petal) timing_.mobsMillis += spent;
+            else if (kind == net::EntityKind::Drop) timing_.itemsMillis += spent;
+            else timing_.projectilesMillis += spent;
+        }
+
         if (kind != net::EntityKind::Mob) continue;
         for (const DyingMob& dying : dying_) {
             if (!onScreen(dying.position, dying.radius)) continue;

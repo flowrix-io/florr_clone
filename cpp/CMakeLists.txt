@@ -30,6 +30,7 @@ target_link_libraries(cpp_canvas PUBLIC PkgConfig::SDL2)
 add_library(flix_shared STATIC
   shared/core/world.cpp
   shared/core/json.cpp
+  shared/core/process_stats.cpp
   shared/net/transport.cpp
   shared/game/rarity.cpp
   shared/game/config.cpp

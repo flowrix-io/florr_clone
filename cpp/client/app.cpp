@@ -366,6 +366,26 @@ std::string twoDecimals(double value) {
     return buffer;
 }
 
+std::string oneDecimal(double value) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%.1f", value);
+    return buffer;
+}
+
+/// The reference's `formatBytes`: whole bytes below a kilobyte, one decimal
+/// above. Used for both the throughput totals and the per-event breakdown.
+std::string formatBytes(double bytes) {
+    char buffer[32];
+    if (bytes < 1024.0) {
+        std::snprintf(buffer, sizeof buffer, "%d B", static_cast<int>(bytes));
+    } else if (bytes < 1024.0 * 1024.0) {
+        std::snprintf(buffer, sizeof buffer, "%.1f KB", bytes / 1024.0);
+    } else {
+        std::snprintf(buffer, sizeof buffer, "%.1f MB", bytes / (1024.0 * 1024.0));
+    }
+    return buffer;
+}
+
 /// The reference's `formatNumber`: one decimal place and a suffix past a
 /// thousand, and the exact integer while ALT is held.
 std::string formatNumber(double value, bool raw) {
@@ -696,6 +716,17 @@ void App::run() {
         // frameDelay just took, so it reports the cap rather than the cost.
         frameTimeAccum_ += (window_.timeSeconds() - timeSeconds_) * 1000.0;
         ++frameTimeSamples_;
+        const WorldRenderer::SectionTiming& section = renderer_.sectionTiming();
+        sectionMobs_.accumMillis += section.mobsMillis;
+        sectionItems_.accumMillis += section.itemsMillis;
+        sectionProjectiles_.accumMillis += section.projectilesMillis;
+        sectionMobs_.windowPeakMillis =
+            std::max(sectionMobs_.windowPeakMillis, section.mobsMillis);
+        sectionItems_.windowPeakMillis =
+            std::max(sectionItems_.windowPeakMillis, section.itemsMillis);
+        sectionProjectiles_.windowPeakMillis =
+            std::max(sectionProjectiles_.windowPeakMillis, section.projectilesMillis);
+        sectionItemCount_ = section.itemCount;
 
         if (config_.screenshotAfterFrames > 0 && ++frames >= config_.screenshotAfterFrames) {
             if (!config_.screenshotPath.empty()) {
@@ -764,8 +795,21 @@ void App::frame(double dt) {
         // Rolled over with the frame count, as the reference rolls its own
         // (src/game.ts:1252-1265): one number a second, not sixty.
         frameTimeAvgMs_ = frameTimeSamples_ > 0 ? frameTimeAccum_ / frameTimeSamples_ : 0.0;
+        // The per-layer figures roll on the same boundary and over the same
+        // sample count, so "Render avg/peak" always adds up against the frame
+        // time printed beside it.
+        for (SectionStats* section : {&sectionMobs_, &sectionItems_, &sectionProjectiles_}) {
+            section->avgMillis =
+                frameTimeSamples_ > 0 ? section->accumMillis / frameTimeSamples_ : 0.0;
+            section->peakMillis = section->windowPeakMillis;
+            section->accumMillis = 0;
+            section->windowPeakMillis = 0;
+        }
         frameTimeAccum_ = 0;
         frameTimeSamples_ = 0;
+        // Counters are drained here and nowhere else, which is what makes the
+        // figures bytes per SECOND rather than bytes since some other event.
+        net_.takeWireStats(incomingBytesPerSecond_, outgoingBytesPerSecond_, topWireEvents_);
     }
 
     Canvas& canvas = window_.canvas();
@@ -787,6 +831,26 @@ void App::frame(double dt) {
         case Screen::Dead:         updateDead(dt); break;
         case Screen::Disconnected: break;
     }
+
+    // One heartbeat a second while the socket is up, as the reference's own
+    // interval does. It is what makes the ping readout a number.
+    // Every status the socket can be in once the handshake has passed: Ready
+    // is only the gap before login, and a heartbeat that stopped there would
+    // leave the readout on "--" for the whole session -- which is exactly what
+    // it did.
+    const NetClient::Status status = net_.status();
+    const bool socketUp = status == NetClient::Status::Ready ||
+                          status == NetClient::Status::LoggedIn ||
+                          status == NetClient::Status::Playing;
+    if (socketUp && timeSeconds_ >= nextPingSeconds_) {
+        net_.sendPing();
+        nextPingSeconds_ = timeSeconds_ + 1.0;
+    }
+
+    // Every frame, on every screen, open or not: the debug panel's graphs are
+    // meant to already hold history when it is opened. See
+    // DebugPanel::recordFrame.
+    menus_.recordDebugSample(dt, net_);
 
     // The renderer's switches live in the settings menu, so they are copied
     // across every frame rather than the menu reaching into the renderer.
@@ -825,7 +889,7 @@ void App::frame(double dt) {
         if (net_.status() == NetClient::Status::Failed) drawDisconnectBanner(canvas);
         // Ping and the rest live here and nowhere else: the reference has no
         // always-on latency readout, only this opt-in corner.
-        if (config_.showStats) drawStatsCounters(canvas, false);
+        if (statsVisible()) drawStatsCounters(canvas, false);
         // Over every other layer but the wipe: the tutorial box is z-index
         // 9999, above the panels, the strip, the loadout bar and the death
         // card. Its one anchored step rings the crafting panel, which is the
@@ -1392,7 +1456,7 @@ void App::drawConnectionState(Canvas& canvas, double time) {
     style.bold = true;
     style.strokeWidth = 4.0;
     text(canvas, "Connecting...", canvas.width() * 0.5, canvas.height() * 0.5, style);
-    if (config_.showStats) drawStatsCounters(canvas, true);
+    if (statsVisible()) drawStatsCounters(canvas, true);
     (void)time;
 }
 
@@ -1499,7 +1563,7 @@ void App::drawLogin(Canvas& canvas, double time) {
         error.strokeWidth = 2;
         text(canvas, loginMessage_, centreX, layout.bottomY + 24, error);
     }
-    if (config_.showStats) drawStatsCounters(canvas, true);
+    if (statsVisible()) drawStatsCounters(canvas, true);
 }
 
 const SvgDocument* App::titleBackground(const std::string& biomeName) {
@@ -1557,6 +1621,14 @@ void App::drawTitleBackground(Canvas& canvas, double time) {
                 // makes the seams crawl as the camera moves.
                 const double x = std::floor(startX + i * tileW - cameraX - 1.0);
                 const double y = std::floor(startY + j * tileH - cameraY - 1.0);
+                // The counts above are the reference's, and they overshoot the
+                // window by a tile in each direction; a tile that lands wholly
+                // outside it is a whole SVG rasterized into nothing. On a
+                // 1280x720 window that is twenty of the thirty-five.
+                if (x + tileW + 2 <= 0 || y + tileH + 2 <= 0 ||
+                    x >= canvas.width() || y >= canvas.height()) {
+                    continue;
+                }
                 texture->renderFitted(canvas, static_cast<float>(x), static_cast<float>(y),
                                       static_cast<float>(tileW + 2),
                                       static_cast<float>(tileH + 2),
@@ -1747,7 +1819,7 @@ void App::drawLobby(Canvas& canvas, double time) {
     }
 
     drawTitleChat(canvas, time);
-    if (config_.showStats) drawStatsCounters(canvas, true);
+    if (statsVisible()) drawStatsCounters(canvas, true);
 }
 
 void App::drawTitleChat(Canvas& canvas, double time) {
@@ -2518,6 +2590,10 @@ void App::drawDailyStreak(Canvas& canvas, double time) {
          card.x + 12.0, card.y + 120.0, countdown);
 }
 
+bool App::statsVisible() const {
+    return config_.showStats || menus_.settings().showStats;
+}
+
 void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
     TextStyle style;
     style.size = 11.0;
@@ -2527,7 +2603,7 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
     style.strokeWidth = 2.0;
 
     struct Line { std::string text; std::uint32_t fill; };
-    std::array<Line, 5> lines;
+    std::vector<Line> lines;
 
     if (titleScreen) {
         // The title screen's overlay is a set of PLACEHOLDERS, not a readout:
@@ -2535,13 +2611,13 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
         // of the five lines out as literals and fills in nothing but the frame
         // count. There is no world behind this screen to report on, and
         // substituting live-looking zeroes would claim there is.
-        lines = {{
+        lines = {
             {"Pos: --, --", 0xFFD700u},
             {"Ping: -- | In: 0 B/s | Out: 0 B/s", 0xA78BFAu},
             {"Players: 0", 0x4ECDC4u},
             {"Mobs: 0", 0xFF6B6Bu},
             {"FPS: " + std::to_string(framesPerSecond_) + " | Memory: 0.00 MB", 0x00FF00u},
-        }};
+        };
     } else {
         int players = 0;
         int mobs = 0;
@@ -2549,36 +2625,70 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
             if (entry.second.kind == net::EntityKind::Player) ++players;
             else if (entry.second.kind == net::EntityKind::Mob) ++mobs;
         }
-        const Vec2 me = prediction_.position();
-        const double ping = net_.pingMillis();
-        const char* quality = ping > 200 ? "slow" : (ping > 100 ? "medium" : "good");
+
+        // Bottom-up, in the reference's order, so the frame counter is near the
+        // corner and the render breakdown is the top line.
+
+        // Position is omitted, not zeroed, until the world has placed this
+        // flower -- the reference pushes the line only when it can resolve its
+        // own socket's entity.
+        if (net_.view().self().netId != 0) {
+            const Vec2 me = prediction_.position();
+            lines.push_back({"Pos: " + std::to_string(static_cast<long>(std::lround(me.x))) +
+                                 ", " + std::to_string(static_cast<long>(std::lround(me.y))),
+                             0xFFD700u});
+        }
+
         // Before the first Pong there is no round trip to report, and the
         // reference prints "--" rather than a confident 0ms.
+        const double ping = net_.averagePingMillis();
         const std::string pingText =
             ping > 0 ? std::to_string(static_cast<int>(std::lround(ping))) + "ms" : "--";
+        lines.push_back({"Ping: " + pingText + " (" + net_.connectionQuality() + ")" +
+                             " | In: " + formatBytes(incomingBytesPerSecond_) + "/s" +
+                             " | Out: " + formatBytes(outgoingBytesPerSecond_) + "/s",
+                         0xA78BFAu});
+
+        // The heaviest opcodes of the last second, incoming first by size.
+        // The arrow is the direction, as in the reference.
+        if (!topWireEvents_.empty()) {
+            std::string top = "Top: ";
+            for (std::size_t i = 0; i < topWireEvents_.size(); ++i) {
+                const NetClient::WireEvent& event = topWireEvents_[i];
+                if (i > 0) top += " | ";
+                // The reference draws these as U+2190/U+2192. The two Ubuntu
+                // faces this client pins have no glyph for either -- the
+                // browser only gets them from a system fallback -- so they
+                // would come out as .notdef boxes. These say the same thing in
+                // characters the face actually has.
+                top += event.incoming ? "< " : "> ";
+                top += event.name;
+                top += " " + formatBytes(event.bytes) + "/s";
+            }
+            lines.push_back({top, 0xA78BFAu});
+        }
+
+        lines.push_back({"Players: " + std::to_string(players), 0x4ECDC4u});
+        lines.push_back({"Mobs: " + std::to_string(mobs), 0xFF6B6Bu});
+
         // The work cost of a frame, which is the number that says whether the
         // frame rate is a budget problem or just the 60Hz cap.
         const std::string frameText =
             frameTimeAvgMs_ > 0 ? twoDecimals(frameTimeAvgMs_) + "ms" : "--";
+        // Memory is the browser's offscreen-canvas tally, and that renderer
+        // keeps none -- getOffscreenCanvasMemoryMB returns a hard 0, so the
+        // reference prints this exact literal too. It is not a stub here.
+        lines.push_back({"FPS: " + std::to_string(framesPerSecond_) + " (" + frameText +
+                             "/frame) | Memory: 0.00 MB",
+                         0x00FF00u});
 
-        // Bottom-up, in the reference's order, so the frame counter is the line
-        // closest to the corner.
-        //
-        // Two of the reference's clauses are deliberately absent rather than
-        // faked: `| In: .../s | Out: .../s` needs wire-byte counters NetClient
-        // does not keep, and `| Memory: x.xx MB` is the browser's offscreen
-        // canvas tally, which has no counterpart here. Its sixth line, the
-        // per-section `Render avg/peak`, needs timings WorldRenderer does not
-        // report.
-        lines = {{
-            {"Pos: " + std::to_string(static_cast<long>(std::lround(me.x))) + ", " +
-                 std::to_string(static_cast<long>(std::lround(me.y))), 0xFFD700u},
-            {"Ping: " + pingText + " (" + quality + ")", 0xA78BFAu},
-            {"Players: " + std::to_string(players), 0x4ECDC4u},
-            {"Mobs: " + std::to_string(mobs), 0xFF6B6Bu},
-            {"FPS: " + std::to_string(framesPerSecond_) + " (" + frameText + "/frame)",
-             0x00FF00u},
-        }};
+        const auto section = [](const SectionStats& stats) {
+            return twoDecimals(stats.avgMillis) + "/" + oneDecimal(stats.peakMillis) + "ms";
+        };
+        lines.push_back({"Render avg/peak: items " + section(sectionItems_) + " (" +
+                             std::to_string(sectionItemCount_) + ") | mobs " +
+                             section(sectionMobs_) + " | proj " + section(sectionProjectiles_),
+                         0xFACC15u});
     }
 
     double y = canvas.height() - 8.0;

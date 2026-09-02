@@ -21,7 +21,7 @@ namespace flr::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 11;
+inline constexpr std::uint16_t kProtocolVersion = 12;
 
 /// Frames larger than this are refused before allocation, so a bad length
 /// prefix costs a dropped connection rather than a 4GB allocation.
@@ -139,6 +139,11 @@ enum class ServerMessage : std::uint8_t {
                         ///< { str username, u8 online }*. `joined` 0 is the
                         ///< browser's `guildUpdate null` and carries no rest.
     GuildInviteReceived, ///< str guildName, str fromUsername
+    DebugStats,         ///< f64 residentBytes, f64 heapBytes, f32 tickAvgMs,
+                        ///< f32 tickMaxMs -- once a second, and only while
+                        ///< somebody is authenticated. The browser's payload
+                        ///< also carries heapTotal; nothing draws it, so it is
+                        ///< not on this wire.
 };
 
 /// What a notification announces. The stripe down a card's left edge is the

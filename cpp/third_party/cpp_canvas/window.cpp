@@ -309,14 +309,16 @@ void Window::present() {
 
   // getImageData is the Canvas API's only pixel accessor, and it already
   // composites onto opaque; taking the whole surface once per frame is one
-  // copy, which the upload would cost anyway.
+  // copy, which the upload would cost anyway. It is handed straight to
+  // SDL_UpdateTexture -- copying it into impl_->rgba first was a second pass
+  // over three and a half megabytes for nothing. The member buffer stays as
+  // the fallback for a size the canvas could not satisfy.
   const std::vector<std::uint8_t> pixels =
       impl_->canvas->getImageData(0, 0, impl_->width, impl_->height);
-  if (pixels.size() == impl_->rgba.size()) {
-    std::memcpy(impl_->rgba.data(), pixels.data(), pixels.size());
-  }
+  const std::uint8_t* upload = impl_->rgba.data();
+  if (pixels.size() == impl_->rgba.size()) upload = pixels.data();
 
-  SDL_UpdateTexture(impl_->texture, nullptr, impl_->rgba.data(), impl_->width * 4);
+  SDL_UpdateTexture(impl_->texture, nullptr, upload, impl_->width * 4);
   SDL_RenderClear(impl_->renderer);
   SDL_RenderCopy(impl_->renderer, impl_->texture, nullptr, nullptr);
   SDL_RenderPresent(impl_->renderer);

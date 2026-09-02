@@ -89,6 +89,10 @@ struct ClientSettings {
     double zoom = 1.0;
     bool showChat = true;
     bool showMenuBar = true;
+    /// The frame/ping/position readout in the bottom-right corner. Off by
+    /// default, and the browser build keeps the same flag in
+    /// `localStorage.showStats`.
+    bool showStats = false;
     /// Shows the grey bug button in the top strip, which is the only way into
     /// the debug panel. Off by default, exactly as `debugMenuEnabled` is.
     bool showDebugButton = false;
@@ -383,8 +387,8 @@ private:
     ui::Scroller scroll_;
 };
 
-/// Frame time and memory graphs. Reachable only while the settings switch that
-/// puts the bug button in the strip is on.
+/// Frame time and memory graphs, client and server. Reachable only while the
+/// settings switch that puts the bug button in the strip is on.
 class DebugPanel {
 public:
     bool render(MenuContext&);
@@ -392,14 +396,45 @@ public:
     static double preferredWidth();
     static Rect bounds(int viewWidth, int viewHeight);
 
+    /// One frame of client samples, and any server packet that has arrived.
+    ///
+    /// Called every frame whether or not the panel is open, which is the
+    /// browser's own arrangement: recordClientFrame runs from the render loop
+    /// and the debugStats handler from the socket, so the graphs already hold
+    /// two minutes of history the moment the panel is opened.
+    void recordFrame(double dtSeconds, NetClient&);
+
 private:
-    /// One sample per second, so the graph holds about two minutes -- the same
+    /// One sample per second, so a graph holds about two minutes -- the same
     /// window the browser panel keeps.
     static constexpr int kHistory = 120;
-    std::vector<double> frameMillis_;
+
+    std::vector<double> clientFrameMillis_;
+    std::vector<double> clientMemoryMB_;
+    std::vector<double> serverTickAvgMillis_;
+    std::vector<double> serverTickMaxMillis_;
+    std::vector<double> serverHeapMB_;
+    std::vector<double> serverResidentMB_;
+    /// Until the first packet the server graphs say so rather than drawing a
+    /// flat zero, which would read as a server that costs nothing.
+    bool haveServerStats_ = false;
+
     double sampleAge_ = 0;
     double sampleTotal_ = 0;
     int sampleCount_ = 0;
+
+    /// One series on one graph.
+    struct Series {
+        const std::vector<double>* values;
+        std::uint32_t colour;
+    };
+    /// One labelled block: caption left, value right, plot below. `lines` are
+    /// drawn on a shared auto-scaled axis with the newest sample against the
+    /// right edge, and the LAST of them tints the value text -- which is what
+    /// lets a two-line graph read without a legend.
+    static void drawGraph(Canvas&, Rect plot, const std::string& label,
+                          const std::string& value, const std::vector<Series>& lines,
+                          const char* unit);
 };
 
 // ---------------------------------------------------------------------------
@@ -486,6 +521,12 @@ public:
 
     /// True while a settings row is waiting for a key.
     bool capturingKey() const { return settings_panel_.capturingKey(); }
+
+    /// Feeds the debug panel one frame of samples. See DebugPanel::recordFrame
+    /// for why this is not done inside render().
+    void recordDebugSample(double dtSeconds, NetClient& net) {
+        debug_.recordFrame(dtSeconds, net);
+    }
 
     ClientSettings& settings() { return settings_; }
     const ClientSettings& settings() const { return settings_; }

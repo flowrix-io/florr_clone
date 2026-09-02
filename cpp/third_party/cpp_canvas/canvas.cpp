@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <utility>
@@ -204,12 +205,80 @@ bool polyBounds(const Poly& p, int width, int height, int& x0, int& y0, int& x1,
     return x0<x1 && y0<y1;
 }
 
-struct Edge { float x0,y0,x1,y1,dir; };
+// One edge, in the form the scanline walk reads it: the y span it covers, a
+// point on it, and dx/dy so a crossing is a multiply. The slope is divided out
+// once here rather than once per crossing -- an edge is crossed five times per
+// scanline it touches -- and ylo/yhi are hoisted out of the inner loop, where
+// they used to be a min and a max per subsample.
+struct Edge { float ylo,yhi,x0,y0,slope,dir; };
+struct Cross { float x,dir; };
+
+// Ordering the crossings of one subsample line.
+//
+// Ordering among EQUAL x is not preserved, and does not need to be: the spans
+// between equal crossings are zero-width, and both the winding total and the
+// crossing parity after such a group are the same whichever way the group is
+// walked. Sorting on x alone is therefore exact, and half the comparison.
+inline void insertionSortByX(Cross* xs, size_t n) {
+    for (size_t i=1;i<n;++i) {
+        const Cross v=xs[i]; size_t j=i;
+        while (j>0 && xs[j-1].x>v.x) { xs[j]=xs[j-1]; --j; }
+        xs[j]=v;
+    }
+}
+
+// A long run is bucketed by whole-pixel column rather than compared. The
+// column a crossing falls in is an index into the same coverage buffer the
+// scanline is already sized for, so the histogram costs nothing to address,
+// and one insertion pass afterwards settles the order inside each column --
+// which is cheap because a column holds one or two crossings. This is the
+// case that matters: a stroked outline is thousands of one-pixel-tall edges,
+// so a single scanline can carry a hundred crossings across a span of pixels
+// no wider than that, and paying n log n unpredictable branches for it was
+// most of what a text label cost.
+//
+// `hist` is all zeroes on entry and left that way on exit. When the crossings
+// turn out to be spread far wider than they are numerous the histogram would
+// cost more than it saves, so the run falls back to a comparison sort.
+inline void sortCrossings(Cross* xs, size_t n, int bx0, int width,
+                          std::vector<int>& hist, std::vector<Cross>& tmp) {
+    const auto byX=[](const Cross& a,const Cross& b){ return a.x<b.x; };
+    if (n<=40) { insertionSortByX(xs,n); return; }
+    // Clamped in float space, before the cast: a crossing can legitimately
+    // land far outside the box (the winding walk needs it, even though the
+    // span it opens is clipped away), and converting 1e20f to int is not
+    // something the standard defines. The first test also catches NaN.
+    const float leftEdge=static_cast<float>(bx0), rightEdge=static_cast<float>(bx0+width);
+    const auto column=[&](float x)->int {
+        if (!(x>leftEdge)) return 0;
+        if (x>=rightEdge) return width-1;
+        return static_cast<int>(std::floor(x))-bx0;
+    };
+    int lo=width, hi=-1;
+    for (size_t i=0;i<n;++i) {
+        const int b=column(xs[i].x);
+        ++hist[static_cast<size_t>(b)];
+        if (b<lo) lo=b;
+        if (b>hi) hi=b;
+    }
+    if (static_cast<size_t>(hi-lo) > 8*n) {
+        for (size_t i=0;i<n;++i) hist[static_cast<size_t>(column(xs[i].x))]=0;
+        std::sort(xs,xs+n,byX);
+        return;
+    }
+    int running=0;
+    for (int b=lo;b<=hi;++b) { const int c=hist[static_cast<size_t>(b)]; hist[static_cast<size_t>(b)]=running; running+=c; }
+    if (tmp.size()<n) tmp.resize(n);
+    for (size_t i=0;i<n;++i) tmp[static_cast<size_t>(hist[static_cast<size_t>(column(xs[i].x))]++)]=xs[i];
+    for (int b=lo;b<=hi;++b) hist[static_cast<size_t>(b)]=0;
+    std::copy(tmp.begin(),tmp.begin()+static_cast<std::ptrdiff_t>(n),xs);
+    insertionSortByX(xs,n);
+}
 
 template <class Emit>
 void scanFill(const Poly& poly, bool evenOdd, int width, int height, Emit emit) {
-    static std::vector<Edge> edges; static std::vector<int> order, active;
-    static std::vector<float> acc; static std::vector<std::pair<float,float>> xs;
+    static std::vector<Edge> edges, byRow, active; static std::vector<int> rowStart, cursor;
+    static std::vector<float> acc, run; static std::vector<Cross> xs, sorted; static std::vector<int> hist;
     int bx0,by0,bx1,by1; if (!polyBounds(poly,width,height,bx0,by0,bx1,by1)) return;
     edges.clear();
     int first=0;
@@ -219,56 +288,149 @@ void scanFill(const Poly& poly, bool evenOdd, int width, int height, Emit emit) 
             const int j=(i+1==last)?first:i+1;
             const float ax=poly.pts[2*i], ay=poly.pts[2*i+1], bx=poly.pts[2*j], by=poly.pts[2*j+1];
             if (ay==by || !(std::isfinite(ax)&&std::isfinite(ay)&&std::isfinite(bx)&&std::isfinite(by))) continue;
-            edges.push_back({ax,ay,bx,by, by>ay?1.f:-1.f});
+            edges.push_back({std::min(ay,by),std::max(ay,by),ax,ay,(bx-ax)/(by-ay), by>ay?1.f:-1.f});
         }
         first=last;
     }
     if (edges.empty()) return;
-    order.resize(edges.size());
-    for (size_t i=0;i<order.size();++i) order[i]=static_cast<int>(i);
-    std::sort(order.begin(),order.end(),[&](int a,int b){ return std::min(edges[a].y0,edges[a].y1) < std::min(edges[b].y0,edges[b].y1); });
-    acc.assign(static_cast<size_t>(bx1-bx0), 0.f);
-    active.clear(); size_t next=0;
+
+    // Edges bucketed by the first scanline that can see them. This used to be
+    // a sort of every edge by its top y, which is O(n log n) over a polygon
+    // that -- once a stroke has been expanded to an outline -- runs to
+    // thousands of edges. The bucket is an integer, so counting them lands
+    // them in the same order for one pass each way.
+    const int rows=by1-by0;
+    const float boxTop=static_cast<float>(by0), boxBottom=static_cast<float>(by1);
+    // The two range tests come before the cast, not after: an edge's y can be
+    // any finite float, and converting one of those to int is not something
+    // the standard defines. Past them, floor(ylo) is provably a row index.
+    const auto firstRow=[&](const Edge& e)->int {
+        if (e.yhi<=boxTop) return -1;              // wholly above the box
+        if (!(e.ylo<boxBottom)) return -1;         // starts below it, or is NaN
+        if (e.ylo<=boxTop) return 0;
+        return static_cast<int>(std::floor(e.ylo))-by0;
+    };
+    rowStart.assign(static_cast<size_t>(rows)+1,0);
+    for (const Edge& e : edges) { const int r=firstRow(e); if (r>=0) ++rowStart[static_cast<size_t>(r)]; }
+    int total=0;
+    for (int r=0;r<=rows;++r) { const int n=rowStart[static_cast<size_t>(r)]; rowStart[static_cast<size_t>(r)]=total; total+=n; }
+    if (total==0) return;
+    byRow.resize(static_cast<size_t>(total));
+    cursor.assign(rowStart.begin(),rowStart.end());
+    for (const Edge& e : edges) { const int r=firstRow(e); if (r>=0) byRow[static_cast<size_t>(cursor[static_cast<size_t>(r)]++)]=e; }
+
+    const size_t span_count=static_cast<size_t>(bx1-bx0);
+    acc.assign(span_count,0.f);
+    run.assign(span_count,0.f);
+    hist.assign(span_count,0);
+    active.clear();
+    const float weight=1.f/kSub;
     for (int y=by0;y<by1;++y) {
-        const float top=static_cast<float>(y), bottom=top+1;
-        while (next<order.size() && std::min(edges[order[next]].y0,edges[order[next]].y1) < bottom) active.push_back(order[next++]);
-        active.erase(std::remove_if(active.begin(),active.end(),[&](int e){ return std::max(edges[e].y0,edges[e].y1) <= top; }), active.end());
+        const float top=static_cast<float>(y);
+        // Retire the edges this scanline has passed, in place and in order:
+        // what survives is what remove_if used to leave behind.
+        size_t keep=0;
+        for (size_t i=0;i<active.size();++i) if (active[i].yhi>top) active[keep++]=active[i];
+        active.resize(keep);
+        for (int k=rowStart[static_cast<size_t>(y-by0)];k<rowStart[static_cast<size_t>(y-by0)+1];++k)
+            active.push_back(byRow[static_cast<size_t>(k)]);
         if (active.empty()) continue;
-        bool touched=false;
+        int lo=bx1, hi=bx0-1;      // the x range any span touched, so the pass below walks only that
         const auto span=[&](float a,float b){
             a=std::max(a,static_cast<float>(bx0)); b=std::min(b,static_cast<float>(bx1));
             if (b<=a) return;
-            const float weight=1.f/kSub;
             int ia=static_cast<int>(std::floor(a)), ib=static_cast<int>(std::floor(b));
             ia=std::clamp(ia,bx0,bx1-1); ib=std::clamp(ib,bx0,bx1-1);
-            if (ia==ib) acc[ia-bx0]+=(b-a)*weight;
-            else { acc[ia-bx0]+=(ia+1-a)*weight; for(int x=ia+1;x<ib;++x) acc[x-bx0]+=weight; acc[ib-bx0]+=(b-ib)*weight; }
-            touched=true;
+            if (ia==ib) acc[static_cast<size_t>(ia-bx0)]+=(b-a)*weight;
+            else {
+                // The whole-pixel interior used to be one write per pixel,
+                // which is what made a full-screen rect five passes over the
+                // width. Two difference-array entries carry it instead, summed
+                // by the running total in the emit pass below.
+                acc[static_cast<size_t>(ia-bx0)]+=(ia+1-a)*weight;
+                run[static_cast<size_t>(ia+1-bx0)]+=weight;
+                run[static_cast<size_t>(ib-bx0)]-=weight;
+                acc[static_cast<size_t>(ib-bx0)]+=(b-ib)*weight;
+            }
+            if (ia<lo) lo=ia;
+            if (ib>hi) hi=ib;
         };
+        if (xs.size()<active.size()) xs.resize(active.size());
+        Cross* const cross=xs.data();
         for (int s=0;s<kSub;++s) {
             const float sy=y+(s+0.5f)/kSub;
-            xs.clear();
-            for (int e : active) {
-                const Edge& ed=edges[e];
-                const float lo=std::min(ed.y0,ed.y1), hi=std::max(ed.y0,ed.y1);
-                if (sy<lo||sy>=hi) continue;
-                xs.emplace_back(ed.x0+(sy-ed.y0)*(ed.x1-ed.x0)/(ed.y1-ed.y0), ed.dir);
+            // Branchless on purpose: whether a given edge reaches this
+            // subsample line is data the predictor cannot learn, and a
+            // mispredict costs more than the crossing does. Every slot is
+            // written and the cursor only advances for the ones that count,
+            // which is safe because `xs` is sized for the whole active list.
+            size_t nx=0;
+            for (const Edge& ed : active) {
+                cross[nx].x=ed.x0+(sy-ed.y0)*ed.slope;
+                cross[nx].dir=ed.dir;
+                nx += (sy>=ed.ylo && sy<ed.yhi) ? 1u : 0u;
             }
-            if (xs.size()<2) continue;
-            std::sort(xs.begin(),xs.end());
+            if (nx<2) continue;
+            sortCrossings(cross,nx,bx0,bx1-bx0,hist,sorted);
             float winding=0; int crossings=0;
-            for (size_t i=0;i+1<xs.size();++i) {
-                winding+=xs[i].second; ++crossings;
-                if (evenOdd ? (crossings&1) : (winding!=0)) span(xs[i].first, xs[i+1].first);
+            for (size_t i=0;i+1<nx;++i) {
+                winding+=cross[i].dir; ++crossings;
+                if (evenOdd ? (crossings&1) : (winding!=0)) span(cross[i].x, cross[i+1].x);
             }
         }
-        if (!touched) continue;
-        for (int x=bx0;x<bx1;++x) {
-            const float a=acc[x-bx0];
+        if (lo>hi) continue;
+        float carry=0;
+        for (int x=lo;x<=hi;++x) {
+            const size_t k=static_cast<size_t>(x-bx0);
+            carry+=run[k]; run[k]=0;
+            const float a=acc[k]+carry; acc[k]=0;
             if (a>0.002f) emit(x,y,std::min(1.f,a));
-            acc[x-bx0]=0;
         }
     }
+}
+
+// Source-over onto one pixel, split so the two cases that carry a frame stay
+// inline at the call site. Out of line the whole thing was the single most
+// expensive symbol in a frame: it runs once per covered pixel and every caller
+// is in this file.
+//
+// Both fast paths are the general form with the divide by the output alpha
+// cancelling exactly, not an approximation of it -- an opaque source at full
+// coverage (the interior of every rect, wall and sprite body) and a pixel that
+// is already opaque (which, once a frame has laid its background down, is
+// every pixel on screen). What is left is a partly transparent source landing
+// on a partly transparent pixel, which is rare enough to pay for a call.
+void blendOntoTranslucent(Color& d, Color c, float sa) {
+    if (d.a==0) { d=Color{c.r,c.g,c.b,static_cast<std::uint8_t>(std::lround(sa*255))}; return; }
+    const float da=d.a/255.f, oa=sa+da*(1-sa);
+    if (oa<=0) { d=Color{0,0,0,0}; return; }
+    d=Color{static_cast<std::uint8_t>(std::lround((c.r*sa+d.r*da*(1-sa))/oa)),
+            static_cast<std::uint8_t>(std::lround((c.g*sa+d.g*da*(1-sa))/oa)),
+            static_cast<std::uint8_t>(std::lround((c.b*sa+d.b*da*(1-sa))/oa)),
+            static_cast<std::uint8_t>(std::lround(oa*255))};
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+// Not a hint: at -O2 the inliner decides the emit lambdas are already big
+// enough and leaves this out of line, which puts a call on every covered pixel
+// and makes it the top symbol in a frame.
+__attribute__((always_inline)) inline
+#else
+inline
+#endif
+void blend(Color& d, Color c, float coverage) {
+    const float sa=std::clamp(coverage,0.f,1.f)*(c.a/255.f);
+    if (sa<=0.0005f) return;
+    if (sa>=1.f) { d=Color{c.r,c.g,c.b,255}; return; }
+    if (d.a==255) {
+        const float keep=1.f-sa;
+        d=Color{static_cast<std::uint8_t>(std::lround(c.r*sa+d.r*keep)),
+                static_cast<std::uint8_t>(std::lround(c.g*sa+d.g*keep)),
+                static_cast<std::uint8_t>(std::lround(c.b*sa+d.b*keep)),
+                255};
+        return;
+    }
+    blendOntoTranslucent(d,c,sa);
 }
 
 void pushContour(Poly& out, const std::vector<float>& pts) {
@@ -338,16 +500,29 @@ void strokeOutline(const Poly& src, float hw, int cap, int join, float miterLimi
             if (join==1) { pushDisc(out,px,py,hw,scale); continue; }
             const float side = cross>0 ? -1.f : 1.f;
             const float o0x=-d0y*hw*side, o0y=d0x*hw*side, o1x=-d1y*hw*side, o1y=d1x*hw*side;
-            quad={px,py,px+o0x,py+o0y,px+o1x,py+o1y}; pushContour(out,quad);
-            quad={px,py,px-o0x,py-o0y,px-o1x,py-o1y}; pushContour(out,quad);
-            if (join!=0) continue;
-            const float denom=-cross;
-            if (std::abs(denom)<1e-9f) continue;
-            const float rx=o1x-o0x, ry=o1y-o0y;
-            const float t=(rx*(-d1y)-ry*(-d1x))/denom;
-            const float qx=px+o0x+t*d0x, qy=py+o0y+t*d0y;
-            if (std::hypot(qx-px,qy-py) > miterLimit*hw) continue;
-            quad={px,py,px+o0x,py+o0y,qx,qy,px+o1x,py+o1y}; pushContour(out,quad);
+            // Only the OUTER wedge is emitted, and only when no miter quad
+            // takes its place. The inner one -- {p, p-o0, p-o1} -- lies inside
+            // the overlap of the two segment quads that meet here, and the
+            // outer one lies inside the miter quad, so both are contours whose
+            // region the union already contains: dropping them leaves the
+            // filled shape identical and takes 40% of the edges out of a
+            // stroke. That matters because a stroked glyph run is thousands of
+            // these, and scanFill's cost is per edge per scanline.
+            bool mitered=false;
+            if (join==0) {
+                const float denom=-cross;
+                if (std::abs(denom)>=1e-9f) {
+                    const float rx=o1x-o0x, ry=o1y-o0y;
+                    const float t=(rx*(-d1y)-ry*(-d1x))/denom;
+                    const float qx=px+o0x+t*d0x, qy=py+o0y+t*d0y;
+                    if (std::hypot(qx-px,qy-py) <= miterLimit*hw) {
+                        quad={px,py,px+o0x,py+o0y,qx,qy,px+o1x,py+o1y};
+                        pushContour(out,quad);
+                        mitered=true;
+                    }
+                }
+            }
+            if (!mitered) { quad={px,py,px+o0x,py+o0y,px+o1x,py+o1y}; pushContour(out,quad); }
         }
         if (closed || cap==0) continue;
         for (int e=0;e<2;++e) {
@@ -706,10 +881,15 @@ void Canvas::clip(const Path2D&p,const std::string&s) {
   mask->x0=x0; mask->y0=y0; mask->x1=x1; mask->y1=y1;
   mask->alpha.assign(static_cast<size_t>(x1-x0)*(y1-y0),0);
   const bool evenOdd = s=="evenodd";
+  std::uint8_t* const cells=mask->alpha.data();
+  const int maskStride=x1-x0;
+  const bool nested=state_.clip!=nullptr;
   scanFill(gFlat,evenOdd,width_,height_,[&](int x,int y,float cov){
     if (x<x0||x>=x1||y<y0||y>=y1) return;
-    const float v=cov*clipAt(x,y);
-    mask->alpha[static_cast<size_t>(y-y0)*(x1-x0)+(x-x0)]=static_cast<std::uint8_t>(std::lround(std::clamp(v,0.f,1.f)*255));
+    // scanFill only emits coverage in (0,1], so the clamp is only needed
+    // once an outer mask has been multiplied in.
+    const float v=nested ? std::clamp(cov*clipAt(x,y),0.f,1.f) : cov;
+    cells[static_cast<size_t>(y-y0)*maskStride+(x-x0)]=static_cast<std::uint8_t>(std::lround(v*255));
   });
   state_.clip=mask;
 #endif
@@ -859,7 +1039,16 @@ std::vector<std::uint8_t> Canvas::getImageData(int a,int b,int c,int d)const {
 #ifdef __EMSCRIPTEN__
   c2d_get_pixels(contextId_,a,b,c,d,r.data());
 #else
-  for(int y=0;y<d;y++)for(int x=0;x<c;x++) if(a+x>=0&&b+y>=0&&a+x<width_&&b+y<height_){auto p=pixels_[size_t(b+y)*width_+a+x];auto i=(size_t(y)*c+x)*4;r[i]=p.r;r[i+1]=p.g;r[i+2]=p.b;r[i+3]=p.a;}
+  // Row at a time: Color is exactly the RGBA byte quartet this returns, so
+  // the in-range part of a row is a straight copy. Per pixel, with the bounds
+  // test inside the loop, this was a measurable slice of every frame -- the
+  // window reads the whole surface back once to present it.
+  const int sx0=std::max(0,-a), sx1=std::min(c,width_-a);
+  for(int y=0;y<d;y++){
+    const int sy=b+y;
+    if(sy<0||sy>=height_||sx1<=sx0) continue;
+    std::memcpy(&r[(size_t(y)*c+sx0)*4], &pixels_[size_t(sy)*width_+a+sx0], size_t(sx1-sx0)*4);
+  }
 #endif
   return r;
 }
@@ -921,15 +1110,7 @@ float Canvas::clipAt(int x,int y) const {
 }
 void Canvas::paint(int x,int y,Color c,float coverage) {
   if(x<0||y<0||x>=width_||y>=height_) return;
-  const float sa=std::clamp(coverage,0.f,1.f)*(c.a/255.f);
-  if (sa<=0.0005f) return;
-  Color& d=pixels_[size_t(y)*width_+x];
-  const float da=d.a/255.f, oa=sa+da*(1-sa);
-  if(oa<=0) { d=Color{0,0,0,0}; return; }
-  d=Color{static_cast<std::uint8_t>(std::lround((c.r*sa+d.r*da*(1-sa))/oa)),
-          static_cast<std::uint8_t>(std::lround((c.g*sa+d.g*da*(1-sa))/oa)),
-          static_cast<std::uint8_t>(std::lround((c.b*sa+d.b*da*(1-sa))/oa)),
-          static_cast<std::uint8_t>(std::lround(oa*255))};
+  blend(pixels_[size_t(y)*width_+x], c, coverage);
 }
 void Canvas::blendPixel(int x,int y,Color c) { paint(x,y,c,1.f); }
 namespace {
@@ -945,14 +1126,30 @@ namespace {
 // petal, wall and button edge in the client away from the reference.
 constexpr float kTextGamma = 3.2f;
 inline float textCoverage(float cov, bool glyph) {
-  return glyph && cov > 0.f && cov < 1.f ? std::pow(cov, 1.f/kTextGamma) : cov;
+  if (!(glyph && cov > 0.f && cov < 1.f)) return cov;
+  // cov^(1/3.2) is cov^(5/16), which is three multiplies and four square
+  // roots -- all single instructions -- instead of a call into powf. The two
+  // agree to a few ULP, orders below the 1/255 the result is quantised to,
+  // and this runs once per partially-covered pixel of every glyph on screen.
+  const float square=cov*cov, fifth=square*square*cov;
+  return std::sqrt(std::sqrt(std::sqrt(std::sqrt(fifth))));
 }
 } // namespace
 void Canvas::fillDevice(const Path2D& path, bool evenOdd, Color color) {
   if (color.a==0 || state_.alpha<=0 || path.segments().empty()) return;
   const bool glyph=path.glyphOutlines();
   flatten(path, state_.matrix, matrixScale(state_.matrix), gFlat);
-  scanFill(gFlat, evenOdd, width_, height_, [&](int x,int y,float cov){ paint(x,y,color,textCoverage(cov,glyph)*state_.alpha*clipAt(x,y)); });
+  // Hoisted: scanFill guarantees x and y are inside the surface, so the
+  // per-pixel path is a blend and nothing else -- no bounds test, no reload of
+  // the alpha, and no shared_ptr dereference for a clip that usually is not set.
+  Color* const surface=pixels_.data();
+  const int stride=width_;
+  const float alpha=state_.alpha;
+  const bool clipped=state_.clip!=nullptr;
+  scanFill(gFlat, evenOdd, width_, height_, [&](int x,int y,float cov){
+    const float a=textCoverage(cov,glyph)*alpha;
+    blend(surface[static_cast<size_t>(y)*stride+x], color, clipped ? a*clipAt(x,y) : a);
+  });
 }
 void Canvas::strokeDevice(const Path2D& path) {
   if (state_.stroke.a==0 || state_.alpha<=0 || state_.lineWidth<=0 || path.segments().empty()) return;
@@ -977,7 +1174,14 @@ void Canvas::strokeDevice(const Path2D& path) {
   strokeOutline(*source, state_.lineWidth/2, state_.lineCap, state_.lineJoin, state_.miterLimit, scale, gOutline);
   transformPoly(gOutline, state_.matrix, gDevice);
   const Color color=state_.stroke;
-  scanFill(gDevice, false, width_, height_, [&](int x,int y,float cov){ paint(x,y,color,cov*state_.alpha*clipAt(x,y)); });
+  Color* const surface=pixels_.data();
+  const int stride=width_;
+  const float alpha=state_.alpha;
+  const bool clipped=state_.clip!=nullptr;
+  scanFill(gDevice, false, width_, height_, [&](int x,int y,float cov){
+    const float a=cov*alpha;
+    blend(surface[static_cast<size_t>(y)*stride+x], color, clipped ? a*clipAt(x,y) : a);
+  });
 }
 // The system face for each generic family, loaded once on first use. A missing
 // face falls back to the 5x7 bitmap below, which has no descenders.

@@ -131,6 +131,11 @@ private:
     /// title screens it is a fixed set of placeholder lines rather than a live
     /// readout, which is what the reference paints there.
     void drawStatsCounters(Canvas&, bool titleScreen);
+    /// Whether that readout is up. Two switches turn it on: the Settings
+    /// panel's "Show Performance Stats", which is where a player finds it and
+    /// which persists, and --stats, which is how a scripted run photographs it
+    /// without a settings file.
+    bool statsVisible() const;
     /// Every biome the player may start in, "default" first.
     const std::vector<std::string>& spawnChoices() const { return spawnChoices_; }
     /// Draws the scrolling title texture behind all non-game screens.
@@ -235,6 +240,32 @@ private:
     double frameTimeAvgMs_ = 0;
     double frameTimeAccum_ = 0;
     int frameTimeSamples_ = 0;
+
+    /// Per-layer render cost, averaged over the last whole second with that
+    /// second's worst frame beside it. Both halves are wanted: the average is
+    /// the steady cost, and the peak is the one-frame spike that a raw
+    /// last-frame readout turns into unreadable flicker.
+    struct SectionStats {
+        double avgMillis = 0;
+        double peakMillis = 0;
+        double accumMillis = 0;
+        double windowPeakMillis = 0;
+    };
+    SectionStats sectionMobs_, sectionItems_, sectionProjectiles_;
+    int sectionItemCount_ = 0;
+
+    /// When the next heartbeat ping is due. The reference sends one a second
+    /// for as long as the socket is up, and the round trip it measures is the
+    /// only thing the Ping readout and the connection-quality band have to go
+    /// on -- without it both are permanently "--".
+    double nextPingSeconds_ = 0;
+
+    /// Wire bytes in the last whole second, and the heaviest opcodes in it.
+    /// Sampled on the same once-a-second boundary the frame counter rolls on,
+    /// because both are reported as per-second figures.
+    std::uint32_t incomingBytesPerSecond_ = 0;
+    std::uint32_t outgoingBytesPerSecond_ = 0;
+    std::vector<NetClient::WireEvent> topWireEvents_;
 
     // -- title backdrop ------------------------------------------------------
     /// The backdrop's own clock, advanced a fixed step per RENDERED frame. The

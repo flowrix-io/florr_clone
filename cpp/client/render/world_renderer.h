@@ -159,6 +159,26 @@ public:
     /// numbers a second, and past a point they are noise that costs frame time.
     std::size_t maxEffects = 256;
 
+    /// What the last draw() spent in each layer, in milliseconds, for the
+    /// stats overlay's "Render avg/peak" line. The browser times the same
+    /// three sections inside drawGameObjects, and these are the same cuts:
+    /// `mobs` runs from the top of the entity passes through the flowers and
+    /// their petals (so it carries the ground-effect layer too, as the
+    /// browser's does), `items` is the loot lying on the ground, and
+    /// `projectiles` is the last pass. Terrain is outside all three, in both
+    /// builds.
+    ///
+    /// Mutable because draw() is const -- it reports what it cost, it does not
+    /// change what it draws. `itemCount` is how many drops survived culling,
+    /// which is the number beside the items figure in the readout.
+    struct SectionTiming {
+        double mobsMillis = 0;
+        double itemsMillis = 0;
+        double projectilesMillis = 0;
+        int itemCount = 0;
+    };
+    const SectionTiming& sectionTiming() const { return timing_; }
+
 private:
     void drawTerrain(Canvas&, const Camera&) const;
     /// The biome artwork, tiled every 400 world units from the world origin.
@@ -318,6 +338,8 @@ private:
     /// and used to decide whose petal ring follows the PREDICTED body rather
     /// than the interpolated one.
     mutable std::uint32_t selfNetId_ = 0;
+
+    mutable SectionTiming timing_;
 
     /// Mob damage numbers accumulate for 100 ms before one number is emitted,
     /// so a ring of petals landing in the same tick reads as one hit and not

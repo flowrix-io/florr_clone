@@ -21,6 +21,74 @@ std::int64_t wallClockMillis() {
         .count();
 }
 
+/// What the bandwidth readout calls each opcode. The browser keys its
+/// per-event byte counters by the socket event name; these are the same names
+/// this protocol's messages go by, so the two overlays read alike.
+const char* clientMessageName(std::uint8_t id) {
+    switch (static_cast<net::ClientMessage>(id)) {
+        case net::ClientMessage::Hello:               return "hello";
+        case net::ClientMessage::Register:            return "register";
+        case net::ClientMessage::Login:               return "login";
+        case net::ClientMessage::ResumeSession:       return "resumeSession";
+        case net::ClientMessage::Logout:              return "logout";
+        case net::ClientMessage::JoinGame:            return "joinGame";
+        case net::ClientMessage::LeaveGame:           return "leaveGame";
+        case net::ClientMessage::Input:               return "input";
+        case net::ClientMessage::SetLoadout:          return "setLoadout";
+        case net::ClientMessage::SwapLoadout:         return "swapLoadout";
+        case net::ClientMessage::Craft:               return "craft";
+        case net::ClientMessage::Chat:                return "chat";
+        case net::ClientMessage::Respawn:             return "respawn";
+        case net::ClientMessage::Ping:                return "ping";
+        case net::ClientMessage::UpgradeSkill:        return "upgradeSkill";
+        case net::ClientMessage::ResetSkills:         return "resetSkills";
+        case net::ClientMessage::BuyPetal:            return "buyPetal";
+        case net::ClientMessage::SetSkin:             return "setSkin";
+        case net::ClientMessage::RequestLeaderboard:  return "leaderboard";
+        case net::ClientMessage::RedeemCode:          return "redeemCode";
+        case net::ClientMessage::PublishSkin:         return "publishSkin";
+        case net::ClientMessage::EquipSkin:           return "equipSkin";
+        case net::ClientMessage::DeleteSkin:          return "deleteSkin";
+        case net::ClientMessage::RequestNotifications:return "notifications";
+        case net::ClientMessage::GuildCreate:         return "guildCreate";
+        case net::ClientMessage::GuildInvite:         return "guildInvite";
+        case net::ClientMessage::GuildAccept:         return "guildAccept";
+        case net::ClientMessage::GuildDecline:        return "guildDecline";
+        case net::ClientMessage::GuildKick:           return "guildKick";
+        case net::ClientMessage::GuildLeave:          return "guildLeave";
+        case net::ClientMessage::GuildSquadAll:       return "guildSquadAll";
+        case net::ClientMessage::GuildInviteToSquad:  return "guildInviteToSquad";
+    }
+    return "unknown";
+}
+
+const char* serverMessageName(std::uint8_t id) {
+    switch (static_cast<net::ServerMessage>(id)) {
+        case net::ServerMessage::Welcome:             return "welcome";
+        case net::ServerMessage::AuthResult:          return "authResult";
+        case net::ServerMessage::Profile:             return "profile";
+        case net::ServerMessage::JoinAccepted:        return "joinAccepted";
+        case net::ServerMessage::Snapshot:            return "gameStateUpdate";
+        case net::ServerMessage::Chat:                return "chat";
+        case net::ServerMessage::Notice:              return "notice";
+        case net::ServerMessage::Died:                return "died";
+        case net::ServerMessage::CraftResult:         return "craftResult";
+        case net::ServerMessage::Leaderboard:         return "leaderboard";
+        case net::ServerMessage::Pong:                return "pong";
+        case net::ServerMessage::Kick:                return "kick";
+        case net::ServerMessage::DailyStreak:         return "dailyStreak";
+        case net::ServerMessage::ShopResult:          return "shopResult";
+        case net::ServerMessage::SkinCatalog:         return "skinCatalog";
+        case net::ServerMessage::SkinPublished:       return "skinPublished";
+        case net::ServerMessage::SkinDeleted:         return "skinDeleted";
+        case net::ServerMessage::Notifications:       return "notifications";
+        case net::ServerMessage::GuildUpdate:         return "guildUpdate";
+        case net::ServerMessage::GuildInviteReceived: return "guildInvite";
+        case net::ServerMessage::DebugStats:          return "debugStats";
+    }
+    return "unknown";
+}
+
 } // namespace
 
 NetClient::NetClient() = default;
@@ -62,6 +130,14 @@ void NetClient::beginMessage(ByteWriter& w, net::ClientMessage id) {
 }
 
 void NetClient::send(ByteWriter& w) {
+    // Counted here rather than in the dialer: this is the one place that has
+    // both the opcode and the finished buffer, and every request goes through
+    // it. The four framing bytes the transport prepends are added in so the
+    // number matches what actually leaves the socket.
+    if (!w.empty()) {
+        const auto id = static_cast<std::uint8_t>(w.data()[0]);
+        outgoingBytes_[id] += static_cast<std::uint32_t>(w.size() + 4);
+    }
     dialer_.send(w);
 }
 
@@ -313,7 +389,12 @@ void NetClient::sendPing() {
 // -- incoming ---------------------------------------------------------------
 
 void NetClient::onMessage(net::Connection&, ByteReader& reader) {
-    const auto id = static_cast<net::ServerMessage>(reader.u8());
+    // Before the opcode is read, so this is the whole frame; plus the four
+    // framing bytes the transport has already stripped.
+    const std::size_t frameBytes = reader.remaining() + 4;
+    const std::uint8_t rawId = reader.u8();
+    incomingBytes_[rawId] += static_cast<std::uint32_t>(frameBytes);
+    const auto id = static_cast<net::ServerMessage>(rawId);
     switch (id) {
         case net::ServerMessage::Welcome:      handleWelcome(reader); break;
         case net::ServerMessage::AuthResult:   handleAuthResult(reader); break;
@@ -335,6 +416,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::Notifications: handleNotifications(reader); break;
         case net::ServerMessage::GuildUpdate:   handleGuildUpdate(reader); break;
         case net::ServerMessage::GuildInviteReceived: handleGuildInviteReceived(reader); break;
+        case net::ServerMessage::DebugStats:    handleDebugStats(reader); break;
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and
@@ -675,6 +757,61 @@ void NetClient::handlePong(ByteReader& reader) {
     reader.u64();   // server time
     if (!reader.ok()) return;
     pingMillis_ = nowMillis() - static_cast<double>(sentAt);
+
+    pingHistory_.push_back(pingMillis_);
+    if (pingHistory_.size() > kPingSamples) pingHistory_.erase(pingHistory_.begin());
+    double total = 0;
+    for (const double sample : pingHistory_) total += sample;
+    averagePingMillis_ = total / static_cast<double>(pingHistory_.size());
+}
+
+const char* NetClient::connectionQuality() const {
+    if (averagePingMillis_ > 200.0) return "slow";
+    if (averagePingMillis_ > 100.0) return "medium";
+    return "good";
+}
+
+void NetClient::handleDebugStats(ByteReader& reader) {
+    ServerDebugStats stats;
+    stats.residentBytes = reader.f64();
+    stats.heapBytes = reader.f64();
+    stats.tickAvgMillis = reader.f32();
+    stats.tickMaxMillis = reader.f32();
+    if (!reader.ok()) return;
+    serverDebugStats_ = stats;
+    haveServerDebugStats_ = true;
+    serverDebugStatsFresh_ = true;
+}
+
+bool NetClient::takeServerDebugStats(ServerDebugStats& out) {
+    if (!serverDebugStatsFresh_) return false;
+    serverDebugStatsFresh_ = false;
+    out = serverDebugStats_;
+    return true;
+}
+
+void NetClient::takeWireStats(std::uint32_t& inBytes, std::uint32_t& outBytes,
+                              std::vector<WireEvent>& top, std::size_t topCount) {
+    inBytes = 0;
+    outBytes = 0;
+    top.clear();
+    for (std::size_t id = 0; id < incomingBytes_.size(); ++id) {
+        const std::uint32_t bytes = incomingBytes_[id];
+        if (bytes == 0) continue;
+        inBytes += bytes;
+        top.push_back({serverMessageName(static_cast<std::uint8_t>(id)), bytes, true});
+    }
+    for (std::size_t id = 0; id < outgoingBytes_.size(); ++id) {
+        const std::uint32_t bytes = outgoingBytes_[id];
+        if (bytes == 0) continue;
+        outBytes += bytes;
+        top.push_back({clientMessageName(static_cast<std::uint8_t>(id)), bytes, false});
+    }
+    incomingBytes_.fill(0);
+    outgoingBytes_.fill(0);
+    std::sort(top.begin(), top.end(),
+              [](const WireEvent& a, const WireEvent& b) { return a.bytes > b.bytes; });
+    if (top.size() > topCount) top.resize(topCount);
 }
 
 void NetClient::handleKick(ByteReader& reader) {

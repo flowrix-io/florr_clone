@@ -1,5 +1,7 @@
 #include "client/ui/menus.h"
 
+#include "shared/core/process_stats.h"
+
 #include <SDL.h>
 
 #include <algorithm>
@@ -327,6 +329,7 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "hitboxes") render.hitboxes = number != 0;
         else if (key == "chat") showChat = number != 0;
         else if (key == "menuBar") showMenuBar = number != 0;
+        else if (key == "stats") showStats = number != 0;
         else if (key == "debugButton") showDebugButton = number != 0;
         else if (key == "changelogSeen") changelogSeen = number;
         else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), 0.6, 1.6);
@@ -354,6 +357,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "hitboxes " << (render.hitboxes ? 1 : 0) << '\n'
          << "chat " << (showChat ? 1 : 0) << '\n'
          << "menuBar " << (showMenuBar ? 1 : 0) << '\n'
+         << "stats " << (showStats ? 1 : 0) << '\n'
          << "debugButton " << (showDebugButton ? 1 : 0) << '\n'
          << "changelogSeen " << changelogSeen << '\n'
          << "zoom " << zoom << '\n'
@@ -957,10 +961,160 @@ void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& 
 double DebugPanel::preferredWidth() { return 420.0; }
 
 void DebugPanel::reset() {
-    frameMillis_.clear();
+    // Only the aggregation window is cleared. The series are the panel's whole
+    // point -- reopening it to an empty graph would throw away the two minutes
+    // of history it was collecting in the background for exactly this moment.
     sampleAge_ = 0;
     sampleTotal_ = 0;
     sampleCount_ = 0;
+}
+
+namespace {
+
+void pushSample(std::vector<double>& series, double value, int limit) {
+    series.push_back(value);
+    if (static_cast<int>(series.size()) > limit) series.erase(series.begin());
+}
+
+double lastOr(const std::vector<double>& series, double fallback) {
+    return series.empty() ? fallback : series.back();
+}
+
+std::string fixed(double value, int decimals) {
+    char buffer[48];
+    std::snprintf(buffer, sizeof buffer, "%.*f", decimals, value);
+    return buffer;
+}
+
+constexpr double kBytesPerMB = 1024.0 * 1024.0;
+
+} // namespace
+
+void DebugPanel::recordFrame(double dtSeconds, NetClient& net) {
+    // Averaged over a whole second before it is kept: a per-frame trace is all
+    // scheduler noise and says nothing about where the time went.
+    sampleTotal_ += dtSeconds * 1000.0;
+    ++sampleCount_;
+    sampleAge_ += dtSeconds;
+    if (sampleAge_ >= 1.0) {
+        if (sampleCount_ > 0) {
+            pushSample(clientFrameMillis_, sampleTotal_ / sampleCount_, kHistory);
+        }
+        // The browser reads performance.memory.usedJSHeapSize here, which is a
+        // Chrome-only figure and empty everywhere else. There is no JS heap in
+        // this build; the resident set is the number that means the same thing
+        // about the same process, so the graph is live here rather than blank.
+        const double resident = static_cast<double>(residentBytes());
+        if (resident > 0) pushSample(clientMemoryMB_, resident / kBytesPerMB, kHistory);
+        sampleAge_ = 0;
+        sampleTotal_ = 0;
+        sampleCount_ = 0;
+    }
+
+    // One graph sample per packet, not per frame: the server sends these once
+    // a second, and resampling the last one between packets would draw a
+    // plateau that says the server was steady when nothing was measured.
+    NetClient::ServerDebugStats stats;
+    if (net.takeServerDebugStats(stats)) {
+        haveServerStats_ = true;
+        pushSample(serverHeapMB_, stats.heapBytes / kBytesPerMB, kHistory);
+        pushSample(serverResidentMB_, stats.residentBytes / kBytesPerMB, kHistory);
+        pushSample(serverTickAvgMillis_, stats.tickAvgMillis, kHistory);
+        pushSample(serverTickMaxMillis_, stats.tickMaxMillis, kHistory);
+    }
+}
+
+void DebugPanel::drawGraph(Canvas& canvas, Rect plot, const std::string& label,
+                           const std::string& value, const std::vector<Series>& lines,
+                           const char* unit) {
+    constexpr double kLabelHeight = 18.0;
+    const double labelY = plot.y - kLabelHeight * 0.5;
+
+    TextStyle caption;
+    caption.size = 13.0;
+    caption.bold = true;
+    caption.strokeWidth = 2.0;
+    caption.baseline = Baseline::Middle;
+    text(canvas, label, plot.x, labelY, caption);
+
+    TextStyle reading;
+    reading.size = 12.0;
+    reading.bold = true;
+    reading.strokeWidth = 2.0;
+    reading.align = Align::Right;
+    reading.baseline = Baseline::Middle;
+    // The last series' colour, so a two-line graph's headline number says
+    // which line it belongs to without a legend.
+    reading.fill = lines.empty() ? kPaper : lines.back().colour;
+    text(canvas, value, plot.right(), labelY, reading);
+
+    setFill(canvas, kInk, 0.3);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(plot.x), static_cast<float>(plot.y),
+                     static_cast<float>(plot.w), static_cast<float>(plot.h), 3.0f);
+    canvas.fill();
+
+    double peak = 0;
+    for (const Series& line : lines) {
+        for (const double sample : *line.values) peak = std::max(peak, sample);
+    }
+    if (peak <= 0) {
+        TextStyle empty;
+        empty.size = 11.0;
+        empty.strokeWidth = 0;
+        empty.fill = 0x888888u;
+        empty.align = Align::Centre;
+        empty.baseline = Baseline::Middle;
+        text(canvas, "no data yet", plot.x + plot.w * 0.5, plot.y + plot.h * 0.5, empty);
+        return;
+    }
+    // Padded, so the tallest sample does not kiss the top edge and read as
+    // clipped.
+    const double scaleMax = peak * 1.15;
+
+    const double midY = plot.y + plot.h * 0.5;
+    setStroke(canvas, kPaper, 0.15);
+    canvas.setLineWidth(1.0f);
+    canvas.beginPath();
+    canvas.moveTo(static_cast<float>(plot.x + 2.0), static_cast<float>(midY));
+    canvas.lineTo(static_cast<float>(plot.right() - 2.0), static_cast<float>(midY));
+    canvas.stroke();
+
+    TextStyle axis;
+    axis.size = 9.0;
+    axis.strokeWidth = 0;
+    axis.fill = kPaper;
+    axis.baseline = Baseline::Middle;
+    canvas.save();
+    canvas.setGlobalAlpha(0.5f);
+    text(canvas, fixed(scaleMax * 0.5, 1) + " " + unit, plot.x + 4.0, midY - 5.0, axis);
+    canvas.restore();
+
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(static_cast<float>(plot.x), static_cast<float>(plot.y),
+                static_cast<float>(plot.w), static_cast<float>(plot.h));
+    canvas.clip();
+    const double step = plot.w / static_cast<double>(kHistory - 1);
+    for (const Series& line : lines) {
+        const std::vector<double>& values = *line.values;
+        if (values.size() < 2) continue;
+        setStroke(canvas, line.colour);
+        canvas.setLineWidth(1.5f);
+        canvas.beginPath();
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            // Anchored to the RIGHT edge: the newest sample is always against
+            // the wall and the history scrolls off the left, so a glance at
+            // the same place always shows now.
+            const double px =
+                plot.right() - static_cast<double>(values.size() - 1 - i) * step;
+            const double py = plot.bottom() - 2.0 - (values[i] / scaleMax) * (plot.h - 4.0);
+            if (i == 0) canvas.moveTo(static_cast<float>(px), static_cast<float>(py));
+            else canvas.lineTo(static_cast<float>(px), static_cast<float>(py));
+        }
+        canvas.stroke();
+    }
+    canvas.restore();
 }
 
 bool DebugPanel::render(MenuContext& ctx) {
@@ -969,19 +1123,6 @@ bool DebugPanel::render(MenuContext& ctx) {
     const Vec2 mouse = ctx.mouse();
     constexpr double kPad = 15.0;
     constexpr double kHeader = 30.0;
-
-    // Averaged over a whole second before it is kept: a per-frame trace is all
-    // scheduler noise and says nothing about where the time went.
-    sampleTotal_ += ctx.dt * 1000.0;
-    ++sampleCount_;
-    sampleAge_ += ctx.dt;
-    if (sampleAge_ >= 1.0 && sampleCount_ > 0) {
-        frameMillis_.push_back(sampleTotal_ / sampleCount_);
-        if (static_cast<int>(frameMillis_.size()) > kHistory) frameMillis_.erase(frameMillis_.begin());
-        sampleAge_ = 0;
-        sampleTotal_ = 0;
-        sampleCount_ = 0;
-    }
 
     inlaid(canvas, panel, kDebugSkin.fill, kDebugSkin.border, 4.0, 5.0);
 
@@ -999,38 +1140,49 @@ bool DebugPanel::render(MenuContext& ctx) {
     button(canvas, closeRect, "X", closeRect.contains(mouse), ctx.window.mouseDown(MouseButton::Left),
            close);
 
-    const Rect graph{panel.x + kPad, panel.y + kPad + kHeader + 23.0, panel.w - kPad * 2, 74.0};
-    TextStyle caption;
-    caption.size = 13.0;
-    caption.bold = true;
-    caption.strokeWidth = 2.0;
-    const double latest = frameMillis_.empty() ? 0.0 : frameMillis_.back();
-    text(canvas, latest > 0 ? "Client Frame Time  " + abbreviate(latest) + " ms  (" +
-                                  abbreviate(1000.0 / latest) + " FPS)"
-                            : "Client Frame Time  collecting...",
-         graph.x, graph.y - 11.0, caption);
+    constexpr double kGraphHeight = 74.0;
+    constexpr double kLabelHeight = 18.0;
+    constexpr double kGap = 12.0;
+    const double left = panel.x + kPad;
+    const double width = panel.w - kPad * 2;
+    double cy = panel.y + kHeader + kPad + 5.0;
+    const auto block = [&](const std::string& label, const std::string& value,
+                           const std::vector<Series>& lines, const char* unit) {
+        drawGraph(canvas, Rect{left, cy + kLabelHeight, width, kGraphHeight}, label, value, lines,
+                  unit);
+        cy += kLabelHeight + kGraphHeight + kGap;
+    };
 
-    setFill(canvas, kInk, 0.35);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(graph.x), static_cast<float>(graph.y),
-                     static_cast<float>(graph.w), static_cast<float>(graph.h), 4.0f);
-    canvas.fill();
+    const double frameMillis = lastOr(clientFrameMillis_, 0.0);
+    block("Client Frame Time",
+          clientFrameMillis_.empty()
+              ? "collecting\xE2\x80\xA6"
+              : fixed(frameMillis, 1) + " ms (" +
+                    std::to_string(static_cast<long>(std::lround(1000.0 /
+                                                                 std::max(frameMillis, 0.01)))) +
+                    " FPS)",
+          {{&clientFrameMillis_, 0x5A9FDBu}}, "ms");
 
-    if (frameMillis_.size() >= 2) {
-        double peak = 1.0;
-        for (const double sample : frameMillis_) peak = std::max(peak, sample);
-        const double step = graph.w / static_cast<double>(kHistory - 1);
-        setStroke(canvas, 0x5A9FDBu);
-        canvas.setLineWidth(2.0f);
-        canvas.beginPath();
-        for (std::size_t i = 0; i < frameMillis_.size(); ++i) {
-            const double px = graph.x + static_cast<double>(i) * step;
-            const double py = graph.bottom() - (frameMillis_[i] / peak) * (graph.h - 4.0) - 2.0;
-            if (i == 0) canvas.moveTo(static_cast<float>(px), static_cast<float>(py));
-            else canvas.lineTo(static_cast<float>(px), static_cast<float>(py));
-        }
-        canvas.stroke();
-    }
+    block("Client Memory (resident)",
+          clientMemoryMB_.empty() ? "unavailable on this platform"
+                                  : fixed(lastOr(clientMemoryMB_, 0.0), 1) + " MB",
+          {{&clientMemoryMB_, 0x7FDB7Fu}}, "MB");
+
+    // The two server graphs say what is missing rather than drawing zeroes:
+    // until a DebugStats packet arrives there is no server to report on, which
+    // on the title screen is the truth.
+    const std::string noServer = "no data \xE2\x80\x94 join a game";
+    block("Server Tick Time",
+          haveServerStats_ ? "avg " + fixed(lastOr(serverTickAvgMillis_, 0.0), 1) + " / max " +
+                                 fixed(lastOr(serverTickMaxMillis_, 0.0), 1) + " ms"
+                           : noServer,
+          {{&serverTickMaxMillis_, 0xE07070u}, {&serverTickAvgMillis_, 0xFFDD66u}}, "ms");
+
+    block("Server Memory",
+          haveServerStats_ ? "heap " + fixed(lastOr(serverHeapMB_, 0.0), 1) + " / rss " +
+                                 fixed(lastOr(serverResidentMB_, 0.0), 1) + " MB"
+                           : noServer,
+          {{&serverResidentMB_, 0xC9A0E8u}, {&serverHeapMB_, 0xE8A023u}}, "MB");
 
     return !ctx.clicked(closeRect);
 }
@@ -1070,6 +1222,14 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     MenuContext ctx{canvas,    window,      net, sprites,    renderer, settings_,
                     drag_,     timeSeconds, dt,  panelRect_, false};
     bool keepOpen = true;
+    // The setting is the single source of truth for the debug panel: unchecking
+    // "Enable Debug Menu" while it is open closes it on the next frame rather
+    // than leaving a panel up with no way back to it, which is what the
+    // reference's own render() does first thing.
+    if (drawn_ == MenuId::Debug && !settings_.showDebugButton) {
+        close();
+        return;
+    }
     switch (drawn_) {
         case MenuId::Inventory:   keepOpen = inventory_.render(ctx); break;
         case MenuId::Crafting:    keepOpen = crafting_.render(ctx); break;

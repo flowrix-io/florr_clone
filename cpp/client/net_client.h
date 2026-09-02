@@ -5,6 +5,7 @@
 // client state. Everything it learns lands in a WorldView or in one of the
 // fields below; nothing in the renderer talks to a socket.
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -278,6 +279,42 @@ public:
 
     /// Round-trip time in milliseconds, from the last Ping/Pong exchange.
     double pingMillis() const { return pingMillis_; }
+    /// The mean of the last ten round trips, which is what the readout shows:
+    /// a single sample jitters too much to read, and the quality band below is
+    /// derived from the same average so the two never disagree.
+    double averagePingMillis() const { return averagePingMillis_; }
+    /// "good", "medium" or "slow", at the reference's 100 ms / 200 ms bands.
+    const char* connectionQuality() const;
+
+    /// One opcode's share of the wire over the last window.
+    struct WireEvent {
+        const char* name = "";
+        std::uint32_t bytes = 0;
+        bool incoming = false;
+    };
+    /// Totals the bytes seen since the last call, fills `top` with the
+    /// heaviest events first, and resets the counters -- so the caller is
+    /// asking for bytes per window, and should ask once a second.
+    ///
+    /// Bytes are real framed sizes, not an estimate: both the send path and
+    /// the dispatch have the encoded buffer in hand when they count it.
+    void takeWireStats(std::uint32_t& inBytes, std::uint32_t& outBytes,
+                       std::vector<WireEvent>& top, std::size_t topCount = 5);
+
+    /// The server's own memory and tick cost, from the last DebugStats. Null
+    /// until one arrives, which is what the debug panel draws as "no data".
+    struct ServerDebugStats {
+        double residentBytes = 0;
+        double heapBytes = 0;
+        double tickAvgMillis = 0;
+        double tickMaxMillis = 0;
+    };
+    const ServerDebugStats* serverDebugStats() const {
+        return haveServerDebugStats_ ? &serverDebugStats_ : nullptr;
+    }
+    /// True exactly once per DebugStats, so the panel appends one graph sample
+    /// per packet rather than resampling whatever it last saw.
+    bool takeServerDebugStats(ServerDebugStats& out);
 
     const std::vector<LeaderboardRow>& leaderboard() const { return leaderboard_; }
     /// True between asking for the board and the answer arriving.
@@ -349,6 +386,7 @@ private:
     void handleGuildUpdate(ByteReader&);
     void handleGuildInviteReceived(ByteReader&);
     void handlePong(ByteReader&);
+    void handleDebugStats(ByteReader&);
     void handleKick(ByteReader&);
     void handleDailyStreak(ByteReader&);
     void handleSkinCatalog(ByteReader&);
@@ -389,6 +427,22 @@ private:
     ShopOutcome shopOutcome_;
 
     double pingMillis_ = 0;
+    /// The last ten round trips and their mean. Ten is the reference's window.
+    static constexpr std::size_t kPingSamples = 10;
+    std::vector<double> pingHistory_;
+    double averagePingMillis_ = 0;
+
+    /// Wire bytes since the last takeWireStats(), indexed by opcode. Two flat
+    /// arrays rather than a map keyed by name: the counting happens on every
+    /// frame of every message, and the names are only needed once a second
+    /// when the overlay asks.
+    std::array<std::uint32_t, 256> incomingBytes_{};
+    std::array<std::uint32_t, 256> outgoingBytes_{};
+
+    ServerDebugStats serverDebugStats_;
+    bool haveServerDebugStats_ = false;
+    bool serverDebugStatsFresh_ = false;
+
     bool dead_ = false;
     std::string killerName_;
 
