@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "client/ui/draw.h"
+#include "client/ui/item_tile.h"
 #include "shared/game/config.h"
 #include "shared/game/components.h"
 #include "shared/game/constants.h"
@@ -65,26 +66,18 @@ constexpr double kFramesPerSecond = 60.0;
 /// which grows with level -- the body never does.
 constexpr double kFlowerArtRadius = 25.0;
 
-/// A petal's artwork is 12 world units per size unit; its 20-per-size hit
-/// radius is only ever drawn as a debug circle.
-constexpr double kPetalArtSize = 12.0;
+/// A petal's artwork is 12 world units per size unit (ui::kPetalArtSize, which
+/// the item tile scales from too); its 20-per-size hit radius is only ever
+/// drawn as a debug circle.
+using ui::kPetalArtSize;
 constexpr double kPetalHitSize = 20.0;
 /// A projectile is drawn from the same petal artwork, at 20 units per size.
 constexpr double kProjectileArtSize = 20.0;
 
-/// A ground drop is a fixed 60-unit shadow with a 50-unit rarity tile on it,
-/// both square with a 3-unit corner and the tile outlined at 5. None of it is
-/// derived from the drop's pickup radius: every drop reads the same size,
-/// whatever petal is lying on it.
-constexpr double kDropBackdropSide = 60.0;
-constexpr double kDropPlateSide = 50.0;
-constexpr double kDropCorner = 3.0;
-constexpr double kDropPlateStroke = 5.0;
-constexpr double kDropShadowAlpha = 0.2;
-/// The plate's outline is the rarity colour darkened by 30%.
-constexpr double kDropPlateShade = 0.7;
-constexpr double kDropNameSize = 12.0;
-constexpr double kDropNameBaseline = 20.0;
+/// A ground drop is the same item tile the menus draw, at its design size and
+/// with the shadow behind it. Nothing about it is derived from the drop's
+/// pickup radius: every drop reads the same size, whatever petal is on it.
+constexpr double kDropBackdropSide = ui::kItemTileDesign;
 /// Slides in from 30-50 units away, unwinding a spin of up to half a turn.
 constexpr double kDropSpawnSeconds = 0.4;
 constexpr double kDropSpawnNear = 30.0;
@@ -193,22 +186,6 @@ std::string formatCompact(double value) {
         }
     }
     return std::to_string(static_cast<long long>(std::llround(value)));
-}
-
-/// The browser build's item label: the id with its first letter upper-cased,
-/// the rest lower-cased, and the FIRST underscore turned into a space. Only
-/// the first, because `String.replace` with a string pattern replaces once.
-std::string itemLabel(const std::string& id) {
-    if (id.empty()) return id;
-    std::string out;
-    out.reserve(id.size());
-    out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(id[0]))));
-    for (std::size_t i = 1; i < id.size(); ++i) {
-        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(id[i]))));
-    }
-    const std::size_t underscore = out.find('_');
-    if (underscore != std::string::npos) out[underscore] = ' ';
-    return out;
 }
 
 /// The four tiers that shimmer in the browser build.
@@ -2118,57 +2095,29 @@ void WorldRenderer::drawDrop(Canvas& canvas, const Camera& camera, Vec2 at,
                              double scale, double alpha) const {
     const double zoom = camera.zoom();
     if (scale <= 0.0 || alpha <= 0.0 || kDropBackdropSide * zoom * scale <= 1.0) return;
+    if (!sprites_) return;
     const Vec2 screen = camera.worldToScreen(at);
 
-    // Everything below is written in the browser build's own 60-unit cell,
-    // with the camera folded into the transform: the reference bakes that cell
-    // once and blits it, so its numbers only line up when they are drawn at
-    // the same scale rather than each multiplied by the zoom.
+    // A drop is one item tile, the same object the loadout bar and the
+    // inventory draw, laid on the ground with its shadow under it. The camera
+    // is folded into the transform rather than multiplied into each number:
+    // the tile is written in its own 60-unit cell and only lines up when the
+    // whole cell is scaled at once.
+    const double cell = kDropBackdropSide * zoom * scale;
     canvas.save();
     canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
     if (rotation != 0) canvas.rotate(static_cast<float>(rotation));
-    const double cell = zoom * scale;
-    canvas.scale(static_cast<float>(cell), static_cast<float>(cell));
-    if (alpha < 1.0) canvas.setGlobalAlpha(static_cast<float>(alpha));
 
-    const double backdrop = kDropBackdropSide * 0.5;
-    ui::setFill(canvas, 0x000000u, kDropShadowAlpha);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(-backdrop), static_cast<float>(-backdrop),
-                     static_cast<float>(kDropBackdropSide),
-                     static_cast<float>(kDropBackdropSide), static_cast<float>(kDropCorner));
-    canvas.fill();
-
-    // Stroked before it is filled, as the reference strokes it: the outline is
-    // centred on the path, so filling afterwards paints over its inner half
-    // and leaves a 2.5-unit border rather than a 5-unit one.
-    const double plate = kDropPlateSide * 0.5;
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(-plate), static_cast<float>(-plate),
-                     static_cast<float>(kDropPlateSide), static_cast<float>(kDropPlateSide),
-                     static_cast<float>(kDropCorner));
-    ui::setStroke(canvas, ui::shade(rarityColor(rarity), kDropPlateShade));
-    canvas.setLineWidth(static_cast<float>(kDropPlateStroke));
-    canvas.stroke();
-    ui::setFill(canvas, rarityColor(rarity));
-    canvas.fill();
-
-    const PetalConfig* config = content_ ? &content_->petal(typeIndex) : nullptr;
-    const double petal = kPetalArtSize * (config ? config->size : 1.0);
-    if (sprites_ && sprites_->petalDrawable(typeIndex)) {
-        // Frame zero, not the frame clock: the reference bakes a drop's petal
-        // once and never animates it on the ground.
-        sprites_->drawPetal(canvas, typeIndex, 0, 0, petal, 0.0, 0.0);
-    }
-
-    // The name rides with the plate, so a spinning despawn spins its label too.
-    ui::TextStyle style;
-    style.size = kDropNameSize;
-    style.align = ui::Align::Centre;
-    style.baseline = ui::Baseline::Alphabetic;
-    style.strokeWidth = 3.0;
-    style.fill = 0xFFFFFFu;
-    ui::text(canvas, itemLabel(config ? config->id : std::string()), 0, kDropNameBaseline, style);
+    ui::ItemTile tile;
+    tile.petalIndex = typeIndex;
+    tile.rarity = rarity;
+    tile.shadow = true;
+    tile.alpha = alpha;
+    // Frame zero, not the frame clock: a drop's petal does not animate on the
+    // ground, and the name rides with the plate so a spinning despawn spins
+    // its label too.
+    tile.timeSeconds = 0.0;
+    ui::drawItemTile(canvas, *sprites_, {-cell * 0.5, -cell * 0.5, cell, cell}, tile);
 
     canvas.restore();
 }

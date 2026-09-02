@@ -22,6 +22,7 @@
 
 #include "svg.h"
 
+#include "client/ui/item_tile.h"
 #include "client/ui/menu_icons.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
@@ -42,7 +43,6 @@ constexpr double kTabsHeight = 50.0;
 constexpr double kTabWidth = 130.0;
 constexpr double kTabPitch = 140.0;
 constexpr double kCardSize = 44.0;
-constexpr double kCardIcon = 32.0;
 constexpr double kPriceBarHeight = 12.0;
 constexpr double kCardGap = 8.0;
 constexpr double kScrollbarWidth = 6.0;
@@ -760,16 +760,20 @@ bool ShopPanel::render(MenuContext& ctx) {
                             kInk, 0.18);
             }
 
-            // Only the fill and the icon fade when the price is out of reach;
-            // the border and the price bar stay opaque, or the card stops
-            // reading as a card at all.
-            fillRounded(canvas, rect, 4.0, rarityColor(card.rarity), card.affordable ? 1.0 : 0.45);
-            strokeRounded(canvas, rect, 4.0, hot ? kPaper : kInk, 2.0, hot ? 1.0 : 0.3);
-
-            canvas.setGlobalAlpha(card.affordable ? 1.0f : 0.5f);
-            ctx.sprites.drawPetal(canvas, card.petalIndex, rect.x + rect.w * 0.5,
-                                  rect.y + 2.0 + kCardIcon * 0.5, kCardIcon, 0.0, ctx.timeSeconds);
-            canvas.setGlobalAlpha(1.0f);
+            // Only the plate and the icon fade when the price is out of reach;
+            // the price bar below stays opaque, or the card stops reading as a
+            // card at all.
+            ItemTile tile;
+            tile.petalIndex = card.petalIndex;
+            tile.rarity = card.rarity;
+            // The price bar is this card's caption, and it sits where the name
+            // would go.
+            tile.showName = false;
+            tile.hovered = hot;
+            tile.selected = hot;
+            tile.alpha = card.affordable ? 1.0 : 0.5;
+            tile.timeSeconds = ctx.timeSeconds;
+            drawItemTile(canvas, ctx.sprites, rect, tile);
 
             setFill(canvas, kInk, 0.8);
             canvas.fillRect(static_cast<float>(rect.x),

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
@@ -405,21 +406,15 @@ bool InventoryPanel::render(MenuContext& ctx) {
         const Rect rect{originX + cell.rect.x, originY + cell.rect.y, cell.rect.w, cell.rect.h};
         if (rect.bottom() <= view.y || rect.y >= viewBottom) continue;
 
-        CellStyle style;
-        style.rarity = cell.rarity;
-        style.label = titleCase(content().petal(cell.petalIndex).name);
-        style.badge = cell.count > 1 ? ("x" + std::to_string(cell.count)) : std::string();
-        style.hovered = hovered == static_cast<int>(i);
-        // Plate, then sprite, then labels: the name and the "xN" badge belong
-        // ON TOP of the petal, and drawing the cell whole would put the sprite
-        // over both.
-        const Rect icon = itemCellPlate(canvas, rect, style);
-        // A petal that spawns as a cluster previews as that cluster: the count
-        // is the petals per equipped slot, not how many the account owns.
-        drawPetalGroup(canvas, ctx.sprites, cell.petalIndex,
-                       content().petalStats(cell.petalIndex, cell.rarity).count,
-                       icon.x + icon.w * 0.5, icon.y + icon.h * 0.5, icon.w, ctx.timeSeconds);
-        itemCellLabels(canvas, rect, style);
+        ItemTile tile;
+        tile.petalIndex = cell.petalIndex;
+        tile.rarity = cell.rarity;
+        // The badge is how many the ACCOUNT owns; the cluster the tile draws is
+        // how many one equipped slot spawns. Two different counts, deliberately.
+        tile.badge = cell.count > 1 ? ("x" + std::to_string(cell.count)) : std::string();
+        tile.hovered = hovered == static_cast<int>(i);
+        tile.timeSeconds = ctx.timeSeconds;
+        drawItemTile(canvas, ctx.sprites, rect, tile);
     }
     canvas.restore();
 

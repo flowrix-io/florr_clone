@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
@@ -29,10 +30,6 @@ constexpr double kRingTop = 50.0;
 constexpr double kRingBox = 180.0;
 constexpr double kRingRadius = 70.0;
 constexpr double kRingSlot = 40.0;
-/// A fixed icon rather than a fraction of the slot: the ring, the result card
-/// and the grid cells each pick their own size and none of them scales.
-constexpr double kRingIcon = 32.0;
-constexpr double kResultIcon = 36.0;
 constexpr double kSpinMillis = 1500.0;
 constexpr double kResultMillis = 2000.0;
 /// The spin holds at its last frame waiting on the server, so a response that
@@ -156,12 +153,6 @@ TextStyle panelLabel(double size, Align align, Baseline baseline) {
     style.strokeWidth = 3.0;
     style.roundJoin = true;
     return style;
-}
-
-/// How many sprites one stack of this petal draws as. Guarded because a result
-/// index arrives off the wire.
-int iconCount(std::uint16_t petalIndex) {
-    return petalIndex < content().petalCount() ? content().petal(petalIndex).count : 1;
 }
 
 bool knownPetal(std::uint16_t petalIndex) {
@@ -326,18 +317,22 @@ bool CraftingPanel::render(MenuContext& ctx) {
         slots[static_cast<std::size_t>(i)] = slot;
 
         const bool occupied = ringFilled && !(showingFailure && i >= survivors_);
-        const std::uint32_t fill = occupied ? rarityColor(ringRarity) : kCraftingSkin.border;
+        ItemTile tile;
+        tile.petalIndex = occupied ? ringPetal : kNoPetal;
+        tile.rarity = ringRarity;
         // An empty slot's fill and border are the same tan, so it reads as a
         // flat block rather than a ring with nothing in it.
-        inlaid(canvas, slot, fill, occupied ? darken(fill, 0.25) : kCraftingSkin.border, 3.0, 3.0);
-        if (!occupied) continue;
-
-        drawPetalGroup(canvas, ctx.sprites, ringPetal, iconCount(ringPetal),
-                       slot.x + slot.w * 0.5, slot.y + slot.h * 0.5, kRingIcon, ctx.timeSeconds);
-        if (phase_ == Phase::Idle && batches_ > 1) {
-            text(canvas, "x" + std::to_string(batches_), slot.right() - 4.0, slot.y + 3.0,
-                 panelLabel(11.0, Align::Right, Baseline::Top));
+        tile.empty = !occupied;
+        tile.emptyFill = kCraftingSkin.border;
+        tile.emptyBorder = kCraftingSkin.border;
+        // The ring is a staging area, not a catalogue: five copies of one name
+        // around a 40px circle is noise, and the grid below already names it.
+        tile.showName = false;
+        if (occupied && phase_ == Phase::Idle && batches_ > 1) {
+            tile.badge = "x" + std::to_string(batches_);
         }
+        tile.timeSeconds = ctx.timeSeconds;
+        drawItemTile(canvas, ctx.sprites, slot, tile);
     }
 
     // The outcome, in the middle of the ring. A failure draws nothing here --
@@ -346,9 +341,11 @@ bool CraftingPanel::render(MenuContext& ctx) {
         const double size = 60.0;
         const Rect card{centreX - size * 0.5, centreY - size * 0.5, size, size};
         const std::uint32_t fill = rarityColor(resultRarity_);
-        inlaid(canvas, card, fill, darken(fill, 0.25), 3.0, 3.0);
-        drawPetalGroup(canvas, ctx.sprites, resultPetal_, iconCount(resultPetal_), centreX, centreY,
-                       kResultIcon, ctx.timeSeconds);
+        ItemTile tile;
+        tile.petalIndex = resultPetal_;
+        tile.rarity = resultRarity_;
+        tile.timeSeconds = ctx.timeSeconds;
+        drawItemTile(canvas, ctx.sprites, card, tile);
 
         TextStyle caption = panelLabel(18.0, Align::Centre, Baseline::Top);
         caption.fill = fill;
@@ -466,25 +463,24 @@ bool CraftingPanel::render(MenuContext& ctx) {
         if (cell.count == 0) {
             // A tier the account holds none of: a flat tan block, fill and
             // border the same colour. Not hoverable and not clickable.
-            inlaid(canvas, rect, kCraftingSkin.border, kCraftingSkin.border, 3.0, 3.0);
+            ItemTile blank;
+            blank.empty = true;
+            blank.emptyFill = kCraftingSkin.border;
+            blank.emptyBorder = kCraftingSkin.border;
+            drawItemTile(canvas, ctx.sprites, rect, blank);
             continue;
         }
         if (rect.contains(mouse) && view.contains(mouse)) hovered = static_cast<int>(i);
 
-        CellStyle style;
-        style.rarity = cell.rarity;
-        style.hovered = hovered == static_cast<int>(i);
-        style.label = titleCase(content().petal(cell.petalIndex).name);
+        ItemTile tile;
+        tile.petalIndex = cell.petalIndex;
+        tile.rarity = cell.rarity;
+        tile.hovered = hovered == static_cast<int>(i);
         // A lone petal carries no badge; "x1" is noise on every cell of a fresh
         // account.
-        if (cell.count > 1) style.badge = "x" + std::to_string(cell.count);
-
-        // Plate, then sprite, then labels -- the badge sits over the petal, not
-        // under it.
-        const Rect icon = itemCellPlate(canvas, rect, style);
-        drawPetalGroup(canvas, ctx.sprites, cell.petalIndex, iconCount(cell.petalIndex),
-                       icon.x + icon.w * 0.5, icon.y + icon.h * 0.5, icon.w, ctx.timeSeconds);
-        itemCellLabels(canvas, rect, style);
+        if (cell.count > 1) tile.badge = "x" + std::to_string(cell.count);
+        tile.timeSeconds = ctx.timeSeconds;
+        drawItemTile(canvas, ctx.sprites, rect, tile);
     }
     canvas.restore();
 

@@ -11,6 +11,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "client/ui/item_tile.h"
 #include "client/ui/menu_icons.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/text.h"
@@ -110,9 +111,12 @@ constexpr const char* kLoadoutKeyCaps[kLoadoutBarPrimary] = {"[1]", "[2]", "[3]"
 
 constexpr std::uint32_t kLoadoutSlotFill = 0xEEEEEEu;
 constexpr std::uint32_t kLoadoutTrashFill = 0xCF8888u;
-/// Every slot's design space is 60x60; the plate, the icon offset and the name
-/// position are all expressed in it and scaled by `rect.w / 60`.
-constexpr double kSlotDesign = 60.0;
+
+/// The petal riding the cursor mid-drag: a translucent tile in game, and on
+/// the title screen the bare sprite the browser's HTML5 drag image is.
+constexpr double kDragGhostSize = 50.0;
+constexpr double kDragGhostAlpha = 0.85;
+constexpr double kDragImageSize = 40.0;
 
 struct LoadoutLayout {
     std::array<Rect, kLoadoutBarSlots> slots{};
@@ -191,69 +195,6 @@ void drawKeyLabel(Canvas& canvas, const std::string& label, double x, double y, 
     canvas.setGlobalAlpha(0.85f);
     text(canvas, label, x, y, style);
     canvas.setGlobalAlpha(1.0f);
-}
-
-/// The rarity plate, icon and name inside one filled slot.
-///
-/// Everything is laid out in the browser's 60x60 design space and scaled by
-/// `rect.w / 60`, which is what keeps the primary and secondary rows -- and
-/// the title screen and the in-game bar -- exactly the same object at four
-/// different sizes.
-void drawLoadoutPetal(Canvas& canvas, const SpriteCache& sprites, Rect rect,
-                      std::uint16_t petalIndex, Rarity rarity, double timeSeconds) {
-    const std::uint32_t base = rarityColor(rarity);
-    const double scale = rect.w / kSlotDesign;
-
-    canvas.save();
-    canvas.translate(static_cast<float>(rect.x + rect.w * 0.5),
-                     static_cast<float>(rect.y + rect.h * 0.5));
-    canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-
-    // The plate covers the whole slot: a filled 60x60 in the darker shade with
-    // a SHARP 50x50 of the rarity colour inside it, so the visible border is
-    // 5 design units -- the same rect.w/12 the empty slot uses.
-    setFill(canvas, shade(base, 0.70));
-    canvas.beginPath();
-    canvas.roundRect(-30.0f, -30.0f, 60.0f, 60.0f, 3.0f);
-    canvas.fill();
-    setFill(canvas, base);
-    canvas.fillRect(-25.0f, -25.0f, 50.0f, 50.0f);
-
-    canvas.save();
-    canvas.beginPath();
-    canvas.rect(-25.0f, -25.0f, 50.0f, 50.0f);
-    canvas.clip();
-
-    // Lifted 5 units and drawn at 50/60 of the design size, which is what
-    // leaves room for the name along the bottom of the plate.
-    const PetalConfig& config = content().petal(petalIndex);
-    // The ring's size is a per-RARITY stat, not a base one: a mythic light is
-    // five icons where a common one is a single icon.
-    const int count = content().petalStats(petalIndex, rarity).count;
-    drawPetalGroup(canvas, sprites, petalIndex, count, 0.0, -5.0, kSlotDesign * 0.833,
-                   timeSeconds);
-
-    const std::string name = titleCase(config.name);
-    if (!name.empty()) {
-        TextStyle label;
-        label.bold = true;
-        label.size = 12.0;
-        const double measured = measure(name, label.size, true);
-        // Shrink to the plate's inner width rather than clipping: a truncated
-        // petal name reads as a different petal.
-        if (measured > 50.0) label.size = std::max(6.0, 12.0 * 50.0 / measured);
-        label.fill = kPaper;
-        label.stroke = kInk;
-        // In design units, so the outline lands at a constant 3 screen px
-        // whatever size the slot is.
-        label.strokeWidth = 3.0 / scale;
-        label.align = Align::Centre;
-        label.baseline = Baseline::Middle;
-        text(canvas, name, 0.0, 20.0, label);
-    }
-
-    canvas.restore();
-    canvas.restore();
 }
 
 /// Advances the secondary selection to the next non-empty slot in `step`'s
@@ -871,8 +812,11 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         // The slot a petal is being dragged out of renders as a plain empty
         // slot: only its icon is lifted, not the chrome.
         if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot == i) continue;
-        drawLoadoutPetal(canvas, sprites, layout.slots[at], profile.loadout[at].petalIndex,
-                         profile.loadout[at].rarity, timeSeconds);
+        ItemTile tile;
+        tile.petalIndex = profile.loadout[at].petalIndex;
+        tile.rarity = profile.loadout[at].rarity;
+        tile.timeSeconds = timeSeconds;
+        drawItemTile(canvas, sprites, layout.slots[at], tile);
     }
     canvas.restore();
 }
@@ -920,34 +864,27 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
 void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& sprites,
                              double timeSeconds) {
     if (!drag_.active() || drag_.petalIndex == kNoPetal) return;
-    const int count = content().petalStats(drag_.petalIndex, drag_.rarity).count;
     if (!inGame_) {
-        // The title screen's drag is the browser's native HTML5 one, and its
-        // drag image is a throwaway 40x40 canvas holding the sprite alone --
-        // no rarity plate, no outline, no transparency -- with the cursor at
-        // its centre.
-        drawPetalGroup(canvas, sprites, drag_.petalIndex, count, window.mouseX(), window.mouseY(),
-                       40.0, timeSeconds);
+        // The title screen's drag image is the sprite alone -- no plate, no
+        // outline -- with the cursor at its centre.
+        const PetalStats stats = content().petalStats(drag_.petalIndex, drag_.rarity);
+        drawPetalCluster(canvas, sprites, drag_.petalIndex, stats.size, stats.count,
+                         window.mouseX(), window.mouseY(), kDragImageSize, timeSeconds);
         return;
     }
 
-    const double size = 50.0;
-    const Rect ghost{window.mouseX() - size * 0.5, window.mouseY() - size * 0.5, size, size};
-    const std::uint32_t fill = rarityColor(drag_.rarity);
-
-    canvas.save();
-    canvas.setGlobalAlpha(0.85f);
-    setFill(canvas, fill);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(ghost.x + 1.5), static_cast<float>(ghost.y + 1.5),
-                     static_cast<float>(size - 3.0), static_cast<float>(size - 3.0), 5.0f);
-    canvas.fill();
-    setStroke(canvas, shade(fill, 0.70));
-    canvas.setLineWidth(3.0f);
-    canvas.stroke();
-    drawPetalGroup(canvas, sprites, drag_.petalIndex, count, ghost.x + size * 0.5,
-                   ghost.y + size * 0.5, 30.0, timeSeconds);
-    canvas.restore();
+    // In game the petal rides the cursor as the same tile it was picked up
+    // from, just translucent: half a drag showing a different object is how
+    // the player loses track of what they are holding.
+    const Rect ghost{window.mouseX() - kDragGhostSize * 0.5,
+                     window.mouseY() - kDragGhostSize * 0.5, kDragGhostSize, kDragGhostSize};
+    ItemTile tile;
+    tile.petalIndex = drag_.petalIndex;
+    tile.rarity = drag_.rarity;
+    tile.showName = false;
+    tile.alpha = kDragGhostAlpha;
+    tile.timeSeconds = timeSeconds;
+    drawItemTile(canvas, sprites, ghost, tile);
 }
 
 // ---------------------------------------------------------------------------

@@ -94,44 +94,12 @@ void scrollbar(Canvas&, Rect view, double contentHeight, double scroll, std::uin
 // ---------------------------------------------------------------------------
 // Item cells
 // ---------------------------------------------------------------------------
-
-/// One rarity-coloured cell in a grid. The icon is drawn by the caller, into
-/// the rect this returns, because only the caller knows whether the cell holds
-/// a petal, a mob or nothing at all.
-struct CellStyle {
-    Rarity rarity = Rarity::Common;
-    std::string label;          ///< drawn along the bottom edge
-    std::string badge;          ///< drawn in the top-right, e.g. "x12"
-    bool hovered = false;
-    bool selected = false;
-    bool disabled = false;      ///< greyed out; the caller also blocks the click
-    /// An empty cell is drawn in the panel's own colours rather than a rarity,
-    /// which is how the crafting grid shows a tier the player does not own.
-    bool empty = false;
-    std::uint32_t emptyFill = kControlMid;
-    std::uint32_t emptyBorder = kControlDark;
-};
-/// Returns the square the icon should be drawn into.
-///
-/// Convenience only, for cells with no icon. A cell that HAS one must paint in
-/// three steps -- plate, icon, labels -- because the name and the "xN" badge
-/// belong on top of the sprite, and a sprite drawn after this call composites
-/// over them instead.
-Rect itemCell(Canvas&, Rect, const CellStyle&);
-
-/// The cell's plate and hover highlight, returning the icon square. Draw the
-/// icon into it, then call itemCellLabels() with the same rect and style.
-Rect itemCellPlate(Canvas&, Rect, const CellStyle&);
-/// The name, the count badge and the disabled scrim -- everything that sits
-/// over the icon.
-void itemCellLabels(Canvas&, Rect, const CellStyle&);
-
-/// Draws `count` copies of a petal on a ring, the way a multi-petal stack is
-/// previewed everywhere in the browser build: one sprite for a single petal,
-/// otherwise N of them starting at the top and each rotated to face outward.
-/// A count below 1 (third eye, antennae, observer) draws one.
-void drawPetalGroup(Canvas&, const SpriteCache&, std::uint16_t petalIndex, int count, double cx,
-                    double cy, double size, double timeSeconds);
+//
+// There is exactly one, and it lives in client/ui/item_tile.h. Every grid,
+// slot, card and ground drop draws `ui::drawItemTile`. This file used to carry
+// a second one (`itemCell`, a rounded plate with a fitted icon) that the
+// inventory and the crafting grid used while the loadout bar drew gardn's; the
+// two were visibly different objects for the same petal.
 
 // ---------------------------------------------------------------------------
 // Tooltips

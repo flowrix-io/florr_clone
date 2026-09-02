@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
@@ -451,38 +452,19 @@ void drawEmptyDropCell(Canvas& canvas, double cellX, double rowY) {
 
 void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, double rowY,
                   Rarity rarity, const DropCell& cell, double timeSeconds) {
-    const std::uint32_t fill = rarityColor(rarity);
     const double cardX = cellX + (kDropCellW - kCardSize) * 0.5;
 
-    setFill(canvas, fill);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(cardX), static_cast<float>(rowY),
-                     static_cast<float>(kCardSize), static_cast<float>(kCardSize), 4.0f);
-    canvas.fill();
-    setStroke(canvas, darken(fill, 0.30));
-    canvas.setLineWidth(2.0f);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(cardX + 1.0), static_cast<float>(rowY + 1.0),
-                     static_cast<float>(kCardSize - 2.0), static_cast<float>(kCardSize - 2.0),
-                     4.0f);
-    canvas.stroke();
-
-    // Consumables have no artwork here for the same reason they have none in
-    // the browser build: only petals are preloaded as sprites, so a potion is
-    // a bare coloured card.
-    const double iconSize = kCardSize - 8.0;
-    if (cell.drop->petalIndex != kInvalidIndex) {
-        sprites.drawPetal(canvas, cell.drop->petalIndex, cardX + kCardSize * 0.5,
-                          rowY + kCardSize * 0.5, iconSize, 0.0, timeSeconds);
-    }
-
-    if (cell.drop->maxQuantity > 1) {
-        TextStyle badge = galleryStyle(9.0, 0xFFD700u, 2.0);
-        badge.align = Align::Right;
-        badge.baseline = Baseline::Top;
-        text(canvas, "x" + std::to_string(cell.drop->maxQuantity), cardX + kCardSize - 2.0,
-             rowY + 2.0, badge);
-    }
+    // Consumables draw as a bare coloured plate: only petals are compiled as
+    // sprites, so a potion has no artwork to put on one.
+    ItemTile tile;
+    tile.petalIndex = cell.drop->petalIndex;
+    tile.rarity = rarity;
+    // The chance printed under the card is this card's caption; a name inside
+    // it as well would give a 34px square two labels.
+    tile.showName = false;
+    if (cell.drop->maxQuantity > 1) tile.badge = "x" + std::to_string(cell.drop->maxQuantity);
+    tile.timeSeconds = timeSeconds;
+    drawItemTile(canvas, sprites, {cardX, rowY, kCardSize, kCardSize}, tile);
 
     // Aggregated branches can push the expected count past one drop per kill;
     // the display caps at 100% rather than printing a number no roll can mean.
