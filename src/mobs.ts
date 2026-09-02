@@ -26,7 +26,7 @@ export interface MobStats {
         count: number; // Number of projectiles to shoot
         distance: number; // Maximum distance projectiles travel
         petalType: string; // Type of petal to use as projectile (e.g., 'basic', 'stinger', 'rose')
-        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex'; // Rarity of the petal projectile
+        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex' | 'titan'; // Rarity of the petal projectile
         speed?: number; // Projectile speed (default: 200 pixels per second)
         spreadAngle?: number; // Spread angle in radians for multiple projectiles (default: 0.2)
     };
@@ -88,6 +88,7 @@ export const RARITY_LEVELS = [
     'super',
     'unique',
     'apex'
+    'titan'
 ] as const;
 
 export type Rarity = typeof RARITY_LEVELS[number];
@@ -120,7 +121,7 @@ interface RarityOverride {
         count: number;
         distance: number;
         petalType: string;
-        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex';
+        petalRarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic' | 'ultra' | 'super' | 'unique' | 'apex' | 'titan';
         speed?: number;
         spreadAngle?: number;
     };
@@ -151,6 +152,7 @@ const HEALTH_SCALING = {
     super: 2374000,
     unique: 10000000,
     apex: 1000000000
+    titan: 102356891245
 };
 
 const DAMAGE_SCALING = {
@@ -164,6 +166,7 @@ const DAMAGE_SCALING = {
     super: 2187,
     unique: 6561,
     apex: 1968300
+    titan: 2348145
 };
 
 export const SIZE_SCALING: { [key: string]: number } = {
@@ -177,6 +180,7 @@ export const SIZE_SCALING: { [key: string]: number } = {
     super: 16.777216,
     unique: 26.8435456,
     apex: 42.9496730
+    titan: 56.1284194
 };
 
 /**
