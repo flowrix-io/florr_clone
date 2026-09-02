@@ -26,9 +26,26 @@ using namespace flr::ui;
 
 namespace {
 
-/// Layout constants for the shell. Kept local because nothing outside this
-/// file positions these; the shared values that widgets derive from live in
-/// theme.h.
+/// The design space every draw call in this client is written in.
+///
+/// Not a window size: it is the fixed extent the frame is scaled to fill, so
+/// a 900x600 window and a 3840x2160 one on a Retina panel both show exactly
+/// this much of the world and this much HUD, at the same relative size. Only
+/// the sharpness differs. A window that is not 16:9 shows LESS than this on
+/// its short axis, never more -- the window's edge is not a zoom control. See
+/// Window::setDesignSize for the machinery, and client/camera.h for why the
+/// world's own zoom is left flat.
+///
+/// 1920x1080 rather than the 1280x720 the window opens at, because it is the
+/// resolution the browser build's layout numbers were authored against: at
+/// this size uiScale is 1 on an ordinary display and the frame is identical,
+/// pixel for pixel, to what this client drew before the design space existed.
+constexpr int kDesignWidth = 1920;
+constexpr int kDesignHeight = 1080;
+
+/// Layout constants for the shell, in design units like everything else. Kept
+/// local because nothing outside this file positions these; the shared values
+/// that widgets derive from live in theme.h.
 constexpr double kLoginFormWidth = 400;
 constexpr double kLoginFormHeight = 500;
 constexpr double kRegisterFormHeight = 600;
@@ -648,6 +665,10 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
 
 
     if (!window_.open(config.windowWidth, config.windowHeight, "florr", errorOut)) return false;
+    // Everything below draws in design units, not pixels. Set before the
+    // first frame, because the camera's viewport and every panel's layout are
+    // read straight off window_.width()/height().
+    window_.setDesignSize(kDesignWidth, kDesignHeight);
 
     renderer_.setContent(&content());
     renderer_.setSprites(&sprites_);
@@ -695,6 +716,10 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // A missing settings file is a first run, not a failure: the defaults in
     // ClientSettings are already the shipped configuration.
     menus_.settings().load(settingsPath());
+    // Before the first frame rather than only from frame(): a --frames run
+    // short enough to be one screenshot would otherwise photograph the
+    // default resolution whatever the file says.
+    window_.setRenderScale(menus_.settings().renderScale);
     if (!net_.connect(config.host, config.port)) {
         errorOut = net_.lastError();
         return false;
@@ -813,7 +838,22 @@ void App::frame(double dt) {
         net_.takeWireStats(incomingBytesPerSecond_, outgoingBytesPerSecond_, topWireEvents_);
     }
 
+    // The render-resolution setting reaches the window here rather than from
+    // the settings panel, for the same reason the renderer's switches do
+    // below: one place copies the settings out, and the panel never reaches
+    // into anything. setRenderScale ignores a value it already has, so this
+    // costs nothing on the frames where nothing moved.
+    window_.setRenderScale(menus_.settings().renderScale);
+
     Canvas& canvas = window_.canvas();
+    // The frame's base transform: design units -> canvas pixels. Every draw
+    // call below is in design units, and this is the only place that knows
+    // how big a design unit is. resetTransform first because the canvas
+    // persists across frames and a save() a screen forgot to balance would
+    // otherwise compound frame after frame.
+    canvas.resetTransform();
+    const float uiScale = static_cast<float>(window_.uiScale());
+    canvas.scale(uiScale, uiScale);
     camera_.setViewport(window_.width(), window_.height());
 
     // Before any screen sees this frame's click. The browser's tutorial box is
@@ -1911,7 +1951,11 @@ const Canvas* App::minimapStatic(int section, bool rarityGlow) {
     // ALT is part of the key, not just the draw: the reference's bake cache is
     // keyed `scrollX_scrollY_glow` (minimap.ts:216), so pressing ALT rebakes
     // the layer rather than tinting a stale one.
-    if (minimapStatic_ && minimapSection_ == section && minimapGlow_ == rarityGlow) {
+    // uiScale is the third key. See minimapDensity_: the bake is a bitmap and
+    // has to be rasterised at the density it will be shown at.
+    const double density = window_.uiScale();
+    if (minimapStatic_ && minimapSection_ == section && minimapGlow_ == rarityGlow &&
+        minimapDensity_ == density) {
         return minimapStatic_.get();
     }
 
@@ -1921,9 +1965,14 @@ const Canvas* App::minimapStatic(int section, bool rarityGlow) {
     const double scrollY = sectionY * kSectionSize;
     const double scale = kMinimapSize / kSectionSize;
 
-    auto baked = std::make_unique<Canvas>(
-        Canvas::createVirtual(static_cast<int>(kMinimapSize), static_cast<int>(kMinimapSize)));
+    const int bakeSide =
+        std::max(1, static_cast<int>(std::lround(kMinimapSize * density)));
+    auto baked = std::make_unique<Canvas>(Canvas::createVirtual(bakeSide, bakeSide));
     Canvas& map = *baked;
+    // Everything below is written in design units, exactly as it was when the
+    // bake was always kMinimapSize pixels square. This one line is what buys
+    // it the display's real resolution.
+    map.scale(static_cast<float>(density), static_cast<float>(density));
 
     setFill(map, kPaper, 0.9);
     map.fillRect(0, 0, static_cast<float>(kMinimapSize), static_cast<float>(kMinimapSize));
@@ -1995,6 +2044,7 @@ const Canvas* App::minimapStatic(int section, bool rarityGlow) {
     minimapStatic_ = std::move(baked);
     minimapSection_ = section;
     minimapGlow_ = rarityGlow;
+    minimapDensity_ = density;
     return minimapStatic_.get();
 }
 
@@ -2019,7 +2069,12 @@ void App::drawMinimap(Canvas& canvas) {
     // half the bake key -- the spawn bands under the tiles come and go with it.
     const bool altHeld = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
     if (const Canvas* baked = minimapStatic(section, altHeld)) {
-        canvas.drawCanvas(*baked, static_cast<float>(x), static_cast<float>(y));
+        // Sized explicitly rather than left to drawCanvas's two-argument form:
+        // that one takes the source's PIXEL size as its user-space extent,
+        // which would draw a bake rasterised for a Retina display at twice
+        // the size the minimap is meant to be.
+        canvas.drawCanvas(*baked, static_cast<float>(x), static_cast<float>(y),
+                          static_cast<float>(kMinimapSize), static_cast<float>(kMinimapSize));
     }
 
     canvas.save();
@@ -2345,8 +2400,13 @@ void App::beginSceneWipe(bool toGame) {
     // the window still holds the outgoing scene whole -- which is exactly the
     // still the wipe has to hold up while the incoming one builds itself.
     Canvas& canvas = window_.canvas();
-    const int width = canvas.width();
-    const int height = canvas.height();
+    // PIXELS, not design units: this is a copy of the backing store, and
+    // asking for a design-sized rectangle of it would photograph the top-left
+    // corner of the screen and stretch that over the whole wipe. It is drawn
+    // back at design size in drawSceneWipe, which is where the two spaces
+    // meet.
+    const int width = canvas.pixelWidth();
+    const int height = canvas.pixelHeight();
     std::unique_ptr<Canvas> snapshot;
     if (width > 0 && height > 0) {
         snapshot = std::make_unique<Canvas>(Canvas::createVirtual(width, height));

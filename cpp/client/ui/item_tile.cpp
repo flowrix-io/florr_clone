@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "client/ui/draw.h"
 #include "client/ui/menu_widgets.h"
@@ -43,6 +44,96 @@ constexpr double kReloadAlpha = 0.25;
 /// gardn's `clump_radius` (10) over its clustered petals' radius (7).
 constexpr double kClusterRingRatio = 10.0 / 7.0;
 
+/// gardn's icon radius for every petal both games have, ported from
+/// PETAL_DATA in ~/gardn/Shared/StaticData.cc. Rarity-invariant there, and so
+/// here: gardn calls radius a tactical knob, not a power knob.
+///
+/// This table exists because `size` and gardn's `radius` are not the same
+/// quantity and no single multiplier reconciles them. Scaling by size alone
+/// (kPetalIconSize) is exact for nineteen of these and close for a dozen more,
+/// but it draws basic at twice gardn's, stinger, peas, pollen and sand at
+/// 1.43x, and third eye, dahlia, corn, square and cactus at half to two
+/// thirds -- which is exactly the "some too big, some too small" it reads as.
+/// The comments below are the ones where the two disagree; a row with no
+/// comment is one the fallback would already have got right, kept so the table
+/// is a straight transcription rather than a diff nobody can check.
+///
+/// A petal gardn does not have -- every egg, and this game's own additions --
+/// is not in here and falls back to kPetalIconSize. Add a row when gardn
+/// grows one, never to hand-tune an icon: this is a port, not a taste.
+struct GardnIconRadius {
+    const char* id;
+    double radius;
+};
+constexpr GardnIconRadius kGardnIconRadius[] = {
+    {"antennae", 12.5},  // size 1 -> 10
+    {"basic", 10},  // size 2 -> 20
+    {"bone", 12},  // size 1 -> 10
+    {"bubble", 12},  // size 1 -> 10
+    {"cactus", 15},  // size 1 -> 10
+    {"corn", 16},  // size 1 -> 10
+    {"cutter", 40},  // size 7 -> 70
+    {"dahlia", 7},  // size 0.33 -> 3.3
+    {"dandelion", 10},
+    {"egg", 12.5},  // size 1 -> 10
+    {"faster", 7},  // size 0.5 -> 5
+    {"heaviest", 12},  // size 1.3 -> 13
+    {"honey", 11},
+    {"iris", 7},
+    {"leaf", 10},
+    {"lightning", 10},
+    {"lotus", 12},
+    {"magnet", 10},
+    {"missile", 10},
+    {"moon", 50},  // size 2.6 -> 26
+    {"observer", 12.5},  // size 1 -> 10
+    {"peas", 7},  // size 1 -> 10
+    {"pincer", 10},
+    {"pollen", 7},  // size 1 -> 10
+    {"powder", 10},
+    {"rice", 13},
+    {"rock", 12},  // size 1 -> 10
+    {"rose", 10},  // size 0.9 -> 9
+    {"sand", 7},  // size 1 -> 10
+    {"shell", 10},  // size 1.1 -> 11
+    {"soil", 10},
+    {"sponge", 12},  // size 1 -> 10
+    {"square", 15},  // size 1 -> 10
+    {"starfish", 8},  // size 1 -> 10
+    {"stick", 15},  // size 1.3 -> 13
+    {"stinger", 7},  // size 1 -> 10
+    {"third_eye", 20},  // size 1 -> 10
+    {"uranium", 10},
+    {"web", 10},  // size 1.2 -> 12
+    {"wing", 10},
+    {"yggdrasil", 12},  // size 1 -> 10
+    {"yin_yang", 10},
+    {"yucca", 10},
+};
+
+/// The icon diameter for one petal, in design units.
+///
+/// The id lookup is resolved once into a table indexed by petal index: the
+/// content registry is loaded before anything draws and never reloaded, and a
+/// panel of sixty tiles would otherwise run sixty string scans a frame.
+double iconDiameter(std::uint16_t petalIndex, double sizeStat) {
+    static const std::vector<double> byIndex = [] {
+        std::vector<double> out(content().petalCount(), 0.0);
+        for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
+            const std::string& id = content().petal(i).id;
+            for (const GardnIconRadius& row : kGardnIconRadius) {
+                if (id == row.id) {
+                    out[i] = row.radius * 2.0;
+                    break;
+                }
+            }
+        }
+        return out;
+    }();
+    if (petalIndex < byIndex.size() && byIndex[petalIndex] > 0) return byIndex[petalIndex];
+    return kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0);
+}
+
 /// gardn's smootherstep on the remaining fraction: the sweep eases in and out
 /// instead of ticking round at a constant rate.
 double smootherStep(double t) {
@@ -56,7 +147,7 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
                       double timeSeconds) {
     if (petalIndex == kNoPetal || !sprites.petalDrawable(petalIndex)) return;
 
-    const double diameter = kPetalArtSize * (sizeStat > 0 ? sizeStat : 1.0);
+    const double diameter = iconDiameter(petalIndex, sizeStat);
     // A configured count below one means "not a stack" -- third eye, antennae
     // and the observer all declare zero and are drawn as a single icon.
     const int drawCount = count >= 1 ? count : 1;

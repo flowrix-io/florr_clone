@@ -1,17 +1,25 @@
 #pragma once
 // World <-> screen mapping.
 //
-// Two decisions here look wrong in isolation and are not: the browser client
-// is the reference, and it does both of these on purpose.
+// Two decisions here look wrong in isolation and are not.
 //
-//  * Zoom is resolution-independent. `Graphics.zoomLevel` (src/graphics/
-//    core.ts) is a flat 1.0 -- the player's zoom setting times whatever a
-//    petal asks for -- and the world transform is nothing but
-//    ctx.scale(zoomLevel, zoomLevel) (src/graphics/render.ts). A bigger window
-//    therefore shows MORE world at the same pixel scale rather than the same
-//    world drawn bigger. Scaling zoom by viewportHeight/1080 instead, as this
-//    camera used to, shrank every world-unit metric in the renderer to 0.667x
-//    at 720p while the HUD stayed put.
+//  * Zoom is flat. `Graphics.zoomLevel` (src/graphics/core.ts) is 1.0 -- the
+//    player's zoom setting times whatever a petal asks for -- and the world
+//    transform is nothing but ctx.scale(zoomLevel, zoomLevel)
+//    (src/graphics/render.ts). This camera keeps that, and it is NOT what
+//    stops the game zooming out when the window is resized: the viewport it
+//    is handed is in DESIGN units, not pixels, so it spans at most the same
+//    1920x1080 of world at every window size and on every display -- exactly
+//    that at 16:9, and less on the short axis of any other shape. The scale
+//    that absorbs the window's real size is a single base transform on the
+//    whole frame (see kDesignWidth in client/app.cpp), applied to the world
+//    and the HUD together.
+//
+//    That togetherness is the point. This camera did once scale its own zoom
+//    by viewportHeight/1080, and it shrank every world-unit metric in the
+//    renderer to 0.667x at 720p while the HUD, which knew nothing about it,
+//    stayed put. A camera cannot fix a window size on its own; only something
+//    above both layers can.
 //
 //  * The camera is pinned to the flower, never eased toward it. src/game.ts's
 //    updateCamera writes the camera straight from the flower's *drawn*
@@ -31,13 +39,17 @@ public:
     /// respawn and teleport.
     void snapTo(Vec2 target) { centre_ = target; }
 
+    /// The visible extent in DESIGN units -- Window::width()/height(), never
+    /// a pixel count. Feeding it pixels is what makes a HiDPI display show
+    /// twice as much world as everyone else.
     void setViewport(int width, int height) {
         viewportWidth_ = width;
         viewportHeight_ = height;
     }
 
-    /// World units -> pixels. Independent of the window size, so widening the
-    /// window reveals more map instead of magnifying what is already there.
+    /// World units -> design units. Independent of the window size and of the
+    /// display's pixel density, both of which are absorbed by the frame's
+    /// base transform long before anything asks the camera anything.
     double zoom() const { return userZoom; }
 
     Vec2 worldToScreen(Vec2 world) const {

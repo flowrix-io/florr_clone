@@ -27,10 +27,13 @@
 //           console overlay are drawn there, and a value cannot outlive the
 //           process until ClientSettings carries a field for it to be saved
 //           in. Until then they are remembered for the session and no longer.
-//   inert   Render Resolution, Anti-aliasing and GPU Acceleration have no
-//           native counterpart at all: SDL owns the backbuffer and the canvas
-//           rasteriser is not switchable at runtime. They keep their row and
-//           their value, and nothing behind them will ever read it.
+//   inert   Anti-aliasing and GPU Acceleration have no native counterpart at
+//           all: SDL owns the backbuffer and the canvas rasteriser is not
+//           switchable at runtime. They keep their row and their value, and
+//           nothing behind them will ever read it. Render Resolution used to
+//           be one of these and no longer is -- it sizes the canvas through
+//           Window::setRenderScale, which is the one graphics setting on this
+//           client that actually buys frame rate.
 
 #include <algorithm>
 #include <array>
@@ -226,12 +229,12 @@ struct PanelState {
     /// Bindings for the rows that are not backed by ClientSettings::hotkeys.
     std::array<Key, kControlCount> keys{};
     std::array<bool, kToggleCount> toggles{};
-    double renderScale = 1.0;
     double mobFramerate = 15.0;
-    // No `interpolation` here: that slider is bound straight to
-    // ClientSettings::interpolation, which is what the renderer's ease reads
-    // and what the settings file persists. A panel-local copy would move the
-    // thumb and change nothing.
+    // No `interpolation` or `renderScale` here: those two sliders are bound
+    // straight to the ClientSettings fields of the same name, which are what
+    // the renderer's ease and the window's canvas size read and what the
+    // settings file persists. A panel-local copy would move the thumb and
+    // change nothing.
     /// Measured by the last paint, the way the browser captures
     /// contentBottomY, so the scroll range is always the real one.
     double contentHeight = 0;
@@ -678,8 +681,8 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.cy += 5.0;
             // Render resolution snaps to 5%, so the thumb lands on values
             // worth naming rather than on 63%.
-            p.sliderRow(kRenderScale, "Render Resolution: ", "%", st.renderScale, 0.25, 1.0, 0.05,
-                        100.0, 0, kInk, 25.0);
+            p.sliderRow(kRenderScale, "Render Resolution: ", "%", settings.renderScale, 0.25,
+                        1.0, 0.05, 100.0, 0, kInk, 25.0);
             // The next two captions are outlined in the slider thumb's
             // leftover grey rather than black. The browser build does it too,
             // and the panel does not read the same with them "corrected".

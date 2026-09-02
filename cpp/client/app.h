@@ -350,6 +350,10 @@ private:
     int minimapSection_ = -1;
     /// Whether the cached bake has the ALT spawn bands in it.
     bool minimapGlow_ = false;
+    /// The canvas pixels per design unit the bake was rasterised at. Part of
+    /// the key: a bitmap baked for a 1x display and shown on a Retina one is
+    /// the single blocky rectangle on an otherwise crisp screen.
+    double minimapDensity_ = 0.0;
 
     // -- scene wipe ----------------------------------------------------------
     /// The iris that covers a scene change. `Covered` holds the outgoing frame

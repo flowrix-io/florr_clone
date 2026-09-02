@@ -614,14 +614,14 @@ const unsigned char kFont[95][5] = {
 } // namespace
 #endif
 
-Canvas::Canvas(int w,int h,std::string id) : width_(std::max(1,w)),height_(std::max(1,h)),elementId_(std::move(id)) {
+Canvas::Canvas(int w,int h,std::string id) : width_(std::max(1,w)),height_(std::max(1,h)),elementId_(std::move(id)),logicalWidth_(width_),logicalHeight_(height_) {
 #ifdef __EMSCRIPTEN__
   contextId_=c2d_create(elementId_.c_str(),width_,height_,0);
 #else
   pixels_.assign(static_cast<size_t>(width_)*height_,Color{255,255,255});
 #endif
 }
-Canvas::Canvas(int w,int h,bool virtualCanvas) : width_(std::max(1,w)),height_(std::max(1,h)),virtual_(virtualCanvas) {
+Canvas::Canvas(int w,int h,bool virtualCanvas) : width_(std::max(1,w)),height_(std::max(1,h)),virtual_(virtualCanvas),logicalWidth_(width_),logicalHeight_(height_) {
 #ifdef __EMSCRIPTEN__
   contextId_=c2d_create("",width_,height_,1);
 #else
@@ -629,9 +629,15 @@ Canvas::Canvas(int w,int h,bool virtualCanvas) : width_(std::max(1,w)),height_(s
 #endif
 }
 Canvas Canvas::createVirtual(int w,int h) { return Canvas(w,h,true); }
+void Canvas::setLogicalSize(int w,int h) {
+  logicalWidth_ = w > 0 ? w : width_;
+  logicalHeight_ = h > 0 ? h : height_;
+}
 Canvas::Canvas(Canvas&& other) noexcept
     : width_(other.width_), height_(other.height_), contextId_(other.contextId_), virtual_(other.virtual_),
-      elementId_(std::move(other.elementId_)), fill_(other.fill_), stroke_(other.stroke_),
+      elementId_(std::move(other.elementId_)),
+      logicalWidth_(other.logicalWidth_), logicalHeight_(other.logicalHeight_),
+      fill_(other.fill_), stroke_(other.stroke_),
       lineWidth_(other.lineWidth_), currentPath_(std::move(other.currentPath_)), pixels_(std::move(other.pixels_)) {
   other.contextId_ = -1;
 #ifndef __EMSCRIPTEN__
@@ -646,6 +652,7 @@ Canvas& Canvas::operator=(Canvas&& other) noexcept {
   width_=other.width_; height_=other.height_; contextId_=other.contextId_; virtual_=other.virtual_;
   elementId_=std::move(other.elementId_); fill_=other.fill_; stroke_=other.stroke_; lineWidth_=other.lineWidth_;
   currentPath_=std::move(other.currentPath_); pixels_=std::move(other.pixels_); other.contextId_=-1;
+  logicalWidth_=other.logicalWidth_; logicalHeight_=other.logicalHeight_;
 #ifndef __EMSCRIPTEN__
   state_=std::move(other.state_); stack_=std::move(other.stack_);
 #endif

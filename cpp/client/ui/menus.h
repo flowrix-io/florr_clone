@@ -93,6 +93,14 @@ struct ClientSettings {
     /// flower, petal, drop and mob facing. The browser build keeps the same
     /// number in `localStorage.interpolationAmount`. See client/interpolation.h.
     double interpolation = kDefaultInterpolationAmount;
+    /// The fraction of the display's native resolution the frame is
+    /// rasterised at, 0.25 to 1. The browser build keeps the same number in
+    /// `localStorage.renderScale`; here it reaches Window::setRenderScale,
+    /// which is the whole of its effect -- nothing moves or resizes, the
+    /// picture just gets softer and the rasteriser gets cheaper. It earns its
+    /// place on a HiDPI display, where 1 means filling four times the pixels
+    /// a non-Retina panel would ask for.
+    double renderScale = 1.0;
     bool showChat = true;
     bool showMenuBar = true;
     /// The frame/ping/position readout in the bottom-right corner. Off by

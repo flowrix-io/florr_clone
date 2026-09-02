@@ -50,7 +50,21 @@ public:
     Canvas(const Canvas&) = delete; Canvas& operator=(const Canvas&) = delete;
     Canvas(Canvas&& other) noexcept; Canvas& operator=(Canvas&& other) noexcept;
     ~Canvas();
-    int width() const { return width_; } int height() const { return height_; } bool isVirtual() const { return virtual_; }
+    // Size in USER units -- the coordinate space every draw call is expressed
+    // in. Equal to the backing store unless setLogicalSize() has divorced the
+    // two, which is what the browser's CSS size vs canvas.width split does and
+    // what lets one canvas be rasterised at a display's real pixel density
+    // without every layout in the program having to know about it.
+    int width() const { return logicalWidth_; } int height() const { return logicalHeight_; }
+    // The backing store's real size in pixels. Only presentation code -- the
+    // texture upload, savePPM, getImageData -- has any business with these.
+    int pixelWidth() const { return width_; } int pixelHeight() const { return height_; }
+    // Declares the user-space size the caller draws in. The caller is
+    // responsible for the matching base transform (scale(pixelWidth/width));
+    // this only changes what width()/height() report. Zero or negative resets
+    // to the backing store's size.
+    void setLogicalSize(int width, int height);
+    bool isVirtual() const { return virtual_; }
     void present(const std::string& elementId);
 
     void save(); void restore(); void reset();
@@ -102,6 +116,7 @@ public:
 private:
     Canvas(int width, int height, bool isVirtual);
     int width_, height_, contextId_ = -1; bool virtual_ = false; std::string elementId_;
+    int logicalWidth_ = 0, logicalHeight_ = 0;
     Color fill_{0, 0, 0}, stroke_{0, 0, 0}; float lineWidth_ = 1.0f; Path2D currentPath_; std::vector<Color> pixels_;
 #ifndef __EMSCRIPTEN__
     // Software backend state. Everything the browser context tracks per save()

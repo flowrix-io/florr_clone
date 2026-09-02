@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 
 #ifndef __EMSCRIPTEN__
@@ -73,7 +74,22 @@ struct Window::Impl {
   Uint64 startCounter = 0, lastFrameCounter = 0;
 #endif
   std::unique_ptr<Canvas> canvas;
-  int width = 0, height = 0;
+  // The window as the OS sees it, in points.
+  int pointWidth = 0, pointHeight = 0;
+  // The canvas's backing store, in pixels.
+  int pixelWidth = 0, pixelHeight = 0;
+  // The design space, in design units. Zero until setDesignSize().
+  int designWidth = 0, designHeight = 0;
+  // The reported size, in design units. Ceiled, never floored: a full-screen
+  // fill written as fillRect(0, 0, width(), height()) has to cover the last
+  // pixel column, and half a design unit of overdraw is cheaper than a seam.
+  int viewWidth = 0, viewHeight = 0;
+  double devicePixelRatio = 1.0;
+  double renderScale = 1.0;
+  // Points per design unit, and canvas pixels per design unit. `fit` is what
+  // the mouse is divided by; `uiScale` is the caller's base transform.
+  double fit = 1.0;
+  double uiScale = 1.0;
   bool shouldClose = false;
 
   std::array<bool, kKeyCount> down{}, pressed{}, released{};
@@ -110,6 +126,90 @@ struct Window::Impl {
   }
 #endif
 
+#ifndef __EMSCRIPTEN__
+  // Recomputes every derived size from the window's current point size, the
+  // display's scale factor and the render-resolution setting, rebuilding the
+  // canvas and the upload texture only when the pixel count actually changed.
+  //
+  // Called every pump rather than only on a resize event: dragging a window
+  // between a Retina and a non-Retina monitor changes the drawable size
+  // WITHOUT changing the window's point size, and SDL reports that as neither
+  // a RESIZED nor a SIZE_CHANGED event on every platform. Two integer queries
+  // a frame is a cheaper way to be right than a table of per-platform events.
+  void refreshGeometry() {
+    if (!window || !renderer) return;
+
+    int points[2] = {0, 0};
+    SDL_GetWindowSize(window, &points[0], &points[1]);
+    int drawable[2] = {0, 0};
+    SDL_GetRendererOutputSize(renderer, &drawable[0], &drawable[1]);
+    if (points[0] <= 0 || points[1] <= 0 || drawable[0] <= 0 || drawable[1] <= 0) return;
+
+    pointWidth = points[0];
+    pointHeight = points[1];
+    devicePixelRatio = static_cast<double>(drawable[0]) / points[0];
+
+    const int wantPixelW = std::max(1, static_cast<int>(std::lround(drawable[0] * renderScale)));
+    const int wantPixelH = std::max(1, static_cast<int>(std::lround(drawable[1] * renderScale)));
+    if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas) {
+      pixelWidth = wantPixelW;
+      pixelHeight = wantPixelH;
+      // Canvas cannot be resized in place, so the backing surfaces are
+      // rebuilt. This is why callers must not hold canvas() across pump().
+      canvas = std::make_unique<Canvas>(pixelWidth, pixelHeight);
+      rgba.assign(static_cast<std::size_t>(pixelWidth) * pixelHeight * 4, 0);
+      if (texture) SDL_DestroyTexture(texture);
+      texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888,
+                                  SDL_TEXTUREACCESS_STREAMING, pixelWidth, pixelHeight);
+    }
+
+    // The fit is measured in POINTS, not pixels: it decides how big the design
+    // space looks to a person, and a Retina display does not make a window
+    // physically smaller. Measuring it in pixels would halve the design space
+    // on exactly the displays this exists to fix.
+    //
+    // MAX, not min. Both cover the window; the difference is what a window
+    // that is not the design aspect ratio does with the leftover.
+    //
+    //   min covers by revealing extra on the long axis, and pays for it by
+    //       letting the SHORT axis set the scale. A window dragged narrow
+    //       then shrinks everything -- 400x1000 points comes out at 0.21x
+    //       with 1920x4800 units of world on screen. That is a zoom control
+    //       made out of the window's edge, and it hands whoever finds it a
+    //       view four times the size of everyone else's.
+    //   max covers by cropping the short axis, and lets the LONG axis set the
+    //       scale. The viewport is then never larger than the design size on
+    //       either axis -- exactly it at the design ratio, less on the odd
+    //       one -- so no window shape reveals more world than any other, and
+    //       none of them makes anything smaller.
+    //
+    // The cost is that a very lopsided window has very little room: at
+    // 3000x300 the viewport is 1920x192 and the HUD is squeezed. That is the
+    // right way to lose. Shrinking the world to make room would be the zoom
+    // this exists to refuse.
+    if (designWidth > 0 && designHeight > 0) {
+      fit = std::max(static_cast<double>(pointWidth) / designWidth,
+                     static_cast<double>(pointHeight) / designHeight);
+      if (!(fit > 0)) fit = 1.0;
+    } else {
+      fit = 1.0;
+    }
+    uiScale = fit * devicePixelRatio * renderScale;
+    if (!(uiScale > 0)) uiScale = 1.0;
+
+    // Ceiled so a full-screen fill written as fillRect(0, 0, width(), height())
+    // reaches the last pixel, and nudged first because it otherwise does not:
+    // a window at exactly the design aspect ratio divides out to
+    // 1920.0000000000002, and a bare ceil turns that into a 1921-unit viewport
+    // that flickers back to 1920 at the next size. The nudge is thirteen
+    // orders of magnitude below the coverage it gives up.
+    constexpr double kSnap = 1e-6;
+    viewWidth = std::max(1, static_cast<int>(std::ceil(pixelWidth / uiScale - kSnap)));
+    viewHeight = std::max(1, static_cast<int>(std::ceil(pixelHeight / uiScale - kSnap)));
+    canvas->setLogicalSize(viewWidth, viewHeight);
+  }
+#endif
+
   void clearEdges() {
     pressed.fill(false);
     released.fill(false);
@@ -132,9 +232,21 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
   close();
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { errorOut = SDL_GetError(); return false; }
 
+  // ALLOW_HIGHDPI is what makes the drawable bigger than the window on a
+  // Retina display. Without it the OS hands the renderer a 1x surface and
+  // stretches it, so every pixel drawn is a blurry pair of pixels shown. With
+  // it the caller has to deal in three sizes -- see the header -- which is
+  // what uiScale() and the design space are for.
   impl_->window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                   width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+                                   width, height,
+                                   SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE |
+                                       SDL_WINDOW_ALLOW_HIGHDPI);
   if (!impl_->window) { errorOut = SDL_GetError(); SDL_Quit(); return false; }
+
+  // The canvas is stretched to the drawable whenever renderScale() < 1, and
+  // nearest -- SDL's default -- makes that stretch look like a mistake rather
+  // than a setting. The browser build's equivalent is `image-rendering: auto`.
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
   impl_->renderer = SDL_CreateRenderer(impl_->window, -1,
                                        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -148,23 +260,15 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
     return false;
   }
 
-  // The drawable size is not the window size on a HiDPI display; drawing at
-  // window size there gives a blurry upscaled image.
-  int drawableW = width, drawableH = height;
-  SDL_GetRendererOutputSize(impl_->renderer, &drawableW, &drawableH);
-  impl_->width = drawableW;
-  impl_->height = drawableH;
-
-  impl_->texture = SDL_CreateTexture(impl_->renderer, SDL_PIXELFORMAT_ABGR8888,
-                                     SDL_TEXTUREACCESS_STREAMING, drawableW, drawableH);
-  if (!impl_->texture) {
+  // Builds the canvas, the texture and every derived scale from what the OS
+  // actually gave us, which on a HiDPI display is not what was asked for.
+  impl_->refreshGeometry();
+  if (!impl_->canvas || !impl_->texture) {
     errorOut = SDL_GetError();
     close();
     return false;
   }
 
-  impl_->canvas = std::make_unique<Canvas>(drawableW, drawableH);
-  impl_->rgba.assign(static_cast<std::size_t>(drawableW) * drawableH * 4, 0);
   impl_->startCounter = SDL_GetPerformanceCounter();
   impl_->lastFrameCounter = impl_->startCounter;
 
@@ -195,31 +299,15 @@ bool Window::pump() {
 #else
   if (!open_) return false;
   impl_->clearEdges();
+  // Before the events are read, so this frame's mouse positions are converted
+  // with the geometry this frame will be drawn with.
+  impl_->refreshGeometry();
 
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     switch (event.type) {
       case SDL_QUIT:
         impl_->shouldClose = true;
-        break;
-
-      case SDL_WINDOWEVENT:
-        if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
-            event.window.event == SDL_WINDOWEVENT_RESIZED) {
-          int w = 0, h = 0;
-          SDL_GetRendererOutputSize(impl_->renderer, &w, &h);
-          if (w > 0 && h > 0 && (w != impl_->width || h != impl_->height)) {
-            impl_->width = w;
-            impl_->height = h;
-            // Canvas cannot be resized in place, so the backing surfaces are
-            // rebuilt. This is why callers must not hold canvas() across pump().
-            impl_->canvas = std::make_unique<Canvas>(w, h);
-            impl_->rgba.assign(static_cast<std::size_t>(w) * h * 4, 0);
-            if (impl_->texture) SDL_DestroyTexture(impl_->texture);
-            impl_->texture = SDL_CreateTexture(impl_->renderer, SDL_PIXELFORMAT_ABGR8888,
-                                               SDL_TEXTUREACCESS_STREAMING, w, h);
-          }
-        }
         break;
 
       case SDL_KEYDOWN: {
@@ -250,14 +338,13 @@ bool Window::pump() {
         break;
 
       case SDL_MOUSEMOTION: {
-        // Event coordinates are in window units; the canvas is in drawable
-        // units, which differ on HiDPI.
-        int windowW = 1, windowH = 1;
-        SDL_GetWindowSize(impl_->window, &windowW, &windowH);
-        const float scaleX = windowW > 0 ? static_cast<float>(impl_->width) / windowW : 1.0f;
-        const float scaleY = windowH > 0 ? static_cast<float>(impl_->height) / windowH : 1.0f;
-        impl_->mouseX = event.motion.x * scaleX;
-        impl_->mouseY = event.motion.y * scaleY;
+        // Event coordinates are in points. The caller draws and hit-tests in
+        // design units, so points are all that has to be divided out -- the
+        // device pixel ratio and the render scale are the base transform's
+        // business, not the pointer's.
+        const float toDesign = impl_->fit > 0 ? static_cast<float>(1.0 / impl_->fit) : 1.0f;
+        impl_->mouseX = event.motion.x * toDesign;
+        impl_->mouseY = event.motion.y * toDesign;
         break;
       }
 
@@ -295,8 +382,32 @@ bool Window::pump() {
 }
 
 Canvas& Window::canvas() { return *impl_->canvas; }
-int Window::width() const { return impl_->width; }
-int Window::height() const { return impl_->height; }
+int Window::width() const { return impl_->viewWidth; }
+int Window::height() const { return impl_->viewHeight; }
+int Window::pixelWidth() const { return impl_->pixelWidth; }
+int Window::pixelHeight() const { return impl_->pixelHeight; }
+double Window::uiScale() const { return impl_->uiScale; }
+double Window::devicePixelRatio() const { return impl_->devicePixelRatio; }
+double Window::renderScale() const { return impl_->renderScale; }
+
+void Window::setDesignSize(int width, int height) {
+  impl_->designWidth = std::max(0, width);
+  impl_->designHeight = std::max(0, height);
+#ifndef __EMSCRIPTEN__
+  impl_->refreshGeometry();
+#endif
+}
+
+void Window::setRenderScale(double scale) {
+  // Clamped rather than rejected: this comes straight off a settings slider,
+  // and a canvas of zero pixels is not a preference anyone can hold.
+  const double clamped = std::min(1.0, std::max(0.25, scale));
+  if (clamped == impl_->renderScale) return;
+  impl_->renderScale = clamped;
+#ifndef __EMSCRIPTEN__
+  impl_->refreshGeometry();
+#endif
+}
 
 void Window::present() {
 #ifndef __EMSCRIPTEN__
@@ -314,11 +425,11 @@ void Window::present() {
   // over three and a half megabytes for nothing. The member buffer stays as
   // the fallback for a size the canvas could not satisfy.
   const std::vector<std::uint8_t> pixels =
-      impl_->canvas->getImageData(0, 0, impl_->width, impl_->height);
+      impl_->canvas->getImageData(0, 0, impl_->pixelWidth, impl_->pixelHeight);
   const std::uint8_t* upload = impl_->rgba.data();
   if (pixels.size() == impl_->rgba.size()) upload = pixels.data();
 
-  SDL_UpdateTexture(impl_->texture, nullptr, upload, impl_->width * 4);
+  SDL_UpdateTexture(impl_->texture, nullptr, upload, impl_->pixelWidth * 4);
   SDL_RenderClear(impl_->renderer);
   SDL_RenderCopy(impl_->renderer, impl_->texture, nullptr, nullptr);
   SDL_RenderPresent(impl_->renderer);

@@ -60,15 +60,70 @@ public:
     // arrive while the frame is still being drawn.
     bool pump();
 
-    // The canvas sized to the window's drawable area. Recreated on resize, so
-    // do not hold the reference across a pump().
+    // The canvas the frame is drawn into. Its backing store is the window's
+    // drawable area (times renderScale()); its user-space size -- what
+    // Canvas::width()/height() report -- is the design space below. Recreated
+    // on resize, so do not hold the reference across a pump().
     Canvas& canvas();
 
     // Uploads the canvas and shows it.
     void present();
 
+    // -- scaling -------------------------------------------------------------
+    //
+    // Three sizes exist and only one of them is the drawing code's business.
+    //
+    //   points   what the OS calls the window's size. Half the pixels on a
+    //            Retina display, and never used for layout.
+    //   pixels   the backing store: points x devicePixelRatio x renderScale.
+    //            Presentation only.
+    //   design   the coordinate space every draw call is written in, fixed by
+    //            setDesignSize(). This is what width()/height() report and
+    //            what the mouse arrives in.
+    //
+    // The design space is what keeps the game from zooming out, and the design
+    // size is a MAXIMUM. A window is never letterboxed: it is covered, with
+    // the LONG axis setting the scale, so a window at the design aspect ratio
+    // reports exactly the design size however many pixels or points it has,
+    // and one at any other aspect ratio reports FEWER units on its short axis
+    // rather than more on its long one.
+    //
+    // Reporting more would be the bug. Covering the other way -- letting the
+    // short axis set the scale so nothing is ever cropped -- means a window
+    // dragged narrow or wide shrinks everything and reveals the world it made
+    // room for, which is a zoom control made out of the window's edge.
+
+    // Declares the design space. Until it is called the window reports points,
+    // which is what a plain tool wants.
+    void setDesignSize(int width, int height);
+
+    // Design units on each axis. At the design aspect ratio these are the
+    // design size exactly, at any window size and on any display.
     int width() const;
     int height() const;
+
+    // Canvas pixels per design unit. The caller MUST apply this as the base
+    // transform of every frame -- scale(uiScale(), uiScale()) -- or nothing
+    // will line up with the sizes reported above.
+    double uiScale() const;
+
+    // The display's pixels per point: 2 on a Retina display, 1 elsewhere.
+    // Changes when the window is dragged onto another monitor.
+    double devicePixelRatio() const;
+
+    // The fraction of the display's native resolution the canvas is
+    // rasterised at, 0.25 to 1. Below 1 the canvas is smaller than the
+    // drawable and the GPU stretches it on the way to the screen, which is
+    // the cheap way to buy frame rate out of a software rasteriser. Only the
+    // sharpness moves: uiScale() absorbs the change, so nothing on screen
+    // shifts or resizes.
+    void setRenderScale(double scale);
+    double renderScale() const;
+
+    // The backing store's size, for a caller that has to reason in real
+    // pixels. Layout never does.
+    int pixelWidth() const;
+    int pixelHeight() const;
 
     // Waits out the remainder of a frame at `targetFps`. Returns the seconds
     // the last frame actually took, so the caller can integrate with real dt.
