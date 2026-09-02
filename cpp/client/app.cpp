@@ -14,6 +14,7 @@
 
 #include <SDL.h>
 
+#include "client/interpolation.h"
 #include "client/ui/draw.h"
 #include "client/ui/text.h"
 #include "shared/game/config.h"
@@ -823,6 +824,18 @@ void App::frame(double dt) {
         tutorial_.update(window_, menus_.settings(), net_.profile(), timeSeconds_);
     }
 
+    // Every drawn position advances here, BEFORE the screens see the frame.
+    // The cursor control law measures from the flower's drawn position and the
+    // camera pins to it, so easing after them would steer and frame the world
+    // from a position one frame stale.
+    if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
+        net_.view().easeRatePerSecond = easeRateFromAmount(menus_.settings().interpolation);
+        // renderClockMillis(), not the window's clock: snapshot arrivals are
+        // stamped against this one, and mob playback has to be measured on
+        // the same timeline it is stamped on.
+        net_.view().interpolate(renderClockMillis(), dt);
+    }
+
     switch (screen_) {
         case Screen::Connecting:   updateConnecting(); break;
         case Screen::Login:        updateLogin(dt); break;
@@ -864,11 +877,12 @@ void App::frame(double dt) {
     if (inWorld) {
         renderer_.ingestEvents(net_.view());
         renderer_.update(dt);
-        net_.view().interpolate(window_.timeSeconds() * 1000.0);
         // Pinned, not eased: the reference keeps the flower exactly on the
         // screen centre, which is what the cursor-relative control law reads.
-        camera_.snapTo(prediction_.position());
-        renderer_.draw(canvas, net_.view(), camera_, prediction_.position(), timeSeconds_);
+        // The EASE is on the flower itself, one frame earlier -- see frame().
+        const Vec2 selfDrawn = net_.view().selfDrawnPosition();
+        camera_.snapTo(selfDrawn);
+        renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
         drawHud(canvas, timeSeconds_);
         // The reference hides the whole chat box while one of the three
         // petal-handling panels is up, rather than letting it poke out beside
@@ -1257,8 +1271,8 @@ void App::updateLobby(double dt) {
     }
 
     if (net_.status() == NetClient::Status::Playing) {
-        prediction_.reset(net_.view().self().position);
-        camera_.snapTo(prediction_.position());
+        net_.view().snapAll();
+        camera_.snapTo(net_.view().selfDrawnPosition());
         beginSceneWipe(true);
         // --dead is the only route a scripted run has to the death card: being
         // killed for real is not something `--frames` can arrange.
@@ -1297,11 +1311,10 @@ void App::sendInputFrame(double dt) {
     input.viewportHeight = static_cast<std::uint16_t>(
         std::min(65535.0, std::round(window_.height() / zoom)));
 
-    // An open menu owns the pointer. Keep sending zero movement so the server
-    // and prediction agree that the flower has stopped while an item is being
-    // dragged, rather than steering toward the panel under the mouse.
+    // An open menu owns the pointer. Keep sending zero movement so the flower
+    // stops while an item is being dragged, rather than steering toward the
+    // panel under the mouse.
     if (menus_.anyOpen()) {
-        prediction_.apply(input, kPlayerMaxSpeed, dt);
         net_.sendInput(input);
         return;
     }
@@ -1317,7 +1330,7 @@ void App::sendInputFrame(double dt) {
     if (window_.keyDown(Key::D) || window_.keyDown(Key::Right)) keyboard.x += 1;
 
     const Vec2 cursorWorld = camera_.screenToWorld({window_.mouseX(), window_.mouseY()});
-    const Vec2 toCursor = cursorWorld - prediction_.position();
+    const Vec2 toCursor = cursorWorld - net_.view().selfDrawnPosition();
 
     if (keyboard.lengthSq() > 0) {
         const Vec2 direction = keyboard.normalized();
@@ -1344,7 +1357,6 @@ void App::sendInputFrame(double dt) {
         }
     }
 
-    prediction_.apply(input, kPlayerMaxSpeed, dt);
     net_.sendInput(input);
 }
 
@@ -1367,13 +1379,8 @@ void App::updatePlaying(double dt) {
         }
     }
 
-    // Reconcile before producing this frame's input, so the new input is
-    // predicted from the authoritative state rather than from a stale one.
-    const SelfState& self = net_.view().self();
-    prediction_.reconcile(self.position, self.velocity, self.acknowledgedInput, kPlayerMaxSpeed);
-
     // Input is produced at the simulation rate rather than per rendered frame:
-    // a 144 Hz client must not get six times the inputs of a 25 Hz one.
+    // a 144 Hz client must not get six times the inputs of a 30 Hz one.
     inputAccumulator_ += dt;
     const double step = net::kTickSeconds;
     int produced = 0;
@@ -1999,7 +2006,7 @@ void App::drawMinimap(Canvas& canvas) {
     // The map always shows exactly the section the player stands in, snapped to
     // its corner. There is no zoom and no free scrolling: the reference's
     // scroll and zoom entry points are both no-ops.
-    const Vec2 me = prediction_.position();
+    const Vec2 me = net_.view().selfDrawnPosition();
     const int sectionX = static_cast<int>(clamp(std::floor(me.x / kSectionSize), 0.0,
                                                 kSectionsPerAxis - 1.0));
     const int sectionY = static_cast<int>(clamp(std::floor(me.y / kSectionSize), 0.0,
@@ -2633,7 +2640,7 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
         // flower -- the reference pushes the line only when it can resolve its
         // own socket's entity.
         if (net_.view().self().netId != 0) {
-            const Vec2 me = prediction_.position();
+            const Vec2 me = net_.view().selfDrawnPosition();
             lines.push_back({"Pos: " + std::to_string(static_cast<long>(std::lround(me.x))) +
                                  ", " + std::to_string(static_cast<long>(std::lround(me.y))),
                              0xFFD700u});

@@ -17,7 +17,6 @@
 
 #include "client/camera.h"
 #include "client/net_client.h"
-#include "client/prediction.h"
 #include "client/render/sprites.h"
 #include "client/render/world_renderer.h"
 #include "client/ui/menus.h"
@@ -164,8 +163,11 @@ private:
     /// exit button all do.
     void leaveToTitle();
 
-    /// Builds this frame's input from the keyboard and mouse, applies it to the
-    /// local prediction, and sends it.
+    /// Builds this frame's input from the keyboard and mouse and sends it.
+    ///
+    /// Nothing local acts on it: the flower's drawn position is the server's,
+    /// eased (see client/interpolation.h). Producing one of these is the only
+    /// thing the client does with a movement key.
     void sendInputFrame(double dt);
 
     /// Text entry shared by the login fields and the chat box.
@@ -215,7 +217,6 @@ private:
     Window window_;
     NetClient net_;
     Camera camera_;
-    Prediction prediction_;
     SpriteCache sprites_;
     /// The title backdrop, one document per biome, compiled on first use. The
     /// picker changes which one tiles behind the menu, exactly as choosing a

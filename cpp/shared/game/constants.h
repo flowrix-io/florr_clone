@@ -37,6 +37,22 @@ inline int sectionAt(Vec2 p) {
 inline constexpr double kTileSize = 300.0;
 inline constexpr int kTilesPerAxis = static_cast<int>(kWorldSize / kTileSize);  // 200
 
+/// The jagged outline a wall or water tile wears on every exposed side.
+///
+/// Here rather than in terrain.cpp because three places have to agree on it
+/// exactly: the collision scan, the wall push-out, and the renderer that draws
+/// the outline you can see. A tile's drawn silhouette and its hitbox are the
+/// same curve, and these are its two parameters -- TypeScript's
+/// JAGGED_MAX_OFFSET and JAGGED_NUM_SEGMENTS.
+inline constexpr double kJaggedMaxProtrusion = 20.0;
+inline constexpr int kJaggedSegmentCount = 7;
+
+/// Slack folded into the tile-scan reach so a body already resting at the
+/// push-out distance still registers as in contact. TypeScript's
+/// COLLISION_BUFFER. It is NOT added to the collision shape: a body collides
+/// with a wall as a disc of exactly its own radius.
+inline constexpr double kCollisionScanBuffer = 5.0;
+
 enum class Tile : std::uint8_t {
     Ground = 0,
     Wall = 1,     ///< blocks movement

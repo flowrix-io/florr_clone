@@ -1,6 +1,6 @@
 #include "test.h"
 
-#include "client/prediction.h"
+#include "client/interpolation.h"
 #include "client/world_view.h"
 #include "server/replication.h"
 #include "shared/game/components.h"
@@ -349,31 +349,149 @@ TEST(stale_snapshots_are_ignored) {
 // Interpolation
 // ---------------------------------------------------------------------------
 
-TEST(interpolation_blends_between_samples_and_clamps) {
+namespace {
+
+/// A view holding one flower at the origin whose server position is `target`.
+/// Built by hand rather than through the replicator: these tests are about the
+/// ease law, and seeding it directly is what lets them assert exact numbers.
+RemoteEntity easedFlower(Vec2 drawn, Vec2 target) {
+    RemoteEntity e;
+    e.netId = 1;
+    e.kind = net::EntityKind::Player;
+    e.position = drawn;
+    e.targetPosition = target;
+    e.needsSnap = false;
+    return e;
+}
+
+} // namespace
+
+TEST(the_ease_rate_is_frame_rate_independent) {
+    // Two frames of half the step must land where one whole one does, or the
+    // flower's speed would depend on the frame rate.
+    const double rate = easeRateFromAmount(kDefaultInterpolationAmount);
+    const double whole = easeAmount(rate, 1.0 / 30.0);
+    const double half = easeAmount(rate, 1.0 / 60.0);
+    CHECK_NEAR(1.0 - (1.0 - half) * (1.0 - half), whole, 1e-12);
+
+    // And the amount is the browser build's definition: the fraction of the
+    // gap closed in one 60 fps frame.
+    CHECK_NEAR(easeAmount(easeRateFromAmount(0.3), 1.0 / 60.0), 0.3, 1e-12);
+}
+
+TEST(a_stalled_frame_does_not_become_a_snap) {
+    // A resize or a breakpoint hands back a dt of seconds. Easing the whole
+    // gap on the frame the window resumes is a teleport on screen.
+    const double rate = easeRateFromAmount(kDefaultInterpolationAmount);
+    CHECK(easeAmount(rate, 30.0) < 0.999);
+    CHECK_NEAR(easeAmount(rate, 30.0), easeAmount(rate, 0.1), 1e-12);
+}
+
+TEST(a_flower_eases_toward_the_server_and_never_past_it) {
     WorldView view;
-    RemoteEntity probe;
-    probe.netId = 1;
-    probe.previousPosition = {0, 0};
-    probe.targetPosition = {100, 0};
-    probe.previousAngle = 0;
-    probe.targetAngle = kPi / 2;
-    probe.sampleStartMillis = 1000;
-    probe.sampleEndMillis = 1040;
-    probe.fresh = false;
+    view.seedForTest(easedFlower({0, 0}, {100, 0}));
+    const double rate = view.easeRatePerSecond;
 
-    const auto blendAt = [&](double renderTime) {
-        RemoteEntity e = probe;
-        double t = (renderTime - e.sampleStartMillis) / (e.sampleEndMillis - e.sampleStartMillis);
-        t = clamp(t, 0.0, 1.0);
-        return Vec2{lerp(e.previousPosition.x, e.targetPosition.x, t), 0};
-    };
+    view.interpolate(1000, 1.0 / 60.0);
+    const double afterOne = view.entities().at(1).position.x;
+    CHECK_NEAR(afterOne, 100.0 * easeAmount(rate, 1.0 / 60.0), 1e-9);
 
-    CHECK_NEAR(blendAt(1020).x, 50.0, 1e-9);
-    CHECK_NEAR(blendAt(1000).x, 0.0, 1e-9);
-    CHECK_NEAR(blendAt(1040).x, 100.0, 1e-9);
-    // Past the end it holds still rather than extrapolating through walls.
-    CHECK_NEAR(blendAt(2000).x, 100.0, 1e-9);
-    CHECK_NEAR(blendAt(0).x, 0.0, 1e-9);
+    // Asymptotic, so it approaches without ever overshooting -- an overshoot
+    // is what makes a corrected position visibly spring.
+    for (int i = 0; i < 600; ++i) view.interpolate(1000, 1.0 / 60.0);
+    CHECK(view.entities().at(1).position.x <= 100.0);
+    CHECK_NEAR(view.entities().at(1).position.x, 100.0, 0.01);
+}
+
+TEST(a_flower_cuts_rather_than_glides_across_a_teleport) {
+    WorldView view;
+    view.seedForTest(easedFlower({0, 0}, {0, kTeleportSnapDistance + 1}));
+    view.interpolate(1000, 1.0 / 60.0);
+    // A portal, a respawn or the maze at (200000, 200000): easing would drag
+    // the flower across every screen in between.
+    CHECK_NEAR(view.entities().at(1).position.y, kTeleportSnapDistance + 1, 1e-9);
+}
+
+TEST(a_flower_settles_exactly_instead_of_asymptoting) {
+    WorldView view;
+    view.seedForTest(easedFlower({0, 0}, {kSettleEpsilon / 2, 0}));
+    view.interpolate(1000, 1.0 / 60.0);
+    CHECK_NEAR(view.entities().at(1).position.x, kSettleEpsilon / 2, 1e-12);
+}
+
+TEST(a_flowers_facing_comes_straight_off_the_wire) {
+    // It drives the eyes. Easing it makes the pupils swim behind the cursor.
+    WorldView view;
+    RemoteEntity e = easedFlower({0, 0}, {0, 0});
+    e.angle = 0;
+    e.targetAngle = kPi / 2;
+    view.seedForTest(e);
+    view.interpolate(1000, 1.0 / 60.0);
+    CHECK_NEAR(view.entities().at(1).angle, kPi / 2, 1e-12);
+}
+
+TEST(a_mobs_facing_eases_instead_of_snapping) {
+    // Passive AI turns up to 180 degrees in one server step.
+    WorldView view;
+    RemoteEntity e;
+    e.netId = 2;
+    e.kind = net::EntityKind::Mob;
+    e.needsSnap = false;
+    e.angle = 0;
+    e.targetAngle = kPi / 2;
+    view.seedForTest(e);
+    view.interpolate(1000, 1.0 / 60.0);
+    const double after = view.entities().at(2).angle;
+    CHECK(after > 0.0);
+    CHECK(after < kPi / 2);
+}
+
+TEST(mob_playback_runs_behind_the_render_clock) {
+    WorldView view;
+    RemoteEntity e;
+    e.netId = 3;
+    e.kind = net::EntityKind::Mob;
+    e.needsSnap = false;
+    e.targetPosition = {100, 0};
+    // Two samples 50 ms apart, so the midpoint of the pair is at t = 1025.
+    e.samples.push_back({1000, {0, 0}});
+    e.samples.push_back({1050, {100, 0}});
+    view.seedForTest(e);
+
+    // Render at 1025 + the delay: playback lands on the midpoint.
+    view.interpolate(1025 + kMobRenderDelayMillis, 1.0 / 60.0);
+    CHECK_NEAR(view.entities().at(3).position.x, 50.0, 1e-9);
+}
+
+TEST(mob_playback_extrapolates_at_most_one_sample_when_starved) {
+    WorldView view;
+    RemoteEntity e;
+    e.netId = 4;
+    e.kind = net::EntityKind::Mob;
+    e.needsSnap = false;
+    e.samples.push_back({1000, {0, 0}});
+    e.samples.push_back({1050, {100, 0}});
+    view.seedForTest(e);
+
+    // Far past the newest sample: it guesses one span forward and stops, which
+    // rides out a late packet without sending the mob through a wall.
+    view.interpolate(9000 + kMobRenderDelayMillis, 1.0 / 60.0);
+    CHECK_NEAR(view.entities().at(4).position.x, 200.0, 1e-9);
+}
+
+TEST(a_mob_with_no_history_eases_rather_than_freezing) {
+    // One sample cannot bracket anything. Freezing on it would stall every mob
+    // for the whole playback delay after it comes into view.
+    WorldView view;
+    RemoteEntity e;
+    e.netId = 5;
+    e.kind = net::EntityKind::Mob;
+    e.needsSnap = false;
+    e.targetPosition = {100, 0};
+    e.samples.push_back({1000, {0, 0}});
+    view.seedForTest(e);
+    view.interpolate(1000, 1.0 / 60.0);
+    CHECK(view.entities().at(5).position.x > 0.0);
 }
 
 TEST(a_freshly_spawned_entity_does_not_slide_in) {
@@ -381,107 +499,141 @@ TEST(a_freshly_spawned_entity_does_not_slide_in) {
     const Entity mob = f.addMob({1200, 1000});
     WorldView client;
     f.tick(client, 1, 1000);
-    client.interpolate(99999);
-    // Both endpoints were seeded from the spawn position, so it renders where
-    // it is rather than sliding from the origin.
+    client.interpolate(99999, 1.0 / 60.0);
+    // Drawn where it spawned rather than sliding in from wherever a recycled
+    // record left the slot.
     CHECK_NEAR(client.entities().at(netIdOf(f.world, mob)).position.x, 1200, 0.05);
 }
 
-// ---------------------------------------------------------------------------
-// Prediction
-// ---------------------------------------------------------------------------
+TEST(the_viewers_flower_eases_and_the_camera_gets_one_answer) {
+    Fixture f;
+    WorldView client;
+    f.tick(client, 1, 1000);
+    // The join snaps: there is no continuity to preserve.
+    client.interpolate(1000, 1.0 / 60.0);
+    const Vec2 spawned = client.selfDrawnPosition();
+    CHECK_NEAR(spawned.x, client.self().position.x, 1e-9);
 
-namespace {
+    f.world.get<Transform>(f.viewer).position.x += 100;
+    f.tick(client, 2, 1040);
+    client.interpolate(1040, 1.0 / 60.0);
 
-net::InputFrame moveRight(std::uint32_t sequence) {
-    net::InputFrame f;
-    f.sequence = sequence;
-    f.moveAngle = 0;
-    f.moveStrength = 1.0;
-    return f;
+    // Eased, not cut: the camera is pinned to this, so anything that jumped
+    // here would jolt the whole world.
+    const Vec2 drawn = client.selfDrawnPosition();
+    CHECK(drawn.x > spawned.x);
+    CHECK(drawn.x < client.self().position.x);
+    // And the self ENTITY reads the same, so the petal ring anchored to it
+    // cannot drift off the body by a fraction of a pixel.
+    CHECK_NEAR(client.entities().at(client.self().netId).position.x, drawn.x, 1e-12);
 }
 
-} // namespace
-
-TEST(prediction_moves_immediately_on_input) {
-    Prediction p;
-    p.reset({0, 0});
-    const Vec2 after = p.apply(moveRight(1), kPlayerMaxSpeed, net::kTickSeconds);
-    CHECK(after.x > 0);
-    CHECK_EQ(p.pendingCount(), std::size_t(1));
+TEST(snapAll_cuts_every_entity_onto_the_server_position) {
+    WorldView view;
+    view.seedForTest(easedFlower({0, 0}, {100, 0}));
+    view.snapAll();
+    view.interpolate(1000, 1.0 / 60.0);
+    CHECK_NEAR(view.entities().at(1).position.x, 100.0, 1e-12);
 }
 
-TEST(reconciling_an_agreeing_server_corrects_nothing) {
-    // The whole point of sharing integrateVelocity: when the server saw the
-    // same inputs, the replay lands exactly where the client already was.
-    Prediction client;
-    client.reset({0, 0});
-    MoveState server;
+TEST(a_rigid_ring_stays_rigid_while_its_flower_walks) {
+    // THE petal-jitter regression. A petal's drawn place in its flower's ring
+    // must depend only on where the server put it relative to that flower --
+    // never on the flower's own interpolation state.
+    //
+    // Snapshots arrive at 20 Hz and frames are drawn faster, so anything
+    // derived from a raw authoritative position is a staircase. The renderer
+    // used to add `owner.position - owner.targetPosition` to every petal to
+    // re-anchor the ring; that is a smooth value minus a staircase, i.e. a
+    // sawtooth, and it shook every petal at the beat between the two rates.
+    //
+    // Here the ring is deliberately RIGID -- the offset never changes -- while
+    // the flower walks in snapshot-sized steps. Any motion in the drawn offset
+    // is manufactured by the client.
+    WorldView view;
 
-    for (std::uint32_t seq = 1; seq <= 20; ++seq) {
-        client.apply(moveRight(seq), kPlayerMaxSpeed, net::kTickSeconds);
-        integrateVelocity(server, desiredVelocity(0.0, 1.0, kPlayerMaxSpeed), net::kTickSeconds);
-        server.position += server.velocity * net::kTickSeconds;
-        client.reconcile(server.position, server.velocity, seq, kPlayerMaxSpeed);
-        CHECK_NEAR(client.lastCorrection(), 0.0, 1e-9);
+    RemoteEntity owner;
+    owner.netId = 1;
+    owner.kind = net::EntityKind::Player;
+    owner.position = owner.targetPosition = {1000, 1000};
+    owner.needsSnap = false;
+    view.seedForTest(owner);
+
+    const Vec2 ring{60, 0};
+    RemoteEntity petal;
+    petal.netId = 2;
+    petal.kind = net::EntityKind::Petal;
+    petal.ownerNetId = 1;
+    petal.position = petal.targetPosition = owner.targetPosition + ring;
+    petal.ownerOffset = ring;
+    petal.needsSnap = false;
+    view.seedForTest(petal);
+
+    // Three frames per snapshot, which is the ratio that produced the visible
+    // shake: the staircase and the frame clock do not divide evenly.
+    Vec2 walked = owner.targetPosition;
+    double worstDrift = 0;
+    for (int snapshot = 0; snapshot < 40; ++snapshot) {
+        walked += {5.0, 0};                       // one 20 Hz step of travel
+        view.setTargetForTest(1, walked);
+        view.setTargetForTest(2, walked + ring);
+        for (int frame = 0; frame < 3; ++frame) {
+            view.interpolate(1000 + snapshot * 50.0 + frame * 16.7, 1.0 / 60.0);
+            const Vec2 drawn = view.entities().at(2).position - view.entities().at(1).position;
+            // Skip the first snapshot: the ease is still settling from the seed.
+            if (snapshot > 0) worstDrift = std::max(worstDrift, distance(drawn, ring));
+        }
     }
-    CHECK_NEAR(client.position().x, server.position.x, 1e-9);
-    CHECK_EQ(client.pendingCount(), std::size_t(0));
+    CHECK_NEAR(worstDrift, 0.0, 1e-9);
 }
 
-TEST(unacknowledged_inputs_are_replayed_after_a_correction) {
-    Prediction client;
-    client.reset({0, 0});
-    MoveState server;
+TEST(a_petal_ring_is_smoothed_in_its_flowers_frame_not_in_the_world) {
+    // The ring's own motion still has to be interpolated -- it arrives at the
+    // snapshot rate like everything else -- but in the flower's frame, so
+    // smoothing a rotation cannot also smear the flower's translation into it.
+    WorldView view;
 
-    // The client runs ahead by five inputs, as it would across a round trip.
-    for (std::uint32_t seq = 1; seq <= 5; ++seq) {
-        client.apply(moveRight(seq), kPlayerMaxSpeed, net::kTickSeconds);
-    }
-    // The server has only processed the first two.
-    for (int i = 0; i < 2; ++i) {
-        integrateVelocity(server, desiredVelocity(0.0, 1.0, kPlayerMaxSpeed), net::kTickSeconds);
-        server.position += server.velocity * net::kTickSeconds;
-    }
-    const Vec2 beforeReconcile = client.position();
-    client.reconcile(server.position, server.velocity, 2, kPlayerMaxSpeed);
+    RemoteEntity owner;
+    owner.netId = 1;
+    owner.kind = net::EntityKind::Player;
+    owner.position = owner.targetPosition = {1000, 1000};
+    owner.needsSnap = false;
+    view.seedForTest(owner);
 
-    CHECK_EQ(client.pendingCount(), std::size_t(3));
-    // Replay must put it back where it was, not snap it to the server's older
-    // position -- otherwise the flower jerks backwards every snapshot.
-    CHECK_NEAR(client.position().x, beforeReconcile.x, 1e-9);
-    CHECK(client.position().x > server.position.x);
+    RemoteEntity petal;
+    petal.netId = 2;
+    petal.kind = net::EntityKind::Petal;
+    petal.ownerNetId = 1;
+    petal.position = petal.targetPosition = {1060, 1000};
+    petal.ownerOffset = {60, 0};
+    petal.needsSnap = false;
+    view.seedForTest(petal);
+
+    // The ring swings a quarter turn in one step while the flower stands still.
+    view.setTargetForTest(2, {1000, 1060});
+    view.interpolate(1000, 1.0 / 60.0);
+
+    const Vec2 drawn = view.entities().at(2).position - view.entities().at(1).position;
+    // Part of the way round, not all of it and not none of it.
+    CHECK(drawn.y > 0.0);
+    CHECK(drawn.y < 60.0);
+    CHECK(drawn.x < 60.0);
+    CHECK(drawn.x > 0.0);
 }
 
-TEST(a_disagreeing_server_wins_and_reports_the_correction) {
-    Prediction client;
-    client.reset({0, 0});
-    for (std::uint32_t seq = 1; seq <= 3; ++seq) {
-        client.apply(moveRight(seq), kPlayerMaxSpeed, net::kTickSeconds);
-    }
-    // The server saw a wall: the player never actually moved.
-    client.reconcile({0, 0}, {0, 0}, 3, kPlayerMaxSpeed);
-    CHECK_NEAR(client.position().x, 0.0, 1e-9);
-    CHECK(client.lastCorrection() > 1.0);
-}
-
-TEST(prediction_bounds_its_pending_queue) {
-    Prediction p;
-    p.reset({0, 0});
-    for (std::uint32_t seq = 1; seq <= Prediction::kMaxPending * 3; ++seq) {
-        p.apply(moveRight(seq), kPlayerMaxSpeed, net::kTickSeconds);
-    }
-    // A server that stops acknowledging must not grow the client's memory
-    // without bound, nor make each reconcile replay an ever-longer history.
-    CHECK_EQ(p.pendingCount(), Prediction::kMaxPending);
-}
-
-TEST(reset_discards_history) {
-    Prediction p;
-    p.reset({0, 0});
-    p.apply(moveRight(1), kPlayerMaxSpeed, net::kTickSeconds);
-    p.reset({500, 500});
-    CHECK_EQ(p.pendingCount(), std::size_t(0));
-    CHECK_NEAR(p.position().x, 500.0, 1e-12);
-    CHECK_NEAR(p.velocity().length(), 0.0, 1e-12);
+TEST(a_petal_with_no_owner_on_screen_still_interpolates) {
+    // The frame or two before an owner's spawn record lands. Anchoring is not
+    // possible; drawing the petal at a stale position is worse than easing it.
+    WorldView view;
+    RemoteEntity petal;
+    petal.netId = 7;
+    petal.kind = net::EntityKind::Petal;
+    petal.ownerNetId = 999;            // nothing under this id
+    petal.position = {0, 0};
+    petal.targetPosition = {100, 0};
+    petal.needsSnap = false;
+    view.seedForTest(petal);
+    view.interpolate(1000, 1.0 / 60.0);
+    CHECK(view.entities().at(7).position.x > 0.0);
+    CHECK(view.entities().at(7).position.x < 100.0);
 }

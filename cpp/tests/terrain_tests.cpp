@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/systems/movement.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 
@@ -630,4 +631,71 @@ TEST(spatial_grid_does_not_allocate_once_warm) {
     CHECK_EQ(out.capacity(), outCapacity);
     CHECK(reserved > 0);
     (void)rng;
+}
+
+// ---------------------------------------------------------------------------
+// The jagged wall outline
+// ---------------------------------------------------------------------------
+
+TEST(the_jagged_outline_is_well_formed_on_every_edge_of_every_tile) {
+    // A wall's silhouette and its hitbox are the same curve. These are the
+    // properties both the renderer's trace and the collision scan assume, and
+    // neither would notice if they stopped holding for some corner of the map.
+    for (int tileY = 0; tileY < kTilesPerAxis; tileY += 37) {
+        for (int tileX = 0; tileX < kTilesPerAxis; tileX += 29) {
+            for (int edge = 0; edge < 4; ++edge) {
+                const JaggedEdge& points = jaggedEdge(tileX, tileY, edge);
+
+                // Pinned flat at both ends, so the protrusion closes onto the
+                // tile edge instead of leaving a step at the seam.
+                CHECK_NEAR(points.front().t, 0.0, 1e-12);
+                CHECK_NEAR(points.front().offset, 0.0, 1e-12);
+                CHECK_NEAR(points.back().t, kTileSize, 1e-12);
+                CHECK_NEAR(points.back().offset, 0.0, 1e-12);
+
+                for (std::size_t i = 0; i < points.size(); ++i) {
+                    // Sorted by t: the renderer traces the polyline in order,
+                    // and maxJaggedOffset's boundary interpolation walks pairs.
+                    if (i > 0) CHECK(points[i].t >= points[i - 1].t);
+                    // Never bulges further than the collision scan reaches for
+                    // it, or a body could rest inside the drawn outline.
+                    CHECK(points[i].offset >= 0.0);
+                    CHECK(points[i].offset <= kJaggedMaxProtrusion);
+                }
+            }
+        }
+    }
+}
+
+TEST(the_jagged_outline_is_deterministic_and_edge_specific) {
+    // Deterministic in the tile coordinates alone: the client draws this
+    // outline and the server collides with it, in different processes.
+    const JaggedEdge& first = jaggedEdge(11, 23, 0);
+    const JaggedEdge copy = first;
+    // Force the cache to churn past this entry, then ask again.
+    for (int i = 0; i < 200; ++i) jaggedEdge(i, i + 7, i & 3);
+    const JaggedEdge& again = jaggedEdge(11, 23, 0);
+    for (std::size_t i = 0; i < again.size(); ++i) {
+        CHECK_NEAR(again[i].t, copy[i].t, 1e-12);
+        CHECK_NEAR(again[i].offset, copy[i].offset, 1e-12);
+    }
+
+    // The four sides of one tile must not share a sequence, or every wall
+    // would wear the same silhouette on all four faces.
+    const JaggedEdge& top = jaggedEdge(11, 23, 0);
+    const JaggedEdge& left = jaggedEdge(11, 23, 2);
+    bool differs = false;
+    for (std::size_t i = 0; i < top.size(); ++i) {
+        if (std::fabs(top[i].offset - left[i].offset) > 1e-9) differs = true;
+    }
+    CHECK(differs);
+}
+
+TEST(a_substep_cannot_carry_a_centre_past_a_tiles_effective_midline) {
+    // Detection inflates a tile by the jagged protrusion and the scan buffer,
+    // so the midline that flips least-penetration ejection to the FAR face --
+    // a teleport through the wall -- sits that much inside the geometric one.
+    // This is TypeScript's MAX_STEP_HARD, and the reason it is not tileSize/2.
+    CHECK(kMaxSubstepLength <= kTileSize * 0.5 - kJaggedMaxProtrusion - kCollisionScanBuffer);
+    CHECK(kMaxSubstepLength > 0.0);
 }

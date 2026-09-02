@@ -274,6 +274,7 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "debugButton") showDebugButton = number != 0;
         else if (key == "changelogSeen") changelogSeen = number;
         else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), 0.6, 1.6);
+        else if (key == "interp") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
         else if (key == "biome") spawnBiome = (value == "-" ? std::string() : value);
         else if (key == "tutorialDone") tutorialCompleted = number != 0;
         else if (key == "tutorialStep") tutorialStep = number;
@@ -302,6 +303,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "debugButton " << (showDebugButton ? 1 : 0) << '\n'
          << "changelogSeen " << changelogSeen << '\n'
          << "zoom " << zoom << '\n'
+         << "interp " << interpolation << '\n'
          // A dash rather than an empty field: the reader splits on whitespace,
          // and an empty value would swallow the next key as its own.
          << "biome " << (spawnBiome.empty() ? std::string("-") : spawnBiome) << '\n'

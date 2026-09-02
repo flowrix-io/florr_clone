@@ -64,7 +64,6 @@ target_link_libraries(flowrix_server PRIVATE flix_server)
 add_library(flix_client STATIC
   client/app.cpp
   client/net_client.cpp
-  client/prediction.cpp
   client/world_view.cpp
   client/ui/draw.cpp
   client/ui/text.cpp

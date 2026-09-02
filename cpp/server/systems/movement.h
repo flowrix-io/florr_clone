@@ -63,10 +63,19 @@ inline constexpr double kMaxSaneWorldCoord = 1e9;
 // for it becoming an unbounded loop. A corrupt velocity is a bug somewhere
 // else; it must cost that entity a slow tick and never cost the server one.
 
-/// Longest a single collision substep may be. Half a tile, so no substep can
-/// step over solid geometry: the thinnest wall the grid can express is one
-/// whole tile.
-inline constexpr double kMaxSubstepLength = kTileSize * 0.5;
+/// Longest a single collision substep may be.
+///
+/// Half a tile is NOT the right number, which is why this subtracts twice.
+/// Detection inflates a tile by the jagged protrusion and the scan buffer, so
+/// the midline that matters sits that much inside the geometric one -- and a
+/// substep that carries the centre past it flips the resolver's
+/// least-penetration ejection to the tile's FAR face, which is a teleport
+/// through the wall. TypeScript spells this out as `MAX_STEP_HARD` in
+/// stepPlayerMovement (src/constants.ts); this is the same expression, and it
+/// only ever binds on bodies wider than half a tile -- a super-tier mob, or a
+/// flower stacked with size petals.
+inline constexpr double kMaxSubstepLength =
+    kTileSize * 0.5 - kJaggedMaxProtrusion - kCollisionScanBuffer;
 
 /// Shortest a substep may be, whatever the body's radius says. A zero-radius
 /// projectile -- or a NaN one -- would otherwise ask for infinitely many

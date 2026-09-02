@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "client/interpolation.h"
 #include "shared/core/types.h"
 #include "shared/game/rarity.h"
 #include "shared/net/bytebuffer.h"
@@ -27,20 +28,31 @@ struct RemoteEntity {
     std::uint8_t spawnFlags = 0;
     std::string name;
 
-    /// Interpolation endpoints. Rendering runs one snapshot in the past so
-    /// there are always two real samples to blend between; extrapolating
-    /// forward instead makes every entity overshoot and jitter on direction
-    /// changes.
-    Vec2 previousPosition;
+    /// The last authoritative position and facing off the wire. Never drawn
+    /// directly -- `position` chases this one, and writing the wire value
+    /// straight into `position` is what makes an entity stutter at the tick
+    /// rate.
     Vec2 targetPosition;
-    double previousAngle = 0;
     double targetAngle = 0;
-    double sampleStartMillis = 0;
-    double sampleEndMillis = 0;
 
-    /// Blended values the renderer reads.
+    /// What the renderer reads: the DRAWN position and facing.
     Vec2 position;
     double angle = 0;
+
+    /// Mob-only position history, stamped on the shared server timeline (see
+    /// WorldView::clockOffsetMillis_). Flowers deliberately have none: they
+    /// all ease at one rate so the viewer's flower and everyone else's move
+    /// alike, and a buffer on one side of that breaks it.
+    struct Sample {
+        double timeMillis = 0;
+        Vec2 position;
+    };
+    std::vector<Sample> samples;
+
+    /// Cut to the target on the next interpolate() instead of easing to it.
+    /// Set for a fresh spawn, where there is no previous position to come
+    /// from, and after a respawn or teleport.
+    bool needsSnap = true;
 
     double healthFraction = 1;
     double radius = 10;
@@ -65,19 +77,29 @@ struct RemoteEntity {
     /// so the wire lands in one place when it exists.
     std::string guildName;
 
-    /// Petal-only: the flower this petal orbits. The server places petals on a
-    /// ring around the owner's tick position while the owner is DRAWN at its
-    /// eased or predicted one, so the ring has to be re-anchored to whatever
-    /// the owner was actually drawn at or it visibly trails the flower.
+    /// Petal-only: the flower this petal orbits, and the petal's DRAWN offset
+    /// from it.
+    ///
+    /// The server places petals on a ring around the owner's tick position
+    /// while the owner is drawn at its eased one, so a petal's absolute
+    /// position is not directly drawable. What is smoothed is this OFFSET --
+    /// the petal's place in the flower's own frame -- and the petal is then
+    /// drawn at the owner's drawn position plus it. The ring is therefore
+    /// rigidly centred on the flower by construction, whatever the flower is
+    /// doing, and only the ring's own rotation is being interpolated.
+    ///
+    /// Easing the absolute position instead leaves the ring centred only to
+    /// the extent that the petal's ease lag happens to equal the flower's, and
+    /// they differ by the orbital velocity. Subtracting the owner's raw
+    /// position from it -- the obvious repair -- is worse still: that value
+    /// stair-steps at the snapshot rate, so the correction is a sawtooth and
+    /// every petal visibly shakes at the beat between snapshot and frame rate.
     std::uint32_t ownerNetId = 0;
+    Vec2 ownerOffset;
 
     /// Smoothed eye-pupil offset in the flower's radius=25 local space.
     double eyeX = 0;
     double eyeY = 0;
-
-    /// Set on the tick a spawn record arrived, so the renderer can play a
-    /// pop-in and so interpolation knows not to blend from a stale origin.
-    bool fresh = true;
 
     bool isSelf() const { return (spawnFlags & net::SpawnIsSelf) != 0; }
     bool dead() const { return (state & net::StateDead) != 0; }
@@ -115,12 +137,40 @@ public:
     /// applied -- a half-read snapshot is worse than a skipped one.
     bool applySnapshot(ByteReader& reader);
 
-    /// Advances interpolation to `nowMillis`. Call once per rendered frame,
-    /// not once per snapshot: this is what decouples a 144 Hz display from a
-    /// 25 Hz simulation.
-    void interpolate(double nowMillis);
+    /// Advances every drawn position and facing by one frame. Call once per
+    /// rendered frame, not once per snapshot: this is what decouples a 144 Hz
+    /// display from a 20 Hz snapshot stream.
+    ///
+    /// `nowMillis` is the client render clock, which is also the clock mob
+    /// playback runs behind. `dtSeconds` is the frame delta the eases use.
+    void interpolate(double nowMillis, double dtSeconds);
+
+    /// Cuts every entity onto its authoritative position on the next
+    /// interpolate(). For joining and respawning, where there is no continuity
+    /// to preserve. Ordinary teleports need no call: an ease over
+    /// kTeleportSnapDistance cuts on its own.
+    void snapAll();
+
+    /// Where the viewer's own flower is being DRAWN this frame.
+    ///
+    /// The camera pins to this, the cursor control law measures from it, and
+    /// the petal ring is anchored to it. Before the first spawn record it is
+    /// the raw authoritative position, which is the only thing there is.
+    Vec2 selfDrawnPosition() const;
 
     void clear();
+
+    /// Inserts an entity outright, for tests and for tools that assemble a
+    /// scene with no socket behind it. Nothing on the wire path uses it.
+    void seedForTest(const RemoteEntity& entity) { entities_[entity.netId] = entity; }
+
+    /// Moves an existing entity's authoritative position, leaving the
+    /// interpolation state alone -- what a snapshot does, without needing one.
+    /// seedForTest() cannot serve: it replaces the record, ease state included.
+    void setTargetForTest(std::uint32_t netId, Vec2 position) {
+        const auto it = entities_.find(netId);
+        if (it != entities_.end()) it->second.targetPosition = position;
+    }
 
     const std::unordered_map<std::uint32_t, RemoteEntity>& entities() const { return entities_; }
     const SelfState& self() const { return self_; }
@@ -130,22 +180,38 @@ public:
     /// Events from the most recent snapshot. Drained by the effects layer.
     std::vector<ViewEvent>& events() { return events_; }
 
-    /// How far behind the newest snapshot the render clock sits. One snapshot
-    /// interval plus a small cushion: enough that a late packet does not leave
-    /// the blend with nothing to aim at, small enough not to feel laggy.
-    double interpolationDelayMillis = net::kSnapshotMillis * 1.5;
+    /// The ease rate every flower, petal, drop and projectile closes its gap
+    /// at, and the rate mob facing turns at. Driven by the settings panel's
+    /// Interpolation slider; see easeRateFromAmount().
+    double easeRatePerSecond = easeRateFromAmount(kDefaultInterpolationAmount);
+
+    /// How far behind the render clock buffered mobs are played back.
+    double interpolationDelayMillis = kMobRenderDelayMillis;
 
 private:
+    /// Maps a server timestamp onto the local render clock.
+    ///
+    /// Mob samples MUST be stamped with the server's own tick time and not
+    /// with their arrival time. Arrival stamping compresses the timeline under
+    /// bursty TCP -- four snapshots 33 ms apart on the server can land 0, 0, 0
+    /// and 100 ms apart here -- and playback then stutters through them. The
+    /// offset is a slow EWMA because the two clocks drift; a large divergence
+    /// (a reconnect, a suspended laptop) re-anchors outright rather than
+    /// crawling back over a minute.
+    double toRenderClock(double serverMillis, double localMillis);
+
     std::unordered_map<std::uint32_t, RemoteEntity> entities_;
     std::vector<ViewEvent> events_;
     SelfState self_;
     std::uint32_t tick_ = 0;
     double serverTimeMillis_ = 0;
-    /// Local arrival time of the newest snapshot, which is what interpolation
-    /// is measured against. Server timestamps cannot be used directly: the two
-    /// clocks are unsynchronised and drift.
-    double lastArrivalMillis_ = 0;
-    double previousArrivalMillis_ = 0;
+    /// Drawn position of the viewer's flower. Held here rather than looked up
+    /// on the self entity because the self entity does not exist until its
+    /// spawn record arrives, and the camera needs an answer before then.
+    Vec2 selfDrawnPosition_;
+    bool selfSnapPending_ = true;
+    double clockOffsetMillis_ = 0;
+    bool clockAnchored_ = false;
 };
 
 } // namespace flr

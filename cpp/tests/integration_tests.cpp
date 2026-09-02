@@ -1,7 +1,7 @@
 #include "test.h"
 
 #include "client/net_client.h"
-#include "client/prediction.h"
+#include "client/interpolation.h"
 #include "server/game_server.h"
 #include "server_harness.h"
 #include "shared/game/config.h"
@@ -215,8 +215,14 @@ TEST(chat_flooding_is_rate_limited) {
     CHECK(bob.chat().size() - before < 20);
 }
 
-TEST(client_prediction_agrees_with_the_server) {
-    Harness h("prediction");
+TEST(the_drawn_flower_tracks_the_server_without_ever_stepping_backwards) {
+    // The property that makes the world look still while you run through it.
+    // The client simulates nothing, so its drawn position is a low-pass of a
+    // monotonically advancing authoritative one -- and a low-pass of a
+    // monotonic signal is monotonic. Any backwards step along the heading is
+    // a correction, and because the camera is pinned to this position, a
+    // correction is a jolt of the entire world.
+    Harness h("drawn-flower");
     if (!h.ready) { CHECK(false); return; }
 
     NetClient client;
@@ -231,11 +237,9 @@ TEST(client_prediction_agrees_with_the_server) {
     input.moveAngle = 0.7;
     input.moveStrength = 1.0;
 
-    // Prediction models movement, not terrain, so this only holds where the
-    // run cannot reach a wall. Spawns land in the map's beginner zone now, and
-    // parts of that are as close as a tile to one -- so put the body somewhere
-    // the whole 60-tick run is provably clear, which is what the assertion
-    // below has always assumed.
+    // Put the body where the whole run is provably clear of walls: a wall stop
+    // is a legitimate reversal of the SERVER position, and this test is about
+    // what the client adds on top of it.
     const double reach = kPlayerMaxSpeed * net::kTickSeconds * 60.0 + kPlayerBaseRadius * 2;
     const Vec2 heading = Vec2::fromAngle(input.moveAngle, reach);
     World& world = h.server.world();
@@ -259,11 +263,8 @@ TEST(client_prediction_agrees_with_the_server) {
         return distance(client.view().self().position, world.get<Transform>(body).position) < 1.0;
     }));
 
-    // Prediction models MOVEMENT, and the server's world holds more than
-    // movement: a mob touching the flower displaces it 25 units on the spot,
-    // which is the reference's fixed contact push and is not something the
-    // client can know about. That is a correction the mechanism is FOR, and it
-    // is not what this test measures -- so the lane is swept before every step.
+    // A mob touching the flower displaces it 25 units on the spot, which is a
+    // real server-side reversal and not what this measures. Sweep the lane.
     const auto clearLane = [&] {
         if (body == NULL_ENTITY) return;
         const Vec2 at = world.get<Transform>(body).position;
@@ -276,27 +277,40 @@ TEST(client_prediction_agrees_with_the_server) {
     };
     clearLane();
 
-    Prediction prediction;
-    prediction.reset(client.view().self().position);
+    WorldView& view = client.view();
+    view.snapAll();
+    const Vec2 forward = Vec2::fromAngle(input.moveAngle, 1.0);
+    const auto along = [&forward](Vec2 p) { return p.x * forward.x + p.y * forward.y; };
+    double previousAlong = along(view.selfDrawnPosition());
+    double worstBackwards = 0;
+    double worstLag = 0;
 
-    double worstCorrection = 0;
     for (int i = 0; i < 60; ++i) {
         clearLane();
         input.sequence = static_cast<std::uint32_t>(i + 1);
-        prediction.apply(input, kPlayerMaxSpeed, net::kTickSeconds);
         client.sendInput(input);
         h.step(1, {&client});
+        // Two rendered frames per server tick, as a 60 Hz client gets.
+        view.interpolate(1000.0 + i * net::kTickMillis, net::kTickSeconds / 2.0);
+        view.interpolate(1000.0 + i * net::kTickMillis + net::kTickMillis / 2.0,
+                         net::kTickSeconds / 2.0);
 
-        const SelfState& self = client.view().self();
-        prediction.reconcile(self.position, self.velocity, self.acknowledgedInput, kPlayerMaxSpeed);
-        // Skip the first few ticks, before the client knows where it spawned.
-        if (i > 10) worstCorrection = std::max(worstCorrection, prediction.lastCorrection());
+        const double now = along(view.selfDrawnPosition());
+        worstBackwards = std::max(worstBackwards, previousAlong - now);
+        previousAlong = now;
+        // Settled in after a few ticks, before which the client is still
+        // learning where it spawned.
+        if (i > 10) {
+            worstLag = std::max(worstLag,
+                                distance(view.selfDrawnPosition(), view.self().position));
+        }
     }
 
-    // Both sides run the same integrateVelocity over the same inputs, so in
-    // open ground the correction should be near zero. A large value means the
-    // two physics paths have diverged.
-    CHECK(worstCorrection < 5.0);
+    // Not "small": zero. The ease only ever moves toward the target.
+    CHECK_NEAR(worstBackwards, 0.0, 1e-9);
+    // And it stays within a few frames of travel of the truth rather than
+    // drifting away from it.
+    CHECK(worstLag < kPlayerMaxSpeed * 0.5);
 }
 
 TEST(a_disconnect_removes_the_player_from_everyone_else) {

@@ -228,7 +228,10 @@ struct PanelState {
     std::array<bool, kToggleCount> toggles{};
     double renderScale = 1.0;
     double mobFramerate = 15.0;
-    double interpolation = 0.15;
+    // No `interpolation` here: that slider is bound straight to
+    // ClientSettings::interpolation, which is what the renderer's ease reads
+    // and what the settings file persists. A panel-local copy would move the
+    // thumb and change nothing.
     /// Measured by the last paint, the way the browser captures
     /// contentBottomY, so the scroll range is always the real one.
     double contentHeight = 0;
@@ -682,8 +685,8 @@ bool SettingsPanel::render(MenuContext& ctx) {
             // and the panel does not read the same with them "corrected".
             p.sliderRow(kMobFramerate, "Mob Animation FPS: ", "", st.mobFramerate, 5.0, 60.0, 1.0,
                         1.0, 0, kTrackGrey, 25.0);
-            p.sliderRow(kInterpolation, "Interpolation: ", "", st.interpolation, 0.05, 0.5, 0.01,
-                        1.0, 2, kTrackGrey, 30.0);
+            p.sliderRow(kInterpolation, "Interpolation: ", "", settings.interpolation,
+                        0.05, 0.5, 0.01, 1.0, 2, kTrackGrey, 30.0);
 
             // Sits below the viewport until the list is scrolled, exactly as
             // it does in the browser.

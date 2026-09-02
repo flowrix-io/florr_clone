@@ -255,48 +255,14 @@ constexpr std::array<Vec2, 5> kWallDots = {{
     {64.5341, 15.5207}, {103.5341, 102.5207},
 }};
 constexpr double kWallOverlap = 1.5;
-constexpr double kJaggedMaxOffset = 20.0;
-constexpr int kJaggedSegments = 7;
 
 enum class WallEdge { Top = 0, Bottom = 1, Left = 2, Right = 3 };
 
-struct JaggedPoint {
-    double t = 0;
-    double offset = 0;
-};
-
-double seededRandom(std::int64_t seed) {
-    const double value = std::sin(static_cast<double>(seed)) * 10000.0;
-    return value - std::floor(value);
-}
-
-std::array<JaggedPoint, kJaggedSegments + 2> jaggedPoints(int tileX, int tileY,
-                                                            WallEdge edge) {
-    // JavaScript's `^` first converts both products to signed 32-bit values.
-    // Do that conversion explicitly: multiplying in signed C++ would overflow
-    // for the lower-right portion of the map and change this shared sequence.
-    const std::uint32_t xBits = static_cast<std::uint32_t>(tileX) * 73856093u;
-    const std::uint32_t yBits = static_cast<std::uint32_t>(tileY) * 19349669u;
-    const std::uint32_t baseBits = xBits ^ yBits;
-    const std::int64_t signedBase = baseBits <= 0x7fffffffu
-        ? static_cast<std::int64_t>(baseBits)
-        : static_cast<std::int64_t>(baseBits) - 4294967296ll;
-    const std::int64_t baseSeed = signedBase + static_cast<int>(edge) * 1000;
-    std::array<JaggedPoint, kJaggedSegments + 2> points{};
-    points.front() = {0, 0};
-    points.back() = {kTileSize, 0};
-    const double segmentLength = kTileSize / static_cast<double>(kJaggedSegments + 1);
-    for (int i = 1; i <= kJaggedSegments; ++i) {
-        const std::int64_t seed = baseSeed + i;
-        const double jitter = (seededRandom(seed) - 0.5) * segmentLength * 0.4;
-        points[static_cast<std::size_t>(i)] = {
-            clamp(i * segmentLength + jitter, 1.0, kTileSize - 1.0),
-            seededRandom(seed + 100) * kJaggedMaxOffset,
-        };
-    }
-    std::sort(points.begin(), points.end(),
-              [](const JaggedPoint& a, const JaggedPoint& b) { return a.t < b.t; });
-    return points;
+/// The outline this tile edge is DRAWN with, which is by construction the one
+/// the server collides against: flr::jaggedEdge is the only generator, and
+/// terrain.cpp's wall push-out calls the same function.
+const JaggedEdge& jaggedPoints(int tileX, int tileY, WallEdge edge) {
+    return jaggedEdge(tileX, tileY, static_cast<int>(edge));
 }
 
 bool tileEdgeExposed(const Terrain& terrain, int tileX, int tileY, WallEdge edge) {
@@ -330,7 +296,7 @@ Vec2 edgeBasePoint(double worldX, double worldY, WallEdge edge, double t) {
     return {};
 }
 
-Vec2 edgePoint(double worldX, double worldY, WallEdge edge, const JaggedPoint& point) {
+Vec2 edgePoint(double worldX, double worldY, WallEdge edge, const JaggedEdgePoint& point) {
     switch (edge) {
         case WallEdge::Top: return {worldX + point.t, worldY - point.offset};
         case WallEdge::Bottom: return {worldX + point.t, worldY + kTileSize + point.offset};
@@ -438,7 +404,7 @@ void drawJaggedWallEdge(Canvas& canvas, const Camera& camera, int tileX, int til
     canvas.save();
     const double worldX = tileX * kTileSize;
     const double worldY = tileY * kTileSize;
-    const auto points = jaggedPoints(tileX, tileY, edge);
+    const JaggedEdge& points = jaggedPoints(tileX, tileY, edge);
 
     Rect bounds{worldX, worldY, 0, 0};
     double minX = worldX, maxX = worldX, minY = worldY, maxY = worldY;
@@ -446,7 +412,7 @@ void drawJaggedWallEdge(Canvas& canvas, const Camera& camera, int tileX, int til
         minX = std::min(minX, p.x); maxX = std::max(maxX, p.x);
         minY = std::min(minY, p.y); maxY = std::max(maxY, p.y);
     };
-    for (const JaggedPoint& point : points) {
+    for (const JaggedEdgePoint& point : points) {
         include(edgeBasePoint(worldX, worldY, edge, point.t));
         include(edgePoint(worldX, worldY, edge, point));
     }
@@ -454,7 +420,7 @@ void drawJaggedWallEdge(Canvas& canvas, const Camera& camera, int tileX, int til
 
     const auto traceFill = [&] {
         moveToScreen(canvas, camera, edgeBasePoint(worldX, worldY, edge, points.front().t));
-        for (const JaggedPoint& point : points) {
+        for (const JaggedEdgePoint& point : points) {
             lineToScreen(canvas, camera, edgePoint(worldX, worldY, edge, point));
         }
         lineToScreen(canvas, camera, edgeBasePoint(worldX, worldY, edge, points.back().t));
@@ -842,7 +808,7 @@ void WorldRenderer::drawGround(Canvas& canvas, const Camera& camera) const {
 void WorldRenderer::drawSmoothedTileEdge(Canvas& canvas, const Camera& camera, int tileX,
                                          int tileY, int edgeIndex) const {
     const WallEdge edge = static_cast<WallEdge>(edgeIndex);
-    const auto points = jaggedPoints(tileX, tileY, edge);
+    const JaggedEdge& points = jaggedPoints(tileX, tileY, edge);
     const std::size_t count = points.size();
     if (count < 3) return;
 
@@ -2191,15 +2157,13 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
 }
 
 void WorldRenderer::draw(Canvas& canvas, const WorldView& view, const Camera& camera,
-                         Vec2 predictedSelf, double timeSeconds) const {
-    // Which flower is the viewer's, so its ring can be re-anchored to the
-    // predicted body the same way the body itself is.
+                         Vec2 selfDrawn, double timeSeconds) const {
     selfNetId_ = view.self().netId;
-    draw(canvas, view.entities(), camera, predictedSelf, timeSeconds);
+    draw(canvas, view.entities(), camera, selfDrawn, timeSeconds);
 }
 
 void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera& camera,
-                         Vec2 predictedSelf, double timeSeconds) const {
+                         Vec2 selfDrawn, double timeSeconds) const {
     drawTerrain(canvas, camera);
     drawMapElements(canvas, camera, timeSeconds);
 
@@ -2223,19 +2187,6 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         net::EntityKind::Petal, net::EntityKind::Drop, net::EntityKind::Projectile,
     };
 
-    // The server places every petal on a ring around its owner's TICK position
-    // while the owner's own body is drawn at the predicted one. The two must
-    // move together or the ring visibly trails the flower it belongs to, so
-    // the viewer's petals are carried by the same offset the body took. The
-    // browser build does this by republishing the flower's drawn position
-    // every frame and offsetting the server petal positions from it.
-    Vec2 selfDelta{0, 0};
-    if (selfNetId_ != 0) {
-        const auto self = entities.find(selfNetId_);
-        if (self != entities.end() && self->second.isSelf()) {
-            selfDelta = predictedSelf - self->second.position;
-        }
-    }
 
     // Per-layer cost, reported through sectionTiming(). The clock is only read
     // at layer boundaries -- six reads a frame -- so measuring the frame does
@@ -2254,16 +2205,13 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             const RemoteEntity& entity = entry.second;
             if (entity.kind != kind) continue;
 
-            // The player's own body uses the predicted position; using the
-            // interpolated one would show your flower a round trip behind
-            // your own input.
-            Vec2 at = entity.position;
-            if (entity.isSelf()) {
-                at = predictedSelf;
-            } else if (kind == net::EntityKind::Petal && entity.ownerNetId == selfNetId_ &&
-                       selfNetId_ != 0) {
-                at += selfDelta;
-            }
+            // Every entity draws at its own interpolated position, petals
+            // included: WorldView has already anchored each ring to the
+            // flower its owner is DRAWN at (see RemoteEntity::ownerOffset), so
+            // there is no correction to apply here. Applying one was the petal
+            // shake -- the obvious `owner.position - owner.targetPosition`
+            // fixup subtracts a value that stair-steps at the snapshot rate.
+            Vec2 at = entity.isSelf() ? selfDrawn : entity.position;
             if (!onScreen(at, entity.radius)) continue;
 
             if (kind == net::EntityKind::Drop) ++timing_.itemCount;
@@ -2292,7 +2240,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
                     Vec2 target = drop.position;
                     const auto taker = entities.find(drop.takerNetId);
                     if (taker != entities.end()) {
-                        target = taker->second.isSelf() ? predictedSelf : taker->second.position;
+                        target = taker->second.isSelf() ? selfDrawn : taker->second.position;
                     }
                     where += (target - drop.position) * eased;
                     scale = 1.0 - eased * 0.7;

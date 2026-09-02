@@ -21,6 +21,30 @@
 
 namespace flr {
 
+/// One point on a tile's jagged edge, in tile-local coordinates: `t` runs
+/// along the edge (0..kTileSize) and `offset` is how far the outline bulges
+/// outward into the air there.
+struct JaggedEdgePoint {
+    double t = 0;
+    double offset = 0;
+};
+
+/// The outline one side of a wall or water tile wears, sorted by `t`, with a
+/// zero-offset point pinned at each end so the protrusion closes onto the flat
+/// tile edge.
+using JaggedEdge = std::array<JaggedEdgePoint, kJaggedSegmentCount + 2>;
+
+/// The outline for one edge of one tile. `edge` is 0 top, 1 bottom, 2 left,
+/// 3 right.
+///
+/// THE single generator, deliberately: collision detection, the wall push-out
+/// and the renderer all call this one function. They used to carry two copies
+/// of the arithmetic that were required to agree and did not -- the seed
+/// additions overflowed in one and not the other -- which meant some tiles
+/// were drawn with an outline they did not collide with. Deterministic in the
+/// tile coordinates alone, so it is also stable across client and server.
+const JaggedEdge& jaggedEdge(int tileX, int tileY, int edge);
+
 /// Number of distinct Tile values, i.e. the size of a per-tile-kind table.
 inline constexpr int kTileKindCount = 5;
 

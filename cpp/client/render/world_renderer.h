@@ -113,16 +113,17 @@ public:
     /// What the renderer actually needs: a set of entities to draw.
     using EntityMap = std::unordered_map<std::uint32_t, RemoteEntity>;
 
-    /// Draws the whole world. `predictedSelf` is the client's own predicted
-    /// position, which replaces the interpolated one for the player's own body
-    /// -- otherwise the flower you control visibly lags your input.
-    void draw(Canvas&, const EntityMap&, const Camera&, Vec2 predictedSelf,
+    /// Draws the whole world. `selfDrawn` is where the viewer's own flower is
+    /// being drawn this frame -- the same eased position the camera is pinned
+    /// to, passed in rather than looked up so the body and the camera cannot
+    /// disagree.
+    void draw(Canvas&, const EntityMap&, const Camera&, Vec2 selfDrawn,
               double timeSeconds) const;
 
     /// The same, reading the entities out of a live view. Taking the map
     /// separately as well is what lets a tool or a replay render a scene it
     /// assembled itself, with no socket behind it.
-    void draw(Canvas&, const WorldView&, const Camera&, Vec2 predictedSelf,
+    void draw(Canvas&, const WorldView&, const Camera&, Vec2 selfDrawn,
               double timeSeconds) const;
 
     /// Draws just the flower body, in the artwork's own local space (radius

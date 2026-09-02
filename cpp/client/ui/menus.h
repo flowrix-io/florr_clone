@@ -28,6 +28,7 @@
 
 #include "client/net_client.h"
 #include "client/render/sprites.h"
+#include "client/interpolation.h"
 #include "client/render/world_renderer.h"
 #include "client/ui/menu_widgets.h"
 #include "shared/core/types.h"
@@ -87,6 +88,11 @@ struct ClientSettings {
     /// Player-chosen camera zoom, multiplied into whatever the loadout asks
     /// for. Persisted, because it is a comfort setting, not a game state.
     double zoom = 1.0;
+    /// How much of the gap between a drawn position and the authoritative one
+    /// is closed per frame at 60 fps -- the smoothness/latency trade for every
+    /// flower, petal, drop and mob facing. The browser build keeps the same
+    /// number in `localStorage.interpolationAmount`. See client/interpolation.h.
+    double interpolation = kDefaultInterpolationAmount;
     bool showChat = true;
     bool showMenuBar = true;
     /// The frame/ping/position readout in the bottom-right corner. Off by

@@ -88,63 +88,17 @@ inline int wrapMod(int v, int m) { return ((v % m) + m) % m; }
 // TypeScript wall-edge geometry
 // ---------------------------------------------------------------------------
 
-constexpr double kJaggedMaxOffset = 20.0;
-constexpr int kJaggedSegments = 7;
-constexpr double kCollisionScanBuffer = 5.0;
+constexpr double kJaggedMaxOffset = kJaggedMaxProtrusion;
 constexpr double kWallResolveEpsilon = 0.01;
 
-struct JaggedPoint {
-    double t = 0.0;
-    double offset = 0.0;
-};
-
-using JaggedPoints = std::array<JaggedPoint, kJaggedSegments + 2>;
-
-double seededRandom(std::int32_t seed) {
-    const double x = std::sin(static_cast<double>(seed)) * 10000.0;
-    return x - std::floor(x);
-}
-
-const JaggedPoints& jaggedPoints(int tileX, int tileY, int edge) {
-    // Points depend only on coordinates and edge, not on which neighbours are
-    // currently exposed. Cache the expensive sin() calls while allowing tests
-    // and editors to change tiles without cache invalidation.
-    static std::unordered_map<std::uint32_t, JaggedPoints> cache;
-    const std::uint32_t key = (static_cast<std::uint32_t>(tileY) << 18) ^
-                              (static_cast<std::uint32_t>(tileX) << 2) ^
-                              static_cast<std::uint32_t>(edge);
-    const auto found = cache.find(key);
-    if (found != cache.end()) return found->second;
-
-    JaggedPoints points{};
-    points[0] = {0.0, 0.0};
-    const double segmentLength = kTileSize / (kJaggedSegments + 1.0);
-    const std::uint32_t mixed = static_cast<std::uint32_t>(tileX) * 73856093u ^
-                                static_cast<std::uint32_t>(tileY) * 19349669u;
-    const std::int32_t baseSeed = static_cast<std::int32_t>(mixed) + edge * 1000;
-    for (int i = 1; i <= kJaggedSegments; ++i) {
-        const std::int32_t seed = baseSeed + i;
-        const double jitter = (seededRandom(seed) - 0.5) * segmentLength * 0.4;
-        const double t = clamp(i * segmentLength + jitter, 1.0, kTileSize - 1.0);
-        points[static_cast<std::size_t>(i)] = {
-            t, seededRandom(seed + 100) * kJaggedMaxOffset,
-        };
-    }
-    points.back() = {kTileSize, 0.0};
-    std::sort(points.begin(), points.end(), [](const JaggedPoint& a, const JaggedPoint& b) {
-        return a.t < b.t;
-    });
-    return cache.emplace(key, points).first->second;
-}
-
-double maxJaggedOffset(const JaggedPoints& points, double minT, double maxT) {
+double maxJaggedOffset(const JaggedEdge& points, double minT, double maxT) {
     double result = 0.0;
-    for (const JaggedPoint& point : points) {
+    for (const JaggedEdgePoint& point : points) {
         if (point.t >= minT && point.t <= maxT) result = std::max(result, point.offset);
     }
     for (std::size_t i = 0; i + 1 < points.size(); ++i) {
-        const JaggedPoint& a = points[i];
-        const JaggedPoint& b = points[i + 1];
+        const JaggedEdgePoint& a = points[i];
+        const JaggedEdgePoint& b = points[i + 1];
         if (b.t < minT || a.t > maxT) continue;
         if (a.t < minT && b.t > minT) {
             const double f = (minT - a.t) / (b.t - a.t);
@@ -211,22 +165,22 @@ std::optional<JaggedCollision> findJaggedCollision(const Terrain& terrain,
                 if (jaggedEdgeExposed(terrain, tileX, tileY, 0)) {
                     const double lo = std::max(0.0, entityLeft - tileX * kTileSize);
                     const double hi = std::min(kTileSize, entityRight - tileX * kTileSize);
-                    if (hi > lo) hit.top -= maxJaggedOffset(jaggedPoints(tileX, tileY, 0), lo, hi);
+                    if (hi > lo) hit.top -= maxJaggedOffset(jaggedEdge(tileX, tileY, 0), lo, hi);
                 }
                 if (jaggedEdgeExposed(terrain, tileX, tileY, 1)) {
                     const double lo = std::max(0.0, entityLeft - tileX * kTileSize);
                     const double hi = std::min(kTileSize, entityRight - tileX * kTileSize);
-                    if (hi > lo) hit.bottom += maxJaggedOffset(jaggedPoints(tileX, tileY, 1), lo, hi);
+                    if (hi > lo) hit.bottom += maxJaggedOffset(jaggedEdge(tileX, tileY, 1), lo, hi);
                 }
                 if (jaggedEdgeExposed(terrain, tileX, tileY, 2)) {
                     const double lo = std::max(0.0, entityTop - tileY * kTileSize);
                     const double hi = std::min(kTileSize, entityBottom - tileY * kTileSize);
-                    if (hi > lo) hit.left -= maxJaggedOffset(jaggedPoints(tileX, tileY, 2), lo, hi);
+                    if (hi > lo) hit.left -= maxJaggedOffset(jaggedEdge(tileX, tileY, 2), lo, hi);
                 }
                 if (jaggedEdgeExposed(terrain, tileX, tileY, 3)) {
                     const double lo = std::max(0.0, entityTop - tileY * kTileSize);
                     const double hi = std::min(kTileSize, entityBottom - tileY * kTileSize);
-                    if (hi > lo) hit.right += maxJaggedOffset(jaggedPoints(tileX, tileY, 3), lo, hi);
+                    if (hi > lo) hit.right += maxJaggedOffset(jaggedEdge(tileX, tileY, 3), lo, hi);
                 }
             }
 
@@ -408,6 +362,57 @@ Tile classifyTile(int section, int tx, int ty, const NoiseSet& n) {
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// The shared jagged outline
+// ---------------------------------------------------------------------------
+
+const JaggedEdge& jaggedEdge(int tileX, int tileY, int edge) {
+    // Depends on the coordinates and the edge alone -- never on which
+    // neighbours happen to be exposed -- so the cache stays valid while a map
+    // editor or a test changes tiles around it.
+    static std::unordered_map<std::uint64_t, JaggedEdge> cache;
+    const std::uint64_t key = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(tileY)) << 34) |
+                              (static_cast<std::uint64_t>(static_cast<std::uint32_t>(tileX)) << 2) |
+                              static_cast<std::uint64_t>(edge & 3);
+    const auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+
+    // TypeScript's `seededRandom`, over an int64 seed. The JavaScript this
+    // mirrors does the additions below in doubles, where `baseSeed + i` cannot
+    // wrap; doing them in int32 would be signed overflow AND would hand back a
+    // different sequence for the handful of tiles whose mixed hash lands
+    // within a few thousand of INT_MAX.
+    const auto seededRandom = [](std::int64_t seed) {
+        const double x = std::sin(static_cast<double>(seed)) * 10000.0;
+        return x - std::floor(x);
+    };
+
+    JaggedEdge points{};
+    points.front() = {0.0, 0.0};
+    points.back() = {kTileSize, 0.0};
+    const double segmentLength = kTileSize / (kJaggedSegmentCount + 1.0);
+    // JavaScript's `^` converts both products to SIGNED 32-bit first. Multiply
+    // unsigned (which wraps exactly as ToInt32 does), xor, then widen with the
+    // sign it would have had over there.
+    const std::uint32_t mixed = static_cast<std::uint32_t>(tileX) * 73856093u ^
+                                static_cast<std::uint32_t>(tileY) * 19349669u;
+    const std::int64_t signedMixed = mixed <= 0x7fffffffu
+        ? static_cast<std::int64_t>(mixed)
+        : static_cast<std::int64_t>(mixed) - 4294967296ll;
+    const std::int64_t baseSeed = signedMixed + edge * 1000;
+    for (int i = 1; i <= kJaggedSegmentCount; ++i) {
+        const std::int64_t seed = baseSeed + i;
+        const double jitter = (seededRandom(seed) - 0.5) * segmentLength * 0.4;
+        points[static_cast<std::size_t>(i)] = {
+            clamp(i * segmentLength + jitter, 1.0, kTileSize - 1.0),
+            seededRandom(seed + 100) * kJaggedMaxProtrusion,
+        };
+    }
+    std::sort(points.begin(), points.end(),
+              [](const JaggedEdgePoint& a, const JaggedEdgePoint& b) { return a.t < b.t; });
+    return cache.emplace(key, points).first->second;
+}
 
 // ---------------------------------------------------------------------------
 // Construction and generation
