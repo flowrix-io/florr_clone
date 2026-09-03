@@ -313,18 +313,10 @@ TextStyle bodyStyle(double size, std::uint32_t fill, std::uint32_t stroke, doubl
     return style;
 }
 
-void roundFill(Canvas& canvas, Rect r, double radius, std::uint32_t colour) {
-    setFill(canvas, colour);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
-    canvas.fill();
-}
-
 /// A white inset surface in a grey surround: the key boxes and the server-IP
 /// field. Rounded outside, SHARP inside, as the browser draws it.
 void insetSurface(Canvas& canvas, Rect r, std::uint32_t surface) {
-    roundFill(canvas, r, 3.0, kSurroundFill);
+    fillRound(canvas, r, 3.0, kSurroundFill);
     setFill(canvas, surface);
     canvas.fillRect(static_cast<float>(r.x + 3.0), static_cast<float>(r.y + 3.0),
                     static_cast<float>(r.w - 6.0), static_cast<float>(r.h - 6.0));
@@ -397,7 +389,7 @@ struct Painter {
         const bool hovered = over(row);
         bool* value = toggleValue(st, ctx.settings, toggleId);
 
-        roundFill(canvas(), Rect{x, cy + 2.0, kCheckSize, kCheckSize}, 4.0, kCheckShell);
+        fillRound(canvas(), Rect{x, cy + 2.0, kCheckSize, kCheckSize}, 4.0, kCheckShell);
         const std::uint32_t inner = *value ? kCheckOn : kCheckOff;
         // Only the inner square lights up: there is no row-wide wash anywhere
         // in this panel.
@@ -441,10 +433,10 @@ struct Painter {
         cy += 22.0;
 
         const double r = clamp((value - lo) / span, 0.0, 1.0);
-        roundFill(canvas(), Rect{x, cy, w, kSliderThickness}, kSliderThickness * 0.5, kTrackGrey);
+        fillRound(canvas(), Rect{x, cy, w, kSliderThickness}, kSliderThickness * 0.5, kTrackGrey);
         // Floored at the track height: a rounded rect narrower than its own
         // radius paints as a sliver of the wrong shape rather than nothing.
-        roundFill(canvas(), Rect{x, cy, std::max(kSliderThickness, w * r), kSliderThickness},
+        fillRound(canvas(), Rect{x, cy, std::max(kSliderThickness, w * r), kSliderThickness},
                   kSliderThickness * 0.5, kActionFill);
 
         setFill(canvas(), (over(hit) || st.dragging == id) ? kSurfaceActive : kThumbFill);
@@ -559,12 +551,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
     if (st.ipFocused) ctx.wantsText = true;
 
     // --- card ---------------------------------------------------------------
-    // Drawn here rather than through panelCard(): the browser's border is a
-    // rounded rect with a SHARP body inset into it, not two rounded fills.
-    roundFill(canvas, panel, 5.0, kSettingsSkin.border);
-    setFill(canvas, kSettingsSkin.fill);
-    canvas.fillRect(static_cast<float>(panel.x + 4.0), static_cast<float>(panel.y + 4.0),
-                    static_cast<float>(panel.w - 8.0), static_cast<float>(panel.h - 8.0));
+    overlayCard(canvas, panel, kSettingsSkin);
 
     text(canvas, "Settings", contentX, panel.y + kPad + kHeaderHeight * 0.5,
          bodyStyle(20.0, kPaper, kInk, 3.0));

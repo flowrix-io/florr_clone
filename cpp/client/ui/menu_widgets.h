@@ -1,14 +1,15 @@
 #pragma once
-// The pieces every menu is assembled from.
+// The stateful pieces every menu is assembled from.
 //
-// Eight panels share one card, one close button, one scrollbar, one item cell
-// and one tooltip. They live here once because the alternative -- each panel
-// drawing its own -- is how the browser build ended up with five copies of the
-// same rounded rectangle that had all drifted a pixel apart.
+// The card, its headings and every button are in client/ui/menu_style.h --
+// pure shape, no state. What is left here is the chrome a panel has to feed
+// something to: a toggle's animation, a field's caret, a scrollbar's offset,
+// a tooltip's contents. Included from there rather than beside it, so a panel
+// that wants the whole toolkit still only names this file.
 //
-// Nothing here holds state. Layout is the caller's business, and hover and
-// press are passed in rather than tracked, so hit-testing stays with the panel
-// that owns the geometry.
+// Nothing here holds state either. Layout is the caller's business, and hover
+// and press are passed in rather than tracked, so hit-testing stays with the
+// panel that owns the geometry.
 
 #include <cstdint>
 #include <string>
@@ -18,6 +19,7 @@
 
 #include "client/render/sprites.h"
 #include "client/ui/draw.h"
+#include "client/ui/menu_style.h"
 #include "client/ui/menu_theme.h"
 #include "shared/core/types.h"
 #include "shared/game/rarity.h"
@@ -25,57 +27,8 @@
 namespace flr::ui {
 
 // ---------------------------------------------------------------------------
-// Chrome
+// Interactive chrome
 // ---------------------------------------------------------------------------
-
-/// The panel card: a border-coloured rounded rect with the fill inset by the
-/// border width. Two fills rather than a stroke, because a stroke centres on
-/// the path and would put the outer corner at radius + border/2.
-void panelCard(Canvas&, Rect, const PanelSkin&, double borderWidth = kMenuBorder,
-               double radius = kMenuRadius);
-
-/// The same two-fill treatment at an arbitrary size, for slots and buttons.
-void inlaid(Canvas&, Rect, std::uint32_t fill, std::uint32_t border, double borderWidth,
-            double radius, double alpha = 1.0);
-
-/// The panel's centred title, and the instruction line under it. The tall list
-/// panels use this one.
-void panelTitle(Canvas&, Rect panel, const std::string& title, const std::string& subtitle = {});
-
-/// The overlay panels put their heading in the top-left corner instead, at
-/// 20px with a thin outline. Both live here so the two families of panel
-/// cannot drift into three.
-void panelHeading(Canvas&, Rect panel, const std::string& title);
-
-/// Where the close button sits in a panel of these bounds.
-Rect closeButtonRect(Rect panel);
-/// The overlay panels' close button is bigger and hangs off the header row:
-/// 30px square, 50px in from the right edge, 10px down.
-Rect overlayCloseRect(Rect panel);
-/// `radius` is the outer corner, `innerRadius` the face inside the 2px rim.
-/// The two are NOT related by a constant: the browser spells both out per
-/// panel and picks 4/3 for the inventory but 3/1 for the forge. A negative
-/// `innerRadius` takes the inventory's relationship, `radius - 1`.
-void closeButton(Canvas&, Rect, bool hovered, const PanelSkin&, double radius = 4.0,
-                 double innerRadius = -1.0);
-
-/// A flat rounded header button with a centred, unstroked label -- the pill
-/// the overlay panels put in their top-right corner ("Refresh", "Mark All
-/// Read"). No border and no outline on the text: it sits on a known panel
-/// colour and an outline there reads as a second, heavier control.
-void pillButton(Canvas&, Rect, const std::string& label, std::uint32_t fill,
-                double textSize = 14.0);
-
-/// A small labelled button: the panel chrome's Switch, Craft, Reset, Refresh.
-struct ChipStyle {
-    std::uint32_t fill = kControlMid;
-    std::uint32_t border = kControlDark;
-    std::uint32_t hoverFill = 0xFFFFFFFFu;   ///< sentinel: lighten `fill` by 15%
-    double radius = 5.0;
-    double textSize = 13.0;
-    bool enabled = true;
-};
-void chip(Canvas&, Rect, const std::string& label, bool hovered, const ChipStyle& = {});
 
 /// The gardn toggle: a dark square whose inner rect lerps to light when on.
 /// `lerp` is 0..1 and is the caller's to animate, so the widget stays pure.

@@ -50,9 +50,10 @@ constexpr double kTextInset = 10.0;
 /// that unscaled.
 constexpr double kWheelStep = 100.0;
 
-constexpr std::uint32_t kBodyFill = 0x4A90E2u;
-constexpr std::uint32_t kBodyBorder = 0x357ABDu;
-constexpr std::uint32_t kClosePillFill = 0xFF4444u;
+/// The card's own colours come from kNotificationsSkin; this is the border
+/// shade reused for the header pill, a stripe and the scrollbar thumb.
+constexpr std::uint32_t kBodyBorder = kNotificationsSkin.border;
+constexpr std::uint32_t kClosePillFill = kNotificationsSkin.close;
 
 /// How many entries one page asks for. The browser's page size, and the value
 /// the server compares against to decide whether there is more.
@@ -212,57 +213,6 @@ double nowMillis() {
         duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
 }
 
-void roundRectPath(Canvas& canvas, Rect r, double radius) {
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
-}
-
-/// A flat rounded header button with an unstroked centred label. Not
-/// ui::chip(): that one draws a 2px inlaid border and brightens on hover, and
-/// this pill has neither.
-void drawPill(Canvas& canvas, Rect r, const std::string& label, std::uint32_t fill,
-              double textSize) {
-    setFill(canvas, fill);
-    roundRectPath(canvas, r, 5.0);
-    canvas.fill();
-
-    TextStyle caption;
-    caption.size = textSize;
-    caption.fill = kPaper;
-    caption.strokeWidth = 0;
-    caption.align = Align::Centre;
-    text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
-}
-
-/// The header's close control. Drawn rather than typed because the reference's
-/// glyph is U+2715, which Ubuntu does not carry -- the browser falls back to a
-/// system face, and typing it here would paint the font's .notdef box.
-void drawClosePill(Canvas& canvas, Rect r) {
-    setFill(canvas, kClosePillFill);
-    roundRectPath(canvas, r, 5.0);
-    canvas.fill();
-
-    const double cx = r.x + r.w * 0.5;
-    const double cy = r.y + r.h * 0.5;
-    const double arm = 5.5;
-    canvas.save();
-    setStroke(canvas, kPaper);
-    // Weighed by INK rather than by the glyph's apparent stroke: over the same
-    // 16x16 box the browser's U+2715 covers 50.1px of white and a 2.0px cross
-    // covers 63.8. Two round-capped arms of 15.6px overlapping once solve to
-    // 1.6, and the arm length is what fixes the bbox, so only the width moves.
-    canvas.setLineWidth(1.6f);
-    canvas.setLineCap("round");
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(cx - arm), static_cast<float>(cy - arm));
-    canvas.lineTo(static_cast<float>(cx + arm), static_cast<float>(cy + arm));
-    canvas.moveTo(static_cast<float>(cx + arm), static_cast<float>(cy - arm));
-    canvas.lineTo(static_cast<float>(cx - arm), static_cast<float>(cy + arm));
-    canvas.stroke();
-    canvas.restore();
-}
-
 /// White at an alpha, which TextStyle cannot express -- it carries a colour,
 /// not a coverage -- and which a pre-mixed grey would get wrong over a
 /// saturated panel.
@@ -373,15 +323,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
         ctx.net.requestNotifications(kPageSize, entries.back().timestampMillis);
     }
 
-    // A single fill plus a CENTRED 2px stroke, not the two-fill panelCard().
-    canvas.save();
-    setFill(canvas, kBodyFill);
-    setStroke(canvas, kBodyBorder);
-    canvas.setLineWidth(2.0f);
-    roundRectPath(canvas, panel, 10.0);
-    canvas.fill();
-    canvas.stroke();
-    canvas.restore();
+    overlayCard(canvas, panel, kNotificationsSkin);
 
     TextStyle heading;
     heading.size = 20.0;
@@ -393,15 +335,15 @@ bool NotificationsPanel::render(MenuContext& ctx) {
 
     // Neither header button has a hover or a press state in the reference.
     const Rect markAllRect{panel.right() - 180.0, panel.y + 10.0, 120.0, 30.0};
-    drawPill(canvas, markAllRect, "Mark All Read", kBodyBorder, 14.0);
+    pillButton(canvas, markAllRect, "Mark All Read", kBodyBorder, 14.0);
     const Rect closeRect = overlayCloseRect(panel);
-    drawClosePill(canvas, closeRect);
+    closeCrossPill(canvas, closeRect, kClosePillFill);
 
     const Rect view{panel.x + kPadding, panel.y + kHeaderHeight, panel.w - kPadding * 2,
                     panel.h - kHeaderHeight - kPadding};
 
     canvas.save();
-    roundRectPath(canvas, view, 8.0);
+    roundPath(canvas, view, 8.0);
     canvas.clip();
 
     const double entryWidth = view.w - (scrollable ? kScrollbarWidth + 5.0 : 0.0);
@@ -430,7 +372,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
 
             if (card.bottom() >= view.y && card.y <= view.bottom()) {
                 setFill(canvas, kPaper, isRead ? 0.1 : 0.15);
-                roundRectPath(canvas, card, 8.0);
+                roundPath(canvas, card, 8.0);
                 canvas.fill();
 
                 // A square-cornered stripe laid over the rounded card, so the
@@ -471,13 +413,13 @@ bool NotificationsPanel::render(MenuContext& ctx) {
 
     if (scrollable) {
         setFill(canvas, kPaper, 0.1);
-        roundRectPath(canvas, track, 5.0);
+        roundPath(canvas, track, 5.0);
         canvas.fill();
         // No minimum thumb height, as the reference clamps none.
         const double thumbHeight = (viewport - 5.0) * viewport / contentHeight;
         const double travelled = maxScroll > 0 ? scroll_.offset / maxScroll : 0.0;
         setFill(canvas, kBodyBorder);
-        roundRectPath(canvas,
+        roundPath(canvas,
                       Rect{track.x, track.y + travelled * (track.h - thumbHeight), track.w,
                            thumbHeight},
                       5.0);

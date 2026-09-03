@@ -75,35 +75,6 @@ std::string displayName(const std::string& name) {
     return name.size() > 20 ? name.substr(0, 17) + "..." : name;
 }
 
-/// The close pill. Its label is U+2715 MULTIPLICATION X, which the bundled
-/// Ubuntu has no glyph for -- the browser falls back to a system face for it,
-/// and this font would put its .notdef box in the button instead. So the pill
-/// is drawn label-less and the cross is stroked at the fallback glyph's
-/// measured shape: 12 x 11 px, half a pixel above the middle.
-///
-/// The weight is set by INK, not by the glyph's apparent stroke: over the same
-/// 16x16 box the browser's cross covers 50.1px of white and a 1.8px stroke
-/// covers 55.4. Two arms of 16.3px overlapping once solve to 1.62.
-void closePill(Canvas& canvas, Rect r, std::uint32_t fill) {
-    pillButton(canvas, r, {}, fill, 16.0);
-
-    const double cx = r.x + r.w * 0.5;
-    const double cy = r.y + r.h * 0.5 - 0.5;
-    const double halfW = 6.0;
-    const double halfH = 5.5;
-    canvas.save();
-    setStroke(canvas, kPaper);
-    canvas.setLineWidth(1.62f);
-    canvas.setLineCap("butt");
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(cx - halfW), static_cast<float>(cy - halfH));
-    canvas.lineTo(static_cast<float>(cx + halfW), static_cast<float>(cy + halfH));
-    canvas.moveTo(static_cast<float>(cx + halfW), static_cast<float>(cy - halfH));
-    canvas.lineTo(static_cast<float>(cx - halfW), static_cast<float>(cy + halfH));
-    canvas.stroke();
-    canvas.restore();
-}
-
 /// Where a scrollbar drag started. This belongs on LeaderboardPanel beside the
 /// scroller, but menus.h is not this file's to change; there is exactly one
 /// panel instance, so one copy here is that state under another name.
@@ -192,19 +163,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
     if (closing) return false;
 
-    // A centred 2px stroke on a 10px radius, rather than the inset border band
-    // the tall list panels are built from. The stroke sits half outside the
-    // card, as ctx.stroke() puts it in the browser.
-    canvas.save();
-    setFill(canvas, kLeaderboardSkin.fill);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(panel.x), static_cast<float>(panel.y),
-                     static_cast<float>(panel.w), static_cast<float>(panel.h), 10.0f);
-    canvas.fill();
-    setStroke(canvas, kLeaderboardSkin.border);
-    canvas.setLineWidth(2.0f);
-    canvas.stroke();
-    canvas.restore();
+    overlayCard(canvas, panel, kLeaderboardSkin);
 
     panelHeading(canvas, panel, "Leaderboard");
 
@@ -226,7 +185,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     }
 
     pillButton(canvas, refreshRect, "Refresh", kLeaderboardSkin.border);
-    closePill(canvas, closeRect, kLeaderboardSkin.close);
+    closeCrossPill(canvas, closeRect, kLeaderboardSkin.close);
 
     canvas.save();
     canvas.beginPath();

@@ -36,12 +36,12 @@ namespace {
 /// Window::setDesignSize for the machinery, and client/camera.h for why the
 /// world's own zoom is left flat.
 ///
-/// 1920x1080 rather than the 1280x720 the window opens at, because it is the
+/// 1920x900 rather than the 1280x720 the window opens at, because it is the
 /// resolution the browser build's layout numbers were authored against: at
 /// this size uiScale is 1 on an ordinary display and the frame is identical,
 /// pixel for pixel, to what this client drew before the design space existed.
 constexpr int kDesignWidth = 1920;
-constexpr int kDesignHeight = 1080;
+constexpr int kDesignHeight = 900;
 
 /// Layout constants for the shell, in design units like everything else. Kept
 /// local because nothing outside this file positions these; the shared values

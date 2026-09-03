@@ -158,31 +158,8 @@ std::string clipChars(const std::string& s, std::size_t n) {
     return s.substr(0, at) + "\xe2\x80\xa6";
 }
 
-void fillRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb, double alpha = 1.0) {
-    if (r.w <= 0 || r.h <= 0) return;
-    setFill(canvas, rgb, alpha);
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
-    canvas.fill();
-}
-
-void strokeRound(Canvas& canvas, Rect r, double radius, std::uint32_t rgb, double width) {
-    if (r.w <= 0 || r.h <= 0) return;
-    canvas.save();
-    setStroke(canvas, rgb);
-    canvas.setLineWidth(static_cast<float>(width));
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
-    canvas.stroke();
-    canvas.restore();
-}
-
 void clipRound(Canvas& canvas, Rect r, double radius) {
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
+    roundPath(canvas, r, radius);
     canvas.clip();
 }
 
@@ -695,7 +672,9 @@ double Studio::drawPalette(Canvas& canvas, double x, double y, double w, const c
 // --- the panel -------------------------------------------------------------
 
 void Studio::drawHeader(Canvas& canvas) {
-    fillRound(canvas, {kPX + 3, kPY + 3, kPW - 6, kHeaderH}, 6.0, kStudioWell);
+    fillRound(canvas, {kPX + kOverlayBorder, kPY + kOverlayBorder, kPW - kOverlayBorder * 2,
+               kHeaderH},
+              kOverlayInnerRadius, kStudioWell);
     ui::text(canvas, "Skin Studio", kPX + 16, kPY + 30, label(18.0, true));
 
     Action create;
@@ -1096,8 +1075,7 @@ void Studio::draw(MenuContext& ctx) {
     Canvas& canvas = ctx.canvas;
     regions.clear();
 
-    fillRound(canvas, {kPX, kPY, kPW, kPH}, 8.0, kStudioBorder);
-    fillRound(canvas, {kPX + 3, kPY + 3, kPW - 6, kPH - 6}, 6.0, kStudioBody);
+    overlayCard(canvas, {kPX, kPY, kPW, kPH}, kStudioBody, kStudioBorder);
 
     drawHeader(canvas);
     if (tab == Tab::Create) {

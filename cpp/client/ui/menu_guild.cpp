@@ -35,7 +35,8 @@ namespace {
 /// Chrome above the scrolling body. Taller than the overlay panels' 40 because
 /// this card carries a 22px title rather than a 20px one.
 constexpr double kHeaderHeight = 54.0;
-constexpr double kBorderWidth = 4.0;
+/// The card's frame, shared with every other overlay panel.
+constexpr double kBorderWidth = kOverlayBorder;
 constexpr double kRowHeight = 34.0;
 /// The card behind one member: a row's pitch less the gap under it.
 constexpr double kRowCard = kRowHeight - 4.0;
@@ -46,9 +47,6 @@ constexpr double kWheelStep = 100.0;
 
 constexpr std::uint32_t kBodyFill = 0x27DADEu;
 constexpr std::uint32_t kBodyBorder = 0x1FB3B0u;
-constexpr std::uint32_t kCloseFill = 0xDC7E92u;
-constexpr std::uint32_t kCloseHover = 0xE8A0B0u;
-constexpr std::uint32_t kCloseBorder = 0xB56476u;
 constexpr std::uint32_t kDangerFrame = 0xB71C1Cu;
 constexpr std::uint32_t kAcceptLabel = 0x4CAF50u;
 constexpr std::uint32_t kAcceptFrame = 0x2E7D32u;
@@ -182,67 +180,6 @@ bool caretVisible(double timeSeconds, double anchor) {
     return std::fmod(std::max(0.0, timeSeconds - anchor), 1.0) < 0.5;
 }
 
-void roundRectPath(Canvas& canvas, Rect r, double radius) {
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
-}
-
-/// A coloured frame over a translucent interior -- NOT ui::chip() or
-/// ui::button(), both of which fill a solid body. Every button on this panel
-/// takes its identity from its frame alone, and giving them a body would make
-/// the two danger buttons read as filled red controls.
-void guildButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t labelColor,
-                 std::uint32_t frame, bool hovered) {
-    setFill(canvas, frame);
-    roundRectPath(canvas, r, 4.0);
-    canvas.fill();
-
-    if (hovered) {
-        setFill(canvas, kPaper, 0.22);
-    } else {
-        setFill(canvas, kInk, 0.25);
-    }
-    roundRectPath(canvas, Rect{r.x + 2.0, r.y + 2.0, r.w - 4.0, r.h - 4.0}, 3.0);
-    canvas.fill();
-
-    TextStyle caption;
-    caption.size = 13.0;
-    caption.bold = true;
-    caption.fill = labelColor;
-    caption.strokeWidth = 3.0;
-    caption.align = Align::Centre;
-    caption.roundJoin = true;
-    // The label sits a pixel below the button's middle: at 13px bold the
-    // stroked cap height reads high without it.
-    text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5 + 1.0, caption);
-}
-
-/// The close control: the reference's own two-rect recipe rather than
-/// ui::closeButton(), whose rect is 26px, whose pad is a fraction of the width
-/// and whose hover is a derived lighten() instead of this flat pink.
-void drawCloseButton(Canvas& canvas, Rect r, bool hovered) {
-    setFill(canvas, kCloseBorder);
-    roundRectPath(canvas, r, 4.0);
-    canvas.fill();
-    setFill(canvas, hovered ? kCloseHover : kCloseFill);
-    roundRectPath(canvas, Rect{r.x + 2.0, r.y + 2.0, r.w - 4.0, r.h - 4.0}, 3.0);
-    canvas.fill();
-
-    const double pad = 8.0;
-    canvas.save();
-    setStroke(canvas, kPaper);
-    canvas.setLineWidth(2.5f);
-    canvas.setLineCap("round");
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(r.x + pad), static_cast<float>(r.y + pad));
-    canvas.lineTo(static_cast<float>(r.right() - pad), static_cast<float>(r.bottom() - pad));
-    canvas.moveTo(static_cast<float>(r.right() - pad), static_cast<float>(r.y + pad));
-    canvas.lineTo(static_cast<float>(r.x + pad), static_cast<float>(r.bottom() - pad));
-    canvas.stroke();
-    canvas.restore();
-}
-
 /// The leader badge. Drawn rather than typed: the reference appends U+2605 to
 /// the row's label and gets it from a fallback face, and Ubuntu -- the only
 /// face this client loads -- would answer with its .notdef box.
@@ -332,17 +269,7 @@ bool GuildPanel::render(MenuContext& ctx) {
     }
     scroll_.offset = clamp(scroll_.offset, 0.0, maxScroll);
 
-    // Two fills, no stroke: the border is a card in its own right with the
-    // body inset into it, so the outer corner keeps its full 6px radius.
-    setFill(canvas, kBodyBorder);
-    roundRectPath(canvas, panel, 6.0);
-    canvas.fill();
-    setFill(canvas, kBodyFill);
-    roundRectPath(canvas,
-                  Rect{panel.x + kBorderWidth, panel.y + kBorderWidth,
-                       panel.w - kBorderWidth * 2, panel.h - kBorderWidth * 2},
-                  4.0);
-    canvas.fill();
+    overlayCard(canvas, panel, kGuildSkin);
 
     TextStyle heading;
     heading.size = 22.0;
@@ -355,7 +282,7 @@ bool GuildPanel::render(MenuContext& ctx) {
 
     std::vector<HitRegion> regions;
     const Rect closeRect{panel.right() - 42.0, panel.y + 12.0, 30.0, 30.0};
-    drawCloseButton(canvas, closeRect, closeRect.contains(mouse));
+    framedCloseButton(canvas, closeRect, closeRect.contains(mouse), kGuildSkin);
     regions.push_back({closeRect, GuildAction::Close, {}});
 
     canvas.save();
@@ -383,7 +310,7 @@ bool GuildPanel::render(MenuContext& ctx) {
     if (pending.waiting && !guild.joined) {
         const double bannerHeight = 70.0;
         setFill(canvas, kInk, 0.25);
-        roundRectPath(canvas, Rect{panel.x + 12.0, contentY, panel.w - 24.0, bannerHeight}, 6.0);
+        roundPath(canvas, Rect{panel.x + 12.0, contentY, panel.w - 24.0, bannerHeight}, 6.0);
         canvas.fill();
 
         text(canvas, "@" + pending.fromUsername + " invited you to", panel.x + 22.0,
@@ -396,11 +323,11 @@ bool GuildPanel::render(MenuContext& ctx) {
         const double buttonH = 26.0;
         const Rect accept{panel.x + panel.w - 24.0 - buttonW * 2 - 6.0,
                           contentY + bannerHeight - buttonH - 8.0, buttonW, buttonH};
-        guildButton(canvas, accept, "Accept", kAcceptLabel, kAcceptFrame, accept.contains(mouse));
+        framedButton(canvas, accept, "Accept", kAcceptLabel, kAcceptFrame, accept.contains(mouse));
         regions.push_back({accept, GuildAction::AcceptInvite, {}});
 
         const Rect decline{accept.x + buttonW + 6.0, accept.y, buttonW, buttonH};
-        guildButton(canvas, decline, "Decline", kDeclineLabel, kDangerFrame,
+        framedButton(canvas, decline, "Decline", kDeclineLabel, kDangerFrame,
                     decline.contains(mouse));
         regions.push_back({decline, GuildAction::DeclineInvite, {}});
 
@@ -425,7 +352,7 @@ bool GuildPanel::render(MenuContext& ctx) {
         contentY += 26.0;
 
         const Rect create{panel.x + 16.0, contentY, 160.0, 34.0};
-        guildButton(canvas, create, "Create guild", kPaper, kBodyBorder, create.contains(mouse));
+        framedButton(canvas, create, "Create guild", kPaper, kBodyBorder, create.contains(mouse));
         regions.push_back({create, GuildAction::Create, {}});
         drawnY += 100.0;
     } else {
@@ -455,7 +382,7 @@ bool GuildPanel::render(MenuContext& ctx) {
         const double actionH = 28.0;
         double actionX = panel.x + 16.0;
         const Rect squadAll{actionX, contentY, actionW, actionH};
-        guildButton(canvas, squadAll, "Squad up", kPaper, kBodyBorder, squadAll.contains(mouse));
+        framedButton(canvas, squadAll, "Squad up", kPaper, kBodyBorder, squadAll.contains(mouse));
         regions.push_back({squadAll, GuildAction::SquadAll, {}});
         actionX += actionW + 8.0;
 
@@ -463,14 +390,14 @@ bool GuildPanel::render(MenuContext& ctx) {
         // one slot to the left rather than leaving a gap.
         if (leaderIsMe) {
             const Rect inviteRect{actionX, contentY, actionW, actionH};
-            guildButton(canvas, inviteRect, "Invite...", kPaper, kBodyBorder,
+            framedButton(canvas, inviteRect, "Invite...", kPaper, kBodyBorder,
                         inviteRect.contains(mouse));
             regions.push_back({inviteRect, GuildAction::Invite, {}});
             actionX += actionW + 8.0;
         }
 
         const Rect leave{actionX, contentY, actionW, actionH};
-        guildButton(canvas, leave, "Leave", kPaper, kDangerFrame, leave.contains(mouse));
+        framedButton(canvas, leave, "Leave", kPaper, kDangerFrame, leave.contains(mouse));
         regions.push_back({leave, GuildAction::Leave, {}});
 
         contentY += actionH + 14.0;
@@ -527,7 +454,7 @@ bool GuildPanel::render(MenuContext& ctx) {
             const double midY = rowY + kRowCard * 0.5;
 
             setFill(canvas, kPaper, 0.08);
-            roundRectPath(canvas, Rect{panel.x + 12.0, rowY, panel.w - 24.0, kRowCard}, 4.0);
+            roundPath(canvas, Rect{panel.x + 12.0, rowY, panel.w - 24.0, kRowCard}, 4.0);
             canvas.fill();
 
             setFill(canvas, online ? kOnlineDot : kOfflineDot);
@@ -560,13 +487,13 @@ bool GuildPanel::render(MenuContext& ctx) {
             const double buttonY = rowY + (kRowCard - smallH) * 0.5;
             if (leaderIsMe && !isSelf) {
                 const Rect kick{buttonX, buttonY, smallW, smallH};
-                guildButton(canvas, kick, "Kick", kPaper, kDangerFrame, kick.contains(mouse));
+                framedButton(canvas, kick, "Kick", kPaper, kDangerFrame, kick.contains(mouse));
                 regions.push_back({kick, GuildAction::Kick, member});
                 buttonX -= smallW + 6.0;
             }
             if (!isSelf && online) {
                 const Rect squad{buttonX, buttonY, smallW, smallH};
-                guildButton(canvas, squad, "Squad", kPaper, kBodyBorder, squad.contains(mouse));
+                framedButton(canvas, squad, "Squad", kPaper, kBodyBorder, squad.contains(mouse));
                 regions.push_back({squad, GuildAction::SquadOne, member});
             }
         }
@@ -578,12 +505,12 @@ bool GuildPanel::render(MenuContext& ctx) {
 
     if (drawnY > visible) {
         setFill(canvas, kInk, 0.25);
-        roundRectPath(canvas, track, 5.0);
+        roundPath(canvas, track, 5.0);
         canvas.fill();
         const double thumbHeight = std::max(24.0, track.h * visible / drawnY);
         const double travel = std::max(1.0, drawnY - visible);
         setFill(canvas, kBodyBorder);
-        roundRectPath(canvas,
+        roundPath(canvas,
                       Rect{track.x, track.y + (scroll_.offset / travel) * (track.h - thumbHeight),
                            track.w, thumbHeight},
                       5.0);
@@ -605,10 +532,10 @@ bool GuildPanel::render(MenuContext& ctx) {
         // rather than reaching the panel underneath.
         const Rect card = centred(kConfirmWidth, kConfirmHeight);
         setFill(canvas, kBodyFill);
-        roundRectPath(canvas, card, 4.0);
+        roundPath(canvas, card, 4.0);
         canvas.fill();
         setFill(canvas, kDialogBody);
-        roundRectPath(canvas, Rect{card.x + 2.0, card.y + 2.0, card.w - 4.0, card.h - 4.0}, 3.0);
+        roundPath(canvas, Rect{card.x + 2.0, card.y + 2.0, card.w - 4.0, card.h - 4.0}, 3.0);
         canvas.fill();
 
         TextStyle question;
@@ -628,8 +555,8 @@ bool GuildPanel::render(MenuContext& ctx) {
         // in for.
         const Rect cancel{card.x + card.w * 0.5 - buttonW - 8.0, buttonY, buttonW, buttonH};
         const Rect accept{card.x + card.w * 0.5 + 8.0, buttonY, buttonW, buttonH};
-        guildButton(canvas, cancel, "Cancel", kPaper, kBodyBorder, cancel.contains(mouse));
-        guildButton(canvas, accept, "OK", kPaper, kBodyBorder, accept.contains(mouse));
+        framedButton(canvas, cancel, "Cancel", kPaper, kBodyBorder, cancel.contains(mouse));
+        framedButton(canvas, accept, "OK", kPaper, kBodyBorder, accept.contains(mouse));
 
         const auto answer = [&](bool confirmed) {
             if (confirmed) {
@@ -653,10 +580,10 @@ bool GuildPanel::render(MenuContext& ctx) {
     if (modal.prompt != PromptMode::None) {
         const Rect box = centred(kPromptWidth, kPromptHeight);
         setFill(canvas, kBodyFill);
-        roundRectPath(canvas, box, 4.0);
+        roundPath(canvas, box, 4.0);
         canvas.fill();
         setFill(canvas, kDialogBody);
-        roundRectPath(canvas, Rect{box.x + 2.0, box.y + 2.0, box.w - 4.0, box.h - 4.0}, 3.0);
+        roundPath(canvas, Rect{box.x + 2.0, box.y + 2.0, box.w - 4.0, box.h - 4.0}, 3.0);
         canvas.fill();
 
         TextStyle field;

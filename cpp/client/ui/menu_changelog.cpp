@@ -48,9 +48,10 @@ constexpr double kBulletIndent = 20.0;
 /// well under half the ground it covers in the reference.
 constexpr double kWheelStep = 100.0;
 
-constexpr std::uint32_t kBodyFill = 0x49C46Fu;
-constexpr std::uint32_t kBodyBorder = 0x4CAF50u;
-constexpr std::uint32_t kClosePillFill = 0xFF4444u;
+/// The card's own colours come from kChangelogSkin; this is the border shade
+/// reused as a rule and a scrollbar thumb on the body.
+constexpr std::uint32_t kBodyBorder = kChangelogSkin.border;
+constexpr std::uint32_t kClosePillFill = kChangelogSkin.close;
 constexpr std::uint32_t kLinkFill = 0xD8F7FFu;
 
 /// The longest entry holds 17 bullets; the spare slot keeps every row's list
@@ -452,43 +453,6 @@ std::vector<Segment> parseChange(const std::string& change) {
     return segments;
 }
 
-void roundRectPath(Canvas& canvas, Rect r, double radius) {
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
-                     static_cast<float>(r.h), static_cast<float>(radius));
-}
-
-/// The header's close control: a flat red pill with a drawn cross.
-///
-/// Drawn rather than typed because the reference's glyph is U+2715, which
-/// Ubuntu does not carry -- the browser silently falls back to a system face,
-/// and typing it here would paint the font's .notdef box. The cross is sized
-/// to the 11px span that fallback produces at 16px.
-void drawClosePill(Canvas& canvas, Rect r) {
-    setFill(canvas, kClosePillFill);
-    roundRectPath(canvas, r, 5.0);
-    canvas.fill();
-
-    const double cx = r.x + r.w * 0.5;
-    const double cy = r.y + r.h * 0.5;
-    const double arm = 5.5;
-    canvas.save();
-    setStroke(canvas, kPaper);
-    // Weighed by INK rather than by the glyph's apparent stroke: over the same
-    // 16x16 box the browser's U+2715 covers 50.1px of white and a 2.0px cross
-    // covers 63.8. Two round-capped arms of 15.6px overlapping once solve to
-    // 1.6, and the arm length is what fixes the bbox, so only the width moves.
-    canvas.setLineWidth(1.6f);
-    canvas.setLineCap("round");
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(cx - arm), static_cast<float>(cy - arm));
-    canvas.lineTo(static_cast<float>(cx + arm), static_cast<float>(cy + arm));
-    canvas.moveTo(static_cast<float>(cx + arm), static_cast<float>(cy - arm));
-    canvas.lineTo(static_cast<float>(cx - arm), static_cast<float>(cy + arm));
-    canvas.stroke();
-    canvas.restore();
-}
-
 /// The one glyph in the build that is filled and THEN stroked.
 ///
 /// The reference paints the bullet with fillText followed by strokeText, so
@@ -589,16 +553,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
     }
     scroll_.offset = clamp(scroll_.offset, 0.0, maxScroll);
 
-    // A single fill plus a CENTRED 2px stroke, not the two-fill panelCard():
-    // this card's border straddles its edge rather than sitting inside it.
-    canvas.save();
-    setFill(canvas, kBodyFill);
-    setStroke(canvas, kBodyBorder);
-    canvas.setLineWidth(2.0f);
-    roundRectPath(canvas, panel, 10.0);
-    canvas.fill();
-    canvas.stroke();
-    canvas.restore();
+    overlayCard(canvas, panel, kChangelogSkin);
 
     TextStyle heading;
     heading.size = 20.0;
@@ -610,13 +565,13 @@ bool ChangelogPanel::render(MenuContext& ctx) {
 
     // No hover and no press state, exactly as the reference pill has none.
     const Rect closeRect = overlayCloseRect(panel);
-    drawClosePill(canvas, closeRect);
+    closeCrossPill(canvas, closeRect, kClosePillFill);
 
     const Rect view{panel.x + kPadding, panel.y + kHeaderHeight, panel.w - kPadding * 2,
                     panel.h - kHeaderHeight - kPadding};
 
     canvas.save();
-    roundRectPath(canvas, view, 8.0);
+    roundPath(canvas, view, 8.0);
     canvas.clip();
 
     // The date strip yields its right edge to the scrollbar when there is one.
@@ -636,7 +591,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
         }
 
         setFill(canvas, kPaper, 0.05);
-        roundRectPath(canvas, Rect{view.x, contentY - 5.0, stripWidth, 10.0}, 8.0);
+        roundPath(canvas, Rect{view.x, contentY - 5.0, stripWidth, 10.0}, 8.0);
         canvas.fill();
 
         TextStyle date;
@@ -664,7 +619,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
 
     if (scrollable) {
         setFill(canvas, kPaper, 0.1);
-        roundRectPath(canvas, track, 5.0);
+        roundPath(canvas, track, 5.0);
         canvas.fill();
         // No minimum thumb height: on a 7896px list the reference's thumb is
         // 26px, and clamping it to a comfortable size would move it off the
@@ -672,7 +627,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
         const double thumbHeight = (viewport - 5.0) * viewport / contentHeight;
         const double travelled = maxScroll > 0 ? scroll_.offset / maxScroll : 0.0;
         setFill(canvas, kBodyBorder);
-        roundRectPath(canvas,
+        roundPath(canvas,
                       Rect{track.x, track.y + travelled * (track.h - thumbHeight),
                            track.w, thumbHeight},
                       5.0);

@@ -67,6 +67,7 @@ add_library(flix_client STATIC
   client/world_view.cpp
   client/ui/draw.cpp
   client/ui/text.cpp
+  client/ui/menu_style.cpp
   client/ui/menu_widgets.cpp
   client/ui/item_tile.cpp
   client/ui/menus.cpp
