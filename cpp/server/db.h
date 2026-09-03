@@ -284,6 +284,20 @@ public:
 
     CreateResult createUser(const std::string& username, const std::string& password);
 
+    /// Deletes an account and the progress record behind it, by any spelling
+    /// of the name. Returns false when there is no such account.
+    ///
+    /// Sessions go with it: a token that outlived its account would resolve to
+    /// nothing on the next resume, and resolveSession would drop it anyway --
+    /// but doing it here means the file never carries the orphans at all.
+    bool eraseUser(const std::string& username);
+
+    /// True when this record is a brand-new account that has done nothing: no
+    /// XP, no skin, and nothing in the inventory or loadout beyond the starter
+    /// kit. The guest sweep keeps anything that fails this, because a guest
+    /// who actually played is a player.
+    static bool isStarterProgress(const PlayerRecord& record);
+
     /// Checks a password and, on success, stamps lastActiveAt. An account
     /// still holding a plaintext password from the old import is upgraded to
     /// bcrypt here, on the one occasion the password is available.
@@ -350,6 +364,14 @@ public:
     /// coercing read would replace the whole feed with `{}`. Returns a null
     /// Json when the table is absent.
     const Json& storedTable(const std::string& key) const { return otherTop_[key]; }
+
+    /// The array-shaped counterpart of rawTable(), for `notifications`.
+    ///
+    /// rawTable() COERCES its value to an object, which is right for the
+    /// dictionaries it was written for and fatal here: one coercing read would
+    /// replace the whole feed with `{}`. Creates the table -- and its place in
+    /// the key order -- on first access; the caller marks the database dirty.
+    Json& rawArrayTable(const std::string& key);
 
     /// One of the top-level tables this build does not model, as raw JSON.
     ///

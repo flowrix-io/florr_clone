@@ -488,23 +488,29 @@ Rect TalentsPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, 
 Rect GalleryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
 
 Rect ShopPanel::bounds(int w, int h) {
-    return cornerPanel(preferredWidth(), ShopPanel::preferredHeight(), 72.0, w, h);
+    return cornerPanel(preferredWidth(), ShopPanel::preferredHeight(), kMenuCornerY, w, h);
 }
-Rect SkinsPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 540.0, 72.0, w, h); }
+Rect SkinsPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), 540.0, kMenuCornerY, w, h);
+}
 Rect LeaderboardPanel::bounds(int w, int h) {
-    return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
+    return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h);
 }
 // Settings and debug sit two pixels higher than the other overlays, which is
 // what the browser does; not worth "correcting" into disagreement with it.
-Rect SettingsPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, 70.0, w, h); }
-Rect DebugPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, 70.0, w, h); }
+Rect SettingsPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), 500.0, kMenuCornerY - 2.0, w, h);
+}
+Rect DebugPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), 500.0, kMenuCornerY - 2.0, w, h);
+}
 Rect ChangelogPanel::bounds(int w, int h) {
-    return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
+    return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h);
 }
 Rect NotificationsPanel::bounds(int w, int h) {
-    return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
+    return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h);
 }
-Rect GuildPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, 72.0, w, h); }
+Rect GuildPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h); }
 
 Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
     switch (id) {

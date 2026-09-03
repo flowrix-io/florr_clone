@@ -71,6 +71,10 @@ struct Session {
 
     double loginAttemptsAllowed = 5;
     double chatAllowance = 4;
+    /// Slash commands, budgeted separately from chat. A command's output goes
+    /// back to its sender, so the flood the chat budget is guarding against is
+    /// not the one a command can cause -- see session.cpp.
+    double commandAllowance = 12;
     double inputAllowance = 60;
     double lastRefillMillis = 0;
 

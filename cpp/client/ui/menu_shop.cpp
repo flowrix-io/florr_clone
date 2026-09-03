@@ -91,6 +91,20 @@ constexpr double kBalanceHeight = 38.0;
 constexpr double kBalanceStar = 26.0;
 constexpr double kPriceStar = 24.0;
 
+/// The store tab's own heading and the rotation line under it, measured off
+/// the reference: "Today's offers:" is 137x20 there and came out 127x18 at 18,
+/// and the line under it a pixel short of the shot's cap height at 13. Every
+/// other label on the panel already matched, so these two are the sizes that
+/// were guessed rather than measured the first time round.
+constexpr double kOffersHeadingSize = 19.5;
+constexpr double kOffersSubSize = 14.0;
+
+/// Glyph outlines on this panel, as a fraction of the font size. Lighter than
+/// the client's own kTextStrokeRatio: every label here sits on a flat green
+/// plate and never has to survive over game content, so it is outlined only
+/// enough to separate it from the plate.
+constexpr double kShopStrokeRatio = 0.10;
+
 constexpr double kScrollbarWidth = 6.0;
 
 /// Half-period of the code field's caret: 530 ms on, 530 ms off.
@@ -105,10 +119,10 @@ constexpr double kWheelPixels = 100.0;
 /// The greens the shot is made of, beside the card's own pair in
 /// menu_theme.h: the light plate the header and the content sit on, the tab
 /// frame, and the Lock pill.
-constexpr std::uint32_t kShopPlate = 0x9AEC7Du;
-constexpr std::uint32_t kTabBorder = 0x659B51u;
-constexpr std::uint32_t kLockFill = 0x8CD671u;
-constexpr std::uint32_t kLockBorder = 0x71AD5Bu;
+constexpr std::uint32_t kShopPlate = 0x7fef6du;
+constexpr std::uint32_t kTabBorder = 0x539d47u;
+constexpr std::uint32_t kLockFill = 0x5baf50u;
+constexpr std::uint32_t kLockBorder = 0x519d44u;
 
 /// The price pill under every offer, which is also its buy button.
 constexpr std::uint32_t kPriceFill = 0xF7E04Bu;
@@ -287,12 +301,21 @@ void tintFace(Canvas& canvas, Rect control, double radius, double alpha) {
 
 /// The browser sets `lineJoin = 'round'` once in drawHeader and never puts it
 /// back, so every glyph outline on this panel is round-joined.
+///
+/// A negative `strokeWidth` asks for the panel's own proportional outline;
+/// 0 turns it off. Proportional and not the flat 3px this used to pass at
+/// every size: solved against the reference, the outline that matches is a
+/// tenth of the font size at 24px, at 19.5, at 16 and at 14 alike, and one
+/// flat width across that range is half again too heavy on the small labels
+/// while being too light on the headings. Over-outlined text reads as a
+/// heavier, greyer typeface rather than as a thicker outline, which is what
+/// "the shop's colours are off" turned out to be.
 TextStyle shopText(double size, bool bold, std::uint32_t fill, double strokeWidth) {
     TextStyle style;
     style.size = size;
     style.bold = bold;
     style.fill = fill;
-    style.strokeWidth = strokeWidth;
+    style.strokeWidth = strokeWidth < 0 ? size * kShopStrokeRatio : strokeWidth;
     style.roundJoin = true;
     return style;
 }
@@ -641,7 +664,7 @@ bool ShopPanel::render(MenuContext& ctx) {
                       kHeaderHeight};
     fillRounded(canvas, header, kPlateRadius, kShopPlate);
 
-    TextStyle title = shopText(24.0, true, kPaper, 4.0);
+    TextStyle title = shopText(24.0, true, kPaper, -1.0);
     title.align = Align::Centre;
     text(canvas, "Shop", panel.x + panel.w * 0.5, header.y + header.h * 0.5, title);
 
@@ -673,11 +696,14 @@ bool ShopPanel::render(MenuContext& ctx) {
             tintFace(canvas, rect, kTabRadius, active ? kTintSelected : kTintHover);
         }
 
-        TextStyle label = shopText(16.0, true, kPaper, 3.0);
+        TextStyle label = shopText(16.0, true, kPaper, -1.0);
         label.align = Align::Centre;
-        // The inactive label's FILL is white at 0.7; its outline stays opaque.
-        fadedText(canvas, kTabLabels[static_cast<std::size_t>(i)], rect.x + rect.w * 0.5,
-                  rect.y + rect.h * 0.5, label, active ? 1.0 : 0.7);
+        // Every label is full white, the active one included. Which tab is
+        // selected is said by the FACE -- kTintSelected presses it into the
+        // body -- and dimming the other two said it a second time, in a way
+        // that read as "disabled" rather than as "not the current tab".
+        text(canvas, kTabLabels[static_cast<std::size_t>(i)], rect.x + rect.w * 0.5,
+             rect.y + rect.h * 0.5, label);
     }
 
     // --- content plate ------------------------------------------------------
@@ -699,10 +725,10 @@ bool ShopPanel::render(MenuContext& ctx) {
         drawStarIcon(canvas, groupX, balancePill.y + (balancePill.h - kBalanceStar) * 0.5,
                      kBalanceStar, false);
         text(canvas, balance, groupX + kBalanceStar + 6.0, balancePill.y + balancePill.h * 0.5,
-             shopText(18.0, true, kPaper, 3.0));
+             shopText(18.0, true, kPaper, -1.0));
     }
 
-    TextStyle hint = shopText(13.0, true, kPaper, 3.0);
+    TextStyle hint = shopText(13.0, true, kPaper, -1.0);
     hint.align = Align::Right;
     const double hintRight = balancePill.x - 9.0;
     text(canvas, "You gain stars by completing challenges, or by", hintRight,
@@ -733,13 +759,13 @@ bool ShopPanel::render(MenuContext& ctx) {
             state.offers = shopOffers(rotation);
         }
 
-        TextStyle heading = shopText(18.0, true, kPaper, 3.5);
+        TextStyle heading = shopText(kOffersHeadingSize, true, kPaper, -1.0);
         heading.align = Align::Centre;
         text(canvas, "Today's offers:", panel.x + panel.w * 0.5, contentPlate.y + 24.0, heading);
 
         const std::int64_t remaining =
             std::max<std::int64_t>(0, shopRotationEnd(rotation) - shopClockNow());
-        TextStyle sub = shopText(13.0, true, kPaper, 3.0);
+        TextStyle sub = shopText(kOffersSubSize, true, kPaper, -1.0);
         sub.align = Align::Centre;
         text(canvas, rotationCaption(remaining), panel.x + panel.w * 0.5, contentPlate.y + 46.0,
              sub);
@@ -747,12 +773,16 @@ bool ShopPanel::render(MenuContext& ctx) {
         // Locking an offer through a rotation is the reference's; nothing on
         // this server keeps per-account offers, so the control is drawn where
         // it belongs and left inert rather than made to lie about what it did.
+        // Drawn at full strength, as the reference draws it: the pill is
+        // kLockFill and the label is white. The 0.55 wash this used to wear
+        // was our own way of saying "inert", and it made the one green control
+        // on the panel the only washed-out thing on it.
         lockRect = Rect{contentPlate.right() - 27.0 - 67.0, contentPlate.y + 17.0, 67.0, 29.0};
-        inlaid(canvas, lockRect, kLockFill, kLockBorder, kControlBorder, 6.0, 0.55);
-        TextStyle lockLabel = shopText(14.0, true, kPaper, 3.0);
+        inlaid(canvas, lockRect, kLockFill, kLockBorder, kControlBorder, 6.0);
+        TextStyle lockLabel = shopText(14.0, true, kPaper, -1.0);
         lockLabel.align = Align::Centre;
-        fadedText(canvas, "Lock", lockRect.x + lockRect.w * 0.5, lockRect.y + lockRect.h * 0.5,
-                  lockLabel, 0.55);
+        text(canvas, "Lock", lockRect.x + lockRect.w * 0.5, lockRect.y + lockRect.h * 0.5,
+             lockLabel);
 
         const double gridWidth =
             kShopOfferColumns * kBlockWidth + (kShopOfferColumns - 1) * kBlockGap;
@@ -799,7 +829,7 @@ bool ShopPanel::render(MenuContext& ctx) {
             const double groupX = pill.x + (pill.w - group) * 0.5;
             drawStarIcon(canvas, groupX, pill.y + (pill.h - kPriceStar) * 0.5, kPriceStar, false);
             text(canvas, price, groupX + kPriceStar + 4.0, pill.y + pill.h * 0.5,
-                 shopText(16.0, true, kPaper, 3.0));
+                 shopText(16.0, true, kPaper, -1.0));
         }
 
         // The ribbons last, in their own pass: one hangs off the corner of its
@@ -816,7 +846,7 @@ bool ShopPanel::render(MenuContext& ctx) {
         fillRounded(canvas, codePlate, 10.0, kCodeBlue, 0.15);
         strokeRounded(canvas, codePlate, 10.0, kCodeBlue, 2.0);
 
-        TextStyle codeTitle = shopText(18.0, true, kPaper, 3.0);
+        TextStyle codeTitle = shopText(18.0, true, kPaper, -1.0);
         codeTitle.baseline = Baseline::Top;
         text(canvas, "Redeem Code", codePlate.x + 15.0, codePlate.y + 12.0, codeTitle);
 
@@ -865,12 +895,12 @@ bool ShopPanel::render(MenuContext& ctx) {
         const bool redeemHover = !modalUp && redeemButton.contains(mouse);
         if (redeemHover) cursor = CursorShape::Hand;
         fillRounded(canvas, redeemButton, 5.0, redeemHover ? kCodeBlueHover : kCodeBlue);
-        TextStyle redeemLabel = shopText(16.0, true, kPaper, 3.0);
+        TextStyle redeemLabel = shopText(16.0, true, kPaper, -1.0);
         redeemLabel.align = Align::Centre;
         text(canvas, "Redeem", redeemButton.x + redeemButton.w * 0.5,
              redeemButton.y + redeemButton.h * 0.5, redeemLabel);
 
-        TextStyle note = shopText(14.0, false, kPaper, 3.0);
+        TextStyle note = shopText(14.0, false, kPaper, -1.0);
         note.align = Align::Centre;
         note.baseline = Baseline::Top;
         text(canvas, "Codes are handed out on the Discord, and each pays its stars once.",
@@ -893,7 +923,7 @@ bool ShopPanel::render(MenuContext& ctx) {
         canvas.clip();
 
         double y = body.y + 10.0 - scroll_.offset;
-        TextStyle heading = shopText(20.0, true, kPaper, 4.0);
+        TextStyle heading = shopText(20.0, true, kPaper, -1.0);
         heading.align = Align::Centre;
         heading.baseline = Baseline::Top;
         text(canvas, "Earn Stars by Defeating Mythic+ Mobs", body.x + body.w * 0.5, y, heading);
@@ -907,12 +937,12 @@ bool ShopPanel::render(MenuContext& ctx) {
             fillRounded(canvas, card, 10.0, challenge.color);
             strokeRounded(canvas, card, 10.0, kInk, 2.0, 0.3);
 
-            TextStyle name = shopText(18.0, true, kPaper, 3.0);
+            TextStyle name = shopText(18.0, true, kPaper, -1.0);
             name.baseline = Baseline::Top;
             text(canvas, std::string(rarityLabel(challenge.tier)) + " Challenge", card.x + 12.0,
                  card.y + 12.0, name);
 
-            TextStyle detail = shopText(14.0, false, kPaper, 3.0);
+            TextStyle detail = shopText(14.0, false, kPaper, -1.0);
             detail.baseline = Baseline::Top;
             fadedText(canvas, std::string("Defeat any ") + rarityLabel(challenge.tier) + " tier mob",
                       card.x + 12.0, card.y + 36.0, detail, 0.95);
@@ -920,7 +950,7 @@ bool ShopPanel::render(MenuContext& ctx) {
             drawStarIcon(canvas, card.x + 12.0, card.y + 60.0, 18.0);
             const std::string reward =
                 std::to_string(challenge.stars) + (challenge.stars == 1 ? " Star" : " Stars");
-            text(canvas, reward, card.x + 38.0, card.y + 69.0, shopText(16.0, true, kGold, 3.0));
+            text(canvas, reward, card.x + 38.0, card.y + 69.0, shopText(16.0, true, kGold, -1.0));
         }
         canvas.restore();
 
@@ -961,11 +991,11 @@ bool ShopPanel::render(MenuContext& ctx) {
 
         const double centreX = box.x + box.w * 0.5;
         if (confirming) {
-            TextStyle heading = shopText(24.0, true, kPaper, 4.0);
+            TextStyle heading = shopText(24.0, true, kPaper, -1.0);
             heading.align = Align::Centre;
             text(canvas, "Confirm", centreX, box.y + 39.0, heading);
 
-            TextStyle question = shopText(kModalBodySize, true, kPaper, 3.0);
+            TextStyle question = shopText(kModalBodySize, true, kPaper, -1.0);
             question.align = Align::Centre;
             text(canvas, "Are you sure you want to buy this?", centreX, box.y + 87.0, question);
             TextStyle warning = question;
@@ -980,7 +1010,7 @@ bool ShopPanel::render(MenuContext& ctx) {
                          {centreX - kTileWidth * 0.5, box.y + 135.0, kTileWidth, kTileWidth},
                          tile);
         } else {
-            TextStyle message = shopText(kModalBodySize, true, state.messageColor, 3.0);
+            TextStyle message = shopText(kModalBodySize, true, state.messageColor, -1.0);
             message.align = Align::Centre;
             message.baseline = Baseline::Top;
             double lineY = box.y + kModalTextTop;
@@ -1011,7 +1041,7 @@ bool ShopPanel::render(MenuContext& ctx) {
             drawStarIcon(canvas, groupX, confirmRect.y + (confirmRect.h - kModalStar) * 0.5,
                          kModalStar, false);
             text(canvas, price, groupX + kModalStar + 4.0,
-                 confirmRect.y + confirmRect.h * 0.5, shopText(16.0, true, kPaper, 3.0));
+                 confirmRect.y + confirmRect.h * 0.5, shopText(16.0, true, kPaper, -1.0));
         }
 
         cancelRect = {bx, by, kModalCancelWidth, kModalButtonHeight};
@@ -1019,7 +1049,7 @@ bool ShopPanel::render(MenuContext& ctx) {
         if (cancelHover) cursor = CursorShape::Hand;
         inlaid(canvas, cancelRect, kModalGrey, kModalGreyBorder, kControlBorder, kBlockRadius);
         if (cancelHover) tintFace(canvas, cancelRect, kBlockRadius, kTintSelected);
-        TextStyle label = shopText(16.0, true, kPaper, 3.0);
+        TextStyle label = shopText(16.0, true, kPaper, -1.0);
         label.align = Align::Centre;
         text(canvas, confirming ? "Cancel" : "OK", cancelRect.x + cancelRect.w * 0.5,
              cancelRect.y + cancelRect.h * 0.5, label);

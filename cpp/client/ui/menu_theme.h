@@ -34,7 +34,7 @@ inline constexpr PanelSkin kTalentsSkin{0xDC7E92u, 0xB56476u, 0x8E4657u, 0x6E354
 /// also the one card with NO frame: the green ring around it in that shot is
 /// the page behind the card, not a border. Border and accent are the body
 /// colour deliberately, so a shared helper that draws either paints nothing.
-inline constexpr PanelSkin kShopSkin{0x7DC065u, 0x7DC065u, 0xAE5B58u, 0x8D4A47u, 0x7DC065u};
+inline constexpr PanelSkin kShopSkin{0x65c359u, 0x65c359u, 0xAE5B58u, 0x8D4A47u, 0x7DC065u};
 /// The skin studio is the one panel whose border is LIGHTER than its body --
 /// it borrows the strip button's own purple as the frame.
 inline constexpr PanelSkin kSkinsSkin{0x8737B6u, 0x9A3FD0u, 0xBB5B61u, 0x914B31u, 0x9A3FD0u};
@@ -100,7 +100,11 @@ inline constexpr double kMenuListHeightFraction = 2.0 / 3.0;
 /// clipped by it. `top + height` is exactly 1.0, so without a pad every list
 /// panel runs off the screen whatever the viewport is.
 inline constexpr double kMenuListBottomPad = 16.0;
-inline constexpr double kMenuCornerX = 20.0;
-inline constexpr double kMenuCornerY = 72.0;
+/// The corner panels hang off the top-left corner, tucked in under the icon
+/// row: 6 in from the edge -- a shade further out than the row's own 9, so the
+/// card reads as a page under the buttons rather than as one more button --
+/// and 5 below the row's bottom edge.
+inline constexpr double kMenuCornerX = 6.0;
+inline constexpr double kMenuCornerY = 62.0;
 
 } // namespace flr::ui

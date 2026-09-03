@@ -422,6 +422,15 @@ bool Database::parseRoot(const Json& root, std::string& errorOut) {
     return true;
 }
 
+Json& Database::rawArrayTable(const std::string& key) {
+    Json& table = otherTop_[key];
+    if (!table.isArray()) table = Json::array();
+    if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), key) == topKeyOrder_.end()) {
+        topKeyOrder_.push_back(key);
+    }
+    return table;
+}
+
 Json& Database::rawTable(const std::string& key) {
     Json& table = otherTop_[key];
     if (!table.isObject()) table = Json::object();
@@ -660,6 +669,64 @@ CreateResult Database::createUser(const std::string& username, const std::string
 
     result.account = &account;
     return result;
+}
+
+bool Database::eraseUser(const std::string& username) {
+    // Resolve through findUser so any spelling works, then delete by the key
+    // the account is actually STORED under -- a legacy file may hold both
+    // "Bob" and "bob", and erasing the typed spelling would take the wrong one
+    // or nothing at all.
+    const Account* account = findUser(username);
+    if (account == nullptr) return false;
+    const std::string storedKey = account->username;
+    const std::string userId = account->id;
+
+    // Sessions first, while the account is still there to match against: a
+    // token outliving its account resolves to nothing anyway, and leaving the
+    // orphans in the file only means writing rubbish that the next load has to
+    // step over.
+    std::vector<std::string> doomedTokens;
+    for (const std::string& tokenHash : sessions_.keys()) {
+        const Session* session = sessions_.find(tokenHash);
+        if (session != nullptr && session->userId == userId) doomedTokens.push_back(tokenHash);
+    }
+    for (const std::string& tokenHash : doomedTokens) sessions_.erase(tokenHash);
+
+    users_.erase(storedKey);
+    if (!userId.empty()) players_.erase(userId);
+    usersByLowerName_.erase(toLower(storedKey));
+    if (!userId.empty()) usersById_.erase(userId);
+    markDirty();
+    return true;
+}
+
+bool Database::isStarterProgress(const PlayerRecord& record) {
+    if (record.totalXp > 0) return false;
+    // A skin is account content somebody chose; it outranks the sweep.
+    if (record.renderFlags != 0) return false;
+    if (!record.equippedSkinId.empty()) return false;
+
+    // The starter inventory is exactly {common: {petal_basic: 5}}. Anything
+    // else -- a second rarity, a second petal, or a different count -- means
+    // this account picked something up.
+    if (record.inventory.isObject() && !record.inventory.keys().empty()) {
+        if (record.inventory.keys().size() > 1) return false;
+        const std::string& rarity = record.inventory.keys().front();
+        if (rarity != "common") return false;
+        const Json& items = record.inventory[rarity];
+        if (!items.isObject()) return false;
+        if (items.keys().size() > 1) return false;
+        if (items.keys().size() == 1) {
+            const std::string& key = items.keys().front();
+            if (key != "petal_basic" || items[key].asInt(0) != 5) return false;
+        }
+    }
+
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (!slot.has_value()) continue;
+        if (slot->petalType != "basic" || slot->rarity != Rarity::Common) return false;
+    }
+    return true;
 }
 
 bool Database::verifyPassword(const std::string& username, const std::string& password) {

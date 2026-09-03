@@ -413,7 +413,7 @@ void SpawnSystem::spawnBodyChain(World& world, const Terrain& terrain,
     Entity ahead = head;
     Vec2 at = headPosition;
     for (int i = 1; i <= config.segmentCount; ++i) {
-        if (census_.mobs >= kMaxLiveMobs) break;
+        if (census_.mobs >= mobCap) break;
         at = at + step;
         const Entity segment = spawnMobAt(world, terrain, content, config.segmentBodyIndex, rarity,
                                           at, nowMillis, rng, depth);
@@ -435,7 +435,7 @@ void SpawnSystem::spawnBodyChain(World& world, const Terrain& terrain,
 Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const ContentRegistry& content,
                                 std::uint16_t childIndex, Rarity nestRarity, Vec2 at, Entity parent,
                                 double nowMillis, Rng& rng, int depth) {
-    if (census_.mobs >= kMaxLiveMobs) return NULL_ENTITY;
+    if (census_.mobs >= mobCap) return NULL_ENTITY;
     const Entity child =
         spawnMobAt(world, terrain, content, childIndex, nestRarity, at, nowMillis, rng, depth);
     if (child == NULL_ENTITY || parent == NULL_ENTITY) return child;
@@ -641,7 +641,7 @@ void SpawnSystem::fillNeighbourhoods(World& world, const Terrain& terrain,
 
         const int budget = std::min(deficit, kMaxSpawnsPerPass);
         for (int n = 0; n < budget; ++n) {
-            if (census_.mobs >= kMaxLiveMobs) return;
+            if (census_.mobs >= mobCap) return;
 
             Vec2 at;
             int section = -1;
@@ -946,7 +946,7 @@ void SpawnSystem::runSpawnZones(World& world, const Terrain& terrain,
 Entity SpawnSystem::spawnInZone(World& world, const Terrain& terrain,
                                 const ContentRegistry& content, const SpawnZone& zone,
                                 const std::vector<Viewer>& viewers, Rng& rng, double nowMillis) {
-    if (census_.mobs >= kMaxLiveMobs) return NULL_ENTITY;
+    if (census_.mobs >= mobCap) return NULL_ENTITY;
 
     Vec2 at;
     bool placed = false;
@@ -1080,7 +1080,7 @@ Entity SpawnSystem::spawnSpecialMob(World& world, const Terrain& terrain,
                                     const std::array<bool, kSectionCount>* superSections,
                                     const std::vector<Viewer>& viewers, Rng& rng,
                                     double nowMillis) {
-    if (census_.mobs >= kMaxLiveMobs) return NULL_ENTITY;
+    if (census_.mobs >= mobCap) return NULL_ENTITY;
 
     // Where the tier lives on the map. Ultras and uniques are ultra-rectangle
     // only; three supers in four join them and the fourth takes a mythic one,

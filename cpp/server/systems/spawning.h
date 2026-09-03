@@ -257,6 +257,15 @@ public:
         double luck = kNeutralSpawnLuck;
     };
 
+    /// The live-mob ceiling this pass will not spawn past.
+    ///
+    /// A variable rather than kMaxLiveMobs directly because the admin console
+    /// can raise or lower it at runtime (`/admin set_max_enemies`), which is
+    /// the one knob an operator reaches for when a box is struggling. Every
+    /// spawn path tests it, so lowering it stops new mobs immediately and lets
+    /// the existing population drain rather than culling anything.
+    int mobCap = kMaxLiveMobs;
+
     /// Assigns the wire id for every entity this system creates.
     ///
     /// Null in a unit test, where nothing replicates. The runtime MUST point it
@@ -314,6 +323,15 @@ public:
     static Rarity rollNaturalRarity(int section, double luck, Rng& rng);
 
     const Census& census() const { return census_; }
+
+    /// Runs the boss pass on the next tick instead of waiting out its timer.
+    ///
+    /// The admin console's `/admin spawn_special_mobs` asks for exactly this
+    /// and nothing more: the pass itself decides what is missing -- one ultra,
+    /// a super per bare section, a unique beside a super -- so forcing the
+    /// clock forward is the whole command, and duplicating that reasoning at
+    /// the call site would be a second answer to the same question.
+    void requestSpecialPass() { nextBossMillis_ = 0; }
 
 private:
     /// One `spawn` rectangle and where it is in its fill cycle.

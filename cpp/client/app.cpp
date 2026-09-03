@@ -122,9 +122,8 @@ constexpr double kChatSuggestionSize = 13.0;
 /// The slash commands the reference offers, in its order.
 ///
 /// Admin rows are carried so this is the reference's table rather than an
-/// edited copy of it, and filtered out at draw time: the browser gates them on
-/// a `showAdminCommands` localStorage flag whose default is off, and a native
-/// client has no such store to turn on.
+/// edited copy of it, and filtered at draw time by matchChatCommands: they are
+/// offered only to a client the server has told is admin.
 struct ChatCommand {
     const char* command;
     const char* description;
@@ -522,13 +521,18 @@ std::string clockTime(std::int64_t unixMillis) {
 /// The commands whose names start with what has been typed, case-blind.
 /// Shared by the key handler and the draw pass so the highlighted row and the
 /// completed text can never come from two different lists.
-std::vector<const ChatCommand*> matchChatCommands(const std::string& typed) {
+std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool includeAdmin) {
     std::string needle = typed;
     for (char& c : needle) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
     std::vector<const ChatCommand*> matches;
     for (const ChatCommand& command : kChatCommands) {
-        if (command.admin) continue;
+        // The browser gates the admin rows on a `showAdminCommands`
+        // localStorage flag; this client has no such store, so it gates them
+        // on what the server actually said -- the admin flag that arrives with
+        // the skin catalog, which a temporary grant re-sends. Listing them to
+        // everyone would advertise a console most players cannot open.
+        if (command.admin && !includeAdmin) continue;
         std::string name = command.command;
         for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (name.size() >= needle.size() && name.compare(0, needle.size(), needle) == 0) {
@@ -1036,7 +1040,7 @@ void App::editChatLine() {
     }
 
     if (chatSuggestion_ >= 0) {
-        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_);
+        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin());
         if (matches.empty()) {
             chatSuggestion_ = -1;
         } else {
@@ -2150,7 +2154,7 @@ void App::drawChat(Canvas& canvas, double time) {
     // reference hides one element and shows the other in the same slot.
     const bool suggesting = chatOpen_ && !chatDraft_.empty() && chatDraft_[0] == '/';
     if (suggesting) {
-        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_);
+        const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin());
         if (!matches.empty()) {
             // Clamped locally: the key handler owns the selection, and a draw
             // pass that edited it would fight whatever the last keystroke did.

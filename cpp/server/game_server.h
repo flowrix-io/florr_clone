@@ -33,6 +33,19 @@ class CombatSystem;
 class SpawnSystem;
 class LootSystem;
 
+/// Milliseconds since the first call, from a steady clock.
+///
+/// The simulation's clock: every `nowMillis` a system is handed comes from
+/// here, so anything that has to place itself on the same timeline -- an
+/// admin-spawned mob's lifetime, a cooldown -- must read it rather than a
+/// clock of its own.
+double monotonicMillis();
+
+/// Hard ceiling on the bot population, whatever the target arithmetic or an
+/// admin override says. Named here rather than in game_server.cpp because the
+/// console quotes it back in `/admin set_bot_count`'s usage line.
+inline constexpr int kMaxBots = 50;
+
 struct ServerConfig {
     std::uint16_t port = 4242;
     std::string dataDir = "data";
@@ -121,6 +134,65 @@ private:
     void handleGuildLeave(Session&, net::Connection&);
     void handleGuildSquadAll(Session&, net::Connection&);
     void handleGuildInviteToSquad(Session&, net::Connection&, ByteReader&);
+
+    // The argument-taking cores behind the four guild messages that carry one.
+    //
+    // Split out because the same operations arrive by two roads: the guild
+    // panel's binary messages, and the `/guild-create`-style chat commands the
+    // reference also accepts. A second implementation of "may this player
+    // invite?" would be a second answer to it.
+    void guildCreate(Session&, net::Connection&, const std::string& name);
+    void guildInvite(Session&, net::Connection&, const std::string& target);
+    void guildKick(Session&, net::Connection&, const std::string& target);
+    void guildInviteToSquad(Session&, net::Connection&, const std::string& target);
+
+    // -- chat commands -----------------------------------------------------
+    //
+    // Implemented in server/chat_commands.cpp. A chat line beginning with '/'
+    // never reaches the global channel: it is answered, refused, or reported
+    // unknown, which is the difference between a command surface and a player
+    // typing "/help" at everyone.
+
+    /// True when `message` was a command -- handled, refused or unknown -- and
+    /// must not be broadcast. False means an ordinary chat line.
+    bool handleChatCommand(Session&, net::Connection&, const std::string& message);
+
+    /// One `/admin` (or `/cmd`) body, already stripped of its prefix. The
+    /// caller has checked that this session may run it.
+    void runAdminCommand(Session&, net::Connection&, const std::string& command);
+
+    /// One System line to one connection. Command output is one line per
+    /// message rather than one message with embedded newlines: the browser
+    /// build joins its lines with `<br/>`, and this client has no markup.
+    void sendSystem(net::Connection&, const std::string& text);
+
+    /// Whether this session may run admin commands: a database admin, or the
+    /// holder of a temporary grant. `session.admin` alone is the database flag
+    /// and deliberately does not move when a grant is made.
+    bool effectiveAdmin(const Session&) const;
+
+    /// What an admin command's `<player>` argument resolved to.
+    ///
+    /// Bots resolve as well as people -- teleporting them is half of what the
+    /// command exists for -- so the session is optional and the entity is not.
+    struct CommandTarget {
+        Entity entity = NULL_ENTITY;
+        Session* session = nullptr;   ///< null for a bot
+        std::string name;             ///< the nameplate, for output
+    };
+    /// Matches a live flower by nameplate or account name, case-insensitively.
+    /// Accounts that are not online do not resolve here; the commands that
+    /// work offline (give, mute) fall back to the database themselves.
+    bool resolveCommandTarget(const std::string& identifier, CommandTarget& out);
+
+    /// Moves a body and tells its owner, so the client cuts its interpolation
+    /// instead of gliding across the map.
+    void teleportEntity(Entity, Vec2);
+
+    /// Drops a temporary admin grant, if this connection holds one. Called on
+    /// respawn, on leaving to the title screen, and on disconnect -- a grant
+    /// is lent for one life, as the reference lends it.
+    void revokeTempAdmin(net::ConnectionId);
 
     void sendAuthResult(net::Connection&, net::AuthStatus, const std::string& token,
                         const std::string& username, const std::string& reason);
@@ -278,6 +350,22 @@ private:
         std::int64_t expiresAtMillis = 0;
     };
     std::unordered_map<std::string, PendingGuildInvite> guildInvites_;
+
+    /// Admin consoles lent to players who are not database admins.
+    ///
+    /// Keyed by connection and held in memory only: a grant is for one life,
+    /// so there is nothing here worth surviving a restart. See
+    /// revokeTempAdmin() for the three ways one ends.
+    struct TempAdminGrant {
+        std::string grantedBy;
+        double grantedAtMillis = 0;
+    };
+    std::unordered_map<net::ConnectionId, TempAdminGrant> tempAdmins_;
+
+    /// `/admin set_bot_count`'s override, or -1 for the default formula.
+    /// Negative rather than optional because -1 is already what "no override"
+    /// means everywhere this is read.
+    int botCountOverride_ = -1;
 
     std::unordered_map<net::ConnectionId, Session> sessions_;
     std::unordered_map<net::ConnectionId, ClientView> views_;

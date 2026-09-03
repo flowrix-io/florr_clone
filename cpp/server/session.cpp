@@ -10,9 +10,18 @@ namespace {
 constexpr double kLoginRefillPerSecond = 0.2;    // one attempt every 5s
 constexpr double kChatRefillPerSecond = 0.5;     // one message every 2s
 constexpr double kInputRefillPerSecond = 30.0;   // comfortably above the tick rate
+/// Commands refill four times faster than chat, off a deeper bucket.
+///
+/// The chat budget exists to stop one player flooding EVERYONE ELSE, and a
+/// command floods nobody -- its output goes back to the sender alone. Held to
+/// the chat rate, the admin console was unusable: four commands and then one
+/// every two seconds, with `/help` and `/guild-info` each spending one. It is
+/// still bounded, because some commands are expensive to serve.
+constexpr double kCommandRefillPerSecond = 2.0;
 
 constexpr double kMaxLoginAttempts = 5;
 constexpr double kMaxChatAllowance = 4;
+constexpr double kMaxCommandAllowance = 12;
 constexpr double kMaxInputAllowance = 60;
 
 constexpr std::size_t kMinUsername = 3;
@@ -38,6 +47,8 @@ void refillAllowances(Session& session, double nowMillis) {
         std::min(kMaxChatAllowance, session.chatAllowance + elapsed * kChatRefillPerSecond);
     session.inputAllowance =
         std::min(kMaxInputAllowance, session.inputAllowance + elapsed * kInputRefillPerSecond);
+    session.commandAllowance = std::min(
+        kMaxCommandAllowance, session.commandAllowance + elapsed * kCommandRefillPerSecond);
 }
 
 bool spend(double& allowance, double cost) {

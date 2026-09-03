@@ -35,6 +35,11 @@ constexpr double kCrossPadRatio = 0.27;
 constexpr double kCloseRimRatio = 0.14;
 constexpr double kCloseCrossRatio = 0.105;
 
+/// The cross's ink. Off-white, not `kPaper`: over a red face a pure white
+/// cross reads a weight heavier than the reference's does, and both reference
+/// shots measure it at exactly this.
+constexpr std::uint32_t kCloseCross = 0xCCCCCCu;
+
 /// How far the hover face is lightened off the skin's own close colour.
 ///
 /// Derived rather than a literal swatch: the panels no longer share one pink,
@@ -148,7 +153,7 @@ void closeCross(Canvas& canvas, Rect r, double arm, double width, bool roundCap)
     const double cx = r.x + r.w * 0.5;
     const double cy = r.y + r.h * 0.5;
     canvas.save();
-    setStroke(canvas, kPaper);
+    setStroke(canvas, kCloseCross);
     canvas.setLineWidth(static_cast<float>(width));
     canvas.setLineCap(roundCap ? "round" : "butt");
     canvas.beginPath();

@@ -12,6 +12,9 @@
 #include <optional>
 #include <thread>
 
+#include "server/bot_identity.h"
+#include "server/guilds.h"
+#include "server/text.h"
 #include "server/systems/combat.h"
 #include "server/systems/loot.h"
 #include "server/systems/mob_ai.h"
@@ -25,13 +28,13 @@
 
 namespace flr {
 
-namespace {
-
 double monotonicMillis() {
     using clock = std::chrono::steady_clock;
     static const clock::time_point start = clock::now();
     return std::chrono::duration<double, std::milli>(clock::now() - start).count();
 }
+
+namespace {
 
 /// Clamp on the viewport a client may claim. A client asking to see the whole
 /// map is asking for an advantage, and for the server to build it a snapshot
@@ -133,54 +136,6 @@ std::string killerLabel(const World& world, Entity killer) {
     if (id.empty()) return {};
     id[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(id[0])));
     return std::string(rarityLabel(type->rarity)) + " " + id;
-}
-
-/// Case folding for every name comparison in the guild code. Guild membership
-/// is case-insensitive in the reference -- a player invited as "Bob" answers as
-/// "bob" -- so nothing here may compare raw bytes.
-std::string lowerCase(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
-std::string trimmed(const std::string& s) {
-    const std::size_t first = s.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    const std::size_t last = s.find_last_not_of(" \t\r\n");
-    return s.substr(first, last - first + 1);
-}
-
-/// A guild's name IS its key: trimmed and upper-cased, so "alpha" and " Alpha "
-/// are the same guild and cannot both be created.
-std::string normalizeGuildName(const std::string& raw) {
-    std::string name = trimmed(raw);
-    for (char& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    return name;
-}
-
-/// Exactly five A-Z or 0-9, which is what makes the name short enough to hang
-/// under a nameplate as a tag.
-bool validGuildName(const std::string& name) {
-    if (name.size() != 5) return false;
-    for (const char c : name) {
-        const auto byte = static_cast<unsigned char>(c);
-        if (!std::isupper(byte) && !std::isdigit(byte)) return false;
-    }
-    return true;
-}
-
-constexpr std::size_t kMaxGuildSize = 200;
-/// A guild invitation lapses after a minute, as the reference's does.
-constexpr std::int64_t kGuildInviteMillis = 60000;
-
-/// Position of `username` in a guild's member array, or -1.
-int guildMemberIndex(const Json& guild, const std::string& username) {
-    const Json& members = guild["memberUsernames"];
-    const std::string key = lowerCase(username);
-    for (std::size_t i = 0; i < members.size(); ++i) {
-        if (lowerCase(members[i].asString()) == key) return static_cast<int>(i);
-    }
-    return -1;
 }
 
 /// The five type tags the browser stores, as the wire enum. Anything else is
@@ -711,6 +666,7 @@ void GameServer::onDisconnect(net::Connection& connection, const std::string&) {
             despawnPlayer(*session, false);
         }
     }
+    revokeTempAdmin(connection.id());
     sessions_.erase(connection.id());
     views_.erase(connection.id());
 }
@@ -1110,6 +1066,7 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
 
 void GameServer::handleLeave(Session& session, net::Connection& connection) {
     if (!session.playing()) return;
+    revokeTempAdmin(session.connection);
     persistPlayer(session);
     despawnPlayer(session, true);
     sendProfile(session, connection);
@@ -1145,12 +1102,40 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
 void GameServer::handleChat(Session& session, net::Connection& connection, ByteReader& reader) {
     const std::string raw = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
+    const std::string text = sanitizeChat(raw);
+    if (text.empty()) return;
+
+    // A leading slash is a command, and a command is answered rather than
+    // said. This has to come BEFORE the mute check: a muted player is barred
+    // from talking to other players, not from asking the server questions
+    // about their own account.
+    //
+    // It also spends a DIFFERENT budget. The chat allowance exists to stop one
+    // player flooding everyone else, and a command's output goes back to its
+    // sender alone -- billed to the chat bucket, four commands emptied it and
+    // the console became one command every two seconds.
+    if (!text.empty() && text[0] == '/') {
+        if (!spend(session.commandAllowance)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "You are sending commands too quickly.");
+            return;
+        }
+        if (handleChatCommand(session, connection, text)) return;
+    }
+
     if (!spend(session.chatAllowance)) {
         sendNotice(connection, net::NoticeSeverity::Warning, "You are sending messages too quickly.");
         return;
     }
-    const std::string text = sanitizeChat(raw);
-    if (text.empty()) return;
+
+    // Everything from here is broadcast to other players, which is exactly
+    // what a mute blocks.
+    const Account* account = database_.findUser(session.username);
+    if (account != nullptr && account->muted) {
+        sendSystem(connection, "You are muted and cannot send chat messages.");
+        return;
+    }
+
     broadcastChat(net::ChatChannel::Global, session.username, text);
 }
 
@@ -1666,9 +1651,12 @@ void GameServer::sendSkinCatalog(Session& session, net::Connection& connection) 
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::SkinCatalog));
-    // Advisory only: it decides whether the takedown button is drawn, and
-    // every delete is re-checked here regardless of what the client believes.
-    w.boolean(session.admin);
+    // Advisory only: it decides whether the takedown button is drawn and
+    // whether the chat autocomplete offers the /admin rows. Every delete, and
+    // every admin command, is re-checked server-side regardless of what the
+    // client believes -- so a temporary grant may safely raise it, which is
+    // how a grantee's console appears without them logging out and back in.
+    w.boolean(effectiveAdmin(session));
     w.str(record.equippedSkinId);
     const std::size_t at = w.reserveU16();
     std::uint16_t count = 0;
@@ -1985,6 +1973,12 @@ void GameServer::handleGuildCreate(Session& session, net::Connection& connection
                                    ByteReader& reader) {
     const std::string raw = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
+    guildCreate(session, connection, raw);
+}
+
+void GameServer::guildCreate(Session& session, net::Connection& connection,
+                             const std::string& raw) {
+    if (!session.authenticated()) return;
 
     const std::string name = normalizeGuildName(raw);
     if (name.empty()) {
@@ -2026,6 +2020,12 @@ void GameServer::handleGuildInvite(Session& session, net::Connection& connection
                                    ByteReader& reader) {
     const std::string raw = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
+    guildInvite(session, connection, raw);
+}
+
+void GameServer::guildInvite(Session& session, net::Connection& connection,
+                             const std::string& raw) {
+    if (!session.authenticated()) return;
 
     const std::string guildName = guildNameForUser(session.username);
     if (guildName.empty()) {
@@ -2200,6 +2200,12 @@ void GameServer::handleGuildKick(Session& session, net::Connection& connection,
                                  ByteReader& reader) {
     const std::string raw = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
+    guildKick(session, connection, raw);
+}
+
+void GameServer::guildKick(Session& session, net::Connection& connection,
+                           const std::string& raw) {
+    if (!session.authenticated()) return;
 
     const std::string guildName = guildNameForUser(session.username);
     if (guildName.empty()) {
@@ -2263,6 +2269,12 @@ void GameServer::handleGuildInviteToSquad(Session& session, net::Connection& con
                                           ByteReader& reader) {
     const std::string raw = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
+    guildInviteToSquad(session, connection, raw);
+}
+
+void GameServer::guildInviteToSquad(Session& session, net::Connection& connection,
+                                    const std::string& raw) {
+    if (!session.authenticated()) return;
 
     const std::string target = trimmed(raw);
     const std::string guildName = guildNameForUser(session.username);
@@ -2280,6 +2292,10 @@ void GameServer::handleGuildInviteToSquad(Session& session, net::Connection& con
 
 void GameServer::handleRespawn(Session& session) {
     if (!session.authenticated()) return;
+    // A lent console is lent for one life. Dropping it here rather than on
+    // death means the grantee keeps it while they are looking at the death
+    // card, which is where the reference leaves it too.
+    revokeTempAdmin(session.connection);
     if (session.playing() && world_.isAlive(session.entity)) {
         Health* health = world_.tryGet<Health>(session.entity);
         if (health && health->alive()) return;   // not actually dead
@@ -2327,8 +2343,6 @@ namespace {
 
 /// Total flowers the world aims to hold, bots plus humans.
 constexpr int kTargetTotalPlayers = 23;
-/// Hard ceiling, whatever the target arithmetic says.
-constexpr int kMaxBots = 50;
 /// How often the population is reconsidered.
 constexpr double kBotMaintainMillis = 1500.0;
 /// Bots created per maintenance pass. A deficit is filled over several passes
@@ -2370,117 +2384,6 @@ constexpr double kBotOrbitRadialGain = 90.0;
 constexpr double kBotTetherRadius = 1400.0;
 constexpr double kBotTetherReturnRadius = 2200.0;
 
-/// The names the reference draws from. Two are deliberately empty: an unnamed
-/// flower is a real sight in the live game.
-const char* const kBotNames[] = {
-    "m28", "M28", "uwu", "67", "Play Zorr.pro", "", "", "petal",
-    "super hunter", "mark m28", "dev", "fake dev", "admin", "pytorch", "urmom",
-    "skibidi", "florrio", "CraftApexPetal", "developer", "hi", "hello", "4167",
-    "florrrrr", "bro", "bruh", "You suck", "pls loot super", "powder",
-    "skibidi ohio rizz", "rizzler", "pro", "noob", "nub", "[YT]", "killer",
-    "flower", "ur mom", "random flower", "centi", "petall", "ygg pls",
-    "SUPER BASIC", "carry pls", "lol", "floor", "ded", "noooo", "nl super",
-    "nah", "m29", "m56", "florr67", "get good", "super raider", "real admin",
-    "not bot", "bot", "scripts", "ban dupers", "absorbed super", "Guest #1234",
-    "Guest #6767", "Guest #4167", "UwU", "m27", "n28", "super petal",
-    "apex petal", "apex crafter", "uniques", "i use scripts", "m28 bad",
-    "guests", "leech squad", "leecher",
-};
-
-/// Only passive petals, yggdrasil and powder: a bot with a bomb would be a
-/// hazard to the players standing next to it.
-const char* const kBotPetalPool[] = {
-    "basic", "stinger", "iris", "faster", "cutter", "missile", "bone", "glass",
-    "dandelion", "yggdrasil", "rock", "third_eye", "powder", "javascript", "soil",
-};
-
-/// djb2-style hash, so a bot with a given name always seeds the same stream and
-/// therefore always has the same build. "A bot named X plays like X" is the
-/// whole point of seeding off the name rather than off the spawn.
-std::uint32_t hashName(const std::string& s) {
-    std::int32_t h = 5381;
-    for (const char c : s) {
-        h = static_cast<std::int32_t>(static_cast<std::uint32_t>(h) * 33u) ^
-            static_cast<std::int32_t>(static_cast<unsigned char>(c));
-    }
-    return static_cast<std::uint32_t>(h);
-}
-
-/// mulberry32, the reference's own generator. Reproduced exactly rather than
-/// swapped for the server's Rng, because the level and loadout a name produces
-/// have to be the same numbers on both servers.
-class BotRng {
-public:
-    explicit BotRng(std::uint32_t seed) : state_(seed) {}
-
-    double unit() {
-        state_ += 0x6d2b79f5u;
-        std::uint32_t t = state_;
-        t = (t ^ (t >> 15)) * (t | 1u);
-        t ^= t + (t ^ (t >> 7)) * (t | 61u);
-        return static_cast<double>((t ^ (t >> 14))) / 4294967296.0;
-    }
-
-private:
-    std::uint32_t state_;
-};
-
-/// Uniform 1..225. Roughly a ninth of bots land at apex tier.
-int rollBotLevel(BotRng& rng) {
-    return static_cast<int>(rng.unit() * 225.0) + 1;
-}
-
-/// One petal rarity for a bot of this level.
-///
-/// Weights by ten-level band, with apex a separate band the level check routes
-/// to rather than a linear extension. The roll itself is the reference's:
-/// `rng*2 + total - 2` lands in the last two units of the cumulative range, so
-/// a bot's petals come from the top of its band's table almost every time --
-/// which is why the rare entries are held down to a weight of one or two.
-Rarity rollBotPetalRarity(int level, BotRng& rng) {
-    struct Entry { Rarity rarity; double weight; };
-    static const std::vector<std::vector<Entry>> kBands = {
-        {{Rarity::Common, 300}, {Rarity::Uncommon, 55}, {Rarity::Rare, 1}},
-        {{Rarity::Common, 40}, {Rarity::Uncommon, 24}, {Rarity::Rare, 15}, {Rarity::Epic, 2}},
-        {{Rarity::Common, 30}, {Rarity::Uncommon, 24}, {Rarity::Rare, 20}, {Rarity::Epic, 5}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 5}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 1}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 4}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 11}},
-        {{Rarity::Common, 18}, {Rarity::Uncommon, 18}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 15}, {Rarity::Mythic, 1}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 2}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 5}},
-        {{Rarity::Common, 40}, {Rarity::Uncommon, 40}, {Rarity::Rare, 40}, {Rarity::Epic, 40}, {Rarity::Legendary, 40}, {Rarity::Mythic, 17}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 11}, {Rarity::Ultra, 1}},
-        {{Rarity::Common, 40}, {Rarity::Uncommon, 40}, {Rarity::Rare, 40}, {Rarity::Epic, 40}, {Rarity::Legendary, 40}, {Rarity::Mythic, 40}, {Rarity::Ultra, 21}, {Rarity::Super, 1}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}},
-        {{Rarity::Common, 20}, {Rarity::Uncommon, 20}, {Rarity::Rare, 20}, {Rarity::Epic, 20}, {Rarity::Legendary, 20}, {Rarity::Mythic, 20}, {Rarity::Ultra, 20}, {Rarity::Super, 20}, {Rarity::Unique, 1}},
-    };
-    // Level 200 and up draws from its own table, not from the top pre-apex band.
-    static const std::vector<Entry> kApexBand = {
-        {Rarity::Mythic, 10}, {Rarity::Ultra, 20}, {Rarity::Super, 20},
-        {Rarity::Unique, 2}, {Rarity::Apex, 30},
-    };
-    constexpr int kApexLevelThreshold = 200;
-    constexpr int kLevelBandSize = 10;
-
-    const std::vector<Entry>& band =
-        level >= kApexLevelThreshold
-            ? kApexBand
-            : kBands[static_cast<std::size_t>(
-                  std::min<int>(static_cast<int>(kBands.size()) - 1,
-                                std::max(1, level - 1) / kLevelBandSize))];
-
-    double total = 0;
-    for (const Entry& entry : band) total += entry.weight;
-    const double roll = rng.unit() * 2.0 + total - 2.0;
-    double cumulative = 0;
-    for (const Entry& entry : band) {
-        cumulative += entry.weight;
-        if (roll < cumulative) return entry.rarity;
-    }
-    return band.back().rarity;
-}
 
 } // namespace
 
@@ -2531,8 +2434,13 @@ void GameServer::maintainBots(double nowMillis) {
     }
 
     const int humans = static_cast<int>(playerCount());
-    const int desired = std::min(
-        kMaxBots, std::max(0, kTargetTotalPlayers - humans + botCountJitter_));
+    // An override from `/admin set_bot_count` is an exact target, not a
+    // correction to the formula: an operator asking for twelve bots wants
+    // twelve, not twelve minus however many people are online.
+    const int desired =
+        botCountOverride_ >= 0
+            ? std::min(kMaxBots, botCountOverride_)
+            : std::min(kMaxBots, std::max(0, kTargetTotalPlayers - humans + botCountJitter_));
     const int current = static_cast<int>(bots_.size());
 
     if (current < desired) {
@@ -2606,9 +2514,12 @@ Vec2 GameServer::pickBotSpawn() {
 
 Entity GameServer::createBotBody(const std::string& name, Vec2 spawn) {
     // Level and loadout are derived from the NAME, not from the spawn, so a
-    // bot called "m28" is the same flower every time it appears.
-    BotRng rng(hashName(name));
-    const int level = std::min(kMaxLevel, rollBotLevel(rng));
+    // bot called "m28" is the same flower every time it appears. The rolls
+    // come from server/bot_identity.h, which is also what the admin console's
+    // /level-from-string and /loadout-from-string answer out of -- one roll,
+    // so the console cannot describe a bot the world would not build.
+    const BotIdentity identity = botIdentityForName(name, kLoadoutActiveSlots, kMaxLevel);
+    const int level = identity.level;
 
     const Entity entity = world_.create();
     world_.add<PlayerTag>(entity);
@@ -2651,15 +2562,11 @@ Entity GameServer::createBotBody(const std::string& name, Vec2 spawn) {
     // All ten active slots, matching a real player's maximum: a bot with five
     // petals reads as a beginner whatever its level says.
     Loadout& loadout = world_.get<Loadout>(entity);
-    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        const char* id = kBotPetalPool[static_cast<std::size_t>(
-            rng.unit() * static_cast<double>(std::size(kBotPetalPool)))];
-        const Rarity rarity = rollBotPetalRarity(level, rng);
-        std::uint16_t index = content().petalIndex(id);
-        if (index == kInvalidIndex) index = content().petalIndex("basic");
-        if (index == kInvalidIndex) continue;
-        loadout.slots[static_cast<std::size_t>(i)].configIndex = index;
-        loadout.slots[static_cast<std::size_t>(i)].rarity = rarity;
+    for (std::size_t i = 0; i < identity.slots.size(); ++i) {
+        const BotIdentity::Slot& slot = identity.slots[i];
+        if (slot.petalIndex == kInvalidIndex) continue;
+        loadout.slots[i].configIndex = slot.petalIndex;
+        loadout.slots[i].rarity = slot.rarity;
     }
 
     world_.add<NetId>(entity, NetId{netIds_.next()});
