@@ -218,7 +218,11 @@ public:
     /// the panel never has to guess whether a jump would be allowed.
     void requestUpgradeSkill(SkillId skill, int tier);
     void requestResetSkills();
-    void requestBuyPetal(std::uint16_t petalIndex, Rarity rarity);
+    /// Buys a petal. `offerSlot` is which card of the rotating store was
+    /// clicked; the default buys at the full ladder price. Either way the
+    /// price is the server's to decide -- the slot says which card, not what
+    /// it costs.
+    void requestBuyPetal(std::uint16_t petalIndex, Rarity rarity, int offerSlot = -1);
     /// Redeems a star code. The answer lands in shopOutcome().
     void requestRedeemCode(const std::string& code);
     void requestSkin(std::uint32_t renderFlags);

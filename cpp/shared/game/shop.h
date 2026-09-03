@@ -7,9 +7,13 @@
 // client shows a price; the server recomputes it and ignores whatever the
 // client claimed.
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "shared/game/config.h"
 #include "shared/game/rarity.h"
@@ -73,6 +77,104 @@ inline bool shopSellsPetal(std::uint16_t petalIndex) {
         if (mob != kInvalidIndex && content().mob(mob).noEggDrop) return false;
     }
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// The rotating store
+// ---------------------------------------------------------------------------
+//
+// The shop does not sell the catalogue. It sells ten cards that change on the
+// hour, some of them discounted, and both sides DERIVE those ten from the
+// clock rather than one sending the other a list: the client draws a price the
+// server will honour because the two ran the same generator over the same
+// content, and a purchase carries only which card was clicked.
+
+/// How long one set of offers stands. The panel counts down to the next
+/// rotation against this and the server prices a purchase by the rotation the
+/// clock is in, so the number is shared rather than spelled out twice.
+inline constexpr std::int64_t kShopRotationSeconds = 3600;
+
+/// Two rows of five. The panel's grid is built to this.
+inline constexpr int kShopOfferCount = 10;
+inline constexpr int kShopOfferColumns = 5;
+
+/// Seconds since the epoch: the one clock the offers hang off.
+inline std::int64_t shopClockNow() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+/// Which rotation a moment falls in. Floor division, not the language's
+/// truncation: a clock set before 1970 would otherwise give the two hours
+/// either side of the epoch the same rotation.
+inline std::int64_t shopRotation(std::int64_t unixSeconds) {
+    const std::int64_t quotient = unixSeconds / kShopRotationSeconds;
+    return (unixSeconds < 0 && quotient * kShopRotationSeconds != unixSeconds) ? quotient - 1
+                                                                              : quotient;
+}
+
+/// When that rotation ends, in the same seconds-since-epoch.
+inline std::int64_t shopRotationEnd(std::int64_t rotation) {
+    return (rotation + 1) * kShopRotationSeconds;
+}
+
+/// One card in the store.
+struct ShopOffer {
+    std::uint16_t petalIndex = kNoPetal;
+    Rarity rarity = Rarity::Common;
+    /// What it costs, discount already taken off. This IS the price: nothing
+    /// that spends stars re-derives it from the two fields above.
+    double price = 0;
+    /// 0, or the 10/20/30 the discounted cards wear on their ribbon.
+    int discountPercent = 0;
+};
+
+/// The ten cards a rotation offers.
+///
+/// Pure, and deterministic to the star: the same rotation index produces the
+/// same cards on every machine that loaded the same petals.json. That is what
+/// lets the client price a card the server will agree to.
+inline std::vector<ShopOffer> shopOffers(std::int64_t rotation) {
+    std::vector<ShopOffer> offers;
+
+    std::vector<std::uint16_t> pool;
+    for (const std::uint16_t index : content().petalDisplayOrder()) {
+        if (shopSellsPetal(index)) pool.push_back(index);
+    }
+    std::vector<Rarity> tiers;
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity rarity = clampRarity(tier);
+        if (shopSellsRarity(rarity)) tiers.push_back(rarity);
+    }
+    if (pool.empty() || tiers.empty()) return offers;
+
+    Rng rng(static_cast<std::uint64_t>(rotation));
+    const int count = std::min<int>(kShopOfferCount, static_cast<int>(pool.size()));
+    const int half = static_cast<int>(tiers.size()) / 2;
+
+    for (int slot = 0; slot < count; ++slot) {
+        // Partial Fisher-Yates, so no petal is offered twice in one rotation.
+        const auto taken = static_cast<std::size_t>(slot);
+        const auto remaining = static_cast<std::uint32_t>(pool.size() - taken);
+        std::swap(pool[taken], pool[taken + rng.below(remaining)]);
+
+        // The top row draws from the cheap half of the ladder and the bottom
+        // row from the dear half, which is what gives the grid a shape a
+        // player can read at a glance instead of ten prices in no order.
+        const bool dear = slot >= kShopOfferColumns && half > 0;
+        const int lowest = dear ? half : 0;
+        const int highest = dear ? static_cast<int>(tiers.size()) - 1 : std::max(0, half - 1);
+
+        ShopOffer offer;
+        offer.petalIndex = pool[taken];
+        offer.rarity = tiers[static_cast<std::size_t>(rng.rangeInt(lowest, highest))];
+        offer.discountPercent = rng.chance(0.2) ? 10 * (1 + static_cast<int>(rng.below(3))) : 0;
+        offer.price = std::floor(shopPrice(offer.petalIndex, offer.rarity) *
+                                 static_cast<double>(100 - offer.discountPercent) / 100.0);
+        offers.push_back(offer);
+    }
+    return offers;
 }
 
 // ---------------------------------------------------------------------------

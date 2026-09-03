@@ -219,6 +219,86 @@ TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK(!shopSellsRarity(Rarity::Apex));
 }
 
+TEST(the_store_rotates_hourly_and_both_sides_derive_the_same_ten_cards) {
+    const std::int64_t rotation = shopRotation(1'700'000'000);
+    // The same hour is the same store, twice over: the generator is what the
+    // client draws and what the server prices against, so a second call that
+    // disagreed would be a purchase refused at random.
+    const std::vector<ShopOffer> first = shopOffers(rotation);
+    const std::vector<ShopOffer> again = shopOffers(rotation);
+    CHECK_EQ(first.size(), static_cast<std::size_t>(kShopOfferCount));
+    CHECK_EQ(again.size(), first.size());
+    for (std::size_t i = 0; i < first.size(); ++i) {
+        CHECK_EQ(again[i].petalIndex, first[i].petalIndex);
+        CHECK_EQ(static_cast<int>(again[i].rarity), static_cast<int>(first[i].rarity));
+        CHECK_NEAR(again[i].price, first[i].price, 1e-9);
+    }
+
+    // The next hour is a different store.
+    const std::vector<ShopOffer> next = shopOffers(rotation + 1);
+    bool moved = false;
+    for (std::size_t i = 0; i < first.size() && i < next.size(); ++i) {
+        if (next[i].petalIndex != first[i].petalIndex) moved = true;
+    }
+    CHECK(moved);
+
+    // An hour is an hour, and a card never costs more than the ladder says.
+    const std::int64_t started = shopRotationEnd(rotation) - kShopRotationSeconds;
+    CHECK_EQ(shopRotation(started), rotation);
+    CHECK_EQ(shopRotation(started + kShopRotationSeconds - 1), rotation);
+    CHECK_EQ(shopRotation(started + kShopRotationSeconds), rotation + 1);
+    for (const ShopOffer& offer : first) {
+        CHECK(shopSellsPetal(offer.petalIndex));
+        CHECK(shopSellsRarity(offer.rarity));
+        CHECK(offer.price > 0);
+        CHECK(offer.price <= shopPrice(offer.petalIndex, offer.rarity));
+        CHECK(offer.discountPercent >= 0 && offer.discountPercent <= 30);
+    }
+}
+
+TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
+    const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
+    if (offers.empty()) { CHECK(false); return; }
+
+    // The cheapest card, so one seeded balance covers whatever the hour rolled.
+    std::size_t slot = 0;
+    for (std::size_t i = 1; i < offers.size(); ++i) {
+        if (offers[i].price < offers[slot].price) slot = i;
+    }
+    const ShopOffer& offer = offers[slot];
+    const int price = static_cast<int>(offer.price);
+
+    Harness h("shop-offer", [&](const std::string& path) {
+        seedAccount(path, "olive", "password7", price + 5, 0);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("olive", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stars == price + 5 + kFirstLoginStars;
+    }));
+
+    const std::uint32_t before = client.profile().stackCount(offer.petalIndex, offer.rarity);
+    client.requestBuyPetal(offer.petalIndex, offer.rarity, static_cast<int>(slot));
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stars == 5 + kFirstLoginStars;
+    }));
+    CHECK_EQ(client.profile().stackCount(offer.petalIndex, offer.rarity), before + 1);
+
+    // A slot that does not hold what it claims buys nothing: the client names
+    // the card, and the server checks that card against its own rotation.
+    const int stars = client.profile().stars;
+    const std::size_t other = (slot + 1) % offers.size();
+    client.requestBuyPetal(offer.petalIndex, offer.rarity, static_cast<int>(other));
+    ShopOutcome answer;
+    CHECK(awaitShopAnswer(h, client, answer));
+    CHECK(!answer.ok);
+    CHECK_EQ(client.profile().stars, stars);
+}
+
 TEST(a_purchase_without_the_stars_is_refused) {
     Harness h("shop-broke");
     if (!h.ready) { CHECK(false); return; }

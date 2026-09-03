@@ -21,7 +21,12 @@ namespace flr::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 12;
+inline constexpr std::uint16_t kProtocolVersion = 13;
+
+/// "Not one of the rotating store's cards": a purchase at the full ladder
+/// price. Any other value is a slot index the server checks against the offers
+/// it generates for itself.
+inline constexpr std::uint8_t kNoShopOffer = 0xFF;
 
 /// Frames larger than this are refused before allocation, so a bad length
 /// prefix costs a dropped connection rather than a 4GB allocation.
@@ -73,7 +78,11 @@ enum class ClientMessage : std::uint8_t {
     Ping,               ///< u64 clientTimeMillis
     UpgradeSkill,       ///< u8 skillId, u8 tier   -- buys ONE tier, the next one
     ResetSkills,        ///< (empty) -- refunds the whole tree
-    BuyPetal,           ///< u16 itemType, u8 rarity  -- price is server-side only
+    BuyPetal,           ///< u16 itemType, u8 rarity, u8 offerSlot -- price is server-side
+                        ///< only. `offerSlot` names WHICH card of the current
+                        ///< rotation was clicked, or kNoShopOffer for a
+                        ///< full-price catalogue purchase; it is a claim about
+                        ///< the card, never about the price.
     SetSkin,            ///< u32 renderFlags
     RequestLeaderboard, ///< (empty)
     RedeemCode,         ///< str code -- a star code, checked server-side

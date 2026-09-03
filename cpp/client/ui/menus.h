@@ -75,8 +75,8 @@ inline constexpr int kLoadoutTrashSlot = kLoadoutBarSlots;
 /// The link the Discord button opens.
 inline constexpr const char* kDiscordInvite = "https://discord.gg/e23DMCR7DV";
 
-/// Slots in the icon strip: nine across the top-left corner, five down the
-/// bottom-left one. Two of the top nine open no panel -- Discord is a link and
+/// Slots in the icon strip: ten across the top-left corner, four down the
+/// bottom-left one. Two of the top ten open no panel -- Discord is a link and
 /// exit leaves the game -- so this is not `kMenuCount`.
 inline constexpr int kStripSlotCount = 14;
 
@@ -306,23 +306,24 @@ private:
     bool confirmingReset_ = false;
 };
 
-/// The star shop, and the challenges that pay stars.
+/// The star shop: the store's ten offers, the challenges that pay the stars to
+/// buy them with, and the code redeemer. An overlay under the top icon row,
+/// not one of the tall lists -- its grid is a fixed two rows of five and has
+/// nothing to gain from a two-thirds-of-the-viewport card.
 class ShopPanel {
 public:
     bool render(MenuContext&);
     void reset();
     static double preferredWidth();
+    /// Fixed, like every other overlay's: the header, the tab row and two rows
+    /// of offer cards come to this and no window makes them taller.
+    static double preferredHeight();
     static Rect bounds(int viewWidth, int viewHeight);
 
 private:
-    enum class Tab : std::uint8_t { Shop, Challenges };
-    Tab tab_ = Tab::Shop;
+    enum class Tab : std::uint8_t { Offers, Challenges, Bonus };
+    Tab tab_ = Tab::Offers;
     ui::Scroller scroll_;
-    /// A purchase is confirmed on a second click of the same cell, so a
-    /// mis-click never spends a million stars.
-    std::uint16_t armedPetal_ = kNoPetal;
-    Rarity armedRarity_ = Rarity::Common;
-    double armedUntil_ = 0;
 };
 
 /// Cosmetic flower skins.

@@ -458,8 +458,10 @@ Rect InventoryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w
 Rect CraftingPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
 Rect TalentsPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
 Rect GalleryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
-Rect ShopPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
 
+Rect ShopPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), ShopPanel::preferredHeight(), 72.0, w, h);
+}
 Rect SkinsPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 540.0, 72.0, w, h); }
 Rect LeaderboardPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), 500.0, 72.0, w, h);
@@ -517,13 +519,13 @@ const std::array<MenuSystem::StripSlot, kStripSlotCount>& MenuSystem::strip() {
         {MenuId::Leaderboard,   A::OpenMenu, "leaderboard",   true,  0xE8A023u, 0xBA801Cu},
         {MenuId::Guild,         A::OpenMenu, "guild",         true,  0x27DADEu, 0x1FB3B0u},
         {MenuId::Skins,         A::OpenMenu, "skins",         true,  0xC45CFFu, 0x9A3FD0u},
+        {MenuId::Shop,          A::OpenMenu, "stars",         true,  0x36D153u, 0x2BA742u},
         {MenuId::None,          A::Discord,  "discord",       true,  0x5865F2u, 0x4752C4u},
         {MenuId::Debug,         A::OpenMenu, "debug",         true,  0x666666u, 0x4D4D4Du},
         {MenuId::None,          A::Exit,     "exit_button",   true,  0xFF0000u, 0xCC0000u},
         {MenuId::Inventory,     A::OpenMenu, "inventory",     false, 0x00B3FFu, 0x008FCCu},
         {MenuId::Talents,       A::OpenMenu, "skills",        false, 0x9D4EDDu, 0x7E3EB1u},
         {MenuId::Gallery,       A::OpenMenu, "mob_gallery",   false, 0xD6C206u, 0xAB9B05u},
-        {MenuId::Shop,          A::OpenMenu, "stars",         false, 0x36D153u, 0x2BA742u},
         {MenuId::Crafting,      A::OpenMenu, "craft",         false, 0xFF9D00u, 0xCC7E00u},
     }};
     return kSlots;
@@ -1132,10 +1134,10 @@ namespace {
 
 /// The tall list panels are DOM shells that rise from `translateY(100vh)` over
 /// 300ms; the corner overlays are canvas panels drawn straight at (20, 72) with
-/// no transition at all, so only these five animate.
+/// no transition at all, so only these four animate.
 bool slidesUp(MenuId id) {
     return id == MenuId::Inventory || id == MenuId::Crafting || id == MenuId::Talents ||
-           id == MenuId::Gallery || id == MenuId::Shop;
+           id == MenuId::Gallery;
 }
 
 constexpr double kPanelSlideSeconds = 0.30;

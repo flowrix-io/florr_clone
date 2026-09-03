@@ -1421,6 +1421,7 @@ void GameServer::handleResetSkills(Session& session, net::Connection& connection
 void GameServer::handleBuyPetal(Session& session, net::Connection& connection, ByteReader& reader) {
     const std::uint16_t petalIndex = reader.u16();
     const Rarity rarity = clampRarity(reader.u8());
+    const std::uint8_t offerSlot = reader.u8();
     if (!reader.ok() || !session.authenticated()) return;
 
     // The client sends what it wants, never what it costs. A price that came
@@ -1431,7 +1432,23 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     }
 
     PlayerRecord& record = database_.progress(session.userId);
-    const double price = shopPrice(petalIndex, rarity);
+    // A card off the rotating store costs what that card showed, discount
+    // included; anything else costs the full ladder price. The slot is only a
+    // claim about WHICH card was clicked -- the offers are regenerated here,
+    // and a slot whose petal and tier do not match the current rotation's is a
+    // click on a store that has since changed.
+    double price = shopPrice(petalIndex, rarity);
+    if (offerSlot != net::kNoShopOffer) {
+        const std::vector<ShopOffer> offers = shopOffers(shopRotation(shopClockNow()));
+        const auto slot = static_cast<std::size_t>(offerSlot);
+        if (slot >= offers.size() || offers[slot].petalIndex != petalIndex ||
+            offers[slot].rarity != rarity) {
+            sendShopResult(connection, net::ShopResultKind::Purchase, false, 0,
+                           "That offer has expired.");
+            return;
+        }
+        price = offers[slot].price;
+    }
     PlayerProgress* live = session.playing() && world_.isAlive(session.entity)
                                ? world_.tryGet<PlayerProgress>(session.entity)
                                : nullptr;

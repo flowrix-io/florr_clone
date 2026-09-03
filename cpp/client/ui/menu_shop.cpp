@@ -1,14 +1,19 @@
 // The star shop.
 //
-// A redeem-code band over two tabs: a catalogue of every petal at every
-// buyable tier, and the challenges that pay the stars to buy them with. The
-// price ladder is steep on purpose -- 3.5x a tier -- so the catalogue is
-// mostly a wish list, and the challenge list beside it is what makes that
-// legible.
+// Three tabs over one card: the store's ten rotating offers, the challenges
+// that pay the stars to buy them with, and the code redeemer. The store is the
+// panel -- a fixed two rows of five cards that change on the hour, each a
+// petal tile over a gold price pill, some of them wearing a discount ribbon --
+// and the other two tabs are what feeds it.
 //
-// Every metric below is the browser panel's own, unscaled: that card is a
-// fixed 700 CSS px wide and two thirds of the window tall, and so is this one,
-// so the numbers transfer as literals rather than as derived fractions.
+// Laid out against a reference screenshot rather than against the browser
+// build's CSS, which is why the numbers here are literal pixel offsets from
+// the card's own edges: they were measured off that shot at its own size, and
+// the panel is drawn at that size.
+//
+// The offers themselves are not this file's: `shopOffers` in shared/game/shop.h
+// derives them from the clock, and the server derives the same ten to price
+// what is clicked. This panel only draws them and names which one was pressed.
 
 #include <algorithm>
 #include <array>
@@ -36,15 +41,56 @@ using namespace flr::ui;
 
 namespace {
 
-constexpr double kPad = 20.0;
-constexpr double kHeaderHeight = 90.0;
-constexpr double kCodeSectionHeight = 110.0;
-constexpr double kTabsHeight = 50.0;
-constexpr double kTabWidth = 130.0;
-constexpr double kTabPitch = 140.0;
-constexpr double kCardSize = 44.0;
-constexpr double kPriceBarHeight = 12.0;
-constexpr double kCardGap = 8.0;
+// --- the card ---------------------------------------------------------------
+
+/// The card has no frame. The green ring around it in the reference shot is
+/// the page BEHIND the card, not a border, so the body runs to the edge on a
+/// corner just round enough to soften it.
+constexpr double kCardRadius = 3.0;
+
+/// The inset both light plates keep from that edge, top and bottom alike.
+constexpr double kPlateInset = 8.0;
+constexpr double kPlateRadius = 6.0;
+
+constexpr double kHeaderHeight = 50.0;
+constexpr double kCloseSide = 29.0;
+
+/// The tab row sits on the card's own body between the two plates.
+constexpr double kTabTop = 65.0;
+constexpr double kTabHeight = 35.0;
+constexpr double kTabWidth = 104.0;
+constexpr double kTabGap = 6.0;
+constexpr double kTabRadius = 7.0;
+constexpr double kContentTop = 108.0;
+
+// --- the store's grid -------------------------------------------------------
+
+/// One offer's dark backing block, and the tile and price pill on it. Every
+/// offset here is from the block's own top-left corner.
+constexpr double kBlockWidth = 120.0;
+constexpr double kBlockHeight = 140.0;
+constexpr double kBlockGap = 20.0;
+constexpr double kBlockRadius = 8.0;
+constexpr double kGridTop = 174.0;
+constexpr double kTileWidth = 82.0;
+constexpr double kTileHeight = 80.0;
+constexpr double kTileTop = 9.0;
+constexpr double kPricePillWidth = 104.0;
+constexpr double kPricePillHeight = 34.0;
+constexpr double kPricePillTop = 98.0;
+
+/// The discount ribbon, centred on the tile's top-right corner and tipped
+/// clockwise so it reads as a tag stuck on the card rather than part of it.
+constexpr double kRibbonWidth = 57.0;
+constexpr double kRibbonHeight = 24.0;
+constexpr double kRibbonRadians = 24.0 * kPi / 180.0;
+
+/// The star balance in the bottom-right corner, and the star glyphs on it.
+constexpr double kBalanceWidth = 83.0;
+constexpr double kBalanceHeight = 38.0;
+constexpr double kBalanceStar = 26.0;
+constexpr double kPriceStar = 24.0;
+
 constexpr double kScrollbarWidth = 6.0;
 
 /// Half-period of the code field's caret: 530 ms on, 530 ms off.
@@ -56,13 +102,57 @@ constexpr std::size_t kCodeMaxLength = 64;
 /// the panel this one is copying.
 constexpr double kWheelPixels = 100.0;
 
+/// The greens the shot is made of, beside the card's own pair in
+/// menu_theme.h: the light plate the header and the content sit on, the tab
+/// frame, and the Lock pill.
+constexpr std::uint32_t kShopPlate = 0x9AEC7Du;
+constexpr std::uint32_t kTabBorder = 0x659B51u;
+constexpr std::uint32_t kLockFill = 0x8CD671u;
+constexpr std::uint32_t kLockBorder = 0x71AD5Bu;
+
+/// The price pill under every offer, which is also its buy button.
+constexpr std::uint32_t kPriceFill = 0xF7E04Bu;
+constexpr std::uint32_t kPriceBorder = 0xC8B63Bu;
+
+/// The card's one hover/press treatment: a wash of black over a control's
+/// FACE, inside its frame, never a recolour or a lift. The tabs wear the light
+/// one on hover and the heavy one while selected; the buy pill wears the heavy
+/// one on hover, so "this is the thing that acts" reads the same in both
+/// places.
+constexpr double kTintHover = 0.05;
+constexpr double kTintSelected = 0.10;
+/// The inset of that face, and the corner it takes -- `inlaid`'s own.
+constexpr double kControlBorder = 4.0;
+
 constexpr std::uint32_t kCodeBlue = 0x4A90E2u;
 constexpr std::uint32_t kCodeBlueHover = 0x5FA1EDu;
 constexpr std::uint32_t kCodeBlueLit = 0x7EB9F7u;
 constexpr std::uint32_t kGold = 0xFFD700u;
 constexpr std::uint32_t kAlert = 0xE74C3Cu;
-constexpr std::uint32_t kModalBox = 0x2C3E50u;
-constexpr std::uint32_t kModalCancel = 0x7F8C8Du;
+
+// --- the confirm box --------------------------------------------------------
+
+/// How far the card dims behind it.
+constexpr double kModalScrim = 0.39;
+/// Centred on the card, at the size the shot measures. Only an alert departs
+/// from the height, and only to fit its message.
+constexpr double kModalWidth = 280.0;
+constexpr double kModalHeight = 288.0;
+constexpr double kModalBorder = 6.0;
+constexpr double kModalRadius = 4.0;
+constexpr double kModalBodySize = 14.0;
+/// An alert's message: where the first line sits and how far apart they are.
+constexpr double kModalTextTop = 34.0;
+constexpr double kModalLine = 22.0;
+/// The row along the bottom: the gold buy pill, then Cancel.
+constexpr double kModalButtonHeight = 32.0;
+constexpr double kModalBuyWidth = 84.0;
+constexpr double kModalCancelWidth = 89.0;
+constexpr double kModalButtonGap = 7.0;
+constexpr double kModalBottomPad = 22.0;
+constexpr double kModalStar = 22.0;
+constexpr std::uint32_t kModalGrey = 0x666666u;
+constexpr std::uint32_t kModalGreyBorder = 0x535353u;
 
 /// The challenge tiers, with their card colour stored rather than derived:
 /// the shop overrides the rarity palette for unique, which is white in the
@@ -80,17 +170,6 @@ const std::array<StarChallenge, 5> kChallenges = {{
     {Rarity::Unique, 100, 0xBF00FFu},
     {Rarity::Apex, 250, 0xFF00FFu},
 }};
-
-/// One catalogue card. `rect.y` is in CONTENT space -- the scroll offset is
-/// applied at draw time, so the layout pass does not have to run again when
-/// the wheel moves.
-struct Card {
-    Rect rect;
-    std::uint16_t petalIndex = kNoPetal;
-    Rarity rarity = Rarity::Common;
-    double price = 0;
-    bool affordable = false;
-};
 
 /// One of the stars that rain down the screen when a code is redeemed.
 ///
@@ -136,11 +215,23 @@ struct ShopState {
     std::uint32_t messageColor = kPaper;
     std::uint16_t pendingPetal = kNoPetal;
     Rarity pendingRarity = Rarity::Common;
+    /// Which card of the rotation the confirm modal is holding, so the buy
+    /// carries the offer's own discounted price rather than the ladder's --
+    /// and what that card costs, which the box prints on its buy button.
+    int pendingSlot = -1;
+    double pendingPrice = 0;
 
     /// Indexed by tab. Kept across a tab switch and across a close, as the
     /// browser does: a player who scrolled down to the mythic prices does not
     /// want to find the top of the list again on the way back.
-    std::array<double, 2> scroll{{0.0, 0.0}};
+    std::array<double, 3> scroll{{0.0, 0.0, 0.0}};
+
+    /// The rotation the cards below were generated for, so the store is built
+    /// once an hour rather than once a frame. `INT64_MIN` is "nothing yet",
+    /// which a rotation index cannot otherwise be -- an empty vector is not,
+    /// because a client with no petals loaded would rebuild it every frame.
+    std::int64_t offersRotation = INT64_MIN;
+    std::vector<ShopOffer> offers;
 
     std::vector<FallingStar> stars;
     Rng rng;
@@ -183,6 +274,15 @@ void strokeRounded(Canvas& canvas, Rect r, double radius, std::uint32_t rgb, dou
     roundedPath(canvas, r, radius);
     canvas.stroke();
     canvas.restore();
+}
+
+/// The hover/press wash: `alpha` of black over the face `inlaid` left inside
+/// this control's frame, so the frame itself keeps its colour.
+void tintFace(Canvas& canvas, Rect control, double radius, double alpha) {
+    fillRounded(canvas,
+                {control.x + kControlBorder, control.y + kControlBorder,
+                 control.w - kControlBorder * 2, control.h - kControlBorder * 2},
+                radius - 2.0, kInk, alpha);
 }
 
 /// The browser sets `lineJoin = 'round'` once in drawHeader and never puts it
@@ -242,74 +342,40 @@ void fadedText(Canvas& canvas, const std::string& s, double x, double y, const T
     canvas.fill(glyphs, "nonzero");
 }
 
-/// The card's `box-shadow: 0 6px 18px rgba(0,0,0,0.3)`.
-///
-/// A CSS blur radius is twice the Gaussian's standard deviation, so 18px of
-/// blur is sigma 9: half of the 0.3 lands against the card's own edge and the
-/// rest fades to nothing twenty pixels out. The canvas has no blur, so the
-/// profile is laid down as one-pixel BANDS rather than as a stack of expanded
-/// silhouettes -- the bands do not overlap, so each carries the finished alpha
-/// for its own distance, and twenty card-sized fills a frame do not happen.
-void panelShadow(Canvas& canvas, Rect panel) {
-    /// Past here the next band's alpha rounds to nothing at eight bits.
-    constexpr int kBands = 22;
-    constexpr double kBlurSigma = 9.0;
-    constexpr double kShadowAlpha = 0.30;
-
-    // How much of the shadow survives `distance` pixels outside its edge.
-    const auto coverage = [](double distance) {
-        return kShadowAlpha * 0.5 * std::erfc(distance / (kBlurSigma * std::sqrt(2.0)));
-    };
-
-    // The silhouette itself, offset 6 down. Only the strip of it the card does
-    // not cover is ever seen, but that strip is at the shadow's full alpha and
-    // the bands below start outside it.
-    const Rect cast{panel.x, panel.y + 6.0, panel.w, panel.h};
-    fillRounded(canvas, cast, 3.0, kInk, kShadowAlpha);
-
-    for (int band = kBands; band >= 1; --band) {
-        // Band `n` fills the ring between expansions n-1 and n, whose pixel
-        // centres sit half a pixel inside it.
-        const double alpha = coverage(band - 0.5);
-        if (alpha <= 0.002) continue;
-        setFill(canvas, kInk, alpha);
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(cast.x - band), static_cast<float>(cast.y - band),
-                         static_cast<float>(cast.w + band * 2),
-                         static_cast<float>(cast.h + band * 2), static_cast<float>(3.0 + band));
-        canvas.roundRect(static_cast<float>(cast.x - (band - 1)),
-                         static_cast<float>(cast.y - (band - 1)),
-                         static_cast<float>(cast.w + (band - 1) * 2),
-                         static_cast<float>(cast.h + (band - 1) * 2),
-                         static_cast<float>(3.0 + band - 1));
-        canvas.fill("evenodd");
-    }
-}
-
-/// The gold star, from the same game-icons.net document the browser recolours
+/// The star glyph, from the same game-icons.net document the browser recolours
 /// and draws as an image. Compiled once; the glyph is a fat five-point star
 /// with concave limbs that a regular polygon does not resemble.
-const SvgDocument* starDocument() {
-    static const SvgDocument doc = [] {
+///
+/// Two of them, because the shop needs both: gold where the star is the
+/// currency against a neutral ground, and the artwork's own white where it
+/// sits INSIDE something already gold -- a gold star on a gold pill is a
+/// silhouette of nothing.
+const SvgDocument* starDocument(bool gold) {
+    const auto compile = [](bool asGold) {
         const int index = menuIconIndex("stars");
         if (index < 0) return SvgDocument::fromString(std::string());
         std::string svg = kMenuIcons[index].svg;
-        const std::string white = "fill=\"#fff\"";
-        const std::string gold = "fill=\"#ffd700\"";
-        for (std::size_t at = svg.find(white); at != std::string::npos;
-             at = svg.find(white, at + gold.size())) {
-            svg.replace(at, white.size(), gold);
+        if (asGold) {
+            const std::string white = "fill=\"#fff\"";
+            const std::string amber = "fill=\"#ffd700\"";
+            for (std::size_t at = svg.find(white); at != std::string::npos;
+                 at = svg.find(white, at + amber.size())) {
+                svg.replace(at, white.size(), amber);
+            }
         }
         return SvgDocument::fromString(svg);
-    }();
+    };
+    static const SvgDocument goldDoc = compile(true);
+    static const SvgDocument paperDoc = compile(false);
+    const SvgDocument& doc = gold ? goldDoc : paperDoc;
     return doc.empty() ? nullptr : &doc;
 }
 
 /// A star, drawn rather than typed: the glyph is not in the shipped face, and
 /// the shop is the one screen where the currency has to be unmistakable. Only
 /// reached when the SVG failed to compile.
-void drawStar(Canvas& canvas, Vec2 at, double radius) {
-    setFill(canvas, kGold);
+void drawStar(Canvas& canvas, Vec2 at, double radius, std::uint32_t rgb) {
+    setFill(canvas, rgb);
     canvas.beginPath();
     for (int i = 0; i < 10; ++i) {
         const double r = (i % 2 == 0) ? radius : radius * 0.45;
@@ -384,14 +450,15 @@ void drawFallingStars(Canvas& canvas, ShopState& state, double dt, double viewHe
 }
 
 /// The star icon in a `size` square whose top-left corner is (x, y), matching
-/// the reference's `drawImage(icon, x, y, size, size)`.
-void drawStarIcon(Canvas& canvas, double x, double y, double size) {
-    if (const SvgDocument* doc = starDocument()) {
+/// the reference's `drawImage(icon, x, y, size, size)`. Gold by default; the
+/// price and balance pills ask for the white one.
+void drawStarIcon(Canvas& canvas, double x, double y, double size, bool gold = true) {
+    if (const SvgDocument* doc = starDocument(gold)) {
         doc->renderFitted(canvas, static_cast<float>(x), static_cast<float>(y),
                           static_cast<float>(size), 0.0f);
         return;
     }
-    drawStar(canvas, {x + size * 0.5, y + size * 0.5}, size * 0.5);
+    drawStar(canvas, {x + size * 0.5, y + size * 0.5}, size * 0.5, gold ? kGold : kPaper);
 }
 
 // ---------------------------------------------------------------------------
@@ -460,23 +527,42 @@ std::string trimmed(const std::string& s) {
     return s.substr(first, last - first);
 }
 
+/// The line under "Today's offers:".
+///
+/// Rounded UP, so the top of an hour reads "in 1 hour" rather than "in 59
+/// minutes" -- the caption is a promise about when the cards change, and a
+/// countdown that starts a minute short of the wait reads as a stale panel.
+std::string rotationCaption(std::int64_t secondsLeft) {
+    const std::int64_t minutes = (secondsLeft + 59) / 60;
+    if (minutes >= 60) return "Store will change in 1 hour";
+    if (minutes > 1) return "Store will change in " + std::to_string(minutes) + " minutes";
+    if (minutes == 1) return "Store will change in 1 minute";
+    return "Store will change in " + std::to_string(secondsLeft) + " seconds";
+}
+
+/// The discount tag, centred on `corner` and tipped clockwise: a black rounded
+/// rect with the saving on it, stuck over the tile's top-right corner.
+void drawDiscountRibbon(Canvas& canvas, Vec2 corner, int percent) {
+    canvas.save();
+    canvas.translate(static_cast<float>(corner.x), static_cast<float>(corner.y));
+    canvas.rotate(static_cast<float>(kRibbonRadians));
+    fillRounded(canvas, {-kRibbonWidth * 0.5, -kRibbonHeight * 0.5, kRibbonWidth, kRibbonHeight},
+                4.0, kInk);
+    TextStyle label = shopText(16.0, true, kPaper, 0.0);
+    label.align = Align::Centre;
+    text(canvas, "-" + std::to_string(percent) + "%", 0.0, 0.0, label);
+    canvas.restore();
+}
+
 bool caretVisible(double timeSeconds, double anchorSeconds) {
     const double since = std::max(0.0, timeSeconds - anchorSeconds);
     return static_cast<long long>(since / kCaretBlinkSeconds) % 2 == 0;
 }
 
-/// The buttons along the bottom of the modal, laid out by the draw pass and
-/// hit-tested by the input pass.
-struct ModalButton {
-    Rect rect;
-    const char* label = "";
-    std::uint32_t fill = kCodeBlue;
-    bool confirms = false;
-};
-
 } // namespace
 
-double ShopPanel::preferredWidth() { return 700.0; }
+double ShopPanel::preferredWidth() { return 753.0; }
+double ShopPanel::preferredHeight() { return 549.0; }
 
 void ShopPanel::reset() {
     // The browser keeps its scroll offsets and whatever was typed into the
@@ -546,265 +632,277 @@ bool ShopPanel::render(MenuContext& ctx) {
                           : profile.stars;
 
     // --- card ---------------------------------------------------------------
-    panelShadow(canvas, panel);
-    // A 2px frame, not the shared 4: the reference strokes its rounded path
-    // centred on the canvas edge, so only half the 4px stroke is ever visible.
-    panelCard(canvas, panel, kShopSkin, 2.0, 3.0);
+    // One flat fill: no frame, and no shadow bleeding into the game behind it.
+    // The reference card sits on its page with nothing between the two.
+    fillRounded(canvas, panel, kCardRadius, kShopSkin.fill);
 
     // --- header -------------------------------------------------------------
+    const Rect header{panel.x + kPlateInset, panel.y + kPlateInset, panel.w - kPlateInset * 2,
+                      kHeaderHeight};
+    fillRounded(canvas, header, kPlateRadius, kShopPlate);
+
     TextStyle title = shopText(24.0, true, kPaper, 4.0);
     title.align = Align::Centre;
-    text(canvas, "Shop", panel.x + panel.w * 0.5, panel.y + kPad + 18.0, title);
+    text(canvas, "Shop", panel.x + panel.w * 0.5, header.y + header.h * 0.5, title);
 
-    const std::string balance = withSeparators(stars);
-    const double balanceW = measure(balance, 24.0, true);
-    const double groupX = panel.x + (panel.w - (28.0 + 10.0 + balanceW)) * 0.5;
-    drawStarIcon(canvas, groupX, panel.y + kPad + 50.0, 28.0);
-    text(canvas, balance, groupX + 38.0, panel.y + kPad + 64.0, shopText(24.0, true, kGold, 4.0));
-
-    const Rect closeRect{panel.right() - kPad - 24.0, panel.y + kPad - 4.0, 24.0, 24.0};
+    const Rect closeRect{header.right() - 8.0 - kCloseSide,
+                         header.y + (header.h - kCloseSide) * 0.5, kCloseSide, kCloseSide};
     const bool closeHover = !modalUp && closeRect.contains(mouse);
     if (closeHover) cursor = CursorShape::Hand;
-    fillRounded(canvas, closeRect, 4.0, closeHover ? kPaper : kInk, closeHover ? 0.25 : 0.15);
-    canvas.save();
-    setStroke(canvas, kPaper);
-    canvas.setLineWidth(2.5f);
-    canvas.setLineJoin("round");
-    canvas.setLineCap("butt");
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(closeRect.x + 6.0), static_cast<float>(closeRect.y + 6.0));
-    canvas.lineTo(static_cast<float>(closeRect.right() - 6.0),
-                  static_cast<float>(closeRect.bottom() - 6.0));
-    canvas.moveTo(static_cast<float>(closeRect.right() - 6.0),
-                  static_cast<float>(closeRect.y + 6.0));
-    canvas.lineTo(static_cast<float>(closeRect.x + 6.0),
-                  static_cast<float>(closeRect.bottom() - 6.0));
-    canvas.stroke();
-    canvas.restore();
-
-    // --- redeem code --------------------------------------------------------
-    const Rect codePlate{panel.x + kPad, panel.y + kPad + kHeaderHeight, panel.w - kPad * 2,
-                         kCodeSectionHeight - 10.0};
-    fillRounded(canvas, codePlate, 10.0, kCodeBlue, 0.15);
-    strokeRounded(canvas, codePlate, 10.0, kCodeBlue, 2.0);
-
-    TextStyle codeTitle = shopText(18.0, true, kPaper, 3.0);
-    codeTitle.baseline = Baseline::Top;
-    text(canvas, "Redeem Code", codePlate.x + 15.0, codePlate.y + 12.0, codeTitle);
-
-    const Rect field{codePlate.x + 15.0, codePlate.y + 45.0,
-                     codePlate.w - 30.0 - 10.0 - 110.0, 40.0};
-    const Rect redeemButton{field.right() + 10.0, field.y, 110.0, 40.0};
-
-    const bool fieldHover = !modalUp && field.contains(mouse);
-    if (fieldHover) cursor = CursorShape::Text;
-    fillRounded(canvas, field, 5.0, kPaper, 0.10);
-    strokeRounded(canvas, field, 5.0,
-                  state.focused ? kPaper : (fieldHover ? kCodeBlueLit : kCodeBlue), 2.0);
-
-    canvas.save();
-    canvas.beginPath();
-    canvas.rect(static_cast<float>(field.x + 4.0), static_cast<float>(field.y),
-                static_cast<float>(field.w - 8.0), static_cast<float>(field.h));
-    canvas.clip();
-    {
-        const double beforeCaret = measure(state.code.substr(0, state.caret), 16.0, false);
-        // Scroll the text so the caret stays inside the field rather than
-        // running out of its right edge.
-        const double scrollX = std::max(0.0, beforeCaret - (field.w - 16.0));
-        const bool placeholder = state.code.empty();
-        const std::string shown =
-            placeholder ? (state.focused ? std::string() : "Enter code...") : state.code;
-
-        if (placeholder) canvas.setGlobalAlpha(0.45f);
-        text(canvas, shown, field.x + 8.0 - scrollX, field.y + field.h * 0.5,
-             shopText(16.0, false, kPaper, 0.0));
-        if (placeholder) canvas.setGlobalAlpha(1.0f);
-
-        if (state.focused && caretVisible(ctx.timeSeconds, state.caretAnchor)) {
-            const double caretX = field.x + 8.0 - scrollX + beforeCaret;
-            setStroke(canvas, kPaper);
-            canvas.setLineWidth(1.5f);
-            canvas.beginPath();
-            canvas.moveTo(static_cast<float>(caretX), static_cast<float>(field.y + 8.0));
-            canvas.lineTo(static_cast<float>(caretX), static_cast<float>(field.bottom() - 8.0));
-            canvas.stroke();
-        }
-    }
-    canvas.restore();
-
-    const bool redeemHover = !modalUp && redeemButton.contains(mouse);
-    if (redeemHover) cursor = CursorShape::Hand;
-    fillRounded(canvas, redeemButton, 5.0, redeemHover ? kCodeBlueHover : kCodeBlue);
-    TextStyle redeemLabel = shopText(16.0, true, kPaper, 3.0);
-    redeemLabel.align = Align::Centre;
-    text(canvas, "Redeem", redeemButton.x + redeemButton.w * 0.5,
-         redeemButton.y + redeemButton.h * 0.5, redeemLabel);
+    inlaid(canvas, closeRect, closeHover ? lighten(kShopSkin.close, 0.15) : kShopSkin.close,
+           kShopSkin.closeBorder, kControlBorder, 5.0);
+    closeCross(canvas, closeRect, kCloseSide * 0.5 - 8.0, 3.0, true);
 
     // --- tabs ---------------------------------------------------------------
-    const double tabY = panel.y + kPad + kHeaderHeight + kCodeSectionHeight;
-    std::array<Rect, 2> tabRects{};
-    for (int i = 0; i < 2; ++i) {
-        const Rect rect{panel.x + kPad + i * kTabPitch, tabY, kTabWidth, 40.0};
+    // Three of them, centred on the card's own body between the two plates.
+    // The active one is pressed INTO the body rather than lit: the frame is
+    // what says "tab", so lighting the face would make it read as a button.
+    static constexpr std::array<const char*, 3> kTabLabels{"Shop", "Challenge", "Bonus"};
+    const double tabsWidth = 3.0 * kTabWidth + 2.0 * kTabGap;
+    std::array<Rect, 3> tabRects{};
+    for (int i = 0; i < 3; ++i) {
+        const Rect rect{panel.x + (panel.w - tabsWidth) * 0.5 + i * (kTabWidth + kTabGap),
+                        panel.y + kTabTop, kTabWidth, kTabHeight};
         tabRects[static_cast<std::size_t>(i)] = rect;
-        const bool active = (tab_ == Tab::Shop) == (i == 0);
+        const bool active = static_cast<int>(tab_) == i;
         const bool hovered = !modalUp && rect.contains(mouse);
         if (hovered) cursor = CursorShape::Hand;
-        fillRounded(canvas, rect, 6.0, kPaper, active ? 0.25 : (hovered ? 0.15 : 0.08));
+
+        inlaid(canvas, rect, kShopSkin.fill, kTabBorder, kControlBorder, kTabRadius);
+        if (active || hovered) {
+            tintFace(canvas, rect, kTabRadius, active ? kTintSelected : kTintHover);
+        }
 
         TextStyle label = shopText(16.0, true, kPaper, 3.0);
         label.align = Align::Centre;
         // The inactive label's FILL is white at 0.7; its outline stays opaque.
-        fadedText(canvas, i == 0 ? "Shop" : "Challenges", rect.x + rect.w * 0.5,
+        fadedText(canvas, kTabLabels[static_cast<std::size_t>(i)], rect.x + rect.w * 0.5,
                   rect.y + rect.h * 0.5, label, active ? 1.0 : 0.7);
-
-        if (active) {
-            setFill(canvas, kPaper);
-            canvas.fillRect(static_cast<float>(rect.x), static_cast<float>(rect.bottom() - 2.0),
-                            static_cast<float>(rect.w), 2.0f);
-        }
     }
-    canvas.save();
-    setStroke(canvas, kPaper, 0.3);
-    canvas.setLineWidth(2.0f);
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(panel.x + kPad), static_cast<float>(tabY + 40.0));
-    canvas.lineTo(static_cast<float>(panel.right() - kPad), static_cast<float>(tabY + 40.0));
-    canvas.stroke();
-    canvas.restore();
 
-    // --- content layout -----------------------------------------------------
-    const double contentTop = tabY + kTabsHeight;
-    const Rect view{panel.x + kPad, contentTop, panel.w - kPad * 2,
-                    std::max(0.0, panel.bottom() - contentTop - kPad)};
-    const std::size_t tabIndex = tab_ == Tab::Shop ? 0 : 1;
+    // --- content plate ------------------------------------------------------
+    const Rect contentPlate{panel.x + kPlateInset, panel.y + kContentTop,
+                            panel.w - kPlateInset * 2, panel.h - kContentTop - kPlateInset};
+    fillRounded(canvas, contentPlate, kPlateRadius, kShopPlate);
 
-    std::vector<Card> cards;
+    // --- the footer, on every tab -------------------------------------------
+    // The balance is the one number all three tabs are about, so it is the
+    // card's footer rather than the store's.
+    const Rect balancePill{contentPlate.right() - 9.0 - kBalanceWidth,
+                           contentPlate.bottom() - 10.0 - kBalanceHeight, kBalanceWidth,
+                           kBalanceHeight};
+    fillRounded(canvas, balancePill, kBlockRadius, kShopSkin.fill);
+    {
+        const std::string balance = withSeparators(stars);
+        const double group = kBalanceStar + 6.0 + measure(balance, 18.0, true);
+        const double groupX = balancePill.x + (balancePill.w - group) * 0.5;
+        drawStarIcon(canvas, groupX, balancePill.y + (balancePill.h - kBalanceStar) * 0.5,
+                     kBalanceStar, false);
+        text(canvas, balance, groupX + kBalanceStar + 6.0, balancePill.y + balancePill.h * 0.5,
+             shopText(18.0, true, kPaper, 3.0));
+    }
+
+    TextStyle hint = shopText(13.0, true, kPaper, 3.0);
+    hint.align = Align::Right;
+    const double hintRight = balancePill.x - 9.0;
+    text(canvas, "You gain stars by completing challenges, or by", hintRight,
+         balancePill.y + 7.0, hint);
+    text(canvas, "redeeming a code on the Bonus tab.", hintRight, balancePill.y + 31.0, hint);
+
+    // What a tab has to itself: the plate above the footer.
+    const Rect body{contentPlate.x, contentPlate.y, contentPlate.w,
+                    balancePill.y - 10.0 - contentPlate.y};
+
+    // --- tab contents -------------------------------------------------------
+    // Laid out by the draw pass and answered for at the bottom of the frame.
+    // A rect left empty is a region this tab does not have, and an empty rect
+    // contains no point, so the hit tests need no second look at `tab_`.
+    std::array<Rect, kShopOfferCount> offerBlocks{};
+    int hoveredOffer = -1;
+    Rect lockRect{};
+    Rect codeField{};
+    Rect redeemButton{};
+
+    const std::size_t tabIndex = static_cast<std::size_t>(tab_);
     double contentHeight = 0;
 
-    if (tab_ == Tab::Shop) {
-        std::vector<Rarity> tiers;
-        for (int tier = 0; tier < kRarityCount; ++tier) {
-            const Rarity rarity = clampRarity(tier);
-            if (shopSellsRarity(rarity)) tiers.push_back(rarity);
+    if (tab_ == Tab::Offers) {
+        const std::int64_t rotation = shopRotation(shopClockNow());
+        if (state.offersRotation != rotation) {
+            state.offersRotation = rotation;
+            state.offers = shopOffers(rotation);
         }
-        // A flow grid of (petal x tier) cards, petal-major: twelve to a row in
-        // a 660-wide column, with no names anywhere. The identity of a card is
-        // its artwork and its tier colour, and the confirm modal spells it out
-        // before any stars are spent.
-        const double pitch = kCardSize + kCardGap;
-        const int cols = std::max(1, static_cast<int>(std::floor((view.w + kCardGap) / pitch)));
-        int col = 0;
-        int row = 0;
-        // Catalogue order, not index order: the browser walks
-        // Object.keys(PETAL_CONFIG), which is petals.json's own key order
-        // followed by the generated eggs. Index order is alphabetical and puts
-        // a different petal on every card.
-        for (const std::uint16_t petalIndex : content().petalDisplayOrder()) {
-            if (!shopSellsPetal(petalIndex)) continue;
-            for (const Rarity rarity : tiers) {
-                Card card;
-                card.rect = {view.x + 6.0 + col * pitch, 6.0 + row * pitch, kCardSize, kCardSize};
-                card.petalIndex = petalIndex;
-                card.rarity = rarity;
-                card.price = shopPrice(petalIndex, rarity);
-                card.affordable = static_cast<double>(stars) >= card.price;
-                cards.push_back(card);
-                if (++col >= cols) { col = 0; ++row; }
-            }
-        }
-        contentHeight = (row + (col > 0 ? 1 : 0)) * pitch + 12.0;
-    } else {
-        contentHeight = 32.0 + 40.0 + kChallenges.size() * 104.0 + 10.0;
-    }
 
-    scroll_.contentHeight = contentHeight;
-    scroll_.viewHeight = view.h;
-    scroll_.offset = state.scroll[tabIndex];
-    // The wheel works anywhere over the card, not just over the list, and is
-    // dead while a modal is up.
-    if (!modalUp && panel.contains(mouse)) scroll_.offset -= ctx.wheel() * kWheelPixels;
-    scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
-    state.scroll[tabIndex] = scroll_.offset;
-    const double scroll = scroll_.offset;
+        TextStyle heading = shopText(18.0, true, kPaper, 3.5);
+        heading.align = Align::Centre;
+        text(canvas, "Today's offers:", panel.x + panel.w * 0.5, contentPlate.y + 24.0, heading);
 
-    // --- content ------------------------------------------------------------
-    canvas.save();
-    canvas.beginPath();
-    canvas.rect(static_cast<float>(view.x), static_cast<float>(view.y), static_cast<float>(view.w),
-                static_cast<float>(view.h));
-    canvas.clip();
+        const std::int64_t remaining =
+            std::max<std::int64_t>(0, shopRotationEnd(rotation) - shopClockNow());
+        TextStyle sub = shopText(13.0, true, kPaper, 3.0);
+        sub.align = Align::Centre;
+        text(canvas, rotationCaption(remaining), panel.x + panel.w * 0.5, contentPlate.y + 46.0,
+             sub);
 
-    int hovered = -1;
-    if (tab_ == Tab::Shop) {
-        for (std::size_t i = 0; i < cards.size(); ++i) {
-            const Card& card = cards[i];
-            const Rect rect{card.rect.x, view.y + card.rect.y - scroll, card.rect.w, card.rect.h};
-            if (rect.bottom() <= view.y || rect.y >= view.bottom()) continue;
+        // Locking an offer through a rotation is the reference's; nothing on
+        // this server keeps per-account offers, so the control is drawn where
+        // it belongs and left inert rather than made to lie about what it did.
+        lockRect = Rect{contentPlate.right() - 27.0 - 67.0, contentPlate.y + 17.0, 67.0, 29.0};
+        inlaid(canvas, lockRect, kLockFill, kLockBorder, kControlBorder, 6.0, 0.55);
+        TextStyle lockLabel = shopText(14.0, true, kPaper, 3.0);
+        lockLabel.align = Align::Centre;
+        fadedText(canvas, "Lock", lockRect.x + lockRect.w * 0.5, lockRect.y + lockRect.h * 0.5,
+                  lockLabel, 0.55);
 
-            // An unaffordable card takes no hover treatment and no click, so
-            // there is nothing to answer for when the pointer is over one.
-            const bool hot = !modalUp && card.affordable && view.contains(mouse) &&
-                             rect.contains(mouse);
+        const double gridWidth =
+            kShopOfferColumns * kBlockWidth + (kShopOfferColumns - 1) * kBlockGap;
+        const double gridX = panel.x + (panel.w - gridWidth) * 0.5;
+
+        for (std::size_t i = 0; i < state.offers.size() && i < kShopOfferCount; ++i) {
+            const ShopOffer& offer = state.offers[i];
+            const int column = static_cast<int>(i) % kShopOfferColumns;
+            const int row = static_cast<int>(i) / kShopOfferColumns;
+            const Rect block{gridX + column * (kBlockWidth + kBlockGap),
+                             panel.y + kGridTop + row * (kBlockHeight + kBlockGap), kBlockWidth,
+                             kBlockHeight};
+            offerBlocks[i] = block;
+
+            // The pill is the button. The block and the tile above it are the
+            // card's picture, not a control, so nothing about them answers to
+            // the pointer -- and every pill is live whatever the balance: the
+            // reference neither greys a card out nor reddens its price, and a
+            // player who cannot afford one is told so by the server's refusal
+            // rather than by a card that quietly does nothing.
+            const Rect pill{block.x + (kBlockWidth - kPricePillWidth) * 0.5,
+                            block.y + kPricePillTop, kPricePillWidth, kPricePillHeight};
+            const bool hot = !modalUp && pill.contains(mouse);
             if (hot) {
-                hovered = static_cast<int>(i);
+                hoveredOffer = static_cast<int>(i);
                 cursor = CursorShape::Hand;
             }
 
-            if (hot) {
-                // shadowBlur 6 at rgba(0,0,0,0.4), offset 2 down. Two expanded
-                // silhouettes stand in for a blur the canvas cannot do.
-                fillRounded(canvas, {rect.x - 3.0, rect.y - 1.0, rect.w + 6.0, rect.h + 6.0}, 7.0,
-                            kInk, 0.10);
-                fillRounded(canvas, {rect.x - 1.0, rect.y + 1.0, rect.w + 2.0, rect.h + 4.0}, 5.0,
-                            kInk, 0.18);
-            }
+            fillRounded(canvas, block, kBlockRadius, kShopSkin.fill);
 
-            // Only the plate and the icon fade when the price is out of reach;
-            // the price bar below stays opaque, or the card stops reading as a
-            // card at all.
+            const Rect tileRect{block.x + (kBlockWidth - kTileWidth) * 0.5, block.y + kTileTop,
+                                kTileWidth, kTileHeight};
             ItemTile tile;
-            tile.petalIndex = card.petalIndex;
-            tile.rarity = card.rarity;
-            // The price bar is this card's caption, and it sits where the name
-            // would go.
-            tile.showName = false;
-            tile.hovered = hot;
-            tile.selected = hot;
-            tile.alpha = card.affordable ? 1.0 : 0.5;
+            tile.petalIndex = offer.petalIndex;
+            tile.rarity = offer.rarity;
             tile.timeSeconds = ctx.timeSeconds;
-            drawItemTile(canvas, ctx.sprites, rect, tile);
+            drawItemTile(canvas, ctx.sprites, tileRect, tile);
 
-            setFill(canvas, kInk, 0.8);
-            canvas.fillRect(static_cast<float>(rect.x),
-                            static_cast<float>(rect.bottom() - kPriceBarHeight),
-                            static_cast<float>(rect.w), static_cast<float>(kPriceBarHeight));
+            inlaid(canvas, pill, kPriceFill, kPriceBorder, kControlBorder, kBlockRadius);
+            if (hot) tintFace(canvas, pill, kBlockRadius, kTintSelected);
 
-            TextStyle price = shopText(9.0, true, card.affordable ? kGold : kAlert, 2.0);
-            price.align = Align::Centre;
-            text(canvas, formatPrice(card.price), rect.x + rect.w * 0.5,
-                 rect.bottom() - kPriceBarHeight * 0.5, price);
+            const std::string price = formatPrice(offer.price);
+            const double group = kPriceStar + 4.0 + measure(price, 16.0, true);
+            const double groupX = pill.x + (pill.w - group) * 0.5;
+            drawStarIcon(canvas, groupX, pill.y + (pill.h - kPriceStar) * 0.5, kPriceStar, false);
+            text(canvas, price, groupX + kPriceStar + 4.0, pill.y + pill.h * 0.5,
+                 shopText(16.0, true, kPaper, 3.0));
         }
-    } else {
-        double y = view.y + 10.0 - scroll;
 
+        // The ribbons last, in their own pass: one hangs off the corner of its
+        // card and would otherwise be painted over by the next card's block.
+        for (std::size_t i = 0; i < state.offers.size() && i < kShopOfferCount; ++i) {
+            if (state.offers[i].discountPercent <= 0) continue;
+            const Rect block = offerBlocks[i];
+            drawDiscountRibbon(canvas,
+                               {block.x + (kBlockWidth + kTileWidth) * 0.5, block.y + kTileTop},
+                               state.offers[i].discountPercent);
+        }
+    } else if (tab_ == Tab::Bonus) {
+        const Rect codePlate{body.x + 30.0, body.y + 26.0, body.w - 60.0, 112.0};
+        fillRounded(canvas, codePlate, 10.0, kCodeBlue, 0.15);
+        strokeRounded(canvas, codePlate, 10.0, kCodeBlue, 2.0);
+
+        TextStyle codeTitle = shopText(18.0, true, kPaper, 3.0);
+        codeTitle.baseline = Baseline::Top;
+        text(canvas, "Redeem Code", codePlate.x + 15.0, codePlate.y + 12.0, codeTitle);
+
+        codeField = Rect{codePlate.x + 15.0, codePlate.y + 45.0,
+                         codePlate.w - 30.0 - 10.0 - 110.0, 40.0};
+        redeemButton = Rect{codeField.right() + 10.0, codeField.y, 110.0, 40.0};
+
+        const bool fieldHover = !modalUp && codeField.contains(mouse);
+        if (fieldHover) cursor = CursorShape::Text;
+        fillRounded(canvas, codeField, 5.0, kPaper, 0.10);
+        strokeRounded(canvas, codeField, 5.0,
+                      state.focused ? kPaper : (fieldHover ? kCodeBlueLit : kCodeBlue), 2.0);
+
+        canvas.save();
+        canvas.beginPath();
+        canvas.rect(static_cast<float>(codeField.x + 4.0), static_cast<float>(codeField.y),
+                    static_cast<float>(codeField.w - 8.0), static_cast<float>(codeField.h));
+        canvas.clip();
+        {
+            const double beforeCaret = measure(state.code.substr(0, state.caret), 16.0, false);
+            // Scroll the text so the caret stays inside the field rather than
+            // running out of its right edge.
+            const double scrollX = std::max(0.0, beforeCaret - (codeField.w - 16.0));
+            const bool placeholder = state.code.empty();
+            const std::string shown =
+                placeholder ? (state.focused ? std::string() : "Enter code...") : state.code;
+
+            if (placeholder) canvas.setGlobalAlpha(0.45f);
+            text(canvas, shown, codeField.x + 8.0 - scrollX, codeField.y + codeField.h * 0.5,
+                 shopText(16.0, false, kPaper, 0.0));
+            if (placeholder) canvas.setGlobalAlpha(1.0f);
+
+            if (state.focused && caretVisible(ctx.timeSeconds, state.caretAnchor)) {
+                const double caretX = codeField.x + 8.0 - scrollX + beforeCaret;
+                setStroke(canvas, kPaper);
+                canvas.setLineWidth(1.5f);
+                canvas.beginPath();
+                canvas.moveTo(static_cast<float>(caretX), static_cast<float>(codeField.y + 8.0));
+                canvas.lineTo(static_cast<float>(caretX),
+                              static_cast<float>(codeField.bottom() - 8.0));
+                canvas.stroke();
+            }
+        }
+        canvas.restore();
+
+        const bool redeemHover = !modalUp && redeemButton.contains(mouse);
+        if (redeemHover) cursor = CursorShape::Hand;
+        fillRounded(canvas, redeemButton, 5.0, redeemHover ? kCodeBlueHover : kCodeBlue);
+        TextStyle redeemLabel = shopText(16.0, true, kPaper, 3.0);
+        redeemLabel.align = Align::Centre;
+        text(canvas, "Redeem", redeemButton.x + redeemButton.w * 0.5,
+             redeemButton.y + redeemButton.h * 0.5, redeemLabel);
+
+        TextStyle note = shopText(14.0, false, kPaper, 3.0);
+        note.align = Align::Centre;
+        note.baseline = Baseline::Top;
+        text(canvas, "Codes are handed out on the Discord, and each pays its stars once.",
+             body.x + body.w * 0.5, codePlate.bottom() + 22.0, note);
+    } else {
+        contentHeight = 32.0 + kChallenges.size() * 104.0 + 10.0;
+        scroll_.contentHeight = contentHeight;
+        scroll_.viewHeight = body.h;
+        scroll_.offset = state.scroll[tabIndex];
+        // The wheel works anywhere over the card, not just over the list, and
+        // is dead while a modal is up.
+        if (!modalUp && panel.contains(mouse)) scroll_.offset -= ctx.wheel() * kWheelPixels;
+        scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
+        state.scroll[tabIndex] = scroll_.offset;
+
+        canvas.save();
+        canvas.beginPath();
+        canvas.rect(static_cast<float>(body.x), static_cast<float>(body.y),
+                    static_cast<float>(body.w), static_cast<float>(body.h));
+        canvas.clip();
+
+        double y = body.y + 10.0 - scroll_.offset;
         TextStyle heading = shopText(20.0, true, kPaper, 4.0);
         heading.align = Align::Centre;
         heading.baseline = Baseline::Top;
-        text(canvas, "Earn Stars by Defeating Mythic+ Mobs", view.x + view.w * 0.5, y, heading);
+        text(canvas, "Earn Stars by Defeating Mythic+ Mobs", body.x + body.w * 0.5, y, heading);
         y += 32.0;
 
-        const std::string line = withSeparators(stars) + " Stars";
-        const double lineW = measure(line, 18.0, true);
-        const double lineX = view.x + (view.w - (22.0 + 8.0 + lineW)) * 0.5;
-        drawStarIcon(canvas, lineX, y, 22.0);
-        text(canvas, line, lineX + 30.0, y + 11.0, shopText(18.0, true, kGold, 3.0));
-        y += 40.0;
-
         for (const StarChallenge& challenge : kChallenges) {
-            const Rect card{view.x + 6.0, y, view.w - 12.0, 92.0};
+            const Rect card{body.x + 20.0, y, body.w - 40.0, 92.0};
             y += card.h + 12.0;
-            if (card.bottom() <= view.y || card.y >= view.bottom()) continue;
+            if (card.bottom() <= body.y || card.y >= body.bottom()) continue;
 
             fillRounded(canvas, card, 10.0, challenge.color);
             strokeRounded(canvas, card, 10.0, kInk, 2.0, 0.3);
@@ -824,65 +922,107 @@ bool ShopPanel::render(MenuContext& ctx) {
                 std::to_string(challenge.stars) + (challenge.stars == 1 ? " Star" : " Stars");
             text(canvas, reward, card.x + 38.0, card.y + 69.0, shopText(16.0, true, kGold, 3.0));
         }
-    }
-    canvas.restore();
+        canvas.restore();
 
-    // --- scrollbar ----------------------------------------------------------
-    if (contentHeight > view.h && view.h > 0) {
-        // Outside the content column, 8px in from the card's right edge.
-        const Rect track{view.right() + 6.0, view.y, kScrollbarWidth, view.h};
-        const double thumbHeight = std::max(20.0, (view.h / contentHeight) * view.h);
-        const double thumbY =
-            view.y + (scroll / (contentHeight - view.h)) * (view.h - thumbHeight);
-        fillRounded(canvas, track, 3.0, kInk, 0.15);
-        fillRounded(canvas, {track.x, thumbY, track.w, thumbHeight}, 3.0, kPaper, 0.55);
+        // --- scrollbar ------------------------------------------------------
+        if (contentHeight > body.h && body.h > 0) {
+            const Rect track{body.right() - kScrollbarWidth - 6.0, body.y, kScrollbarWidth, body.h};
+            const double thumbHeight = std::max(20.0, (body.h / contentHeight) * body.h);
+            const double thumbY =
+                body.y + (scroll_.offset / (contentHeight - body.h)) * (body.h - thumbHeight);
+            fillRounded(canvas, track, 3.0, kInk, 0.15);
+            fillRounded(canvas, {track.x, thumbY, track.w, thumbHeight}, 3.0, kPaper, 0.55);
+        }
     }
 
     // --- modal --------------------------------------------------------------
-    std::array<ModalButton, 2> buttons{};
-    int buttonCount = 0;
+    // The card dims and one green box stands on it: a title, the question, the
+    // petal itself, and the two things that can be done about it. The buy
+    // button IS the price -- the same gold pill the offer card wears -- so
+    // what is being agreed to is spelled out on the control that agrees.
+    Rect confirmRect{};
+    Rect cancelRect{};
     if (modalUp) {
-        fillRounded(canvas, panel, 3.0, kInk, 0.55);
+        fillRounded(canvas, panel, kCardRadius, kInk, kModalScrim);
 
-        const double boxW = std::min(440.0, panel.w - 60.0);
-        const Rect box{panel.x + (panel.w - boxW) * 0.5, panel.y + (panel.h - 170.0) * 0.5, boxW,
-                       170.0};
-        fillRounded(canvas, box, 10.0, kModalBox);
-        strokeRounded(canvas, box, 10.0, kPaper, 2.0);
+        const bool confirming = state.modal == ShopState::Modal::Confirm;
+        const std::vector<std::string> lines =
+            confirming ? std::vector<std::string>{}
+                       : wrapMessage(state.message, kModalBodySize, kModalWidth - 40.0);
+        // A confirm is the measured box; an alert is as tall as its message
+        // needs, which is the only thing that ever varies here.
+        const double boxH =
+            confirming ? kModalHeight
+                       : kModalTextTop + static_cast<double>(lines.size()) * kModalLine + 24.0 +
+                             kModalButtonHeight + kModalBottomPad;
+        const Rect box{panel.x + (panel.w - kModalWidth) * 0.5,
+                       panel.y + (panel.h - boxH) * 0.5, kModalWidth, boxH};
+        inlaid(canvas, box, kShopPlate, kShopSkin.fill, kModalBorder, kModalRadius);
 
-        TextStyle body = shopText(16.0, false, state.messageColor, 3.0);
-        body.align = Align::Centre;
-        body.baseline = Baseline::Top;
-        double lineY = box.y + 30.0;
-        for (const std::string& piece : wrapMessage(state.message, 16.0, boxW - 30.0)) {
-            text(canvas, piece, box.x + boxW * 0.5, lineY, body);
-            lineY += 22.0;
-        }
+        const double centreX = box.x + box.w * 0.5;
+        if (confirming) {
+            TextStyle heading = shopText(24.0, true, kPaper, 4.0);
+            heading.align = Align::Centre;
+            text(canvas, "Confirm", centreX, box.y + 39.0, heading);
 
-        if (state.modal == ShopState::Modal::Confirm) {
-            buttons[0] = {Rect{}, "Cancel", kModalCancel, false};
-            buttons[1] = {Rect{}, "Buy", kCodeBlue, true};
-            buttonCount = 2;
+            TextStyle question = shopText(kModalBodySize, true, kPaper, 3.0);
+            question.align = Align::Centre;
+            text(canvas, "Are you sure you want to buy this?", centreX, box.y + 87.0, question);
+            TextStyle warning = question;
+            warning.fill = kAlert;
+            text(canvas, "Petal purchases are not refundable", centreX, box.y + 107.0, warning);
+
+            ItemTile tile;
+            tile.petalIndex = state.pendingPetal;
+            tile.rarity = state.pendingRarity;
+            tile.timeSeconds = ctx.timeSeconds;
+            drawItemTile(canvas, ctx.sprites,
+                         {centreX - kTileWidth * 0.5, box.y + 135.0, kTileWidth, kTileWidth},
+                         tile);
         } else {
-            buttons[0] = {Rect{}, "OK", kCodeBlue, false};
-            buttonCount = 1;
+            TextStyle message = shopText(kModalBodySize, true, state.messageColor, 3.0);
+            message.align = Align::Centre;
+            message.baseline = Baseline::Top;
+            double lineY = box.y + kModalTextTop;
+            for (const std::string& piece : lines) {
+                text(canvas, piece, centreX, lineY, message);
+                lineY += kModalLine;
+            }
         }
 
-        const double row = buttonCount * 100.0 + (buttonCount - 1) * 12.0;
-        double bx = box.x + (boxW - row) * 0.5;
-        for (int i = 0; i < buttonCount; ++i) {
-            ModalButton& button = buttons[static_cast<std::size_t>(i)];
-            button.rect = {bx, box.bottom() - 36.0 - 18.0, 100.0, 36.0};
-            bx += 112.0;
-            const bool hovered = button.rect.contains(mouse);
+        // Buy sits left of Cancel, as the reference has it: the affirmative is
+        // the one that carries a price, and reading order puts the price first.
+        const double buttonsWidth =
+            confirming ? kModalBuyWidth + kModalButtonGap + kModalCancelWidth : kModalCancelWidth;
+        double bx = centreX - buttonsWidth * 0.5;
+        const double by = box.bottom() - kModalBottomPad - kModalButtonHeight;
+        if (confirming) {
+            confirmRect = {bx, by, kModalBuyWidth, kModalButtonHeight};
+            bx += kModalBuyWidth + kModalButtonGap;
+
+            const bool hovered = confirmRect.contains(mouse);
             if (hovered) cursor = CursorShape::Hand;
-            fillRounded(canvas, button.rect, 6.0,
-                        hovered ? lighten(button.fill, 0.15) : button.fill);
-            TextStyle label = shopText(15.0, true, kPaper, 3.0);
-            label.align = Align::Centre;
-            text(canvas, button.label, button.rect.x + button.rect.w * 0.5,
-                 button.rect.y + button.rect.h * 0.5, label);
+            inlaid(canvas, confirmRect, kPriceFill, kPriceBorder, kControlBorder, kBlockRadius);
+            if (hovered) tintFace(canvas, confirmRect, kBlockRadius, kTintSelected);
+
+            const std::string price = formatPrice(state.pendingPrice);
+            const double group = kModalStar + 4.0 + measure(price, 16.0, true);
+            const double groupX = confirmRect.x + (confirmRect.w - group) * 0.5;
+            drawStarIcon(canvas, groupX, confirmRect.y + (confirmRect.h - kModalStar) * 0.5,
+                         kModalStar, false);
+            text(canvas, price, groupX + kModalStar + 4.0,
+                 confirmRect.y + confirmRect.h * 0.5, shopText(16.0, true, kPaper, 3.0));
         }
+
+        cancelRect = {bx, by, kModalCancelWidth, kModalButtonHeight};
+        const bool cancelHover = cancelRect.contains(mouse);
+        if (cancelHover) cursor = CursorShape::Hand;
+        inlaid(canvas, cancelRect, kModalGrey, kModalGreyBorder, kControlBorder, kBlockRadius);
+        if (cancelHover) tintFace(canvas, cancelRect, kBlockRadius, kTintSelected);
+        TextStyle label = shopText(16.0, true, kPaper, 3.0);
+        label.align = Align::Centre;
+        text(canvas, confirming ? "Cancel" : "OK", cancelRect.x + cancelRect.w * 0.5,
+             cancelRect.y + cancelRect.h * 0.5, label);
     }
 
     // The whole card has now been laid out, so this is the last word on what
@@ -899,7 +1039,7 @@ bool ShopPanel::render(MenuContext& ctx) {
     const auto resolveModal = [&](bool confirmed) {
         if (confirmed && state.modal == ShopState::Modal::Confirm &&
             state.pendingPetal != kNoPetal) {
-            ctx.net.requestBuyPetal(state.pendingPetal, state.pendingRarity);
+            ctx.net.requestBuyPetal(state.pendingPetal, state.pendingRarity, state.pendingSlot);
         }
         clearModal();
     };
@@ -963,24 +1103,25 @@ bool ShopPanel::render(MenuContext& ctx) {
     if (!ctx.pressed()) return true;
 
     if (modalUp) {
-        for (int i = 0; i < buttonCount; ++i) {
-            const ModalButton& button = buttons[static_cast<std::size_t>(i)];
-            if (button.rect.contains(mouse)) resolveModal(button.confirms);
-        }
+        if (confirmRect.contains(mouse)) resolveModal(true);
+        else if (cancelRect.contains(mouse)) resolveModal(false);
         // The scrim swallows everything else, including the close button.
         return true;
     }
 
-    if (!field.contains(mouse)) state.focused = false;
+    if (!codeField.contains(mouse)) state.focused = false;
     if (closeRect.contains(mouse)) return false;
 
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 3; ++i) {
         if (!tabRects[static_cast<std::size_t>(i)].contains(mouse)) continue;
-        tab_ = i == 0 ? Tab::Shop : Tab::Challenges;
+        // Leaving the code field behind clears its focus, or the shop would go
+        // on eating keystrokes from a tab with no field on it.
+        if (static_cast<int>(tab_) != i) state.focused = false;
+        tab_ = static_cast<Tab>(i);
         return true;
     }
 
-    if (field.contains(mouse)) {
+    if (codeField.contains(mouse)) {
         if (!state.focused) {
             state.focused = true;
             state.caretAnchor = ctx.timeSeconds;
@@ -996,18 +1137,19 @@ bool ShopPanel::render(MenuContext& ctx) {
         return true;
     }
 
-    if (tab_ == Tab::Shop && hovered >= 0) {
-        const Card& card = cards[static_cast<std::size_t>(hovered)];
-        const PetalConfig& config = content().petal(card.petalIndex);
-        const std::string name = config.name.empty() ? config.id : config.name;
+    if (hoveredOffer >= 0 && static_cast<std::size_t>(hoveredOffer) < state.offers.size()) {
+        const ShopOffer& offer = state.offers[static_cast<std::size_t>(hoveredOffer)];
         // Some of these prices are a whole session's stars; a stray click must
-        // not spend one, so the purchase goes through a confirmation.
+        // not spend one, so the purchase goes through a confirmation. The box
+        // shows the petal itself rather than naming it -- the tile is the same
+        // one that was just clicked, which is a clearer answer to "this?" than
+        // a sentence repeating its name and tier.
         state.modal = ShopState::Modal::Confirm;
-        state.message = "Buy " + name + " (" + rarityName(card.rarity) + ") for " +
-                        withSeparators(card.price) + " stars?";
         state.messageColor = kPaper;
-        state.pendingPetal = card.petalIndex;
-        state.pendingRarity = card.rarity;
+        state.pendingPetal = offer.petalIndex;
+        state.pendingRarity = offer.rarity;
+        state.pendingSlot = hoveredOffer;
+        state.pendingPrice = offer.price;
     }
     return true;
 }

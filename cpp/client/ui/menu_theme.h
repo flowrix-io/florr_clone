@@ -29,7 +29,12 @@ inline constexpr PanelSkin kInventorySkin{0x599FDCu, 0x4A8BC2u, 0xDC7E92u, 0xB56
 inline constexpr PanelSkin kCraftingSkin{0xDB9D5Bu, 0xB17F48u, 0xBB5B61u, 0x914B31u, 0xB17F48u};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xCC4455u, 0x992F3Cu, 0xA89D36u};
 inline constexpr PanelSkin kTalentsSkin{0xDC7E92u, 0xB56476u, 0x8E4657u, 0x6E3543u, 0xB56476u};
-inline constexpr PanelSkin kShopSkin{0x42F563u, 0x36D153u, 0xBB5B61u, 0x914B31u, 0x36D153u};
+/// The shop is the one panel drawn against a reference screenshot rather than
+/// against the browser build's CSS, so its greens are that shot's -- and it is
+/// also the one card with NO frame: the green ring around it in that shot is
+/// the page behind the card, not a border. Border and accent are the body
+/// colour deliberately, so a shared helper that draws either paints nothing.
+inline constexpr PanelSkin kShopSkin{0x7DC065u, 0x7DC065u, 0xAE5B58u, 0x8D4A47u, 0x7DC065u};
 /// The skin studio is the one panel whose border is LIGHTER than its body --
 /// it borrows the strip button's own purple as the frame.
 inline constexpr PanelSkin kSkinsSkin{0x8737B6u, 0x9A3FD0u, 0xBB5B61u, 0x914B31u, 0x9A3FD0u};
@@ -71,10 +76,10 @@ inline constexpr std::uint32_t kControlField = 0xEEEEEEu;
 
 /// The two anchors the browser build hangs panels off.
 ///
-/// The tall list panels (inventory, craft, talents, gallery, shop) sit a third
-/// of the way down and 100px in from the left, clear of the bottom icon
-/// column, and run two thirds of the viewport tall. The corner panels
-/// (settings, changelog, notifications, guild, leaderboard, skins, debug) are
+/// The tall list panels (inventory, craft, talents, gallery) sit a third of
+/// the way down and 100px in from the left, clear of the bottom icon column,
+/// and run two thirds of the viewport tall. The corner panels (settings,
+/// changelog, notifications, guild, leaderboard, skins, shop, debug) are
 /// pinned directly under the top icon row instead, at their own fixed sizes.
 inline constexpr double kMenuInsetX = 100.0;
 inline constexpr double kMenuListTopFraction = 1.0 / 3.0;
