@@ -27,11 +27,20 @@ TextStyle labelStyle(double size, bool bold, std::uint32_t fill, double stroke) 
 /// tall list panels wear the same cross.
 constexpr double kCrossPadRatio = 0.27;
 
-/// The hover face of every close button in the game. A literal swatch, not a
-/// tint of the skin: both reference panels hover to the same light rose
-/// regardless of the button's own pink, and deriving it from #bb5b61 lands on
-/// a desaturated brown instead.
-constexpr std::uint32_t kCloseHover = 0xE8A0B0u;
+/// The rim, and the cross's ink, as fractions of the button's own width.
+///
+/// Both used to be literals -- a 2px rim and a 2.5px cross whatever the button
+/// -- which drew a 29px close button with the rim of a 20px one. A close
+/// control is one shape at several sizes, so its parts scale with it.
+constexpr double kCloseRimRatio = 0.14;
+constexpr double kCloseCrossRatio = 0.105;
+
+/// How far the hover face is lightened off the skin's own close colour.
+///
+/// Derived rather than a literal swatch: the panels no longer share one pink,
+/// and a fixed rose over the inventory's brick close read as a different
+/// button rather than as the same one lit.
+constexpr double kCloseHoverLift = 0.18;
 
 } // namespace
 
@@ -105,14 +114,15 @@ void panelTitle(Canvas& canvas, Rect panel, const std::string& title,
     heading.align = Align::Centre;
     heading.baseline = Baseline::Top;
     heading.roundJoin = true;
-    text(canvas, title, panel.x + panel.w * 0.5, panel.y + kMenuPadding, heading);
+    text(canvas, title, panel.x + panel.w * 0.5, panel.y + kMenuTitleTop, heading);
 
     if (subtitle.empty()) return;
     TextStyle sub = labelStyle(kMenuSubtitleSize, true, kPaper, 3.0);
     sub.align = Align::Centre;
     sub.baseline = Baseline::Top;
     sub.roundJoin = true;
-    text(canvas, subtitle, panel.x + panel.w * 0.5, panel.y + kMenuPadding + 28.0, sub);
+    text(canvas, subtitle, panel.x + panel.w * 0.5, panel.y + kMenuTitleTop + kMenuSubtitleDrop,
+         sub);
 }
 
 void panelHeading(Canvas& canvas, Rect panel, const std::string& title) {
@@ -126,7 +136,7 @@ void panelHeading(Canvas& canvas, Rect panel, const std::string& title) {
 // ---------------------------------------------------------------------------
 
 Rect closeButtonRect(Rect panel) {
-    return {panel.right() - kMenuPadding - kCloseSize, panel.y + kMenuPadding - 4.0, kCloseSize,
+    return {panel.right() - kMenuPadding - kCloseSize, panel.y + kMenuPadding + 2.0, kCloseSize,
             kCloseSize};
 }
 
@@ -155,10 +165,12 @@ void closeButton(Canvas& canvas, Rect r, bool hovered, const PanelSkin& skin, do
     // Not inlaid(): that derives the inner corner as radius - 2, and neither
     // reference panel uses that relationship (inventory 4/3, forge 3/1).
     const double inner = innerRadius < 0 ? std::max(0.0, radius - 1.0) : innerRadius;
+    const double rim = std::max(2.0, r.w * kCloseRimRatio);
     fillRound(canvas, r, radius, skin.closeBorder);
-    fillRound(canvas, Rect{r.x + 2.0, r.y + 2.0, r.w - 4.0, r.h - 4.0}, inner,
-              hovered ? kCloseHover : skin.close);
-    closeCross(canvas, r, r.w * (0.5 - kCrossPadRatio), 2.5, true);
+    fillRound(canvas, Rect{r.x + rim, r.y + rim, r.w - rim * 2, r.h - rim * 2}, inner,
+              hovered ? lighten(skin.close, kCloseHoverLift) : skin.close);
+    closeCross(canvas, r, r.w * (0.5 - kCrossPadRatio), std::max(2.0, r.w * kCloseCrossRatio),
+               true);
 }
 
 void pillButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t fill,

@@ -48,14 +48,40 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     {"Debug", Key::J},
 }};
 
-/// The browser build's `gardn-icon-btn`: a 42px square with a 4px border and a
-/// 3px outer radius, spaced 10 apart and inset 20 from the corner it hangs off.
-constexpr double kIconButton = 42.0;
-constexpr double kIconGap = 10.0;
-constexpr double kIconInset = 20.0;
-constexpr double kIconBorder = 4.0;
-constexpr double kIconRadius = 3.0;
-constexpr double kIconGlyph = 24.0;
+/// The two icon groups, which are NOT the same button at two positions.
+///
+/// The top row is chrome -- settings, changelog, the guild, the way out --
+/// packed tight along the edge and read left to right. The left column is the
+/// game: the four panels a player opens mid-fight, off a hotkey, without
+/// looking. So the column's buttons are a third larger, spaced further apart
+/// and captioned with their key; the row's are smaller and crowded. One
+/// `kIconButton` used to serve both at 42px, which drew the row and the column
+/// as the same control and left neither at the size its job wants.
+///
+/// Every part of a button is a fraction of its own side: a 3px rim and a 6px
+/// corner on the 48 becomes 4 and 8 on the 64, so the two read as one shape at
+/// two sizes rather than as two designs.
+struct IconStyle {
+    double side;
+    double gap;
+    double inset;   ///< from the edge it hangs off, on both axes
+    double border;
+    double radius;
+    double glyph;   ///< the artwork's fitted box, centred in the face
+};
+
+constexpr IconStyle kTopIcon{48.0, 6.0, 9.0, 3.0, 6.0, 32.0};
+constexpr IconStyle kColumnIcon{64.0, 11.0, 9.0, 4.0, 8.0, 43.0};
+
+constexpr const IconStyle& iconStyle(bool topRow) { return topRow ? kTopIcon : kColumnIcon; }
+
+/// The hotkey printed in the bottom-right corner of a column button, as the
+/// loadout bar prints its slot caps. Only the column wears one. Some top-row
+/// panels are bound too, but those are opened between fights with the mouse
+/// already on the button; captioning all ten would turn a quiet strip of icons
+/// into a wall of text for keys nobody reaches for mid-game.
+constexpr double kIconKeyCapSize = 14.0;
+constexpr double kIconKeyCapInset = 4.0;
 
 /// The strip cascades in from the left on its first frame: each button slides
 /// its own distance from the edge in 50ms, 40ms apart down the table.
@@ -440,8 +466,10 @@ namespace {
 /// it does not narrow the card and re-centre it, which would move a panel a
 /// player has learnt the position of.
 Rect listPanel(double width, int, int viewHeight) {
-    return {kMenuInsetX, static_cast<double>(viewHeight) * kMenuListTopFraction, width,
-            static_cast<double>(viewHeight) * kMenuListHeightFraction};
+    const double top = static_cast<double>(viewHeight) * kMenuListTopFraction;
+    const double height =
+        static_cast<double>(viewHeight) * kMenuListHeightFraction - kMenuListBottomPad;
+    return {kMenuInsetX, top, width, std::max(0.0, height)};
 }
 
 /// An overlay pinned under the top icon row, at a literal size. Also unclamped:
@@ -564,22 +592,22 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
 
     // Lay both groups out first: the slide-in offset is a per-button distance
     // from the left edge, so it needs the final x before anything is drawn.
-    double x = kIconInset;
+    double x = kTopIcon.inset;
     int columnCount = 0;
     for (int i = 0; i < kStripSlotCount; ++i) {
         const auto at = static_cast<std::size_t>(i);
         if (!visible[at]) continue;
         if (!strip()[at].topRow) { ++columnCount; continue; }
-        stripRects_[at] = {x, kIconInset, kIconButton, kIconButton};
-        x += kIconButton + kIconGap;
+        stripRects_[at] = {x, kTopIcon.inset, kTopIcon.side, kTopIcon.side};
+        x += kTopIcon.side + kTopIcon.gap;
     }
-    double y = canvas.height() - kIconInset - columnCount * kIconButton -
-               std::max(0, columnCount - 1) * kIconGap;
+    double y = canvas.height() - kColumnIcon.inset - columnCount * kColumnIcon.side -
+               std::max(0, columnCount - 1) * kColumnIcon.gap;
     for (int i = 0; i < kStripSlotCount; ++i) {
         const auto at = static_cast<std::size_t>(i);
         if (!visible[at] || strip()[at].topRow) continue;
-        stripRects_[at] = {kIconInset, y, kIconButton, kIconButton};
-        y += kIconButton + kIconGap;
+        stripRects_[at] = {kColumnIcon.inset, y, kColumnIcon.side, kColumnIcon.side};
+        y += kColumnIcon.side + kColumnIcon.gap;
     }
 
     // First frame: stagger every visible button so the strip cascades in.
@@ -607,6 +635,7 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         const auto at = static_cast<std::size_t>(i);
         if (!visible[at]) continue;
         const StripSlot& slot = strip()[at];
+        const IconStyle& style = iconStyle(slot.topRow);
         const Rect r = stripRects_[at];
         // Against the UN-translated rect: neither the slide nor the shake may
         // move a button out from under the cursor that is already on it.
@@ -616,7 +645,7 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         canvas.save();
         if (slideStart_[at] >= 0) {
             const double elapsed = timeSeconds - slideStart_[at];
-            const double travel = -(r.x + kIconButton);
+            const double travel = -(r.x + style.side);
             if (elapsed < 0) {
                 canvas.translate(static_cast<float>(travel), 0.0f);
             } else if (elapsed < kIconSlideSeconds) {
@@ -636,20 +665,23 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
             canvas.translate(static_cast<float>(-cx), static_cast<float>(-cy));
         }
 
-        // Two filled rects rather than a stroke: CSS puts the outer corner at
-        // radius 3 and clamps the inner one to 0 (radius minus border width),
-        // where a centred stroke would blow the outer radius out to 3 + 2.
+        // Two filled rects rather than a stroke: the face keeps the frame's own
+        // rounding one step tighter, where a centred stroke would blow the
+        // outer radius out by half its width.
         setFill(canvas, slot.border);
         canvas.beginPath();
         canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y),
                          static_cast<float>(r.w), static_cast<float>(r.h),
-                         static_cast<float>(kIconRadius));
+                         static_cast<float>(style.radius));
         canvas.fill();
         setFill(canvas, slot.fill);
-        canvas.fillRect(static_cast<float>(r.x + kIconBorder),
-                        static_cast<float>(r.y + kIconBorder),
-                        static_cast<float>(r.w - kIconBorder * 2),
-                        static_cast<float>(r.h - kIconBorder * 2));
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(r.x + style.border),
+                         static_cast<float>(r.y + style.border),
+                         static_cast<float>(r.w - style.border * 2),
+                         static_cast<float>(r.h - style.border * 2),
+                         static_cast<float>(std::max(0.0, style.radius - style.border * 0.5)));
+        canvas.fill();
 
         // Press wins over hover, and it follows the button the press began on
         // even once the cursor has left it.
@@ -658,15 +690,35 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
             canvas.beginPath();
             canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y),
                              static_cast<float>(r.w), static_cast<float>(r.h),
-                             static_cast<float>(kIconRadius));
+                             static_cast<float>(style.radius));
             canvas.fill();
         }
 
         // After the tint, so the glyph is never washed out by it.
         if (const SvgDocument* glyph = icon(ui::menuIconIndex(slot.icon))) {
-            glyph->renderFitted(canvas, static_cast<float>(r.x + (r.w - kIconGlyph) * 0.5),
-                                static_cast<float>(r.y + (r.h - kIconGlyph) * 0.5),
-                                static_cast<float>(kIconGlyph), static_cast<float>(timeSeconds));
+            glyph->renderFitted(canvas, static_cast<float>(r.x + (r.w - style.glyph) * 0.5),
+                                static_cast<float>(r.y + (r.h - style.glyph) * 0.5),
+                                static_cast<float>(style.glyph), static_cast<float>(timeSeconds));
+        }
+
+        // The hotkey, over the glyph in the corner it is least in the way of.
+        // Read live off the settings rather than off kMenus' default, so a key
+        // rebound in the settings panel relabels the button it belongs to.
+        if (!slot.topRow && slot.menu != MenuId::None) {
+            const Key bound = settings_.hotkeys[static_cast<std::size_t>(menuIndex(slot.menu))];
+            if (bound != Key::Unknown) {
+                TextStyle cap;
+                cap.size = kIconKeyCapSize;
+                cap.bold = true;
+                cap.fill = kPaper;
+                cap.stroke = kInk;
+                cap.strokeWidth = 3.0;
+                cap.roundJoin = true;
+                cap.align = Align::Right;
+                cap.baseline = Baseline::Bottom;
+                text(canvas, std::string("[") + keyName(bound) + "]",
+                     r.right() - kIconKeyCapInset, r.bottom() - kIconKeyCapInset, cap);
+            }
         }
         canvas.restore();
 
@@ -1284,7 +1336,7 @@ double MenuSystem::reservedTop() const {
             right = std::max(right, stripRects_[at].right());
         }
     }
-    return right > 0 ? right + kIconGap : 0.0;
+    return right > 0 ? right + kTopIcon.gap : 0.0;
 }
 
 double MenuSystem::reservedLeft() const {
@@ -1295,10 +1347,12 @@ double MenuSystem::reservedLeft() const {
             right = std::max(right, stripRects_[at].right());
         }
     }
-    return right > 0 ? right + kIconGap : 0.0;
+    return right > 0 ? right + kColumnIcon.gap : 0.0;
 }
 
-double MenuSystem::stripBottom() const { return kIconInset + kIconButton + kIconGap; }
+double MenuSystem::stripBottom() const {
+    return kTopIcon.inset + kTopIcon.side + kTopIcon.gap;
+}
 
 bool MenuSystem::capturesMouse(Vec2 mouse) const {
     if (panelRect_.w > 0 && panelRect_.contains(mouse)) return true;

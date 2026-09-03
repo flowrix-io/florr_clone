@@ -30,7 +30,16 @@ constexpr double kShadowAlpha = 0.25;
 constexpr double kNameSize = 12.0;
 constexpr double kNameBaseline = 20.0;
 constexpr double kNameStroke = 3.0;
-constexpr double kBadgeSize = 11.0;
+/// The stack count, top-right, tilted as the reference shot draws it. A count
+/// lying flat on a square plate reads as part of the artwork; the tilt is what
+/// makes it a sticker on the tile instead.
+constexpr double kBadgeSize = 16.0;
+constexpr double kBadgeTiltRadians = -14.0 * kPi / 180.0;
+/// The corner it hangs off, in the design cell. The plate's own corner rather
+/// than the face's: the tilt swings the text's right end a couple of units
+/// past the anchor, which lands it flush with the plate's edge.
+constexpr double kBadgeAnchorX = 26.0;
+constexpr double kBadgeAnchorY = -26.0;
 
 constexpr double kHoverAlpha = 0.15;
 constexpr double kDisabledAlpha = 0.6;
@@ -275,6 +284,12 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         }
     }
 
+    canvas.restore();  // unclip
+
+    // The badge sits OUTSIDE the face clip, so it reaches the plate's own
+    // corner the way the reference's does. Inside it, the count was held a
+    // border's width in from the edge and read as floating over the icon
+    // rather than as a label pinned to the tile.
     if (!tile.badge.empty()) {
         TextStyle badge;
         badge.bold = true;
@@ -285,10 +300,14 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         badge.align = Align::Right;
         badge.baseline = Baseline::Top;
         badge.roundJoin = true;
-        text(canvas, tile.badge, kFaceSide * 0.5 - 3.0, -kFaceSide * 0.5 + 2.0, badge);
+        // Rotated about the corner it is anchored to, so the tilt lifts the
+        // text's head to the right and swings its tail down and away.
+        canvas.save();
+        canvas.translate(static_cast<float>(kBadgeAnchorX), static_cast<float>(kBadgeAnchorY));
+        canvas.rotate(static_cast<float>(kBadgeTiltRadians));
+        text(canvas, tile.badge, 0.0, 0.0, badge);
+        canvas.restore();
     }
-
-    canvas.restore();  // unclip
 
     // The selection ring goes OUTSIDE the clip, or the half of it that lands
     // on the plate's border is eaten.

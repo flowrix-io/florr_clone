@@ -1,9 +1,10 @@
 // The petal inventory.
 //
-// Laid out exactly as the browser build's panel is, because it is the screen
-// players spend the most time in and the muscle memory is real: a five-column
-// grid of 56px cells, centred, grouped under a centred tier label with a rule
-// running out to either edge, a Stack toggle and a search box above them.
+// The screen players spend the most time in, so the muscle memory is real and
+// the layout is held to the reference shot: a five-column grid of 60px cells
+// grouped under a centred tier label with a rule running out to either edge of
+// the grid, a Stack toggle and a search box above them, and a scroll thumb in
+// the strip the grid leaves free on the right.
 
 #include <algorithm>
 #include <cctype>
@@ -24,38 +25,67 @@ using namespace flr::ui;
 
 namespace {
 
-constexpr double kGridPadding = 12.0;
+/// The grid's margins. NOT equal: the right one also has to clear the scroll
+/// thumb, so the five columns sit a touch left of the panel's own centre and
+/// the thumb rides in the strip they leave. Centring the block on the panel
+/// instead puts the last column under the thumb.
+constexpr double kGridPadding = 26.0;
+constexpr double kGridGutter = 42.0;
+/// The air above the first heading and below the last row. Its own constant
+/// rather than kGridPadding: the side margins are set by the scroll thumb and
+/// this one is not.
+constexpr double kGridTopPad = 12.0;
 constexpr double kSectionGap = 14.0;
-constexpr double kLabelHeight = 22.0;
+/// The band a tier heading occupies, and how far the tiles under it clear its
+/// baseline. Both grew with the cells: a 60px tile needs more air above it
+/// than a 56px one before the heading stops looking stuck to it.
+constexpr double kLabelHeight = 26.0;
+constexpr double kLabelToGrid = 12.0;
 constexpr int kColumns = 5;
 
 /// The controls row and everything above it. Fixed, because the grid below
 /// scrolls and the header must not.
-constexpr double kHeaderHeight = 96.0;
-constexpr double kControlsY = 64.0;
-constexpr double kControlsHeight = 26.0;
-constexpr double kToggleBoxSize = 18.0;
-constexpr double kToggleHitWidth = 70.0;
+constexpr double kHeaderHeight = 137.0;
+constexpr double kControlsY = 91.0;
+constexpr double kControlsHeight = 33.0;
+constexpr double kToggleBoxSize = 29.0;
+constexpr double kToggleHitWidth = 95.0;
+
+/// The controls row's own inset, wider than `kMenuPadding`: the toggle lines
+/// up with the grid's left margin rather than with the title's, so the header
+/// and the cells under it share one left edge.
+constexpr double kControlsPad = kGridPadding;
+constexpr double kControlsRightPad = 22.0;
+/// The word beside the toggle, and the tier heading over each run of cells.
+/// Both sized to the taller controls and larger cells around them.
+constexpr double kToggleLabelSize = 16.0;
+constexpr double kSectionLabelSize = 15.0;
 
 /// The height the scroll range, the cull and the scrollbar are all measured
-/// against. Deliberately the panel's own bottom padding rather than the 4px
-/// border the content is CLIPPED to: the browser reserves the wider strip, so
-/// the last ten pixels of the clip rect are never scrolled into.
+/// against. Deliberately the panel's own bottom padding rather than the
+/// kMenuBorder the content is CLIPPED to: the wider strip is reserved, so the
+/// last few units of the clip rect are never scrolled into.
 constexpr double kViewBottomPad = 14.0;
 
 /// One wheel notch is a raw ~100px deltaY in the browser; SDL reports ±1, so
 /// the step is spelled out here rather than taken from Scroller's own 42.
 constexpr double kWheelStep = 100.0;
 
-/// The thumb, and how far in from the panel's right edge it sits. There is no
-/// track: the browser paints the thumb alone.
-constexpr double kThumbWidth = 4.0;
-constexpr double kThumbInset = 10.0;
+/// The thumb, and how far in from the panel's right edge its RIGHT side sits.
+/// There is no track: the panel paints the thumb alone, in the skin's accent
+/// so it reads as part of the frame rather than as content.
+constexpr double kThumbWidth = 8.0;
+constexpr double kThumbInset = 14.0;
 constexpr double kThumbMinHeight = 20.0;
 
 /// Long enough that no player reaches it. The field scrolls its own head out
 /// of view rather than refusing keys, exactly as the DOM input does.
 constexpr std::size_t kSearchLimit = 128;
+
+/// The tier heading's rules: their ink, and the air they leave either side of
+/// the word. Round-capped, so the gap reads as a gap and not as a cut.
+constexpr double kRuleWidth = 5.0;
+constexpr double kRuleGap = 13.0;
 
 /// Dwell before the hover tooltip appears, and how wide its body text wraps.
 constexpr double kTooltipWrapWidth = 230.0;
@@ -152,7 +182,7 @@ void layoutRun(Grid& grid, const std::vector<Cell>& entries, double left, double
 Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
                const std::string& needle) {
     Grid grid;
-    double y = kGridPadding;
+    double y = kGridTopPad;
 
     if (stacked) {
         // One cell per petal TYPE, shown at the best tier the account holds.
@@ -174,7 +204,7 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
         }
         layoutRun(grid, entries, kGridPadding, innerWidth, y);
         y += kSectionGap;
-        grid.contentHeight = y + kGridPadding;
+        grid.contentHeight = y + kGridTopPad;
         return grid;
     }
 
@@ -192,12 +222,12 @@ Grid buildGrid(const Profile& profile, double innerWidth, bool stacked,
         if (entries.empty()) continue;
 
         y += kLabelHeight;
-        grid.sections.push_back({rarity, y - 4.0});
+        grid.sections.push_back({rarity, y - kLabelToGrid});
         layoutRun(grid, entries, kGridPadding, innerWidth, y);
         y += kSectionGap;
     }
 
-    grid.contentHeight = y + kGridPadding;
+    grid.contentHeight = y + kGridTopPad;
     return grid;
 }
 
@@ -212,9 +242,12 @@ void scrollThumb(Canvas& canvas, Rect panel, double contentTop, double visibleH,
     const double travel = contentHeight - visibleH;
     const double thumbHeight = std::max(kThumbMinHeight, visibleH * (visibleH / contentHeight));
     const double thumbY = contentTop + clamp(scroll / travel, 0.0, 1.0) * (visibleH - thumbHeight);
-    setFill(canvas, kInk, 0.25);
-    canvas.fillRect(static_cast<float>(panel.right() - kThumbInset), static_cast<float>(thumbY),
-                    static_cast<float>(kThumbWidth), static_cast<float>(thumbHeight));
+    setFill(canvas, kInventorySkin.accent);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(panel.right() - kThumbInset - kThumbWidth),
+                     static_cast<float>(thumbY), static_cast<float>(kThumbWidth),
+                     static_cast<float>(thumbHeight), static_cast<float>(kThumbWidth * 0.5));
+    canvas.fill();
 }
 
 /// A whole number with no separators, for the ALT variant of a stat row. The
@@ -263,9 +296,10 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
 } // namespace
 
 double InventoryPanel::preferredWidth() {
-    // Five cells, their gaps, and the padding either side. This IS the panel's
-    // width in the browser build; deriving it stops the two drifting apart.
-    return kColumns * kCellSize + (kColumns - 1) * kCellGap + kGridPadding * 2 + 44.0;
+    // Five cells, their gaps, and the two unequal margins. The panel is sized
+    // to the grid rather than the grid fitted to the panel, so a change to the
+    // cell size moves the card's edge instead of crowding its contents.
+    return kColumns * kCellSize + (kColumns - 1) * kCellGap + kGridPadding + kGridGutter;
 }
 
 void InventoryPanel::reset() {
@@ -281,21 +315,27 @@ bool InventoryPanel::render(MenuContext& ctx) {
     const Profile& profile = ctx.net.profile();
     const Rect panel = ctx.bounds;
     const Vec2 mouse = ctx.mouse();
-    const double centre = panel.x + panel.w * 0.5;
+    // The grid's own span, and its centre. Not the panel's: the scroll thumb
+    // takes a strip off the right, so the cells -- and the tier headings and
+    // rules that introduce them -- sit slightly left of the card's middle.
+    const double gridLeft = panel.x + kGridPadding;
+    const double gridRight = panel.right() - kGridGutter;
+    const double centre = (gridLeft + gridRight) * 0.5;
 
     panelCard(canvas, panel, kInventorySkin);
     panelTitle(canvas, panel, "Inventory", "Drag a petal to equip it");
 
     // --- header controls ---------------------------------------------------
     const Rect closeRect = closeButtonRect(panel);
-    const Rect toggleBoxRect{panel.x + kMenuPadding,
+    const Rect toggleBoxRect{panel.x + kControlsPad,
                              panel.y + kControlsY + (kControlsHeight - kToggleBoxSize) * 0.5,
                              kToggleBoxSize, kToggleBoxSize};
-    const Rect toggleHit{panel.x + kMenuPadding, panel.y + kControlsY, kToggleHitWidth,
+    const Rect toggleHit{panel.x + kControlsPad, panel.y + kControlsY, kToggleHitWidth,
                          kControlsHeight};
-    const double searchX = panel.x + kMenuPadding + kToggleHitWidth + 8.0;
+    const double searchX = panel.x + kControlsPad + kToggleHitWidth;
     const Rect searchRect{searchX, panel.y + kControlsY,
-                          std::max(60.0, panel.right() - kMenuPadding - searchX), kControlsHeight};
+                          std::max(60.0, panel.right() - kControlsRightPad - searchX),
+                          kControlsHeight};
 
     // Eased rather than snapped: the toggle is the only animated control on
     // the panel and a hard flip reads as a redraw glitch. The rate matches the
@@ -306,7 +346,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
 
     toggleBox(canvas, toggleBoxRect, stackLerp_);
     TextStyle toggleLabel;
-    toggleLabel.size = 14.0;
+    toggleLabel.size = kToggleLabelSize;
     toggleLabel.bold = true;
     toggleLabel.strokeWidth = 3.0;
     toggleLabel.roundJoin = true;
@@ -323,7 +363,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
                     std::max(0.0, panel.bottom() - (panel.y + kHeaderHeight) - kMenuBorder)};
     const double visibleH =
         std::max(0.0, panel.bottom() - (panel.y + kHeaderHeight) - kViewBottomPad);
-    const double innerWidth = panel.w - kGridPadding * 2;
+    const double innerWidth = panel.w - kGridPadding - kGridGutter;
     const Grid grid = buildGrid(profile, innerWidth, stacked_, trimmed(lowercased(search_)));
 
     scroll_.contentHeight = grid.contentHeight;
@@ -365,7 +405,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
         if (labelY < view.y - kLabelHeight || labelY >= viewBottom) continue;
 
         TextStyle label;
-        label.size = 14.0;
+        label.size = kSectionLabelSize;
         label.bold = true;
         label.align = Align::Centre;
         label.baseline = Baseline::Bottom;
@@ -383,19 +423,21 @@ bool InventoryPanel::render(MenuContext& ctx) {
         label.strokeWidth = 0.0;
         text(canvas, caption, centre, labelY, label);
 
-        // Rules out to both edges, stopping clear of the text. They are what
-        // makes a tier read as a section rather than a stray heading.
+        // Rules out to the grid's own edges, stopping clear of the text. They
+        // are what makes a tier read as a section rather than a stray heading,
+        // and running them to the GRID rather than to the panel is what keeps
+        // the heading centred over the cells it introduces.
         const double half = measure(caption, label.size, true) * 0.5;
         const double ruleY = labelY - 6.0;
         setStroke(canvas, kInventorySkin.accent);
-        canvas.setLineWidth(3.0f);
+        canvas.setLineWidth(static_cast<float>(kRuleWidth));
         canvas.setLineCap("round");
-        if (centre - half - 10.0 > panel.x + 6.0) {
+        if (centre - half - kRuleGap > gridLeft) {
             canvas.beginPath();
-            canvas.moveTo(static_cast<float>(panel.x + 6.0), static_cast<float>(ruleY));
-            canvas.lineTo(static_cast<float>(centre - half - 10.0), static_cast<float>(ruleY));
-            canvas.moveTo(static_cast<float>(centre + half + 10.0), static_cast<float>(ruleY));
-            canvas.lineTo(static_cast<float>(panel.right() - 6.0), static_cast<float>(ruleY));
+            canvas.moveTo(static_cast<float>(gridLeft), static_cast<float>(ruleY));
+            canvas.lineTo(static_cast<float>(centre - half - kRuleGap), static_cast<float>(ruleY));
+            canvas.moveTo(static_cast<float>(centre + half + kRuleGap), static_cast<float>(ruleY));
+            canvas.lineTo(static_cast<float>(gridRight), static_cast<float>(ruleY));
             canvas.stroke();
         }
         canvas.setLineCap("butt");

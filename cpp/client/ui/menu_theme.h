@@ -25,7 +25,7 @@ struct PanelSkin {
     std::uint32_t accent = kPanelDark;
 };
 
-inline constexpr PanelSkin kInventorySkin{0x599FDCu, 0x4A8BC2u, 0xDC7E92u, 0xB56476u, 0x4A8BC2u};
+inline constexpr PanelSkin kInventorySkin{0x6B9DD6u, 0x5680ADu, 0xAE5B58u, 0x8D4A47u, 0x5680ADu};
 inline constexpr PanelSkin kCraftingSkin{0xDB9D5Bu, 0xB17F48u, 0xBB5B61u, 0x914B31u, 0xB17F48u};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xCC4455u, 0x992F3Cu, 0xA89D36u};
 inline constexpr PanelSkin kTalentsSkin{0xDC7E92u, 0xB56476u, 0x8E4657u, 0x6E3543u, 0xB56476u};
@@ -49,24 +49,36 @@ inline constexpr PanelSkin kGuildSkin{0x27DADEu, 0x1FB3B0u, 0xDC7E92u, 0xB56476u
 
 // --- shared panel metrics ---------------------------------------------------
 
-/// Border width and corner radius. Deliberately a thick border on a nearly
-/// square corner: the browser build's `border: 4px solid; border-radius: 3px`.
-inline constexpr double kMenuBorder = 4.0;
-inline constexpr double kMenuRadius = 3.0;
+/// Border width and corner radius. A heavy frame on a softly rounded corner:
+/// the list panels read as a slab the content is sunk into, and the corner is
+/// round enough to be seen past the border's own thickness.
+inline constexpr double kMenuBorder = 7.0;
+inline constexpr double kMenuRadius = 5.0;
 inline constexpr double kMenuPadding = 14.0;
 
-/// Title, then the line under it that says what to do with the panel.
-inline constexpr double kMenuTitleSize = 22.0;
-inline constexpr double kMenuSubtitleSize = 13.0;
+/// Title, then the line under it that says what to do with the panel. The gap
+/// between the two is wide enough that they read as a heading and a caption
+/// rather than as one block.
+inline constexpr double kMenuTitleSize = 24.0;
+inline constexpr double kMenuSubtitleSize = 16.0;
+
+/// Where those two sit, measured from the panel's top edge rather than from
+/// `kMenuPadding`: the heading is clear of the border, and the gap under it is
+/// wide enough that the title and the instruction line read as two things.
+inline constexpr double kMenuTitleTop = 19.0;
+inline constexpr double kMenuSubtitleDrop = 43.0;
 
 /// The square close button in every panel's top-right corner.
-inline constexpr double kCloseSize = 26.0;
+inline constexpr double kCloseSize = 29.0;
 
 
 /// One inventory/shop/gallery cell. Five of them plus their gaps is what sets
 /// the inventory panel's width, so these two are load-bearing.
-inline constexpr double kCellSize = 56.0;
-inline constexpr double kCellGap = 8.0;
+///
+/// 60 is `kItemTileDesign`: at exactly that size a tile is drawn 1:1 with the
+/// design cell it is written in, so no icon, name or badge is resampled.
+inline constexpr double kCellSize = 60.0;
+inline constexpr double kCellGap = 10.0;
 
 /// The dark chrome the toggle, the search field and the TP badge are made of.
 inline constexpr std::uint32_t kControlDark = 0x3A3A3Au;
@@ -77,13 +89,17 @@ inline constexpr std::uint32_t kControlField = 0xEEEEEEu;
 /// The two anchors the browser build hangs panels off.
 ///
 /// The tall list panels (inventory, craft, talents, gallery) sit a third of
-/// the way down and 100px in from the left, clear of the bottom icon column,
+/// the way down and kMenuInsetX in from the left, clear of the icon column,
 /// and run two thirds of the viewport tall. The corner panels (settings,
 /// changelog, notifications, guild, leaderboard, skins, shop, debug) are
 /// pinned directly under the top icon row instead, at their own fixed sizes.
-inline constexpr double kMenuInsetX = 100.0;
+inline constexpr double kMenuInsetX = 91.0;
 inline constexpr double kMenuListTopFraction = 1.0 / 3.0;
 inline constexpr double kMenuListHeightFraction = 2.0 / 3.0;
+/// ...less this, so the card stops short of the bottom edge instead of being
+/// clipped by it. `top + height` is exactly 1.0, so without a pad every list
+/// panel runs off the screen whatever the viewport is.
+inline constexpr double kMenuListBottomPad = 16.0;
 inline constexpr double kMenuCornerX = 20.0;
 inline constexpr double kMenuCornerY = 72.0;
 
