@@ -25,6 +25,26 @@ namespace flr {
 
 class Terrain;
 
+/// One row of a biome's own spawn table.
+///
+/// The `mobType` is the reason this is a struct rather than a bare tier. A row
+/// that names a mob pins the spawn to it, and that is the ONLY way a mob the
+/// ambient roll refuses ever reaches the world: `target_dummy` declares no
+/// spawn weight and is marked `neverAmbient`, so the map's four dummy biomes
+/// are the whole of its existence. Parsing the tier and dropping the name
+/// makes every one of those biomes spawn ordinary garden mobs instead, and the
+/// DPS row is simply never built.
+struct BiomeSpawnEntry {
+    Rarity tier = Rarity::Common;
+    /// Relative weight within its own table. The bundle writes one on every
+    /// row; a row without one still takes a share rather than being silently
+    /// unreachable.
+    double weight = 1.0;
+    /// The mob this row pins the spawn to, or empty for "whatever this section
+    /// admits at that tier".
+    std::string mobType;
+};
+
 enum class MapElementKind : std::uint8_t {
     Other = 0,
     Spawn,
@@ -45,11 +65,11 @@ struct MapElement {
 
     /// Biomes only.
     std::string biomeName;
-    /// The tiers this biome's own spawn table admits. Empty means the biome
-    /// declared no table, which is NOT the same as declaring an empty one:
-    /// a biome without a table falls back to the global tiers, so it can hold
-    /// anything and is never safe to spawn in.
-    std::vector<Rarity> spawnTable;
+    /// This biome's own spawn table. Empty means the biome declared no table,
+    /// which is NOT the same as declaring an empty one: a biome without a
+    /// table falls back to the global tiers, so it can hold anything and is
+    /// never safe to spawn in.
+    std::vector<BiomeSpawnEntry> spawnTable;
     bool hasSpawnTable = false;
 
     /// Teleporters only: where the pad drops the flower. A pad without one is
@@ -133,6 +153,13 @@ public:
     /// biome with no table at all is never safe -- it inherits the world's
     /// tiers, which go all the way up.
     static bool safeForSpawn(const MapElement&);
+
+    /// The biome covering `at`, or null. First match in MAP ORDER, and the
+    /// rectangle is inclusive on every edge, both as the reference's own
+    /// lookup is (src/server/enemySpawner.ts:182). A biome is returned whether
+    /// or not it declares a spawn table -- the caller is the one that decides
+    /// what an empty table means.
+    const MapElement* biomeAt(Vec2 at) const;
 
     /// What one tick of teleporter interaction did to a flower.
     struct TeleportStep {

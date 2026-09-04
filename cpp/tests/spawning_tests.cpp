@@ -5,6 +5,7 @@
 
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <string>
@@ -1063,4 +1064,155 @@ TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
         CHECK_EQ(world.get<DropItem>(drop).eligible.size(), std::size_t(1));
         CHECK_EQ(world.get<DropItem>(drop).eligible.front(), player);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Biome spawn tables
+// ---------------------------------------------------------------------------
+//
+// The map does not only say which TIER belongs where. A biome may name the mob
+// outright, and that is the only way a mob the ambient roll refuses ever
+// reaches the world: `target_dummy` declares no spawn weight and is marked
+// neverAmbient, so the four dummy biomes are the whole of its existence. A
+// parser that keeps the tier and drops the name leaves the DPS row unbuilt and
+// nothing else about the world looks wrong.
+
+namespace {
+
+std::string mapBundlePath() {
+    return firstExisting({testsDir() + "/../data/map_bundle.ts",
+                          testsDir() + "/../../src/map_bundle.ts", "data/map_bundle.ts",
+                          "../src/map_bundle.ts", "src/map_bundle.ts"});
+}
+
+const MapData& shippedMap() {
+    static const MapData map = [] {
+        MapData m;
+        std::string error;
+        m.load(mapBundlePath(), error);
+        return m;
+    }();
+    return map;
+}
+
+/// Every biome row that names a mob, so the test asserts against the map
+/// rather than against a hard-coded list that the map is free to outgrow.
+struct NamedRow {
+    Rect bounds;
+    Rarity tier;
+    std::string mobType;
+};
+
+std::vector<NamedRow> namedBiomeRows() {
+    std::vector<NamedRow> rows;
+    for (const MapElement& element : shippedMap().elements()) {
+        if (element.kind != MapElementKind::Biome) continue;
+        for (const BiomeSpawnEntry& entry : element.spawnTable) {
+            if (entry.mobType.empty()) continue;
+            rows.push_back(NamedRow{element.bounds, entry.tier, entry.mobType});
+        }
+    }
+    return rows;
+}
+
+} // namespace
+
+TEST(a_biome_spawn_table_keeps_the_mob_it_names) {
+    if (!shippedMap().loaded()) {
+        ::testing::reportFailure(__FILE__, __LINE__,
+                                 "no map bundle at " + mapBundlePath());
+        return;
+    }
+    const std::vector<NamedRow> rows = namedBiomeRows();
+    // Nine dummy rows plus the legendary hornet. A parser that drops `mobType`
+    // leaves this at zero, which is exactly the bug this guards.
+    CHECK(rows.size() >= 10);
+
+    int dummyRows = 0;
+    for (const NamedRow& row : rows) {
+        if (row.mobType == "target_dummy") ++dummyRows;
+    }
+    CHECK_EQ(dummyRows, 9);
+}
+
+TEST(the_dummy_biomes_actually_build_the_dps_row) {
+    if (!shippedMap().loaded()) return;
+    const std::uint16_t dummy = shipped().mobIndex("target_dummy");
+    CHECK(dummy != kInvalidIndex);
+    // The premise of the whole mechanism: the ambient roll will never produce
+    // one, so if the biome table does not, nothing does.
+    CHECK(shipped().mob(dummy).neverAmbient);
+
+    Sim sim;
+    sim.spawner.mapData = &shippedMap();
+
+    // Standing in the common/uncommon dummy biome, which sits inside the big
+    // common spawn rectangle -- so it is the ZONE fill that has to honour it,
+    // not the neighbourhood fill.
+    const Rect biome = [&] {
+        for (const NamedRow& row : namedBiomeRows()) {
+            if (row.mobType == "target_dummy") return row.bounds;
+        }
+        return Rect{};
+    }();
+    const Vec2 at{biome.x + biome.w * 0.5, biome.y + biome.h * 0.5};
+
+    const std::vector<Vec2> players{at};
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+
+    int dummies = 0;
+    std::vector<Rarity> tiers;
+    Query<MobTag, MobType> mobs{sim.world};
+    mobs.each([&](Entity, MobTag&, MobType& type) {
+        if (type.configIndex != dummy) return;
+        ++dummies;
+        tiers.push_back(type.rarity);
+    });
+    CHECK(dummies > 0);
+
+    // Permanent and unkillable, so a duplicate would stand there forever: one
+    // of each rarity per section, no more.
+    for (std::size_t i = 0; i < tiers.size(); ++i) {
+        for (std::size_t j = i + 1; j < tiers.size(); ++j) {
+            CHECK(tiers[i] != tiers[j]);
+        }
+    }
+
+    // And every tier is one a dummy row actually declares. The four dummy
+    // biomes between them cover common..unique and the big common rectangle
+    // sampled above overlaps several, so the set is wider than one biome --
+    // but a DRIFTED tier would fall outside it, and drift is exactly what a
+    // permanent fixture must not take (a tier nothing asked for is one the
+    // one-per-section check never cleared).
+    std::vector<Rarity> declared;
+    for (const NamedRow& row : namedBiomeRows()) {
+        if (row.mobType == "target_dummy") declared.push_back(row.tier);
+    }
+    for (const Rarity tier : tiers) {
+        CHECK(std::find(declared.begin(), declared.end(), tier) != declared.end());
+    }
+}
+
+TEST(a_target_dummy_is_smaller_than_the_wild_mob_of_its_tier) {
+    const std::uint16_t dummy = shipped().mobIndex("target_dummy");
+    if (dummy == kInvalidIndex) return;
+
+    // A common dummy matches a common mob exactly; by unique it is three
+    // quarters of one. Straight tier scaling turns the top of the DPS row into
+    // a wall, which is why the reference ramps it (src/mobs.ts:212).
+    Sim sim;
+    Rng rng(99);
+    const Entity common =
+        sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), dummy, Rarity::Common,
+                             kCentre, 0.0, rng);
+    const Entity unique =
+        sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), dummy, Rarity::Unique,
+                             kCentre + Vec2{4000.0, 0.0}, 0.0, rng);
+    CHECK(common != NULL_ENTITY);
+    CHECK(unique != NULL_ENTITY);
+
+    CHECK_NEAR(sim.world.get<MobType>(common).sizeJitter, 1.0, 1e-12);
+    CHECK_NEAR(sim.world.get<MobType>(unique).sizeJitter, 0.75, 1e-12);
+    CHECK_NEAR(sim.world.get<Body>(unique).radius,
+               shipped().mobStats(dummy, Rarity::Unique).radius * 0.75, 1e-9);
 }

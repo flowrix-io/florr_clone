@@ -105,7 +105,20 @@ bool MapData::safeForSpawn(const MapElement& element) {
     // is the opposite, and reading it the other way is how a spawn picker ends
     // up dropping people into Hel.
     if (!element.hasSpawnTable || element.spawnTable.empty()) return false;
-    return std::all_of(element.spawnTable.begin(), element.spawnTable.end(), safeTier);
+    return std::all_of(element.spawnTable.begin(), element.spawnTable.end(),
+                       [](const BiomeSpawnEntry& entry) { return safeTier(entry.tier); });
+}
+
+const MapElement* MapData::biomeAt(Vec2 at) const {
+    for (const MapElement& element : elements_) {
+        if (element.kind != MapElementKind::Biome) continue;
+        // Inclusive on every edge, as the reference's own rectangle test is.
+        if (at.x >= element.bounds.left() && at.x <= element.bounds.right() &&
+            at.y >= element.bounds.top() && at.y <= element.bounds.bottom()) {
+            return &element;
+        }
+    }
+    return nullptr;
 }
 
 bool MapData::load(const std::string& bundlePath, std::string& errorOut) {
@@ -204,7 +217,16 @@ bool MapData::load(const std::string& bundlePath, std::string& errorOut) {
             if (table.isArray()) {
                 element.hasSpawnTable = true;
                 for (const Json& entry : table.items()) {
-                    if (entry.isObject()) element.spawnTable.push_back(parseRarity(entry["tier"].asString()));
+                    if (!entry.isObject()) continue;
+                    BiomeSpawnEntry row;
+                    row.tier = parseRarity(entry["tier"].asString());
+                    // A row with no weight, or a nonsensical one, still takes a
+                    // share: dropping it to zero would make it unreachable and
+                    // silently delete whatever the map author put there.
+                    const double weight = entry["weight"].asDouble(1.0);
+                    row.weight = (std::isfinite(weight) && weight > 0.0) ? weight : 1.0;
+                    row.mobType = entry["mobType"].asString();
+                    element.spawnTable.push_back(std::move(row));
                 }
             }
         }

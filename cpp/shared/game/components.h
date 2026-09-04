@@ -441,7 +441,11 @@ struct AuraCooldowns {
 struct MobType {
     std::uint16_t configIndex = 0;
     Rarity rarity = Rarity::Common;
-    /// Per-spawn size jitter from the config's `random_size` range.
+    /// Per-spawn size multiplier on the tier's nominal size: the config's
+    /// `random_size` roll, times the fixture ramp that keeps a high-rarity
+    /// target dummy from becoming a wall. One number because the reference
+    /// resolves both in one function (src/mobs.ts getEnemySizeScale) and
+    /// everything downstream multiplies by exactly that.
     double sizeJitter = 1.0;
 };
 

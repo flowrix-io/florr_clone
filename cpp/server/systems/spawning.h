@@ -383,6 +383,31 @@ private:
                        const SpawnZone& zone, const std::vector<Viewer>& viewers, Rng& rng,
                        double nowMillis);
 
+    /// Tier and mob from a biome's own spawn table, mirroring the reference's
+    /// selectBiomeSpawn (src/server/enemySpawner.ts:477).
+    ///
+    /// A biome that declares a table OVERRIDES both the section roll and the
+    /// spawn rectangle it sits in -- the reference tests the biome first in
+    /// both of its spawn paths -- and a row that names a mob pins the spawn to
+    /// it. That naming is the whole reason the target dummy exists: it is
+    /// `neverAmbient`, so the section roll will never produce one, and the
+    /// map's four dummy biomes are the only thing that ever asks for it.
+    ///
+    /// False when the table names a mob the content does not have, or when the
+    /// section admits nothing at the rolled tier -- both "no spawn this
+    /// attempt" rather than a fallback, as the reference has them.
+    bool chooseBiomeSpawn(const ContentRegistry& content, const MapElement& biome, int section,
+                          double luck, Rng& rng, std::uint16_t& typeOut, Rarity& rarityOut);
+
+    /// True when this section already holds a mob of this type and tier that
+    /// nothing will ever clear away.
+    ///
+    /// Only asked about `neverAmbient` mobs, which is the target dummy: it
+    /// never despawns and is effectively unkillable, so a duplicate that slips
+    /// through is permanent. One of each rarity per section, checked against
+    /// the FINAL tier after any drift (src/server/enemySpawner.ts:112).
+    bool permanentFixtureExists(World& world, std::uint16_t mobIndex, Rarity rarity, int section);
+
     /// Keeps the world's boss population topped up: one ultra, one super per
     /// section, and a unique rolled for whenever a super is out.
     void runSpecialMobs(World& world, const Terrain& terrain, const ContentRegistry& content,

@@ -130,11 +130,12 @@ TEST(a_biome_with_no_spawn_table_is_never_safe) {
 
     MapElement safe = bare;
     safe.hasSpawnTable = true;
-    safe.spawnTable = {Rarity::Common, Rarity::Uncommon};
+    safe.spawnTable = {BiomeSpawnEntry{Rarity::Common, 1.0, ""},
+                       BiomeSpawnEntry{Rarity::Uncommon, 1.0, ""}};
     CHECK(MapData::safeForSpawn(safe));
 
     MapElement deadly = safe;
-    deadly.spawnTable.push_back(Rarity::Mythic);
+    deadly.spawnTable.push_back(BiomeSpawnEntry{Rarity::Mythic, 1.0, ""});
     CHECK(!MapData::safeForSpawn(deadly));
 }
 

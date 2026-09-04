@@ -16,25 +16,45 @@ bool neverDespawns(const ContentRegistry& content, const MobType& type) {
     return content.mob(type.configIndex).neverAmbient;
 }
 
-/// The `random_size` roll, as a multiplier on the mob's nominal size.
+/// How much smaller a permanent fixture is than the wild mob of its tier.
+///
+/// A common dummy matches a common mob exactly; by unique it is pulled down to
+/// three quarters of a wild unique, so the practice target does not become an
+/// enormous wall at the top rarities. Linear in the rarity index over the
+/// common..unique span, which is the reference's buildSizeRamp
+/// (src/mobs.ts:190, DUMMY_SIZE_SCALE_AT_UNIQUE).
+double fixtureSizeScale(const MobConfig& config, Rarity rarity) {
+    if (!config.neverAmbient) return 1.0;
+    constexpr double kScaleAtUnique = 0.75;
+    constexpr double kUniqueIndex = static_cast<double>(rarityIndex(Rarity::Unique));
+    return 1.0 - (1.0 - kScaleAtUnique) * (static_cast<double>(rarityIndex(rarity)) / kUniqueIndex);
+}
+
+/// The per-spawn size multiplier on the mob's nominal size: the `random_size`
+/// roll, times the fixture ramp above.
 ///
 /// The JSON range is an ABSOLUTE size rather than a factor, so the reference
 /// divides it by the config's own `size`: a cactus (size 1.5, random_size
-/// [1, 2]) comes out between 0.667x and 1.333x, not between 1x and 2x.
-double rollSizeJitter(const MobConfig& config, Rng& rng) {
+/// [1, 2]) comes out between 0.667x and 1.333x, not between 1x and 2x. Both
+/// factors ride in the one number because the reference resolves them in the
+/// one function (getEnemySizeScale), and everything that turns a mob's stat
+/// size into world units multiplies by exactly that.
+double rollSizeJitter(const MobConfig& config, Rarity rarity, Rng& rng) {
+    const double fixture = fixtureSizeScale(config, rarity);
     if (!(config.randomSizeMax > config.randomSizeMin) || !(config.size > 0.0)) {
-        return config.randomSizeMin;
+        return config.randomSizeMin * fixture;
     }
-    return rng.range(config.randomSizeMin, config.randomSizeMax) / config.size;
+    return rng.range(config.randomSizeMin, config.randomSizeMax) / config.size * fixture;
 }
 
 /// The largest body that roll can produce. Used to space a spawn against its
 /// neighbours before the roll itself has happened.
-double sizeJitterCeiling(const MobConfig& config) {
+double sizeJitterCeiling(const MobConfig& config, Rarity rarity) {
+    const double fixture = fixtureSizeScale(config, rarity);
     if (!(config.randomSizeMax > config.randomSizeMin) || !(config.size > 0.0)) {
-        return std::max(config.randomSizeMin, config.randomSizeMax);
+        return std::max(config.randomSizeMin, config.randomSizeMax) * fixture;
     }
-    return config.randomSizeMax / config.size;
+    return config.randomSizeMax / config.size * fixture;
 }
 
 /// A mob whose body cannot hurt a player.
@@ -230,6 +250,65 @@ std::uint16_t SpawnSystem::chooseMobType(const ContentRegistry& content, int sec
     return last;
 }
 
+bool SpawnSystem::chooseBiomeSpawn(const ContentRegistry& content, const MapElement& biome,
+                                   int section, double luck, Rng& rng, std::uint16_t& typeOut,
+                                   Rarity& rarityOut) {
+    if (biome.spawnTable.empty()) return false;
+
+    double total = 0.0;
+    for (const BiomeSpawnEntry& row : biome.spawnTable) total += std::max(0.0, row.weight);
+    // Weightless table: the reference's reduce/compare walk falls out of its
+    // loop and returns the FIRST row, so a table nobody weighted still spawns
+    // something rather than nothing.
+    const BiomeSpawnEntry* chosen = &biome.spawnTable.front();
+    if (total > 0.0) {
+        double roll = rng.unit() * total;
+        for (const BiomeSpawnEntry& row : biome.spawnTable) {
+            roll -= std::max(0.0, row.weight);
+            if (roll <= 0.0) {
+                chosen = &row;
+                break;
+            }
+        }
+    }
+
+    Rarity tier = chosen->tier;
+    std::uint16_t index = kInvalidIndex;
+    if (!chosen->mobType.empty()) {
+        // Named outright, which bypasses the candidate table entirely -- that
+        // table excludes `neverAmbient` mobs, and this is how they get in.
+        index = content.mobIndex(chosen->mobType);
+    } else {
+        // No name: whatever this section admits at the row's tier, weighted
+        // exactly as an ordinary ambient roll would weight it.
+        index = chooseMobType(content, section, tier, rng);
+    }
+    if (index == kInvalidIndex || index >= content.mobCount()) return false;
+
+    const MobConfig& config = content.mob(index);
+    // A permanent fixture keeps exactly the rarity the map asked for. Drifting
+    // off it would produce a tier the one-per-section check below never
+    // cleared, and a dummy that slips through is there forever.
+    if (!config.neverAmbient) tier = applyTierDrift(tier, luck, rng);
+
+    typeOut = index;
+    rarityOut = clampRarity(std::max(rarityIndex(tier), rarityIndex(config.minRarity)));
+    return true;
+}
+
+bool SpawnSystem::permanentFixtureExists(World& world, std::uint16_t mobIndex, Rarity rarity,
+                                         int section) {
+    bind(world);
+    bool found = false;
+    allMobs_->each([&](Entity, MobTag&, Transform& transform, MobType& type) {
+        if (found) return;
+        if (type.configIndex != mobIndex || type.rarity != rarity) return;
+        if (sectionAt(transform.position) != section) return;
+        found = true;
+    });
+    return found;
+}
+
 Rarity SpawnSystem::rollRarity(const MobConfig& config, Rng& rng) {
     const Rarity rolled = rollNaturalRarity(-1, 1.0, rng);
     return clampRarity(std::max(rarityIndex(rolled), rarityIndex(config.minRarity)));
@@ -280,7 +359,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
     const MobStats stats = content.mobStats(mobIndex, rarity);
 
-    const double jitter = rollSizeJitter(config, rng);
+    const double jitter = rollSizeJitter(config, rarity, rng);
     const double radius = stats.radius * jitter;
 
     // resolveCircle, not a blocked() test: the caller hands over a point and
@@ -681,17 +760,37 @@ void SpawnSystem::fillNeighbourhoods(World& world, const Terrain& terrain,
             // charges the roll to the player whose neighbourhood asked for the
             // mob: luck is what a clover loadout buys, and a spawn owned by
             // nobody would never feel it (src/server/enemySpawner.ts:775-777).
-            Rarity rarity = rollNaturalRarity(section, viewer.luck, rng);
-            const std::uint16_t type = chooseMobType(content, section, rarity, rng);
-            if (type == kInvalidIndex) break;   // nothing lives in this section
+            //
+            // Unless a biome declares its own table, which overrides both the
+            // tier roll and the type roll for anything standing inside it.
+            Rarity rarity = Rarity::Common;
+            std::uint16_t type = kInvalidIndex;
+            const MapElement* biome = mapData != nullptr ? mapData->biomeAt(at) : nullptr;
+            if (biome != nullptr && !biome->spawnTable.empty()) {
+                if (!chooseBiomeSpawn(content, *biome, section, viewer.luck, rng, type, rarity)) {
+                    continue;   // the table asked for something that cannot spawn here
+                }
+            } else {
+                rarity = rollNaturalRarity(section, viewer.luck, rng);
+                type = chooseMobType(content, section, rarity, rng);
+                if (type == kInvalidIndex) break;   // nothing lives in this section
+                rarity = clampRarity(std::max(rarityIndex(rarity),
+                                              rarityIndex(content.mob(type).minRarity)));
+            }
 
-            rarity = clampRarity(std::max(rarityIndex(rarity),
-                                          rarityIndex(content.mob(type).minRarity)));
+            // A permanent fixture is admitted once per tier per section. It is
+            // never despawned and effectively unkillable, so a duplicate would
+            // stand there for the life of the server.
+            if (content.mob(type).neverAmbient &&
+                permanentFixtureExists(world, type, rarity, section)) {
+                continue;
+            }
             // Phase two used the same 20-unit preliminary body as TypeScript.
             // Its finalizer then repeats the overlap test with the chosen
             // rarity's actual body, which matters for mythic-and-up mobs.
             const MobStats finalStats = content.mobStats(type, rarity);
-            const double finalRadius = finalStats.radius * sizeJitterCeiling(content.mob(type));
+            const double finalRadius =
+                finalStats.radius * sizeJitterCeiling(content.mob(type), rarity);
             if (crowdedAt(at, finalRadius, 0.0)) continue;
 
             const Entity spawned = spawnMob(world, terrain, content, type, rarity,
@@ -962,22 +1061,45 @@ Entity SpawnSystem::spawnInZone(World& world, const Terrain& terrain,
     }
     if (!placed) return NULL_ENTITY;
 
-    // The rectangle's own tier, never a natural roll: this is where the map's
-    // rarity progression comes from. An ultra rectangle is also the only place
-    // `super` appears without the boss pass -- one roll in a hundred.
-    Rarity rarity = zone.tier;
-    if (rarity == Rarity::Ultra) {
-        rarity = rng.chance(kUltraZoneSuperChance) ? Rarity::Super : Rarity::Ultra;
+    // A rectangle belongs to nobody's viewport, so anything charged to luck is
+    // charged to whoever is standing nearest its centre -- the reference's own
+    // attribution rule for a zone fill.
+    const Vec2 centre{zone.bounds.x + zone.bounds.w * 0.5, zone.bounds.y + zone.bounds.h * 0.5};
+    const double luck = nearestViewerLuck(viewers, centre);
+    const int section = sectionAt(at);
+
+    Rarity rarity = Rarity::Common;
+    std::uint16_t type = kInvalidIndex;
+    // The biome wins over the rectangle it sits in, exactly as it does in the
+    // neighbourhood fill: the reference's createEnemyInZone tests the biome
+    // before it looks at the zone's own tier at all
+    // (src/server/enemySpawner.ts:917). Every one of the map's target-dummy
+    // biomes lies inside the big common rectangle, so a zone fill that ignored
+    // this is a zone fill that never builds the DPS row.
+    const MapElement* biome = mapData != nullptr ? mapData->biomeAt(at) : nullptr;
+    if (biome != nullptr && !biome->spawnTable.empty()) {
+        if (!chooseBiomeSpawn(content, *biome, section, luck, rng, type, rarity)) {
+            return NULL_ENTITY;
+        }
     } else {
-        // A rectangle belongs to nobody's viewport, so the drift is charged to
-        // whoever is standing nearest its centre -- the reference's own
-        // attribution rule for a zone fill.
-        const Vec2 centre{zone.bounds.x + zone.bounds.w * 0.5, zone.bounds.y + zone.bounds.h * 0.5};
-        rarity = applyTierDrift(rarity, nearestViewerLuck(viewers, centre), rng);
+        // The rectangle's own tier, never a natural roll: this is where the
+        // map's rarity progression comes from. An ultra rectangle is also the
+        // only place `super` appears without the boss pass -- one roll in a
+        // hundred.
+        rarity = zone.tier;
+        if (rarity == Rarity::Ultra) {
+            rarity = rng.chance(kUltraZoneSuperChance) ? Rarity::Super : Rarity::Ultra;
+        } else {
+            rarity = applyTierDrift(rarity, luck, rng);
+        }
+        type = chooseMobType(content, section, rarity, rng);
+        if (type == kInvalidIndex) return NULL_ENTITY;
     }
 
-    const std::uint16_t type = chooseMobType(content, sectionAt(at), rarity, rng);
-    if (type == kInvalidIndex) return NULL_ENTITY;
+    if (content.mob(type).neverAmbient &&
+        permanentFixtureExists(world, type, rarity, section)) {
+        return NULL_ENTITY;
+    }
 
     const Entity spawned = spawnMob(world, terrain, content, type, rarity, at, nowMillis, rng);
     if (spawned == NULL_ENTITY) return NULL_ENTITY;
