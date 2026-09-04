@@ -572,11 +572,10 @@ private:
 
     /// Where the open card falls in the paint order. It is always clear of the
     /// bar-and-strip pair, never between them -- the browser has no seam there
-    /// for a card to sit in. Which side it lands on is what inverts between the
-    /// screens: the title screen paints settings and debug inside
-    /// renderCanvasUI (under both) and every other card in
-    /// renderInGameMenusOverlay (over both); in game graphics.render() paints
-    /// those other cards first and Game's settings/debug overlays last.
+    /// for a card to sit in. The title screen keeps the browser's split:
+    /// renderCanvasUI paints settings and debug under both, and every other
+    /// card lands over them. In game every card is over both, so the loadout
+    /// bar never paints across an open menu.
     enum class PanelLayer : std::uint8_t { Under, Over };
     static PanelLayer panelLayer(MenuId, bool inGame);
 

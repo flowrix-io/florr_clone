@@ -1203,17 +1203,18 @@ constexpr double kPanelSlideSeconds = 0.30;
 } // namespace
 
 MenuSystem::PanelLayer MenuSystem::panelLayer(MenuId id, bool inGame) {
-    // Settings and the debug panel are the pair that does not follow the rest,
-    // and the two screens are exact mirrors of each other. On the title screen
-    // renderCanvasUI paints them before drawTitleLoadout and the strip, while
-    // renderInGameMenusOverlay paints every other card after both. In game it
-    // is the other way round: graphics.render() paints the changelog,
-    // notifications, leaderboard, guild and skin cards, then the strip, and
-    // only once render() has returned does Game paint the loadout bar and the
-    // settings and debug overlays over the top of it.
+    // On the title screen the two screens' odd pair still applies: settings and
+    // the debug panel are painted inside renderCanvasUI, before
+    // drawTitleLoadout and the strip, while every other card comes after both.
+    //
+    // In game every card is Over, which is a deliberate departure from the
+    // reference. There graphics.render() paints the cards, then the strip, and
+    // Game paints the loadout bar afterwards -- so the hotbar cut across the
+    // bottom of an open inventory or crafting card. The bar belongs behind the
+    // menus, so the cards are painted last on this screen whatever they are.
+    if (inGame) return PanelLayer::Over;
     const bool oddPair = id == MenuId::Settings || id == MenuId::Debug;
-    if (oddPair) return inGame ? PanelLayer::Over : PanelLayer::Under;
-    return inGame ? PanelLayer::Under : PanelLayer::Over;
+    return oddPair ? PanelLayer::Under : PanelLayer::Over;
 }
 
 void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
@@ -1297,9 +1298,10 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // The bar and the strip trade places between the screens. The title screen
     // runs drawTitleLoadout and then canvasButtons.draw; in game the strip is
     // the last thing graphics.render() paints and the bar is the first thing
-    // Game paints after it, which is what puts the hotbar over the corner
-    // cards -- and over the death scrim, the one thing that ever falls in
-    // between the two.
+    // Game paints after it, which keeps the hotbar over the death scrim -- the
+    // one thing that ever falls in between the two. The open card is no longer
+    // in that sandwich: in game it is always painted after the bar, so the
+    // hotbar sits behind the menus instead of cutting across them.
     if (inGame_) {
         drawIconStrip(canvas, window, timeSeconds);
         if (overStripUnderBar) overStripUnderBar();
@@ -1313,12 +1315,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     }
 
     // Input last, and after the panel has had the same click whichever layer it
-    // was painted on -- in game included, where the bar is painted OVER the
-    // card. Paint order and input order are deliberately not the same thing
-    // here: a press the card is standing on stays the card's, and a drop into
-    // the card must reach the card before the bar decides it landed on
-    // nothing. The two only ever overlap across the bar's caption strip, which
-    // answers for no click at all.
+    // was painted on: a press the card is standing on stays the card's, and a
+    // drop into the card must reach the card before the bar decides it landed
+    // on nothing.
     updateLoadoutInput(window, net);
     drawDragged(canvas, window, sprites, timeSeconds);
 }

@@ -1,66 +1,107 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>florr</title>
-<style>
-  html, body {
-    margin: 0;
-    height: 100%;
-    background: #1b1b1b;
-    overflow: hidden;
-    font-family: 'Ubuntu', system-ui, sans-serif;
-    font-weight: 700;
-    color: #fff;
-  }
-  /* The client draws every pixel itself, including its own cursor feedback,
-     so the canvas takes the whole window and nothing is layered over it. */
-  canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    outline: none;
-    touch-action: none;
-  }
-  #status {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #1b1b1b;
-    font-size: 18px;
-    pointer-events: none;
-  }
-  #status[hidden] { display: none; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>flowrix.pro</title>
+    <meta name="description" content="florr.io clone">
+    <meta name="keywords" content="florr, florr.io, florr clone, flowrix, flowrix pro, flowrix.pro, florrclone cryodome, zorr, zorr.pro, gardn, io games, online game, multiplayer game, browser game, web game">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Ubuntu', sans-serif;
+            font-weight: 700;
+            background-color: #000;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        #loadingScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100vw;
+            text-align: center;
+            font-size: 88px;
+            transform: translate(-50%, -50%);
+            color: #fff;
+        }
+
+    </style>
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
 </head>
 <body>
-<canvas id="canvas" tabindex="-1"></canvas>
-<div id="status">loading…</div>
+    <span id="loadingScreen">Loading...</span>
+    <canvas id="canvas" oncontextmenu="return false;"></canvas>
+    <script>
+        console.log('Hello');
+    </script>
+    <!-- <script>
+        async function fetchAndDecompress(url) {
+            // 1. Fetch the compressed binary file (never cache — always get the
+            //    freshest build so a rebuilt bundle.bin shows up on reload).
+            const response = await fetch(url, { cache: 'no-store' });
+            
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-<script>
-// The page's whole job is to hand the wasm client three things: a canvas, the
-// command line it would have had natively, and the WebSocket the emulated
-// connect() should dial. It draws nothing itself.
+            // 2. Create a DecompressionStream with 'deflate-raw'
+            const decompressionStream = new DecompressionStream('deflate-raw');
+
+            // 3. Pipe the response body (a ReadableStream) through the decompressor
+            const decompressedStream = response.body.pipeThrough(decompressionStream);
+
+            // 4. Read the resulting data (e.g., as an ArrayBuffer or Blob)
+            const decompressedResponse = new Response(decompressedStream);
+            const buffer = await decompressedResponse.arrayBuffer();
+
+            return new Uint8Array(buffer);
+        }
+        const loadingScreen = document.createElement('div');
+        loadingScreen.innerHTML = '<div style="text-align: center;"><h1 style="color: yellow; font-size: 48px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Decompressing bundle...</h1><p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 30px;">Please wait while we decompress the bundle...</p></div>';
+        document.body.appendChild(loadingScreen);
+        console.log('Decompressing bundle...');
+
+        const fetchedBundle = fetchAndDecompress('bundle.bin');
+        fetchedBundle.then(bundle => {
+            const scriptData = new TextDecoder().decode(bundle);
+            const script = document.createElement('script');
+            script.textContent = scriptData;
+            document.body.removeChild(loadingScreen);
+            document.body.appendChild(script);
+
+        });
+    </script> -->
+    <script>
 (function () {
   const query = new URLSearchParams(location.search);
-  const status = document.getElementById('status');
+  const status = document.getElementById('loadingScreen');
   const canvas = document.getElementById('canvas');
 
-  // The server is same-origin by default, which is what a deployment behind
-  // one host wants; ?host= and ?port= override it for local work. Which
-  // transport is used is NOT decided here: the client asks the server what it
-  // offers and picks WebTransport or WebSocket itself (see net/web_channel.h).
-  // Same-origin by default: the server serves this page over the same port it
-  // plays the game on, so an untouched URL already points at the right place.
-  // ?host= and ?port= are for a client build served from somewhere else.
   const host = query.get('host') || location.hostname || '127.0.0.1';
   const port = query.get('port') || location.port || '4242';
 
-  // The client's own argv, in the same spelling main.cpp parses natively. The
-  // data directory is the preloaded package, mounted at /data.
   const args = ['--data', 'data', '--host', host, '--port', port];
   for (const name of ['user', 'password']) {
     const value = query.get(name);
@@ -68,14 +109,7 @@
   }
   if (query.get('lobby') !== null) args.push('--lobby');
   if (query.get('stats') !== null) args.push('--stats');
-  // Repeatable, so a page can be loaded with a known transcript in it -- the
-  // same hook the native --chat gives the screenshot rig.
   for (const line of query.getAll('chat')) args.push('--chat', line);
-
-  // The canvas element's backing store is the CLIENT's to set -- it sizes it
-  // from this element's CSS box every frame, and a resize handler here would
-  // only fight that. CSS keeps the element filling the window; the client lays
-  // out in its own 1920x1080 design space either way.
 
   var Module = {
     canvas,
@@ -93,12 +127,12 @@
     },
     onAbort: (what) => {
       status.hidden = false;
-      status.textContent = 'the client stopped: ' + what;
+      status.textContent = 'client error: ' + what;
     },
   };
   window.Module = Module;
 })();
 </script>
-{{{ SCRIPT }}}
+    {{{ SCRIPT }}}
 </body>
 </html>
