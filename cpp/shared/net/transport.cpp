@@ -1,9 +1,11 @@
 #include "shared/net/transport.h"
 #include "shared/net/protocol.h"
 
-#include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+
+#ifndef __EMSCRIPTEN__
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -11,6 +13,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 
@@ -27,6 +30,7 @@ constexpr std::size_t kReadChunk = 16 * 1024;
 /// time; waiting forever would grow the buffer without bound.
 constexpr std::size_t kCompactThreshold = 64 * 1024;
 
+#ifndef __EMSCRIPTEN__
 bool setNonBlocking(int fd) {
     const int flags = ::fcntl(fd, F_GETFL, 0);
     return flags >= 0 && ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
@@ -55,6 +59,15 @@ std::string describePeer(const sockaddr_storage& addr) {
 }
 
 bool wouldBlock() { return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR; }
+#else
+/// How far ahead of the transport this side will run before it stops feeding a
+/// channel. A socket says "not now" with EAGAIN; a WebSocket or a QUIC stream
+/// says it by holding bytes, so the stop has to be a number. One read chunk is
+/// enough to keep the wire busy without handing an unbounded queue to a peer
+/// that has stopped reading -- the connection's own backlog cap is what
+/// finally drops it.
+constexpr std::size_t kWebSendHighWater = 256 * 1024;
+#endif
 
 } // namespace
 
@@ -68,10 +81,13 @@ Connection::Connection(int fd, ConnectionId id, std::string peer)
 Connection::~Connection() { shutdownNow(); }
 
 void Connection::shutdownNow() {
-    if (fd_ >= 0) {
-        ::close(fd_);
-        fd_ = -1;
-    }
+    if (fd_ < 0) return;
+#ifdef __EMSCRIPTEN__
+    web::close(fd_);
+#else
+    ::close(fd_);
+#endif
+    fd_ = -1;
 }
 
 void Connection::send(const std::byte* data, std::size_t size) {
@@ -84,6 +100,53 @@ void Connection::send(const std::byte* data, std::size_t size) {
 }
 
 void Connection::send(const ByteWriter& message) { send(message.data(), message.size()); }
+
+#ifdef __EMSCRIPTEN__
+
+bool Connection::readAvailable(std::string& errorOut) {
+    while (true) {
+        const std::size_t at = inbound_.size();
+        inbound_.resize(at + kReadChunk);
+        const int n = web::recv(fd_, inbound_.data() + at, static_cast<int>(kReadChunk));
+        if (n > 0) {
+            inbound_.resize(at + static_cast<std::size_t>(n));
+            if (static_cast<std::size_t>(n) < kReadChunk) return true;
+            continue;
+        }
+        inbound_.resize(at);
+        if (n == 0) return true;   // nothing waiting, which is not an end
+        const std::string reason = web::error(fd_);
+        errorOut = reason.empty() ? "peer closed" : reason;
+        return false;
+    }
+}
+
+bool Connection::writeAvailable(std::string& errorOut) {
+    while (outboundSent_ < outbound_.size()) {
+        // The transport's own queue is the EAGAIN here: past the high water
+        // mark this side stops feeding it and the rest waits for the next
+        // pass, which is what keeps a slow peer's backlog on this object --
+        // where maxPendingBytes can see and cap it -- rather than inside a
+        // JavaScript object that grows without anybody counting.
+        if (web::buffered(fd_) >= kWebSendHighWater) break;
+        const std::size_t remaining = outbound_.size() - outboundSent_;
+        const std::size_t chunk = std::min(remaining, kReadChunk);
+        if (!web::send(fd_, outbound_.data() + outboundSent_, static_cast<int>(chunk))) {
+            const std::string reason = web::error(fd_);
+            errorOut = reason.empty() ? "send failed" : reason;
+            return false;
+        }
+        outboundSent_ += chunk;
+    }
+    compactOutbound();
+    return true;
+}
+
+std::size_t Connection::transportBuffered() const {
+    return fd_ >= 0 ? web::buffered(fd_) : 0;
+}
+
+#else
 
 bool Connection::readAvailable(std::string& errorOut) {
     while (true) {
@@ -124,6 +187,15 @@ bool Connection::writeAvailable(std::string& errorOut) {
         return false;
     }
 
+    compactOutbound();
+    return true;
+}
+
+std::size_t Connection::transportBuffered() const { return 0; }
+
+#endif  // __EMSCRIPTEN__
+
+void Connection::compactOutbound() {
     if (outboundSent_ == outbound_.size()) {
         outbound_.clear();
         outboundSent_ = 0;
@@ -132,7 +204,6 @@ bool Connection::writeAvailable(std::string& errorOut) {
                         outbound_.begin() + static_cast<std::ptrdiff_t>(outboundSent_));
         outboundSent_ = 0;
     }
-    return true;
 }
 
 bool Connection::nextFrame(std::vector<std::byte>& out) {
@@ -170,6 +241,41 @@ bool Connection::nextFrame(std::vector<std::byte>& out) {
 
 Listener::Listener() = default;
 Listener::~Listener() { stop(); }
+
+#ifdef __EMSCRIPTEN__
+
+bool Listener::start(std::uint16_t port, std::string& errorOut) {
+    stop();
+    listenFd_ = web::listen(port, certPath, keyPath, webRoot);
+    if (listenFd_ < 0) {
+        errorOut = "this runtime cannot listen (a browser tab has nothing to listen with)";
+        return false;
+    }
+    port_ = port;
+    return true;
+}
+
+void Listener::stop() {
+    connections_.clear();
+    if (listenFd_ >= 0) {
+        web::close(listenFd_);
+        listenFd_ = -1;
+    }
+}
+
+void Listener::acceptPending(TransportHandler& handler) {
+    while (true) {
+        const int channel = web::accept(listenFd_);
+        if (channel < 0) break;
+        auto connection =
+            std::make_unique<Connection>(channel, nextId_++, web::peer(channel));
+        Connection& ref = *connection;
+        connections_.push_back(std::move(connection));
+        handler.onConnect(ref);
+    }
+}
+
+#else
 
 bool Listener::start(std::uint16_t port, std::string& errorOut) {
     stop();
@@ -213,24 +319,6 @@ void Listener::stop() {
     }
 }
 
-Connection* Listener::find(ConnectionId id) {
-    for (auto& c : connections_) {
-        if (c->id() == id) return c.get();
-    }
-    return nullptr;
-}
-
-void Listener::each(const std::function<void(Connection&)>& fn) {
-    // Index rather than iterate: a callback may queue a close, and while that
-    // does not remove entries here, keeping this index-based makes it safe if
-    // it ever does.
-    for (std::size_t i = 0; i < connections_.size(); ++i) fn(*connections_[i]);
-}
-
-void Listener::close(ConnectionId id) {
-    if (Connection* c = find(id)) c->closeGracefully();
-}
-
 void Listener::acceptPending(TransportHandler& handler) {
     while (true) {
         sockaddr_storage addr{};
@@ -252,10 +340,93 @@ void Listener::acceptPending(TransportHandler& handler) {
     }
 }
 
+#endif  // __EMSCRIPTEN__
+
+Connection* Listener::find(ConnectionId id) {
+    for (auto& c : connections_) {
+        if (c->id() == id) return c.get();
+    }
+    return nullptr;
+}
+
+void Listener::each(const std::function<void(Connection&)>& fn) {
+    // Index rather than iterate: a callback may queue a close, and while that
+    // does not remove entries here, keeping this index-based makes it safe if
+    // it ever does.
+    for (std::size_t i = 0; i < connections_.size(); ++i) fn(*connections_[i]);
+}
+
+void Listener::close(ConnectionId id) {
+    if (Connection* c = find(id)) c->closeGracefully();
+}
+
 void Listener::drop(Connection& c, TransportHandler& handler, const std::string& reason) {
     handler.onDisconnect(c, reason);
     c.shutdownNow();
 }
+
+bool Listener::service(Connection& c, bool readable, bool writable, TransportHandler& handler,
+                      int& delivered, std::string& error) {
+    if (writable && !c.writeAvailable(error)) return false;
+
+    if (readable) {
+        const bool alive = c.readAvailable(error);
+        while (c.nextFrame(frameScratch_)) {
+            ByteReader reader(frameScratch_.data(), frameScratch_.size());
+            handler.onMessage(c, reader);
+            ++delivered;
+            // A handler may have closed this connection out from under us.
+            if (!c.open()) return false;
+        }
+        if (!alive) return false;
+    }
+
+    // Counted with what the transport is still holding: on the web backend
+    // most of a slow peer's backlog lives there, and a cap that only saw this
+    // object's half would never fire.
+    if (c.pendingBytes() + c.transportBuffered() > maxPendingBytes) {
+        error = "outbound backlog exceeded";
+        return false;
+    }
+    if (c.closing() && !c.wantsWrite()) {
+        error = "closed by server";
+        return false;
+    }
+    return true;
+}
+
+#ifdef __EMSCRIPTEN__
+
+int Listener::poll(TransportHandler& handler, int timeoutMillis) {
+    if (listenFd_ < 0) return 0;
+    // The timeout is deliberately ignored. Bytes reach a channel from the
+    // JavaScript event loop, which only runs when this stack has returned to
+    // it, so sleeping here would not wait for data -- it would prevent it.
+    (void)timeoutMillis;
+
+    acceptPending(handler);
+
+    int delivered = 0;
+    for (std::size_t i = 0; i < connections_.size(); ++i) {
+        Connection& c = *connections_[i];
+        if (!c.open()) continue;
+        std::string error;
+        // Both directions every pass: a channel has no readiness to report,
+        // only a queue that is empty or is not, and both calls handle empty.
+        if (!service(c, true, true, handler, delivered, error)) {
+            drop(c, handler, error.empty() ? "disconnected" : error);
+        }
+    }
+
+    connections_.erase(
+        std::remove_if(connections_.begin(), connections_.end(),
+                       [](const std::unique_ptr<Connection>& c) { return !c->open(); }),
+        connections_.end());
+
+    return delivered;
+}
+
+#else
 
 int Listener::poll(TransportHandler& handler, int timeoutMillis) {
     if (listenFd_ < 0) return 0;
@@ -288,29 +459,10 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
         if (revents == 0) continue;
 
         std::string error;
-        bool alive = true;
-
-        if (revents & POLLOUT) alive = c.writeAvailable(error);
-
-        if (alive && (revents & (POLLIN | POLLHUP | POLLERR))) {
-            alive = c.readAvailable(error);
-            while (c.nextFrame(frameScratch_)) {
-                ByteReader reader(frameScratch_.data(), frameScratch_.size());
-                handler.onMessage(c, reader);
-                ++delivered;
-                if (!c.open()) { alive = false; break; }
-            }
+        if (!service(c, (revents & (POLLIN | POLLHUP | POLLERR)) != 0, (revents & POLLOUT) != 0,
+                     handler, delivered, error)) {
+            drop(c, handler, error.empty() ? "disconnected" : error);
         }
-
-        if (alive && c.pendingBytes() > maxPendingBytes) {
-            alive = false;
-            error = "outbound backlog exceeded";
-        }
-        if (alive && c.closing() && !c.wantsWrite()) {
-            alive = false;
-            error = "closed by server";
-        }
-        if (!alive) drop(c, handler, error.empty() ? "disconnected" : error);
     }
 
     connections_.erase(
@@ -320,6 +472,8 @@ int Listener::poll(TransportHandler& handler, int timeoutMillis) {
 
     return delivered;
 }
+
+#endif  // __EMSCRIPTEN__
 
 void Listener::flush() {
     for (auto& c : connections_) {
@@ -335,6 +489,70 @@ void Listener::flush() {
 
 Dialer::Dialer() = default;
 Dialer::~Dialer() { disconnect(); }
+
+#ifdef __EMSCRIPTEN__
+
+bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& errorOut) {
+    disconnect();
+
+    const int channel = web::connect(host, port);
+    if (channel < 0) {
+        errorOut = "no transport available for " + host + ":" + std::to_string(port);
+        state_ = State::Failed;
+        error_ = errorOut;
+        return false;
+    }
+    // The peer string is provisional: which transport was chosen is not known
+    // until the handshake resolves, and poll() replaces this with what the
+    // channel says once it is open.
+    connection_ = std::make_unique<Connection>(channel, 1, host + ":" + std::to_string(port));
+    state_ = State::Connecting;
+    announced_ = false;
+    error_.clear();
+    return true;
+}
+
+int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
+    if (!connection_ || !connection_->open()) return 0;
+    // Ignored, as in Listener::poll: the handshake and every byte after it
+    // arrive from the JavaScript event loop, which is not running while this
+    // call is on the stack.
+    (void)timeoutMillis;
+
+    const web::State channel = web::state(connection_->fd());
+    if (channel == web::State::Closed) {
+        const std::string reason = web::error(connection_->fd());
+        fail(reason.empty() ? "connection closed" : reason, &handler);
+        return 0;
+    }
+    if (state_ == State::Connecting) {
+        if (channel != web::State::Open) return 0;
+        state_ = State::Connected;
+        announced_ = true;
+        handler.onConnect(*connection_);
+    }
+
+    std::string error;
+    if (!connection_->writeAvailable(error)) {
+        fail(error.empty() ? "write failed" : error, &handler);
+        return 0;
+    }
+
+    int delivered = 0;
+    const bool alive = connection_->readAvailable(error);
+    while (connection_ && connection_->nextFrame(frameScratch_)) {
+        ByteReader reader(frameScratch_.data(), frameScratch_.size());
+        handler.onMessage(*connection_, reader);
+        ++delivered;
+    }
+    if (!alive) {
+        fail(error.empty() ? "disconnected" : error, &handler);
+        return delivered;
+    }
+    return delivered;
+}
+
+#else
 
 bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& errorOut) {
     disconnect();
@@ -383,23 +601,6 @@ bool Dialer::connect(const std::string& host, std::uint16_t port, std::string& e
     return true;
 }
 
-void Dialer::disconnect() {
-    connection_.reset();
-    state_ = State::Idle;
-    announced_ = false;
-}
-
-void Dialer::send(const ByteWriter& message) {
-    if (connection_) connection_->send(message);
-}
-
-void Dialer::fail(const std::string& reason, TransportHandler* handler) {
-    if (handler && connection_ && announced_) handler->onDisconnect(*connection_, reason);
-    connection_.reset();
-    state_ = State::Failed;
-    error_ = reason;
-}
-
 int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
     if (!connection_ || !connection_->open()) return 0;
 
@@ -445,6 +646,25 @@ int Dialer::poll(TransportHandler& handler, int timeoutMillis) {
         }
     }
     return delivered;
+}
+
+#endif  // __EMSCRIPTEN__
+
+void Dialer::disconnect() {
+    connection_.reset();
+    state_ = State::Idle;
+    announced_ = false;
+}
+
+void Dialer::send(const ByteWriter& message) {
+    if (connection_) connection_->send(message);
+}
+
+void Dialer::fail(const std::string& reason, TransportHandler* handler) {
+    if (handler && connection_ && announced_) handler->onDisconnect(*connection_, reason);
+    connection_.reset();
+    state_ = State::Failed;
+    error_ = reason;
 }
 
 void Dialer::flush() {

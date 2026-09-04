@@ -218,6 +218,9 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // against the same maze for the whole session.
     setActiveMazeDay(currentMazeDay());
 
+    listener_.certPath = config.certPath;
+    listener_.keyPath = config.keyPath;
+    listener_.webRoot = config.webRoot;
     if (!listener_.start(config.port, errorOut)) return false;
 
     running_ = true;
@@ -225,56 +228,13 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
 }
 
 void GameServer::run() {
-    double nextTickMillis = monotonicMillis();
-
-    while (running_.load()) {
-        const double now = monotonicMillis();
-
-        // Sleep in the network poll rather than in a bare sleep, so a packet
-        // arriving mid-frame is picked up immediately instead of waiting out
-        // the remainder of the tick.
-        const int waitMillis = static_cast<int>(std::max(0.0, nextTickMillis - now));
-        serviceNetwork(std::min(waitMillis, 5));
-
-        const double tickNow = monotonicMillis();
-        if (tickNow >= nextTickMillis) {
-            // Real elapsed time, clamped, then low-pass filtered -- see
-            // smoothedDeltaSeconds_. Sampled before the tick so a slow tick
-            // shows up in the NEXT step's delta, exactly as the reference's
-            // performance.now() sample at the top of its interval does.
-            double raw = lastTickWallMillis_ > 0
-                             ? (tickNow - lastTickWallMillis_) / 1000.0
-                             : net::kTickSeconds;
-            lastTickWallMillis_ = tickNow;
-            if (raw > kMaxDeltaSeconds) raw = kMaxDeltaSeconds;
-            smoothedDeltaSeconds_ += (raw - smoothedDeltaSeconds_) * kDeltaSmoothing;
-
-            // The REAL clock, not the scheduled slot. Every absolute deadline
-            // in the world -- poison, slows, reloads, hit cooldowns, despawn --
-            // is compared against this, so handing over a nominal time that
-            // lags wall clock makes all of them fire late and then jump.
-            const double tickStarted = monotonicMillis();
-            tick(tickNow);
-            const double tookMillis = monotonicMillis() - tickStarted;
-            debugTickAccumMillis_ += tookMillis;
-            if (tookMillis > debugTickMaxMillis_) debugTickMaxMillis_ = tookMillis;
-            ++debugTickSamples_;
-
-            nextTickMillis += net::kTickMillis;
-            // A timer never queues up the fires it missed: a tick that overran
-            // simply makes the next one land immediately, it does not run twice
-            // to catch up. Replaying would advance the fixed-step mob half once
-            // per replay while the dt-scaled half, which has just had its delta
-            // reset to almost nothing, stood still.
-            if (nextTickMillis < monotonicMillis()) nextTickMillis = monotonicMillis();
-
-            if (tickNow >= nextDebugStatsMillis_) {
-                broadcastDebugStats();
-                nextDebugStatsMillis_ = tickNow + 1000.0;
-            }
-        }
+    nextTickMillis_ = monotonicMillis();
+    while (step()) {
     }
+    shutdown();
+}
 
+void GameServer::shutdown() {
     // Flush account progress before exiting; an orderly shutdown must not cost
     // anyone their session.
     for (const auto& entry : sessions_) {
@@ -282,6 +242,58 @@ void GameServer::run() {
     }
     database_.save();
     listener_.stop();
+}
+
+bool GameServer::step() {
+    if (!running_.load()) return false;
+
+    const double now = monotonicMillis();
+
+    // Sleep in the network poll rather than in a bare sleep, so a packet
+    // arriving mid-frame is picked up immediately instead of waiting out
+    // the remainder of the tick.
+    const int waitMillis = static_cast<int>(std::max(0.0, nextTickMillis_ - now));
+    serviceNetwork(std::min(waitMillis, 5));
+
+    const double tickNow = monotonicMillis();
+    if (tickNow >= nextTickMillis_) {
+        // Real elapsed time, clamped, then low-pass filtered -- see
+        // smoothedDeltaSeconds_. Sampled before the tick so a slow tick
+        // shows up in the NEXT step's delta, exactly as the reference's
+        // performance.now() sample at the top of its interval does.
+        double raw = lastTickWallMillis_ > 0
+                         ? (tickNow - lastTickWallMillis_) / 1000.0
+                         : net::kTickSeconds;
+        lastTickWallMillis_ = tickNow;
+        if (raw > kMaxDeltaSeconds) raw = kMaxDeltaSeconds;
+        smoothedDeltaSeconds_ += (raw - smoothedDeltaSeconds_) * kDeltaSmoothing;
+
+        // The REAL clock, not the scheduled slot. Every absolute deadline
+        // in the world -- poison, slows, reloads, hit cooldowns, despawn --
+        // is compared against this, so handing over a nominal time that
+        // lags wall clock makes all of them fire late and then jump.
+        const double tickStarted = monotonicMillis();
+        tick(tickNow);
+        const double tookMillis = monotonicMillis() - tickStarted;
+        debugTickAccumMillis_ += tookMillis;
+        if (tookMillis > debugTickMaxMillis_) debugTickMaxMillis_ = tookMillis;
+        ++debugTickSamples_;
+
+        nextTickMillis_ += net::kTickMillis;
+        // A timer never queues up the fires it missed: a tick that overran
+        // simply makes the next one land immediately, it does not run twice
+        // to catch up. Replaying would advance the fixed-step mob half once
+        // per replay while the dt-scaled half, which has just had its delta
+        // reset to almost nothing, stood still.
+        if (nextTickMillis_ < monotonicMillis()) nextTickMillis_ = monotonicMillis();
+
+        if (tickNow >= nextDebugStatsMillis_) {
+            broadcastDebugStats();
+            nextDebugStatsMillis_ = tickNow + 1000.0;
+        }
+    }
+
+    return running_.load();
 }
 
 void GameServer::serviceNetwork(int timeoutMillis) {
@@ -478,6 +490,12 @@ void GameServer::announceBossSpawns() {
         }
         const int section = sectionAt(boss.position);
         const std::string tier = rarityLabel(boss.rarity);
+        // Wrapped in the tier's own colour, as the reference server wraps it.
+        // The client parses the markup; sending the announcement bare left it
+        // the one boss line in the game with no tier colour on it.
+        char colorAttribute[32];
+        std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x",
+                      rarityColor(boss.rarity));
 
         for (auto& entry : sessions_) {
             Session& session = entry.second;
@@ -489,8 +507,8 @@ void GameServer::announceBossSpawns() {
             const Transform* transform = world_.tryGet<Transform>(session.entity);
             const bool here = transform != nullptr && sectionAt(transform->position) == section;
             sendChatTo(*connection, net::ChatChannel::System, "",
-                       "A " + tier + " " + name + " has spawned" +
-                           (here ? "" : " somewhere") + "!");
+                       std::string("<b style=\"color: ") + colorAttribute + ";\">A " + tier +
+                           " " + name + " has spawned" + (here ? "" : " somewhere") + "!</b>");
         }
     }
     spawning_->bossSpawns.clear();

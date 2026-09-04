@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>florr</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #1b1b1b;
+    overflow: hidden;
+    font-family: 'Ubuntu', system-ui, sans-serif;
+    font-weight: 700;
+    color: #fff;
+  }
+  /* The client draws every pixel itself, including its own cursor feedback,
+     so the canvas takes the whole window and nothing is layered over it. */
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    outline: none;
+    touch-action: none;
+  }
+  #status {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1b1b1b;
+    font-size: 18px;
+    pointer-events: none;
+  }
+  #status[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="status">loading…</div>
+
+<script>
+// The page's whole job is to hand the wasm client three things: a canvas, the
+// command line it would have had natively, and the WebSocket the emulated
+// connect() should dial. It draws nothing itself.
+(function () {
+  const query = new URLSearchParams(location.search);
+  const status = document.getElementById('status');
+  const canvas = document.getElementById('canvas');
+
+  // The server is same-origin by default, which is what a deployment behind
+  // one host wants; ?host= and ?port= override it for local work. Which
+  // transport is used is NOT decided here: the client asks the server what it
+  // offers and picks WebTransport or WebSocket itself (see net/web_channel.h).
+  // Same-origin by default: the server serves this page over the same port it
+  // plays the game on, so an untouched URL already points at the right place.
+  // ?host= and ?port= are for a client build served from somewhere else.
+  const host = query.get('host') || location.hostname || '127.0.0.1';
+  const port = query.get('port') || location.port || '4242';
+
+  // The client's own argv, in the same spelling main.cpp parses natively. The
+  // data directory is the preloaded package, mounted at /data.
+  const args = ['--data', 'data', '--host', host, '--port', port];
+  for (const name of ['user', 'password']) {
+    const value = query.get(name);
+    if (value !== null) args.push('--' + name, value);
+  }
+  if (query.get('lobby') !== null) args.push('--lobby');
+  if (query.get('stats') !== null) args.push('--stats');
+  // Repeatable, so a page can be loaded with a known transcript in it -- the
+  // same hook the native --chat gives the screenshot rig.
+  for (const line of query.getAll('chat')) args.push('--chat', line);
+
+  // The canvas element's backing store is the CLIENT's to set -- it sizes it
+  // from this element's CSS box every frame, and a resize handler here would
+  // only fight that. CSS keeps the element filling the window; the client lays
+  // out in its own 1920x1080 design space either way.
+
+  var Module = {
+    canvas,
+    arguments: args,
+    print: (text) => console.log(text),
+    printErr: (text) => console.warn(text),
+    setStatus: (text) => {
+      if (!text) {
+        status.hidden = true;
+        canvas.focus();
+        return;
+      }
+      status.hidden = false;
+      status.textContent = text;
+    },
+    onAbort: (what) => {
+      status.hidden = false;
+      status.textContent = 'the client stopped: ' + what;
+    },
+  };
+  window.Module = Module;
+})();
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

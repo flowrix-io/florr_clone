@@ -5,7 +5,15 @@
 #include <cmath>
 #include <cstring>
 
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+// The browser backend. Drawing already goes to a real
+// CanvasRenderingContext2D (see canvas.cpp), so what is left for a Window
+// here is the geometry and the input -- and DOM events, unlike SDL's queue,
+// are delivered by callback rather than polled. They land in the same Impl
+// fields the native path fills, so everything above this file is unaware.
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#else
 #include <SDL.h>
 #endif
 
@@ -65,8 +73,131 @@ constexpr std::size_t kCursorCount = static_cast<std::size_t>(CursorShape::Count
 
 } // namespace
 
+#ifdef __EMSCRIPTEN__
+// KeyboardEvent.code -> Key. `code` is the PHYSICAL key, which is what Key
+// names, so this is a rename and not a layout decision: a Dvorak typist's
+// "KeyW" is the same key a QWERTY typist's is, and both walk forward.
+Key fromDomCode(const char* code) {
+  const std::string c = code;
+  if (c.size() == 4 && c.compare(0, 3, "Key") == 0 && c[3] >= 'A' && c[3] <= 'Z') {
+    return static_cast<Key>(static_cast<int>(Key::A) + (c[3] - 'A'));
+  }
+  if (c.size() == 6 && c.compare(0, 5, "Digit") == 0 && c[5] >= '0' && c[5] <= '9') {
+    return static_cast<Key>(static_cast<int>(Key::Num0) + (c[5] - '0'));
+  }
+  if (c.size() == 7 && c.compare(0, 6, "Numpad") == 0 && c[6] >= '0' && c[6] <= '9') {
+    return static_cast<Key>(static_cast<int>(Key::Num0) + (c[6] - '0'));
+  }
+  if (c.size() >= 2 && c[0] == 'F' && std::isdigit(static_cast<unsigned char>(c[1]))) {
+    const int n = std::atoi(c.c_str() + 1);
+    if (n >= 1 && n <= 12) return static_cast<Key>(static_cast<int>(Key::F1) + (n - 1));
+  }
+  struct Named { const char* code; Key key; };
+  static const Named kNamed[] = {
+    {"Space", Key::Space},           {"Enter", Key::Enter},
+    {"NumpadEnter", Key::Enter},     {"Escape", Key::Escape},
+    {"Backspace", Key::Backspace},   {"Tab", Key::Tab},
+    {"Delete", Key::Delete},         {"Home", Key::Home},
+    {"End", Key::End},               {"ArrowLeft", Key::Left},
+    {"ArrowRight", Key::Right},      {"ArrowUp", Key::Up},
+    {"ArrowDown", Key::Down},        {"ShiftLeft", Key::LeftShift},
+    {"ShiftRight", Key::RightShift}, {"ControlLeft", Key::LeftCtrl},
+    {"ControlRight", Key::RightCtrl},{"AltLeft", Key::LeftAlt},
+    {"AltRight", Key::RightAlt},     {"MetaLeft", Key::LeftCtrl},
+    {"MetaRight", Key::RightCtrl},   {"Minus", Key::Minus},
+    {"NumpadSubtract", Key::Minus},  {"Equal", Key::Equals},
+    {"NumpadAdd", Key::Equals},      {"Comma", Key::Comma},
+    {"Period", Key::Period},         {"NumpadDecimal", Key::Period},
+    {"Slash", Key::Slash},           {"NumpadDivide", Key::Slash},
+    {"Backslash", Key::Backslash},   {"Semicolon", Key::Semicolon},
+    {"Quote", Key::Apostrophe},
+  };
+  for (const Named& named : kNamed) {
+    if (c == named.code) return named.key;
+  }
+  return Key::Unknown;
+}
+
+// The clipboard a page is allowed to read without asking is the one the user
+// just pasted into it, so that is what is kept. navigator.clipboard.readText()
+// would need a permission prompt mid-game; a paste event needs none.
+EM_JS(void, web_clipboard_init, (), {
+  Module.cppCanvasClipboard = '';
+  addEventListener('paste', (event) => {
+    Module.cppCanvasClipboard = (event.clipboardData || window.clipboardData).getData('text') || '';
+  });
+});
+// Into a caller-owned buffer rather than a malloc'd string: _malloc is not
+// exported to JavaScript by default, and needing it would make this file
+// impose a link setting on every program that draws a window.
+EM_JS(void, web_clipboard_get, (char* out, int capacity), {
+  stringToUTF8(Module.cppCanvasClipboard || '', out, capacity);
+});
+EM_JS(void, web_clipboard_set, (const char* text), {
+  const value = UTF8ToString(text);
+  Module.cppCanvasClipboard = value;
+  if (navigator.clipboard) navigator.clipboard.writeText(value).catch(() => {});
+});
+EM_JS(void, web_set_cursor, (const char* element, const char* shape), {
+  const node = document.getElementById(UTF8ToString(element));
+  if (node) node.style.cursor = UTF8ToString(shape);
+});
+// CSS pixels, which are this backend's "points". Read every pump for the same
+// reason the native path re-reads the window size: a resize, a zoom and a
+// drag onto another display are three different events and only one of them
+// is reliably delivered.
+EM_JS(double, web_css_width, (const char* element), {
+  const node = document.getElementById(UTF8ToString(element));
+  return node ? node.clientWidth : 0;
+});
+EM_JS(double, web_css_height, (const char* element), {
+  const node = document.getElementById(UTF8ToString(element));
+  return node ? node.clientHeight : 0;
+});
+#endif
+
 struct Window::Impl {
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+  // The element every frame is drawn into, and the two clocks the native path
+  // keeps in SDL performance counters.
+  std::string elementId = "canvas";
+  double startMillis = 0, lastFrameMillis = 0;
+
+  // Edge events, waiting for a frame to observe them.
+  //
+  // The native backend clears the edges at the top of pump() because the
+  // events that refill them are still sitting in SDL`s queue, and the drain
+  // immediately below re-applies them. DOM events have no queue: they were
+  // delivered by callback at some point between the last frame and this one,
+  // so clearing on entry throws every one of them away. A click that goes down
+  // and up inside one frame gap -- which at 16ms a frame is most clicks --
+  // would then never be seen at all, and no button in the game would work.
+  //
+  // So the callbacks record here and pump() moves the set across in one go.
+  // Accumulating rather than overwriting is what lets a press and its release
+  // arrive on the same frame, exactly as they do natively when both come out
+  // of a single drain.
+  std::array<bool, kKeyCount> pendingPressed{}, pendingReleased{};
+  std::array<bool, kButtonCount> pendingDownEdge{}, pendingUpEdge{};
+  float pendingWheel = 0;
+  std::string pendingTyped;
+
+  void takePendingEvents() {
+    pressed = pendingPressed;
+    released = pendingReleased;
+    mouseDownEdge = pendingDownEdge;
+    mouseUpEdge = pendingUpEdge;
+    wheel = pendingWheel;
+    typed = pendingTyped;
+
+    pendingPressed.fill(false);
+    pendingReleased.fill(false);
+    pendingDownEdge.fill(false);
+    pendingUpEdge.fill(false);
+    pendingWheel = 0;
+    pendingTyped.clear();
+  }
+#else
   SDL_Window* window = nullptr;
   SDL_Renderer* renderer = nullptr;
   SDL_Texture* texture = nullptr;
@@ -107,7 +238,16 @@ struct Window::Impl {
   // Count means "nothing has been pushed to the OS yet".
   CursorShape cursorApplied = CursorShape::Count;
 
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+  void applyCursor() {
+    if (cursorRequested == cursorApplied) return;
+    const char* shape = "default";
+    if (cursorRequested == CursorShape::Hand) shape = "pointer";
+    else if (cursorRequested == CursorShape::Text) shape = "text";
+    web_set_cursor(elementId.c_str(), shape);
+    cursorApplied = cursorRequested;
+  }
+#else
   void applyCursor() {
     if (cursorRequested == cursorApplied) return;
     const auto slot = static_cast<std::size_t>(cursorRequested);
@@ -126,43 +266,11 @@ struct Window::Impl {
   }
 #endif
 
-#ifndef __EMSCRIPTEN__
-  // Recomputes every derived size from the window's current point size, the
-  // display's scale factor and the render-resolution setting, rebuilding the
-  // canvas and the upload texture only when the pixel count actually changed.
-  //
-  // Called every pump rather than only on a resize event: dragging a window
-  // between a Retina and a non-Retina monitor changes the drawable size
-  // WITHOUT changing the window's point size, and SDL reports that as neither
-  // a RESIZED nor a SIZE_CHANGED event on every platform. Two integer queries
-  // a frame is a cheaper way to be right than a table of per-platform events.
-  void refreshGeometry() {
-    if (!window || !renderer) return;
-
-    int points[2] = {0, 0};
-    SDL_GetWindowSize(window, &points[0], &points[1]);
-    int drawable[2] = {0, 0};
-    SDL_GetRendererOutputSize(renderer, &drawable[0], &drawable[1]);
-    if (points[0] <= 0 || points[1] <= 0 || drawable[0] <= 0 || drawable[1] <= 0) return;
-
-    pointWidth = points[0];
-    pointHeight = points[1];
-    devicePixelRatio = static_cast<double>(drawable[0]) / points[0];
-
-    const int wantPixelW = std::max(1, static_cast<int>(std::lround(drawable[0] * renderScale)));
-    const int wantPixelH = std::max(1, static_cast<int>(std::lround(drawable[1] * renderScale)));
-    if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas) {
-      pixelWidth = wantPixelW;
-      pixelHeight = wantPixelH;
-      // Canvas cannot be resized in place, so the backing surfaces are
-      // rebuilt. This is why callers must not hold canvas() across pump().
-      canvas = std::make_unique<Canvas>(pixelWidth, pixelHeight);
-      rgba.assign(static_cast<std::size_t>(pixelWidth) * pixelHeight * 4, 0);
-      if (texture) SDL_DestroyTexture(texture);
-      texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888,
-                                  SDL_TEXTUREACCESS_STREAMING, pixelWidth, pixelHeight);
-    }
-
+  // The half of the geometry that is the same in a window and in a page:
+  // point size, device pixel ratio and backing-store size in, design-space
+  // viewport out. Both backends fill the inputs their own way and then call
+  // this, so the rule below is stated once.
+  void recomputeScales() {
     // The fit is measured in POINTS, not pixels: it decides how big the design
     // space looks to a person, and a Retina display does not make a window
     // physically smaller. Measuring it in pixels would halve the design space
@@ -208,6 +316,186 @@ struct Window::Impl {
     viewHeight = std::max(1, static_cast<int>(std::ceil(pixelHeight / uiScale - kSnap)));
     canvas->setLogicalSize(viewWidth, viewHeight);
   }
+
+#ifdef __EMSCRIPTEN__
+  // The page's answer to the same question. CSS pixels are the points, the
+  // browser owns the device pixel ratio, and the canvas element's backing
+  // store is ours to set -- which is what constructing a Canvas on it does.
+  //
+  // Called every pump for the reason the native one is: a resize, a browser
+  // zoom and a drag onto a second display all change these numbers, and only
+  // some of them fire an event.
+  void refreshGeometry() {
+    const double cssWidth = web_css_width(elementId.c_str());
+    const double cssHeight = web_css_height(elementId.c_str());
+    if (!(cssWidth > 0) || !(cssHeight > 0)) return;
+
+    pointWidth = static_cast<int>(std::lround(cssWidth));
+    pointHeight = static_cast<int>(std::lround(cssHeight));
+    devicePixelRatio = emscripten_get_device_pixel_ratio();
+    if (!(devicePixelRatio > 0)) devicePixelRatio = 1.0;
+
+    const int wantPixelW =
+        std::max(1, static_cast<int>(std::lround(cssWidth * devicePixelRatio * renderScale)));
+    const int wantPixelH =
+        std::max(1, static_cast<int>(std::lround(cssHeight * devicePixelRatio * renderScale)));
+    if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas) {
+      pixelWidth = wantPixelW;
+      pixelHeight = wantPixelH;
+      // Constructing a Canvas on the element resizes its backing store and
+      // takes a fresh 2D context, so this is the resize -- which is also why
+      // callers must not hold canvas() across pump().
+      canvas = std::make_unique<Canvas>(pixelWidth, pixelHeight, elementId);
+    }
+
+    recomputeScales();
+  }
+
+  // DOM event handlers. Static members rather than free functions because
+  // Impl is private to Window, and they write straight into the same fields
+  // the native pump() fills from the SDL queue.
+  static Impl* implOf(void* userData) { return static_cast<Impl*>(userData); }
+
+  // The pointer arrives in CSS pixels relative to the canvas; the caller draws
+  // and hit-tests in design units, so the point-to-design fit is all that has to
+  // be divided out -- exactly as in the native SDL_MOUSEMOTION case.
+  static void recordPointer(Impl* impl, double targetX, double targetY) {
+    const float toDesign = impl->fit > 0 ? static_cast<float>(1.0 / impl->fit) : 1.0f;
+    impl->mouseX = static_cast<float>(targetX) * toDesign;
+    impl->mouseY = static_cast<float>(targetY) * toDesign;
+  }
+
+  static void recordModifiers(Impl* impl, bool shift, bool ctrl, bool alt, bool meta) {
+    impl->shift = shift;
+    // Meta counts as ctrl, so a Mac's Cmd shortcuts reach code written for Ctrl
+    // -- which is what SDL's KMOD_GUI does natively.
+    impl->ctrl = ctrl || meta;
+    impl->alt = alt;
+  }
+
+  static EM_BOOL onMouse(int type, const EmscriptenMouseEvent* event, void* userData) {
+    Impl* impl = implOf(userData);
+    recordPointer(impl, event->targetX, event->targetY);
+    recordModifiers(impl, event->shiftKey, event->ctrlKey, event->altKey, event->metaKey);
+    if (type == EMSCRIPTEN_EVENT_MOUSEMOVE) return EM_TRUE;
+
+    std::size_t index = kButtonCount;
+    if (event->button == 0) index = static_cast<std::size_t>(MouseButton::Left);
+    else if (event->button == 1) index = static_cast<std::size_t>(MouseButton::Middle);
+    else if (event->button == 2) index = static_cast<std::size_t>(MouseButton::Right);
+    if (index < kButtonCount) {
+      const bool downNow = type == EMSCRIPTEN_EVENT_MOUSEDOWN;
+      impl->mouseHeld[index] = downNow;
+      (downNow ? impl->pendingDownEdge : impl->pendingUpEdge)[index] = true;
+    }
+    return EM_TRUE;
+  }
+
+  static EM_BOOL onWheel(int type, const EmscriptenWheelEvent* event, void* userData) {
+    // Sign flipped and normalised to notches: a browser's deltaY grows
+    // downward and is reported in pixels, lines or pages depending on the
+    // device, while wheelDelta() is the notches-up SDL reports.
+    const double perNotch = event->deltaMode == DOM_DELTA_PIXEL ? 100.0 : 1.0;
+    implOf(userData)->pendingWheel += static_cast<float>(-event->deltaY / perNotch);
+    return EM_TRUE;
+  }
+
+  static EM_BOOL onKey(int type, const EmscriptenKeyboardEvent* event, void* userData) {
+    Impl* impl = implOf(userData);
+    recordModifiers(impl, event->shiftKey, event->ctrlKey, event->altKey, event->metaKey);
+
+    const Key key = fromDomCode(event->code);
+    const std::size_t i = static_cast<std::size_t>(key);
+    if (type == EMSCRIPTEN_EVENT_KEYUP) {
+      if (i < kKeyCount) { impl->down[i] = false; impl->pendingReleased[i] = true; }
+      return EM_TRUE;
+    }
+
+    if (i < kKeyCount) {
+      // `repeat` is the browser auto-repeating a held key: it must feed text
+      // fields but must not read as a fresh press to game logic -- except for
+      // the two erase keys, which a field has to see repeat on.
+      if (!event->repeat) impl->pendingPressed[i] = true;
+      else if (key == Key::Backspace || key == Key::Delete) impl->pendingPressed[i] = true;
+      impl->down[i] = true;
+    }
+
+    // KeyboardEvent.key is the character the layout produced when it is one, and
+    // a name like "ArrowLeft" when it is not. One code point -- however many
+    // UTF-8 bytes that is -- is the test for the difference.
+    if (!event->ctrlKey && !event->metaKey) {
+      const char* text = event->key;
+      const std::size_t bytes = std::strlen(text);
+      const bool oneCodePoint =
+          bytes > 0 && bytes <= 4 &&
+          (bytes == 1 ? static_cast<unsigned char>(text[0]) >= 0x20 &&
+                            static_cast<unsigned char>(text[0]) != 0x7F
+                      : (static_cast<unsigned char>(text[0]) & 0x80) != 0);
+      if (oneCodePoint) impl->pendingTyped += text;
+    }
+
+    // Consumed, so the page does not also scroll on Space, tab away, or open a
+    // quick-find on '/'. Ctrl and Cmd combinations are left to the browser:
+    // reload and the developer tools are not the game's to swallow.
+    return (event->ctrlKey || event->metaKey || key == Key::F5 || key == Key::F12) ? EM_FALSE
+                                                                                  : EM_TRUE;
+  }
+
+  // The page went away, or the canvas lost the pointer mid-drag. Either way the
+  // held state has to be dropped: a button whose release happened somewhere else
+  // would otherwise stay down forever.
+  static EM_BOOL onBlur(int type, const EmscriptenFocusEvent* event, void* userData) {
+    Impl* impl = implOf(userData);
+    for (std::size_t i = 0; i < kButtonCount; ++i) {
+      if (impl->mouseHeld[i]) { impl->mouseHeld[i] = false; impl->pendingUpEdge[i] = true; }
+    }
+    for (std::size_t i = 0; i < kKeyCount; ++i) {
+      if (impl->down[i]) { impl->down[i] = false; impl->pendingReleased[i] = true; }
+    }
+    impl->shift = impl->ctrl = impl->alt = false;
+    return EM_TRUE;
+  }
+#endif
+
+#ifndef __EMSCRIPTEN__
+  // Recomputes every derived size from the window's current point size, the
+  // display's scale factor and the render-resolution setting, rebuilding the
+  // canvas and the upload texture only when the pixel count actually changed.
+  //
+  // Called every pump rather than only on a resize event: dragging a window
+  // between a Retina and a non-Retina monitor changes the drawable size
+  // WITHOUT changing the window's point size, and SDL reports that as neither
+  // a RESIZED nor a SIZE_CHANGED event on every platform. Two integer queries
+  // a frame is a cheaper way to be right than a table of per-platform events.
+  void refreshGeometry() {
+    if (!window || !renderer) return;
+
+    int points[2] = {0, 0};
+    SDL_GetWindowSize(window, &points[0], &points[1]);
+    int drawable[2] = {0, 0};
+    SDL_GetRendererOutputSize(renderer, &drawable[0], &drawable[1]);
+    if (points[0] <= 0 || points[1] <= 0 || drawable[0] <= 0 || drawable[1] <= 0) return;
+
+    pointWidth = points[0];
+    pointHeight = points[1];
+    devicePixelRatio = static_cast<double>(drawable[0]) / points[0];
+
+    const int wantPixelW = std::max(1, static_cast<int>(std::lround(drawable[0] * renderScale)));
+    const int wantPixelH = std::max(1, static_cast<int>(std::lround(drawable[1] * renderScale)));
+    if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas) {
+      pixelWidth = wantPixelW;
+      pixelHeight = wantPixelH;
+      // Canvas cannot be resized in place, so the backing surfaces are
+      // rebuilt. This is why callers must not hold canvas() across pump().
+      canvas = std::make_unique<Canvas>(pixelWidth, pixelHeight);
+      rgba.assign(static_cast<std::size_t>(pixelWidth) * pixelHeight * 4, 0);
+      if (texture) SDL_DestroyTexture(texture);
+      texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888,
+                                  SDL_TEXTUREACCESS_STREAMING, pixelWidth, pixelHeight);
+    }
+
+    recomputeScales();
+  }
 #endif
 
   void clearEdges() {
@@ -225,9 +513,35 @@ Window::~Window() { close(); }
 
 bool Window::open(int width, int height, const std::string& title, std::string& errorOut) {
 #ifdef __EMSCRIPTEN__
+  // width/height are the native window's opening size; in a page the element
+  // is already laid out by CSS and its size is the answer. The title belongs
+  // to the document, which the shell page owns.
   (void)width; (void)height; (void)title;
-  errorOut = "Window is a native-only facility";
-  return false;
+  close();
+
+  impl_->refreshGeometry();
+  if (!impl_->canvas) {
+    errorOut = "no element with id '" + impl_->elementId + "' to draw into";
+    return false;
+  }
+
+  const char* canvasTarget = "#canvas";
+  emscripten_set_mousemove_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onMouse);
+  emscripten_set_mousedown_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onMouse);
+  // Release is watched on the WINDOW, not the canvas: a drag that ends off the
+  // element would otherwise never report its mouseup and the button would
+  // stay held.
+  emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onMouse);
+  emscripten_set_wheel_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onWheel);
+  emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onKey);
+  emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onKey);
+  emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onBlur);
+  web_clipboard_init();
+
+  impl_->startMillis = emscripten_get_now();
+  impl_->lastFrameMillis = impl_->startMillis;
+  open_ = true;
+  return true;
 #else
   close();
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { errorOut = SDL_GetError(); return false; }
@@ -279,7 +593,20 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
 }
 
 void Window::close() {
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+  if (open_) {
+    const char* canvasTarget = "#canvas";
+    emscripten_set_mousemove_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
+    emscripten_set_mousedown_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
+    emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
+    emscripten_set_wheel_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
+    emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
+    emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
+    emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
+  }
+  impl_->cursorRequested = CursorShape::Arrow;
+  impl_->cursorApplied = CursorShape::Count;
+#else
   if (impl_->texture) { SDL_DestroyTexture(impl_->texture); impl_->texture = nullptr; }
   if (impl_->renderer) { SDL_DestroyRenderer(impl_->renderer); impl_->renderer = nullptr; }
   for (SDL_Cursor*& cursor : impl_->cursors) {
@@ -295,7 +622,15 @@ void Window::close() {
 
 bool Window::pump() {
 #ifdef __EMSCRIPTEN__
-  return false;
+  if (!open_) return false;
+  // No queue to drain: the DOM already delivered every event by callback while
+  // the page was between frames. Taking the pending set IS the drain, and it
+  // must NOT be preceded by a clear -- see Impl::takePendingEvents.
+  impl_->takePendingEvents();
+  // After that, so this frame's pointer positions are converted with the
+  // geometry this frame will be drawn with, as the native path does too.
+  impl_->refreshGeometry();
+  return !impl_->shouldClose;
 #else
   if (!open_) return false;
   impl_->clearEdges();
@@ -393,9 +728,7 @@ double Window::renderScale() const { return impl_->renderScale; }
 void Window::setDesignSize(int width, int height) {
   impl_->designWidth = std::max(0, width);
   impl_->designHeight = std::max(0, height);
-#ifndef __EMSCRIPTEN__
   impl_->refreshGeometry();
-#endif
 }
 
 void Window::setRenderScale(double scale) {
@@ -404,13 +737,18 @@ void Window::setRenderScale(double scale) {
   const double clamped = std::min(1.0, std::max(0.25, scale));
   if (clamped == impl_->renderScale) return;
   impl_->renderScale = clamped;
-#ifndef __EMSCRIPTEN__
   impl_->refreshGeometry();
-#endif
 }
 
 void Window::present() {
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+  if (!open_) return;
+  // There is nothing to upload: the frame was drawn INTO the page's canvas
+  // element, through its own 2D context, so it is already on screen. The
+  // cursor is the only thing this still owes the host, on the same terms as
+  // the native path -- last word of the frame wins.
+  impl_->applyCursor();
+#else
   if (!open_) return;
   // Here rather than in setCursorShape: the shape is asserted by whatever is
   // under the pointer during the frame, and only the last word of the frame
@@ -438,8 +776,14 @@ void Window::present() {
 
 double Window::frameDelay(double targetFps) {
 #ifdef __EMSCRIPTEN__
+  // The rate is requestAnimationFrame's to set and there is no thread to
+  // sleep, so this only measures. Clamped like the native path: a backgrounded
+  // tab stops being called and comes back with a dt of minutes.
   (void)targetFps;
-  return 1.0 / 60.0;
+  const double now = emscripten_get_now();
+  const double dt = (now - impl_->lastFrameMillis) / 1000.0;
+  impl_->lastFrameMillis = now;
+  return std::min(std::max(dt, 0.0), 0.25);
 #else
   const Uint64 frequency = SDL_GetPerformanceFrequency();
   const Uint64 now = SDL_GetPerformanceCounter();
@@ -468,7 +812,7 @@ double Window::frameDelay(double targetFps) {
 
 double Window::timeSeconds() const {
 #ifdef __EMSCRIPTEN__
-  return 0;
+  return (emscripten_get_now() - impl_->startMillis) / 1000.0;
 #else
   return static_cast<double>(SDL_GetPerformanceCounter() - impl_->startCounter) /
          SDL_GetPerformanceFrequency();
@@ -509,7 +853,15 @@ bool Window::altHeld() const { return impl_->alt; }
 
 std::string Window::clipboardText() const {
 #ifdef __EMSCRIPTEN__
-  return {};
+  // What the user last pasted into the page or copied out of it. A page may
+  // not read the system clipboard unprompted, so this is as much as there is;
+  // it is a paste event behind, which is why the game's own fields take
+  // pasted text through typedText() instead.
+  // Bounded: a clipboard is whatever the user last copied anywhere, and a
+  // chat field has no use for a megabyte of it.
+  char buffer[4096] = {0};
+  web_clipboard_get(buffer, static_cast<int>(sizeof buffer));
+  return std::string(buffer);
 #else
   if (!SDL_HasClipboardText()) return {};
   // SDL hands over a buffer it allocated; it is the caller's to free, and
@@ -523,15 +875,19 @@ std::string Window::clipboardText() const {
 }
 
 void Window::setClipboardText(const std::string& text) {
-#ifndef __EMSCRIPTEN__
-  SDL_SetClipboardText(text.c_str());
+#ifdef __EMSCRIPTEN__
+  web_clipboard_set(text.c_str());
 #else
-  (void)text;
+  SDL_SetClipboardText(text.c_str());
 #endif
 }
 
 void Window::setCursorVisible(bool visible) {
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+  web_set_cursor(impl_->elementId.c_str(), visible ? "default" : "none");
+  // The shape cache no longer describes what is showing.
+  impl_->cursorApplied = CursorShape::Count;
+#else
   SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
 #endif
 }

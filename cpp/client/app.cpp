@@ -16,6 +16,7 @@
 
 #include "client/interpolation.h"
 #include "client/ui/draw.h"
+#include "client/ui/markup.h"
 #include "client/ui/text.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
@@ -41,7 +42,7 @@ namespace {
 /// this size uiScale is 1 on an ordinary display and the frame is identical,
 /// pixel for pixel, to what this client drew before the design space existed.
 constexpr int kDesignWidth = 1920;
-constexpr int kDesignHeight = 900;
+constexpr int kDesignHeight = 930;
 
 /// Layout constants for the shell, in design units like everything else. Kept
 /// local because nothing outside this file positions these; the shared values
@@ -543,11 +544,25 @@ std::vector<const ChatCommand*> matchChatCommands(const std::string& typed, bool
 }
 
 /// One styled run of a transcript line, before it is laid out.
+///
+/// `italic`, `underline` and `blink` come from the line's markup; everything
+/// in the transcript is already bold, so <b> -- which is what wraps every boss
+/// announcement -- has no field of its own. That matches the reference, whose
+/// chat box is font-weight:700 to begin with.
 struct ChatToken {
     std::string text;
     double size = 14.0;
     std::uint32_t fill = kPaper;
     double alpha = 1.0;
+    bool italic = false;
+    bool underline = false;
+    bool blink = false;
+    /// A <br>: end the row here and start the next one.
+    bool lineBreak = false;
+    /// Set when this run continues the previous one's word rather than
+    /// starting a new one, as the "lo" of `<b>Hel</b>lo` does. Without it the
+    /// layout would insert a space at every style change.
+    bool joinsPrevious = false;
 };
 
 /// The same run once it knows which row it is on and where along it.
@@ -557,6 +572,9 @@ struct ChatPlacedRun {
     double size = 14.0;
     std::uint32_t fill = kPaper;
     double alpha = 1.0;
+    bool italic = false;
+    bool underline = false;
+    bool blink = false;
 };
 
 using ChatRow = std::vector<ChatPlacedRun>;
@@ -581,9 +599,21 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
     double pen = 0;
 
     for (const ChatToken& token : tokens) {
+        // A <br> ends the row wherever it stands, including on an empty one --
+        // "Public squads:<br/><br/>" is meant to leave a blank line.
+        if (token.lineBreak) {
+            rows.emplace_back();
+            pen = 0;
+            continue;
+        }
         std::string word = token.text;
         if (word.empty()) continue;
-        double gap = rows.back().empty() ? 0.0 : measure(" ", token.size, true);
+        const auto place = [&](const std::string& run, double x) {
+            rows.back().push_back({run, x, token.size, token.fill, token.alpha, token.italic,
+                                   token.underline, token.blink});
+        };
+        double gap = (rows.back().empty() || token.joinsPrevious)
+                         ? 0.0 : measure(" ", token.size, true);
         if (!rows.back().empty() && pen + gap + measure(word, token.size, true) > width) {
             rows.emplace_back();
             pen = 0;
@@ -595,18 +625,23 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
             std::string head = word;
             while (!head.empty() && measure(head, token.size, true) > width) popCodepoint(head);
             if (head.empty()) break;
-            rows.back().push_back({head, pen, token.size, token.fill, token.alpha});
+            place(head, pen);
             word.erase(0, head.size());
             rows.emplace_back();
             pen = 0;
             gap = 0;
         }
         if (word.empty()) continue;
-        rows.back().push_back({word, pen + gap, token.size, token.fill, token.alpha});
+        place(word, pen + gap);
         pen += gap + measure(word, token.size, true);
     }
     return rows;
 }
+
+/// The slant a synthetic italic gets. There is one face in this build -- bold
+/// is a real Ubuntu-Bold, italic is not shipped at all -- so <i> is drawn the
+/// way a browser draws a missing italic: by shearing the upright glyphs.
+constexpr double kItalicShear = 0.21;   // ~12 degrees
 
 /// One run of chat text.
 ///
@@ -616,7 +651,16 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
 /// its own so a translucent span (the timestamp) does not also thin its
 /// outline, which is opaque in the reference.
 void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, double size,
-             std::uint32_t fill, double alpha) {
+             std::uint32_t fill, double alpha, bool italic = false, bool underline = false) {
+    if (italic) {
+        // Sheared about the baseline, so the run keeps its origin and the row
+        // below is not walked into.
+        canvas.save();
+        canvas.translate(static_cast<float>(x), static_cast<float>(baseline));
+        canvas.transform(1.0f, 0.0f, static_cast<float>(-kItalicShear), 1.0f, 0.0f, 0.0f);
+        canvas.translate(static_cast<float>(-x), static_cast<float>(-baseline));
+    }
+
     TextStyle style;
     style.size = size;
     style.bold = true;
@@ -633,14 +677,32 @@ void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, do
     if (alpha >= 1.0) {
         style.fill = fill;
         text(canvas, s, x, baseline, style);
-        return;
+    } else {
+        text(canvas, s, x, baseline, style);
+        style.strokeWidth = 0;
+        style.fill = fill;
+        canvas.setGlobalAlpha(static_cast<float>(alpha));
+        text(canvas, s, x, baseline, style);
+        canvas.setGlobalAlpha(1.0f);
     }
-    text(canvas, s, x, baseline, style);
-    style.strokeWidth = 0;
-    style.fill = fill;
-    canvas.setGlobalAlpha(static_cast<float>(alpha));
-    text(canvas, s, x, baseline, style);
-    canvas.setGlobalAlpha(1.0f);
+
+    if (underline) {
+        // A hairline a tenth of the point size below the baseline, outlined
+        // like the glyphs so it stays readable over the world behind it.
+        const double width = measure(s, size, true);
+        const double y = baseline + size * 0.1;
+        canvas.beginPath();
+        canvas.moveTo(static_cast<float>(x), static_cast<float>(y));
+        canvas.lineTo(static_cast<float>(x + width), static_cast<float>(y));
+        canvas.setLineWidth(static_cast<float>(std::max(1.0, size * 0.07) + 2.0));
+        setStroke(canvas, kInk, 0.8);
+        canvas.stroke();
+        canvas.setLineWidth(static_cast<float>(std::max(1.0, size * 0.07)));
+        setStroke(canvas, fill, alpha);
+        canvas.stroke();
+    }
+
+    if (italic) canvas.restore();
 }
 
 } // namespace
@@ -731,46 +793,63 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
 
     if (config.autoMenu != MenuId::None) menus_.toggle(config.autoMenu);
 
+    // Seeded before the first frame rather than after the join, so a
+    // --frames run short enough to be one screenshot still photographs them.
+    // No author: these stand in for the server's own announcements, which are
+    // the lines that carry markup.
+    for (const std::string& line : config.seedChat) net_.addLocalChat({}, line);
+
     screen_ = Screen::Connecting;
     running_ = true;
     return true;
 }
 
 void App::run() {
-    int frames = 0;
-    while (running_ && window_.pump()) {
-        const double dt = window_.frameDelay(60.0);
-        timeSeconds_ = window_.timeSeconds();
-        frame(dt);
-        // Measured around frame() and not off `dt`: dt includes the sleep that
-        // frameDelay just took, so it reports the cap rather than the cost.
-        frameTimeAccum_ += (window_.timeSeconds() - timeSeconds_) * 1000.0;
-        ++frameTimeSamples_;
-        const WorldRenderer::SectionTiming& section = renderer_.sectionTiming();
-        sectionMobs_.accumMillis += section.mobsMillis;
-        sectionItems_.accumMillis += section.itemsMillis;
-        sectionProjectiles_.accumMillis += section.projectilesMillis;
-        sectionMobs_.windowPeakMillis =
-            std::max(sectionMobs_.windowPeakMillis, section.mobsMillis);
-        sectionItems_.windowPeakMillis =
-            std::max(sectionItems_.windowPeakMillis, section.itemsMillis);
-        sectionProjectiles_.windowPeakMillis =
-            std::max(sectionProjectiles_.windowPeakMillis, section.projectilesMillis);
-        sectionItemCount_ = section.itemCount;
-
-        if (config_.screenshotAfterFrames > 0 && ++frames >= config_.screenshotAfterFrames) {
-            if (!config_.screenshotPath.empty()) {
-                window_.canvas().savePPM(config_.screenshotPath);
-                std::fprintf(stderr, "wrote %s\n", config_.screenshotPath.c_str());
-            }
-            running_ = false;
-        }
+    while (step()) {
     }
+    shutdown();
+}
+
+void App::shutdown() {
     // Written once, on the way out, rather than on every toggle: this is a
     // handful of switches, and a file write per click would be absurd. The
     // flower's name is remembered on the same terms.
     menus_.settings().save(settingsPath());
     saveSession();
+}
+
+bool App::step() {
+    if (!running_ || !window_.pump()) return false;
+
+    const double dt = window_.frameDelay(60.0);
+    timeSeconds_ = window_.timeSeconds();
+    frame(dt);
+    // Measured around frame() and not off `dt`: dt includes the sleep that
+    // frameDelay just took, so it reports the cap rather than the cost.
+    frameTimeAccum_ += (window_.timeSeconds() - timeSeconds_) * 1000.0;
+    ++frameTimeSamples_;
+    const WorldRenderer::SectionTiming& section = renderer_.sectionTiming();
+    sectionMobs_.accumMillis += section.mobsMillis;
+    sectionItems_.accumMillis += section.itemsMillis;
+    sectionProjectiles_.accumMillis += section.projectilesMillis;
+    sectionMobs_.windowPeakMillis =
+        std::max(sectionMobs_.windowPeakMillis, section.mobsMillis);
+    sectionItems_.windowPeakMillis =
+        std::max(sectionItems_.windowPeakMillis, section.itemsMillis);
+    sectionProjectiles_.windowPeakMillis =
+        std::max(sectionProjectiles_.windowPeakMillis, section.projectilesMillis);
+    sectionItemCount_ = section.itemCount;
+
+    if (config_.screenshotAfterFrames > 0 &&
+        ++framesDrawn_ >= config_.screenshotAfterFrames) {
+        if (!config_.screenshotPath.empty()) {
+            window_.canvas().savePPM(config_.screenshotPath);
+            std::fprintf(stderr, "wrote %s\n", config_.screenshotPath.c_str());
+        }
+        running_ = false;
+    }
+
+    return running_;
 }
 
 void App::pollNetwork() {
@@ -2224,14 +2303,38 @@ void App::drawChat(Canvas& canvas, double time) {
                 // line: the reference has no per-channel colouring at all.
                 tokens.push_back({it->author + ":", 14.0, 0x00FF00u, 1.0});
             }
-            std::size_t at = 0;
-            while (at < it->text.size()) {
-                const std::size_t space = it->text.find(' ', at);
-                const std::string word = it->text.substr(
-                    at, space == std::string::npos ? std::string::npos : space - at);
-                if (!word.empty()) tokens.push_back({word, 14.0, kPaper, 1.0});
-                if (space == std::string::npos) break;
-                at = space + 1;
+            // The wire carries markup, not plain text: every boss announcement
+            // is a <b style="color: ..."> and every multi-line command answer
+            // is joined with <br/>. Splitting the raw string on spaces printed
+            // the tags as words; parseMarkup turns them back into styling.
+            bool afterWhitespace = true;
+            for (const ui::MarkupSpan& span : ui::parseMarkup(it->text)) {
+                if (span.lineBreak) {
+                    tokens.push_back({{}, 14.0, kPaper, 1.0, false, false, false, true, false});
+                    afterWhitespace = true;
+                    continue;
+                }
+                const std::uint32_t fill = span.hasColor ? span.color : kPaper;
+                std::size_t at = 0;
+                while (at < span.text.size()) {
+                    const std::size_t space = span.text.find_first_of(" \t\r\n", at);
+                    const std::string word = span.text.substr(
+                        at, space == std::string::npos ? std::string::npos : space - at);
+                    if (!word.empty()) {
+                        tokens.push_back({word, 14.0, fill, 1.0, span.italic, span.underline,
+                                          span.blink, false, !afterWhitespace});
+                        afterWhitespace = false;
+                    }
+                    if (space == std::string::npos) break;
+                    afterWhitespace = true;
+                    at = space + 1;
+                }
+                // A span ending mid-word ("<b>Hel</b>lo") must not gain a space
+                // at the style change; one ending on a space must keep it.
+                if (!span.text.empty()) {
+                    const char last = span.text.back();
+                    afterWhitespace = last == ' ' || last == '\t' || last == '\r' || last == '\n';
+                }
             }
             newestFirst.push_back(layoutChatMessage(tokens, column.w));
             content += newestFirst.back().size() * kChatLineHeight + kChatMessageGap;
@@ -2259,8 +2362,12 @@ void App::drawChat(Canvas& canvas, double time) {
                     const double rowTop = top + row * kChatLineHeight;
                     if (rowTop + kChatLineHeight < column.y || rowTop > column.bottom()) continue;
                     for (const ChatPlacedRun& run : rows[row]) {
+                        // `blink 1s step-start infinite`, which is what the
+                        // reference's <blink> resolves to: shown for the first
+                        // half of every second and hidden for the second.
+                        if (run.blink && std::fmod(time, 1.0) >= 0.5) continue;
                         chatRun(canvas, run.text, column.x + run.x, rowTop + baselineOffset,
-                                run.size, run.fill, run.alpha);
+                                run.size, run.fill, run.alpha, run.italic, run.underline);
                     }
                 }
                 if (m + 1 >= newestFirst.size()) break;

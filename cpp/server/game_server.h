@@ -55,6 +55,17 @@ struct ServerConfig {
     /// Refuses connections past this; the tick cost is linear in players and
     /// the snapshot cost is worse, so this is a real limit, not a formality.
     std::size_t maxPlayers = 64;
+    /// TLS material, used only by the emscripten build. With it the listener
+    /// serves https and offers WebTransport alongside WebSocket; without it,
+    /// plain http and WebSocket only -- WebTransport is secure-context only
+    /// and cannot be offered at all. The native build speaks TCP and ignores
+    /// both.
+    std::string certPath;
+    std::string keyPath;
+    /// Directory the emscripten build serves the client from, over the same
+    /// port the game itself uses. Empty means the build directory the server
+    /// module was loaded from. Unused natively.
+    std::string webRoot;
 };
 
 class GameServer : public net::TransportHandler {
@@ -69,6 +80,18 @@ public:
 
     /// Runs until stop() is called or a signal is caught.
     void run();
+
+    /// One pass of that loop: service the network, and tick if a tick is due.
+    /// Returns false once the server is finished. run() is a loop over this;
+    /// the emscripten build cannot own the loop -- blocking the Node event
+    /// loop is what would stop every WebSocket message from ever arriving --
+    /// and drives this from a timer callback instead.
+    bool step();
+
+    /// Flushes every playing account and the database, then drops the
+    /// listener. run() does this on the way out; the emscripten build calls it
+    /// when step() first returns false.
+    void shutdown();
 
     /// Safe to call from a signal handler: it only stores to an atomic flag,
     /// and the shutdown work itself happens on the main thread.
@@ -420,6 +443,10 @@ private:
     /// speed honest and the motion smooth, and the clamp keeps a long stall
     /// from producing one giant step.
     ///
+    /// When the next fixed step is due, in the monotonic clock. A member
+    /// rather than a local in run(), because the loop is no longer
+    /// necessarily this object's.
+    double nextTickMillis_ = 0;
     /// Only run() writes it, so a test driving tick() by hand still gets an
     /// exactly fixed step.
     double smoothedDeltaSeconds_ = net::kTickSeconds;

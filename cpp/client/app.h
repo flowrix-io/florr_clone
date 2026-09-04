@@ -85,6 +85,13 @@ struct AppConfig {
     /// what it is off for: a real player with no settings file still meets the
     /// tutorial on their first game.
     bool autoTutorial = false;
+    /// Transcript lines to seed before the first frame, newest last. The chat
+    /// box is the one surface whose content a screenshot run cannot arrange --
+    /// it needs a second player to say something -- and it is where the
+    /// server's markup lands, so the parity rig needs a way to put a known
+    /// line in it. Delivered exactly as a server line would be, markup and
+    /// all, so what is photographed is the real parse and the real layout.
+    std::vector<std::string> seedChat;
 };
 
 class App {
@@ -98,6 +105,16 @@ public:
 
     /// Runs until the window closes.
     void run();
+
+    /// One frame. Returns false once the app is finished -- the window closed,
+    /// or a --frames run reached its count. run() is a loop over this; the
+    /// emscripten build cannot own the loop (the browser does) and drives this
+    /// from a requestAnimationFrame callback instead.
+    bool step();
+
+    /// Writes the settings and session files. run() does this on the way out;
+    /// the emscripten build calls it when step() first returns false.
+    void shutdown();
 
 private:
     void frame(double dt);
@@ -397,6 +414,9 @@ private:
     double inputAccumulator_ = 0;
 
     bool running_ = false;
+    /// Frames drawn since start, for --frames. A step() counter rather than a
+    /// local, because the loop is no longer necessarily this object's.
+    int framesDrawn_ = 0;
 };
 
 } // namespace flr

@@ -9,6 +9,17 @@
 // Both sides speak the same framing: [u32 length][payload]. Reads accumulate
 // until a whole frame is present; writes queue and drain as the socket allows,
 // so a slow client backs up in its own buffer instead of blocking the tick.
+//
+// There are two backends under all of this, and only the byte movement differs
+// -- the framing, the backlog rule and the TransportHandler contract are one
+// implementation shared by both:
+//
+//   native       a TCP socket and poll(), as described above.
+//   emscripten   whatever the JavaScript runtime has, via net/web_channel.h:
+//                WebTransport when the runtime and the server both offer it,
+//                WebSocket otherwise. `fd()` there is a channel handle rather
+//                than a descriptor, and poll()'s timeout is ignored, because
+//                neither a browser tab nor a Node event loop may be blocked.
 
 #include <cstdint>
 #include <deque>
@@ -19,6 +30,7 @@
 
 #include "shared/net/bytebuffer.h"
 #include "shared/net/protocol.h"
+#include "shared/net/web_channel.h"
 
 namespace flr::net {
 
@@ -63,7 +75,14 @@ private:
     bool writeAvailable(std::string& errorOut);
     /// Pops one complete frame into `out`. False when none is buffered yet.
     bool nextFrame(std::vector<std::byte>& out);
+    /// Bytes the transport itself still holds, on top of what this object has
+    /// queued. Zero on a socket, where the kernel's buffer is not ours to see;
+    /// the web backend's real backpressure signal.
+    std::size_t transportBuffered() const;
     bool wantsWrite() const { return outboundSent_ < outbound_.size(); }
+    /// Drops what has already gone out. Called at the end of every write
+    /// drain, by both backends.
+    void compactOutbound();
     void shutdownNow();
 
     int fd_;
@@ -120,9 +139,33 @@ public:
     /// and buffering a snapshot stream for it costs the server unbounded memory.
     std::size_t maxPendingBytes = 4u << 20;   // 4 MiB
 
+    /// TLS material for the web backend, set before start(). Both empty means
+    /// the conventional pair names are looked for in the working directory;
+    /// finding none leaves the listener on plain HTTP and WebSocket only,
+    /// because WebTransport is secure-context only and there would be nothing
+    /// to offer. Ignored natively, which speaks TCP and does no TLS at all.
+    std::string certPath;
+    std::string keyPath;
+
+    /// Directory the web backend serves over the same HTTP(S) listener. Empty
+    /// means the directory the program was loaded from, which is where the
+    /// client build sits. Ignored natively, which serves no files at all.
+    std::string webRoot;
+
 private:
     void acceptPending(TransportHandler& handler);
     void drop(Connection& c, TransportHandler& handler, const std::string& reason);
+    /// Everything that happens to one connection once the transport says it
+    /// may read and/or write: the write drain, the read, the frame loop, and
+    /// the three conditions that end a connection. Returns false when the
+    /// connection should be dropped, with `error` saying why.
+    ///
+    /// Shared by both backends deliberately. They differ in how they learn a
+    /// connection is ready -- poll() revents against a JavaScript queue -- and
+    /// in nothing else; a copy of these rules per backend is how they would
+    /// come to differ in more.
+    bool service(Connection& c, bool readable, bool writable, TransportHandler& handler,
+                 int& delivered, std::string& error);
 
     int listenFd_ = -1;
     std::uint16_t port_ = 0;

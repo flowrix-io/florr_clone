@@ -1,7 +1,16 @@
 // The game client.
 //
-// Native only: every pixel is drawn through cpp_canvas into an SDL window.
-// There is no HTML, no CSS and no browser anywhere in this program.
+// Every pixel is drawn through cpp_canvas, into an SDL window natively and
+// into a <canvas> under emscripten. Either way the drawing is the same code:
+// the browser build hosts the program, it does not render for it. The one
+// thing the page is asked for is the handful of chat tags that need a
+// document to mean anything -- see client/ui/markup.h.
+//
+// The two builds differ in who owns the frame loop. Natively this program
+// does, in App::run(). In the browser the event loop belongs to the page, so
+// App::step() is registered as a requestAnimationFrame callback instead;
+// returning from main() there is normal and must not tear the runtime down,
+// which is what -sEXIT_RUNTIME=0 in the emscripten link flags is for.
 
 #include <cctype>
 #include <cstdio>
@@ -9,6 +18,10 @@
 #include <string>
 
 #include "client/app.h"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 namespace {
 
@@ -30,7 +43,9 @@ void usage(const char* program) {
         "  --login            ignore any stored session and show the login form\n"
         "  --dead             join, then show the death card straight away\n"
         "  --tutorial         join with the onboarding tutorial card up\n"
-        "  --stats            show the frame/ping/position counters\n",
+        "  --stats            show the frame/ping/position counters\n"
+        "  --chat <line>      seed a transcript line (repeatable); markup is\n"
+        "                     parsed exactly as a server line's would be\n",
         program);
 }
 
@@ -82,6 +97,7 @@ int main(int argc, char** argv) {
         else if (arg == "--dead") config.autoDead = true;
         else if (arg == "--tutorial") config.autoTutorial = true;
         else if (arg == "--stats") config.showStats = true;
+        else if (arg == "--chat") config.seedChat.push_back(next("--chat"));
         else if (arg == "--user") config.autoUsername = next("--user");
         else if (arg == "--password") config.autoPassword = next("--password");
         else if (arg == "--help" || arg == "-h") { usage(argv[0]); return 0; }
@@ -92,6 +108,32 @@ int main(int argc, char** argv) {
         }
     }
 
+#ifdef __EMSCRIPTEN__
+    // Leaked deliberately: main() returns straight after registering the
+    // callback and the app has to outlive it. The browser tab's teardown is
+    // the process exit here.
+    auto* app = new flr::App();
+    std::string error;
+    if (!app->start(config, error)) {
+        std::fprintf(stderr, "could not start: %s\n", error.c_str());
+        return 1;
+    }
+    emscripten_set_main_loop_arg(
+        [](void* handle) {
+            auto* running = static_cast<flr::App*>(handle);
+            if (running->step()) return;
+            running->shutdown();
+            emscripten_cancel_main_loop();
+        },
+        app,
+        // 0: driven by requestAnimationFrame, which is the browser's own
+        // vsync. A fixed rate here would fight it.
+        0,
+        // 0: do not simulate an infinite loop by unwinding the stack. main()
+        // has nothing left to do, so there is nothing to preserve.
+        0);
+    return 0;
+#else
     flr::App app;
     std::string error;
     if (!app.start(config, error)) {
@@ -100,4 +142,5 @@ int main(int argc, char** argv) {
     }
     app.run();
     return 0;
+#endif
 }
