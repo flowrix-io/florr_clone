@@ -392,12 +392,14 @@ void MovementSystem::moveMobs(World& world, const Terrain& terrain,
 }
 
 void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, double dt) {
+    spentProjectiles_.clear();
     queries_->projectiles.each([&](Entity e, ProjectileTag&, Transform& transform,
                                    Motion& motion, Projectile& projectile) {
         if (!(projectile.remainingDistance > 0.0)) {
-            // Spent, and waiting on the lifecycle phase to reap it. Parking it
-            // matters: an expired shot that keeps flying keeps hitting things.
+            // Park immediately so a spent shot cannot move or hit anything
+            // else before the lifecycle phase reaps it below.
             motion.velocity = {0, 0};
+            spentProjectiles_.push_back(e);
             return;
         }
 
@@ -437,17 +439,28 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
         if (!(projectile.remainingDistance > 0.0)) projectile.remainingDistance = 0.0;
 
         if (out.blocked) {
-            // Terrain and the map edge eat shots. Spending the range here is
-            // what tells the lifecycle phase to reap it, without this system
-            // needing a command buffer of its own.
+            // Terrain and the map edge eat shots.
             projectile.remainingDistance = 0.0;
             motion.velocity = {0, 0};
+            spentProjectiles_.push_back(e);
             return;
         }
 
         motion.velocity = velocity;
         if (speed > kMinProjectileSpeed) transform.angle = velocity.angle();
+        if (!(projectile.remainingDistance > 0.0)) {
+            motion.velocity = {0, 0};
+            spentProjectiles_.push_back(e);
+        }
     });
+
+    // Expiry is a movement result, so movement owns the transition to Dead.
+    // Combat retains its zero-range check as a backstop for callers that edit
+    // Projectile state between phases, but ordinary flight no longer depends
+    // on combat happening to clean up a projectile parked on the ground.
+    for (const Entity e : spentProjectiles_) {
+        if (world.isAlive(e) && !world.has<Dead>(e)) world.add<Dead>(e);
+    }
 }
 
 void MovementSystem::collectSeekTargets() {

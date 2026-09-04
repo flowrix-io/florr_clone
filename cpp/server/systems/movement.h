@@ -244,6 +244,12 @@ private:
     /// another archetype -- which is not something a query walk survives.
     std::vector<Entity> teleportPlayers_;
 
+    /// Projectiles whose distance budget or terrain step ended this tick.
+    /// Collected during the query walk and marked Dead afterwards: adding a
+    /// component relocates an entity between archetypes, so doing it inline
+    /// would invalidate the columns moveProjectiles is iterating.
+    std::vector<Entity> spentProjectiles_;
+
     World* boundWorld_ = nullptr;
     std::optional<Queries> queries_;
     std::vector<SeekTarget> seekTargets_;

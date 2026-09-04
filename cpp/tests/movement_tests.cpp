@@ -534,8 +534,9 @@ TEST(a_projectile_flies_straight_and_spends_its_range_exactly) {
     fx.step(1, dt);                                   // the last 10, not 20
     CHECK_NEAR(fx.positionOf(shot).x, 5030.0, 1e-9);
     CHECK_NEAR(fx.world.get<Projectile>(shot).remainingDistance, 0.0, 1e-12);
+    CHECK(fx.world.has<Dead>(shot));                  // lifecycle will reap it
 
-    fx.step(5, dt);                                   // spent: it stays put
+    fx.step(5, dt);                                   // dead: it cannot move again
     CHECK_NEAR(fx.positionOf(shot).x, 5030.0, 1e-9);
     CHECK_NEAR(fx.velocityOf(shot).length(), 0.0, 1e-12);
 }
@@ -547,6 +548,7 @@ TEST(a_projectile_that_hits_terrain_is_spent_where_it_hit) {
     fx.step(40);
 
     CHECK_NEAR(fx.world.get<Projectile>(shot).remainingDistance, 0.0, 1e-12);
+    CHECK(fx.world.has<Dead>(shot));
     CHECK(fx.positionOf(shot).x < 3000.0);
     CHECK(!fx.terrain.blocked(fx.positionOf(shot)));
 }
