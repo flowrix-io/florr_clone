@@ -44,6 +44,7 @@ target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # --- server ------------------------------------------------------------------
 add_library(flix_server STATIC
   server/game_server.cpp
+  server/account_limits.cpp
   server/chat_commands.cpp
   server/replication.cpp
   server/session.cpp

@@ -274,13 +274,56 @@ function findUsernameKey(username) {
 }
 exports.database = {
     // User-related functions
-    createUser: (username, password) => {
+    /**
+     * A stable, non-reversible label for the address an account was created
+     * from, for the per-address daily registration cap.
+     *
+     * Salted with a per-database secret so the stored value cannot be matched
+     * back to an address by hashing a candidate list — inventory.json and every
+     * backup of it would otherwise carry a de-anonymisable log of who played
+     * from where. The salt is generated once and persisted, because a fresh one
+     * each boot would silently reset the cap it exists to enforce.
+     */
+    accountAddressHash: (addressKey) => {
+        if (!addressKey)
+            return '';
+        if (!db.ipSalt) {
+            db.ipSalt = crypto.randomBytes(16).toString('hex');
+            writeDatabase();
+        }
+        return crypto.createHash('sha256').update(db.ipSalt + '|' + addressKey).digest('hex').slice(0, 24);
+    },
+    /**
+     * How many accounts this address hash created in the last `windowMs`.
+     *
+     * Walks every account: registration is rate-limited long before this is hot,
+     * and the alternative — a second index kept in sync with the user table — is
+     * more to get wrong than a scan of a few thousand entries is to run.
+     */
+    countAccountsCreatedBy: (addressHash, windowMs) => {
+        if (!addressHash)
+            return 0;
+        const cutoff = Date.now() - windowMs;
+        let count = 0;
+        for (const name in db.users) {
+            const user = db.users[name];
+            if (user.createdFromHash === addressHash && (user.createdAt || 0) >= cutoff)
+                count++;
+        }
+        return count;
+    },
+    createUser: (username, password, createdFromHash) => {
         if (db.users[username]) {
             return null; // User already exists
         }
         const userId = Math.random().toString(36).substr(2, 9);
         const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
-        const newUser = { id: userId, username, password: hashedPassword };
+        const newUser = { id: userId, username, password: hashedPassword, createdAt: Date.now() };
+        // Stamped only when the caller could identify a source. An account with
+        // no stamp counts against nobody, which is the safe direction: the
+        // in-memory bucket and the global cap still apply to it.
+        if (createdFromHash)
+            newUser.createdFromHash = createdFromHash;
         db.users[username] = newUser;
         writeDatabase();
         return newUser;

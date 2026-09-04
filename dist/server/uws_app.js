@@ -114,6 +114,21 @@ function parseQuery(qs) {
     }
     return result;
 }
+/**
+ * The peer address of an in-flight request, or '' when uWS cannot report one.
+ *
+ * uWS hands back the uncompressed IPv6 text form (an IPv4 peer on a dual-stack
+ * listener arrives as `0000:...:ffff:7f00:0001`); normalising that is the
+ * caller's business, not the shim's.
+ */
+function peerAddress(uRes) {
+    try {
+        return Buffer.from(uRes.getRemoteAddressAsText()).toString();
+    }
+    catch {
+        return '';
+    }
+}
 function statusLine(code) {
     return `${code} ${STATUS_TEXT[code] || ''}`.trim();
 }
@@ -368,6 +383,9 @@ class UApp {
             params: {},
             headers,
             body: undefined,
+            // Read here, synchronously: like `uReq`, the address is only valid
+            // before the handler yields.
+            ip: peerAddress(uRes),
             header(n) { return headers[n.toLowerCase()]; },
             get(n) { return headers[n.toLowerCase()]; }
         };

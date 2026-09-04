@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "server/account_limits.h"
 #include "server/db.h"
 #include "server/replication.h"
 #include "server/session.h"
@@ -338,6 +339,10 @@ private:
     Rng rng_;
 
     Database database_;
+    /// Registration and login limits, keyed on the peer address rather than on
+    /// the session -- a session is a socket, and a socket is free. See
+    /// server/account_limits.h.
+    AccountLimiter accountLimits_;
     net::Listener listener_;
 
     /// Guild invitations waiting on an answer, keyed by the lower-cased

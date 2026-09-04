@@ -796,7 +796,30 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
         return;
     }
 
-    const CreateResult result = database_.createUser(username, password);
+    // Below the format checks, so mistyping a password does not cost one of the
+    // three accounts an address gets: those checks are pure string work and are
+    // already bounded by the per-session budget above. Above the bcrypt hash and
+    // the database write, which are the work an unlimited registration endpoint
+    // hands an attacker.
+    //
+    // That session budget bounds one SOCKET; it does not bound one client, which
+    // can hang up and dial again for a fresh allowance. These limits are keyed
+    // on the address instead, and outlive any one connection.
+    const std::string address = addressKey(connection.peer());
+    const std::string addressHash = database_.accountAddressHash(address);
+    const LimitVerdict verdict = accountLimits_.spendRegistration(
+        address,
+        [&] { return database_.countAccountsCreatedBy(addressHash, kRegisterDailyWindowMillis); },
+        monotonicMillis());
+    if (!verdict.allowed) {
+        const std::string line =
+            accountLimits_.refusalLogLine(address, verdict.scope, monotonicMillis());
+        if (!line.empty()) std::printf("%s\n", line.c_str());
+        sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", verdict.message);
+        return;
+    }
+
+    const CreateResult result = database_.createUser(username, password, addressHash);
     if (!result.ok() || !result.account) {
         sendAuthResult(connection, net::AuthStatus::UsernameTaken, "", "", result.reason);
         return;
@@ -825,6 +848,15 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
         sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", "Too many attempts. Wait a moment.");
         return;
     }
+    // Same reasoning as handleRegister: a reconnect resets the session budget,
+    // and every attempt costs this server a bcrypt verify.
+    const std::string address = addressKey(connection.peer());
+    const LimitVerdict verdict = accountLimits_.spendLoginAttempt(address, monotonicMillis());
+    if (!verdict.allowed) {
+        sendAuthResult(connection, net::AuthStatus::RateLimited, "", "", verdict.message);
+        return;
+    }
+
     if (!database_.verifyPassword(username, password)) {
         // Deliberately the same answer for a wrong password and an unknown
         // account: distinguishing them tells an attacker which names exist.
@@ -838,6 +870,8 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
         sendAuthResult(connection, net::AuthStatus::ServerError, "", "", "Account could not be read.");
         return;
     }
+    // A player who signed in is not what the limit is for.
+    accountLimits_.refundLoginAttempt(address);
 
     session.userId = account->id;
     session.username = account->username;

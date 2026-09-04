@@ -165,6 +165,15 @@ import { awardKillXp, killEnemy } from './server/shared/killHandler';
 import { downgradeRarity } from './server/shared/rarity';
 import type { KillContext } from './server/shared/killHandler';
 import { registerApiKeyRoutes, recordBossEvent, stripHtml } from './server/apiKeyApi';
+import {
+    addressKey,
+    clientAddressOf,
+    spendRegistration,
+    spendLoginAttempt,
+    refundLoginAttempt,
+    refusalLogLine,
+    DAILY_WINDOW_MS,
+} from './server/accountLimiter';
 import { setSuperMobInSection } from './server/gameState';
 
 // Build today's maze up front so its spawn point and wall collision are live
@@ -279,8 +288,37 @@ app.post('/auth/register', (req, res) => {
     if (!username || !password) {
         return res.status(400).json({ message: 'Username and password are required' });
     }
+    if (typeof username !== 'string' || typeof password !== 'string') {
+        return res.status(400).json({ message: 'Username and password must be text' });
+    }
+    // Bounds, so an account cannot be a megabyte of junk on its own. Only the
+    // absurd is rejected: this endpoint has always accepted whatever the player
+    // typed, and tightening the actual name rules here would turn a spam fix
+    // into a policy change for everyone. Control characters go because a name
+    // carrying them forges lines wherever it is later rendered.
+    if (username.length > 24 || password.length > 200) {
+        return res.status(400).json({ message: 'Username or password is too long' });
+    }
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x1F\x7F]/.test(username)) {
+        return res.status(400).json({ message: 'Username may not contain control characters' });
+    }
 
-    const user = database.createUser(username, password);
+    // Abuse limits before the bcrypt hash and before the database write: both
+    // are the cost an unlimited registration endpoint hands an attacker.
+    const address = addressKey(clientAddressOf(req));
+    const addressHash = database.accountAddressHash(address);
+    const verdict = spendRegistration(
+        address,
+        () => database.countAccountsCreatedBy(addressHash, DAILY_WINDOW_MS));
+    if (!verdict.allowed) {
+        const line = refusalLogLine(address, verdict.scope || 'unknown');
+        if (line) console.warn(line);
+        res.setHeader('Retry-After', String(Math.max(1, verdict.retryAfterSeconds)));
+        return res.status(429).json({ message: verdict.message });
+    }
+
+    const user = database.createUser(username, password, addressHash);
     if (user) {
         // No session here — /auth/login is the only place a token is minted, so
         // there is exactly one path to audit. The guest flow logs in right after.
@@ -297,8 +335,19 @@ app.post('/auth/login', (req, res) => {
         return res.status(400).json({ message: 'Username and password are required' });
     }
 
+    // Guessing passwords costs the guesser nothing and costs this server a
+    // bcrypt verify per attempt, so the budget is spent before the compare.
+    const address = addressKey(clientAddressOf(req));
+    const verdict = spendLoginAttempt(address);
+    if (!verdict.allowed) {
+        res.setHeader('Retry-After', String(Math.max(1, verdict.retryAfterSeconds)));
+        return res.status(429).json({ message: verdict.message });
+    }
+
     const user = database.getUser(username, password);
     if (user) {
+        // A player who signed in is not the thing this limit is for.
+        refundLoginAttempt(address);
         res.json({
             message: 'Login successful',
             userId: user.id,

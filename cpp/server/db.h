@@ -120,6 +120,16 @@ struct Account {
     std::int64_t mutedAtMillis = 0;
     std::string mutedBy;
 
+    /// Wall-clock millis the account was created. Zero on accounts that predate
+    /// the field. Wall clock, not the tick clock: it is compared against a
+    /// 24-hour window across restarts.
+    std::int64_t createdAtMillis = 0;
+    /// Salted hash of the address that created the account -- see
+    /// Database::accountAddressHash. Never the address itself: this file is
+    /// backed up and read by operators, and a rolling count is all the abuse
+    /// limit needs. Empty when the creator could not be identified.
+    std::string createdFromHash;
+
     Json extra = Json::object();
 };
 
@@ -282,7 +292,26 @@ public:
     /// account.
     std::string canonicalUsername(const std::string& username) const;
 
-    CreateResult createUser(const std::string& username, const std::string& password);
+    /// `createdFromHash` stamps the account with accountAddressHash(...) of the
+    /// address that asked for it, so countAccountsCreatedBy can hold one source
+    /// to a daily cap across restarts. Empty means "creator unknown", which
+    /// counts against nobody -- the in-memory and global limits still apply.
+    CreateResult createUser(const std::string& username, const std::string& password,
+                            const std::string& createdFromHash = {});
+
+    /// A stable, non-reversible label for an address, for the per-address
+    /// registration cap.
+    ///
+    /// Salted with a secret stored in the database file, so the value cannot be
+    /// matched back to an address by hashing a candidate list -- the file and
+    /// every backup of it would otherwise be a de-anonymisable log of who
+    /// played from where. The salt is generated once and persisted: a fresh one
+    /// each boot would silently reset the cap it exists to enforce, and two
+    /// servers sharing a file have to agree on the hashes.
+    std::string accountAddressHash(const std::string& addressKey);
+
+    /// How many accounts `addressHash` created within the last `windowMillis`.
+    int countAccountsCreatedBy(const std::string& addressHash, std::int64_t windowMillis) const;
 
     /// Deletes an account and the progress record behind it, by any spelling
     /// of the name. Returns false when there is no such account.

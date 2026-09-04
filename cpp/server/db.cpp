@@ -199,9 +199,11 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.muted = value["muted"].asBool(false);
     account.mutedAtMillis = static_cast<std::int64_t>(value["mutedAt"].asDouble(0));
     account.mutedBy = value["mutedBy"].asString();
+    account.createdAtMillis = static_cast<std::int64_t>(value["createdAt"].asDouble(0));
+    account.createdFromHash = value["createdFromHash"].asString();
 
     collectExtras(value, {"id", "username", "password", "isPlainText", "admin", "lastActiveAt",
-                          "muted", "mutedAt", "mutedBy"},
+                          "muted", "mutedAt", "mutedBy", "createdAt", "createdFromHash"},
                   account.extra);
     return account;
 }
@@ -219,6 +221,10 @@ Json accountToJson(const Account& account) {
         if (account.mutedAtMillis != 0) out["mutedAt"] = millisJson(account.mutedAtMillis);
         if (!account.mutedBy.empty()) out["mutedBy"] = account.mutedBy;
     }
+    // Both omitted when unset, so accounts written before the registration
+    // limits existed round-trip through this build unchanged.
+    if (account.createdAtMillis != 0) out["createdAt"] = millisJson(account.createdAtMillis);
+    if (!account.createdFromHash.empty()) out["createdFromHash"] = account.createdFromHash;
     appendExtras(account.extra, out);
     return out;
 }
@@ -635,7 +641,42 @@ std::string Database::newUserId() {
     return {};
 }
 
-CreateResult Database::createUser(const std::string& username, const std::string& password) {
+std::string Database::accountAddressHash(const std::string& addressKey) {
+    if (addressKey.empty()) return {};
+    std::string salt = otherTop_["ipSalt"].asString();
+    if (salt.empty()) {
+        salt = crypto::secureRandom().hex(16);
+        otherTop_["ipSalt"] = Json(salt);
+        if (std::find(topKeyOrder_.begin(), topKeyOrder_.end(), "ipSalt") == topKeyOrder_.end()) {
+            topKeyOrder_.push_back("ipSalt");
+        }
+        markDirty();
+    }
+    // Same construction as the browser server's database.accountAddressHash,
+    // so both builds reading one file agree on which accounts an address made.
+    return crypto::sha256Hex(salt + "|" + addressKey).substr(0, 24);
+}
+
+int Database::countAccountsCreatedBy(const std::string& addressHash,
+                                     std::int64_t windowMillis) const {
+    if (addressHash.empty()) return 0;
+    const std::int64_t cutoff = nowMillis() - windowMillis;
+    int count = 0;
+    // A scan of the whole user table. Registration is rate-limited long before
+    // this is hot, and a second index kept in step with the accounts is more to
+    // get wrong than walking a few thousand entries is to run.
+    for (const std::string& name : users_.keys()) {
+        const Account* account = users_.find(name);
+        if (account != nullptr && account->createdFromHash == addressHash &&
+            account->createdAtMillis >= cutoff) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+CreateResult Database::createUser(const std::string& username, const std::string& password,
+                                  const std::string& createdFromHash) {
     CreateResult result;
     if (!validUsername(username, result.reason)) {
         result.status = CreateStatus::UsernameInvalid;
@@ -661,6 +702,8 @@ CreateResult Database::createUser(const std::string& username, const std::string
     account.id = id;
     account.username = username;
     account.passwordHash = crypto::bcryptHash(password, passwordCost_);
+    account.createdAtMillis = nowMillis();
+    account.createdFromHash = createdFromHash;
     indexUser(username, account);
     // Give the account its (empty) progress row now, so `players` and `users`
     // never disagree about who exists.

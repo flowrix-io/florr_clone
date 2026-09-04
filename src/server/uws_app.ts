@@ -31,6 +31,12 @@ export interface UReq {
     params: Record<string, string>;
     headers: Record<string, string>;
     body: any;
+    /**
+     * The accepted TCP peer's address, as uWS reports it — never a header, so
+     * it cannot be spoofed. Behind a proxy this is the proxy, not the player;
+     * see server/accountLimiter.ts for how the two are combined.
+     */
+    ip: string;
     header(name: string): string | undefined;
     get(name: string): string | undefined;
 }
@@ -149,6 +155,21 @@ function parseQuery(qs: string): Record<string, string> {
         }
     }
     return result;
+}
+
+/**
+ * The peer address of an in-flight request, or '' when uWS cannot report one.
+ *
+ * uWS hands back the uncompressed IPv6 text form (an IPv4 peer on a dual-stack
+ * listener arrives as `0000:...:ffff:7f00:0001`); normalising that is the
+ * caller's business, not the shim's.
+ */
+function peerAddress(uRes: HttpResponse): string {
+    try {
+        return Buffer.from(uRes.getRemoteAddressAsText()).toString();
+    } catch {
+        return '';
+    }
 }
 
 function statusLine(code: number): string {
@@ -397,6 +418,9 @@ export class UApp {
             params: {},
             headers,
             body: undefined,
+            // Read here, synchronously: like `uReq`, the address is only valid
+            // before the handler yields.
+            ip: peerAddress(uRes),
             header(n: string) { return headers[n.toLowerCase()]; },
             get(n: string) { return headers[n.toLowerCase()]; }
         };

@@ -79,6 +79,11 @@ interface User {
     username: string;
     password: string; // Now stores bcrypt hashed password
     isPlainText?: boolean; // Flag to track if password needs migration
+    createdAt?: number; // When the account was created. Absent on accounts predating the field.
+    // Salted hash of the address that created the account — see accountAddressHash.
+    // Never the address itself: this file is backed up and read by operators, and
+    // a rolling 24h count is all the abuse limit needs.
+    createdFromHash?: string;
     admin?: boolean; // Admin flag for server command access
     lastActiveAt?: number; // Timestamp of last successful authentication, used for DAU tracking
     // Chat mute (`/admin mute`). Stored on the account, not the socket, so it
@@ -143,6 +148,10 @@ interface DatabaseData {
     apiKeys?: { [key: string]: ApiKey }; // External REST API keys
     customSkins?: { [skinId: string]: CustomSkin }; // User-created player skins, keyed by skin id
     sessions?: { [tokenHash: string]: Session }; // Live login sessions, keyed by SHA-256 of the token
+    // Per-database secret for accountAddressHash. Generated on first use and
+    // persisted so the 24h per-address account count survives a restart; kept
+    // out of the code so two servers sharing a file agree on the hashes.
+    ipSalt?: string;
 }
 
 let db: DatabaseData = { players: {}, users: {} };
@@ -348,13 +357,55 @@ function findUsernameKey(username: string): string | null {
 
 export const database = {
     // User-related functions
-    createUser: (username: string, password: string): User | null => {
+
+    /**
+     * A stable, non-reversible label for the address an account was created
+     * from, for the per-address daily registration cap.
+     *
+     * Salted with a per-database secret so the stored value cannot be matched
+     * back to an address by hashing a candidate list — inventory.json and every
+     * backup of it would otherwise carry a de-anonymisable log of who played
+     * from where. The salt is generated once and persisted, because a fresh one
+     * each boot would silently reset the cap it exists to enforce.
+     */
+    accountAddressHash: (addressKey: string): string => {
+        if (!addressKey) return '';
+        if (!db.ipSalt) {
+            db.ipSalt = crypto.randomBytes(16).toString('hex');
+            writeDatabase();
+        }
+        return crypto.createHash('sha256').update(db.ipSalt + '|' + addressKey).digest('hex').slice(0, 24);
+    },
+
+    /**
+     * How many accounts this address hash created in the last `windowMs`.
+     *
+     * Walks every account: registration is rate-limited long before this is hot,
+     * and the alternative — a second index kept in sync with the user table — is
+     * more to get wrong than a scan of a few thousand entries is to run.
+     */
+    countAccountsCreatedBy: (addressHash: string, windowMs: number): number => {
+        if (!addressHash) return 0;
+        const cutoff = Date.now() - windowMs;
+        let count = 0;
+        for (const name in db.users) {
+            const user = db.users[name];
+            if (user.createdFromHash === addressHash && (user.createdAt || 0) >= cutoff) count++;
+        }
+        return count;
+    },
+
+    createUser: (username: string, password: string, createdFromHash?: string): User | null => {
         if (db.users[username]) {
             return null; // User already exists
         }
         const userId = Math.random().toString(36).substr(2, 9);
         const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
-        const newUser: User = { id: userId, username, password: hashedPassword };
+        const newUser: User = { id: userId, username, password: hashedPassword, createdAt: Date.now() };
+        // Stamped only when the caller could identify a source. An account with
+        // no stamp counts against nobody, which is the safe direction: the
+        // in-memory bucket and the global cap still apply to it.
+        if (createdFromHash) newUser.createdFromHash = createdFromHash;
         db.users[username] = newUser;
         writeDatabase();
         return newUser;
