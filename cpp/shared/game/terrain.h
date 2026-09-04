@@ -45,6 +45,19 @@ using JaggedEdge = std::array<JaggedEdgePoint, kJaggedSegmentCount + 2>;
 /// tile coordinates alone, so it is also stable across client and server.
 const JaggedEdge& jaggedEdge(int tileX, int tileY, int edge);
 
+class Terrain;
+
+/// Whether that outline is actually worn on that side, i.e. whether the tile
+/// shows an edge there. Companion to jaggedEdge() and, for the same reason,
+/// THE single answer: collision and the renderer must agree on which sides
+/// exist, or the client draws a shore the server does not collide with.
+///
+/// Outside the grid counts as exposed. A solid tile shows its edge against
+/// water; water does NOT show one back, or every shoreline would be drawn
+/// twice, once in each colour -- and, crucially, water against water shows
+/// nothing at all, or a lake is ruled into tiles.
+bool jaggedEdgeExposed(const Terrain& terrain, int tileX, int tileY, int edge);
+
 /// Number of distinct Tile values, i.e. the size of a per-tile-kind table.
 inline constexpr int kTileKindCount = 5;
 

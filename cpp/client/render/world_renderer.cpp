@@ -265,25 +265,13 @@ const JaggedEdge& jaggedPoints(int tileX, int tileY, WallEdge edge) {
     return jaggedEdge(tileX, tileY, static_cast<int>(edge));
 }
 
+/// Which sides this tile shows, from the same shared answer the server's wall
+/// push-out uses. It must not be re-derived here: a local copy once tested
+/// tileBlocks(), which counts water as blocking because water stops movement,
+/// and so ruled every lake into 300-unit tiles with a shoreline drawn along
+/// each interior seam.
 bool tileEdgeExposed(const Terrain& terrain, int tileX, int tileY, WallEdge edge) {
-    int adjacentX = tileX;
-    int adjacentY = tileY;
-    switch (edge) {
-        case WallEdge::Top: --adjacentY; break;
-        case WallEdge::Bottom: ++adjacentY; break;
-        case WallEdge::Left: --adjacentX; break;
-        case WallEdge::Right: ++adjacentX; break;
-    }
-    // Terrain::atTile deliberately returns Wall out of range for collision.
-    // The TypeScript render grid instead treats its outside as air, so retain
-    // that visual rule here without changing gameplay collision semantics.
-    if (adjacentX < 0 || adjacentY < 0 ||
-        adjacentX >= kTilesPerAxis || adjacentY >= kTilesPerAxis) return true;
-    const Tile adjacent = terrain.atTile(adjacentX, adjacentY);
-    if (adjacent == Tile::Ground) return true;   // air on the far side
-    // A solid tile shows its edge against water; water does NOT show one back,
-    // or every shoreline would be drawn twice, once in each colour.
-    return tileBlocks(terrain.atTile(tileX, tileY)) && tileIsWater(adjacent);
+    return jaggedEdgeExposed(terrain, tileX, tileY, static_cast<int>(edge));
 }
 
 Vec2 edgeBasePoint(double worldX, double worldY, WallEdge edge, double t) {

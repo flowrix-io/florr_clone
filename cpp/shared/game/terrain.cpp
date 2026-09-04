@@ -112,22 +112,6 @@ double maxJaggedOffset(const JaggedEdge& points, double minT, double maxT) {
     return result;
 }
 
-bool jaggedEdgeExposed(const Terrain& terrain, int tileX, int tileY, int edge) {
-    int adjacentX = tileX;
-    int adjacentY = tileY;
-    if (edge == 0) --adjacentY;
-    else if (edge == 1) ++adjacentY;
-    else if (edge == 2) --adjacentX;
-    else ++adjacentX;
-
-    if (adjacentX < 0 || adjacentY < 0 ||
-        adjacentX >= kTilesPerAxis || adjacentY >= kTilesPerAxis) return true;
-    const Tile adjacent = terrain.atTile(adjacentX, adjacentY);
-    if (adjacent == Tile::Ground) return true;
-    const Tile current = terrain.atTile(tileX, tileY);
-    return current == Tile::Wall && adjacent == Tile::Water;
-}
-
 struct JaggedCollision {
     double left = 0.0;
     double right = 0.0;
@@ -366,6 +350,22 @@ Tile classifyTile(int section, int tx, int ty, const NoiseSet& n) {
 // ---------------------------------------------------------------------------
 // The shared jagged outline
 // ---------------------------------------------------------------------------
+
+bool jaggedEdgeExposed(const Terrain& terrain, int tileX, int tileY, int edge) {
+    int adjacentX = tileX;
+    int adjacentY = tileY;
+    if (edge == 0) --adjacentY;
+    else if (edge == 1) ++adjacentY;
+    else if (edge == 2) --adjacentX;
+    else ++adjacentX;
+
+    if (adjacentX < 0 || adjacentY < 0 ||
+        adjacentX >= kTilesPerAxis || adjacentY >= kTilesPerAxis) return true;
+    const Tile adjacent = terrain.atTile(adjacentX, adjacentY);
+    if (adjacent == Tile::Ground) return true;
+    const Tile current = terrain.atTile(tileX, tileY);
+    return current == Tile::Wall && adjacent == Tile::Water;
+}
 
 const JaggedEdge& jaggedEdge(int tileX, int tileY, int edge) {
     // Depends on the coordinates and the edge alone -- never on which
