@@ -541,6 +541,55 @@ TEST(a_projectile_flies_straight_and_spends_its_range_exactly) {
     CHECK_NEAR(fx.velocityOf(shot).length(), 0.0, 1e-12);
 }
 
+TEST(a_projectile_at_the_end_of_its_range_dies_whatever_the_rounding) {
+    // Real shots do not fly along an axis for a whole number of ticks. Sweep
+    // odd headings, speeds and budgets: the last step is clamped to the
+    // remaining budget, so whatever floating-point residual that leaves must
+    // still count as spent -- a residual too small to move a coordinate near
+    // 5000 would otherwise never be consumed and the shot would live forever.
+    int stuck = 0;
+    for (int k = 0; k < 40; ++k) {
+        Fixture fx;
+        const double heading = 0.1 + k * 0.37;
+        const double speed = 300.0 + k * 13.7;
+        const double range = 100.0 + k * 7.3;
+        const Entity shot = fx.spawnProjectile({5123.7, 4987.3},
+                                               Vec2::fromAngle(heading, speed), range);
+        fx.step(200);
+        if (!fx.world.has<Dead>(shot)) ++stuck;
+    }
+    CHECK_EQ(stuck, 0);
+}
+
+TEST(a_projectile_that_cannot_fly_still_dies_on_its_lifetime) {
+    // A velocity the sanitiser zeroes spends no range at all. The flight-time
+    // backstop is what retires it; without one it would lie on the ground
+    // until something walked into it.
+    Fixture fx;
+    const double dt = net::kTickSeconds;
+    const Entity shot = fx.spawnProjectile({5000, 5000}, {0, 0}, 300.0);
+    fx.world.add<Lifetime>(shot, Lifetime{dt * 10});
+
+    fx.step(10, dt);                                  // the lifetime reaches zero
+    CHECK(!fx.world.has<Dead>(shot));                 // the tie is the distance rule's
+    fx.step(2, dt);
+    CHECK(fx.world.has<Dead>(shot));
+}
+
+TEST(the_lifetime_backstop_never_cuts_an_ordinary_flight_short) {
+    // Spawned exactly as the petal and mob systems do: lifetime = range/speed.
+    // The distance rule must always be the one that ends the flight, at the
+    // full range.
+    Fixture fx;
+    const double dt = net::kTickSeconds;
+    const double speed = 437.0, range = 291.3;
+    const Entity shot = fx.spawnProjectile({5000, 5000}, {speed, 0}, range);
+    fx.world.add<Lifetime>(shot, Lifetime{range / speed});
+    fx.step(200, dt);
+    CHECK(fx.world.has<Dead>(shot));
+    CHECK_NEAR(fx.positionOf(shot).x, 5000.0 + range, 1e-6);
+}
+
 TEST(a_projectile_that_hits_terrain_is_spent_where_it_hit) {
     Fixture fx;
     fx.wallColumn(10);

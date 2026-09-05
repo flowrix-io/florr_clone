@@ -31,6 +31,15 @@ constexpr double kMinEnvScale = 1e-4;
 /// homes nor updates its facing.
 constexpr double kMinProjectileSpeed = 1e-3;
 
+/// Range left on a projectile below this is rounding noise, not reach, and the
+/// shot is spent. The last step of a flight is clamped to exactly the budget,
+/// but `velocity * fraction * dt` and the displacement it produces round
+/// differently, and the difference (~1e-13) is smaller than one ulp of a
+/// coordinate near 5000. Asked to fly that residual, the shot moves by exactly
+/// zero, spends nothing, and lives forever. A millionth of a unit is far below
+/// anything drawable and far above any residual the arithmetic can leave.
+constexpr double kSpentRangeEpsilon = 1e-6;
+
 Vec2 sanitizePosition(Vec2 p) {
     // A body that arrived here non-finite has already lost its place in the
     // world; putting it at the centre is recoverable, propagating NaN is not.
@@ -436,7 +445,7 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
 
         const StepOutcome out = stepCollide(terrain, transform.position, attempted, radius, dt);
         projectile.remainingDistance -= out.displacement.length();
-        if (!(projectile.remainingDistance > 0.0)) projectile.remainingDistance = 0.0;
+        if (!(projectile.remainingDistance > kSpentRangeEpsilon)) projectile.remainingDistance = 0.0;
 
         if (out.blocked) {
             // Terrain and the map edge eat shots.
@@ -451,6 +460,23 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
         if (!(projectile.remainingDistance > 0.0)) {
             motion.velocity = {0, 0};
             spentProjectiles_.push_back(e);
+            return;
+        }
+
+        // The net under the distance rule. Every shot is spawned with its
+        // range restated as a flight time, and a shot that cannot spend its
+        // range -- a NaN velocity sanitised to zero, a step that rounds to no
+        // movement -- must still die on that schedule instead of lying on the
+        // ground until something walks into it. A whole tick of slack keeps
+        // this strictly the backstop: the two clocks tie to within rounding,
+        // and firing on the tie would cut a tick off ordinary flights.
+        if (Lifetime* lifetime = world.tryGet<Lifetime>(e)) {
+            lifetime->remainingSeconds -= dt;
+            if (lifetime->remainingSeconds <= -net::kTickSeconds) {
+                projectile.remainingDistance = 0.0;
+                motion.velocity = {0, 0};
+                spentProjectiles_.push_back(e);
+            }
         }
     });
 
