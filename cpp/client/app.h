@@ -166,6 +166,10 @@ private:
     /// Steps and draws the petals drifting over that texture.
     void drawTitlePetals(Canvas&, double time);
     void drawHud(Canvas&, double time);
+    /// The screen-top health bars a super, unique or apex mob in view gets,
+    /// one under the other, name above each. Ultras are not bosses: they wear
+    /// the ordinary bar under the body like every other mob.
+    void drawBossBars(Canvas&, bool altHeld);
     /// The 200x200 section map in the top-right corner, its gold border and
     /// its biome caption.
     void drawMinimap(Canvas&);

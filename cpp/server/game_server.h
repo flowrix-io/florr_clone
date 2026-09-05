@@ -283,6 +283,10 @@ private:
     /// rights on the corpse: the gallery ledger, and the stars a mythic-or-
     /// better kill is worth.
     void bankKills();
+    /// Broadcasts the "has been defeated by" line a super, unique or apex kill
+    /// earns, credited to the top damage dealer on the corpse. `ranked` is the
+    /// same damage-sorted ledger bankKills() paid the bounty out of.
+    void announceBossDefeat(const MobType&, const std::vector<Bounty::Share>& ranked);
     /// The world half of a yggdrasil revival has already happened when this is
     /// called; the SESSION half is here -- a body whose death was announced
     /// needs that announcement retracted, or its next death is silent.

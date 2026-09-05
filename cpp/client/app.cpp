@@ -2032,9 +2032,86 @@ void App::drawHud(Canvas& canvas, double time) {
 
     drawMinimap(canvas);
 
+    drawBossBars(canvas, altHeld);
+
     // The loadout is NOT drawn here. The menu system's strip is the same set of
     // slots and is a live drop target; a second, inert copy of it a few pixels
     // away was two things that looked like one.
+}
+
+void App::drawBossBars(Canvas& canvas, bool altHeld) {
+    // Super, unique and apex only. An ultra is a big mob, not a boss: it wears
+    // the ordinary bar under its body, which is also where its name is.
+    // A pet is somebody's summon and a target dummy is a permanent DPS-test
+    // fixture, so neither earns the screen-top bar whatever tier it wears.
+    std::vector<const RemoteEntity*> bosses;
+    const Rect view = camera_.visibleWorld();
+    for (const auto& entry : net_.view().entities()) {
+        const RemoteEntity& entity = entry.second;
+        if (entity.kind != net::EntityKind::Mob) continue;
+        if (entity.rarity != Rarity::Super && entity.rarity != Rarity::Unique &&
+            entity.rarity != Rarity::Apex) {
+            continue;
+        }
+        if ((entity.spawnFlags & net::SpawnIsPet) != 0) continue;
+        const MobConfig& config = content().mob(entity.typeIndex);
+        if (config.id == "target_dummy") continue;
+
+        // The same generous test the browser build makes: the drawn size plus
+        // a buffer of at least 100 units, so a boss keeps its bar until it is
+        // well clear of the edge rather than losing it mid-fight.
+        const double visualScale = config.visualScale > 0 ? config.visualScale : 1.0;
+        const double size = entity.radius * 2.0 * visualScale;
+        const double margin = size * 0.5 + std::max(size, 100.0);
+        if (entity.position.x + margin < view.left() || entity.position.x - margin > view.right() ||
+            entity.position.y + margin < view.top() || entity.position.y - margin > view.bottom()) {
+            continue;
+        }
+        bosses.push_back(&entity);
+    }
+    if (bosses.empty()) return;
+    // The entity table is unordered, so two bosses on screen at once would
+    // otherwise trade rows from frame to frame.
+    std::sort(bosses.begin(), bosses.end(),
+              [](const RemoteEntity* a, const RemoteEntity* b) { return a->netId < b->netId; });
+
+    constexpr double kBarWidth = 400.0;
+    constexpr double kBarHeight = 24.0;
+    constexpr double kNameSize = 20.0;
+    constexpr double kNameMargin = 8.0;
+    constexpr double kRowSpacing = 60.0;
+    constexpr double kTopMargin = 20.0;
+    const double centreX = window_.width() * 0.5;
+
+    for (std::size_t i = 0; i < bosses.size(); ++i) {
+        const RemoteEntity& boss = *bosses[i];
+        const double nameTop = kTopMargin + static_cast<double>(i) * kRowSpacing;
+        const double barY = nameTop + kNameSize + kNameMargin;
+
+        TextStyle name;
+        name.size = kNameSize;
+        name.strokeWidth = 4.0;
+        name.align = Align::Centre;
+        name.baseline = Baseline::Alphabetic;
+        text(canvas, content().mob(boss.typeIndex).name, centreX, nameTop + kNameSize, name);
+
+        // Max health is not on the wire -- only the fraction is -- so it is
+        // recomputed from the same config the server sized the mob from. The
+        // two cannot disagree: nothing scales a mob's pool after it spawns.
+        const double maxHealth = content().mobStats(boss.typeIndex, boss.rarity).health;
+        const double health = std::max(0.0, clamp(boss.healthFraction, 0.0, 1.0) * maxHealth);
+        hudBar(canvas, centreX - kBarWidth * 0.5, barY, kBarWidth, kBarHeight,
+               maxHealth > 0 ? health / maxHealth * kBarWidth : 0.0, kHealth);
+
+        TextStyle value;
+        value.size = 16.0;
+        value.strokeWidth = 3.0;
+        value.align = Align::Centre;
+        value.baseline = Baseline::Alphabetic;
+        text(canvas,
+             formatNumber(std::round(health), altHeld) + "/" + formatNumber(maxHealth, altHeld),
+             centreX, barY + 18.0, value);
+    }
 }
 
 const Canvas* App::minimapStatic(int section, bool rarityGlow) {

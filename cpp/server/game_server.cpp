@@ -1401,17 +1401,15 @@ void GameServer::bankKills() {
             // Stars are the mythic-and-above bounty. Awarded on the live entity
             // rather than the record so the HUD sees them this tick;
             // persistPlayer copies them back the same way it does XP.
+            // Silently: the reference pays the bounty and updates the star
+            // counter, and says nothing. A notice per mythic kill is a line
+            // every few seconds in a mythic zone.
             if (stars > 0) {
                 if (PlayerProgress* live = world_.tryGet<PlayerProgress>(share.player)) {
                     live->stars += stars;
                     record.stars = live->stars;
                 } else {
                     record.stars += stars;
-                }
-                if (net::Connection* connection = listener_.find(session->connection)) {
-                    sendNotice(*connection, net::NoticeSeverity::Good,
-                               "+" + std::to_string(stars) + " star" + (stars == 1 ? "" : "s") +
-                                   " for a " + rarityLabel(type->rarity) + " kill");
                 }
             }
             database_.markDirty();
@@ -1420,7 +1418,42 @@ void GameServer::bankKills() {
                 sendProfile(*session, *connection);
             }
         }
+
+        announceBossDefeat(*type, ranked);
     }
+}
+
+void GameServer::announceBossDefeat(const MobType& type,
+                                    const std::vector<Bounty::Share>& ranked) {
+    // The three announced tiers are the three the spawn line announces. An
+    // ultra dies as quietly as it spawned.
+    if (type.rarity != Rarity::Super && type.rarity != Rarity::Unique &&
+        type.rarity != Rarity::Apex) {
+        return;
+    }
+    // Credited to the top damage dealer alone, whatever the kill was shared
+    // with: `ranked` is already sorted by damage, so that is its first row.
+    if (ranked.empty()) return;
+    const Session* session = sessionForEntity(ranked.front().player);
+    if (session == nullptr || !session->authenticated()) return;
+
+    std::string name = content().mob(type.configIndex).id;
+    for (char& c : name) {
+        if (c == '_') c = ' ';
+    }
+    char colorAttribute[32];
+    std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
+
+    // The flower's name, not the account's, in the brackets -- the account is
+    // the @handle before them.
+    const std::string playerName =
+        session->displayName.empty() ? session->username : session->displayName;
+    broadcastChat(net::ChatChannel::System, "",
+                  std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
+                      rarityLabel(type.rarity) + " " + name +
+                      " has been defeated by <span style=\"color: #00ff00;\">@" +
+                      session->username + "</span> [<span style=\"color: yellow;\">" +
+                      playerName + "</span>]</b>");
 }
 
 void GameServer::handleUpgradeSkill(Session& session, net::Connection& connection,
