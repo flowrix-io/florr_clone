@@ -141,8 +141,18 @@ players → floating damage → HUD → panels → cursor.
 ```
 mkdir cpp/build-web && cd cpp/build-web
 emcmake cmake .. -DFLIX_BUILD=release
-cmake --build . -j8      # -> flowrix_client.{html,js,wasm}, flowrix_server.{js,wasm}
+cmake --build . -j8      # -> bundle.{html,js,wasm}, server.{js,wasm}
 ```
+
+`npm run build` at the repository root does the same thing and then stages the
+result in `dist/`, which is what ships: `scripts/build-web.js` configures and
+builds both web targets and copies them out. `npm start` builds the server half
+and runs it. The web build's outputs carry the names the TypeScript build's did
+— the page's script is `bundle.js` and the server is `server.js` — so nginx,
+pm2 and the autoupdate zipball did not have to learn new ones; `bundle.html` is
+staged as `dist/index.html`. Only the web build is renamed, at the link, by
+`OUTPUT_NAME` in CMakeLists.txt: the native binaries are still `flowrix_client`
+and `flowrix_server`.
 
 `-DFLIX_BUILD` picks the flavour, and is the only build knob: `CMAKE_BUILD_TYPE`
 follows from it rather than being set alongside it.
@@ -189,9 +199,14 @@ own origin, so an untouched URL already points at the server that served it;
 The wasm server serves it, over the same port it plays the game on:
 
 ```
-node cpp/build-web/flowrix_server.js --port 4242 --db inventory.json
+node cpp/build-web/server.js --port 4242 --db inventory.json
 # -> https://localhost:4242/
 ```
+
+`npm start` is this, pointed at the staged build instead: `node dist/server.js
+--port ${PORT:-3000} --db dist/inventory.json --web-root dist`, run from the
+repository root so that the certificate lookup finds `cert.crt` / `dev-cert.crt`
+where they live.
 
 One process and one origin for the page, the WebSocket, the QUIC listener and
 `/transport-info`. Nothing else has to be running, and the page is same-origin
@@ -211,7 +226,7 @@ It follows the TypeScript server here, because the two share these files:
   that file; two writers is how they come to disagree.
 * `--web-root` is the directory served, defaulting to the build directory the
   server module was loaded from — which is where the client build already is.
-  `/` serves `index.html` or `flowrix_client.html`. Requests are decoded,
+  `/` serves `index.html` or `bundle.html`. Requests are decoded,
   normalised and required to stay under the root, and `.wasm` is served as
   `application/wasm` so the browser will stream-compile it.
 

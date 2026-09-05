@@ -209,7 +209,7 @@ EM_JS(int, flix_ch_listen,
   const crypto = require("crypto");
 
   // Where the client build sits, unless told otherwise: the emitted server
-  // module and flowrix_client.html land in the same build directory, so the
+  // module and the client's page land in the same build directory, so the
   // default needs no argument and no guessing.
   const webRoot = path.resolve(UTF8ToString(rootPtr) || __dirname);
 
@@ -360,13 +360,14 @@ EM_JS(int, flix_ch_listen,
       return;
     }
 
-    // A directory means its index. The client build`s page is named after the
-    // program rather than index.html, so both are tried.
+    // A directory means its index. In cpp/build-web the client's page is
+    // named after its output (bundle.html) rather than index.html, which is
+    // the name it is staged into dist/ under, so both are tried.
     let candidates = [target];
     let isDirectory = false;
     try { isDirectory = fs.statSync(target).isDirectory(); } catch (e) { }
     if (isDirectory) {
-      candidates = [path.join(target, "index.html"), path.join(target, "flowrix_client.html")];
+      candidates = [path.join(target, "index.html"), path.join(target, "bundle.html")];
     }
     for (const candidate of candidates) {
       if (sendFile(response, candidate, head)) return;

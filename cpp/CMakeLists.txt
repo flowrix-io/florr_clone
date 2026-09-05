@@ -242,7 +242,18 @@ if(EMSCRIPTEN)
   endif()
 
   target_compile_definitions(flix_shared PUBLIC FLIX_WEB_BUILD)
-  set_target_properties(flowrix_client PROPERTIES SUFFIX ".html")
+
+  # The web build's artifacts are what dist/ ships, and dist/ is served and run
+  # by name: the page is index.html, the script beside it bundle.js, and the
+  # program `npm start` runs server.js -- the names the TypeScript build used
+  # before the C++ client and server took over, so nothing downstream (nginx,
+  # pm2, the autoupdate zipball) has to learn new ones. Emscripten writes the
+  # .wasm filename into the glue and the glue's filename into the page, so the
+  # rename belongs here, at the link, rather than in a copy step afterwards.
+  # Only the web build is renamed: the native binaries stay flowrix_client and
+  # flowrix_server, which is what the parity rigs and the docs invoke.
+  set_target_properties(flowrix_client PROPERTIES OUTPUT_NAME bundle SUFFIX ".html")
+  set_target_properties(flowrix_server PROPERTIES OUTPUT_NAME server)
   target_link_options(flowrix_client PRIVATE
     ${FLIX_WEB_LINK_OPTIONS}
     # Every draw goes through the page's own 2D context, so the 2D canvas
@@ -273,6 +284,13 @@ if(EMSCRIPTEN)
   target_link_options(flowrix_server PRIVATE
     ${FLIX_WEB_LINK_OPTIONS}
     "-sENVIRONMENT=node"
+    # Emscripten's default stack is 64KB, against the 8MB a native thread gets,
+    # and the JSON parser and the Json destructor both recurse once per level
+    # of the document. The account database nests deeply enough that the
+    # default stack runs out part-way through loading a real one -- silently,
+    # in a release build, as an out-of-bounds access with no name on it. The
+    # parser's own kMaxDepth of 200 is the bound on how far this has to go.
+    "-sSTACK_SIZE=4194304"
     # The database is a real file that has to survive a restart, so the one
     # directory it lives in is mounted from the host filesystem. Everything
     # else -- all of the embedded content above -- stays in memory.
