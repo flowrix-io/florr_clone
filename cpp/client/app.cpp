@@ -810,12 +810,16 @@ void App::run() {
     shutdown();
 }
 
-void App::shutdown() {
-    // Written once, on the way out, rather than on every toggle: this is a
-    // handful of switches, and a file write per click would be absurd. The
-    // flower's name is remembered on the same terms.
+void App::persist() {
+    // Written on the way out rather than on every toggle: this is a handful of
+    // switches, and a file write per click would be absurd. The flower's name
+    // is remembered on the same terms.
     menus_.settings().save(settingsPath());
     saveSession();
+}
+
+void App::shutdown() {
+    persist();
 }
 
 bool App::step() {
@@ -2647,13 +2651,19 @@ void App::logout() {
     menus_.close();
 
     // Forget the token on disk as well as in memory: a logout a restart undoes
-    // is not a logout. The file is removed rather than rewritten because
+    // is not a logout. The file is emptied rather than left alone because
     // saveSession() declines to write at all once there is nothing to save,
     // which would leave the old token sitting there. The name is not part of
-    // the account -- the browser keeps it in localStorage too -- so it is
-    // written straight back if there is one.
+    // the account, so it is written straight back if there is one.
+    //
+    // Emptied, not removed: an empty session file reads back as no session at
+    // all, and on the browser build the file is the mount point for the
+    // storage behind it -- deleting it would take the persistence with it.
+    // See client/web/persist.cpp.
     storedToken_.clear();
-    std::remove(config_.sessionFile.c_str());
+    // A temporary, so the stream is closed again before saveSession() opens
+    // the same path.
+    std::ofstream(config_.sessionFile, std::ios::trunc);
     saveSession();
 
     // The form opens the way it does on a first run: blank, unfocused, and

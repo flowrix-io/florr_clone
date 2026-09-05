@@ -21,9 +21,22 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+
+#include "client/web/persist.h"
 #endif
 
 namespace {
+
+#ifdef __EMSCRIPTEN__
+/// The running app, so the page's unload handler can reach it. main() has
+/// returned by the time that fires, and a capture-less lambda is what the
+/// handler takes.
+flix::App* g_app = nullptr;
+
+/// The name the session file is stored under. settingsPath() appends
+/// "-settings" to the path, so the settings file's name follows from it.
+constexpr const char* kSessionName = "session";
+#endif
 
 void usage(const char* program) {
     std::printf(
@@ -109,6 +122,14 @@ int main(int argc, char** argv) {
     }
 
 #ifdef __EMSCRIPTEN__
+    // Before start(), which reads both files. MEMFS is gone the moment the tab
+    // is, so the settings and the session token are moved onto storage the
+    // browser keeps; everything else the client reads is embedded and
+    // read-only, and stays in memory where it belongs.
+    if (flix::web::mountStorage({kSessionName, std::string(kSessionName) + "-settings"})) {
+        config.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + kSessionName;
+    }
+
     // Leaked deliberately: main() returns straight after registering the
     // callback and the app has to outlive it. The browser tab's teardown is
     // the process exit here.
@@ -118,6 +139,13 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
         return 1;
     }
+
+    // The native client saves from run(), on its way out. A tab has no way
+    // out, so the page's own teardown is what stands in for it.
+    g_app = app;
+    flix::web::onPageHide([] {
+        if (g_app) g_app->persist();
+    });
     emscripten_set_main_loop_arg(
         [](void* handle) {
             auto* running = static_cast<flix::App*>(handle);

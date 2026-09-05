@@ -112,8 +112,15 @@ public:
     /// from a requestAnimationFrame callback instead.
     bool step();
 
-    /// Writes the settings and session files. run() does this on the way out;
-    /// the emscripten build calls it when step() first returns false.
+    /// Writes the settings and session files.
+    ///
+    /// Separate from shutdown() because the browser build has no way out to
+    /// save on: the tab is closed or reloaded and step() is simply never
+    /// called again, so the page's unload handler calls this instead.
+    void persist();
+
+    /// Finishes: saves, as persist() does. run() does this on the way out; the
+    /// emscripten build calls it when step() first returns false.
     void shutdown();
 
 private:

@@ -140,9 +140,21 @@ players → floating damage → HUD → panels → cursor.
 
 ```
 mkdir cpp/build-web && cd cpp/build-web
-emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
+emcmake cmake .. -DFLIX_BUILD=release
 cmake --build . -j8      # -> flowrix_client.{html,js,wasm}, flowrix_server.{js,wasm}
 ```
+
+`-DFLIX_BUILD` picks the flavour, and is the only build knob: `CMAKE_BUILD_TYPE`
+follows from it rather than being set alongside it.
+
+* **`dev`** (the default) — `-O2 -g`, `assert()` live, frame pointers kept, and
+  emscripten's own heap and stack checks on. Still optimised: the client
+  rasterises every pixel on the CPU, so an `-O0` build does not reach a frame
+  rate anything can be judged by. The web link is left at the configuration's
+  own `-O2 -g`, because wasm-opt at `-O3` is most of the wait on a relink.
+* **`release`** — `-O3`, `NDEBUG`, no debug info, emscripten's checks off, and
+  the client's web link pinned at `-O3` whatever else is on the line. About 2MB
+  of wasm against dev's 19MB.
 
 Both are the same programs as the native ones — the same tick, the same
 systems, the same rasterizer drawing the same frames — and differ in three
