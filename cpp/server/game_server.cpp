@@ -738,10 +738,27 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
         case net::ClientMessage::Logout:
-            session->stage = SessionStage::Anonymous;
+            // A body in the world belongs to the account that is going away,
+            // so it comes off first -- and with its progress saved, because a
+            // logout is a deliberate exit, not a drop. Left alone it would be
+            // an orphan: a flower nobody can steer and no account can persist.
+            if (session->playing()) {
+                persistPlayer(*session);
+                despawnPlayer(*session, false);
+            }
+            revokeTempAdmin(session->connection);
             if (!session->token.empty()) database_.revokeSession(session->token);
             session->token.clear();
             session->userId.clear();
+            // Both of these gate later messages -- `admin` unlocks the console
+            // commands, `username` is who the chat and the guild take this
+            // connection for -- so an anonymous session must not keep either.
+            session->username.clear();
+            session->admin = false;
+            session->displayName.clear();
+            // Last: despawnPlayer() puts the stage back to Authenticated, and
+            // this is what the socket actually is now.
+            session->stage = SessionStage::Anonymous;
             break;
         default:
             break;

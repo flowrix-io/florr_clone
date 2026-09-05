@@ -196,12 +196,21 @@ public:
     void poll(int timeoutMillis = 0);
 
     Status status() const { return status_; }
+    /// Whether this client is holding an account: logged in, or in a game.
+    /// Everything the server says about an account or a world is only
+    /// meaningful while this holds.
+    bool haveSession() const { return status_ == Status::LoggedIn || status_ == Status::Playing; }
     const std::string& lastError() const { return lastError_; }
 
     // -- requests ----------------------------------------------------------
     void requestRegister(const std::string& username, const std::string& password);
     void requestLogin(const std::string& username, const std::string& password);
     void resumeSession(const std::string& token);
+    /// Ends the session: tells the server to revoke the token, then drops
+    /// every scrap of the account this client was holding. The socket stays
+    /// up -- the connection is not the session -- so the status falls back to
+    /// Ready and the login form can be used again without a reconnect.
+    void logout();
     /// `spawnBiome` is empty (or "default") for the beginner ground.
     /// `playerName` is the flower's nameplate; empty spawns as "Unnamed".
     void joinGame(int viewportWidth, int viewportHeight,

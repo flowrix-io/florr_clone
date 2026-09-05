@@ -995,6 +995,9 @@ void App::frame(double dt) {
     const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
     menus_.setInGame(inWorld);
     if (menus_.takeExitRequest() && inWorld) leaveToTitle();
+    // No inWorld guard: Settings' Log Out is offered on the title screen too,
+    // and it is the one action that has to work from either of them.
+    if (menus_.takeLogoutRequest()) logout();
 
     // --- draw -------------------------------------------------------------
     if (inWorld) {
@@ -2631,6 +2634,54 @@ void App::leaveToTitle() {
     tutorial_.endGame();
     beginSceneWipe(false);
     screen_ = Screen::Lobby;
+}
+
+void App::logout() {
+    // Not leaveToTitle(): that lands on the lobby, which is the one screen a
+    // logged-out client must not be on. The body itself is NetClient's to take
+    // off the server -- it leaves the game before it sends the logout, because
+    // the account a flower would be saved into goes away with the session.
+    const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
+    if (inWorld) tutorial_.endGame();
+    net_.logout();
+    menus_.close();
+
+    // Forget the token on disk as well as in memory: a logout a restart undoes
+    // is not a logout. The file is removed rather than rewritten because
+    // saveSession() declines to write at all once there is nothing to save,
+    // which would leave the old token sitting there. The name is not part of
+    // the account -- the browser keeps it in localStorage too -- so it is
+    // written straight back if there is one.
+    storedToken_.clear();
+    std::remove(config_.sessionFile.c_str());
+    saveSession();
+
+    // The form opens the way it does on a first run: blank, unfocused, and
+    // with no message left over from the session that just ended.
+    usernameField_.clear();
+    passwordField_.clear();
+    confirmPasswordField_.clear();
+    loginMessage_.clear();
+    focusedField_ = -1;
+    registering_ = false;
+    advancedOpen_ = false;
+    pressedControl_.clear();
+    pendingAuth_.clear();
+    // Done, not Idle: a scripted run must not answer a deliberate logout by
+    // registering itself straight back in.
+    autoLogin_ = AutoLogin::Done;
+
+    deathCardVisible_ = false;
+    chatOpen_ = false;
+    chatDraft_.clear();
+    chatSuggestion_ = -1;
+    nameFocused_ = false;
+
+    // Only worth a wipe when there is a world to hide: lobby and login are the
+    // same scene with a different card on it, and wiping between them would
+    // read as a stutter rather than a transition.
+    if (inWorld) beginSceneWipe(false);
+    screen_ = Screen::Login;
 }
 
 // ---------------------------------------------------------------------------

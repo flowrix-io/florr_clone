@@ -1247,6 +1247,11 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::Debug:       keepOpen = debug_.render(ctx); break;
         default: break;
     }
+    // Latched before the closing-card check below: the Log Out button closes
+    // its own panel on the same click, so the request would never survive to
+    // be read if it were picked up after that early return.
+    if (ctx.logoutRequested) logoutRequested_ = true;
+
     // A card on its way out still paints, but it has no say any more: it is
     // already closed, and a search field it happened to hold would go on
     // eating the chat box's keystrokes all the way down.

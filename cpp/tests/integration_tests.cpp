@@ -442,3 +442,53 @@ TEST(a_player_who_leaves_to_the_menu_keeps_their_account) {
     client.joinGame(1280, 720);
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
 }
+
+TEST(logging_out_ends_the_session_at_both_ends) {
+    Harness h("logout");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestRegister("grace", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    const std::string token = client.sessionToken();
+    CHECK(!token.empty());
+
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    CHECK(h.stepUntil({&client}, [&] { return client.view().self().netId != 0; }));
+
+    client.logout();
+    h.step(10, {&client});
+
+    // The client keeps nothing of the account: no token to resume with, no
+    // profile for a panel to draw, and no body left on the screen. The socket
+    // itself is untouched -- it is back where a fresh connection sits, ready
+    // for the login form.
+    CHECK(client.sessionToken().empty());
+    CHECK(client.profile().username.empty());
+    CHECK_EQ(playersVisibleTo(client), std::size_t(0));
+    CHECK(client.status() == NetClient::Status::Ready);
+
+    // The server dropped the body with it, rather than leaving a flower nobody
+    // is steering.
+    CHECK_EQ(h.server.playerCount(), std::size_t(0));
+
+    // The token is revoked, not merely forgotten: a copy of it kept anywhere
+    // else is now worthless.
+    NetClient stale;
+    CHECK(connectClient(h, stale));
+    stale.authAnswered = false;
+    stale.resumeSession(token);
+    CHECK(h.stepUntil({&stale}, [&] { return stale.authAnswered; }));
+    CHECK_EQ(static_cast<int>(stale.authStatus), static_cast<int>(net::AuthStatus::SessionExpired));
+
+    // And the same socket can log straight back in, which is what the form
+    // behind the Log Out button expects: no reconnect between the two.
+    client.authAnswered = false;
+    client.requestLogin("grace", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.authAnswered; }));
+    CHECK_EQ(static_cast<int>(client.authStatus), static_cast<int>(net::AuthStatus::Ok));
+    CHECK_EQ(client.profile().username, std::string("grace"));
+    CHECK(client.sessionToken() != token);
+}

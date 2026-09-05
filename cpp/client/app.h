@@ -206,6 +206,11 @@ private:
     /// the auto-login path and the Ready button cannot send different things.
     void startGame();
 
+    /// Ends the session and goes back to the auth form: the server revokes the
+    /// token, the client forgets the account, and the stored token on disk
+    /// goes with it so a restart does not walk straight back in.
+    void logout();
+
     void loadSession();
     void saveSession() const;
 

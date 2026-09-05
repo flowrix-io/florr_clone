@@ -176,6 +176,10 @@ struct MenuContext {
     /// Set by a panel whose text field has focus, so the chat box and the
     /// login form do not also consume this frame's keystrokes.
     bool wantsText = false;
+    /// Set by the settings panel's Log Out button. Ending a session is the
+    /// app's business -- it owns the stored token and the screen -- so the
+    /// panel only says that it was asked for.
+    bool logoutRequested = false;
 
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -481,6 +485,14 @@ public:
         return requested;
     }
 
+    /// Set when Settings' Log Out was clicked, read and cleared by the app the
+    /// same way the exit request is.
+    bool takeLogoutRequest() {
+        const bool requested = logoutRequested_;
+        logoutRequested_ = false;
+        return requested;
+    }
+
     /// Anything the caller needs painted between the icon strip and the
     /// loadout bar. In game that gap is the death scrim's: it dims the strip
     /// and the HUD but leaves the bar at full brightness, and there is no
@@ -611,6 +623,7 @@ private:
 
     bool inGame_ = false;
     bool exitRequested_ = false;
+    bool logoutRequested_ = false;
     int changelogEntries_ = 1;
 
     /// The icon artwork, compiled on first use. One document per glyph, shared

@@ -732,9 +732,12 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kDebugMenuEnabled, "Enable Debug Menu button (J in-game)");
 
             p.cy += 10.0;
-            // Closing the panel is all the browser's logout does that this
-            // client can do: there is no session to revoke from here.
+            // The app does the work -- revoking the token, forgetting the
+            // stored one and going back to the auth form. All this row knows
+            // is that it was clicked, and that its own card goes away with the
+            // session it belonged to.
             if (p.button(Rect{contentX, p.cy, 160.0, 32.0}, "Log Out", kCloseFill, 14.0, kLogOut)) {
+                ctx.logoutRequested = true;
                 keepOpen = false;
             }
             p.cy += 42.0;

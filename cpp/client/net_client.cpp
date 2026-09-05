@@ -177,6 +177,54 @@ void NetClient::resumeSession(const std::string& token) {
     send(w);
 }
 
+void NetClient::logout() {
+    // Leave first if there is a body out there: the server drops the session's
+    // account on Logout, and a player left in the world would have nothing
+    // behind it to save into.
+    if (status_ == Status::Playing) leaveGame();
+
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::Logout);
+    send(w);
+
+    // Everything the account owned goes with the account. Whatever logs in
+    // next must not inherit the last one's inventory, chat, guild or skins --
+    // the panels read these fields directly, and a stale one would be drawn
+    // on the lobby's first frame before the server's fresh copy arrived.
+    sessionToken_.clear();
+    profile_ = Profile{};
+    chat_.clear();
+    dailyStreak_ = DailyStreak{};
+    skinCatalog_.clear();
+    equippedSkinId_.clear();
+    skinAdmin_ = false;
+    leaderboard_.clear();
+    leaderboardPending_ = false;
+    notifications_.clear();
+    notificationsPending_ = false;
+    notificationsMore_ = true;
+    notificationsPaging_ = false;
+    guild_ = GuildState{};
+    guildInvite_ = GuildInvite{};
+    craftOutcome_ = CraftOutcome{};
+    shopOutcome_ = ShopOutcome{};
+    view_.clear();
+    dead_ = false;
+    killerName_.clear();
+
+    // Not an auth answer: the form must open blank rather than showing the
+    // reason the LAST attempt gave.
+    authAnswered = false;
+    authStatus = net::AuthStatus::Ok;
+    authMessage.clear();
+
+    // A dropped socket stays dropped -- logging out cannot repair it.
+    if (status_ != Status::Offline && status_ != Status::Failed &&
+        status_ != Status::Connecting && status_ != Status::Handshaking) {
+        status_ = Status::Ready;
+    }
+}
+
 void NetClient::joinGame(int viewportWidth, int viewportHeight, const std::string& spawnBiome,
                          const std::string& playerName) {
     ByteWriter w;
@@ -397,6 +445,27 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
     const std::uint8_t rawId = reader.u8();
     incomingBytes_[rawId] += static_cast<std::uint32_t>(frameBytes);
     const auto id = static_cast<net::ServerMessage>(rawId);
+
+    // A logout does not empty the pipe. Whatever the server had already sent
+    // -- the profile handleLeave answers a LeaveGame with, a streak, a skin
+    // catalog, a guild -- is still in flight, and applying any of it would
+    // repopulate the account this client just finished forgetting. Anything
+    // that describes an account or a world is dropped until there is a session
+    // for it to belong to again; only the handshake, the auth answer, a server
+    // notice, a kick and a ping mean anything without one.
+    if (!haveSession()) {
+        switch (id) {
+            case net::ServerMessage::Welcome:
+            case net::ServerMessage::AuthResult:
+            case net::ServerMessage::Notice:
+            case net::ServerMessage::Kick:
+            case net::ServerMessage::Pong:
+                break;
+            default:
+                return;
+        }
+    }
+
     switch (id) {
         case net::ServerMessage::Welcome:      handleWelcome(reader); break;
         case net::ServerMessage::AuthResult:   handleAuthResult(reader); break;
