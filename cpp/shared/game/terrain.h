@@ -19,7 +19,7 @@
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 
 /// One point on a tile's jagged edge, in tile-local coordinates: `t` runs
 /// along the edge (0..kTileSize) and `offset` is how far the outline bulges
@@ -280,8 +280,8 @@ public:
     bool inWater(Vec2 p) const { return !isInMazeRegion(p) && tileIsWater(at(p)); }
 
     /// Which of the nine sections a point is in, or -1 outside the map.
-    int sectionAt(Vec2 p) const { return flr::sectionAt(p); }
-    int sectionOfTile(int tx, int ty) const { return flr::sectionAt(tileCenter(tx, ty)); }
+    int sectionAt(Vec2 p) const { return flix::sectionAt(p); }
+    int sectionOfTile(int tx, int ty) const { return flix::sectionAt(tileCenter(tx, ty)); }
     const Biome& biomeAt(Vec2 p) const { return biomeOf(sectionAt(p)); }
 
     /// The connectivity root chosen by generate(), and where a fresh player
@@ -455,4 +455,4 @@ private:
     int spawnTile_ = 0;
 };
 
-} // namespace flr
+} // namespace flix

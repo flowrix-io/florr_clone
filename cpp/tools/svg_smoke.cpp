@@ -56,7 +56,7 @@ bool mentionsRaster(const SvgDocument& doc) {
     return false;
 }
 
-void load(const flr::Json& table, std::vector<Sprite>& out, std::map<std::string,int>& warnings) {
+void load(const flix::Json& table, std::vector<Sprite>& out, std::map<std::string,int>& warnings) {
     for (const std::string& key : table.keys()) {
         std::string source = table[key]["image"].asString();
         std::size_t begin = source.find_first_not_of(" \t\r\n");
@@ -126,13 +126,13 @@ int main(int argc, char** argv) {
     const std::string dataDir = argc > 1 ? argv[1] : "../src";
     const float time = argc > 2 ? std::strtof(argv[2], nullptr) : 0.0f;
 
-    flr::Json mobs, petals;
+    flix::Json mobs, petals;
     std::string error;
-    if (!flr::Json::parseFile(dataDir + "/mobs.json", mobs, error)) {
+    if (!flix::Json::parseFile(dataDir + "/mobs.json", mobs, error)) {
         std::printf("cannot read mobs.json: %s\n", error.c_str());
         return 1;
     }
-    if (!flr::Json::parseFile(dataDir + "/petals.json", petals, error)) {
+    if (!flix::Json::parseFile(dataDir + "/petals.json", petals, error)) {
         std::printf("cannot read petals.json: %s\n", error.c_str());
         return 1;
     }

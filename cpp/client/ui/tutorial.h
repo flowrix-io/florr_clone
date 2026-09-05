@@ -20,14 +20,14 @@
 
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 struct ClientSettings;
 struct Profile;
 
-} // namespace flr
+} // namespace flix
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// What a step waits for instead of a click. The browser spells these as
 /// `condition` closures over one `completedSteps` set; there is one flag per
@@ -184,4 +184,4 @@ private:
     Layout cached_;
 };
 
-} // namespace flr::ui
+} // namespace flix::ui

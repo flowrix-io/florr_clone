@@ -24,7 +24,7 @@
 #include "shared/game/map_elements.h"
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 class ContentRegistry;
 
@@ -424,4 +424,4 @@ private:
     int framesDrawn_ = 0;
 };
 
-} // namespace flr
+} // namespace flix

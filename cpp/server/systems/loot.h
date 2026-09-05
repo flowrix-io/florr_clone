@@ -27,7 +27,7 @@
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // Components owned by this system
@@ -248,6 +248,6 @@ private:
     std::vector<const DropTables::Entry*> selected_;
 };
 
-} // namespace flr
+} // namespace flix
 
-FLR_COMPONENT(flr::LootAwarded);
+FLIX_COMPONENT(flix::LootAwarded);

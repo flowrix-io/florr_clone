@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -143,4 +143,4 @@ std::string sanitizePlayerName(const std::string& name) {
     return out.substr(first, last - first + 1);
 }
 
-} // namespace flr
+} // namespace flix

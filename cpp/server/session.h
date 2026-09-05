@@ -14,7 +14,7 @@
 #include "shared/core/entity.h"
 #include "shared/net/protocol.h"
 
-namespace flr {
+namespace flix {
 
 enum class SessionStage : std::uint8_t {
     /// Connected, but has not sent a compatible Hello yet. Nothing else is
@@ -112,4 +112,4 @@ std::string sanitizePlayerName(const std::string& name);
 /// that another player will see.
 std::string sanitizeChat(const std::string& text);
 
-} // namespace flr
+} // namespace flix

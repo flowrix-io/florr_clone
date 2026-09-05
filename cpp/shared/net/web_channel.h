@@ -27,7 +27,7 @@
 #include <cstdint>
 #include <string>
 
-namespace flr::net::web {
+namespace flix::net::web {
 
 /// No channel. Returned by every call that could not produce one.
 inline constexpr int kInvalid = -1;
@@ -100,4 +100,4 @@ std::string kind(int channel);
 /// Why a channel closed, when it closed for a reason worth reporting.
 std::string error(int channel);
 
-} // namespace flr::net::web
+} // namespace flix::net::web

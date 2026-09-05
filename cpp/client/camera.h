@@ -30,7 +30,7 @@
 
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 class Camera {
 public:
@@ -90,4 +90,4 @@ private:
     int viewportHeight_ = 720;
 };
 
-} // namespace flr
+} // namespace flix

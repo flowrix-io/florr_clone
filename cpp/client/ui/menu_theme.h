@@ -11,7 +11,7 @@
 
 #include "client/ui/theme.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// The fill/border pair a panel is built from, plus the colours of the chrome
 /// that sits on it.
@@ -107,4 +107,4 @@ inline constexpr double kMenuListBottomPad = 16.0;
 inline constexpr double kMenuCornerX = 6.0;
 inline constexpr double kMenuCornerY = 62.0;
 
-} // namespace flr::ui
+} // namespace flix::ui

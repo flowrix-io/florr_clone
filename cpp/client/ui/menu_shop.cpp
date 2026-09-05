@@ -35,9 +35,9 @@
 #include "shared/game/config.h"
 #include "shared/game/shop.h"
 
-namespace flr {
+namespace flix {
 
-using namespace flr::ui;
+using namespace flix::ui;
 
 namespace {
 
@@ -1184,4 +1184,4 @@ bool ShopPanel::render(MenuContext& ctx) {
     return true;
 }
 
-} // namespace flr
+} // namespace flix

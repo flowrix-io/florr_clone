@@ -21,7 +21,7 @@
 #include "shared/net/bytebuffer.h"
 #include "shared/net/protocol.h"
 
-namespace flr {
+namespace flix {
 
 /// Allocates the ids entities are known by on the wire.
 ///
@@ -205,4 +205,4 @@ struct PlayerVisualState {
 
 PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis);
 
-} // namespace flr
+} // namespace flix

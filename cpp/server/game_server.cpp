@@ -26,7 +26,7 @@
 #include "shared/game/skin_format.h"
 #include "shared/game/skills.h"
 
-namespace flr {
+namespace flix {
 
 double monotonicMillis() {
     using clock = std::chrono::steady_clock;
@@ -1201,7 +1201,8 @@ void GameServer::handleChat(Session& session, net::Connection& connection, ByteR
     // what a mute blocks.
     const Account* account = database_.findUser(session.username);
     if (account != nullptr && account->muted) {
-        sendSystem(connection, "You are muted and cannot send chat messages.");
+        sendSystem(connection, "<span style=\"color: #ff8866;\">You are muted and cannot "
+                               "send chat messages.</span>");
         return;
     }
 
@@ -2993,4 +2994,4 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     views_[session.connection].reset();
 }
 
-} // namespace flr
+} // namespace flix

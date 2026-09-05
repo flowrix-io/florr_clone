@@ -17,7 +17,7 @@
 #include "server/text.h"
 #include "shared/core/json.h"
 
-namespace flr {
+namespace flix {
 
 inline constexpr std::size_t kMaxGuildSize = 200;
 /// A guild invitation lapses after a minute, as the reference's does.
@@ -52,4 +52,4 @@ inline int guildMemberIndex(const Json& guild, const std::string& username) {
     return -1;
 }
 
-} // namespace flr
+} // namespace flix

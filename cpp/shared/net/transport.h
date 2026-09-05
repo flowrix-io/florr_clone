@@ -32,7 +32,7 @@
 #include "shared/net/protocol.h"
 #include "shared/net/web_channel.h"
 
-namespace flr::net {
+namespace flix::net {
 
 /// One accepted socket and its buffers.
 class Connection {
@@ -210,4 +210,4 @@ private:
     bool announced_ = false;
 };
 
-} // namespace flr::net
+} // namespace flix::net

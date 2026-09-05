@@ -22,7 +22,7 @@
 #include "shared/core/json.h"
 #include "shared/net/bytebuffer.h"
 
-namespace flr {
+namespace flix {
 
 inline constexpr int kMaxSkinShapes = 24;
 inline constexpr std::size_t kMaxSkinNameLen = 24;
@@ -117,4 +117,4 @@ bool readCustomSkin(ByteReader&, CustomSkin& out);
 Json skinToJson(const CustomSkin&);
 CustomSkin skinFromJson(const Json&);
 
-} // namespace flr
+} // namespace flix

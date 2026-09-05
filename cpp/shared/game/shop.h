@@ -18,7 +18,7 @@
 #include "shared/game/config.h"
 #include "shared/game/rarity.h"
 
-namespace flr {
+namespace flix {
 
 /// Base (common-tier) price per petal id. Anything absent costs the default,
 /// which is what keeps a newly added petal buyable instead of free.
@@ -194,4 +194,4 @@ inline int starsForKill(Rarity mobRarity) {
     }
 }
 
-} // namespace flr
+} // namespace flix

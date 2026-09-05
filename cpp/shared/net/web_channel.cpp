@@ -8,14 +8,14 @@
 // reason canvas.cpp's does: it is the implementation of the C++ declarations
 // directly above it, and splitting the two across files is how they drift.
 //
-// Everything hangs off one registry, Module.flrNet, whose slots hold either a
+// Everything hangs off one registry, Module.flixNet, whose slots hold either a
 // channel or a listener. Slot indices are the handles C++ passes around, so a
 // closed channel's slot is nulled rather than spliced out -- reusing an index
 // for something else while C++ still holds it would be the one bug this design
 // can have.
 
-EM_JS(void, flr_net_init, (), {
-  if (Module.flrNet) return;
+EM_JS(void, flix_net_init, (), {
+  if (Module.flixNet) return;
 
   const net = {
     slots: [],
@@ -69,13 +69,13 @@ EM_JS(void, flr_net_init, (), {
     },
   };
 
-  Module.flrNet = net;
+  Module.flixNet = net;
 });
 
 // --- client ----------------------------------------------------------------
 
-EM_JS(int, flr_ch_connect, (const char* hostPtr, int port), {
-  const net = Module.flrNet;
+EM_JS(int, flix_ch_connect, (const char* hostPtr, int port), {
+  const net = Module.flixNet;
   // A page dials its own scheme: a document served over https may not open a
   // ws:// socket, and https is also the only context WebTransport exists in.
   // Node has no page, so it asks for the plain one.
@@ -199,9 +199,9 @@ EM_JS(int, flr_ch_connect, (const char* hostPtr, int port), {
 
 // --- server ----------------------------------------------------------------
 
-EM_JS(int, flr_ch_listen,
+EM_JS(int, flix_ch_listen,
       (int port, const char* certPtr, const char* keyPtr, const char* rootPtr), {
-  const net = Module.flrNet;
+  const net = Module.flixNet;
   if (!net.isNode) return -1;
 
   const fs = require("fs");
@@ -490,21 +490,21 @@ EM_JS(int, flr_ch_listen,
   return id;
 });
 
-EM_JS(int, flr_ch_accept, (int listenerId), {
-  const listener = Module.flrNet.get(listenerId);
+EM_JS(int, flix_ch_accept, (int listenerId), {
+  const listener = Module.flixNet.get(listenerId);
   if (!listener || !listener.listener || listener.pending.length === 0) return -1;
   return listener.pending.shift();
 });
 
 // --- both ------------------------------------------------------------------
 
-EM_JS(int, flr_ch_state, (int id), {
-  const slot = Module.flrNet.get(id);
+EM_JS(int, flix_ch_state, (int id), {
+  const slot = Module.flixNet.get(id);
   return slot ? slot.state : 2;
 });
 
-EM_JS(int, flr_ch_recv, (int id, char* out, int capacity), {
-  const channel = Module.flrNet.get(id);
+EM_JS(int, flix_ch_recv, (int id, char* out, int capacity), {
+  const channel = Module.flixNet.get(id);
   if (!channel || channel.listener) return -1;
   let written = 0;
   while (written < capacity && channel.chunks.length > 0) {
@@ -522,8 +522,8 @@ EM_JS(int, flr_ch_recv, (int id, char* out, int capacity), {
   return written;
 });
 
-EM_JS(int, flr_ch_send, (int id, const char* data, int size), {
-  const channel = Module.flrNet.get(id);
+EM_JS(int, flix_ch_send, (int id, const char* data, int size), {
+  const channel = Module.flixNet.get(id);
   if (!channel || channel.listener || channel.state !== 1 || !channel.sender) return 0;
   try {
     // Copied out of the heap, not a view into it: the transport keeps the
@@ -531,19 +531,19 @@ EM_JS(int, flr_ch_send, (int id, const char* data, int size), {
     channel.sender(HEAPU8.slice(data, data + size));
     return 1;
   } catch (e) {
-    Module.flrNet.fail(channel, e);
+    Module.flixNet.fail(channel, e);
     return 0;
   }
 });
 
-EM_JS(double, flr_ch_buffered, (int id), {
-  const channel = Module.flrNet.get(id);
+EM_JS(double, flix_ch_buffered, (int id), {
+  const channel = Module.flixNet.get(id);
   if (!channel || channel.listener || !channel.bufferedFn) return 0;
   try { return channel.bufferedFn(); } catch (e) { return 0; }
 });
 
-EM_JS(void, flr_ch_close, (int id), {
-  const net = Module.flrNet;
+EM_JS(void, flix_ch_close, (int id), {
+  const net = Module.flixNet;
   const slot = net.get(id);
   if (!slot) return;
   if (slot.listener) {
@@ -564,15 +564,15 @@ EM_JS(void, flr_ch_close, (int id), {
 // The caller owns the buffer. The obvious shape -- return a malloc'd string --
 // needs _malloc exported to JavaScript, which is a link setting a caller of
 // this header would have no reason to expect it imposes.
-EM_JS(void, flr_ch_text, (int id, int which, char* out, int capacity), {
-  const slot = Module.flrNet.get(id);
+EM_JS(void, flix_ch_text, (int id, int which, char* out, int capacity), {
+  const slot = Module.flixNet.get(id);
   const value = !slot ? "" : (which === 0 ? (slot.peer || "")
                             : which === 1 ? (slot.kind || "")
                                           : String(slot.error || ""));
   stringToUTF8(value, out, capacity);
 });
 
-namespace flr::net::web {
+namespace flix::net::web {
 
 namespace {
 
@@ -580,7 +580,7 @@ namespace {
 void ensureInit() {
     static bool done = false;
     if (done) return;
-    flr_net_init();
+    flix_net_init();
     done = true;
 }
 
@@ -589,7 +589,7 @@ void ensureInit() {
 /// truncating rather than allocating for.
 std::string text(int channel, int which) {
     char buffer[256] = {0};
-    flr_ch_text(channel, which, buffer, static_cast<int>(sizeof buffer));
+    flix_ch_text(channel, which, buffer, static_cast<int>(sizeof buffer));
     return std::string(buffer);
 }
 
@@ -599,44 +599,44 @@ bool available() { return true; }
 
 int connect(const std::string& host, std::uint16_t port) {
     ensureInit();
-    return flr_ch_connect(host.c_str(), static_cast<int>(port));
+    return flix_ch_connect(host.c_str(), static_cast<int>(port));
 }
 
 int listen(std::uint16_t port, const std::string& certPath, const std::string& keyPath,
            const std::string& webRoot) {
     ensureInit();
-    return flr_ch_listen(static_cast<int>(port), certPath.c_str(), keyPath.c_str(),
+    return flix_ch_listen(static_cast<int>(port), certPath.c_str(), keyPath.c_str(),
                          webRoot.c_str());
 }
 
-int accept(int listener) { return flr_ch_accept(listener); }
+int accept(int listener) { return flix_ch_accept(listener); }
 
-State state(int channel) { return static_cast<State>(flr_ch_state(channel)); }
+State state(int channel) { return static_cast<State>(flix_ch_state(channel)); }
 
 int recv(int channel, void* buffer, int capacity) {
-    return flr_ch_recv(channel, static_cast<char*>(buffer), capacity);
+    return flix_ch_recv(channel, static_cast<char*>(buffer), capacity);
 }
 
 bool send(int channel, const void* data, int size) {
-    return flr_ch_send(channel, static_cast<const char*>(data), size) != 0;
+    return flix_ch_send(channel, static_cast<const char*>(data), size) != 0;
 }
 
 std::size_t buffered(int channel) {
-    const double bytes = flr_ch_buffered(channel);
+    const double bytes = flix_ch_buffered(channel);
     return bytes > 0 ? static_cast<std::size_t>(bytes) : 0;
 }
 
-void close(int channel) { flr_ch_close(channel); }
+void close(int channel) { flix_ch_close(channel); }
 
 std::string peer(int channel) { return text(channel, 0); }
 std::string kind(int channel) { return text(channel, 1); }
 std::string error(int channel) { return text(channel, 2); }
 
-} // namespace flr::net::web
+} // namespace flix::net::web
 
 #else   // !__EMSCRIPTEN__
 
-namespace flr::net::web {
+namespace flix::net::web {
 
 // Natively there is no JavaScript runtime and transport.cpp uses real sockets;
 // these exist so a caller can ask without an #ifdef of its own.
@@ -655,6 +655,6 @@ std::string peer(int) { return {}; }
 std::string kind(int) { return {}; }
 std::string error(int) { return {}; }
 
-} // namespace flr::net::web
+} // namespace flix::net::web
 
 #endif

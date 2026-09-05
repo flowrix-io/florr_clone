@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <chrono>
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -905,4 +905,4 @@ void NetClient::handleDailyStreak(ByteReader& reader) {
     dailyStreak_ = next;
 }
 
-} // namespace flr
+} // namespace flix

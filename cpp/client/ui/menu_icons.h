@@ -11,7 +11,7 @@
 // artwork is; the inline `style` that pins them to 512px is stripped, because
 // renderFitted maps the viewBox onto the button itself.
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// One entry of the icon table, keyed by the name the browser build uses.
 struct IconSource {
@@ -67,4 +67,4 @@ constexpr int menuIconIndex(const char* name) {
     return -1;
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

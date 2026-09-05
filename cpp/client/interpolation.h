@@ -37,7 +37,7 @@
 
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 /// The client's render clock, in milliseconds since an arbitrary fixed epoch.
 ///
@@ -92,4 +92,4 @@ inline double easeAmount(double ratePerSecond, double dtSeconds) {
     return 1.0 - std::exp(-ratePerSecond * dt);
 }
 
-} // namespace flr
+} // namespace flix

@@ -20,7 +20,7 @@
 #include "shared/game/map_elements.h"
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -259,7 +259,7 @@ constexpr double kWallOverlap = 1.5;
 enum class WallEdge { Top = 0, Bottom = 1, Left = 2, Right = 3 };
 
 /// The outline this tile edge is DRAWN with, which is by construction the one
-/// the server collides against: flr::jaggedEdge is the only generator, and
+/// the server collides against: flix::jaggedEdge is the only generator, and
 /// terrain.cpp's wall push-out calls the same function.
 const JaggedEdge& jaggedPoints(int tileX, int tileY, WallEdge edge) {
     return jaggedEdge(tileX, tileY, static_cast<int>(edge));
@@ -2280,4 +2280,4 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     drawEffects(canvas, camera);
 }
 
-} // namespace flr
+} // namespace flix

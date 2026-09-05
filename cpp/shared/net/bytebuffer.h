@@ -17,7 +17,7 @@
 
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 class ByteWriter {
 public:
@@ -163,4 +163,4 @@ private:
     bool failed_ = false;
 };
 
-} // namespace flr
+} // namespace flix

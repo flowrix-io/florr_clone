@@ -28,7 +28,7 @@
 #include "shared/game/rarity.h"
 #include "shared/game/spatial.h"
 
-namespace flr {
+namespace flix {
 
 /// How long a hit keeps the client's white flash lit. Short: it reads as an
 /// impact rather than a status, and it is refreshed by every landed hit, so a
@@ -309,4 +309,4 @@ private:
     std::uint64_t tick_ = 0;
 };
 
-} // namespace flr
+} // namespace flix

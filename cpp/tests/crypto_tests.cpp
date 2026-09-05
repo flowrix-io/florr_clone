@@ -4,7 +4,7 @@
 
 #include <string>
 
-using namespace flr::crypto;
+using namespace flix::crypto;
 
 // The hashes below were produced by the Node `bcrypt` package the previous
 // server used. They are the shape every existing account is stored in, so if

@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace flr {
+namespace flix {
 
 class Json {
 public:
@@ -134,4 +134,4 @@ private:
 /// Escapes `in` as a JSON string body, including the surrounding quotes.
 std::string jsonEscape(const std::string& in);
 
-} // namespace flr
+} // namespace flix

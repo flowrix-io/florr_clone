@@ -6,7 +6,7 @@
 
 #include <string>
 
-using namespace flr;
+using namespace flix;
 
 // --- components used only by these tests ------------------------------------
 namespace {
@@ -16,11 +16,11 @@ struct THealth { double hp = 0; };
 struct TLabel { std::string text; };   // non-trivial: exercises the move paths
 struct TFrozen {};                     // tag
 } // namespace
-FLR_COMPONENT(TPosition);
-FLR_COMPONENT(TVelocity);
-FLR_COMPONENT(THealth);
-FLR_COMPONENT(TLabel);
-FLR_COMPONENT(TFrozen);
+FLIX_COMPONENT(TPosition);
+FLIX_COMPONENT(TVelocity);
+FLIX_COMPONENT(THealth);
+FLIX_COMPONENT(TLabel);
+FLIX_COMPONENT(TFrozen);
 
 // ---------------------------------------------------------------------------
 // ECS
@@ -579,7 +579,7 @@ TEST(bounty_credits_accumulate_per_player) {
 
 TEST(components_can_all_be_attached_to_one_world) {
     // Registering every component type and exercising an archetype move over
-    // the non-trivial ones catches a missing FLR_COMPONENT or a component that
+    // the non-trivial ones catches a missing FLIX_COMPONENT or a component that
     // is not default-constructible.
     World w;
     const Entity e = w.create();
@@ -648,7 +648,7 @@ struct Defaults {
     std::uint16_t sentinel = 0xFFFF;
 };
 } // namespace
-FLR_COMPONENT(Defaults);
+FLIX_COMPONENT(Defaults);
 
 TEST(components_keep_their_in_class_initialisers) {
     // Zeroing a trivially-copyable component instead of constructing it looks

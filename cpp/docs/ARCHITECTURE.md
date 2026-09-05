@@ -76,7 +76,7 @@ Rules that matter:
   because an entity dies once; "is currently poisoned" is a field on
   `Afflictions` because it changes constantly.
 * Component structs live in `shared/game/components.h` and are registered with
-  `FLR_COMPONENT(...)` at global scope. Add new ones there, not locally.
+  `FLIX_COMPONENT(...)` at global scope. Add new ones there, not locally.
 
 ## Simulation
 

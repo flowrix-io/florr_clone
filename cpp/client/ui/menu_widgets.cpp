@@ -6,7 +6,7 @@
 
 #include "client/ui/text.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -377,4 +377,4 @@ std::string ellipsize(const std::string& text, double size, bool bold, double wi
     return out + "...";
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

@@ -19,7 +19,7 @@
 #include "shared/net/protocol.h"
 #include "shared/net/transport.h"
 
-namespace flr {
+namespace flix {
 
 /// The account state the server sends after login, and keeps up to date.
 struct Profile {
@@ -464,4 +464,4 @@ private:
     static constexpr std::size_t kMaxChatLines = 100;
 };
 
-} // namespace flr
+} // namespace flix

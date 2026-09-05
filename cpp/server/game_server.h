@@ -25,7 +25,7 @@
 #include "shared/game/terrain.h"
 #include "shared/net/transport.h"
 
-namespace flr {
+namespace flix {
 
 class MovementSystem;
 class MobAiSystem;
@@ -474,4 +474,4 @@ private:
     ByteWriter scratch_;
 };
 
-} // namespace flr
+} // namespace flix

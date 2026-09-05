@@ -8,7 +8,7 @@
 #include "shared/core/types.h"
 #include "shared/net/protocol.h"
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // World
@@ -455,4 +455,4 @@ inline Vec2 desiredVelocity(double moveAngle, double moveStrength, double maxSpe
     return Vec2::fromAngle(moveAngle, maxSpeed * clamp(moveStrength, 0.0, 1.0));
 }
 
-} // namespace flr
+} // namespace flix

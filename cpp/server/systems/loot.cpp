@@ -5,7 +5,7 @@
 
 #include "shared/core/json.h"
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // DropTables
@@ -548,4 +548,4 @@ void LootSystem::rollTable(const std::vector<DropTables::Entry>& table, Rarity m
     selected_.push_back(chosen);
 }
 
-} // namespace flr
+} // namespace flix

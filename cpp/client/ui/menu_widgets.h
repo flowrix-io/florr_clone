@@ -24,7 +24,7 @@
 #include "shared/core/types.h"
 #include "shared/game/rarity.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 // ---------------------------------------------------------------------------
 // Interactive chrome
@@ -165,4 +165,4 @@ struct Scroller {
     }
 };
 
-} // namespace flr::ui
+} // namespace flix::ui

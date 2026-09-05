@@ -5,7 +5,7 @@
 
 #include "client/ui/text.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -226,4 +226,4 @@ void chip(Canvas& canvas, Rect r, const std::string& label, bool hovered, const 
     text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

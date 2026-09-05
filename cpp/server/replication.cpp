@@ -5,7 +5,7 @@
 
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
     std::uint8_t state = 0;
@@ -112,7 +112,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // The viewer's own body is always replicated, however the camera sits:
         // losing it would leave the client with nothing to anchor prediction to.
         if (e != viewer && outsideView(transform.position)) return;
-        candidates_.push_back({e, id.value, flr::distanceSq(transform.position, centre)});
+        candidates_.push_back({e, id.value, flix::distanceSq(transform.position, centre)});
     });
 
     if (candidates_.size() > maxEntities) {
@@ -366,4 +366,4 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     out.patchU16(eventCountAt, eventCount);
 }
 
-} // namespace flr
+} // namespace flix

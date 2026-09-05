@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cmath>
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -274,4 +274,4 @@ void textField(Canvas& canvas, Rect r, const std::string& value, const std::stri
                     static_cast<float>(std::max(2.0, r.h - 20.0)));
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

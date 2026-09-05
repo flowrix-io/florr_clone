@@ -15,7 +15,7 @@
 #include "shared/game/player_flags.h"
 #include "shared/net/bytebuffer.h"
 
-namespace flr::net {
+namespace flix::net {
 
 /// Identifies one connected client for the lifetime of its socket.
 using ConnectionId = std::uint32_t;
@@ -340,4 +340,4 @@ inline std::uint32_t contentHash(const std::string& text, std::uint32_t seed = 2
     return h;
 }
 
-} // namespace flr::net
+} // namespace flix::net

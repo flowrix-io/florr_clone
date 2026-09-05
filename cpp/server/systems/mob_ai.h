@@ -69,7 +69,7 @@
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -532,4 +532,4 @@ private:
     std::unordered_set<Entity> visited_;
 };
 
-} // namespace flr
+} // namespace flix

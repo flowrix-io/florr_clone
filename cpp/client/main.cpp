@@ -52,7 +52,7 @@ void usage(const char* program) {
 } // namespace
 
 int main(int argc, char** argv) {
-    flr::AppConfig config;
+    flix::AppConfig config;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -82,12 +82,12 @@ int main(int argc, char** argv) {
                 return out;
             };
             const std::string name = slug(next("--menu"));
-            for (int id = 1; id < flr::kMenuCount; ++id) {
-                if (slug(flr::menuLabel(static_cast<flr::MenuId>(id))) == name) {
-                    config.autoMenu = static_cast<flr::MenuId>(id);
+            for (int id = 1; id < flix::kMenuCount; ++id) {
+                if (slug(flix::menuLabel(static_cast<flix::MenuId>(id))) == name) {
+                    config.autoMenu = static_cast<flix::MenuId>(id);
                 }
             }
-            if (config.autoMenu == flr::MenuId::None) {
+            if (config.autoMenu == flix::MenuId::None) {
                 std::fprintf(stderr, "unknown menu: %s\n", name.c_str());
                 return 2;
             }
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
     // Leaked deliberately: main() returns straight after registering the
     // callback and the app has to outlive it. The browser tab's teardown is
     // the process exit here.
-    auto* app = new flr::App();
+    auto* app = new flix::App();
     std::string error;
     if (!app->start(config, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     }
     emscripten_set_main_loop_arg(
         [](void* handle) {
-            auto* running = static_cast<flr::App*>(handle);
+            auto* running = static_cast<flix::App*>(handle);
             if (running->step()) return;
             running->shutdown();
             emscripten_cancel_main_loop();
@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
         0);
     return 0;
 #else
-    flr::App app;
+    flix::App app;
     std::string error;
     if (!app.start(config, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());

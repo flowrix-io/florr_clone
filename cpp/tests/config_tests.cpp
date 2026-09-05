@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 
@@ -82,7 +82,7 @@ std::string tempDir() {
     const char* env = std::getenv("TMPDIR");
     std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
     if (base.back() != '/') base.push_back('/');
-    base += "flr_config_tests";
+    base += "flix_config_tests";
     mkdir(base.c_str(), 0755);   // already exists is fine
     return base;
 }

@@ -11,7 +11,7 @@
 #include "shared/core/json.h"
 #include "shared/net/protocol.h"
 
-namespace flr {
+namespace flix {
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -1190,4 +1190,4 @@ bool loadContent(const std::string& dataDir, std::string& errorOut) {
     return registry().load(dataDir, errorOut);
 }
 
-} // namespace flr
+} // namespace flix

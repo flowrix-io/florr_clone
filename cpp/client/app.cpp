@@ -21,9 +21,9 @@
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 
-using namespace flr::ui;
+using namespace flix::ui;
 
 namespace {
 
@@ -2934,4 +2934,4 @@ std::string App::settingsPath() const {
     return config_.sessionFile + "-settings";
 }
 
-} // namespace flr
+} // namespace flix

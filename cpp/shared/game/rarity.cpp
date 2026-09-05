@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace flr {
+namespace flix {
 
 Rarity parseRarity(const std::string& name) {
     for (int i = 0; i < kRarityCount; ++i) {
@@ -11,4 +11,4 @@ Rarity parseRarity(const std::string& name) {
     return Rarity::Common;
 }
 
-} // namespace flr
+} // namespace flix

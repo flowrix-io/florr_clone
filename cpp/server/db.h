@@ -30,7 +30,7 @@
 #include "shared/game/rarity.h"
 #include "shared/game/skills.h"
 
-namespace flr {
+namespace flix {
 
 /// One item as the database stores it -- an inventory entry that has been
 /// equipped, not the live petal entity. `type` is the old server's item
@@ -175,7 +175,7 @@ struct CreateResult {
 
 class Database {
 public:
-    /// One logged-in client. Nested rather than `flr::Session`, which is the
+    /// One logged-in client. Nested rather than `flix::Session`, which is the
     /// per-connection state in server/session.h -- a socket and a credential
     /// are different things and both deserve the obvious name in their own
     /// scope.
@@ -443,4 +443,4 @@ private:
     ClockFn clock_ = nullptr;
 };
 
-} // namespace flr
+} // namespace flix

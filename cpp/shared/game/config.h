@@ -28,7 +28,7 @@
 #include "shared/game/components.h"
 #include "shared/game/rarity.h"
 
-namespace flr {
+namespace flix {
 
 /// What mobIndex()/petalIndex() answer for an id the content does not define.
 /// Deliberately the same sentinel as an empty loadout slot: "no petal" and
@@ -450,4 +450,4 @@ const ContentRegistry& content();
 /// content in place and fills `errorOut`.
 bool loadContent(const std::string& dataDir, std::string& errorOut);
 
-} // namespace flr
+} // namespace flix

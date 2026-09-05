@@ -11,8 +11,8 @@
 
 #include "server_harness.h"
 
-using namespace flr;
-using namespace flr::testsupport;
+using namespace flix;
+using namespace flix::testsupport;
 
 namespace {
 

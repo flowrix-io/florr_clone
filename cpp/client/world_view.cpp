@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace flr {
+namespace flix {
 
 void WorldView::clear() {
     entities_.clear();
@@ -418,4 +418,4 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
     }
 }
 
-} // namespace flr
+} // namespace flix

@@ -6,7 +6,7 @@
 #include "client/ui/draw.h"
 #include "shared/game/config.h"
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -522,4 +522,4 @@ void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, double x, doubl
     draw(canvas, petals_[index], x, y, diameter, rotation, timeSeconds, false);
 }
 
-} // namespace flr
+} // namespace flix

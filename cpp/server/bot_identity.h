@@ -20,7 +20,7 @@
 #include "shared/game/config.h"
 #include "shared/game/rarity.h"
 
-namespace flr {
+namespace flix {
 
 /// The names the reference draws from. Two are deliberately empty: an unnamed
 /// flower is a real sight in the live game.
@@ -165,4 +165,4 @@ inline BotIdentity botIdentityForName(const std::string& name, int slotCount, in
     return identity;
 }
 
-} // namespace flr
+} // namespace flix

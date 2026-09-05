@@ -6,7 +6,7 @@
 #include <ctime>
 #include <string>
 
-namespace flr::crypto {
+namespace flix::crypto {
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -693,4 +693,4 @@ bool constantTimeEquals(const std::string& a, const std::string& b) {
     return diff == 0;
 }
 
-} // namespace flr::crypto
+} // namespace flix::crypto

@@ -22,7 +22,7 @@
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 
 class ContentRegistry;
 class MapData;
@@ -361,4 +361,4 @@ private:
     mutable int glitchSide_ = 0;
 };
 
-} // namespace flr
+} // namespace flix

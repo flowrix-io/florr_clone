@@ -20,7 +20,7 @@
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 
 class MapData;
 
@@ -265,4 +265,4 @@ private:
     SpatialGrid separationGrid_{kMobCollisionCellSize};
 };
 
-} // namespace flr
+} // namespace flix

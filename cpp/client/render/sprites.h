@@ -23,7 +23,7 @@
 #include "shared/game/constants.h"
 #include "shared/game/rarity.h"
 
-namespace flr {
+namespace flix {
 
 class ContentRegistry;
 
@@ -90,4 +90,4 @@ private:
     std::vector<std::string> warnings_;
 };
 
-} // namespace flr
+} // namespace flix

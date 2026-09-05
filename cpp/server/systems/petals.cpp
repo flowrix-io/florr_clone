@@ -6,7 +6,7 @@
 
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 namespace {
 
 /// Cluster spacing as a multiple of a petal's own radius. The reference states
@@ -1999,4 +1999,4 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     summonPets(world, registry, player, slot, mobIndex, petRarity, kFlowerPetCount, at, *state);
 }
 
-} // namespace flr
+} // namespace flix

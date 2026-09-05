@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // entity.h
@@ -43,7 +43,7 @@ namespace detail {
 ComponentId registerComponent(ComponentInfo info) {
     Registry& r = registry();
     if (r.count >= kMaxComponents) {
-        throw std::runtime_error("component registry full; raise flr::kMaxComponents");
+        throw std::runtime_error("component registry full; raise flix::kMaxComponents");
     }
     info.id = static_cast<ComponentId>(r.count);
     r.entries[r.count++] = info;
@@ -333,4 +333,4 @@ const std::string* World::nameOf(Entity e) const {
     return name.empty() ? nullptr : &name;
 }
 
-} // namespace flr
+} // namespace flix

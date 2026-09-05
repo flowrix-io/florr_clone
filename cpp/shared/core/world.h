@@ -22,7 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace flr {
+namespace flix {
 
 class World;
 
@@ -429,4 +429,4 @@ private:
     std::vector<std::function<void(World&)>> deferred_;
 };
 
-} // namespace flr
+} // namespace flix

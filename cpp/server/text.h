@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace flr {
+namespace flix {
 
 /// Case folding for every name comparison on the server. Guild membership,
 /// account lookup and command targets are all case-insensitive in the
@@ -48,4 +48,4 @@ inline std::vector<std::string> splitWords(const std::string& s) {
     return words;
 }
 
-} // namespace flr
+} // namespace flix

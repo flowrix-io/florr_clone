@@ -23,9 +23,9 @@
 #include "client/world_view.h"
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 
-using namespace flr::ui;
+using namespace flix::ui;
 
 namespace {
 
@@ -753,4 +753,4 @@ bool TalentsPanel::render(MenuContext& ctx) {
     return true;
 }
 
-} // namespace flr
+} // namespace flix

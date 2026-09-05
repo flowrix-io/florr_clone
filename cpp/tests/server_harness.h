@@ -18,7 +18,7 @@
 #include "server/game_server.h"
 #include "shared/game/config.h"
 
-namespace flr::testsupport {
+namespace flix::testsupport {
 
 inline std::string tempPath(const char* name) {
     return std::string("/tmp/florr-itest-") + name + "-" + std::to_string(::getpid()) + ".json";
@@ -29,9 +29,9 @@ inline std::string tempPath(const char* name) {
 /// project root, and from ctest, and all three must work.
 inline const std::string& dataDir() {
     static const std::string resolved = [] {
-#ifdef FLR_TEST_DATA_DIR
+#ifdef FLIX_TEST_DATA_DIR
         {
-            const std::string staged = FLR_TEST_DATA_DIR;
+            const std::string staged = FLIX_TEST_DATA_DIR;
             std::ifstream mapProbe(staged + "/map_bundle.ts", std::ios::binary);
             if (mapProbe) return staged;
         }
@@ -128,4 +128,4 @@ inline bool loginNew(Harness& h, NetClient& client, const char* name, const char
     return h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; });
 }
 
-} // namespace flr::testsupport
+} // namespace flix::testsupport

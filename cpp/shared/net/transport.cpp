@@ -17,7 +17,7 @@
 
 #include <algorithm>
 
-namespace flr::net {
+namespace flix::net {
 
 namespace {
 
@@ -673,4 +673,4 @@ void Dialer::flush() {
     if (!connection_->writeAvailable(error)) fail(error, nullptr);
 }
 
-} // namespace flr::net
+} // namespace flix::net

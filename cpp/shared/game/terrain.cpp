@@ -13,7 +13,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace flr {
+namespace flix {
 namespace {
 
 constexpr int kAxis = kTilesPerAxis;
@@ -538,7 +538,7 @@ void Terrain::generateSections(Rng& rng) {
     const NoiseSet noise(rng);
     for (int ty = 0; ty < kAxis; ++ty) {
         for (int tx = 0; tx < kAxis; ++tx) {
-            const int section = flr::sectionAt(tileCenter(tx, ty));
+            const int section = flix::sectionAt(tileCenter(tx, ty));
             tiles_[static_cast<std::size_t>(index(tx, ty))] =
                 static_cast<std::uint8_t>(classifyTile(section, tx, ty, noise));
         }
@@ -637,7 +637,7 @@ void Terrain::placeCircuitChips(Rng& rng) {
     // and the section is connected without any repair.
     for (int cellY = 0; cellY + 9 <= kAxis; cellY += 9) {
         for (int cellX = 0; cellX + 9 <= kAxis; cellX += 9) {
-            if (flr::sectionAt(tileCenter(cellX + 4, cellY + 4)) != 7) continue;
+            if (flix::sectionAt(tileCenter(cellX + 4, cellY + 4)) != 7) continue;
             if (!rng.chance(0.55)) continue;
             const int size = rng.rangeInt(3, 5);
             const int ox = cellX + 2;
@@ -1458,4 +1458,4 @@ void setActiveMazeDay(std::int64_t dayNumber) {
     if (mutableActiveMaze().day() != dayNumber) mutableActiveMaze().setDay(dayNumber);
 }
 
-} // namespace flr
+} // namespace flix

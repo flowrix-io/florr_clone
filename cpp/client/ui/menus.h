@@ -34,7 +34,7 @@
 #include "shared/core/types.h"
 #include "shared/game/skills.h"
 
-namespace flr {
+namespace flix {
 
 /// Which panel is on screen.
 ///
@@ -686,4 +686,4 @@ const char* menuLabel(MenuId);
 /// A key's name, for the settings list. "Unbound" for Key::Unknown.
 const char* keyName(Key);
 
-} // namespace flr
+} // namespace flix

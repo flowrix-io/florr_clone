@@ -32,7 +32,7 @@
 #include <string>
 #include <vector>
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// Whether this build may honour the tags that only mean something inside a
 /// real page. Only the emscripten build can, and it defines FLIX_WEB_BUILD.
@@ -78,4 +78,4 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source);
 /// for the surfaces that draw one flat string. <br> becomes '\n'.
 std::string markupPlainText(const std::string& source);
 
-} // namespace flr::ui
+} // namespace flix::ui

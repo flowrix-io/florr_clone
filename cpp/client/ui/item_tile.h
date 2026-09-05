@@ -27,7 +27,7 @@
 #include "shared/game/components.h"
 #include "shared/game/rarity.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// gardn's design cell. A tile's contents are written in these units.
 inline constexpr double kItemTileDesign = 60.0;
@@ -127,4 +127,4 @@ struct ItemTile {
 /// shorter of the rect's sides.
 void drawItemTile(Canvas&, const SpriteCache&, Rect rect, const ItemTile& tile);
 
-} // namespace flr::ui
+} // namespace flix::ui

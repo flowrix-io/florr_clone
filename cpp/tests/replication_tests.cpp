@@ -7,7 +7,7 @@
 
 #include <string>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 

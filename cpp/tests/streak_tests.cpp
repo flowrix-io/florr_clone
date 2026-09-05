@@ -7,7 +7,7 @@
 #include "server/db.h"
 #include "server/session.h"
 
-using namespace flr;
+using namespace flix;
 
 // The daily-login streak, which is the only thing on the title screen that
 // depends on the calendar. Every case here drives the clock rather than the

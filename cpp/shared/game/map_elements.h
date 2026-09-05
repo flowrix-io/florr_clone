@@ -21,7 +21,7 @@
 #include "shared/game/components.h"
 #include "shared/game/rarity.h"
 
-namespace flr {
+namespace flix {
 
 class Terrain;
 
@@ -200,4 +200,4 @@ private:
     std::vector<std::string> pickableBiomes_;
 };
 
-} // namespace flr
+} // namespace flix

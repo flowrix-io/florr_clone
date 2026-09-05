@@ -9,7 +9,7 @@
 #include <unistd.h>
 #endif
 
-namespace flr {
+namespace flix {
 
 std::uint64_t residentBytes() {
 #if defined(__APPLE__)
@@ -60,4 +60,4 @@ std::uint64_t heapBytes() {
 #endif
 }
 
-} // namespace flr
+} // namespace flix

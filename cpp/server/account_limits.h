@@ -26,7 +26,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace flr {
+namespace flix {
 
 /// Registrations one address may make back-to-back, then one per ten minutes.
 inline constexpr double kRegisterBurst = 3;
@@ -129,4 +129,4 @@ private:
     Bucket globalRegister_{kGlobalRegisterBurst, 0};
 };
 
-} // namespace flr
+} // namespace flix

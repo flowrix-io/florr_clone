@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 

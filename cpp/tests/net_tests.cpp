@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
-using namespace flr;
-using namespace flr::net;
+using namespace flix;
+using namespace flix::net;
 
 // ---------------------------------------------------------------------------
 // ByteWriter / ByteReader

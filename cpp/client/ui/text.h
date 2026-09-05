@@ -11,7 +11,7 @@
 #include "canvas.h"
 #include "font.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// The process-wide typeface. One face is enough: bold is produced by stroking
 /// the glyph in its own fill colour, which matches the game's chunky look more
@@ -37,4 +37,4 @@ double ascent(double size, bool bold = false);
 double descent(double size, bool bold = false);
 double lineHeight(double size, bool bold = false);
 
-} // namespace flr::ui
+} // namespace flix::ui

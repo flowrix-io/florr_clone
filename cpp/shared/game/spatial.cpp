@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace flr {
+namespace flix {
 
 SpatialGrid::SpatialGrid(double cellSize, Vec2 origin, Vec2 size) : origin_(origin) {
     cellSize_ = (std::isfinite(cellSize) && cellSize > 1.0) ? cellSize : kDefaultCellSize;
@@ -117,4 +117,4 @@ std::size_t SpatialGrid::reservedEntries() const {
     return total;
 }
 
-} // namespace flr
+} // namespace flix

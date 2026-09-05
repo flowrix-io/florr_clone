@@ -2,7 +2,7 @@
 
 #include <memory>
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -90,4 +90,4 @@ double lineHeight(double size, bool bold) {
     return state().ready ? Fonts::face(bold).lineHeight(static_cast<float>(size)) : size * 1.3;
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

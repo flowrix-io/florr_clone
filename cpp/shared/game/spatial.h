@@ -22,7 +22,7 @@
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 
 class SpatialGrid {
 public:
@@ -114,4 +114,4 @@ private:
     mutable std::uint32_t queryEpoch_ = 0;
 };
 
-} // namespace flr
+} // namespace flix

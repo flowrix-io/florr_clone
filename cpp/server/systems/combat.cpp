@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -1308,4 +1308,4 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
     }
 }
 
-} // namespace flr
+} // namespace flix

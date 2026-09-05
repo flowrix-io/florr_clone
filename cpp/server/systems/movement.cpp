@@ -7,7 +7,7 @@
 #include "shared/game/constants.h"
 #include "shared/game/map_elements.h"
 
-namespace flr {
+namespace flix {
 namespace {
 
 /// A correction from resolveCircle smaller than this is floating-point noise
@@ -648,4 +648,4 @@ void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
     }
 }
 
-} // namespace flr
+} // namespace flix

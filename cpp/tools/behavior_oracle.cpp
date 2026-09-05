@@ -15,7 +15,7 @@
 
 namespace {
 
-using namespace flr;
+using namespace flix;
 
 void emit(const std::string& path, double value) {
     Json row = Json::array();
@@ -188,7 +188,7 @@ void emitMovementScenario(const char* mapBundlePath) {
 } // namespace
 
 int main(int argc, char** argv) {
-    using namespace flr;
+    using namespace flix;
     try {
         if (argc != 5) {
             std::cerr << "usage: behavior_oracle <mobs.json> <petals.json> <mob_xp.json> <map_bundle.ts>\n";

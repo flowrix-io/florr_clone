@@ -5,7 +5,7 @@
 #include <cmath>
 #include <vector>
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -309,4 +309,4 @@ void AccountLimiter::reset(double nowMillis) {
     suppressedRefusals_ = 0;
 }
 
-} // namespace flr
+} // namespace flix

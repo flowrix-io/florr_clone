@@ -14,7 +14,7 @@
 
 #include "shared/game/rarity.h"
 
-namespace flr {
+namespace flix {
 
 enum class SkillId : std::uint8_t {
     Damage = 0,
@@ -158,4 +158,4 @@ inline int skillTierCount(SkillId id) {
     return i < kSkillTiers.size() ? kSkillTiers[i] : kRarityCount;
 }
 
-} // namespace flr
+} // namespace flix

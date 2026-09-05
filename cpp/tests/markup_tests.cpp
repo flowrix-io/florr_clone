@@ -4,10 +4,10 @@
 
 #include <string>
 
-using flr::ui::kWebMarkup;
-using flr::ui::markupPlainText;
-using flr::ui::MarkupSpan;
-using flr::ui::parseMarkup;
+using flix::ui::kWebMarkup;
+using flix::ui::markupPlainText;
+using flix::ui::MarkupSpan;
+using flix::ui::parseMarkup;
 
 // The chat wire carries markup, and this is where the rules about which tags
 // survive it are pinned down. Two of them matter beyond looks: <script> and

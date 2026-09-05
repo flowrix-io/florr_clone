@@ -5,7 +5,7 @@
 #include <functional>
 #include <string>
 
-using namespace flr;
+using namespace flix;
 
 /// A database with nothing recorded against the address under test.
 static const std::function<int()> noAccountsToday = [] { return 0; };

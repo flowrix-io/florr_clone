@@ -13,7 +13,7 @@
 #include <fstream>
 #include <string>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 
@@ -139,7 +139,7 @@ std::string tempDir() {
     const char* env = std::getenv("TMPDIR");
     std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
     if (base.back() != '/') base.push_back('/');
-    base += "flr_combat_tests";
+    base += "flix_combat_tests";
     mkdir(base.c_str(), 0755);   // already exists is fine
     return base;
 }

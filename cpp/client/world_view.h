@@ -17,7 +17,7 @@
 #include "shared/net/bytebuffer.h"
 #include "shared/net/protocol.h"
 
-namespace flr {
+namespace flix {
 
 /// One entity as the client knows it.
 struct RemoteEntity {
@@ -214,4 +214,4 @@ private:
     bool clockAnchored_ = false;
 };
 
-} // namespace flr
+} // namespace flix

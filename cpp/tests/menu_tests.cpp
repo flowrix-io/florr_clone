@@ -6,11 +6,11 @@
 
 #include <fstream>
 
-using namespace flr;
-using flr::testsupport::connectClient;
-using flr::testsupport::dataDir;
-using flr::testsupport::Harness;
-using flr::testsupport::loginNew;
+using namespace flix;
+using flix::testsupport::connectClient;
+using flix::testsupport::dataDir;
+using flix::testsupport::Harness;
+using flix::testsupport::loginNew;
 
 // What the menus can actually do to an account: spend talent points, buy a
 // petal, wear a skin, and read the board. Every one of these is a request the
@@ -585,7 +585,7 @@ TEST(killing_a_mob_credits_the_ledger_and_pays_its_stars) {
 // ---------------------------------------------------------------------------
 
 TEST(a_talent_tree_round_trips_through_the_database) {
-    const std::string path = flr::testsupport::tempPath("skill-json");
+    const std::string path = flix::testsupport::tempPath("skill-json");
     std::remove(path.c_str());
     {
         Database db;

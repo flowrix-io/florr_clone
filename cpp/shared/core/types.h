@@ -5,7 +5,7 @@
 #include <cmath>
 #include <algorithm>
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // Geometry
@@ -188,4 +188,4 @@ private:
     std::uint64_t s_[4]{};
 };
 
-} // namespace flr
+} // namespace flix

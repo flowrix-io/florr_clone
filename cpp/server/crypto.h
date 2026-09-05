@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <string>
 
-namespace flr::crypto {
+namespace flix::crypto {
 
 // ---------------------------------------------------------------------------
 // SHA-256
@@ -99,7 +99,7 @@ int bcryptCost(const std::string& stored);
 /// refill overwrites its own key from the keystream, so capturing the state
 /// reveals nothing that was generated before it.
 ///
-/// Distinct from `flr::Rng` on purpose. That one is xoshiro, seeded from a
+/// Distinct from `flix::Rng` on purpose. That one is xoshiro, seeded from a
 /// fixed number so the world generates identically on every machine -- exactly
 /// the property that makes it unusable for a session token.
 class SecureRandom {
@@ -132,4 +132,4 @@ SecureRandom& secureRandom();
 /// leading bytes of a guessed token or hash were correct.
 bool constantTimeEquals(const std::string& a, const std::string& b);
 
-} // namespace flr::crypto
+} // namespace flix::crypto

@@ -15,8 +15,8 @@
 #include "server/bot_identity.h"
 #include "server/db.h"
 
-using namespace flr;
-using namespace flr::testsupport;
+using namespace flix;
+using namespace flix::testsupport;
 
 namespace {
 
@@ -204,10 +204,10 @@ TEST(give_rejects_an_unknown_petal_and_an_unknown_rarity) {
     CHECK(loginAs(h, client, "boss", "password7"));
 
     CHECK(say(h, client, "/admin give boss notapetal legendary"));
-    CHECK(sawText(client, "No petal named \"notapetal\""));
+    CHECK(sawText(client, "Petal type \"notapetal\" does not exist"));
 
     CHECK(say(h, client, "/admin give boss rose notararity"));
-    CHECK(sawText(client, "Invalid rarity \"notararity\""));
+    CHECK(sawText(client, "Invalid rarity. Valid rarities:"));
 }
 
 TEST(spawn_places_a_mob_and_killall_clears_it) {
@@ -241,7 +241,7 @@ TEST(spawn_places_a_mob_and_killall_clears_it) {
     CHECK(sawText(client, "pets left intact"));
 }
 
-TEST(spawn_reports_a_bad_mob_type_instead_of_spawning_something_else) {
+TEST(spawn_with_a_bad_mob_type_spawns_nothing) {
     Harness h("cmd-spawn-bad", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
     });
@@ -249,8 +249,21 @@ TEST(spawn_reports_a_bad_mob_type_instead_of_spawning_something_else) {
 
     NetClient client;
     CHECK(loginAs(h, client, "boss", "password7"));
+
+    const auto liveMobs = [&] {
+        int count = 0;
+        Query<MobTag> mobs{h.server.world()};
+        mobs.each([&](Entity, MobTag&) { ++count; });
+        return count;
+    };
+
+    // A bad mob type is a server-console diagnostic and nothing else -- the
+    // reference logs it inside spawnMob and still acknowledges in chat -- so
+    // the only thing a player can observe is that nothing was spawned.
+    const int before = liveMobs();
     CHECK(say(h, client, "/admin spawn notamob rare"));
-    CHECK(sawText(client, "No mob type named \"notamob\""));
+    CHECK(sawText(client, "Spawned rare notamob"));
+    CHECK_EQ(liveMobs(), before);
 }
 
 TEST(teleport_moves_the_flower_and_refuses_a_point_off_the_map) {
@@ -354,7 +367,7 @@ TEST(a_temporary_grant_opens_the_console_and_closes_on_respawn) {
 
     // The loan does not extend itself: a grantee may not hand out a successor.
     CHECK(say(h, helper, "/admin grant_admin boss"));
-    CHECK(sawText(helper, "does not cover \"grant_admin\""));
+    CHECK(sawText(helper, "Only a full admin can grant or revoke admin access."));
 
     // And it ends with the life it was lent for.
     helper.requestRespawn();
@@ -399,10 +412,10 @@ TEST(generate_code_mints_a_redeemable_code) {
     CHECK(say(h, client, "/admin generate_code 250 3"));
     CHECK(sawText(client, "[CODE GENERATED]"));
     CHECK(sawText(client, "Stars: 250"));
-    CHECK(sawText(client, "Max uses: 3"));
+    CHECK(sawText(client, "Max Uses: 3"));
 
     CHECK(say(h, client, "/admin list_codes"));
-    CHECK(sawText(client, "250 stars"));
+    CHECK(sawText(client, "Stars: 250"));
 
     // A refused mint says so rather than writing a zero-star code.
     CHECK(say(h, client, "/admin generate_code notanumber"));
@@ -433,7 +446,7 @@ TEST(notifications_are_appended_to_the_array_table_not_over_it) {
     CHECK(sawText(client, "Valid types:"));
 
     CHECK(say(h, client, "/admin clear_notifications"));
-    CHECK(sawText(client, "Cleared 1 notification."));
+    CHECK(sawText(client, "Cleared 1 notification(s)"));
 }
 
 TEST(loadout_from_string_reports_the_build_the_world_would_spawn) {
@@ -457,10 +470,10 @@ TEST(loadout_from_string_reports_the_build_the_world_would_spawn) {
                               content().petal(expected.slots[0].petalIndex).id));
 
     CHECK(say(h, client, "/level-from-string"));
-    CHECK(sawText(client, "Usage: /level-from-string <name>"));
+    CHECK(sawText(client, "Usage: /level-from-string &lt;name&gt;"));
 }
 
-TEST(commands_this_build_lacks_say_so_by_name) {
+TEST(a_command_this_build_lacks_is_left_unanswered) {
     Harness h("cmd-unsupported", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
     });
@@ -469,14 +482,17 @@ TEST(commands_this_build_lacks_say_so_by_name) {
     NetClient client;
     CHECK(loginAs(h, client, "boss", "password7"));
 
-    // The client advertises the browser build's whole table. A player who
-    // types one of the rows this server has no counterpart for deserves to be
-    // told which row, not a bare "unknown command".
+    // The reference's command chain falls off its last branch for an admin
+    // verb it does not know, and the echo is all the operator sees. This build
+    // says exactly as much -- no apology of its own about what it lacks.
     CHECK(say(h, client, "/admin update now"));
-    CHECK(sawText(client, "\"update\" is not available on this server"));
+    CHECK(sawText(client, "[ADMIN] boss executed: update now"));
+    CHECK(!sawText(client, "not available"));
 
+    // A squad line is not a command here, so it gets the answer any unknown
+    // slash line gets rather than a message written for this build.
     CHECK(say(h, client, "/squad-create public"));
-    CHECK(sawText(client, "Squads are not available on this server."));
+    CHECK(sawText(client, "Unknown command. Available commands:"));
 }
 
 TEST(api_keys_are_minted_and_revoked_per_account) {
@@ -489,7 +505,8 @@ TEST(api_keys_are_minted_and_revoked_per_account) {
     CHECK(loginAs(h, client, "owner", "password7"));
 
     CHECK(say(h, client, "/create-api-key discord-bot"));
-    CHECK(sawText(client, "[API KEY CREATED] label: discord-bot"));
+    CHECK(sawText(client, "[API KEY CREATED]"));
+    CHECK(sawText(client, "Label: discord-bot"));
     CHECK(sawText(client, "sk_"));
 
     CHECK(say(h, client, "/delete-api-key sk_"));
@@ -567,5 +584,5 @@ TEST(delete_guests_keeps_a_guest_that_actually_played) {
     NetClient client;
     CHECK(loginAs(fresh, client, "boss", "password7"));
     CHECK(say(fresh, client, "/admin delete_guests"));
-    CHECK(sawText(client, "Deleted 1 guest account."));
+    CHECK(sawText(client, "Deleted 1 guest account(s) and their player data."));
 }

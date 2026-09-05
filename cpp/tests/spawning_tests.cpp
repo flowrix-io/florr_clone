@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 
@@ -52,7 +52,7 @@ std::string tempPath(const char* name) {
     const char* env = std::getenv("TMPDIR");
     std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
     if (base.back() != '/') base.push_back('/');
-    base += "flr_spawning_tests";
+    base += "flix_spawning_tests";
     mkdir(base.c_str(), 0755);
     return base + "/" + name;
 }

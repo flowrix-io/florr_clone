@@ -11,7 +11,7 @@
 
 #include <cstdint>
 
-namespace flr {
+namespace flix {
 
 /// Resident set size in bytes -- the browser server's `rss`.
 std::uint64_t residentBytes();
@@ -21,4 +21,4 @@ std::uint64_t residentBytes();
 /// is what the program is actually holding, which is what the graph is for.
 std::uint64_t heapBytes();
 
-} // namespace flr
+} // namespace flix

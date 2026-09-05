@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace flr {
+namespace flix {
 
 using ComponentId = std::uint16_t;
 
@@ -68,13 +68,13 @@ ComponentInfo makeComponentInfo(const char* name) {
 /// Every component type must specialise this, which is also what gives the
 /// type a stable human-readable name in diagnostics:
 ///     struct Position { Vec2 value; };
-///     FLR_COMPONENT(Position);
+///     FLIX_COMPONENT(Position);
 template <class T>
 struct ComponentTraits;
 
-#define FLR_COMPONENT(Type)                                    \
+#define FLIX_COMPONENT(Type)                                    \
     template <>                                                \
-    struct ::flr::ComponentTraits<Type> {                      \
+    struct ::flix::ComponentTraits<Type> {                      \
         static constexpr const char* name = #Type;             \
     }
 
@@ -106,4 +106,4 @@ ComponentMask maskOf() {
     return m;
 }
 
-} // namespace flr
+} // namespace flix

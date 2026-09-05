@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace flr {
+namespace flix {
 namespace {
 
 /// Mobs the recycler is not allowed to touch.
@@ -1355,4 +1355,4 @@ bool SpawnSystem::randomPointInZoneTypeInSection(Rarity tier, int section, Rng& 
     return false;
 }
 
-} // namespace flr
+} // namespace flix

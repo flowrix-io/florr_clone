@@ -22,7 +22,7 @@
 #include "shared/game/config.h"
 #include "shared/game/spatial.h"
 
-namespace flr {
+namespace flix {
 
 class Terrain;
 
@@ -371,7 +371,7 @@ private:
     Rng rng_{0xB17E5EEDull};
 };
 
-} // namespace flr
+} // namespace flix
 
-FLR_COMPONENT(flr::PetalSlotState);
-FLR_COMPONENT(flr::PetalEffect);
+FLIX_COMPONENT(flix::PetalSlotState);
+FLIX_COMPONENT(flix::PetalEffect);

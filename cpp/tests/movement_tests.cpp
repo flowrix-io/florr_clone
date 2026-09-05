@@ -5,7 +5,7 @@
 #include <cmath>
 #include <limits>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 

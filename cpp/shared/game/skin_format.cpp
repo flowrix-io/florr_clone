@@ -5,7 +5,7 @@
 
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -339,4 +339,4 @@ CustomSkin skinFromJson(const Json& value) {
     return skin;
 }
 
-} // namespace flr
+} // namespace flix

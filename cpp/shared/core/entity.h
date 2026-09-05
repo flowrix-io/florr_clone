@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <string>
 
-namespace flr {
+namespace flix {
 
 using Entity = std::uint64_t;
 
@@ -36,4 +36,4 @@ inline constexpr Entity makeEntity(std::uint32_t index, std::uint32_t generation
 
 std::string entityToString(Entity e);
 
-} // namespace flr
+} // namespace flix

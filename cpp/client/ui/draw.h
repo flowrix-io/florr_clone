@@ -14,7 +14,7 @@
 #include "client/ui/theme.h"
 #include "shared/core/types.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 /// Where text sits relative to the position given.
 enum class Align { Left, Centre, Right };
@@ -142,4 +142,4 @@ void textField(Canvas&, Rect r, const std::string& value, const std::string& pla
 /// True when `point` is inside `r`. Here so every screen hit-tests the same way.
 inline bool hit(Rect r, Vec2 point) { return r.contains(point); }
 
-} // namespace flr::ui
+} // namespace flix::ui

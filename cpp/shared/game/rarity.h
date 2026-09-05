@@ -11,7 +11,7 @@
 
 #include "shared/core/types.h"
 
-namespace flr {
+namespace flix {
 
 enum class Rarity : std::uint8_t {
     Common = 0, Uncommon, Rare, Epic, Legendary,
@@ -167,4 +167,4 @@ inline constexpr std::array<double, kRarityCount> kNaturalSpawnWeight = {
     0.40, 0.30, 0.15, 0.10, 0.04, 0.01, 0.0, 0.0, 0.0, 0.0,
 };
 
-} // namespace flr
+} // namespace flix

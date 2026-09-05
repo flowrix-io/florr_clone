@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace flr {
+namespace flix {
 namespace {
 
 /// Below this a vector carries no usable direction and normalising it would
@@ -1427,4 +1427,4 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     driveSpawners(world, terrain, nowMillis, commands);
 }
 
-} // namespace flr
+} // namespace flix

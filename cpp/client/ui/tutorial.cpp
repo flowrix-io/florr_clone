@@ -11,7 +11,7 @@
 #include "client/ui/text.h"
 #include "client/ui/theme.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -818,4 +818,4 @@ void Tutorial::draw(Canvas& canvas, double nowSeconds, Rect highlightCard) {
     canvas.restore();
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

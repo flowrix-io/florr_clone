@@ -6,7 +6,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace flr {
+namespace flix {
 
 const Json& Json::nullValue() {
     static const Json kNull;
@@ -361,4 +361,4 @@ bool Json::writeFile(const std::string& path, int indent) const {
     return out.good();
 }
 
-} // namespace flr
+} // namespace flix

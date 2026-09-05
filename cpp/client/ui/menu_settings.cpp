@@ -45,9 +45,9 @@
 #include "client/ui/menus.h"
 #include "client/ui/text.h"
 
-namespace flr {
+namespace flix {
 
-using namespace flr::ui;
+using namespace flix::ui;
 
 namespace {
 
@@ -778,4 +778,4 @@ bool SettingsPanel::render(MenuContext& ctx) {
     return false;
 }
 
-} // namespace flr
+} // namespace flix

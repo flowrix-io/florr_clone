@@ -10,7 +10,7 @@
 #include "shared/game/components.h"
 #include "shared/game/config.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -334,4 +334,4 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     canvas.restore();
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

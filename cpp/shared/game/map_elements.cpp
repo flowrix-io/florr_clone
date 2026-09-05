@@ -9,7 +9,7 @@
 #include "shared/game/constants.h"
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 
 namespace {
 
@@ -397,4 +397,4 @@ bool MapData::spawnInBiome(const std::string& biomeName, Rng& rng, const Terrain
     return true;
 }
 
-} // namespace flr
+} // namespace flix

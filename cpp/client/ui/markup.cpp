@@ -4,7 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 
-namespace flr::ui {
+namespace flix::ui {
 
 namespace {
 
@@ -453,4 +453,4 @@ std::string markupPlainText(const std::string& source) {
     return out;
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

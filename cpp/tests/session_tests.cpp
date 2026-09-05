@@ -4,7 +4,7 @@
 
 #include <string>
 
-using namespace flr;
+using namespace flix;
 
 TEST(usernames_accept_reasonable_names_and_reject_the_rest) {
     std::string reason;

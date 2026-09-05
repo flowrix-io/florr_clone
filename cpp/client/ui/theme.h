@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace flr::ui {
+namespace flix::ui {
 
 // --- palette ----------------------------------------------------------------
 
@@ -119,4 +119,4 @@ inline double outlineFor(double size) {
     return w < kMinOutline ? kMinOutline : (w > kMaxOutline ? kMaxOutline : w);
 }
 
-} // namespace flr::ui
+} // namespace flix::ui

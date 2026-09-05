@@ -9,7 +9,7 @@
 
 #include "shared/game/constants.h"
 
-namespace flr {
+namespace flix {
 namespace {
 
 std::string toLower(std::string text) {
@@ -925,4 +925,4 @@ DailyStreakResult Database::processDailyStreak(const std::string& userId) {
     return result;
 }
 
-} // namespace flr
+} // namespace flix

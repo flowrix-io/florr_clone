@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace flr {
+namespace flix {
 
 enum FaceFlag : std::uint8_t {
     FaceNone          = 0,
@@ -36,4 +36,4 @@ enum PlayerRenderFlag : std::uint32_t {
     PlayerRenderGlitch  = 1 << 2,
 };
 
-} // namespace flr
+} // namespace flix

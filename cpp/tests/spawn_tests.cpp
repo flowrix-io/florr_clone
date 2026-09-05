@@ -3,11 +3,11 @@
 #include "server_harness.h"
 #include "shared/game/map_elements.h"
 
-using namespace flr;
-using flr::testsupport::connectClient;
-using flr::testsupport::dataDir;
-using flr::testsupport::Harness;
-using flr::testsupport::loginNew;
+using namespace flix;
+using flix::testsupport::connectClient;
+using flix::testsupport::dataDir;
+using flix::testsupport::Harness;
+using flix::testsupport::loginNew;
 
 // Where a player appears.
 //

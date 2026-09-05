@@ -10,7 +10,7 @@
 #include <sstream>
 #include <string>
 
-using namespace flr;
+using namespace flix;
 
 // "Keep the database format" is a hard requirement: real accounts exist in the
 // previous server's inventory.json. These tests load a file in exactly that

@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-using namespace flr;
+using namespace flix;
 
 // These tests answer "is it still a multiplayer game": a real server object,
 // real sockets on loopback, real clients speaking the real protocol.
@@ -22,8 +22,8 @@ using namespace flr;
 
 namespace {
 
-using flr::testsupport::connectClient;
-using flr::testsupport::Harness;
+using flix::testsupport::connectClient;
+using flix::testsupport::Harness;
 
 std::size_t playersVisibleTo(const NetClient& client) {
     std::size_t n = 0;

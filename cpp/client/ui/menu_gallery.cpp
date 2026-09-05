@@ -24,9 +24,9 @@
 #include "shared/core/json.h"
 #include "shared/game/config.h"
 
-namespace flr {
+namespace flix {
 
-using namespace flr::ui;
+using namespace flix::ui;
 
 namespace {
 
@@ -779,4 +779,4 @@ bool GalleryPanel::render(MenuContext& ctx) {
     return !closing;
 }
 
-} // namespace flr
+} // namespace flix

@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 
@@ -48,7 +48,7 @@ std::string tempDir() {
     const char* env = std::getenv("TMPDIR");
     std::string base = (env != nullptr && *env != '\0') ? env : "/tmp";
     if (base.back() != '/') base.push_back('/');
-    base += "flr_petal_tests";
+    base += "flix_petal_tests";
     mkdir(base.c_str(), 0755);   // already there is fine
     return base;
 }

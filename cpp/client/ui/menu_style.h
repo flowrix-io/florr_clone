@@ -25,7 +25,7 @@
 #include "client/ui/menu_theme.h"
 #include "shared/core/types.h"
 
-namespace flr::ui {
+namespace flix::ui {
 
 // ---------------------------------------------------------------------------
 // Shapes
@@ -144,4 +144,4 @@ struct ChipStyle {
 };
 void chip(Canvas&, Rect, const std::string& label, bool hovered, const ChipStyle& = {});
 
-} // namespace flr::ui
+} // namespace flix::ui

@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-using namespace flr;
+using namespace flix;
 
 namespace {
 
@@ -69,7 +69,7 @@ bool contentReady() {
         const char* env = std::getenv("TMPDIR");
         std::string dir = (env != nullptr && *env != '\0') ? env : "/tmp";
         if (dir.back() != '/') dir.push_back('/');
-        dir += "flr_mob_ai_tests";
+        dir += "flix_mob_ai_tests";
         mkdir(dir.c_str(), 0755);
         if (!writeText(dir + "/mobs.json", mobs)) return false;
         if (!writeText(dir + "/petals.json", petals)) return false;

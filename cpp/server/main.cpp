@@ -21,7 +21,7 @@
 namespace {
 
 #ifndef __EMSCRIPTEN__
-flr::GameServer* g_server = nullptr;
+flix::GameServer* g_server = nullptr;
 
 void onSignal(int) {
     // Only an atomic flag is stored here; flushing the database and telling
@@ -75,7 +75,7 @@ void mountDatabaseDirectory(const std::string& databasePath) {
 } // namespace
 
 int main(int argc, char** argv) {
-    flr::ServerConfig config;
+    flix::ServerConfig config;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
 
     // Leaked deliberately: main() returns as soon as the timer is armed and
     // the server has to outlive it. Node exiting is this process's exit.
-    auto* server = new flr::GameServer();
+    auto* server = new flix::GameServer();
     std::string error;
     if (!server->start(config, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
     std::printf("listening on port %u\n", static_cast<unsigned>(config.port));
     emscripten_set_main_loop_arg(
         [](void* handle) {
-            auto* running = static_cast<flr::GameServer*>(handle);
+            auto* running = static_cast<flix::GameServer*>(handle);
             if (running->step()) return;
             running->shutdown();
             emscripten_cancel_main_loop();
@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
         0, 0);
     return 0;
 #else
-    flr::GameServer server;
+    flix::GameServer server;
     std::string error;
     if (!server.start(config, error)) {
         std::fprintf(stderr, "could not start: %s\n", error.c_str());

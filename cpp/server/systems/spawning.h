@@ -28,7 +28,7 @@
 #include "shared/game/rarity.h"
 #include "shared/game/terrain.h"
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // Components owned by this system
@@ -518,7 +518,7 @@ private:
     std::vector<Entity> scratchChildren_;
 };
 
-} // namespace flr
+} // namespace flix
 
-FLR_COMPONENT(flr::AmbientMob);
-FLR_COMPONENT(flr::NestWaves);
+FLIX_COMPONENT(flix::AmbientMob);
+FLIX_COMPONENT(flix::NestWaves);

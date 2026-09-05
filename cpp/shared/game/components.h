@@ -25,7 +25,7 @@
 #include "shared/game/skills.h"
 #include "shared/net/protocol.h"
 
-namespace flr {
+namespace flix {
 
 // ---------------------------------------------------------------------------
 // Kind tags -- exactly one per entity, fixed for its lifetime
@@ -682,53 +682,53 @@ struct Replicated {
     std::uint8_t spawnFlags = 0;
 };
 
-} // namespace flr
+} // namespace flix
 
 // Component registration. Global scope, once per type.
-FLR_COMPONENT(flr::PlayerTag);
-FLR_COMPONENT(flr::MobTag);
-FLR_COMPONENT(flr::PetalTag);
-FLR_COMPONENT(flr::ProjectileTag);
-FLR_COMPONENT(flr::DropTag);
-FLR_COMPONENT(flr::GroundEffectTag);
-FLR_COMPONENT(flr::Dead);
-FLR_COMPONENT(flr::Transform);
-FLR_COMPONENT(flr::Motion);
-FLR_COMPONENT(flr::Body);
-FLR_COMPONENT(flr::Knockback);
-FLR_COMPONENT(flr::Faction);
-FLR_COMPONENT(flr::Health);
-FLR_COMPONENT(flr::ContactDamage);
-FLR_COMPONENT(flr::HitCooldowns);
-FLR_COMPONENT(flr::Afflictions);
-FLR_COMPONENT(flr::ShieldState);
-FLR_COMPONENT(flr::SpongeDamageState);
-FLR_COMPONENT(flr::SecondChance);
-FLR_COMPONENT(flr::Bounty);
-FLR_COMPONENT(flr::Loadout);
-FLR_COMPONENT(flr::PetalRing);
-FLR_COMPONENT(flr::PlayerInput);
-FLR_COMPONENT(flr::PlayerAccount);
-FLR_COMPONENT(flr::PlayerSkillTree);
-FLR_COMPONENT(flr::PlayerProgress);
-FLR_COMPONENT(flr::PlayerVisuals);
-FLR_COMPONENT(flr::PlayerModifiers);
-FLR_COMPONENT(flr::PlayerLocation);
-FLR_COMPONENT(flr::TeleporterState);
-FLR_COMPONENT(flr::AuraCooldowns);
-FLR_COMPONENT(flr::MobType);
-FLR_COMPONENT(flr::MobAi);
-FLR_COMPONENT(flr::WanderTarget);
-FLR_COMPONENT(flr::PassiveMotion);
-FLR_COMPONENT(flr::Wobble);
-FLR_COMPONENT(flr::HoleTether);
-FLR_COMPONENT(flr::Pet);
-FLR_COMPONENT(flr::BodySegment);
-FLR_COMPONENT(flr::Spawner);
-FLR_COMPONENT(flr::PetalInstance);
-FLR_COMPONENT(flr::Projectile);
-FLR_COMPONENT(flr::Lifetime);
-FLR_COMPONENT(flr::DropItem);
-FLR_COMPONENT(flr::GroundEffect);
-FLR_COMPONENT(flr::NetId);
-FLR_COMPONENT(flr::Replicated);
+FLIX_COMPONENT(flix::PlayerTag);
+FLIX_COMPONENT(flix::MobTag);
+FLIX_COMPONENT(flix::PetalTag);
+FLIX_COMPONENT(flix::ProjectileTag);
+FLIX_COMPONENT(flix::DropTag);
+FLIX_COMPONENT(flix::GroundEffectTag);
+FLIX_COMPONENT(flix::Dead);
+FLIX_COMPONENT(flix::Transform);
+FLIX_COMPONENT(flix::Motion);
+FLIX_COMPONENT(flix::Body);
+FLIX_COMPONENT(flix::Knockback);
+FLIX_COMPONENT(flix::Faction);
+FLIX_COMPONENT(flix::Health);
+FLIX_COMPONENT(flix::ContactDamage);
+FLIX_COMPONENT(flix::HitCooldowns);
+FLIX_COMPONENT(flix::Afflictions);
+FLIX_COMPONENT(flix::ShieldState);
+FLIX_COMPONENT(flix::SpongeDamageState);
+FLIX_COMPONENT(flix::SecondChance);
+FLIX_COMPONENT(flix::Bounty);
+FLIX_COMPONENT(flix::Loadout);
+FLIX_COMPONENT(flix::PetalRing);
+FLIX_COMPONENT(flix::PlayerInput);
+FLIX_COMPONENT(flix::PlayerAccount);
+FLIX_COMPONENT(flix::PlayerSkillTree);
+FLIX_COMPONENT(flix::PlayerProgress);
+FLIX_COMPONENT(flix::PlayerVisuals);
+FLIX_COMPONENT(flix::PlayerModifiers);
+FLIX_COMPONENT(flix::PlayerLocation);
+FLIX_COMPONENT(flix::TeleporterState);
+FLIX_COMPONENT(flix::AuraCooldowns);
+FLIX_COMPONENT(flix::MobType);
+FLIX_COMPONENT(flix::MobAi);
+FLIX_COMPONENT(flix::WanderTarget);
+FLIX_COMPONENT(flix::PassiveMotion);
+FLIX_COMPONENT(flix::Wobble);
+FLIX_COMPONENT(flix::HoleTether);
+FLIX_COMPONENT(flix::Pet);
+FLIX_COMPONENT(flix::BodySegment);
+FLIX_COMPONENT(flix::Spawner);
+FLIX_COMPONENT(flix::PetalInstance);
+FLIX_COMPONENT(flix::Projectile);
+FLIX_COMPONENT(flix::Lifetime);
+FLIX_COMPONENT(flix::DropItem);
+FLIX_COMPONENT(flix::GroundEffect);
+FLIX_COMPONENT(flix::NetId);
+FLIX_COMPONENT(flix::Replicated);
