@@ -40,6 +40,16 @@ constexpr double kCraftTimeoutMillis = 8000.0;
 constexpr double kGridCell = 56.0;
 constexpr double kGridGap = 4.0;
 constexpr double kGridPadding = 12.0;
+/// Columns of the tier grid: EVERY craftable tier, common through unique,
+/// whether or not the account holds one. Apex is not among them because
+/// nothing upgrades out of apex -- there is no tier above it to craft toward,
+/// which is the same reason the inventory sweep below skips apex stacks.
+///
+/// Built from what the player owned, the grid was two columns wide on a fresh
+/// account and never said what the forge is FOR, and it reflowed sideways the
+/// first time a craft landed a new tier -- moving every cell out from under
+/// the cursor mid-click.
+constexpr std::size_t kTierColumns = static_cast<std::size_t>(Rarity::Unique) + 1;
 /// The grid is CLIPPED to four pixels off the card's bottom edge but SCROLLS
 /// against a view fourteen off it. Two different numbers on purpose: the thumb
 /// and the scroll limit follow the shorter one, the paint the taller.
@@ -377,23 +387,19 @@ bool CraftingPanel::render(MenuContext& ctx) {
                  panelLabel(13.0, Align::Centre, Baseline::Top), kSoftStroke);
 
     // --- the grid ----------------------------------------------------------
-    // Rows are petal types the account owns, columns the tiers it owns at all.
-    // Both come from the UNDEDUCTED profile on purpose: a stack staged down to
-    // nothing keeps its cell, so the grid cannot reflow under the cursor
-    // mid-click and drop the next click onto a different petal.
+    // Columns are the fixed tier run (see kTierColumns); rows are the petal
+    // types the account owns. Those come from the UNDEDUCTED profile on
+    // purpose: a stack staged down to nothing keeps its row, so the grid
+    // cannot reflow under the cursor mid-click and drop the next click onto a
+    // different petal.
     std::vector<std::uint16_t> types;
-    std::vector<Rarity> tiers;
     for (const Profile::Stack& stack : profile.inventory) {
         if (stack.count == 0 || stack.rarity == Rarity::Apex) continue;
         if (std::find(types.begin(), types.end(), stack.petalIndex) == types.end()) {
             types.push_back(stack.petalIndex);
         }
-        if (std::find(tiers.begin(), tiers.end(), stack.rarity) == tiers.end()) {
-            tiers.push_back(stack.rarity);
-        }
     }
     std::sort(types.begin(), types.end());
-    std::sort(tiers.begin(), tiers.end());
 
     const double inventoryTop = instructionY + 30.0;
     const Rect view{panel.x + kClipInset, inventoryTop, panel.w - kClipInset * 2,
@@ -401,8 +407,8 @@ bool CraftingPanel::render(MenuContext& ctx) {
     const double scrollHeight = std::max(0.0, panel.bottom() - kScrollInset - inventoryTop);
 
     const double gridWidth =
-        tiers.empty() ? 0.0
-                      : tiers.size() * kGridCell + (tiers.size() - 1) * kGridGap;
+        static_cast<double>(kTierColumns) * kGridCell +
+        static_cast<double>(kTierColumns - 1) * kGridGap;
     const double startX = panel.x + kGridPadding + std::max(0.0, (panel.w - kGridPadding * 2 - gridWidth) * 0.5);
 
     const std::uint32_t held =
@@ -410,8 +416,8 @@ bool CraftingPanel::render(MenuContext& ctx) {
     std::vector<GridCell> cells;
     double y = kGridPadding;
     for (const std::uint16_t petalIndex : types) {
-        for (std::size_t column = 0; column < tiers.size(); ++column) {
-            const Rarity rarity = tiers[column];
+        for (std::size_t column = 0; column < kTierColumns; ++column) {
+            const Rarity rarity = static_cast<Rarity>(column);
             std::uint32_t count = profile.stackCount(petalIndex, rarity);
             // Staged petals are gone from the player's point of view the moment
             // they land in the ring, so the badge counts down with each click.
