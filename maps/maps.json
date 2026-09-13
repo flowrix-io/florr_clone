@@ -14,6 +14,7 @@
     { "file": "garden.tmj" },
     { "file": "desert.tmj" },
     { "file": "computer.tmj" },
-    { "file": "ocean.tmj" }
+    { "file": "ocean.tmj" },
+    { "file": "jungle.tmj" }
   ]
 }
