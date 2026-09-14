@@ -300,6 +300,29 @@ foreach(source IN LISTS FLIX_DATA_SOURCES)
   list(APPEND FLIX_DATA_STAGED ${FLIX_DATA_DIR}/${name})
 endforeach()
 
+# Everything the directory is allowed to contain, as bare names: the files
+# staged below, plus the two fonts, which are downloaded into it at configure
+# time instead. Written out for the prune script -- through a file rather than
+# a command line because the list is a few hundred names long.
+#
+# Rewritten only when it changes, so that a re-configure that stages the same
+# set does not date the manifest forward and relink both wasms for nothing.
+set(FLIX_DATA_EXPECTED Ubuntu-Regular.ttf Ubuntu-Bold.ttf)
+foreach(source IN LISTS FLIX_DATA_SOURCES)
+  get_filename_component(name "${source}" NAME)
+  list(APPEND FLIX_DATA_EXPECTED ${name})
+endforeach()
+set(FLIX_DATA_MANIFEST ${CMAKE_CURRENT_BINARY_DIR}/staged_content.txt)
+string(REPLACE ";" "\n" FLIX_DATA_EXPECTED_TEXT "${FLIX_DATA_EXPECTED}")
+string(APPEND FLIX_DATA_EXPECTED_TEXT "\n")
+set(FLIX_DATA_MANIFEST_EXISTING "")
+if(EXISTS ${FLIX_DATA_MANIFEST})
+  file(READ ${FLIX_DATA_MANIFEST} FLIX_DATA_MANIFEST_EXISTING)
+endif()
+if(NOT FLIX_DATA_MANIFEST_EXISTING STREQUAL FLIX_DATA_EXPECTED_TEXT)
+  file(WRITE ${FLIX_DATA_MANIFEST} "${FLIX_DATA_EXPECTED_TEXT}")
+endif()
+
 # The whole set is staged FLAT, by bare file name, and that is what makes the
 # references inside the files resolve. A map names its tilesets as siblings and
 # a tileset names its tile art under `tiles/`; both readers look for them beside
@@ -312,11 +335,22 @@ endforeach()
 # newer than the inputs, or every build would see them as still out of date and
 # relink the wasm for nothing. The DEPENDS list is what keeps this from running
 # when no data changed.
+#
+# The prune runs first, and it is what keeps the directory equal to the content
+# this tree declares rather than to the union of everything every configuration
+# ever staged there. The web link embeds the directory whole, so without it a
+# file that stops being content -- a replaced map, art a tileset no longer
+# names -- goes on being shipped inside both wasms until someone deletes the
+# build directory by hand. See cmake/prune_staged_content.cmake.
 add_custom_command(
   OUTPUT ${FLIX_DATA_STAGED}
   COMMAND ${CMAKE_COMMAND} -E make_directory ${FLIX_DATA_DIR}
+  COMMAND ${CMAKE_COMMAND}
+          -DFLIX_DATA_DIR=${FLIX_DATA_DIR}
+          -DFLIX_DATA_MANIFEST=${FLIX_DATA_MANIFEST}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/prune_staged_content.cmake
   COMMAND ${CMAKE_COMMAND} -E copy ${FLIX_DATA_SOURCES} ${FLIX_DATA_DIR}/
-  DEPENDS ${FLIX_DATA_SOURCES}
+  DEPENDS ${FLIX_DATA_SOURCES} ${FLIX_DATA_MANIFEST}
   COMMENT "Staging game content")
 add_custom_target(flix_data ALL DEPENDS ${FLIX_DATA_STAGED})
 add_dependencies(flowrix_client flix_data)
