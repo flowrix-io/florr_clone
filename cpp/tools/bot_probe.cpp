@@ -27,7 +27,12 @@
 // population through the admin console, which is the same path an operator
 // uses, and measures the fighting rather than the walking.
 //
-// Usage: bot_probe [seconds] [bots] [dense]
+// `boss` mode is `dense` plus a super mob kept alive a long walk away from the
+// crowd, which is the one case the ordinary dense run cannot produce: a bot
+// committed to a target worth thousands of units of walking, with a field of
+// ordinary mobs between it and the thing it wants. What it measures is `ram`.
+//
+// Usage: bot_probe [seconds] [bots] [dense|boss]
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -38,6 +43,7 @@
 #include <vector>
 
 #include "../tests/server_harness.h"
+#include "server/bot_ai.h"
 #include "server/db.h"
 #include "shared/game/components.h"
 #include "shared/game/config.h"
@@ -74,6 +80,12 @@ struct BotTrace {
     long passedClaimedTicks = 0;
     double lastMoveAngle = 0;
     bool hasMoveAngle = false;
+    /// Ticks with a boss in sensing range, and how many of those the bot spent
+    /// with an ORDINARY mob buried in its body. A boss out-scores anything
+    /// standing on a bot by thousands of units, so this is the one number that
+    /// says whether the walk to it goes around the field or through it.
+    long bossInRangeTicks = 0;
+    long bossChaseRamTicks = 0;
 };
 
 /// An admin account, seeded before the server opens the database. `dense` mode
@@ -91,8 +103,21 @@ void seedAdmin(const std::string& path) {
 
 /// The roster `dense` mode tops the world up with: ordinary garden fare, at a
 /// tier a mid-level flower has to actually fight rather than brush past.
-constexpr const char* const kDenseMobs[] = {"bee", "ant", "hornet", "spider", "ladybug"};
+/// Names straight out of mobs.json -- the console rejects anything else with a
+/// line on stderr and spawns nothing, which reads as a controller that will not
+/// fight rather than a mob that was never there. "ant" and "spider" are not
+/// mobs; the ants are worker/soldier/baby.
+constexpr const char* const kDenseMobs[] = {"bee", "soldier_ant", "hornet", "beetle", "ladybug"};
 constexpr const char* const kDenseRarities[] = {"rare", "epic", "legendary"};
+
+/// Where `boss` mode puts its boss: far enough that the bot has to cross the
+/// carpet of ordinary mobs dense mode is laying down, close enough that the
+/// sensing pass can still see it (kBotSenseRadius) and the trip is a HUNT
+/// rather than a rally.
+constexpr double kBossSpawnDistance = 1350.0;
+constexpr int kBossSpawnInterval = 300;   // ten seconds
+/// Nearer than this and the bot has arrived: see where bossInRange is set.
+constexpr double kBossApproachFloor = 500.0;
 
 std::uint64_t cellKey(Vec2 at) {
     const auto x = static_cast<std::int32_t>(std::floor(at.x / kCellSize));
@@ -106,7 +131,9 @@ std::uint64_t cellKey(Vec2 at) {
 int main(int argc, char** argv) {
     const double seconds = argc > 1 ? std::atof(argv[1]) : 120.0;
     const int bots = argc > 2 ? std::atoi(argv[2]) : 24;
-    const bool dense = argc > 3 && std::string(argv[3]) == "dense";
+    const std::string mode = argc > 3 ? argv[3] : "";
+    const bool boss = mode == "boss";
+    const bool dense = boss || mode == "dense";
 
     Harness h("bot-probe", dense ? seedAdmin : std::function<void(const std::string&)>{},
               dataDir(), bots);
@@ -173,6 +200,11 @@ int main(int argc, char** argv) {
     std::vector<Entity> mobList;
     std::vector<Vec2> mobAt;
     std::vector<double> mobRadius;
+    std::vector<char> mobIsBoss;
+    /// Who each mob is chasing. A mob that is hunting the bot put ITSELF in
+    /// the way; counting those as the bot walking into things makes the
+    /// steering look bad in exact proportion to how aggressive the world is.
+    std::vector<Entity> mobHunting;
 
     Rng probe{0xB07};
     for (int tick = 0; tick < ticks; ++tick) {
@@ -196,6 +228,19 @@ int main(int argc, char** argv) {
                             std::to_string(static_cast<int>(at.y)) + " 6");
         }
 
+        // Boss mode: one super, a long walk from a bot, topped up on its own
+        // clock. It is spawned relative to a bot rather than at a fixed point
+        // so the crowd cannot farm it out and then wander off.
+        // Off the dense spawner's own beat: two console lines on one tick
+        // is one console line, and the boss is always the one that loses.
+        if (boss && tick % kBossSpawnInterval == 7 && !botList.empty()) {
+            const Vec2 from = botAt[probe.below(static_cast<std::uint32_t>(botAt.size()))];
+            const Vec2 at = from + Vec2::fromAngle(probe.angle()) * kBossSpawnDistance;
+            client.sendChat(std::string("/admin spawn beetle super ") +
+                            std::to_string(static_cast<int>(at.x)) + " " +
+                            std::to_string(static_cast<int>(at.y)) + " 1");
+        }
+
         botList.clear();
         botAt.clear();
         humanAt.clear();
@@ -209,6 +254,8 @@ int main(int argc, char** argv) {
         mobList.clear();
         mobAt.clear();
         mobRadius.clear();
+        mobIsBoss.clear();
+        mobHunting.clear();
         std::unordered_set<Entity> liveMobs;
         Query<MobTag, Transform, Body> mobs{world};
         mobs.each([&](Entity e, MobTag&, Transform& transform, Body& body) {
@@ -234,6 +281,10 @@ int main(int argc, char** argv) {
             mobList.push_back(e);
             mobAt.push_back(transform.position);
             mobRadius.push_back(body.radius);
+            const MobType* type = world.tryGet<MobType>(e);
+            mobIsBoss.push_back(type != nullptr && isBotBossTier(type->rarity));
+            const MobAi* ai = world.tryGet<MobAi>(e);
+            mobHunting.push_back(ai != nullptr ? ai->target : NULL_ENTITY);
         });
         // Mark every mob a bot could currently be hitting, so that when one
         // vanishes the reason is known.
@@ -283,6 +334,8 @@ int main(int argc, char** argv) {
             constexpr double kReach = 155.0;
             bool engaged = false;
             bool ramming = false;
+            bool rammingOrdinary = false;
+            bool bossInRange = false;
             bool engagedUnclaimed = false;
             double nearestMob = 1e18;
             for (std::size_t m = 0; m < mobList.size(); ++m) {
@@ -300,6 +353,27 @@ int main(int argc, char** argv) {
                     if (!claimed) engagedUnclaimed = true;
                 }
                 if (dist < bodyRadius + mobRadius[m]) ramming = true;
+                // The controller's own definition of IN THE WAY, which is a
+                // body's width before the collision rather than after it: by
+                // the time the bodies overlap a bot with petals out has
+                // usually already killed the thing, so the overlap count
+                // under-reports the shouldering it is meant to catch.
+                if (!mobIsBoss[m] && mobHunting[m] != bot &&
+                    dist < bodyRadius + mobRadius[m] + kBotBlockerMargin) {
+                    rammingOrdinary = true;
+                }
+                // The APPROACH, not the fight. A boss already inside the
+                // standoff ring has the whole raid stacked around it and the
+                // ordinary mobs that wander into that pile are nothing to do
+                // with how the bot got there; counting those ticks buries the
+                // walk under the brawl.
+                if (mobIsBoss[m] && dist < kBotSenseRadius && dist > kBossApproachFloor) {
+                    bossInRange = true;
+                }
+            }
+            if (bossInRange) {
+                ++trace.bossInRangeTicks;
+                if (rammingOrdinary) ++trace.bossChaseRamTicks;
             }
             if (nearestMob < 1e17) {
                 nearestMobSum += nearestMob;
@@ -450,6 +524,8 @@ int main(int argc, char** argv) {
     double pathLength = 0;
     long idleTicks = 0;
     long reversals = 0;
+    long bossInRangeTicks = 0;
+    long bossChaseRamTicks = 0;
     for (const auto& entry : traces) {
         const BotTrace& trace = entry.second;
         aliveTicks += trace.aliveTicks;
@@ -465,6 +541,8 @@ int main(int argc, char** argv) {
         idleTicks += trace.idleTicks;
         reversals += trace.reversals;
         pathLength += trace.pathLength;
+        bossInRangeTicks += trace.bossInRangeTicks;
+        bossChaseRamTicks += trace.bossChaseRamTicks;
     }
     const double bodies = std::max<std::size_t>(1, traces.size());
     const double alive = std::max(1L, aliveTicks);
@@ -475,6 +553,12 @@ int main(int argc, char** argv) {
                 100.0 * static_cast<double>(engagedTicks) / alive);
     std::printf("  ram       %5.1f%%   (a mob body overlapping the bot's)\n",
                 100.0 * static_cast<double>(ramTicks) / alive);
+    std::printf("  bossRam   %5.2f%%   of ticks APPROACHING a boss spent with an ORDINARY"
+                " mob it walked into in the way (%ld such ticks)\n",
+                bossInRangeTicks > 0 ? 100.0 * static_cast<double>(bossChaseRamTicks) /
+                                           static_cast<double>(bossInRangeTicks)
+                                     : 0.0,
+                bossInRangeTicks);
     std::printf("  ignored   %5.1f%%   of in-reach ticks spent NOT attacking"
                 " (%0.1f%% of those the player's own mobs)\n",
                 engagedTicks > 0 ? 100.0 * static_cast<double>(passedTicks) /

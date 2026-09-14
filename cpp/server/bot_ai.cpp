@@ -614,12 +614,19 @@ Vec2 GameServer::botSteerAroundWalls(Vec2 from, Vec2 direction, double probeDist
     return direction;
 }
 
-Vec2 GameServer::botAvoidMobs(Vec2 at, Entity except) {
+Vec2 GameServer::botAvoidMobs(Vec2 at, Entity except, Vec2 heading, double sidePreference) {
     // A steering BIAS, not a hard constraint: summed with the requested
     // heading the same way bot-vs-bot separation is, and capped below one so
     // it can bend a heading around a mob but can never reverse the bot's
     // intent and leave it unable to reach a goal that happens to be guarded.
     Vec2 out{0, 0};
+    // Which way the bot is trying to go, which is what decides whether a body
+    // is an obstacle or just something nearby. Zero when the caller has no
+    // heading yet, and then this degrades to the pure push-away it used to be.
+    const double headingLength = heading.length();
+    const bool steering = headingLength > 1e-9;
+    const Vec2 forward = steering ? heading / headingLength : Vec2{0, 0};
+    const Vec2 left{-forward.y, forward.x};
     botAvoidCandidates_.clear();
     grid_.query(Realm::Overworld, at, kBotMobAvoidQueryRadius, botAvoidCandidates_);
     for (const Entity candidate : botAvoidCandidates_) {
@@ -643,8 +650,34 @@ Vec2 GameServer::botAvoidMobs(Vec2 at, Entity except) {
         // -- so a bot already touching a mob pushes off far harder than one
         // just drifting close. Divided by the distance to normalise in the
         // same step.
-        const double weight = std::min(2.0, (outer - dist) / kBotMobAvoidLookahead) / dist;
-        out += away * weight;
+        const double strength = std::min(2.0, (outer - dist) / kBotMobAvoidLookahead);
+        Vec2 push = away * (strength / dist);
+
+        // Straight away from a body the bot is walking STRAIGHT AT is the one
+        // direction that does not go around it: the push lands opposite the
+        // heading, the two cancel, and what the cap leaves is a flower leaning
+        // into the mob at reduced speed until it is through it. That is the
+        // "bots run into things on the way somewhere" shape exactly. So the
+        // more head-on the body is, the more of the push becomes a SIDESTEP --
+        // perpendicular, to whichever side the body is not on.
+        if (steering) {
+            const Vec2 toMob = other->position - at;
+            const double ahead = toMob.x * forward.x + toMob.y * forward.y;
+            if (ahead > 0.0) {
+                const double headOn = clamp(ahead / dist, 0.0, 1.0);
+                // Which way round it: away from the side the body sits on,
+                // and for a body dead on the bot's line -- where that sign is
+                // noise -- the bot's own preferred side.
+                const double lateral = toMob.x * left.x + toMob.y * left.y;
+                const double side = std::abs(lateral) > kBotMobAvoidSideDeadband
+                                        ? (lateral >= 0.0 ? -1.0 : 1.0)
+                                        : sidePreference;
+                const Vec2 sidestep{left.x * side, left.y * side};
+                const double blend = headOn * kBotMobAvoidTangent;
+                push = push * (1.0 - blend) + sidestep * (strength * blend);
+            }
+        }
+        out += push;
     }
     const double magnitude = out.length();
     if (magnitude > kBotMobAvoidMax) out = out * (kBotMobAvoidMax / magnitude);
@@ -706,7 +739,9 @@ void GameServer::botDrive(Bot& bot, Vec2 direction, double speedMultiplier, doub
     }
 
     Vec2 out = direction + separation * kBotSeparationStrength;
-    if (avoidStrength > 0.0) out += botAvoidMobs(at, engaging) * avoidStrength;
+    if (avoidStrength > 0.0) {
+        out += botAvoidMobs(at, engaging, direction, persona.passSide) * avoidStrength;
+    }
 
     // A slow lateral weave, perpendicular to where the bot is going. Small,
     // continuous, and per-bot: this is the difference between a flower walking
@@ -2183,15 +2218,22 @@ void GameServer::botHunt(Bot& bot, const BotSenses& senses, double nowMillis) {
 
     // Petals carried neutral on the way in, thrown out as the bot arrives.
     // A flower sprinting across a field with its ring at full extension is not
-    // something a player does; one that flares them as it closes is.
+    // something a player does; one that flares them as it closes is. The
+    // exception is something already inside the ring: a bot crossing a field
+    // with a mob scraping along its side and its petals tucked in is taking
+    // free damage no player would stand for.
     const double flare = senses.reach + senses.targetRadius + 90.0;
-    botSetPetals(bot, dist < flare, nowMillis);
+    botSetPetals(bot, dist < flare || senses.blocker != NULL_ENTITY, nowMillis);
 
-    // Mob repulsion stays low while closing: a hunter that dodged every mob
-    // between it and its target would circle the field forever. Anything
-    // actually in the way has already been promoted to the target by the
-    // sensing pass.
-    const double avoid = kBotAvoidStrengthFight;
+    // Mob repulsion by how far there is still to go. Over the last stretch it
+    // is fight strength, because a hunter that dodged every mob near its
+    // target could never close on it. Further out the bot is travelling, and
+    // steers like it -- see kBotHuntApproachBand for why the promotion rule
+    // does not cover the long chases on its own.
+    const double approach = senses.reach + senses.targetRadius + kBotHuntApproachBand;
+    const double ramp = clamp((dist - approach) / kBotHuntAvoidRampDistance, 0.0, 1.0);
+    const double avoid =
+        kBotAvoidStrengthFight + (kBotAvoidStrengthTravel - kBotAvoidStrengthFight) * ramp;
     if (dist > kTileSize * 2.0 &&
         botFollowPath(bot, nowMillis, targetAt, 0.95, avoid, senses.target)) {
         return;
@@ -2254,7 +2296,11 @@ void GameServer::botRetreat(Bot& bot, const BotSenses& senses, double nowMillis)
 void GameServer::botTravel(Bot& bot, const BotSenses& senses, double nowMillis, Vec2 goal) {
     PlayerInput* input = world_.tryGet<PlayerInput>(bot.entity);
     if (input == nullptr) return;
-    botSetPetals(bot, false, nowMillis);
+    // Ring in for the walk, out for whatever it brushes on the way: a long
+    // trip -- a raid on a boss the far side of the map is the common one --
+    // otherwise crosses a stocked field with the petals tucked in, and every
+    // mob it clips is free damage.
+    botSetPetals(bot, senses.blocker != NULL_ENTITY, nowMillis);
 
     const Vec2 toward = goal - senses.at;
     const double dist = std::max(1e-6, toward.length());
@@ -2411,6 +2457,7 @@ void GameServer::stepOneBot(Bot& bot, double nowMillis) {
         ai.persona.restlessness = 0.7 + rng.unit() * 0.6;
         ai.persona.stillness = rng.unit() * 0.4;
         ai.persona.greed = 0.7 + rng.unit() * 0.7;
+        ai.persona.passSide = rng.unit() < 0.5 ? 1.0 : -1.0;
 
         // The tempers, applied. These are the parts that make two bots pick
         // DIFFERENTLY rather than pick the same thing at different speeds.

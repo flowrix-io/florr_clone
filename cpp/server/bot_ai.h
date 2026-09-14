@@ -295,12 +295,37 @@ inline constexpr double kBotMobAvoidMargin = 26.0;
 inline constexpr double kBotMobAvoidLookahead = 110.0;
 inline constexpr double kBotMobAvoidMax = 0.9;
 inline constexpr double kBotMobAvoidQueryRadius = 260.0;
+/// How much of the repulsion becomes a sidestep for a body the bot is walking
+/// straight at. See botAvoidMobs: pure push-away cannot route around a head-on
+/// obstacle, it can only slow the bot down against it.
+inline constexpr double kBotMobAvoidTangent = 0.85;
+/// How far off the bot's line a body has to sit before the sidestep takes its
+/// side from the body rather than from the persona. Inside this the two are
+/// near enough to a dead-on approach that the offset's sign is noise.
+inline constexpr double kBotMobAvoidSideDeadband = 30.0;
 /// How hard the repulsion pushes while walking somewhere, and while fighting.
 /// They are different numbers because they are different problems: a
 /// traveller wants to go AROUND everything, and a fighter that dodged every
 /// mob near it could never close on the one it picked.
 inline constexpr double kBotAvoidStrengthTravel = 1.35;
 inline constexpr double kBotAvoidStrengthFight = 0.35;
+
+/// A chase is both problems at once, so the repulsion ramps between them by
+/// how far there is still to go: travel strength out at range, fight strength
+/// over the last stretch into the standoff ring.
+///
+/// Without the ramp a hunt steers at fight strength the whole way, and the
+/// promotion rule that is supposed to cover it -- something in the way gets
+/// fought, whatever the bot thought it was doing -- only holds for targets
+/// whose appetite a blocker's bonus can out-score. A boss out-scores anything
+/// standing on the bot by thousands of units, so nothing ever promotes and the
+/// bot shoulders through every common mob between it and the boss.
+///
+/// The band is measured from the standoff ring outward, so the ramp is fully
+/// off for the whole approach and only opens up once the bot is genuinely
+/// crossing ground.
+inline constexpr double kBotHuntApproachBand = 240.0;
+inline constexpr double kBotHuntAvoidRampDistance = 520.0;
 
 /// Just larger than two flower bodies: bots do not overlap, and do not
 /// scatter.
@@ -464,6 +489,13 @@ struct BotPersona {
     double stillness = 0.3;
     /// How much a drop is worth relative to a mob.
     double greed = 1.0;
+    /// Which side this bot steps to when a body is DEAD ahead: +1 left, -1
+    /// right. A fixed preference rather than a per-tick choice, because the
+    /// side a sidestep picks from the body's own offset is a sign that flips
+    /// as the offset passes through zero -- which is exactly the head-on case,
+    /// and would make the bot shimmy in front of the mob instead of passing
+    /// it. People have a side they step to; so does a bot.
+    double passSide = 1.0;
 };
 
 /// Everything one bot remembers between ticks.

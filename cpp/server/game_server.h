@@ -689,7 +689,7 @@ private:
     Vec2 botSteerAroundWalls(Vec2 from, Vec2 direction,
                              double probeDistance = kTileSize * 1.2) const;
     /// A steering bias away from every nearby mob except the one being fought.
-    Vec2 botAvoidMobs(Vec2 at, Entity except);
+    Vec2 botAvoidMobs(Vec2 at, Entity except, Vec2 heading, double sidePreference = 1.0);
     /// Watches for the one unambiguous fault: a bot asking to move and not
     /// moving. Returns true while an escape manoeuvre is running.
     bool botHandleStuck(Bot&, double nowMillis);
