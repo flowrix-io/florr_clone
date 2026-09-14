@@ -355,12 +355,21 @@ private:
     Phase phase_ = Phase::Idle;
     double phaseStarted_ = 0;
     double spinAngle_ = 0;
+    /// How far the ring is drawn in toward its centre, 0 apart and 1 merged.
+    /// The five breathe in and out under the turn and then clamp together for
+    /// the combine; see kPullDepth and kMergeDepth.
+    double ringPull_ = 0;
     /// What the ring is animating. The whole staging area goes to the server
     /// on the click, so `staged*` is empty for the whole spin and the ring
     /// needs its own copy of what was sent -- which is also what the result
     /// card is compared against.
     std::uint16_t spinPetal_ = kNoPetal;
     Rarity spinRarity_ = Rarity::Common;
+    /// A result that landed before the ring finished turning, held until it
+    /// does. The server answers a craft in well under a frame on a local
+    /// socket, so applying an outcome the moment it arrives skipped the spin
+    /// entirely -- the ring jumped straight to the result card.
+    bool resultPending_ = false;
     bool lastSuccess_ = false;
     std::uint16_t resultPetal_ = kNoPetal;
     Rarity resultRarity_ = Rarity::Common;

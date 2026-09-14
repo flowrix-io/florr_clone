@@ -31,7 +31,27 @@ constexpr double kRingBox = 180.0;
 constexpr double kRingRadius = 70.0;
 constexpr double kRingSlot = 40.0;
 constexpr double kSpinMillis = 1500.0;
-constexpr double kResultMillis = 2000.0;
+/// The ring does not merely turn. The five are being pressed into one, so they
+/// draw in toward the centre and spring back out `kPullCycles` times -- a
+/// rotation alone is a carousel, and a carousel is not a forge -- and then on
+/// the last approach they clamp together and stay there, which is the moment
+/// the craft is actually resolving.
+///
+/// `kPullDepth` is how far a breath pulls, as a fraction of the ring's radius;
+/// `kMergeDepth` is how far the final clamp goes. Not all the way to the
+/// centre: five tiles stacked exactly is one tile, and the player would see the
+/// ring vanish rather than close. A tight clump still reads as five.
+constexpr double kPullCycles = 3.0;
+constexpr double kPullDepth = 0.32;
+constexpr double kMergeStart = 0.72;
+constexpr double kMergeDepth = 0.86;
+/// Converging petals also shrink, down to this much of a slot. Things being
+/// crushed together get smaller; things merely orbiting do not.
+constexpr double kMergeShrink = 0.62;
+/// Past this much convergence the names come off. Five overlapping labels are
+/// unreadable on top of each other, and by then the tiles are a moving clump
+/// rather than five things to identify.
+constexpr double kNameDropPull = 0.5;
 /// The spin holds at its last frame waiting on the server, so a response that
 /// never lands would leave the ring turning until the panel is closed. Give up
 /// after this and drop back to idle; the craft is resolved server-side anyway.
@@ -72,10 +92,8 @@ constexpr std::uint32_t kCraftIdleFill = 0x777777u;
 constexpr std::uint32_t kCraftIdleBorder = 0x555555u;
 
 /// Not every outline here is solid black: the labels under the ring are
-/// stroked at 60% and the result caption at 80%, which is a visibly lighter
-/// weight at these sizes.
+/// stroked at 60%, which is a visibly lighter weight at these sizes.
 constexpr double kSoftStroke = 0.6;
-constexpr double kResultStroke = 0.8;
 
 /// Absorb -- the purple half of this panel -- is maze-only, and this build has
 /// no maze. The Switch button is still laid out and hit-tested, drawn in the
@@ -182,6 +200,7 @@ void CraftingPanel::reset() {
     stagedPetal_ = kNoPetal;
     batches_ = 0;
     phase_ = Phase::Idle;
+    resultPending_ = false;
 }
 
 void CraftingPanel::stage(const Profile& profile, std::uint16_t petalIndex, Rarity rarity,
@@ -228,8 +247,15 @@ bool CraftingPanel::render(MenuContext& ctx) {
         // slots show. It is a count off the wire, not a constant -- a failure
         // hands back one to four, not always three.
         survivors_ = outcome.petalsReturned;
-        phase_ = Phase::Result;
-        phaseStarted_ = ctx.timeSeconds;
+        // Mid-spin the outcome is only recorded; the ring owns when it is
+        // shown. Anywhere else -- a result that arrived while the panel was
+        // shut, or after the spin already ran out -- it lands now.
+        if (phase_ == Phase::Spinning) {
+            resultPending_ = true;
+        } else {
+            phase_ = Phase::Result;
+            phaseStarted_ = ctx.timeSeconds;
+        }
     }
 
     // The staged batch cannot outlive the petals behind it: another window, a
@@ -270,29 +296,52 @@ bool CraftingPanel::render(MenuContext& ctx) {
 
     if (phase_ == Phase::Spinning) {
         const double elapsed = (ctx.timeSeconds - phaseStarted_) * 1000.0;
-        const double t = clamp(elapsed / kSpinMillis, 0.0, 1.0);
-        // Cubic ease-out over six turns: fast enough to read as a commitment,
-        // slow enough at the end that the result does not appear mid-blur.
-        spinAngle_ = (1.0 - std::pow(1.0 - t, 3.0)) * 6.0 * kTau;
-        // Held at the end of the spin rather than snapped back to idle: the
-        // server has not answered yet, and an empty ring would read as a loss.
-        if (elapsed >= kCraftTimeoutMillis) {
-            phase_ = Phase::Idle;
+        if (elapsed >= kSpinMillis && resultPending_) {
+            // The spin ran its full course and the answer is already in hand.
+            resultPending_ = false;
+            phase_ = Phase::Result;
+            phaseStarted_ = ctx.timeSeconds;
             spinAngle_ = 0;
-        }
-    } else {
-        spinAngle_ = 0;
-        if (phase_ == Phase::Result &&
-            (ctx.timeSeconds - phaseStarted_) * 1000.0 >= kResultMillis) {
-            phase_ = Phase::Idle;
+        } else {
+            const double t = clamp(elapsed / kSpinMillis, 0.0, 1.0);
+            // Cubic ease-out over six turns: fast enough to read as a
+            // commitment, slow enough at the end that the result does not
+            // appear mid-blur.
+            spinAngle_ = (1.0 - std::pow(1.0 - t, 3.0)) * 6.0 * kTau;
+            // In and out under the turn, then held together for the combine.
+            // The breath starts and ends a cycle at rest, so the ring leaves
+            // the idle radius and returns to it without a step.
+            ringPull_ = kPullDepth * (0.5 - 0.5 * std::cos(t * kPullCycles * kTau));
+            if (t > kMergeStart) {
+                // Smoothstep, so the last approach accelerates out of the
+                // breath instead of snapping inward off it.
+                const double m = (t - kMergeStart) / (1.0 - kMergeStart);
+                ringPull_ = lerp(ringPull_, kMergeDepth, m * m * (3.0 - 2.0 * m));
+            }
+            // Held at the end of the spin rather than snapped back to idle: the
+            // server has not answered yet, and an empty ring would read as a
+            // loss.
+            if (elapsed >= kCraftTimeoutMillis) {
+                phase_ = Phase::Idle;
+                spinAngle_ = 0;
+            }
         }
     }
+    if (phase_ != Phase::Spinning) {
+        spinAngle_ = 0;
+        ringPull_ = 0;
+    }
 
-    // Through the spin AND through the result the ring keeps showing the petal
-    // as it was before the craft -- the pre-craft tier stays behind the result
-    // card rather than being replaced by what came out. The server answers a
+    // Through the spin AND through a FAILED result the ring keeps showing the
+    // petal as it was before the craft -- the pre-craft tier stays behind the
+    // result rather than being replaced by what came out. The server answers a
     // success with the upgraded tier, so the original is one step back down.
+    //
+    // A success clears the ring entirely: the five went in and one came out,
+    // so leaving five of the old tier orbiting the new one says the opposite
+    // of what happened.
     const bool showingFailure = phase_ == Phase::Result && !lastSuccess_;
+    const bool showingSuccess = phase_ == Phase::Result && lastSuccess_;
     std::uint16_t ringPetal = stagedPetal_;
     Rarity ringRarity = stagedRarity_;
     if (phase_ == Phase::Spinning) {
@@ -306,12 +355,17 @@ bool CraftingPanel::render(MenuContext& ctx) {
     }
     const bool ringFilled = knownPetal(ringPetal);
 
+    // Idle and at rest these are the ring's own radius and slot size, which is
+    // what keeps the rects below hit-testable as the staging area they are.
+    const double radius = kRingRadius * (1.0 - ringPull_);
+    const double side =
+        kRingSlot * (1.0 - (1.0 - kMergeShrink) * clamp(ringPull_ / kMergeDepth, 0.0, 1.0));
+
     std::array<Rect, kBatch> slots{};
     for (int i = 0; i < kBatch; ++i) {
         const double angle = (static_cast<double>(i) / kBatch) * kTau + spinAngle_;
-        const Rect slot{centreX + kRingRadius * std::cos(angle) - kRingSlot * 0.5,
-                        centreY + kRingRadius * std::sin(angle) - kRingSlot * 0.5, kRingSlot,
-                        kRingSlot};
+        const Rect slot{centreX + radius * std::cos(angle) - side * 0.5,
+                        centreY + radius * std::sin(angle) - side * 0.5, side, side};
         slots[static_cast<std::size_t>(i)] = slot;
 
         const bool occupied = ringFilled && !(showingFailure && i >= survivors_);
@@ -323,34 +377,37 @@ bool CraftingPanel::render(MenuContext& ctx) {
         tile.empty = !occupied;
         tile.emptyFill = kCraftingSkin.border;
         tile.emptyBorder = kCraftingSkin.border;
-        // The ring is a staging area, not a catalogue: five copies of one name
-        // around a 40px circle is noise, and the grid below already names it.
-        tile.showName = false;
+        // Named like every other tile in the game. The ring is the only place
+        // a petal was ever drawn anonymously, and a staged slot that does not
+        // say what is in it reads as a different, unlabelled kind of object --
+        // the repetition around the circle is the point, not noise.
+        tile.showName = ringPull_ < kNameDropPull;
         if (occupied && phase_ == Phase::Idle && batches_ > 1) {
             tile.badge = "x" + std::to_string(batches_);
         }
         tile.timeSeconds = ctx.timeSeconds;
-        drawItemTile(canvas, ctx.sprites, slot, tile);
+        // The rects are still laid out on a success -- they are what the idle
+        // panel hit-tests -- they are simply not drawn.
+        if (!showingSuccess) drawItemTile(canvas, ctx.sprites, slot, tile);
     }
 
     // The outcome, in the middle of the ring. A failure draws nothing here --
     // the emptied slots behind it are the whole message.
-    if (phase_ == Phase::Result && lastSuccess_ && knownPetal(resultPetal_)) {
+    if (showingSuccess && knownPetal(resultPetal_)) {
         const double size = 60.0;
         const Rect card{centreX - size * 0.5, centreY - size * 0.5, size, size};
-        const std::uint32_t fill = rarityColor(resultRarity_);
         ItemTile tile;
         tile.petalIndex = resultPetal_;
         tile.rarity = resultRarity_;
+        // How many upgrades the pool actually produced -- a staged x3 that
+        // landed twice reads "x2", which is the only place the player is told.
+        // In the tile's own top-right badge, the way a stack is counted
+        // everywhere else; it used to be a caption slung under the card in the
+        // rarity colour, which is a count nothing else in the game wears. A
+        // lone petal carries no badge, matching the grid.
+        if (resultCount_ > 1) tile.badge = "x" + std::to_string(resultCount_);
         tile.timeSeconds = ctx.timeSeconds;
         drawItemTile(canvas, ctx.sprites, card, tile);
-
-        TextStyle caption = panelLabel(18.0, Align::Centre, Baseline::Top);
-        caption.fill = fill;
-        // How many upgrades the pool actually produced. A staged x3 that landed
-        // twice reads "x2", which is the only place the player is told.
-        outlinedText(canvas, "x" + std::to_string(std::max(1, resultCount_)), centreX,
-                     card.bottom() + 4.0, caption, kResultStroke);
     }
 
     // --- craft button ------------------------------------------------------
@@ -494,13 +551,24 @@ bool CraftingPanel::render(MenuContext& ctx) {
     // --- input -------------------------------------------------------------
     // On press, not release: the browser hit-tests in mousedown, so a press
     // that starts on a cell and drifts off must not still fire.
-    if (phase_ == Phase::Idle && panel.contains(mouse) &&
-        ctx.window.mousePressed(MouseButton::Right)) {
+    const bool rightPressed = panel.contains(mouse) && ctx.window.mousePressed(MouseButton::Right);
+    if (phase_ == Phase::Idle && rightPressed) {
         removeBatch();
         return true;
     }
-    if (!ctx.pressed()) return true;
-    if (closeRect.contains(mouse)) return false;
+    if (!ctx.pressed() && !rightPressed) return true;
+    if (closeRect.contains(mouse) && ctx.pressed()) return false;
+
+    // The outcome sits there until it is dismissed. It used to expire on a
+    // two-second timer, which put the one thing the player crafted the petal to
+    // see on a clock they do not control -- look away and the result is gone
+    // and there is nowhere to read it back. Any click in the panel clears it,
+    // and that click does nothing else: the press that dismisses a result must
+    // not also stage the cell it happens to land on.
+    if (phase_ == Phase::Result && panel.contains(mouse)) {
+        phase_ = Phase::Idle;
+        return true;
+    }
     // Swallowed rather than ignored: a dead control still eats its own click.
     if (switchRect.contains(mouse)) return true;
 
