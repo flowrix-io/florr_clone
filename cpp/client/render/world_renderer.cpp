@@ -26,20 +26,37 @@ namespace flix {
 
 namespace {
 
-/// A floating number ages by exactly one browser frame per frame there: it
-/// rises one world unit and loses a hundredth of its alpha, so at 60 Hz it
-/// lives 100 frames and climbs 100 units. Expressed in seconds so this client
-/// looks the same at any refresh rate.
-constexpr double kNumberLifeSeconds = 100.0 / 60.0;
+/// The browser build's number lost a hundredth of its alpha per frame, so at
+/// 60 Hz it lived 100 frames. Half that here: the throw below covers the same
+/// ground it always did, at twice the speed, so it has half as long to do it
+/// in. Expressed in seconds so this client looks the same at any refresh rate.
+constexpr double kNumberLifeSeconds = 50.0 / 60.0;
+/// A number is thrown rather than floated: kNumberRise is the apex of its arc,
+/// reached at kNumberArcPeak of its life, after which the same gravity carries
+/// it back down past where it started while it fades out. kNumberDrift is how
+/// far sideways it can be thrown over a whole life, either way -- a random
+/// sideways speed is what keeps two numbers off the same mob from tracing one
+/// line on top of each other.
+/// Both are a life's worth of travel, and the life above is what sets the pace
+/// they are covered at.
 constexpr double kNumberRise = 100.0;
+constexpr double kNumberArcPeak = 0.45;
+constexpr double kNumberDrift = 45.0;
 /// Both spawn 20 world units above the body that was hit.
 constexpr double kNumberSpawnRise = 20.0;
-/// Damage to a flower is reported per hit at 20; damage to a mob is throttled
-/// into a 100 ms bucket and shown at 16.
-constexpr double kPlayerNumberSize = 20.0;
-constexpr double kMobNumberSize = 16.0;
+/// Damage to a flower is reported per hit; damage to a mob is throttled into a
+/// 100 ms bucket. Both sizes are the floor a small hit is drawn at -- the
+/// number grows with what it reports, up to kNumberMaxSize.
+constexpr double kPlayerNumberSize = 30.0;
+constexpr double kMobNumberSize = 30.0;
+/// The ceiling a number stops growing at, and the hit that reaches it. The
+/// ramp between the two is logarithmic: damage spans several orders of
+/// magnitude over a run, and a linear ramp would put every hit worth reading
+/// at the top of it within the first biome.
+constexpr double kNumberMaxSize = 40.0;
+constexpr double kNumberMaxSizeDamage = 1000.0;
 constexpr double kDamageTextThrottleSeconds = 0.1;
-constexpr std::uint32_t kDamageTextColor = 0xFF0000u;
+constexpr std::uint32_t kDamageTextColor = 0xFF6666u;
 
 /// A mob balloons to three times its size and fades out over this, which is
 /// the only feedback there is that something died.
@@ -270,6 +287,21 @@ constexpr double kTeleporterCull = 140.0;
 constexpr std::uint32_t kInvulnHealth = 0xFAFFC9u;
 constexpr double kInvulnFadeSeconds = 0.5;
 
+/// The vertical leg of a number's throw at `t` of its life, in units of the
+/// apex: a parabola solved so it passes through 1 at kNumberArcPeak and keeps
+/// falling afterwards, which puts the number below its spawn by the time it is
+/// invisible.
+double numberArc(double t) {
+    return 2.0 * t / kNumberArcPeak - t * t / (kNumberArcPeak * kNumberArcPeak);
+}
+
+/// The type size for a hit of `value`, between `base` and kNumberMaxSize.
+double numberSizeFor(double base, double value) {
+    if (value <= 1.0 || base >= kNumberMaxSize) return base;
+    const double t = clamp(std::log(value) / std::log(kNumberMaxSizeDamage), 0.0, 1.0);
+    return base + (kNumberMaxSize - base) * t;
+}
+
 /// Damage is shown as a whole number however large it gets -- abbreviating it
 /// would read as a different game from the browser build.
 std::string formatDamage(double value) {
@@ -443,9 +475,12 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         // 14 units to the side of that so it cannot land under the petal hit
         // that arrived in the same tick.
         e.position = {at.x + (poison ? kPoisonNumberOffsetX : 0.0), at.y - kNumberSpawnRise};
-        e.drift = {0, -kNumberRise};
+        // The throw: a sideways speed picked per number, and the apex the arc
+        // is scaled to. `drift` is a whole life's worth of travel in both, so
+        // the draw only has to weigh it by the shape of the path.
+        e.drift = {kNumberDrift * (randomUnit() * 2.0 - 1.0), -kNumberRise};
         e.value = value;
-        e.textSize = size;
+        e.textSize = numberSizeFor(size, value);
         e.color = poison ? kPoisonTextColor : kDamageTextColor;
         e.lifeSeconds = kNumberLifeSeconds;
         effects_.push_back(std::move(e));
@@ -2425,16 +2460,21 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
 
         switch (e.kind) {
             case Effect::Kind::DamageNumber: {
-                const Vec2 world{e.position.x + e.drift.x * t, e.position.y + e.drift.y * t};
+                // Ballistic: the sideways leg runs at a constant speed, the
+                // vertical one along the arc, which is what a thrown thing
+                // does and what makes the path a parabola rather than a line.
+                const Vec2 world{e.position.x + e.drift.x * t,
+                                 e.position.y + e.drift.y * numberArc(t)};
                 const Vec2 screen = camera.worldToScreen(world);
                 ui::TextStyle style;
                 style.size = e.textSize * zoom;
                 style.fill = e.color;
                 style.align = ui::Align::Centre;
                 style.baseline = ui::Baseline::Alphabetic;
-                // No outline: a floating number is drawn plain, and its colour
-                // alone is what says damage.
-                style.strokeWidth = 0;
+                // Outlined exactly like every other piece of text in the game:
+                // the shared ink stroke at kTextStrokeRatio, which `strokeWidth`
+                // left at its default asks for. A number painted any other way
+                // reads as a different face from the names and labels around it.
                 // Linear over the whole life, exactly as the browser build's
                 // per-frame alpha decrement works out to.
                 canvas.setGlobalAlpha(static_cast<float>(1.0 - t));
