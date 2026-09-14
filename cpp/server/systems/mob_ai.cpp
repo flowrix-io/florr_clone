@@ -241,7 +241,7 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         // the reference selects the machine by mob type and nothing in the
         // numbers distinguishes a bee from anything else that flies.
         // firefly also has bee AI
-        drive.beeFlight = (config.id == "bee") || (config.id == "firefly");
+        drive.beeFlight = (config.id == "bee") || (config.id == "firefly") || (config.id == "magic_firefly");
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
         drive.valid = true;
