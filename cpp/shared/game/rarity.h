@@ -97,7 +97,7 @@ inline constexpr bool isBossRarity(Rarity r) {
 /// wall, not a gentle step, so a common-tier loadout cannot chip down a
 /// legendary by patience alone.
 inline constexpr std::array<double, kRarityCount> kMobHealthScale = {
-    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 1e9,
+    1.0, 3.75, 13.5, 54.0, 324.0, 3159.0, 126830.0, 2374000.0, 1e7, 2e8,
 };
 
 /// Mob damage per tier -- a clean 3x ladder, so a tier above you roughly
