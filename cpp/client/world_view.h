@@ -142,7 +142,9 @@ struct SelfState {
     double maxHealth = 0;
     double totalXp = 0;
     int level = 1;
-    int stars = 0;
+    /// See PlayerProgress::stars: a balance the server keeps to 2^53, so the
+    /// HUD must not be the thing that rounds it.
+    double stars = 0;
     std::uint32_t acknowledgedInput = 0;
 
     /// How much of each orbiting slot's reload is still to run, in

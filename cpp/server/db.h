@@ -61,7 +61,7 @@ struct StoredItem {
 /// an account never has to move its progress.
 struct PlayerRecord {
     double totalXp = 0;
-    int stars = 0;
+    double stars = 0;   ///< see PlayerProgress::stars for why it is not an int
     int dailyStreak = 0;
     /// "YYYY-MM-DD" in UTC. A date string rather than a timestamp because the
     /// reward is per calendar day, and comparing days is what the rule is.

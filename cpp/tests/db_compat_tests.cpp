@@ -264,3 +264,40 @@ TEST(sessions_are_stored_hashed_and_expire) {
 
     std::remove(path.c_str());
 }
+
+TEST(a_star_balance_past_32_bits_survives_the_database) {
+    // Stars are a double for the same reason XP is: the reference keeps the
+    // balance in a JS number and a code can mint any amount, so the only
+    // ceiling the pipeline is allowed to have is the JSON number's own 2^53.
+    // Held as an int, everything past 2.1 billion used to come back as garbage
+    // -- a balance in the billions is not a rounding error, it is a different
+    // number entirely.
+    const std::string path = scratchPath("bigstars");
+    std::remove(path.c_str());
+
+    constexpr double kBalance = 12'345'678'901'234.0;
+    {
+        Database db;
+        std::string error;
+        db.load(path, error);
+        db.setPasswordCost(4);
+        const CreateResult created = db.createUser("croesus", "a-good-password");
+        CHECK(created.ok());
+        if (!created.account) return;
+        db.progress(created.account->id).stars = kBalance;
+        db.markDirty();
+        CHECK(db.save());
+    }
+
+    // On the disk as digits, not as an exponent an older reader would mangle.
+    CHECK(readFile(path).find("12345678901234") != std::string::npos);
+
+    Database reloaded;
+    std::string error;
+    CHECK(reloaded.load(path, error));
+    const Account* account = reloaded.findUser("croesus");
+    CHECK(account != nullptr);
+    if (account) CHECK_EQ(reloaded.progress(account->id).stars, kBalance);
+
+    std::remove(path.c_str());
+}

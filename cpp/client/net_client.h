@@ -28,7 +28,7 @@ struct Profile {
     std::string username;
     double totalXp = 0;
     int level = 1;
-    int stars = 0;
+    double stars = 0;   ///< see PlayerProgress::stars
 
     struct Stack {
         std::uint16_t petalIndex = 0;
@@ -171,7 +171,7 @@ struct ShopOutcome {
     bool pending = false;      ///< a result arrived that the panel has not read
     bool redeem = false;       ///< false for a purchase
     bool ok = false;
-    int stars = 0;             ///< what a redeemed code paid
+    double stars = 0;          ///< what a redeemed code paid
     std::string message;
 };
 

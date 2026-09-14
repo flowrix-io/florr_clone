@@ -58,8 +58,10 @@ public:
     /// where the reader only turns it back into a fraction of a pixel.
     void unitByte(double v) { u8(static_cast<std::uint8_t>(clamp(v, 0.0, 1.0) * 255.0 + 0.5)); }
 
-    /// A 0..1 ratio in two bytes, where a byte's 1/255 steps would visibly
-    /// stair-step -- a boss health bar spanning the screen.
+    /// A 0..1 ratio in two bytes, for a fill a byte's 1/255 steps would
+    /// visibly stair-step. Health is NOT one of these: a mob's pool spans nine
+    /// orders of magnitude across the tier ladder, and at the top even
+    /// 1/65535 of it is a hit the bar would swallow. See FieldHealth.
     void unitShort(double v) { u16(static_cast<std::uint16_t>(clamp(v, 0.0, 1.0) * 65535.0 + 0.5)); }
 
     void raw(const void* data, std::size_t n) {

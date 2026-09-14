@@ -157,6 +157,112 @@ TEST(health_and_state_changes_replicate) {
     CHECK((client.entities().at(netIdOf(f.world, mob)).state & net::StateHurt) == 0);
 }
 
+TEST(a_small_bite_out_of_a_huge_pool_still_reaches_the_client) {
+    // The tier ladder multiplies mob health by 2e8 between common and apex, so
+    // a single petal takes a millionth of a top-tier mob's pool. Judged against
+    // any fixed fraction that reads as "unchanged", and the bar sits still
+    // while the damage numbers pile up. Every step the wire can represent has
+    // to be sent.
+    Fixture f;
+    const Entity mob = f.addMob({1100, 1000});
+    Health& health = f.world.get<Health>(mob);
+    health.max = 4'000'000.0;
+    health.current = health.max;
+
+    WorldView client;
+    f.tick(client, 1, 1000);
+    const std::uint32_t id = netIdOf(f.world, mob);
+    CHECK_NEAR(client.entities().at(id).healthFraction, 1.0, 1e-4);
+
+    // 200 damage: a thousandth of a percent short of what a 1/255 tolerance
+    // demanded before it would spend three bytes.
+    health.current -= 200.0;
+    f.tick(client, 2, 1040);
+    CHECK_NEAR(client.entities().at(id).healthFraction, 0.99995, 2e-5);
+
+    // And it keeps arriving hit after hit rather than accumulating server-side
+    // until some threshold trips.
+    for (int i = 0; i < 5; ++i) {
+        health.current -= 200.0;
+        f.tick(client, static_cast<std::uint32_t>(3 + i), 1080.0 + 40.0 * i);
+    }
+    CHECK_NEAR(client.entities().at(id).healthFraction, health.current / health.max, 2e-5);
+
+    // The far end of the scale: the target dummy's pool is a billion and one
+    // basic petal takes TEN of it -- a hundred-millionth of the bar. Read back
+    // as health rather than as a ratio, because health is what the boss bar
+    // prints and a ratio that small is all mantissa.
+    health.max = 1'000'000'000.0;
+    health.current = health.max;
+    f.tick(client, 20, 2000);
+    CHECK_EQ(client.entities().at(id).healthFraction, 1.0);
+
+    health.current -= 10.0;
+    f.tick(client, 21, 2040);
+    // Within a thousandth of a point, on a pool of a billion. Through a
+    // quantised fraction -- a byte's 1/255, a short's 1/65535, or an f32 of
+    // the fraction itself -- this hit is not a small change, it is no change
+    // at all, and the bar never moves however long you stand there hitting it.
+    CHECK_NEAR(client.entities().at(id).healthFraction * health.max, health.current, 1e-3);
+}
+
+TEST(the_health_field_widens_with_the_pool_and_not_before) {
+    // A pool of 65535 or fewer points is exact to the POINT through a u16, so
+    // the overwhelming majority of what is on screen -- every flower, every
+    // petal, every mob up to legendary -- pays two bytes and loses nothing.
+    // The f32 is reserved for the pools a u16 would start swallowing whole
+    // hits from, and its precision sits where a huge pool needs it: at the top
+    // of the bar, where the first hits land.
+    struct Case {
+        double pool;
+        double damage;
+        bool wide;
+    };
+    // A bee at common, at legendary (324x), and at mythic (3159x) and apex
+    // (2e8), against a matched petal hit at each.
+    const Case cases[] = {
+        {35.0, 1.0, false},
+        {11'340.0, 30.0, false},
+        {110'565.0, 2'430.0, true},
+        {7'000'000'000.0, 196'830.0, true},
+        {1'000'000'000.0, 10.0, true},   // the target dummy, hit by a basic
+    };
+
+    for (const Case& c : cases) {
+        CHECK_EQ(net::healthFieldIsWide(c.pool), c.wide);
+
+        Fixture f;
+        const Entity mob = f.addMob({1100, 1000});
+        Health& health = f.world.get<Health>(mob);
+        health.max = c.pool;
+        health.current = c.pool;
+
+        WorldView client;
+        f.tick(client, 1, 1000);
+        const std::uint32_t id = netIdOf(f.world, mob);
+
+        // One hit has to move the bar, and to move it by what it took.
+        health.current -= c.damage;
+        const std::size_t bytes = f.tick(client, 2, 1040);
+        const double shown = client.entities().at(id).healthFraction * health.max;
+        CHECK_NEAR(shown, health.current, std::max(1e-3, c.damage * 0.01));
+
+        // ...and a snapshot in which nothing was hurt says nothing about it.
+        CHECK(f.tick(client, 3, 1080) < bytes);
+    }
+}
+
+TEST(unchanged_health_is_not_resent) {
+    // The flip side: precision at the wire's own step, not below it. A pool
+    // nothing has touched must not put a health field in every snapshot.
+    Fixture f;
+    f.addMob({1100, 1000});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    const std::size_t idle = f.tick(client, 2, 1040);
+    CHECK_EQ(f.tick(client, 3, 1080), idle);
+}
+
 TEST(attack_and_defend_reach_the_client) {
     Fixture f;
     WorldView client;

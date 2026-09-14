@@ -771,6 +771,7 @@ void GameServer::reapDead(double nowMillis) {
 void GameServer::replicate(double nowMillis) {
     Replicator::Frame frame;
     frame.tick = tick_;
+    frame.snapshotIndex = ++snapshotIndex_;
     frame.nowMillis = nowMillis;
     frame.events = &events_;
 
@@ -1100,7 +1101,7 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     w.str(session.username);
     w.f64(trackXp);
     w.u16(static_cast<std::uint16_t>(levelFromTotalXp(trackXp).level));
-    w.u32(static_cast<std::uint32_t>(std::max(0, record.stars)));
+    w.f64(std::max(0.0, record.stars));
 
     // The inventory is a sparse dictionary of rarity -> item name -> count.
     // Anything whose name this build does not know (an item from a newer
@@ -1198,12 +1199,12 @@ void GameServer::sendNotice(net::Connection& connection, net::NoticeSeverity sev
 }
 
 void GameServer::sendShopResult(net::Connection& connection, net::ShopResultKind kind, bool ok,
-                                int stars, const std::string& message) {
+                                double stars, const std::string& message) {
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::ShopResult));
     w.u8(static_cast<std::uint8_t>(kind));
     w.boolean(ok);
-    w.u32(static_cast<std::uint32_t>(std::max(0, stars)));
+    w.f64(std::max(0.0, stars));
     w.str(message);
     connection.send(w);
 }
@@ -1787,14 +1788,17 @@ void GameServer::handleBuyPetal(Session& session, net::Connection& connection, B
     PlayerProgress* live = session.playing() && world_.isAlive(session.entity)
                                ? world_.tryGet<PlayerProgress>(session.entity)
                                : nullptr;
-    const int stars = live ? live->stars : record.stars;
-    if (static_cast<double>(stars) < price) {
+    const double stars = live ? live->stars : record.stars;
+    if (stars < price) {
         sendShopResult(connection, net::ShopResultKind::Purchase, false, 0, "Not enough stars.");
         return;
     }
 
-    const int spent = static_cast<int>(price);
-    record.stars = stars - spent;
+    // The price AS QUOTED, not a cast of it. shopPrice() floors, so this is
+    // already whole -- but the ladder reaches 3.5^9 times a base of a hundred
+    // million, which is comfortably past what an int can hold and used to trap
+    // or wrap on the way to the subtraction.
+    record.stars = stars - price;
     if (live) live->stars = record.stars;
     giveToInventory(record, petalIndex, rarity, 1);
     database_.markDirty();
@@ -1853,7 +1857,7 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
         return;
     }
 
-    const int stars = stored["stars"].asInt(0);
+    const double stars = stored["stars"].asDouble(0);
     PlayerRecord& record = database_.progress(session.userId);
     record.stars += stars;
     if (session.playing() && world_.isAlive(session.entity)) {

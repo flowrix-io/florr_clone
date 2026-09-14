@@ -119,7 +119,7 @@ PlayerRecord playerFromJson(const Json& value) {
     if (!value.isObject()) return record;
 
     record.totalXp = value["totalXP"].asDouble(0);
-    record.stars = value["stars"].asInt(0);
+    record.stars = value["stars"].asDouble(0);
     record.dailyStreak = value["dailyStreak"].asInt(0);
     record.lastStreakDate = value["lastStreakDate"].asString();
     record.renderFlags = static_cast<std::uint32_t>(value["renderFlags"].asDouble(0));

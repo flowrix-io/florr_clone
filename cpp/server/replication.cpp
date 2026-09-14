@@ -104,6 +104,15 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         const double dy = at.y - centre.y;
         return (dx < 0 ? -dx : dx) >= reachX || (dy < 0 ? -dy : dy) >= reachY;
     };
+    // The inner box, on the same axes: inside it an entity is drawn, or close
+    // enough to being drawn that it has to be current.
+    const double nearX = viewport.x * nearReach;
+    const double nearY = viewport.y * nearReach;
+    const auto outsideNearBox = [&](Vec2 at) {
+        const double dx = at.x - centre.x;
+        const double dy = at.y - centre.y;
+        return (dx < 0 ? -dx : dx) >= nearX || (dy < 0 ? -dy : dy) >= nearY;
+    };
     // At most three entries, scanned linearly: a set for a squad would cost
     // more to build each tick than it could ever save looking through.
     const auto exempt = [&](Entity e) {
@@ -182,11 +191,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     if (const PlayerProgress* progress = world.tryGet<PlayerProgress>(viewer)) {
         out.f64(progress->totalXp);
         out.u16(static_cast<std::uint16_t>(progress->level));
-        out.u32(static_cast<std::uint32_t>(std::max(0, progress->stars)));
+        out.f64(std::max(0.0, progress->stars));
     } else {
         out.f64(0);
         out.u16(1);
-        out.u32(0);
+        out.f64(0);
     }
 
     // Which of the viewer's own slots are reloading or hurt, and by how much.
@@ -275,6 +284,12 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
 
         std::uint8_t flags = info.spawnFlags;
         if (candidate.entity == viewer) flags |= net::SpawnIsSelf;
+        // Decided here rather than beside the field itself: `flags` is written
+        // near the top of the record and the health fraction near the bottom,
+        // and the flag is what tells the reader how many bytes the latter is.
+        const Health* preHealth = world.tryGet<Health>(candidate.entity);
+        const bool spawnWide = net::healthFieldIsWide(preHealth ? preHealth->max : 1.0);
+        if (spawnWide) flags |= net::SpawnHealthWide;
         const PlayerAccount* account = world.tryGet<PlayerAccount>(candidate.entity);
         if (account && !account->username.empty()) flags |= net::SpawnHasName;
 
@@ -290,7 +305,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // entity that enters view already hurt draws a full health bar until
         // it next changes, which for a fleeing mob may be never.
         const Health* spawnHealth = world.tryGet<Health>(candidate.entity);
-        out.unitShort(spawnHealth ? spawnHealth->fraction() : 1.0);
+        const double spawnFraction = spawnHealth ? spawnHealth->fraction() : 1.0;
+        const double spawnSent = net::writeHealthFraction(out, spawnFraction, spawnWide);
         out.u8(computeEntityState(world, candidate.entity, frame.nowMillis));
         const PlayerVisualState visuals =
             computePlayerVisuals(world, candidate.entity, frame.nowMillis);
@@ -325,7 +341,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.angle = transform.angle;
         tracked.radius = radius;
         tracked.seenThisTick = true;
-        tracked.healthFraction = spawnHealth ? spawnHealth->fraction() : 1.0;
+        tracked.healthFraction = spawnSent;
         tracked.state = computeEntityState(world, candidate.entity, frame.nowMillis);
         tracked.faceFlags = visuals.faceFlags;
         tracked.equipFlags = visuals.equipFlags;
@@ -337,12 +353,31 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     }
     out.patchU16(spawnCountAt, spawnCount);
 
+    const int farStride = std::max(1, farSnapshotStride);
     for (const Candidate& candidate : candidates_) {
         auto it = view.tracked.find(candidate.netId);
         if (it == view.tracked.end()) continue;
         ClientView::Tracked& tracked = it->second;
 
         const Transform& transform = world.get<Transform>(candidate.entity);
+        // Off-screen and not due this snapshot: say nothing about it at all.
+        //
+        // Skipping the whole record rather than trimming its fields is the
+        // point -- the net id and the mask are five bytes before a single
+        // field is named, and at a hundred-odd entities a snapshot they are a
+        // third of the stream on their own. `tracked` is left exactly as it
+        // was, so whenever this entity IS described the diff is still measured
+        // against what the client actually holds, and the spawn pass has
+        // already marked it seen, so skipping it never reads as a removal.
+        //
+        // The viewer is exempt for the obvious reason, and a squadmate because
+        // it is streamed from any distance precisely so the HUD can point at
+        // it (see Frame::alwaysVisible).
+        if (candidate.entity != viewer && !exempt(candidate.entity) &&
+            outsideNearBox(transform.position) &&
+            (frame.snapshotIndex + candidate.netId) % static_cast<std::uint32_t>(farStride) != 0) {
+            continue;
+        }
         const Health* health = world.tryGet<Health>(candidate.entity);
         const Body* body = world.tryGet<Body>(candidate.entity);
         const std::uint8_t state = computeEntityState(world, candidate.entity, frame.nowMillis);
@@ -357,9 +392,19 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         if (std::fabs(wrapAngle(transform.angle - tracked.angle)) > tolerances.angle) {
             mask |= net::FieldAngle;
         }
-        if (health && std::fabs(health->fraction() - tracked.healthFraction) >
-                          tolerances.healthFraction) {
+        // Compared AT THE WIDTH it would be sent in, which is the only
+        // comparison that means anything: judged against the unrounded double,
+        // a pool healing by a hundredth of a step would put bytes on the wire
+        // every snapshot that decode to the value the client already holds.
+        // Judged against a fixed threshold -- as a 1/255 tolerance once was --
+        // a petal taking a millionth of an apex mob reads as no change at all,
+        // and the bar sits still through the whole fight.
+        const bool healthWide = health != nullptr && net::healthFieldIsWide(health->max);
+        const double healthFraction =
+            health ? net::quantizeHealthFraction(health->fraction(), healthWide) : -1.0;
+        if (health && healthFraction != tracked.healthFraction) {
             mask |= net::FieldHealth;
+            if (healthWide) mask |= net::FieldHealthWide;
         }
         if (state != tracked.state) mask |= net::FieldState;
         if (body && std::fabs(body->radius - tracked.radius) > tolerances.radius) {
@@ -387,8 +432,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.angle = transform.angle;
         }
         if (mask & net::FieldHealth) {
-            out.unitShort(health->fraction());
-            tracked.healthFraction = health->fraction();
+            net::writeHealthFraction(out, health->fraction(), healthWide);
+            tracked.healthFraction = healthFraction;
         }
         if (mask & net::FieldState) {
             out.u8(state);

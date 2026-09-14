@@ -617,7 +617,7 @@ void NetClient::handleProfile(ByteReader& reader) {
     next.username = reader.str();
     next.totalXp = reader.f64();
     next.level = reader.u16();
-    next.stars = static_cast<int>(reader.u32());
+    next.stars = reader.f64();
 
     const std::uint16_t stackCount = reader.u16();
     next.inventory.reserve(stackCount);
@@ -683,7 +683,7 @@ void NetClient::handleShopResult(ByteReader& reader) {
     outcome.redeem =
         static_cast<net::ShopResultKind>(reader.u8()) == net::ShopResultKind::Redeem;
     outcome.ok = reader.boolean();
-    outcome.stars = static_cast<int>(reader.u32());
+    outcome.stars = reader.f64();
     outcome.message = reader.str();
     if (!reader.ok()) return;
     outcome.pending = true;

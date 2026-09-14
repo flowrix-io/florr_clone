@@ -35,7 +35,7 @@ bool awaitProfile(Harness& h, NetClient& client, F predicate) {
 /// Writes an account with the given stars and kills straight into a database
 /// file, for the cases a test cannot reach by playing.
 void seedAccount(const std::string& path, const std::string& username,
-                 const std::string& password, int stars, double totalXp) {
+                 const std::string& password, double stars, double totalXp) {
     Database db;
     std::string error;
     db.load(path, error);
@@ -290,13 +290,45 @@ TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
 
     // A slot that does not hold what it claims buys nothing: the client names
     // the card, and the server checks that card against its own rotation.
-    const int stars = client.profile().stars;
+    const double stars = client.profile().stars;
     const std::size_t other = (slot + 1) % offers.size();
     client.requestBuyPetal(offer.petalIndex, offer.rarity, static_cast<int>(other));
     ShopOutcome answer;
     CHECK(awaitShopAnswer(h, client, answer));
     CHECK(!answer.ok);
     CHECK_EQ(client.profile().stars, stars);
+}
+
+TEST(a_balance_past_32_bits_reaches_the_client_and_is_debited_exactly) {
+    // The balance is a JS number on the reference and a JSON number in the
+    // file; it used to cross the wire as a u32 and sit in an int at both ends,
+    // which is a cliff in the middle of an otherwise exact pipeline. A code
+    // for ten billion stars was not "slightly off" after it -- it was a
+    // different number, and the shop then charged against that.
+    const std::uint16_t rose = content().petalIndex("rose");
+    if (rose == kInvalidIndex) { CHECK(false); return; }
+    const double price = shopPrice("rose", Rarity::Common);
+    constexpr double kBalance = 10'000'000'000.0;   // > 2^32
+
+    Harness h("shop-rich", [&](const std::string& path) {
+        seedAccount(path, "croesus", "password7", kBalance, 0);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("croesus", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stars == kBalance + kFirstLoginStars;
+    }));
+
+    // And the purchase takes the price off THAT, rather than off whatever a
+    // narrowing cast of it happened to produce.
+    client.requestBuyPetal(rose, Rarity::Common);
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stars == kBalance + kFirstLoginStars - price;
+    }));
 }
 
 TEST(a_purchase_without_the_stars_is_refused) {

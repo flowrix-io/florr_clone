@@ -640,9 +640,9 @@ bool ShopPanel::render(MenuContext& ctx) {
 
     // Read the balance from the live entity when there is one, so a mythic
     // kill's payout shows up before the next profile arrives.
-    const int stars = ctx.net.status() == NetClient::Status::Playing
-                          ? ctx.net.view().self().stars
-                          : profile.stars;
+    const double stars = ctx.net.status() == NetClient::Status::Playing
+                             ? ctx.net.view().self().stars
+                             : profile.stars;
 
     // --- card ---------------------------------------------------------------
     // No shadow: the reference card sits on its page with nothing between it

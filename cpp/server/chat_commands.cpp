@@ -75,6 +75,15 @@ bool parseNumber(const std::string& text, double& out) {
     return true;
 }
 
+/// A whole-number amount as text, for the star balances and code values that
+/// are doubles because the economy outgrew 32 bits (see PlayerProgress::stars)
+/// but are always integral. std::to_string would print six decimal zeroes.
+std::string wholeNumber(double value) {
+    char buffer[40];
+    std::snprintf(buffer, sizeof buffer, "%.0f", value);
+    return buffer;
+}
+
 /// A coordinate has to fit the rectangle of the realm the body is in, and
 /// nothing outside it is meaningful: the terrain has no tiles there, and a
 /// body parked past the edge is invisible to the spawner's whole
@@ -1678,8 +1687,11 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             out("    gen_code 1000  (shorthand, single use)");
             return;
         }
-        int stars = 0;
-        if (!parseInteger(words[1], stars) || stars <= 0) {
+        // parseNumber, not parseInteger: the codes the reference mints are
+        // JS numbers, and a 32-bit parse turns a ten-billion-star code into
+        // whatever the wrap lands on.
+        double stars = 0;
+        if (!parseNumber(words[1], stars) || !(stars >= 1.0)) {
             out("Invalid stars amount. Usage: generate_code <stars> [maxUses]");
             out("  Default maxUses is 1. Use 0 for unlimited.");
             return;
@@ -1706,6 +1718,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             return;
         }
 
+        stars = std::floor(stars);
+
         Json entry = Json::object();
         entry["code"] = code;
         entry["stars"] = stars;
@@ -1722,7 +1736,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
         out("[CODE GENERATED]");
         out("Code: " + code);
-        out("Stars: " + std::to_string(stars));
+        out("Stars: " + wholeNumber(stars));
         out(maxUses > 0 ? "Max Uses: " + std::to_string(maxUses) : "Max Uses: Unlimited");
         out("Created by: " + session.username);
         out("Players can redeem this code in the shop!");
@@ -1740,7 +1754,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             const Json& entry = codes[code];
             const int maxUses = entry["maxUses"].asInt(0);
             out("Code: " + code);
-            out("  Stars: " + std::to_string(entry["stars"].asInt(0)));
+            out("  Stars: " + wholeNumber(entry["stars"].asDouble(0)));
             out("  Uses: " + std::to_string(entry["uses"].asInt(0)) +
                 (maxUses > 0 ? "/" + std::to_string(maxUses) : std::string(" (unlimited)")));
             out("  Created by: " + entry["createdBy"].asString("Unknown"));

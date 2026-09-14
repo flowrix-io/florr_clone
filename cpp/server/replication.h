@@ -23,6 +23,7 @@
 
 namespace flix {
 
+
 /// Allocates the ids entities are known by on the wire.
 ///
 /// Separate from Entity because Entity encodes a slot that gets recycled: a
@@ -45,7 +46,14 @@ public:
     struct Tracked {
         Vec2 position;
         double angle = 0;
-        double healthFraction = -1;   ///< -1 so the first update always sends it
+        /// The last health fraction SENT, and -1 until one has been.
+        ///
+        /// Compared for exact equality, because the wire carries the f64 this
+        /// holds: anything a hit changes about a mob's pool is a change the
+        /// client must see. A threshold here used to be the bug -- at 1/255 a
+        /// petal taking a millionth of an apex mob read as "unchanged" and the
+        /// bar sat still through the whole fight.
+        double healthFraction = -1;
         double radius = -1;
         std::uint8_t state = 0xFF;    ///< 0xFF is not a valid state, forcing a first send
         std::uint8_t faceFlags = 0xFF;
@@ -69,10 +77,14 @@ public:
 /// These are the whole reason a snapshot is small. A mob drifting a hundredth
 /// of a unit does not need eight bytes spent on it, and no player can see the
 /// difference. Set them just under what a pixel represents at normal zoom.
+/// Health is deliberately absent: it is compared exactly (see
+/// ClientView::Tracked::healthFraction) rather than against a threshold,
+/// because a mob's bar is read as a proportion of a pool that spans nine
+/// orders of magnitude across the tier ladder, and any fixed fraction of it is
+/// enormous at the top.
 struct ReplicationTolerances {
     double position = 0.05;     ///< world units
     double angle = 0.01;        ///< radians, ~0.6 degrees
-    double healthFraction = 1.0 / 255.0;
     double radius = 0.05;
 };
 
@@ -176,6 +188,10 @@ public:
     /// Everything the snapshot needs that is not in the world.
     struct Frame {
         std::uint32_t tick = 0;
+        /// Counts SNAPSHOTS, not ticks: the wire runs slower than the
+        /// simulation and on its own clock, so a cadence expressed in ticks
+        /// would land unevenly on the frames that actually go out.
+        std::uint32_t snapshotIndex = 0;
         double nowMillis = 0;
         const EventQueue* events = nullptr;
         /// Bodies streamed to this client however far away they are.
@@ -206,6 +222,32 @@ public:
     /// known long before it is drawn. Anything tighter pops mobs in at the
     /// screen edge as soon as the player zooms out or enlarges the window.
     double viewportReach = 2.0;
+
+    /// How far out an entity still gets an update EVERY snapshot, as a
+    /// multiple of the viewport per axis.
+    ///
+    /// The streamed box is four screens across (viewportReach above), and the
+    /// screen inside it is one -- so fifteen sixteenths of everything streamed
+    /// is, at any moment, being described to a client that is not drawing it.
+    /// Those entities are streamed so they are KNOWN before they are drawn,
+    /// which is a statement about existence, not about being current to the
+    /// tick: a mob two screens away can be a tenth of a second stale without a
+    /// single pixel being wrong.
+    ///
+    /// The viewport a client reports is the world rectangle it DRAWS -- it
+    /// divides by its own zoom before sending, so a wide loadout lens widens
+    /// this box rather than seeing past it. The drawn rectangle is therefore
+    /// 0.5 of it per axis, and 0.75 leaves a quarter-screen margin all round:
+    /// 640 world units at 1440p, which the fastest thing in the game takes two
+    /// seconds to cross and the far band is never more than a fifth of a
+    /// second stale. Nothing reaches the drawn edge without having been at
+    /// full rate for a long while first.
+    double nearReach = 0.75;
+
+    /// One snapshot in this many carries the far band. Staggered by net id, so
+    /// the band's cost is spread evenly over the snapshots rather than landing
+    /// on every fourth one as a spike.
+    int farSnapshotStride = 4;
 
     /// Ceiling on entities in one snapshot.
     ///

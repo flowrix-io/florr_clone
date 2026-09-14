@@ -56,7 +56,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     const double maxHealth = reader.f32();
     const double totalXp = reader.f64();
     const int level = reader.u16();
-    const int stars = static_cast<int>(reader.u32());
+    const double stars = reader.f64();
 
     // The viewer's own reloading and damaged slots, in wire order with the rest
     // of the self block. A slot that has reloaded or is back at full health is
@@ -115,7 +115,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         s.position = reader.position();
         s.angle = reader.angle();
         s.radius = reader.f32();
-        s.healthFraction = reader.unitShort();
+        s.healthFraction = net::readHealthFraction(reader, (s.flags & net::SpawnHealthWide) != 0);
         s.state = reader.u8();
         s.level = 1;
         s.bestRarity = Rarity::Common;
@@ -156,7 +156,10 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         u.mask = reader.u8();
         if (u.mask & net::FieldPosition) u.position = reader.position();
         if (u.mask & net::FieldAngle) u.angle = reader.angle();
-        if (u.mask & net::FieldHealth) u.healthFraction = reader.unitShort();
+        if (u.mask & net::FieldHealth) {
+            u.healthFraction =
+                net::readHealthFraction(reader, (u.mask & net::FieldHealthWide) != 0);
+        }
         if (u.mask & net::FieldState) u.state = reader.u8();
         if (u.mask & net::FieldSize) u.radius = reader.f32();
         if (u.mask & net::FieldPlayerVisuals) {

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 21;
+inline constexpr std::uint16_t kProtocolVersion = 22;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -133,7 +133,7 @@ enum class ServerMessage : std::uint8_t {
                         ///< i64 nextClaimAtMillis, i64 streakExpiresAtMillis.
                         ///< Sent once per authentication, after Profile, so the
                         ///< stars it awarded are already in the profile beside it.
-    ShopResult,         ///< u8 kind(ShopResultKind), u8 ok, u32 stars, str reason.
+    ShopResult,         ///< u8 kind(ShopResultKind), u8 ok, f64 stars, str reason.
                         ///< The shop panel's own reply channel: a refusal is a
                         ///< modal on the card, not a line in the chat, so it
                         ///< cannot travel as a Notice.
@@ -327,7 +327,71 @@ enum SpawnFlags : std::uint8_t {
     SpawnHasName    = 1 << 0,   ///< a player name follows
     SpawnIsSelf     = 1 << 1,   ///< this is the viewer's own body
     SpawnIsPet      = 1 << 2,   ///< a summoned ally, drawn with an owner tint
+    /// This record's health fraction is an f32 rather than a u16. See
+    /// healthFieldIsWide(): it is the pool that decides, not the kind.
+    SpawnHealthWide = 1 << 3,
 };
+
+// ---------------------------------------------------------------------------
+// The health fraction
+// ---------------------------------------------------------------------------
+//
+// A bar is read as a proportion, so a fraction is what goes on the wire -- but
+// the pool it is a proportion OF runs from 35 points on a common bee to 2e11
+// on an apex digger, and one width cannot serve both. A u16 splits the bar
+// into 65535 parts: exact to the point of health on anything up to that many
+// points, and blind to a whole petal hit above it.
+//
+// So the width travels WITH the record, chosen per entity from its own pool.
+// Self-describing rather than re-derived on the client: an update names an
+// entity the client may not have spawned yet, and a reader that had to look up
+// a pool before it knew how many bytes to consume would lose the rest of the
+// frame the one time it guessed wrong.
+
+/// Whether a pool this size needs the wide field.
+///
+/// The rule is ONE STEP PER POINT OF HEALTH, wherever that is affordable. A
+/// u16's 65535 steps do exactly that for any pool of 65535 or fewer points --
+/// which is every mob up to and including legendary, every flower, and every
+/// petal -- and those are the overwhelming majority of what is ever on screen.
+/// Above it the f32 takes over.
+inline bool healthFieldIsWide(double maxHealth) { return maxHealth > 65535.0; }
+
+/// The wide field carries what is MISSING from the bar, not what is left.
+///
+/// Both are the same f32 and the same four bytes; the difference is where the
+/// mantissa's precision sits. A float's steps are relative to the value it
+/// holds, so `1 - fraction` resolves finely near ZERO -- which is a full bar,
+/// exactly where a huge pool needs it: the first petal hit on an apex mob
+/// takes a millionth of it, and as a fraction-of-max near 1.0 that rounds
+/// clean away, while as a missing-fraction near 0 it survives with seven
+/// digits to spare. The trade is resolution on an almost-empty bar, where the
+/// mob is a sliver about to die and nobody is reading the exact number.
+inline double quantizeHealthFraction(double fraction, bool wide) {
+    const double clamped = clamp(fraction, 0.0, 1.0);
+    if (wide) return 1.0 - static_cast<double>(static_cast<float>(1.0 - clamped));
+    return static_cast<double>(static_cast<std::uint16_t>(clamped * 65535.0 + 0.5)) / 65535.0;
+}
+
+/// Writes a fraction at the chosen width, returning the value the CLIENT will
+/// hold once it reads it back.
+///
+/// The return is the point of the function: the sender tracks what it has told
+/// each client so it can send only changes, and tracking the unrounded double
+/// would have it re-send a value that decodes to exactly what the client
+/// already has, every snapshot, forever.
+inline double writeHealthFraction(ByteWriter& out, double fraction, bool wide) {
+    const double clamped = clamp(fraction, 0.0, 1.0);
+    if (wide) out.f32(static_cast<float>(1.0 - clamped));
+    else out.u16(static_cast<std::uint16_t>(clamped * 65535.0 + 0.5));
+    return quantizeHealthFraction(clamped, wide);
+}
+
+/// Reads back what writeHealthFraction wrote. `wide` comes from the record's
+/// own flag or mask bit, never from anything the reader has to look up.
+inline double readHealthFraction(ByteReader& in, bool wide) {
+    return wide ? 1.0 - static_cast<double>(in.f32()) : in.unitShort();
+}
 
 /// Which mutable fields a snapshot carries for one entity this tick.
 ///
@@ -337,13 +401,21 @@ enum SpawnFlags : std::uint8_t {
 enum UpdateFields : std::uint8_t {
     FieldPosition = 1 << 0,   ///< f32 x, f32 y
     FieldAngle    = 1 << 1,   ///< u16 quantised
-    FieldHealth   = 1 << 2,   ///< u16 fraction of max
+    /// Fraction of max: u16, or f32 when FieldHealthWide rides with it.
+    ///
+    /// The sender compares this field at the width it is about to send in, so
+    /// it costs nothing at all until something is actually hurt -- and then it
+    /// costs whatever it takes to describe the hit. See healthFieldIsWide().
+    FieldHealth   = 1 << 2,
     FieldState    = 1 << 3,   ///< u8 EntityState bits
     FieldSize     = 1 << 4,   ///< f32 radius; changes only on level-up or growth
     /// u8 face flags, u8 equipment flags, u32 render/skin flags, u16 level,
     /// u8 best loadout rarity, u32 arena score. Set only for players; the
     /// payload remains self-contained for decoding.
     FieldPlayerVisuals = 1 << 5,
+    /// Modifies FieldHealth: the fraction is an f32, not a u16. Meaningless
+    /// on its own, and never set without FieldHealth.
+    FieldHealthWide = 1 << 6,
 };
 
 /// Transient visual state, refreshed whenever FieldState is set.

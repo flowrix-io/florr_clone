@@ -386,7 +386,7 @@ private:
     /// The shop's own reply channel. A refused purchase or code is a modal on
     /// the shop card in the reference, not a line in the chat, so it cannot
     /// travel as a Notice.
-    void sendShopResult(net::Connection&, net::ShopResultKind, bool ok, int stars,
+    void sendShopResult(net::Connection&, net::ShopResultKind, bool ok, double stars,
                         const std::string& message);
     void broadcastChat(net::ChatChannel, const std::string& author, const std::string& text);
     /// One chat line to one connection, under a chosen author. The guild's own
@@ -941,6 +941,9 @@ private:
     /// per-recipient encode/cull/delta pass is the most expensive thing in the
     /// tick that nothing simulated depends on.
     double nextSnapshotMillis_ = 0;
+    /// Counts snapshots actually sent, which is what the far-band update
+    /// cadence is staggered against (Replicator::farSnapshotStride).
+    std::uint32_t snapshotIndex_ = 0;
 
     double nextRankRefreshMillis_ = 0;
 

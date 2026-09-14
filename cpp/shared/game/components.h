@@ -359,7 +359,14 @@ struct ArenaScore {
 struct PlayerProgress {
     double totalXp = 0;
     int level = 1;
-    int stars = 0;
+    /// The star balance, as a double for the same reason `totalXp` is one: the
+    /// reference keeps it in a JS number and the database stores it as a JSON
+    /// number, so an int is a 32-bit cliff in the middle of a pipeline that is
+    /// otherwise exact to 2^53. A code minted for more than 2.1 billion, or a
+    /// shop price above it, used to wrap or trap on the cast rather than
+    /// costing what it said. Integral in practice -- nothing awards a
+    /// fraction of a star -- but never truncated on the way through.
+    double stars = 0;
     /// Set when the level changed this tick so the networking layer can emit a
     /// LevelUp event without diffing.
     bool leveledThisTick = false;
