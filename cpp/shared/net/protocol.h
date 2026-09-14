@@ -369,6 +369,15 @@ enum EntityState : std::uint8_t {
 enum DamageEventFlags : std::uint8_t {
     DamageCritical = 1 << 0,
     DamagePoison   = 1 << 1,
+    /// A lightning strike's damage, which the client paints cyan.
+    ///
+    /// It rides the flag byte rather than being inferred from the Lightning
+    /// event beside it: the strike names where it LANDED and which bodies it
+    /// drew arms to, not what each of them lost, and pairing the two on the
+    /// client would mean matching a position against an entity that the same
+    /// tick may already have killed. The bit costs nothing -- the byte was
+    /// being sent anyway.
+    DamageLightning = 1 << 2,
 };
 
 enum class EventKind : std::uint8_t {

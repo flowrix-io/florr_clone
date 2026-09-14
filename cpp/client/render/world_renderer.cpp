@@ -249,6 +249,47 @@ void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle
 constexpr std::uint32_t kPoisonTextColor = 0xCE76DBu;
 constexpr double kPoisonNumberOffsetX = 14.0;
 
+/// A lightning strike's damage is cyan -- the colour of the bolt that dealt it.
+///
+/// Not offset the way a poison tick is: a strike IS a landed hit, and it opens
+/// the victim's post-hit window, so nothing else can land on the same body in
+/// the same tick for it to stack on.
+constexpr std::uint32_t kLightningTextColor = 0x00FFFFu;
+
+/// Which floating number a hit belongs to.
+///
+/// Not just a colour: each channel accumulates on its own key inside the mob
+/// throttle. Sharing one bucket would let a poison tick land inside a petal
+/// hit's window and repaint the whole total purple -- or a strike's cyan repaint
+/// the ring damage that arrived beside it -- and the reverse.
+enum class NumberChannel : std::uint8_t { Hit = 0, Poison = 1, Lightning = 2 };
+
+std::uint32_t numberColor(NumberChannel channel) {
+    switch (channel) {
+        case NumberChannel::Poison: return kPoisonTextColor;
+        case NumberChannel::Lightning: return kLightningTextColor;
+        case NumberChannel::Hit: break;
+    }
+    return kDamageTextColor;
+}
+
+/// The throttle bucket one channel's numbers accumulate in for one body. The
+/// channel rides above the 32-bit net id, which is the whole of the key.
+std::uint64_t numberKey(std::uint32_t netId, NumberChannel channel) {
+    return static_cast<std::uint64_t>(netId) |
+           (static_cast<std::uint64_t>(channel) << 32);
+}
+
+/// The channel a Damage event's flag byte names.
+NumberChannel channelOf(std::uint8_t flags) {
+    // Poison first: a poisoned strike is not a thing any content can author,
+    // and reading the byte in a fixed order beats leaving the answer to
+    // whichever bit a future flag happens to occupy.
+    if ((flags & net::DamagePoison) != 0) return NumberChannel::Poison;
+    if ((flags & net::DamageLightning) != 0) return NumberChannel::Lightning;
+    return NumberChannel::Hit;
+}
+
 /// The ceiling the browser build's server clamps a flower's size modifier to.
 constexpr double kMaxSizeMultiplier = 6.0;
 
@@ -467,8 +508,9 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         if (it == view.entities().end() || it->second.kind != net::EntityKind::Mob) return false;
         return content_->mob(it->second.typeIndex).id == "target_dummy";
     };
-    const auto pushNumber = [this](Vec2 at, double value, double size, bool poison) {
+    const auto pushNumber = [this](Vec2 at, double value, double size, NumberChannel channel) {
         if (effects_.size() >= maxEffects) return;
+        const bool poison = channel == NumberChannel::Poison;
         Effect e;
         e.kind = Effect::Kind::DamageNumber;
         // Reported 20 units above the body that produced it, and a poison tick
@@ -481,7 +523,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
         e.drift = {kNumberDrift * (randomUnit() * 2.0 - 1.0), -kNumberRise};
         e.value = value;
         e.textSize = numberSizeFor(size, value);
-        e.color = poison ? kPoisonTextColor : kDamageTextColor;
+        e.color = numberColor(channel);
         e.lifeSeconds = kNumberLifeSeconds;
         effects_.push_back(std::move(e));
     };
@@ -557,16 +599,14 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 // A flower's own damage is never throttled: you must see every
                 // hit you take. A mob's is, because a full ring lands eight
                 // hits in one tick and eight stacked numbers read as noise.
-                // Poison accumulates under its own key: sharing one bucket
-                // would let a tick land inside a petal hit's throttle window
-                // and repaint the whole total purple, or the reverse.
-                const bool poison = (event.flag & net::DamagePoison) != 0;
+                // Each channel accumulates under its own key -- see
+                // NumberChannel.
+                const NumberChannel channel = channelOf(event.flag);
                 if (isPlayer(event.netId)) {
-                    pushNumber(event.position, event.amount, kPlayerNumberSize, poison);
+                    pushNumber(event.position, event.amount, kPlayerNumberSize, channel);
                     break;
                 }
-                const std::uint64_t key =
-                    static_cast<std::uint64_t>(event.netId) | (poison ? (1ull << 32) : 0ull);
+                const std::uint64_t key = numberKey(event.netId, channel);
                 const auto bucket = damageTextAt_.find(key);
                 if (bucket != damageTextAt_.end() &&
                     nowSeconds_ - bucket->second < kDamageTextThrottleSeconds) {
@@ -580,21 +620,21 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     damagePending_.erase(pending);
                 }
                 damageTextAt_[key] = nowSeconds_;
-                if (total > 0) pushNumber(event.position, total, kMobNumberSize, poison);
+                if (total > 0) pushNumber(event.position, total, kMobNumberSize, channel);
                 break;
             }
             case net::EventKind::Killed: {
                 // Whatever was still accumulating dies with the target, so
-                // flush it rather than losing the killing blow's number. Both
-                // buckets: a mob can die with a petal hit and a poison tick
-                // still pending.
-                for (const bool poison : {false, true}) {
-                    const std::uint64_t key = static_cast<std::uint64_t>(event.netId) |
-                                              (poison ? (1ull << 32) : 0ull);
+                // flush it rather than losing the killing blow's number. EVERY
+                // bucket: a mob can die with a petal hit, a poison tick and a
+                // strike all still pending.
+                for (const NumberChannel channel :
+                     {NumberChannel::Hit, NumberChannel::Poison, NumberChannel::Lightning}) {
+                    const std::uint64_t key = numberKey(event.netId, channel);
                     const auto pending = damagePending_.find(key);
                     if (pending != damagePending_.end()) {
                         if (options.damageNumbers && pending->second > 0) {
-                            pushNumber(event.position, pending->second, kMobNumberSize, poison);
+                            pushNumber(event.position, pending->second, kMobNumberSize, channel);
                         }
                         damagePending_.erase(pending);
                     }

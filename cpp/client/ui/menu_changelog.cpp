@@ -354,6 +354,11 @@ constexpr ChangelogEntry kChangelog[] = {
     {"September 12, 2026",
      {"New mob: Crab",
       "New mob: Leech, a long body that follows its head in one piece"}},
+    {"September 13, 2026",
+     {"Jellyfish shock any flower that comes near them",
+      "Both fireflies shock the flower they collide with -- hitting one with "
+      "your petals does not set it off",
+      "Lightning damage numbers are cyan now"}},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

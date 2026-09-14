@@ -71,6 +71,59 @@ struct ProjectileSpec {
     Rarity ammoRarity = Rarity::Common;
 };
 
+/// A mob that throws lightning.
+///
+/// Two triggers, because the two mobs that have one are nothing alike: a
+/// jellyfish shocks anything that comes inside `strikeRange` without having to
+/// reach it, and a firefly shocks on the tick its body touches a flower. A mob
+/// may declare either, or both.
+///
+/// Nothing here fires when the MOB is hit. That is deliberate and is the
+/// difference between a firefly and a thorn: swatting one with a petal ring is
+/// exactly the case that must not discharge, or a ranged loadout would take
+/// the strike it kept its distance to avoid.
+struct LightningSpec {
+    bool present = false;
+
+    /// How far the shock travels PAST THE MOB'S OWN BODY. Every flower inside
+    /// that reach takes `damage` and has an arm drawn to it.
+    ///
+    /// Past the body, not from the centre, because a mob's body is the one
+    /// length here that already scales with rarity -- 1.5x a common's at
+    /// common, 43x at apex. Measured from the centre, a flat radius is eaten by
+    /// the mob that threw it: an ultra jellyfish's 300 units sit entirely
+    /// inside its own 315-unit body and reach nobody at all, and a flower
+    /// standing ON an ultra firefly is 277 units from its centre and so outside
+    /// a 250-unit disc. Stated against the skin, a strike always reaches
+    /// whatever is touching the mob, at every tier, and grows with it.
+    double radius = 0;
+
+    /// What one strike takes off. 0 means the mob's own `damage` stat for its
+    /// tier, which is what makes a mythic jellyfish's shock worth more than a
+    /// common one's without a second ladder in the JSON.
+    double damage = 0;
+
+    /// How close a flower has to come before the mob strikes at it, measured
+    /// from the body's edge like `radius`. 0 means the mob never strikes at
+    /// range and `onContact` is its only trigger.
+    ///
+    /// Separate from `radius` because they answer different questions -- when
+    /// to throw, and what the throw covers -- though a mob that states only
+    /// `radius` gets them equal, which is the shape a shock wants. A mob that
+    /// names `onContact` and no `range` gets zero instead: it has already said
+    /// what its trigger is.
+    double strikeRange = 0;
+
+    /// Strike when this mob's body collides with a flower.
+    bool onContact = false;
+
+    /// Gap between two strikes from the same mob. 0 means the mob's own
+    /// `cooldown`, and a mob with neither waits kDefaultLightningCooldownMillis
+    /// -- a firefly ships `cooldown: 0`, and an unpaced strike would fire on
+    /// all thirty ticks a flower spends walking through one.
+    double cooldownMillis = 0;
+};
+
 /// A ring of petals a mob carries, as a flower does.
 struct PetalRingSpec {
     bool present = false;
@@ -221,6 +274,7 @@ struct MobConfig {
     ProjectileSpec projectile;
     PetalRingSpec petalRing;
     PeriodicSpawnSpec periodicSpawn;
+    LightningSpec lightning;
 
     /// Poison the mob's touch applies. Stored per second, converted from the
     /// per-millisecond figure the JSON uses.

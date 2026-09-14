@@ -287,7 +287,12 @@ private:
 
     /// An instantaneous area hit: everything a strike or an explosion needs
     /// beyond its own radius and damage.
-    void emitDamageBurst(World& world, Entity player, Vec2 at, double radius, double damage);
+    ///
+    /// `lightning` marks the burst with LightningBurst, which changes nothing
+    /// about who it hits or how hard -- only the colour of the number combat
+    /// reports for it.
+    void emitDamageBurst(World& world, Entity player, Vec2 at, double radius, double damage,
+                         bool lightning = false);
     void strikeLightning(World& world, Entity player, Vec2 at, double damage);
     /// The strike's visual half: one event carrying the bolts' endpoints. The
     /// damage half is a field, and a field has nothing on the wire the client

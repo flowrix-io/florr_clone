@@ -68,6 +68,14 @@ inline constexpr double kPostHitInvulnerabilityMillis = 50.0;
 /// protects focused tests that intentionally build a minimal broadphase.
 inline constexpr double kBroadphasePad = 24.0;
 
+/// What paces a lightning strike when neither the strike nor the mob carrying
+/// it states a gap.
+///
+/// A firefly ships `cooldown: 0` -- it has no volley and no attack cadence to
+/// state -- and an unpaced contact strike would fire on all thirty ticks a
+/// flower spends walking through one, which is thirty shocks a second.
+inline constexpr double kDefaultLightningCooldownMillis = 1000.0;
+
 /// Ticks between HitCooldowns sweeps. The entries are only a correctness
 /// concern while they are in the future; the sweep exists so a petal that has
 /// grazed ten thousand mobs is not still carrying all ten thousand.
@@ -89,7 +97,19 @@ enum class DamageKind : std::uint8_t {
     Direct = 0,     ///< a landed hit: flashes, and so provokes a neutral mob
     Periodic = 1,   ///< a drip, reported in the ordinary colour
     Poison = 2,     ///< a drip the client tints purple and offsets sideways
+    /// A lightning strike. A landed hit in every respect that the simulation
+    /// can see -- it flashes, it provokes, a shell absorbs it and it grants the
+    /// post-hit window -- and differs from Direct in exactly one place: the
+    /// floating number is cyan. Hence isDirectHit() rather than a widening
+    /// `!= Periodic && != Poison` test at each of applyDamage's branches.
+    Lightning = 3,
 };
+
+/// Whether this kind is a landed hit rather than a drip. Everything in
+/// applyDamage that used to ask `kind == Direct` asks this.
+inline constexpr bool isDirectHit(DamageKind kind) {
+    return kind == DamageKind::Direct || kind == DamageKind::Lightning;
+}
 
 struct DamageResult {
     double applied = 0;      ///< health actually removed, after clamping to what was left
@@ -137,6 +157,22 @@ public:
     /// Not const-safe against iteration: see the structural trap above.
     DamageResult applyDamage(World& world, Entity victim, Entity source, double amount,
                              double nowMillis, DamageKind kind = DamageKind::Direct);
+
+    /// One lightning strike thrown BY A MOB: every flower whose centre is
+    /// inside `radius` of `at` takes `damage` as DamageKind::Lightning, and the
+    /// client is sent the arms to draw.
+    ///
+    /// Damage lands here and now rather than through the one-tick damage field
+    /// a petal's strike leaves behind. Two reasons. The field pass runs after
+    /// the contact pass, so a firefly's touch and the shock it triggers would
+    /// arrive in the same tick with the shock second -- and the touch's own
+    /// 50 ms window would swallow it, which is a firefly that never shocks
+    /// anybody. And a field damages mobs; making it damage flowers instead
+    /// would mean a second victim rule inside a loop that already carries one.
+    ///
+    /// Public because it is a weapon, and tests fire weapons directly.
+    void strikeLightning(World& world, const SpatialGrid& grid, Entity source, Vec2 at,
+                         Realm realm, double radius, double damage, double nowMillis);
 
     /// Queue the TypeScript petal/projectile mob push: direction times
     /// `strength / victimMass`. This REPLACES a prior queued push, matching
@@ -231,6 +267,17 @@ private:
         /// markGlitched). Resolved from the config in the gather, where the
         /// registry is at hand.
         bool glitchInfecting = false;
+        /// A mob whose touch throws lightning -- both fireflies. Zero radius
+        /// means it does not, which is every other body in the game. Resolved
+        /// in the gather beside the glitch flag and for the same reason.
+        ///
+        /// This is the CONTACT trigger only. A mob that strikes at RANGE is
+        /// gathered separately (see LightningSource): it needs no collision,
+        /// and hanging it off a melee source would mean a jellyfish could only
+        /// shock a flower it was already touching.
+        double lightningRadius = 0;
+        double lightningDamage = 0;
+        double lightningCooldownMillis = 0;
         /// The space the body is in; the broadphase is asked about this one.
         Realm realm = Realm::Overworld;
     };
@@ -248,9 +295,31 @@ private:
         Realm realm = Realm::Overworld;
     };
 
+    /// A mob that shocks whatever comes near it, resolved once per tick.
+    ///
+    /// Gathered rather than struck in place for the usual reason every pass
+    /// here is split in two: a strike marks flowers Dead, which relocates rows,
+    /// and the walk that found the strikers would be walking those rows.
+    struct LightningSource {
+        Entity mob = NULL_ENTITY;
+        Vec2 position;
+        double radius = 0;
+        double damage = 0;
+        /// How close a flower has to come. Always at least `radius` in
+        /// practice; the two are separate numbers in the config.
+        double strikeRange = 0;
+        double cooldownMillis = 0;
+        Realm realm = Realm::Overworld;
+    };
+
     struct FieldSource {
         Entity effect = NULL_ENTITY;
         GroundEffectKind kind = GroundEffectKind::Poison;
+        /// How the field's discrete chip is REPORTED. Direct for a pollen puff,
+        /// Lightning for the one-tick burst a strike leaves behind, which is
+        /// what paints its number cyan. Read off the effect in the gather so
+        /// the resolve never has to ask the world what a field is.
+        DamageKind hitKind = DamageKind::Direct;
         Vec2 position;
         double radius = 0;
         double damagePerSecond = 0;
@@ -310,6 +379,21 @@ private:
     void gatherAuras(World& world, const ContentRegistry& content);
     void resolveAuras(World& world, const SpatialGrid& grid, double nowMillis);
     void gatherContact(World& world, const ContentRegistry& content);
+    /// One pass of lightning at RANGE: which mobs are charged and have somebody
+    /// in reach, and the strikes they throw. Runs in the world phase, after
+    /// movement. The CONTACT trigger is not here -- it fires inside
+    /// resolveMelee, where the collision it needs has just been resolved.
+    void tickMobLightning(World& world, const SpatialGrid& grid, const ContentRegistry& content,
+                          double nowMillis);
+    /// The two halves of it. Split for the reason the header of LightningSource
+    /// gives.
+    void gatherMobLightning(World& world, const ContentRegistry& content);
+    void resolveMobLightning(World& world, const SpatialGrid& grid, double nowMillis);
+    /// Whether any flower this mob could actually hurt is inside `range`. The
+    /// trigger for a strike at range, kept apart from the strike itself so a
+    /// mob with nobody near it costs one broadphase query and no bolt.
+    bool playerWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at, Realm realm,
+                      double range, double nowMillis);
     void gatherPetals(World& world, const ContentRegistry& content);
     void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
     /// A petal swinging at another flower, which is a different collision from
@@ -336,12 +420,23 @@ private:
 
     std::vector<MeleeSource> melee_;
     std::vector<AuraSource> auras_;
+    std::vector<LightningSource> strikers_;
     std::vector<FieldSource> fields_;
     std::vector<ShotSource> shots_;
     std::vector<ShotImpact> impacts_;
     std::vector<PoisonTick> poison_;
     std::vector<PoisonTick> spongeTicks_;
     std::vector<Entity> candidates_;
+    /// A strike's own broadphase answer and the two lists it builds from it.
+    /// Separate from candidates_ because a contact strike is thrown from INSIDE
+    /// the loop that is walking candidates_, and one shared scratch buffer
+    /// would have the strike delete the list it was called from.
+    std::vector<Entity> strikeCandidates_;
+    std::vector<Entity> strikeVictims_;
+    /// Where the bolts end, for the wire. Trimmed to net::kMaxLightningTargets;
+    /// strikeVictims_ is not, because every flower inside the disc is hit
+    /// whether or not an arm was drawn to it.
+    std::vector<Vec2> strikeArms_;
     /// TypeScript stops after the first legitimate mob body-contact for a
     /// player each tick. Reused rather than allocated in resolveMelee().
     std::vector<Entity> mobContactedPlayers_;

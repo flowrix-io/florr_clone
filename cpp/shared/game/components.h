@@ -675,6 +675,33 @@ struct DropItem {
 
 enum class GroundEffectKind : std::uint8_t { Poison = 0, Web = 1, Radiation = 2 };
 
+/// When a mob last threw a lightning strike.
+///
+/// Its own component rather than a field on MobAi, because combat owns both
+/// triggers -- the reach and the touch -- and mob_ai.cpp owns nothing about
+/// either; and because a strike is paced separately from the body's contact
+/// clock, or a flower standing inside a jellyfish would suppress the shock it
+/// is standing inside.
+///
+/// Added the first time a mob strikes, so a world of mobs that never do costs
+/// no column.
+struct LightningClock {
+    /// Far enough back that the first strike is never on cooldown, whatever
+    /// the server's clock reads at the moment a mob is spawned.
+    double lastStrikeMillis = -1e18;
+};
+
+/// Marks a one-tick damage field as a LIGHTNING strike's, so the hit it
+/// resolves is reported in the strike's own cyan rather than as an ordinary
+/// petal hit.
+///
+/// A tag beside the effect rather than a fourth GroundEffectKind: the kind
+/// decides how a field is drawn, how wide it reaches for its victim and which
+/// side of the rim counts as inside, and a strike wants every one of those to
+/// stay exactly what the burst already had. All it wants is a different colour
+/// on the number.
+struct LightningBurst {};
+
 struct GroundEffect {
     GroundEffectKind kind = GroundEffectKind::Poison;
     Entity owner = NULL_ENTITY;
@@ -760,5 +787,7 @@ FLIX_COMPONENT(flix::Projectile);
 FLIX_COMPONENT(flix::Lifetime);
 FLIX_COMPONENT(flix::DropItem);
 FLIX_COMPONENT(flix::GroundEffect);
+FLIX_COMPONENT(flix::LightningBurst);
+FLIX_COMPONENT(flix::LightningClock);
 FLIX_COMPONENT(flix::NetId);
 FLIX_COMPONENT(flix::Replicated);

@@ -191,6 +191,24 @@ double contactDamageOf(const World& world, Entity mob) {
     return contact != nullptr ? contact->amount : 1.0;
 }
 
+/// What one strike from this mob takes off.
+///
+/// The spec's own number when it states one, and otherwise the mob's tier-
+/// scaled `damage` -- which is what lets a mythic jellyfish shock harder than a
+/// common one without a second rarity ladder in mobs.json.
+double lightningDamageOf(const MobConfig& config, const MobStats& stats) {
+    return config.lightning.damage > 0.0 ? config.lightning.damage : stats.damage;
+}
+
+/// The gap between two strikes from this mob: the spec's, else the mob's own
+/// attack cadence, else the default. Deliberately NOT rarity-scaled -- neither
+/// is the `cooldown` a volley reads.
+double lightningCooldownOf(const MobConfig& config) {
+    if (config.lightning.cooldownMillis > 0.0) return config.lightning.cooldownMillis;
+    if (config.cooldownMillis > 0.0) return config.cooldownMillis;
+    return kDefaultLightningCooldownMillis;
+}
+
 /// Write a swing into the victim's contributor ledger.
 ///
 /// The number SWUNG, never the number that fitted in the health that was left.
@@ -214,8 +232,9 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
 
 struct CombatSystem::Queries {
     explicit Queries(World& world)
-        : progress(world), afflicted(world), auras(world), contact(world), petals(world),
-          projectiles(world), fields(world), cooldowns(world), auraCooldowns(world) {
+        : progress(world), afflicted(world), auras(world), contact(world), strikers(world),
+          petals(world), projectiles(world), fields(world), cooldowns(world),
+          auraCooldowns(world) {
         // A dead flower projects nothing, which is the same guard the
         // reference's pre-movement pass opens with.
         auras.without<Dead>();
@@ -230,6 +249,7 @@ struct CombatSystem::Queries {
         petals.without<Dead>();
         projectiles.without<Dead>();
         fields.without<Dead>();
+        strikers.without<Dead>();
     }
 
     Query<PlayerProgress> progress;
@@ -243,6 +263,11 @@ struct CombatSystem::Queries {
     /// riders all come out of the petal config, and reading it once beats
     /// mirroring six numbers onto every petal entity every tick.
     Query<ContactDamage, Transform, Body> contact;
+    /// Mobs that might shock at range. Every mob is walked and the config
+    /// decides -- the same trade gatherAuras makes with loadouts: one config
+    /// read per mob per tick beats keeping a second copy of the spec honest
+    /// through summons, rarity rolls and a hot content reload.
+    Query<MobTag, MobType, Transform, Body> strikers;
     Query<PetalInstance, Transform, Body> petals;
     Query<Projectile, Transform, Body, Motion> projectiles;
     Query<GroundEffect, Transform> fields;
@@ -359,7 +384,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         }
         Health& health = world.get<Health>(victim);
         health.current -= amount;
-        if (kind == DamageKind::Direct) {
+        if (isDirectHit(kind)) {
             health.flashUntilMillis = std::max(health.flashUntilMillis,
                                                nowMillis + kHurtFlashMillis);
         }
@@ -371,7 +396,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // Shell's shield is a temporary flat reduction per DIRECT hit. It neither
     // depletes nor applies to poison/radiation, matching getShieldAmount() in
     // the TypeScript hit paths.
-    const bool directPlayerHit = kind == DamageKind::Direct && world.has<PlayerTag>(victim);
+    const bool directPlayerHit = isDirectHit(kind) && world.has<PlayerTag>(victim);
     if (directPlayerHit) {
         if (ShieldState* shield = world.tryGet<ShieldState>(victim)) {
             if (shield->active(nowMillis)) amount = std::max(0.0, amount - shield->amount);
@@ -416,7 +441,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     health.current -= applied;
     if (health.current < 0.0) health.current = 0.0;
     bool fatal = health.current <= 0.0;
-    if (kind == DamageKind::Direct) {
+    if (isDirectHit(kind)) {
         health.flashUntilMillis = std::max(health.flashUntilMillis, nowMillis + kHurtFlashMillis);
     }
     result.applied = applied;
@@ -450,9 +475,13 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     if (events_ != nullptr && (world.has<MobTag>(victim) || world.has<PlayerTag>(victim))) {
         if (const NetId* id = world.tryGet<NetId>(victim)) {
             const Transform* transform = world.tryGet<Transform>(victim);
-            const std::uint8_t flags = kind == DamageKind::Poison
-                                           ? static_cast<std::uint8_t>(net::DamagePoison)
-                                           : std::uint8_t{0};
+            std::uint8_t flags{0};
+            if (kind == DamageKind::Poison) flags |= net::DamagePoison;
+            // Every strike in the game reaches here as DamageKind::Lightning --
+            // the petal cutter's burst, a jellyfish's reach and a firefly's
+            // touch alike -- so the cyan is decided once, where the number is
+            // reported, rather than at each of the three triggers.
+            if (kind == DamageKind::Lightning) flags |= net::DamageLightning;
             events_->damage(id->value, applied, transform ? transform->position : Vec2{},
                             transform ? transform->realm : Realm::Overworld, flags);
         }
@@ -769,11 +798,23 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     resolveMelee(world, grid, nowMillis);
 }
 
+void CombatSystem::tickMobLightning(World& world, const SpatialGrid& grid,
+                                    const ContentRegistry& content, double nowMillis) {
+    gatherMobLightning(world, content);
+    resolveMobLightning(world, grid, nowMillis);
+}
+
 void CombatSystem::runWorldPhase(World& world, const SpatialGrid& grid,
                                  const ContentRegistry& content, double nowMillis, double dt) {
     // TypeScript advances projectiles and then world fields after mobs move.
     // Damage fields are commutative within this phase, while projectile impact
     // remains the discrete collision whose post-movement position matters.
+    // Lightning at range goes here, after the mobs have moved: a jellyfish
+    // shocks from where it IS rather than from where it was, and the positions
+    // the client is sent to draw arms to are the ones this tick's snapshot
+    // carries. The other trigger -- a firefly's touch -- fires in the contact
+    // phase above, where the collision it needs is resolved.
+    tickMobLightning(world, grid, content, nowMillis);
     tickProjectiles(world, grid, content, nowMillis, dt);
     tickGroundEffects(world, grid, content, nowMillis, dt);
 
@@ -882,7 +923,12 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
     fields_.clear();
     queries_->fields.each([&](Entity e, GroundEffect& effect, Transform& transform) {
         if (effect.radius <= 0.0) return;
-        fields_.push_back({e, effect.kind, transform.position, effect.radius,
+        // A strike's burst is a pollen puff in every respect the field pass
+        // cares about -- same reach rule, same rim rule, same once-per-victim
+        // chip -- and differs only in the colour of the number it reports.
+        const DamageKind hitKind = world.has<LightningBurst>(e) ? DamageKind::Lightning
+                                                                : DamageKind::Direct;
+        fields_.push_back({e, effect.kind, hitKind, transform.position, effect.radius,
                            effect.damagePerSecond, effect.slowFactor, effect.rarity,
                            effect.damagePerHit, effect.damageIntervalMillis, transform.realm});
     });
@@ -934,7 +980,8 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                     // buys both of those -- the flash it also lights is what
                     // steerAggressive reads as "something just hurt me".
                     const DamageResult hit = applyDamage(world, victim, field.effect,
-                                                         field.damagePerHit, nowMillis);
+                                                         field.damagePerHit, nowMillis,
+                                                         field.hitKind);
                     if (!hit.refused) {
                         world.ensure<HitCooldowns>(field.effect)
                             .arm(victim, nowMillis + field.damageIntervalMillis);
@@ -1036,11 +1083,22 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         source.knockback = 0.0;
 
         if (const MobType* type = world.tryGet<MobType>(e)) {
+            const MobConfig& config = content.mob(type->configIndex);
             const MobStats stats = content.mobStats(type->configIndex, type->rarity);
             source.poisonPerSecond = stats.poisonPerSecond;
             source.poisonDurationMillis = stats.poisonDurationMillis;
             source.rarity = type->rarity;
-            source.glitchInfecting = content.mob(type->configIndex).glitchInfecting;
+            source.glitchInfecting = config.glitchInfecting;
+            if (config.lightning.present && config.lightning.onContact) {
+                // Past the BODY. A flower touching this mob has its centre a
+                // whole body radius away, so a reach measured from the centre
+                // stops reaching the very thing that triggered it as soon as
+                // the mob is bigger than the reach -- which an ultra firefly
+                // is. See LightningSpec::radius.
+                source.lightningRadius = body.radius + config.lightning.radius;
+                source.lightningDamage = lightningDamageOf(config, stats);
+                source.lightningCooldownMillis = lightningCooldownOf(config);
+            }
         }
         if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e)) {
             source.damage *= modifiers->damageScale;
@@ -1051,7 +1109,13 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         // sitting on an exact health boundary dies on the same hit it dies on
         // in the reference. Mob contact damage is unrounded on both sides.
         if (source.isPlayerBody) source.damage = std::round(source.damage);
-        if (source.damage <= 0.0 && source.poisonPerSecond <= 0.0) return;
+        // A body that does nothing on contact is not gathered -- but a shock IS
+        // something it does, so a mob whose whole weapon is the strike still
+        // reaches resolveMelee rather than being dropped for dealing no bump.
+        if (source.damage <= 0.0 && source.poisonPerSecond <= 0.0 &&
+            source.lightningRadius <= 0.0) {
+            return;
+        }
         melee_.push_back(source);
     });
 }
@@ -1160,6 +1224,36 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 mobContactedPlayers_.push_back(victim);
                 applyMobContactKnockback(world, victim, offset);
                 if (source.glitchInfecting) markGlitched(world, victim);
+
+                // A firefly discharges on the tick its body reaches a flower.
+                //
+                // Here, ABOVE the body's own hit, on purpose. Both land on the
+                // same flower on the same tick and the first of them opens the
+                // 50 ms post-hit window that refuses the second, so whichever
+                // goes first is the one the player feels -- and a firefly whose
+                // shock is silently eaten by its own bump is a firefly that
+                // never shocks anybody.
+                //
+                // Nothing about being HIT reaches this block: a petal landing
+                // on the firefly is the other direction through resolveMelee
+                // and throws nothing, which is the whole difference between a
+                // firefly and a thorn.
+                if (source.lightningRadius > 0.0) {
+                    // Read before it is created: a mob that has never struck
+                    // should not pay an archetype move just for touching
+                    // somebody while it is still charging.
+                    const LightningClock* clock = world.tryGet<LightningClock>(source.attacker);
+                    if (clock == nullptr ||
+                        nowMillis - clock->lastStrikeMillis >= source.lightningCooldownMillis) {
+                        world.ensure<LightningClock>(source.attacker).lastStrikeMillis = nowMillis;
+                        // From the MOB, not from the flower it touched: the
+                        // bolt lands where the firefly is, and the flowers
+                        // standing around it are inside the same flash.
+                        strikeLightning(world, grid, source.attacker, source.position,
+                                        source.realm, source.lightningRadius,
+                                        source.lightningDamage, nowMillis);
+                    }
+                }
             }
 
             if (!canHit(world, victim, source.attacker, nowMillis)) continue;
@@ -1252,6 +1346,141 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             if (source.isPlayerBody && !hit.refused) break;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Lightning
+// ---------------------------------------------------------------------------
+
+void CombatSystem::strikeLightning(World& world, const SpatialGrid& grid, Entity source, Vec2 at,
+                                   Realm realm, double radius, double damage, double nowMillis) {
+    if (radius <= 0.0 || !(damage > 0.0)) return;
+
+    grid.query(realm, at, radius + kBroadphasePad, strikeCandidates_);
+    strikeVictims_.clear();
+    strikeArms_.clear();
+    for (const Entity victim : strikeCandidates_) {
+        if (victim == source) continue;
+        // Flowers only, stated outright rather than left to the faction rule.
+        // A mob's shock is aimed at what it is fighting; washing over the mobs
+        // beside it would turn a jellyfish shoal into a mutual suicide pact,
+        // and canDamage() would not have stopped that on its own -- it lets
+        // anything through whose side it cannot resolve.
+        if (!world.has<PlayerTag>(victim)) continue;
+        const Transform* transform = world.tryGet<Transform>(victim);
+        if (transform == nullptr || transform->realm != realm) continue;
+        // Centres inside the disc. The stricter of the two rules a field could
+        // use -- it does not add the victim's own radius -- so every arm drawn
+        // ends on a flower that was certainly inside the flash.
+        if (distanceSq(transform->position, at) > radius * radius) continue;
+        // Asked here rather than left to applyDamage so that a teammate is not
+        // given a bolt to look at. canHit() is deliberately NOT what is asked:
+        // a flower inside its respawn window is still standing in the strike
+        // and still gets an arm, and applyDamage refuses the damage on its own.
+        if (!canDamage(world, source, victim)) continue;
+        strikeVictims_.push_back(victim);
+        strikeArms_.push_back(transform->position);
+    }
+    if (strikeVictims_.empty()) return;
+
+    // Reported BEFORE the damage lands, and from positions read before it
+    // lands: a strike can kill, replication drops a dead entity in the same
+    // tick, and a bolt to the flower it just felled is exactly the bolt to
+    // draw. This is why the arms ride the event instead of the client working
+    // them out from its entity table.
+    if (events_ != nullptr) {
+        // Nearest first, and only when there are more than fit -- the same
+        // rule a petal's strike trims by, for the same reason: a plain
+        // truncation takes whatever order the archetypes hold, which is a
+        // direction rather than a disc. The DAMAGE list is not trimmed; every
+        // flower inside the radius is hit whether or not an arm was drawn.
+        if (strikeArms_.size() > net::kMaxLightningTargets) {
+            std::partial_sort(strikeArms_.begin(),
+                              strikeArms_.begin() + net::kMaxLightningTargets,
+                              strikeArms_.end(), [at](const Vec2& a, const Vec2& b) {
+                                  return distanceSq(a, at) < distanceSq(b, at);
+                              });
+            strikeArms_.resize(net::kMaxLightningTargets);
+        }
+        events_->lightning(at, radius, realm, strikeArms_);
+    }
+
+    // Entities, not pointers: applyDamage can mark a flower Dead, which
+    // relocates the row every Transform* above came out of.
+    for (const Entity victim : strikeVictims_) {
+        applyDamage(world, victim, source, damage, nowMillis, DamageKind::Lightning);
+    }
+}
+
+void CombatSystem::gatherMobLightning(World& world, const ContentRegistry& content) {
+    strikers_.clear();
+    queries_->strikers.each([&](Entity e, MobTag&, MobType& type, Transform& transform,
+                                Body& body) {
+        const MobConfig& config = content.mob(type.configIndex);
+        if (!config.lightning.present || config.lightning.strikeRange <= 0.0) return;
+        // A pet is a mob a flower summoned, and a strike only ever aims at
+        // flowers. Letting one through would mean a summon that electrocutes
+        // its owner, which is what canDamage then has to refuse -- once per
+        // broadphase query, every tick, forever.
+        if (world.has<Pet>(e)) return;
+        LightningSource striker;
+        striker.mob = e;
+        striker.position = transform.position;
+        // Both reaches are stated against the skin -- see LightningSpec. An
+        // ultra jellyfish is 315 units across; measured from its centre its
+        // 300-unit shock never left its own body and it could not hurt a flower
+        // standing on top of it, let alone one nearby.
+        striker.radius = body.radius + config.lightning.radius;
+        striker.damage = lightningDamageOf(config, content.mobStats(type.configIndex, type.rarity));
+        striker.strikeRange = body.radius + config.lightning.strikeRange;
+        striker.cooldownMillis = lightningCooldownOf(config);
+        striker.realm = transform.realm;
+        strikers_.push_back(striker);
+    });
+}
+
+void CombatSystem::resolveMobLightning(World& world, const SpatialGrid& grid, double nowMillis) {
+    for (const LightningSource& striker : strikers_) {
+        if (!world.isAlive(striker.mob) || world.has<Dead>(striker.mob)) continue;
+        // The clock first: it is the cheap half, and a mob still charging is
+        // spared the broadphase query entirely. Read, not created -- a mob that
+        // has never struck pays no archetype move for standing in an empty sea.
+        const LightningClock* clock = world.tryGet<LightningClock>(striker.mob);
+        if (clock != nullptr && nowMillis - clock->lastStrikeMillis < striker.cooldownMillis) {
+            continue;
+        }
+        // Something has to be in reach before a strike is thrown. Without this
+        // the mob would flash on its cooldown forever with nothing to hit,
+        // which is a bolt on every client's screen once a second per jellyfish.
+        if (!playerWithin(world, grid, striker.mob, striker.position, striker.realm,
+                          striker.strikeRange, nowMillis)) {
+            continue;
+        }
+        // Stamped before the strike and whatever the strike turns out to do,
+        // exactly as every other cooldown here is stamped: a shock that lands
+        // on a flower already inside its respawn window still costs the charge.
+        world.ensure<LightningClock>(striker.mob).lastStrikeMillis = nowMillis;
+        strikeLightning(world, grid, striker.mob, striker.position, striker.realm, striker.radius,
+                        striker.damage, nowMillis);
+    }
+}
+
+bool CombatSystem::playerWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at,
+                                Realm realm, double range, double nowMillis) {
+    grid.query(realm, at, range + kBroadphasePad, strikeCandidates_);
+    for (const Entity candidate : strikeCandidates_) {
+        if (!world.has<PlayerTag>(candidate)) continue;
+        const Transform* transform = world.tryGet<Transform>(candidate);
+        if (transform == nullptr || transform->realm != realm) continue;
+        if (distanceSq(transform->position, at) > range * range) continue;
+        // The full hit test, not just the faction one: a corpse and a flower
+        // still inside its respawn window are both standing there, and neither
+        // is a reason to spend a charge. A strike ALREADY under way still
+        // washes over them -- see strikeLightning.
+        if (!canHit(world, candidate, mob, nowMillis)) continue;
+        return true;
+    }
+    return false;
 }
 
 void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Entity victim,

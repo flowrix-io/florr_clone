@@ -1721,7 +1721,7 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
 }
 
 void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double radius,
-                                  double damage) {
+                                  double damage, bool lightning) {
     if (radius <= 0.0 || damage <= 0.0) return;
     // An instantaneous area hit, expressed as a damage field that lives for a
     // single tick.
@@ -1748,13 +1748,17 @@ void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double r
     world.add<GroundEffect>(burst, GroundEffect{GroundEffectKind::Poison, player, radius, 0.0,
                                                 1.0, Rarity::Common, damage, 0.0});
     world.add<Lifetime>(burst, Lifetime{net::kTickSeconds * 1.5});
+    // Nothing about the field changes -- same reach rule, same rim rule, same
+    // one chip per victim. The tag says only that the number combat reports for
+    // it is a strike's cyan rather than an ordinary hit's red.
+    if (lightning) world.add<LightningBurst>(burst);
 }
 
 void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double damage) {
     // The strike carries the petal's raw stat: unlike ring contact, the
     // reference hands it straight over without the flower's damage multiplier.
     emitDamageBurst(world, player, at, kLightningRadius,
-                    damage > 0.0 ? damage : kLightningFallbackDamage);
+                    damage > 0.0 ? damage : kLightningFallbackDamage, true);
     reportLightning(world, player, at, kLightningRadius);
 }
 

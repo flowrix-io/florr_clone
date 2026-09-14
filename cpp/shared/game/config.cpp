@@ -384,6 +384,32 @@ PeriodicSpawnSpec parsePeriodicSpawn(Ctx& ctx, const Json& owner,
     return spec;
 }
 
+LightningSpec parseLightning(Ctx& ctx, const Json& owner) {
+    LightningSpec spec;
+    if (!owner.contains("lightning")) return spec;
+    const Json& node = owner["lightning"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("lightning is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    spec.radius = ctx.range(node, "radius", 0.0, 0.0, kWorldSize);
+    spec.damage = ctx.range(node, "damage", 0.0, 0.0, kMaxBaseStat);
+    spec.onContact = ctx.boolean(node, "onContact");
+    // An omitted `range` is the strike's own reach -- a mob that states only
+    // how far its shock carries strikes at exactly the flowers the shock would
+    // reach, which is the whole of what a jellyfish wants and one number to
+    // author instead of two that have to be kept in step -- UNLESS the mob
+    // already named a trigger. A firefly writes `onContact` and nothing else
+    // and means exactly that: it shocks what touches it and never reaches out.
+    spec.strikeRange = ctx.range(node, "range", spec.onContact ? 0.0 : spec.radius,
+                                 0.0, kWorldSize);
+    spec.cooldownMillis = ctx.range(node, "cooldownMs", 0.0, 0.0, kMaxDurationMillis);
+    // A strike with no reach is not a strike. Both triggers measure from the
+    // bolt outwards, so a zero radius would land on nobody however it fired.
+    spec.present = spec.radius > 0.0 && (spec.onContact || spec.strikeRange > 0.0);
+    return spec;
+}
+
 RadiationSpec parseRadiation(Ctx& ctx, const Json& owner) {
     RadiationSpec spec;
     if (!owner.contains("radiation")) return spec;
@@ -614,6 +640,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.projectile = parseProjectile(ctx, src, &petalIds);
     m.petalRing = parsePetalRing(ctx, src, petalIds);
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
+    m.lightning = parseLightning(ctx, src);
 
     // The JSON states poison as damage per millisecond; the simulation thinks
     // in seconds, and converting once here keeps that unit out of every
