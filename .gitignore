@@ -29,3 +29,6 @@ cpp/build-rel/
 # The server regenerates it whenever it expires; never commit the key.
 dev-cert.crt
 dev-cert.key
+
+# Python bytecode, from running the LED matrix app's render locally.
+__pycache__/

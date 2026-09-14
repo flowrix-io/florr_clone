@@ -1,0 +1,3 @@
+name: CPU Monitor
+icon: 📈
+description: Shows the board's CPU load on the onboard 8x13 LED matrix as a scrolling history graph.
