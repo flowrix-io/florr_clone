@@ -1308,6 +1308,51 @@ TEST(a_firing_mob_rocks_back_a_little_and_no_further) {
     CHECK(kick.x < 0.0);
 }
 
+TEST(a_top_tier_shooter_still_aggros_and_fires_from_outside_its_own_body) {
+    CHECK(contentReady());
+    // Aggro is measured from the mob's skin, so the authored range means the
+    // same thing at every tier. Measured from the CENTRE it did not: a super
+    // wasp is 436 units in radius and carries a 300-unit range, which put its
+    // whole aggro circle inside itself -- it never saw a flower, never chased
+    // one and never fired, at super and at every tier above it.
+    for (const Rarity rarity : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+        for (const char* id : {"hornet", "wasp"}) {
+            Sim sim;
+            const Entity mob = sim.spawnMob(id, kOrigin, rarity);
+            const double radius = sim.world.get<Body>(mob).radius;
+            // Just clear of the body: as close as a flower can stand without
+            // being inside the mob, and the case that used to fail.
+            sim.spawnPlayer(kOrigin + Vec2{radius + 100.0, 0});
+
+            CHECK(fireAndCatch(sim) != NULL_ENTITY);
+            CHECK(sim.brainOf(mob).target != NULL_ENTITY);
+        }
+    }
+}
+
+TEST(the_rarity_range_ramps_run_to_the_end_of_the_ladder) {
+    CHECK(contentReady());
+    // Apex is the tier the reference's override table never reached, so every
+    // mob on a ramp used to drop back to its authored common-tier range there.
+    // Each ramp simply continues instead, and a wasp rides the hornet's.
+    for (const char* id : {"hornet", "wasp", "beetle", "soldier_ant", "spider", "mantis",
+                           "ladybug"}) {
+        const std::uint16_t index = content().mobIndex(id);
+        double previous = 0.0;
+        for (int tier = rarityIndex(Rarity::Rare); tier < kRarityCount; ++tier) {
+            const double range = content().mobStats(index, static_cast<Rarity>(tier)).aggroRange;
+            CHECK(range >= previous);
+            previous = range;
+        }
+    }
+    // A ladybug is neutral from rare up, apex included: there is no tier at
+    // which it goes back to hunting on its own.
+    const std::uint16_t ladybug = content().mobIndex("ladybug");
+    for (int tier = rarityIndex(Rarity::Rare); tier < kRarityCount; ++tier) {
+        CHECK(content().mobStats(ladybug, static_cast<Rarity>(tier)).ai == AiKind::Neutral);
+    }
+}
+
 TEST(a_common_shooters_reach_is_the_number_written_in_the_config) {
     CHECK(contentReady());
     Sim sim;

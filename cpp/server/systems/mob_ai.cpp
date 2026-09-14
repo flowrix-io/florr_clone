@@ -834,7 +834,16 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
                                   const Body& body, MobAi& ai, const Drive& drive,
                                   double chaseSpeed, double nowMillis, Vec2& desired,
                                   CommandBuffer& commands) {
-    const double range = ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange;
+    // Measured from the mob's SKIN, not from its centre. `range` is authored as
+    // how far outside itself a mob notices a flower, and a body grows by nearly
+    // thirty times across the ladder: a super wasp is 436 units in radius and
+    // carries a 300-unit range, so centre-to-centre its entire aggro circle
+    // lies inside its own body and nothing outside it can ever be seen. Adding
+    // the radius is what keeps the authored number meaning the same thing at
+    // every tier, and it is what stops a mob added without a rarity ramp of its
+    // own from going blind at the top of the ladder.
+    const double range =
+        (ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange) + body.radius;
 
     // Provocation first, which is where the reference has it: over there it
     // happens in the damage phase and the AI merely validates what it left
@@ -1121,7 +1130,11 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
     // owner -- so neutral and hostile run the same pet AI. Passive stays
     // passive, and a sandstorm keeps drifting.
     const bool attacks = drive.ai == AiKind::Hostile || drive.ai == AiKind::Neutral;
-    const double range = ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange;
+    // From the skin, as the wild mob's range is: a pet is graded on the same
+    // ladder and an ownerless high-tier one, which has only this range and no
+    // owner's screen to see through, would otherwise go blind the same way.
+    const double range =
+        (ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange) + body.radius;
 
     Vec2 desired{0, 0};
     Vec2 facing{0, 0};

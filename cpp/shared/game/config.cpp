@@ -1145,25 +1145,30 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.chaseSpeed = s.playerSpeedChaser ? kPlayerMaxSpeed : s.speed;
     s.xp = c.xp[t];
     s.aggroRange = c.range;
+    // Every ramp below runs the whole ladder, APEX INCLUDED. The reference's
+    // RARITY_OVERRIDES table stops at unique -- apex was added to the ladder
+    // after it was written -- and a table that stopped there dropped an apex
+    // mob back to its authored common-tier range: 300 units measured from the
+    // centre of a body 1100 units across, which is a mob that can never see
+    // anything. The last step of each ramp is simply continued.
     const auto tieredRange = [&](const std::array<double, kRarityCount>& values) {
         s.aggroRange = values[t];
     };
     if (c.id == "soldier_ant" || c.id == "worker_ant" || c.id == "shiny_ladybug" ||
         c.id == "beetle" || c.id == "hel_beetle" || c.id == "starfish" ||
-        c.id == "hornet" || c.id == "mantis" || c.id == "glitch") {
-        tieredRange({c.range, 500, 600, 750, 900, 1100, 1300, 1500, 1700, c.range});
+        c.id == "hornet" || c.id == "wasp" || c.id == "mantis" || c.id == "glitch") {
+        tieredRange({c.range, 500, 600, 750, 900, 1100, 1300, 1500, 1700, 1900});
     } else if (c.id == "soldier_fire_ant") {
-        tieredRange({c.range, 700, 900, 1100, 1300, 1500, 1700, 1900, 2100, c.range});
+        tieredRange({c.range, 700, 900, 1100, 1300, 1500, 1700, 1900, 2100, 2300});
     } else if (c.id == "jellyfish") {
-        tieredRange({c.range, 700, 800, 950, 1100, 1300, 1500, 1700, 1900, c.range});
+        tieredRange({c.range, 700, 800, 950, 1100, 1300, 1500, 1700, 1900, 2100});
     } else if (c.id == "spider") {
-        tieredRange({c.range, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, c.range});
+        tieredRange({c.range, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400});
     } else if (c.id == "glitch_flower") {
-        tieredRange({c.range, 850, 1000, 1150, 1300, 1500, 1700, 1900, 2100, c.range});
-    } else if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare) &&
-               tier < rarityIndex(Rarity::Apex)) {
-        static constexpr std::array<double, 7> kLadybugRange = {
-            350, 500, 700, 900, 1100, 1300, 1500,
+        tieredRange({c.range, 850, 1000, 1150, 1300, 1500, 1700, 1900, 2100, 2300});
+    } else if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare)) {
+        static constexpr std::array<double, 8> kLadybugRange = {
+            350, 500, 700, 900, 1100, 1300, 1500, 1700,
         };
         s.aggroRange = kLadybugRange[static_cast<std::size_t>(tier - rarityIndex(Rarity::Rare))];
     }
@@ -1176,8 +1181,11 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.spawnWeight = c.spawnWeight;
     s.ai = c.ai;
     if (c.id == "bee" && tier >= rarityIndex(Rarity::Rare)) s.ai = AiKind::Neutral;
-    if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare) &&
-        tier < rarityIndex(Rarity::Apex)) s.ai = AiKind::Neutral;
+    // Apex included, for the same reason the ranges above run to the end of
+    // the ladder: a ladybug that is neutral from rare up has no reason to turn
+    // hostile again at the one tier the reference's override table never
+    // reached.
+    if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare)) s.ai = AiKind::Neutral;
     if ((c.id == "centipede" || c.id == "centipede_body" ||
          c.id == "desert_centipede" || c.id == "desert_centipede_body") &&
         tier >= rarityIndex(Rarity::Epic)) {
