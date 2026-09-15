@@ -3183,7 +3183,6 @@ void GameServer::collectSpawnBlockers(Realm realm, std::vector<MobDisc>& out) co
 }
 
 void GameServer::onPlayerRevived(Entity revived, Entity reviver) {
-    (void)reviver;
     Session* session = sessionForEntity(revived);
     if (session == nullptr) return;
 
@@ -3192,9 +3191,26 @@ void GameServer::onPlayerRevived(Entity revived, Entity reviver) {
     // time: without it the next death is silent and the player is left standing
     // as a corpse nobody told them about.
     session->deathReported = false;
-    if (net::Connection* connection = listener_.find(session->connection)) {
-        sendNotice(*connection, net::NoticeSeverity::Good, "A yggdrasil pulled you back up.");
+    net::Connection* connection = listener_.find(session->connection);
+    if (connection == nullptr) return;
+
+    // Whoever carried the yggdrasil, by the name on their nameplate -- a bot's
+    // reads the same way a player's does. A reviver whose own body went away
+    // between the raise and this call leaves the client its own fallback.
+    std::string reviverName;
+    if (reviver != NULL_ENTITY && world_.isAlive(reviver)) {
+        if (const PlayerAccount* account = world_.tryGet<PlayerAccount>(reviver)) {
+            reviverName = account->username;
+        }
     }
+
+    // The counterpart of the `Died` the reaper sent: without it the client
+    // keeps the death card up and stops sending input, so a revived player
+    // stands in the world unable to move.
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Revived));
+    w.str(reviverName);
+    connection->send(w);
 }
 
 Entity GameServer::spawnPlayer(Session& session) {

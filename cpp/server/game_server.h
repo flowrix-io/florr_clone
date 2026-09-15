@@ -470,7 +470,9 @@ private:
     void announceBossDefeat(const MobType&, const std::vector<Bounty::Share>& ranked);
     /// The world half of a yggdrasil revival has already happened when this is
     /// called; the SESSION half is here -- a body whose death was announced
-    /// needs that announcement retracted, or its next death is silent.
+    /// needs that announcement retracted, or its next death is silent, and the
+    /// client that was told the body died has to be told it stood back up or
+    /// it keeps the death card over a flower it will not steer.
     void onPlayerRevived(Entity revived, Entity reviver);
 
     /// Every live mob body, for the spawn-placement tests that refuse a point

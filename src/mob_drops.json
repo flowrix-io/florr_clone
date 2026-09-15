@@ -659,6 +659,27 @@
         "probability": 0.5,
         "minQuantity": 0,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "battery",
+        "rarity": "common",
+        "probability": 0.1,
+        "minQuantity": 0,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "magic_firefly": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "battery",
+        "rarity": "common",
+        "probability": 0.8,
+        "minQuantity": 0,
+        "maxQuantity": 1
       }
     ]
   },

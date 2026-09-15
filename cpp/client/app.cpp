@@ -963,6 +963,19 @@ void App::pollNetwork() {
         deathCardVisible_ = true;
         screen_ = Screen::Dead;
     }
+    // A yggdrasil put the body back on its feet. Read as a one-shot flag
+    // rather than as `!net_.dead()`, because --dead raises the card on a
+    // client the server never told anything, and the symmetric test would
+    // take it straight back down.
+    if (net_.revived) {
+        net_.revived = false;
+        if (screen_ == Screen::Dead) {
+            // The card goes with the death it was announcing; the world under
+            // it never stopped drawing, so there is nothing else to restore.
+            deathCardVisible_ = false;
+            screen_ = Screen::Playing;
+        }
+    }
 }
 
 void App::frame(double dt) {

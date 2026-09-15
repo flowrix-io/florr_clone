@@ -468,9 +468,17 @@ public:
     /// once it has raised the modal for it.
     ShopOutcome& shopOutcome() { return shopOutcome_; }
 
-    /// Set when the server reports the player died; cleared by respawning.
+    /// Set when the server reports the player died; cleared by respawning, or
+    /// by a yggdrasil raising this body back up.
     bool dead() const { return dead_; }
     const std::string& killerName() const { return killerName_; }
+
+    /// Set once each time a yggdrasil raised this body. Cleared by whoever
+    /// reads it, like `reconnected`: the socket knows the player is alive
+    /// again, but only the app can take the death screen down -- and it must
+    /// not confuse this with `--dead`, which puts that screen up with no death
+    /// behind it at all.
+    bool revived = false;
 
     /// Set when an auth attempt finished. The UI reads and clears it.
     bool authAnswered = false;
@@ -501,6 +509,7 @@ private:
     /// Appends one line and trims the transcript to its cap.
     void pushChat(net::ChatChannel, std::string author, std::string text);
     void handleDied(ByteReader&);
+    void handleRevived(ByteReader&);
     void handleCraftResult(ByteReader&);
     void handleShopResult(ByteReader&);
     void handleLeaderboard(ByteReader&);

@@ -82,6 +82,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::Chat:                return "chat";
         case net::ServerMessage::Notice:              return "notice";
         case net::ServerMessage::Died:                return "died";
+        case net::ServerMessage::Revived:             return "revived";
         case net::ServerMessage::CraftResult:         return "craftResult";
         case net::ServerMessage::Leaderboard:         return "leaderboard";
         case net::ServerMessage::Pong:                return "pong";
@@ -130,6 +131,7 @@ void NetClient::disconnect() {
     status_ = Status::Offline;
     view_.clear();
     dead_ = false;
+    revived = false;
     // An explicit disconnect is a decision, not an accident: nothing redials
     // after one. connect() re-arms by dialling.
     retryAtMillis_ = 0;
@@ -258,6 +260,7 @@ void NetClient::logout() {
     shopOutcome_ = ShopOutcome{};
     view_.clear();
     dead_ = false;
+    revived = false;
     killerName_.clear();
 
     // Not an auth answer: the form must open blank rather than showing the
@@ -291,6 +294,7 @@ void NetClient::leaveGame() {
     if (status_ == Status::Playing) status_ = Status::LoggedIn;
     view_.clear();
     dead_ = false;
+    revived = false;
 }
 
 void NetClient::sendInput(const net::InputFrame& input) {
@@ -523,6 +527,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::Chat:         handleChat(reader); break;
         case net::ServerMessage::Notice:       handleNotice(reader); break;
         case net::ServerMessage::Died:         handleDied(reader); break;
+        case net::ServerMessage::Revived:      handleRevived(reader); break;
         case net::ServerMessage::CraftResult:  handleCraftResult(reader); break;
         case net::ServerMessage::Leaderboard:  handleLeaderboard(reader); break;
         case net::ServerMessage::Pong:         handlePong(reader); break;
@@ -862,6 +867,7 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     (void)selfNetId;
     status_ = Status::Playing;
     dead_ = false;
+    revived = false;
     view_.clear();
     // After the clear, which resets it: the realm is the one thing about the
     // new body the snapshot stream never restates. The maze is built from the
@@ -1004,6 +1010,20 @@ void NetClient::handleDied(ByteReader& reader) {
     reader.u32();   // ticks survived
     if (!reader.ok()) return;
     dead_ = true;
+}
+
+void NetClient::handleRevived(ByteReader& reader) {
+    std::string reviverName = reader.str();
+    if (!reader.ok()) return;
+    dead_ = false;
+    killerName_.clear();
+    revived = true;
+    // Composed here for the same reason the death card composes its own line:
+    // the server sends the fact and the name, the client says it. An empty
+    // name is a reviver whose body went away in the same tick, which still
+    // deserves a line -- the player is standing and wants to know why.
+    addSystemMessage(reviverName.empty() ? std::string("You were revived.")
+                                         : "You were revived by " + reviverName + ".");
 }
 
 void NetClient::handlePong(ByteReader& reader) {

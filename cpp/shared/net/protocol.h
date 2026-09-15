@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 23;
+inline constexpr std::uint16_t kProtocolVersion = 24;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -173,6 +173,12 @@ enum class ServerMessage : std::uint8_t {
                         ///< another map. The client clears its view, adopts the
                         ///< grid and snaps its camera; nothing else about the
                         ///< body changed, so the snapshot stream carries on.
+    Revived,            ///< str reviverName -- a yggdrasil raised this body
+                        ///< back up. The counterpart of `Died`: the corpse the
+                        ///< client was shown is standing again, so the death
+                        ///< card comes down and the body takes input. The name
+                        ///< is the reviver's nameplate, which is what the
+                        ///< system line thanks.
 };
 
 // ---------------------------------------------------------------------------

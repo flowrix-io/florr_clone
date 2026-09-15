@@ -700,3 +700,86 @@ TEST(persist_all_writes_the_database_and_keeps_serving) {
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
     CHECK_EQ(h.server.persistAll(), std::size_t{1});
 }
+
+TEST(a_yggdrasil_revival_takes_the_death_screen_back_down) {
+    // Bots are off: they carry yggdrasil for each other and path to any corpse
+    // they can reach, so with them running the revive under test could be one
+    // of theirs and the name in the line would not be Bob's.
+    Harness h("yggdrasil-revive", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice, bob;
+    CHECK(flix::testsupport::loginNew(h, alice, "alice", "password1"));
+    CHECK(flix::testsupport::loginNew(h, bob, "bob", "password2"));
+    alice.joinGame(1280, 720, {}, "alice");
+    bob.joinGame(1280, 720, {}, "bob");
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return alice.status() == NetClient::Status::Playing &&
+               bob.status() == NetClient::Status::Playing;
+    }));
+
+    World& world = h.server.world();
+    Entity aliceBody = NULL_ENTITY;
+    Entity bobBody = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount, Transform> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account, Transform&) {
+        if (account.username == "alice") aliceBody = e;
+        else if (account.username == "bob") bobBody = e;
+    });
+    CHECK(aliceBody != NULL_ENTITY);
+    CHECK(bobBody != NULL_ENTITY);
+    if (aliceBody == NULL_ENTITY || bobBody == NULL_ENTITY) return;
+
+    // Alice goes down where she stands, and the client is told so: the death
+    // card is up and nothing she presses moves the body.
+    world.get<Health>(aliceBody).current = 0;
+    world.add<Dead>(aliceBody, Dead{NULL_ENTITY});
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return alice.dead(); }));
+    CHECK(!alice.revived);
+
+    // Bob walks over her with a yggdrasil out. Close enough that the petal's
+    // own orbit -- not just his body -- is inside the revival range.
+    const Vec2 corpse = world.get<Transform>(aliceBody).position;
+    world.get<Transform>(bobBody).position = corpse + Vec2{30, 0};
+    world.get<Transform>(bobBody).realm = world.get<Transform>(aliceBody).realm;
+    const std::uint16_t yggdrasil = content().petalIndex("yggdrasil");
+    CHECK(yggdrasil != kInvalidIndex);
+    world.get<Loadout>(bobBody).slots[0].configIndex = yggdrasil;
+    world.get<Loadout>(bobBody).slots[0].rarity = Rarity::Common;
+    // One tick for the slot pass to see the swap, then the equip reload is
+    // waived: yggdrasil serves 512 seconds before it ever reaches the ring,
+    // and this test is about what happens when it does.
+    h.step(1, {&alice, &bob});
+    world.get<Loadout>(bobBody).slots[0].broken = false;
+    world.get<Loadout>(bobBody).slots[0].reloadReadyAtMillis = 0;
+
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return !alice.dead(); }, 200));
+    // The world half really happened, and not by the corpse being replaced:
+    // it is the same entity, standing.
+    CHECK(world.isAlive(aliceBody));
+    CHECK(!world.has<Dead>(aliceBody));
+    CHECK(world.get<Health>(aliceBody).current > 0.0);
+
+    // The client half. `revived` is the one-shot the app reads to take the
+    // death card down; without it the screen stays up over a body that is
+    // alive and the player cannot move.
+    CHECK(alice.revived);
+    bool sawLine = false;
+    for (const ChatLine& line : alice.chat()) {
+        if (line.text == "You were revived by bob.") sawLine = true;
+    }
+    CHECK(sawLine);
+
+    // And she can move again -- which is the bug this fixes, from the
+    // simulation's side: a body with no Dead tag is one movement steps.
+    const Vec2 before = world.get<Transform>(aliceBody).position;
+    net::InputFrame input;
+    input.moveAngle = 0;
+    input.moveStrength = 1.0;
+    for (int i = 0; i < 30; ++i) {
+        input.sequence = static_cast<std::uint32_t>(i + 1);
+        alice.sendInput(input);
+        h.step(1, {&alice, &bob});
+    }
+    CHECK(distance(world.get<Transform>(aliceBody).position, before) > 50.0);
+}
