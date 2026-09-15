@@ -510,6 +510,19 @@ struct MobAi {
     /// which paces contact damage: a hornet shoots on its config cooldown the
     /// whole way in and touches on a different clock once it arrives.
     double lastProjectileMillis = 0;
+    /// Which way round a stinger shooter is part way through swinging: +1, -1,
+    /// or 0 for a mob sitting nose-on with no swing in progress.
+    ///
+    /// Stored rather than re-derived because the two ends of the swing are the
+    /// SAME ANGLE. A mob with its tail on the flower sits at an offset of
+    /// exactly +/-pi from the bearing, and which of the two an angleDelta
+    /// reports is decided by whichever way the bearing last drifted -- so a
+    /// mob that wound up anticlockwise around a flower strafing the other way
+    /// would read as wound clockwise and unwind the long way round, through a
+    /// full revolution. Choosing the side once, while the mob is still near
+    /// nose-on and the two sides are a real choice, is what makes the second
+    /// leg retrace the first.
+    std::int8_t stingerSide = 0;
 };
 
 /// Where a mob is walking to, when it walks to a POINT rather than steering on
@@ -665,6 +678,17 @@ struct Projectile {
     /// Homing cone and range, both zero for a dumb projectile.
     double seekRange = 0;
     double seekCone = 0;
+    /// A WEAVING shot: it is carried `waveAmplitude` units to either side of
+    /// the bearing it was launched on, `waveFrequency` times a second. Zero
+    /// amplitude is a straight shot, which is nearly all of them.
+    ///
+    /// The phase lives here rather than being derived from the shot's age
+    /// because the age is not a thing the movement pass has: `remainingDistance`
+    /// is a budget that a slowed or blocked shot spends unevenly, and a weave
+    /// driven off it would stall whenever the shot did.
+    double waveAmplitude = 0;
+    double waveFrequency = 0;
+    double wavePhase = 0;
     /// Fired by a glitch-family mob: touching this shot leaves the flower
     /// glitched. Stamped at spawn from the shooter's config, as the reference
     /// stamps `sourceType`, so a shot still infects after its shooter is gone

@@ -227,6 +227,76 @@ inline constexpr double kProjectileReachReferenceScale = kMobSizeScale[0];
 /// reach and size deliberately grow at different rates.
 inline constexpr double kProjectileSizeDivisor = 3.0;
 
+/// How fast a stinger shooter turns, radians a second. ONE rate: the swing
+/// onto the target and the swing back off it are the same manoeuvre played
+/// twice, so a half turn takes a quarter of a second either way.
+///
+/// Uncapped (the kPi every other mob turns at) the server would be facing
+/// backwards on the same tick it decided to, and the missile would leave
+/// before the client had drawn any of the turn.
+///
+/// This IS faster than the client's ease can follow, and that is a deliberate
+/// trade rather than an oversight. The client closes 15% of the facing gap per
+/// frame at 60 fps -- about 9.8 rad/s -- so a 13 rad/s swing is drawn trailing
+/// the server: the mob reads as turning some 110 degrees onto the flower
+/// rather than the full 180 the server holds. What is bought with that is a
+/// snappy turn in both directions and a wasp that still gets a clear rest at
+/// nose-forward inside its 1 s cadence. Slowing this down tightens the drawn
+/// angle; a short hold at the top of the swing would too, at the cost of a
+/// beat in the cycle.
+inline constexpr double kStingerTurnRate = 13.0;
+
+/// How long a swing takes: half a turn at the rate above, in milliseconds.
+///
+/// A stinger shooter starts its wind-up this far -- plus kStingerAimHoldMillis
+/// -- before its volley comes off cooldown, so it is round and settled by the
+/// moment it is allowed to fire. Begun on the expiry instead, every mob of the
+/// family would shoot a wind-up later than its config asks -- a hornet on 2 s
+/// would really fire every 2.24 -- and the flag would be a silent nerf to
+/// every mob that carries it.
+inline constexpr double kStingerWindupMillis = 1000.0 * kPi / kStingerTurnRate;
+
+/// How long a stinger shooter holds the pose, tail already on the flower,
+/// before its volley is due. The wind-up starts this much earlier again.
+///
+/// Without it the mob fires on the tick the SERVER comes round, and the server
+/// is not what the player watches. The client eases a mob's facing at about
+/// 9.8 rad/s and the swing above is 13, so at the end of the swing the drawn
+/// mob is still 70 degrees short of tail-on -- the missile leaves a mob that
+/// is visibly side-on, which is the whole flag failing in the only place it
+/// matters. The gap decays with the client's own time constant once the server
+/// stops moving, so a quarter second of holding still brings it to 6 degrees.
+///
+/// This is LEAD, not delay: the mob starts turning earlier, and the volley
+/// still goes at the moment the config cooldown says, so nothing about any
+/// mob's rate of fire moves. A mob whose whole cooldown is shorter than the
+/// swing plus this simply never leaves the pose, which is the right answer for
+/// something that shoots faster than it can turn.
+inline constexpr double kStingerAimHoldMillis = 250.0;
+
+/// How wound a stinger shooter has to be before a fresh swing keeps the side
+/// it is already on, radians.
+///
+/// A mob "at rest" is never exactly nose-on -- it trails a moving flower by a
+/// tick's worth of bearing, which at any orbit the game allows is under five
+/// degrees, and the SIGN of that trail is just the direction the player
+/// happens to be circling. Inside this the swing always goes the same way, so
+/// a player jinking cannot make consecutive volleys swing opposite ways.
+/// Outside it the mob is genuinely part wound and the wind is KEPT: the step
+/// works from the offset's magnitude, so flipping the side under a real offset
+/// would throw the mob across the bearing rather than turn it.
+inline constexpr double kStingerSideDeadzone = 0.15;
+
+/// How close the tail has to be to the bearing before the volley goes.
+///
+/// One tick of the turn above is 0.43 rad, which is WIDER than this: the swing
+/// is clamped to a half turn, so its last step lands exactly rear-on and the
+/// gate is normally met dead on. What the tolerance buys is the moving case --
+/// a flower that strafes while the mob is coming round leaves a small residual
+/// every tick, and without some slack the mob would spend a tick chasing it
+/// instead of shooting.
+inline constexpr double kStingerAimTolerance = 0.3;
+
 // -- pets --------------------------------------------------------------------
 
 /// A pet sees exactly what its owner's screen shows: its target scan is
@@ -372,6 +442,9 @@ private:
         bool beeFlight = false;
         /// Has a projectile block, so the volley path is worth entering.
         bool shoots = false;
+        /// Shoots over its TAIL: keeps its rear on the target and holds the
+        /// volley until it has come round. See MobConfig::stingerShooter.
+        bool stingerShooter = false;
         bool valid = false;
     };
 
@@ -444,10 +517,16 @@ private:
                   double chaseSpeed, double nowMillis, Vec2& desired, CommandBuffer& commands);
     /// True when the mob has something to chase, with `desired` holding this
     /// tick's pursuit velocity. Lets the mob's volley go on the way in.
+    ///
+    /// `facing` comes back as where to POINT, which is `desired` again for
+    /// every mob but a stinger shooter -- that one turns its back on its
+    /// target to shoot, and retraces the swing afterwards. It arrives already
+    /// stepped for this tick, which is why this branch needs `dt`.
     bool steerAggressive(World& world, const Terrain& terrain, const SpatialGrid& grid,
                          Entity self, const MobType& type, const Transform& transform,
                          const Body& body, MobAi& ai, const Drive& drive, double chaseSpeed,
-                         double nowMillis, Vec2& desired, CommandBuffer& commands);
+                         double nowMillis, double dt, Vec2& desired, Vec2& facing,
+                         CommandBuffer& commands);
 
     Entity acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
                          Entity self, Vec2 from, Realm realm, double range);

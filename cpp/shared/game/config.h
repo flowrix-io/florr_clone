@@ -237,6 +237,15 @@ struct MobConfig {
     bool reversed = false;       ///< art is mirrored horizontally
     bool noMobCollision = false;
 
+    /// The mob shoots over its TAIL: it keeps its rear on whatever it is
+    /// aiming at and holds the volley until it has come round, rather than
+    /// firing out of its face the instant the cooldown is up.
+    ///
+    /// The two mobs that have one -- hornet and wasp -- draw their stinger at
+    /// the back of the sprite, so a shot leaving the front is a shot leaving
+    /// the wrong end of the animal.
+    bool stingerShooter = false;
+
     /// The mob never appears in a GROUP roll -- a band or a region naming a
     /// group never produces it. `target_dummy` declares no
     /// spawn_weight and would otherwise inherit the default 1.0 and take its
@@ -386,6 +395,20 @@ struct PetalConfig {
     double attractionForce = 0;
     double webRadius = 0;
     RadiationSpec radiation;
+
+    /// A shot of this petal WEAVES instead of flying straight: it is carried
+    /// sideways about the bearing it was launched on, `waveFrequency` times a
+    /// second, by `waveAmplitude` multiplied by the shot's OWN RADIUS. Zero
+    /// amplitude is a straight shot, which is every petal but the wasp's
+    /// missile.
+    ///
+    /// Stated against the shot's radius rather than in world units so that one
+    /// number holds across the rarity ladder: an apex wasp's missile is four
+    /// times the calibre of a common one and weaves four times as wide, which
+    /// is the same picture at a different size. A figure in world units would
+    /// read as a twitch at the top of the ladder.
+    double waveAmplitude = 0;
+    double waveFrequency = 0;
 
     /// False when the JSON gave no health pool at all. Such a petal is a pure
     /// modifier or an emitter and can never be broken; it is NOT a petal with

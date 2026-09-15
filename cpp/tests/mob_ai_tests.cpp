@@ -2,6 +2,10 @@
 
 #include "server/systems/mob_ai.h"
 
+// The hold below is sized against the CLIENT's facing ease, so the test that
+// guards it reads that rate from the client rather than restating it.
+#include "client/interpolation.h"
+
 #include "shared/game/config.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
@@ -1173,6 +1177,15 @@ Entity firstShot(Sim& sim) {
     return found;
 }
 
+/// How many shots a volley has put in the world. Under tickIntent() nothing
+/// moves or expires, so this only ever counts up: it is a fire counter.
+int shotCount(Sim& sim) {
+    Query<ProjectileTag> shots(sim.world);
+    int n = 0;
+    shots.each([&](Entity, ProjectileTag&) { ++n; });
+    return n;
+}
+
 /// Ticks until the shooter fires, so the test does not depend on the mob's
 /// decision cadence.
 Entity fireAndCatch(Sim& sim, int maxTicks = 200) {
@@ -1215,6 +1228,333 @@ TEST(a_hornets_missile_inherits_the_hornets_size) {
     CHECK_NEAR(sim.world.get<Body>(shot).mass, projectileMass(expected), 1e-12);
     CHECK_NEAR(sim.world.get<Health>(shot).max, stats.health, 1e-9);
     CHECK(sim.world.has<HitCooldowns>(shot));
+}
+
+TEST(a_stinger_shooter_comes_round_before_it_fires) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    // Inside the hornet's 300-unit aggro range, measured from its skin: with
+    // nothing integrating velocity below, a flower out of range never comes
+    // into it.
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{250, 0});
+
+    // The INTENT phase only, so nothing but the AI moves anything: the mob
+    // stays put and the bearing to the flower stays due east for the whole
+    // manoeuvre.
+    int ticksTurning = 0;
+    Entity shot = NULL_ENTITY;
+    for (int i = 0; i < 200 && shot == NULL_ENTITY; ++i) {
+        sim.tickIntent();
+        shot = firstShot(sim);
+        if (shot == NULL_ENTITY) ++ticksTurning;
+    }
+    CHECK(shot != NULL_ENTITY);
+    if (shot == NULL_ENTITY) return;
+
+    // The turn was a MANOEUVRE and not a snap. A hornet on a 2 s cadence gets
+    // its first volley on the tick the cooldown allows one, so anything past
+    // that tick is time spent coming round.
+    CHECK(ticksTurning > 1);
+
+    // Tail on the flower when the missile went, not face.
+    const double bearing = (sim.positionOf(player) - sim.positionOf(hornet)).angle();
+    const double tail = wrapAngle(sim.angleOf(hornet) + kPi);
+    CHECK(std::fabs(angleDelta(tail, bearing)) <= kStingerAimTolerance + 1e-9);
+    // Which is to say it is pointing AWAY: the player is due east and the
+    // hornet is looking west.
+    CHECK(std::cos(sim.angleOf(hornet)) < 0.0);
+
+    // And the missile still goes at the flower, from the stinger end -- a body
+    // radius out along the shot rather than out of the mob's middle.
+    const Vec2 launch = sim.world.get<Motion>(shot).velocity;
+    CHECK(launch.x > 0.0);
+    // Measured against the shooter AFTER it has rocked back, so the gap is the
+    // muzzle offset plus however much of the recoil cap the volley spent.
+    const Vec2 muzzle = sim.world.get<Transform>(shot).position - sim.positionOf(hornet);
+    const double radius = sim.world.get<Body>(hornet).radius;
+    CHECK(muzzle.length() >= radius - 1e-9);
+    CHECK(muzzle.length() <= radius + kProjectileMaxRecoil + 1e-9);
+    CHECK(muzzle.x > 0.0);
+}
+
+TEST(a_stinger_shooter_holds_the_pose_before_it_shoots) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{250, 0});
+
+    const auto bearing = [&] {
+        return (sim.positionOf(player) - sim.positionOf(hornet)).angle();
+    };
+    // The same measure the volley gate uses: how far the TAIL is off the
+    // flower, which is a half turn less the nose's offset.
+    const auto aimed = [&] {
+        return kPi - std::fabs(angleDelta(bearing(), sim.angleOf(hornet))) <=
+               kStingerAimTolerance;
+    };
+
+    // Up to the tick it comes round -- and nothing fires on the way. This is
+    // the OPENING shot of an engagement, whose cooldown expired long before
+    // the mob ever saw a flower; it is telegraphed like every other one rather
+    // than going off the instant the mob is round.
+    int ticksToAim = -1;
+    for (int i = 0; i < 200; ++i) {
+        sim.tickIntent();
+        CHECK_EQ(shotCount(sim), 0);
+        if (aimed()) { ticksToAim = i + 1; break; }
+    }
+    CHECK(ticksToAim > 0);
+
+    // Then it SITS there, still not shooting. The hold is what the drawn mob
+    // needs: the client eases toward the server's facing rather than replaying
+    // it, so a volley let go on the tick the SERVER comes round leaves a mob
+    // the player can see is still side-on. Holding lets that gap decay.
+    int ticksHeld = 0;
+    for (int i = 0; i < 200; ++i) {
+        sim.tickIntent();
+        if (shotCount(sim) > 0) break;
+        CHECK(aimed());                 // and never drifts off the pose while it waits
+        ++ticksHeld;
+    }
+    CHECK_EQ(shotCount(sim), 1);
+    // It really waited, and it waited as long as the constant says.
+    CHECK(ticksHeld > 0);
+    CHECK_NEAR(ticksHeld * net::kTickMillis, kStingerAimHoldMillis, net::kTickMillis * 2.0);
+
+    // And the constant is long enough to do the job it exists for. Anchored to
+    // the CLIENT's ease rather than to itself: the drawn facing closes on the
+    // server's exponentially, so a hold of two time constants takes whatever
+    // the swing left over down to an eighth of it. Shrink the hold below this
+    // -- or speed the swing up without revisiting it -- and the missile starts
+    // leaving a mob the player can see is pointing somewhere else again, which
+    // is a bug no assertion about the hold matching itself would catch.
+    const double clientEase = easeRateFromAmount(kDefaultInterpolationAmount);
+    CHECK(kStingerAimHoldMillis >= 2000.0 / clientEase);
+}
+
+TEST(a_stinger_shooter_retraces_its_swing_around_a_moving_flower) {
+    CHECK(contentReady());
+    // The flower ORBITS, and that is the entire point of this test.
+    //
+    // At the top of a swing the mob's offset from the bearing is within a hair
+    // of half a turn, and which SIDE of the wrap an angleDelta reports it on is
+    // decided by whichever way the bearing last drifted. Against a pinned
+    // flower it drifts not at all, always reports the same side, and the
+    // retrace always looks right -- which is how a mob that unwound the far way
+    // round for half of all real players shipped past a green test. Anything
+    // asserting the swing has to move the flower, and has to move it both ways.
+    for (const double rate : {0.35, -0.35, 1.2, -1.2, 2.5, -2.5}) {
+        Sim sim;
+        const Entity hornet = sim.spawnMob("hornet", kOrigin);
+        const Entity player = sim.spawnPlayer(kOrigin + Vec2{250, 0});
+
+        double theta = 0.0;
+        double spun = 0.0;
+        double previous = sim.angleOf(hornet);
+        double spunAtShot = 0.0;
+        double bearingAtShot = 0.0;
+        bool haveShot = false;
+        int shots = 0;
+        int intervals = 0;
+
+        for (int i = 0; i < 300; ++i) {
+            // Intent only, so nothing integrates the mob: it holds the origin
+            // and the bearing to the flower IS the orbit angle.
+            sim.world.get<Transform>(player).position = kOrigin + Vec2::fromAngle(theta, 250.0);
+            const int before = shotCount(sim);
+            sim.tickIntent();
+            theta += rate * net::kTickSeconds;
+
+            // Signed, so a swing that comes home the way it went out cancels
+            // and one that carries on round does not.
+            spun += angleDelta(previous, sim.angleOf(hornet));
+            previous = sim.angleOf(hornet);
+
+            if (shotCount(sim) > before) {
+                ++shots;
+                if (haveShot) {
+                    // Between two volleys the mob starts and finishes nose-on,
+                    // so the only rotation it is allowed to keep is the
+                    // bearing's own. A swing that unwound the far way round
+                    // shows up here as a whole extra turn.
+                    CHECK_NEAR(spun - spunAtShot, theta - bearingAtShot, 0.5);
+                    ++intervals;
+                }
+                spunAtShot = spun;
+                bearingAtShot = theta;
+                haveShot = true;
+            }
+        }
+        CHECK(shots >= 3);
+        CHECK(intervals >= 2);
+    }
+}
+
+TEST(a_stinger_shooter_noses_back_round_after_the_shot) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{250, 0});
+
+    // Intent only, so the pair stay put and the bearing is due east for the
+    // whole run: every angle below can be read against zero.
+    const auto toFire = [&] {
+        const int before = shotCount(sim);
+        for (int i = 0; i < 200; ++i) {
+            sim.tickIntent();
+            if (shotCount(sim) > before) return i + 1;
+        }
+        return -1;
+    };
+
+    CHECK(toFire() > 0);
+    // Rear-on at the shot, which is the wind-up half of the cycle.
+    CHECK(std::cos(sim.angleOf(hornet)) < 0.0);
+
+    // It comes back round, over the same swing it went out on: one rate for
+    // the family, so the recovery costs exactly what the wind-up did. And it
+    // RETRACES -- the offset from the bearing shrinks from a half turn to
+    // nothing without ever changing sign.
+    //
+    // That is the whole point of stepping the offset rather than steering at
+    // the bearing: from exactly tail-on the two ways home are the same half
+    // turn, an ordinary shortest-path turn breaks the tie the same way it
+    // broke it on the way out, and the mob completes a full revolution per
+    // shot instead of coming back.
+    const double wound = angleDelta((sim.positionOf(player) - sim.positionOf(hornet)).angle(),
+                                    sim.angleOf(hornet));
+    CHECK_NEAR(std::fabs(wound), kPi, kStingerAimTolerance);
+    const double side = wound < 0.0 ? -1.0 : 1.0;
+
+    int ticksBack = -1;
+    double previous = std::fabs(wound);
+    for (int i = 0; i < 200; ++i) {
+        sim.tickIntent();
+        const double bearing = (sim.positionOf(player) - sim.positionOf(hornet)).angle();
+        const double offset = angleDelta(bearing, sim.angleOf(hornet));
+        // Still on the side it wound onto, and closer to the nose than it was.
+        if (std::fabs(offset) > 1e-9) CHECK(offset * side > 0.0);
+        CHECK(std::fabs(offset) < previous + 1e-9);
+        previous = std::fabs(offset);
+        if (std::fabs(offset) < 1e-9) { ticksBack = i + 1; break; }
+    }
+    CHECK(ticksBack > 1);
+    // Within a tick of the swing either side: the mob starts the leg already a
+    // step into it, and the last step is clamped to land exactly on the nose.
+    CHECK_NEAR(ticksBack * net::kTickMillis, kStingerWindupMillis, net::kTickMillis * 2.0);
+
+    // And it STAYS there: the next wind-up is a swing's worth of time before
+    // the volley is due, not the instant the nose comes round.
+    for (int i = 0; i < 10; ++i) {
+        sim.tickIntent();
+        CHECK_NEAR(sim.angleOf(hornet), 0.0, 1e-9);
+    }
+    CHECK_EQ(shotCount(sim), 1);
+}
+
+TEST(the_wind_up_does_not_cost_a_stinger_shooter_its_cadence) {
+    CHECK(contentReady());
+    Sim sim;
+    sim.spawnMob("hornet", kOrigin);
+    sim.spawnPlayer(kOrigin + Vec2{250, 0});
+
+    const auto toFire = [&] {
+        const int before = shotCount(sim);
+        for (int i = 0; i < 400; ++i) {
+            sim.tickIntent();
+            if (shotCount(sim) > before) return i + 1;
+        }
+        return -1;
+    };
+
+    CHECK(toFire() > 0);
+    const int gap = toFire();
+    CHECK(gap > 0);
+    // A hornet's config says 2000 ms and a hornet shoots every 2000 ms. The
+    // mob starts its swing BEFORE the volley is due precisely so the flag
+    // stays a behaviour rather than a silent rate nerf; begun on expiry
+    // instead this would be a wind-up longer.
+    const double cooldown = content().mob(content().mobIndex("hornet")).cooldownMillis;
+    CHECK_NEAR(gap * net::kTickMillis, cooldown, net::kTickMillis + 1e-9);
+}
+
+TEST(a_mob_that_shoots_out_of_its_face_still_does) {
+    CHECK(contentReady());
+    // The flag is per-mob, and every other shooter keeps the behaviour it had:
+    // heading and facing are one vector, and the volley leaves on the tick the
+    // cooldown allows it.
+    Sim sim;
+    const Entity glitch = sim.spawnMob("glitch", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{300, 0});
+
+    const Entity shot = fireAndCatch(sim);
+    CHECK(shot != NULL_ENTITY);
+    if (shot == NULL_ENTITY) return;
+    const double bearing = (sim.positionOf(player) - sim.positionOf(glitch)).angle();
+    CHECK(std::fabs(angleDelta(sim.angleOf(glitch), bearing)) < 0.2);
+    // Out of the centre, not off a stinger it does not have. The residual is
+    // the shooter's own recoil, which moves the mob and not the shot.
+    CHECK(distance(sim.world.get<Transform>(shot).position, sim.positionOf(glitch)) <=
+          kProjectileMaxRecoil + 1e-9);
+}
+
+TEST(a_wasp_throws_its_own_weaving_missile_and_a_hornet_does_not) {
+    CHECK(contentReady());
+    const std::uint16_t waspMissile = content().petalIndex("wasp_missile");
+    const std::uint16_t hornetMissile = content().petalIndex("hornet_missile");
+    CHECK(waspMissile != kInvalidIndex);
+    CHECK(waspMissile != hornetMissile);
+
+    Sim wasp;
+    wasp.spawnMob("wasp", kOrigin);
+    wasp.spawnPlayer(kOrigin + Vec2{300, 0});
+    const Entity stinger = fireAndCatch(wasp);
+    CHECK(stinger != NULL_ENTITY);
+    if (stinger == NULL_ENTITY) return;
+    CHECK_EQ(wasp.world.get<Projectile>(stinger).petalConfigIndex, waspMissile);
+
+    // The weave is stamped at the firing site, off the AMMUNITION, and scaled
+    // by the shot it is riding -- so it is a shape rather than a fixed
+    // wobble in world units.
+    const Projectile& p = wasp.world.get<Projectile>(stinger);
+    CHECK(p.waveAmplitude > 0.0);
+    CHECK(p.waveFrequency > 0.0);
+    CHECK_NEAR(p.waveAmplitude,
+               content().petal(waspMissile).waveAmplitude * wasp.world.get<Body>(stinger).radius,
+               1e-9);
+
+    Sim hornet;
+    hornet.spawnMob("hornet", kOrigin);
+    hornet.spawnPlayer(kOrigin + Vec2{300, 0});
+    const Entity missile = fireAndCatch(hornet);
+    CHECK(missile != NULL_ENTITY);
+    if (missile == NULL_ENTITY) return;
+    CHECK_EQ(hornet.world.get<Projectile>(missile).petalConfigIndex, hornetMissile);
+    CHECK_NEAR(hornet.world.get<Projectile>(missile).waveAmplitude, 0.0, 1e-12);
+}
+
+TEST(a_bigger_wasp_weaves_wider) {
+    CHECK(contentReady());
+    Sim common;
+    common.spawnMob("wasp", kOrigin);
+    common.spawnPlayer(kOrigin + Vec2{300, 0});
+    const Entity small = fireAndCatch(common);
+
+    Sim mythic;
+    mythic.spawnMob("wasp", kOrigin, Rarity::Mythic);
+    mythic.spawnPlayer(kOrigin + Vec2{300, 0});
+    const Entity large = fireAndCatch(mythic);
+
+    CHECK(small != NULL_ENTITY);
+    CHECK(large != NULL_ENTITY);
+    if (small == NULL_ENTITY || large == NULL_ENTITY) return;
+    // Amplitude is stated against the shot's own radius, so the ladder carries
+    // it for free and the two missiles trace the same shape at two sizes.
+    CHECK(mythic.world.get<Projectile>(large).waveAmplitude >
+          common.world.get<Projectile>(small).waveAmplitude);
+    CHECK_NEAR(mythic.world.get<Projectile>(large).waveFrequency,
+               common.world.get<Projectile>(small).waveFrequency, 1e-12);
 }
 
 TEST(a_glitch_volley_carries_the_infection_and_a_hornets_does_not) {

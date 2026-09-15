@@ -1548,6 +1548,11 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         projectile.rarity = rarity;
         projectile.seekRange = spec.seekRange;
         projectile.seekCone = spec.seekCone;
+        // A petal that fires ITSELF is its own ammunition, so the weave comes
+        // off the same config either way. Stated against the shot's radius,
+        // which is where the flower's own growth already landed.
+        projectile.waveAmplitude = config.waveAmplitude * shotRadius;
+        projectile.waveFrequency = config.waveFrequency;
         world.add<Projectile>(shot, projectile);
 
         // Distance is the authority on range; the lifetime is the same limit

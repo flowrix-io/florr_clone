@@ -87,6 +87,53 @@ bool idleDrifting(World& world, Entity self, const MobAi& ai) {
 /// apex, which is what makes big mobs look frozen.
 double sizeFactor(double radius) { return radius / kWanderRefRadius; }
 
+/// Whether a stinger shooter has its tail on the bearing closely enough to let
+/// the volley go. Measured off the nose's OFFSET from the bearing, so it does
+/// not care which side of the wrap the mob's absolute angle landed on.
+bool stingerAimed(double bearing, double current) {
+    return kPi - std::fabs(angleDelta(bearing, current)) <= kStingerAimTolerance;
+}
+
+/// Where a stinger shooter points at the end of THIS tick -- one step of a
+/// swing, already rate-limited, so the caller adopts it outright.
+///
+/// Worked as an OFFSET from the bearing rather than as an absolute heading,
+/// and only the offset's magnitude ever changes. That is what makes the second
+/// leg retrace the first instead of carrying on round: steering an ordinary
+/// shortest-path turn from exactly tail-on back to nose-on is a coin flip --
+/// the two directions are the same half turn to the radian -- and the coin
+/// lands the same way it landed on the way out, which spins the mob through a
+/// full revolution per shot. Keeping the SIDE and unwinding the magnitude
+/// takes it back the way it came.
+///
+/// `side` is the mob's own, carried between ticks, and that is load-bearing:
+/// at the top of the swing the offset is within a hair of +/-pi, and which of
+/// the two an angleDelta reports depends on whichever way the bearing has just
+/// drifted. Re-derived each tick, a flower strafing the opposite way to the
+/// swing flips it at exactly the moment it matters and the mob unwinds the far
+/// way round -- the whole bug this function exists to prevent, only now
+/// invisible against a flower that happens to stand still.
+double stingerFacing(double bearing, double current, bool winding, double step,
+                     std::int8_t& side) {
+    const double offset = angleDelta(bearing, current);
+    // Magnitude off the live offset, so the swing still tracks a flower that
+    // moves: the sign may have wrapped, but |offset| is continuous across the
+    // tail and the step below stays a step.
+    const double magnitude = std::fabs(offset);
+    // Chosen while the mob is still near nose-on, where the two sides really
+    // are a choice, and held for the rest of the swing. Inside the deadzone it
+    // is the same side every time rather than the sign of a resting mob's
+    // fraction of a degree of lag; outside it the mob is already wound and
+    // keeps its wind. See kStingerSideDeadzone.
+    if (side == 0) side = (offset < 0.0 && magnitude > kStingerSideDeadzone) ? -1 : 1;
+    const double want = winding ? std::min(kPi, magnitude + step)
+                                : std::max(0.0, magnitude - step);
+    // Home. The next swing picks its side afresh rather than inheriting this
+    // one, so a mob is never committed to a direction it chose a volley ago.
+    if (!(want > 0.0)) { side = 0; return wrapAngle(bearing); }
+    return wrapAngle(bearing + side * want);
+}
+
 /// One projectile, resolved where the mob decided to shoot and assembled at
 /// flush time. Creating the entity from inside the mob walk would relocate the
 /// very columns that walk is holding.
@@ -110,6 +157,9 @@ struct VolleyShot {
     Faction faction;
     double seekRange = 0;
     double seekCone = 0;
+    /// A weaving shot; zero amplitude is the straight one every other mob fires.
+    double waveAmplitude = 0;
+    double waveFrequency = 0;
     std::uint16_t petalIndex = kNoPetal;
     Rarity rarity = Rarity::Common;
     std::uint32_t netId = 0;
@@ -144,6 +194,8 @@ void spawnShot(World& world, const VolleyShot& shot) {
     projectile.rarity = shot.rarity;
     projectile.seekRange = shot.seekRange;
     projectile.seekCone = shot.seekCone;
+    projectile.waveAmplitude = shot.waveAmplitude;
+    projectile.waveFrequency = shot.waveFrequency;
     projectile.glitchInfecting = shot.glitchInfecting;
     world.add<Projectile>(e, projectile);
 
@@ -244,6 +296,13 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.beeFlight = (config.id == "bee") || (config.id == "firefly") || (config.id == "magic_firefly");
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
+        // Only meaningful for something that actually shoots, and only for
+        // something with a heading to turn: the flag decides which way a VOLLEY
+        // leaves, a mob with no volley would spend its life flying backwards
+        // for nothing, and a mob drawn upright has no tail to bring round --
+        // the aim gate would simply never open and it would never fire.
+        drive.stingerShooter =
+            drive.shoots && config.stingerShooter && !config.hideRotation;
         drive.valid = true;
     }
     return drive;
@@ -532,7 +591,13 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
                                   : scaling;
 
     VolleyShot shot;
-    shot.from = from;
+    // A stinger shooter has already turned its tail onto the target (see
+    // steerAggressive), so the muzzle is a body-radius out along the SHOT --
+    // which is the tail end of the sprite. Everything else fires from its
+    // centre, as the reference does.
+    shot.from = drive.stingerShooter && shooterBody != nullptr
+                    ? from + Vec2::fromAngle(aimAngle, shooterBody->radius)
+                    : from;
     if (const Transform* shooterAt = world.tryGet<Transform>(shooter)) shot.realm = shooterAt->realm;
     shot.speed = speed;
     // The shot's calibre comes off the ammunition petal's `size` stat, then is
@@ -562,6 +627,13 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // the two sides of a hit can never disagree about what the tier means.
     shot.seekRange = spec.seekRange;
     shot.seekCone = spec.seekCone;
+    // The weave belongs to the AMMUNITION, not to the shooter: a wasp missile
+    // snakes whoever throws it. Amplitude is stated against the shot's own
+    // radius, so it needs no tier scaling of its own -- the calibre above
+    // already carries the whole ladder.
+    const PetalConfig& ammoConfig = registry.petal(spec.ammoPetalIndex);
+    shot.waveAmplitude = ammoConfig.waveAmplitude * shot.radius;
+    shot.waveFrequency = ammoConfig.waveFrequency;
     shot.petalIndex = spec.ammoPetalIndex;
     shot.rarity = type.rarity;
     // The reference stamps the shooter's TYPE on every shot so the player
@@ -832,8 +904,8 @@ bool MobAiSystem::walkHome(World& world, Entity self, const Transform& transform
 bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const SpatialGrid& grid,
                                   Entity self, const MobType& type, const Transform& transform,
                                   const Body& body, MobAi& ai, const Drive& drive,
-                                  double chaseSpeed, double nowMillis, Vec2& desired,
-                                  CommandBuffer& commands) {
+                                  double chaseSpeed, double nowMillis, double dt, Vec2& desired,
+                                  Vec2& facing, CommandBuffer& commands) {
     // Measured from the mob's SKIN, not from its centre. `range` is authored as
     // how far outside itself a mob notices a flower, and a body grows by nearly
     // thirty times across the ladder: a super wasp is 436 units in radius and
@@ -903,9 +975,66 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     if (gap <= reach) stampAttack(world, self, ai, nowMillis, drive);
 
     desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
+    // Look where you are going, unless the weapon is at the other end.
+    facing = desired;
     if (drive.shoots) {
-        fireVolley(world, self, type, ai, drive, transform.position, toTarget.angle(), desired,
-                   nowMillis, commands);
+        const double bearing = toTarget.angle();
+        if (!drive.stingerShooter) {
+            fireVolley(world, self, type, ai, drive, transform.position, bearing, desired,
+                       nowMillis, commands);
+            return true;
+        }
+        // The hornet and the wasp both draw their stinger at the BACK of the
+        // sprite, so the shot leaves the tail. The family runs a three-beat
+        // cycle against its own volley clock, which is all the state this
+        // needs -- `lastProjectileMillis` already says where in the cycle the
+        // mob is, so no component grows a field:
+        //
+        //   * WIND UP, from a swing's worth of time plus a hold before the
+        //     volley is due: turn the rear onto the flower, sit there while
+        //     the client's ease catches up, and fire the moment BOTH the
+        //     cooldown and the alignment allow it. Starting early is what
+        //     keeps the mob's real cadence the one its config asks for AND
+        //     what puts the missile out of a mob the player can see is
+        //     pointing the right way.
+        //   * RECOVER, the rest of the time: retrace the swing back to nose-on
+        //     at the same rate, and sit there until the next wind-up.
+        //
+        // The alignment gate is the whole behaviour. Firing on the tick the
+        // aim is decided would put the missile out before the client had drawn
+        // any of the swing -- the client eases a mob's facing rather than
+        // replaying it -- and the mob would read as shooting out of its face
+        // after all.
+        const double cooldown = drive.attackCooldownMillis > 0.0 ? drive.attackCooldownMillis
+                                                                 : kDefaultVolleyCooldownMillis;
+        // A mob idle for longer than its cooldown is due a volley the instant it
+        // comes round, so the OPENING shot of an engagement would leave a mob
+        // the client has not finished turning -- the one shot a player is most
+        // likely to be looking straight at. Defer readiness to the end of a
+        // full wind-up and hold instead, so the first missile is telegraphed
+        // like every other one. `stingerSide` is what says the mob is at rest
+        // rather than part way through a swing, and the clock only ever moves
+        // FORWARD from one that had already expired, so this can neither grant
+        // a shot early nor accumulate across ticks.
+        if (ai.stingerSide == 0 && nowMillis - ai.lastProjectileMillis > cooldown) {
+            ai.lastProjectileMillis =
+                nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
+        }
+        const bool winding =
+            nowMillis - ai.lastProjectileMillis >=
+            cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
+        // Off the mob's own angle and the bearing, never off `desired`: a mob
+        // slowed to a standstill by a web still has a flower to swing about,
+        // and a zero desired would hand it to the fallback in steerMob.
+        facing = Vec2::fromAngle(
+            stingerFacing(bearing, transform.angle, winding, kStingerTurnRate * dt,
+                          ai.stingerSide));
+        // fireVolley re-checks the cooldown, so a mob that comes round early
+        // simply holds the pose until its volley is due.
+        if (winding && stingerAimed(bearing, transform.angle)) {
+            fireVolley(world, self, type, ai, drive, transform.position, bearing, desired,
+                       nowMillis, commands);
+        }
     }
     return true;
 }
@@ -969,6 +1098,11 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
     const double chaseSpeed = drive.chaseSpeed * factor;
 
     Vec2 desired{0, 0};
+    // Where the mob points, when that is not simply where it is going. Only a
+    // stinger shooter ever separates the two, and it reports a heading already
+    // stepped for this tick; for everything else the pursuit branch reports
+    // `desired` and nothing below can tell the difference.
+    Vec2 facing{0, 0};
     // True when the mob is actively holding a velocity of its own -- a pursuit,
     // weather, a march home. False hands both the velocity and the heading to
     // the idle machines.
@@ -1013,7 +1147,7 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
     case AiKind::Neutral:
     case AiKind::Hostile:
         driven = steerAggressive(world, terrain, grid, self, type, transform, body, ai, drive,
-                                 chaseSpeed, nowMillis, desired, commands);
+                                 chaseSpeed, nowMillis, dt, desired, facing, commands);
         break;
     }
 
@@ -1032,7 +1166,13 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
     // already pointing along it. Easing there instead leaves the sprite aimed
     // at where the mob used to be going for a third of a second, which is most
     // of a hop and the whole of a turn onto a target that came up behind it.
-    const Vec2 travel = desired.lengthSq() > kDirectionEpsilonSq ? desired : motion.velocity;
+    // A pursuit's aim outranks both, for the one mob family whose weapon is
+    // not at the front. Adopted outright like every other heading -- a stinger
+    // shooter's swing is rate-limited where it is computed, a step at a time,
+    // rather than by clamping the turn here.
+    const bool aimed = facing.lengthSq() > kDirectionEpsilonSq;
+    const Vec2 heading = desired.lengthSq() > kDirectionEpsilonSq ? desired : motion.velocity;
+    const Vec2 travel = aimed ? facing : heading;
     transform.angle = steerFacing(transform.angle, travel, drive.hideRotation, drive.reversed, kPi);
 }
 
@@ -1212,11 +1352,37 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
     motion.velocity = desired;
     if (desired.lengthSq() > kDirectionEpsilonSq) facing = desired;
 
+    // A stinger shooter fights the same way on a leash as it does wild: it
+    // winds up rear-on, holds the missile until it has come round, and
+    // retraces the swing afterwards. See steerAggressive for the whole cycle.
     if (attacks && drive.shoots && speed > 0.0 && ai.target != NULL_ENTITY) {
         if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
-            fireVolley(world, self, type, ai, drive, transform.position,
-                       (prey->position - transform.position).angle(), motion.velocity, nowMillis,
-                       commands);
+            const Vec2 toPrey = prey->position - transform.position;
+            const double bearing = toPrey.angle();
+            if (!drive.stingerShooter) {
+                fireVolley(world, self, type, ai, drive, transform.position, bearing,
+                           motion.velocity, nowMillis, commands);
+            } else if (toPrey.lengthSq() > kDirectionEpsilonSq) {
+                const double cooldown = drive.attackCooldownMillis > 0.0
+                                            ? drive.attackCooldownMillis
+                                            : kDefaultVolleyCooldownMillis;
+                // See steerAggressive: the opening shot of an engagement is
+                // telegraphed like the rest rather than going the instant the
+                // mob comes round.
+                if (ai.stingerSide == 0 && nowMillis - ai.lastProjectileMillis > cooldown) {
+                    ai.lastProjectileMillis =
+                        nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
+                }
+                const bool winding = nowMillis - ai.lastProjectileMillis >=
+                                     cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
+                facing = Vec2::fromAngle(
+                    stingerFacing(bearing, transform.angle, winding, kStingerTurnRate * dt,
+                                  ai.stingerSide));
+                if (winding && stingerAimed(bearing, transform.angle)) {
+                    fireVolley(world, self, type, ai, drive, transform.position, bearing,
+                               motion.velocity, nowMillis, commands);
+                }
+            }
         }
     }
 

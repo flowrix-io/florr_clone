@@ -47,6 +47,16 @@ constexpr double kMinSpawnIntervalMillis = 50.0;
 /// Poison the JSON writes per millisecond; a full second's worth is the cap.
 constexpr double kMaxPoisonPerMillis = 1000.0;
 
+/// A weaving shot crosses its own axis twice per cycle, and the server steps
+/// 30 times a second. Fifteen cycles a second is the Nyquist point, where the
+/// weave aliases into a straight line with jitter on it; a third of that still
+/// leaves six samples a cycle, which draws as a curve.
+constexpr double kMaxWaveFrequency = 5.0;
+
+/// Amplitude is in multiples of the shot's own radius. A hundred of them is
+/// already a shot travelling sideways faster than it travels forward.
+constexpr double kMaxWaveAmplitude = 100.0;
+
 /// A bad file could otherwise turn into a million strings. The warnings are a
 /// report for a human, and a human stops reading long before this.
 constexpr std::size_t kMaxWarnings = 512;
@@ -570,6 +580,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.noEggDrop = ctx.boolean(src, "noEggDrop");
     m.reversed = ctx.boolean(src, "reversed");
     m.noMobCollision = ctx.boolean(src, "no_mob_collision");
+    m.stingerShooter = ctx.boolean(src, "stinger");
 
     // Three rules the reference states by NAME rather than in the JSON. They
     // are resolved once here so no spawner, no combat path and no despawn
@@ -755,6 +766,16 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.slowDurationMillis = ctx.range(src, "slowDuration", 0.0, 0.0, kMaxDurationMillis);
 
     p.spongeDamageDurationMillis = ctx.range(src, "spongeDamageDuration", 0.0, 0.0, kMaxDurationMillis);
+    // A weave needs BOTH numbers to mean anything: an amplitude at no frequency
+    // is a shot held permanently off-axis, and a frequency at no amplitude is
+    // a straight line with a phase nobody reads. Either one missing leaves the
+    // petal flying straight rather than half-curving.
+    p.waveAmplitude = ctx.range(src, "waveAmplitude", 0.0, 0.0, kMaxWaveAmplitude);
+    p.waveFrequency = ctx.range(src, "waveFrequency", 0.0, 0.0, kMaxWaveFrequency);
+    if (p.waveAmplitude <= 0.0 || p.waveFrequency <= 0.0) {
+        p.waveAmplitude = 0.0;
+        p.waveFrequency = 0.0;
+    }
     p.attractionForce = ctx.range(src, "attractionForce", 0.0, -kMaxBaseStat, kMaxBaseStat);
     p.webRadius = ctx.range(src, "webRadius", 0.0, 0.0, kWorldSize);
     p.radiation = parseRadiation(ctx, src);

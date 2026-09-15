@@ -799,6 +799,20 @@
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
         "isAdminPetal": true
     },
+    "wasp_missile": {
+        "name": "Wasp Missile",
+        "damage": 10,
+        "health": 10,
+        "size": 1.5,
+        "cooldown": 1000,
+        "description": "A wasp's stinger, thrown; it weaves on the way in",
+        "color": "#c8803c",
+        "count": 1,
+        "waveAmplitude": 1.1,
+        "waveFrequency": 1.8,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-16.5 -8.75 32 17.5\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <clipPath id=\"wasp-missile-clip\">\n      <ellipse cx=\"-5\" cy=\"0\" rx=\"10\" ry=\"7\" />\n    </clipPath>\n  </defs>\n  <path d=\"M 14.2 0 L 3.8 -4.7 L 3.8 4.7 Z\" fill=\"#333333\" stroke=\"#333333\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n  <ellipse cx=\"-5\" cy=\"0\" rx=\"10\" ry=\"7\" fill=\"#c8803c\" />\n  <g clip-path=\"url(#wasp-missile-clip)\" fill=\"#333333\">\n    <rect x=\"-2.6\" y=\"-7\" width=\"3.4\" height=\"14\" />\n    <rect x=\"-9.4\" y=\"-7\" width=\"3.4\" height=\"14\" />\n  </g>\n  <ellipse cx=\"-5\" cy=\"0\" rx=\"10\" ry=\"7\" fill=\"none\" stroke=\"#b77334\" stroke-width=\"3\" />\n</svg>",
+        "isAdminPetal": true
+    },
     "action_test": {
         "name": "Action Test Petal",
         "damage": 10,

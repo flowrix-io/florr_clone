@@ -2,6 +2,7 @@
 
 #include "server/systems/movement.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -67,6 +68,16 @@ struct Fixture {
         p.seekCone = seekCone;
         world.add<Projectile>(e, p);
         world.add<Faction>(e, Faction{Team::Players, false});
+        return e;
+    }
+
+    /// The same shot with a weave on it -- what a wasp throws.
+    Entity spawnWeavingProjectile(Vec2 at, Vec2 velocity, double range, double amplitude,
+                                  double frequency) {
+        const Entity e = spawnProjectile(at, velocity, range);
+        Projectile& p = world.get<Projectile>(e);
+        p.waveAmplitude = amplitude;
+        p.waveFrequency = frequency;
         return e;
     }
 
@@ -703,6 +714,96 @@ TEST(a_seek_range_without_a_cone_still_homes) {
     const Entity shot = fx.spawnProjectile({5000, 5000}, {500, 0}, 5000.0, 1000.0, 0.0);
     fx.step(1, dt);
     CHECK(fx.velocityOf(shot).y > 0.0);
+}
+
+TEST(a_weaving_shot_snakes_about_the_bearing_it_was_fired_on) {
+    Fixture fx;
+    const double dt = net::kTickSeconds;
+    const double amplitude = 30.0;
+    const double frequency = 1.5;
+    // Due east at 400 u/s, with range enough for two full cycles.
+    const Entity weaver =
+        fx.spawnWeavingProjectile({5000, 5000}, {400, 0}, 2000.0, amplitude, frequency);
+    const Entity straight = fx.spawnProjectile({5000, 4000}, {400, 0}, 2000.0);
+
+    // Two full cycles of it. The sampling lands exactly on the axis twice a
+    // cycle at these numbers, so a crossing is counted off the last SIGNED
+    // sample rather than off the last sample: an exact zero is the shot
+    // arriving at the axis, not a side of it.
+    const int ticks = static_cast<int>(2.0 / (frequency * dt));
+    double maxOffset = 0.0;
+    double minOffset = 0.0;
+    int crossings = 0;
+    int side = 0;
+    for (int i = 0; i < ticks; ++i) {
+        fx.step(1, dt);
+        const double offset = fx.positionOf(weaver).y - 5000.0;
+        maxOffset = std::max(maxOffset, offset);
+        minOffset = std::min(minOffset, offset);
+        const int now = offset > 0.0 ? 1 : (offset < 0.0 ? -1 : 0);
+        if (now != 0) {
+            if (side != 0 && now != side) ++crossings;
+            side = now;
+        }
+    }
+
+    // It leaves the axis, to BOTH sides, by about the amplitude it was given
+    // -- not by a little, and not off to one side like a shot that was simply
+    // aimed wrong.
+    CHECK(maxOffset > amplitude * 0.8);
+    CHECK(minOffset < -amplitude * 0.8);
+    CHECK(maxOffset < amplitude * 1.2);
+    CHECK(minOffset > -amplitude * 1.2);
+    // Two cycles, so it has changed sides three times after leaving the axis
+    // at launch.
+    CHECK(crossings >= 3);
+
+    // The axis itself never rotates: a weave folded into the stored velocity
+    // would compound into a spiral, and this shot is still travelling east as
+    // fast as it started.
+    CHECK_NEAR(fx.velocityOf(weaver).y, 0.0, 1e-9);
+    CHECK_NEAR(fx.velocityOf(weaver).length(), 400.0, 1e-9);
+    // ...and it has covered the ground east that a straight shot has, give or
+    // take the rounding either path leaves.
+    CHECK_NEAR(fx.positionOf(weaver).x, fx.positionOf(straight).x, 1e-6);
+
+    // The drawn heading follows the PATH, so the missile noses into its turns
+    // instead of sliding sideways.
+    CHECK(std::fabs(fx.world.get<Transform>(weaver).angle) > 1e-3);
+    CHECK_NEAR(fx.world.get<Transform>(straight).angle, 0.0, 1e-12);
+
+    // The straight shot is untouched by any of this.
+    CHECK_NEAR(fx.positionOf(straight).y, 4000.0, 1e-9);
+}
+
+TEST(a_weave_spends_range_along_the_path_it_actually_flies) {
+    Fixture fx;
+    const double dt = net::kTickSeconds;
+    const Entity weaver = fx.spawnWeavingProjectile({5000, 5000}, {400, 0}, 400.0, 40.0, 2.0);
+    const Entity straight = fx.spawnProjectile({5000, 4000}, {400, 0}, 400.0);
+
+    fx.step(60, dt);
+    // Both are spent -- the budget is a distance and both spend it -- but the
+    // weaver travelled its snaking path to do so, so it is not as far east.
+    CHECK_NEAR(fx.world.get<Projectile>(weaver).remainingDistance, 0.0, 1e-9);
+    CHECK_NEAR(fx.world.get<Projectile>(straight).remainingDistance, 0.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(straight).x, 5400.0, 1e-6);
+    CHECK(fx.positionOf(weaver).x < 5400.0);
+    // Not a token shortfall either: a real weave costs real ground.
+    CHECK(fx.positionOf(weaver).x < 5395.0);
+}
+
+TEST(a_weave_needs_both_of_its_numbers) {
+    Fixture fx;
+    const double dt = net::kTickSeconds;
+    // Amplitude with no frequency, and frequency with no amplitude. Neither
+    // is a weave, and neither may bend the shot.
+    const Entity noFrequency = fx.spawnWeavingProjectile({5000, 5000}, {400, 0}, 2000.0, 30.0, 0.0);
+    const Entity noAmplitude = fx.spawnWeavingProjectile({5000, 4000}, {400, 0}, 2000.0, 0.0, 1.5);
+
+    fx.step(10, dt);
+    CHECK_NEAR(fx.positionOf(noFrequency).y, 5000.0, 1e-12);
+    CHECK_NEAR(fx.positionOf(noAmplitude).y, 4000.0, 1e-12);
 }
 
 // ---------------------------------------------------------------------------

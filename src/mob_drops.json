@@ -32,14 +32,6 @@
     "guaranteed": true,
     "drops": [
       {
-        "type": "consumable",
-        "itemType": "health_potion",
-        "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
         "type": "petal",
         "itemType": "rose",
         "rarity": "common",
@@ -68,22 +60,6 @@
   "soldier_ant": {
     "guaranteed": true,
     "drops": [
-      {
-        "type": "consumable",
-        "itemType": "speed_boost",
-        "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "consumable",
-        "itemType": "shield",
-        "rarity": "common",
-        "probability": 0.5,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
       {
         "type": "petal",
         "itemType": "glass",
@@ -657,7 +633,49 @@
     "drops": [
       {
         "type": "petal",
-        "itemType": "leaf",
+        "itemType": "peas",
+        "rarity": "common",
+        "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "firefly": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "wing",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 0,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bulb",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 0,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "wasp": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "missile",
+        "rarity": "common",
+        "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "antennae",
+        "itemType": "missile",
         "rarity": "common",
         "probability": 1,
         "minQuantity": 1,

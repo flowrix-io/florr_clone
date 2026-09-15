@@ -195,9 +195,11 @@ TEST(the_catalogue_is_the_files_own_order_with_the_eggs_appended) {
     CHECK_EQ(r.petal(order[1]).id, std::string("rose"));
 
     // The eggs come last, because that is where the reference appends them.
-    CHECK_EQ(r.petal(order[73]).id, std::string("shell"));
-    CHECK(r.petal(order[74]).id.size() > 4);
-    CHECK_EQ(r.petal(order[74]).id.substr(r.petal(order[74]).id.size() - 4), std::string("_egg"));
+    // 75 hand-written petals, so `shell` -- the file's last key -- is the last
+    // entry before the generated block starts.
+    CHECK_EQ(r.petal(order[74]).id, std::string("shell"));
+    CHECK(r.petal(order[75]).id.size() > 4);
+    CHECK_EQ(r.petal(order[75]).id.substr(r.petal(order[75]).id.size() - 4), std::string("_egg"));
 
     // A generated egg carries the mob's colour in its art and hatches the pet
     // variant where the mob has one.

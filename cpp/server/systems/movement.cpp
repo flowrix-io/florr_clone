@@ -414,10 +414,15 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
 
         // Seeking is a LAUNCH correction, not a guidance system: the shot
         // snaps onto the nearest mob inside a cone around the bearing it was
-        // fired on, once, and then flies straight. That is what the reference
-        // does, and it is load-bearing -- the client dead-reckons a projectile
-        // along a fixed heading, so a shot that curves in flight is drawn
-        // somewhere the server does not have it.
+        // fired on, once, and then holds that bearing. That is what the
+        // reference does, and a shot that re-aimed mid-flight would be a
+        // different weapon -- unmissable rather than merely well thrown.
+        //
+        // The weave below is not a second bite at this: it is a fixed,
+        // target-blind pattern about the SAME bearing, which is why the two
+        // can coexist. (The client eases a projectile toward its replicated
+        // position rather than dead-reckoning it, so a curved path draws
+        // faithfully, a beat behind, like every other entity.)
         //
         // The correction belongs to the volley, and the petal system spawns
         // the shot on the petal's orbit bearing; this runs on the shot's first
@@ -429,13 +434,44 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
         }
         const double speed = velocity.length();
 
+        // The weave. `velocity` stays the shot's AXIS for its whole flight --
+        // the sideways carry is added to the step and never written back --
+        // because a weave folded into the stored velocity is a rotation, and
+        // a rotation compounds: the shot would spiral off instead of snaking
+        // along the bearing it was fired on.
+        //
+        // Sideways OFFSET is amplitude * sin(phase), so what a step carries is
+        // its derivative, amplitude * omega * cos(phase). The offset is zero
+        // at launch and the shot crosses its own axis twice a cycle, which is
+        // what makes the path read as a wave rather than as a shot that was
+        // simply aimed wrong.
+        Vec2 step = velocity;
+        if (projectile.waveAmplitude > 0.0 && projectile.waveFrequency > 0.0 &&
+            speed > kMinProjectileSpeed) {
+            const double omega = 2.0 * kPi * projectile.waveFrequency;
+            const double turn = omega * dt;
+            // Sampled at the MIDDLE of the step, not at either end. Read at a
+            // step boundary the cosines sum to sin(phase) plus a constant, and
+            // that constant is a permanent sideways offset: the shot weaves
+            // correctly about a line PARALLEL to the bearing it was fired on
+            // instead of about the bearing itself, by a few units at the wasp's
+            // numbers. The midpoint sum telescopes to exactly
+            // amplitude * sin(phase), which is the curve this is meant to be.
+            const Vec2 across{-velocity.y / speed, velocity.x / speed};
+            step += across * (projectile.waveAmplitude * omega *
+                              std::cos(projectile.wavePhase + turn * 0.5));
+            projectile.wavePhase = wrapAngle(projectile.wavePhase + turn);
+        }
+        const double stepSpeed = step.length();
+
         // Range is a distance budget, not a timer: the last tick is shortened
         // so a fast shot dies exactly at its stated reach rather than one whole
-        // tick past it.
-        Vec2 attempted = velocity;
-        const double travel = speed * dt;
+        // tick past it. Measured on the STEP and not on the axis, so a weaving
+        // shot spends the budget along the path it actually flies.
+        Vec2 attempted = step;
+        const double travel = stepSpeed * dt;
         if (travel > projectile.remainingDistance && travel > kMinStepSeconds) {
-            attempted = velocity * (projectile.remainingDistance / travel);
+            attempted = step * (projectile.remainingDistance / travel);
         }
 
         double radius = 0.0;
@@ -455,7 +491,9 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
         }
 
         motion.velocity = velocity;
-        if (speed > kMinProjectileSpeed) transform.angle = velocity.angle();
+        // Pointed along the STEP rather than along the axis: a weaving missile
+        // that stayed square to its bearing would slide sideways like a crab.
+        if (stepSpeed > kMinProjectileSpeed) transform.angle = step.angle();
         if (!(projectile.remainingDistance > 0.0)) {
             motion.velocity = {0, 0};
             spentProjectiles_.push_back(e);
