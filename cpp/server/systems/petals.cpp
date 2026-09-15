@@ -71,10 +71,23 @@ constexpr const char* kFlowerPetMobId = "glitch_flower";
 // different moment in a petal's life.
 
 /// A strike reaches this far and, when the petal declares no damage of its own,
-/// lands this much. Deliberately NOT scaled by the Damage talent: the reference
-/// hands the strike the raw petal stat, unlike ring contact.
+/// lands this much AT COMMON.
+///
+/// The fallback is a base, not a figure: it goes up the same 3x-per-tier petal
+/// ladder `stats.damage` does (see petalStatScale). A flat one is how an apex
+/// battery ended up striking for a common battery's number -- `damage: 0` in
+/// petals.json means "this petal does not hit things with its body", not "this
+/// petal's shock ignores what tier it is".
 constexpr double kLightningRadius = 1000.0;
 constexpr double kLightningFallbackDamage = 25.0;
+
+/// The battery ships with three discharges and spends one per body slam, no
+/// faster than twice a second. It has no health pool -- petals.json gives it a
+/// null `health`, which is a petal nothing can break -- so running the charges
+/// out is the ONLY thing that ever takes it off the ring, and the slot's
+/// ordinary cooldown is what hands a full one back.
+constexpr std::uint8_t kBatteryCharges = 3;
+constexpr double kBatteryStrikeIntervalMillis = 500.0;
 
 /// How far apart a worn lightning cutter's strikes are: 500 ms, so at most
 /// twice a second. The limiter is per PLAYER rather than per petal, so a second
@@ -153,6 +166,14 @@ PetalBehaviour behaviourOf(const std::string& id) {
         return {PetalBehaviourKind::TestExplosive, false, false, kBehaviourExplodeIntervalMillis};
     }
     return {};
+}
+
+/// How many discharges a petal arrives holding. Only the battery has any, and
+/// it is asked by id for the reason the lightning cutter is: petals.json is
+/// shared verbatim with the frozen browser build, whose loader throws on a key
+/// its own enums do not know.
+std::uint8_t chargesFor(const PetalConfig& config) {
+    return config.id == "battery" ? kBatteryCharges : 0;
 }
 
 /// Summoned-only stat multipliers, applied on top of rarity scaling. The
@@ -329,6 +350,10 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         updateRing(world, player, aggregate, dt);
         placePetals(world, registry, player, aggregate, nowMillis, dt, terrain);
         runActions(world, registry, player, nowMillis, terrain);
+        // Last, so a battery that goes flat is taken off the ring AFTER this
+        // tick's placement rather than being flown to an orbit point it is
+        // about to be reaped from.
+        strikeBatteries(world, registry, player, nowMillis);
     }
 
     // Not left dangling between ticks, for the reason CombatSystem states: the
@@ -759,6 +784,11 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.nextActionMillis = hasNonProjectileAction(config, stats)
                                     ? nowMillis + actionIntervalMillis(config, stats)
                                     : 0.0;
+    // A reload hands back a FULL battery: the charges ride the instance, and
+    // the instance is new. Ready at once, unlike the action gate above -- the
+    // petal has just served its whole cooldown to get here, and a slam it is
+    // already standing in should discharge.
+    instance.charges = chargesFor(config);
     world.add<PetalInstance>(petal, instance);
 
     world.add<PetalEffect>(petal, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
@@ -1665,7 +1695,7 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
         case PetalBehaviourKind::Lightning:
             // Parked at spawn, so only a contact or a break strikes.
             if (trigger == PetalTrigger::Spawn || trigger == PetalTrigger::Interval) return;
-            strikeLightning(world, player, at, stats.damage);
+            strikeLightning(world, player, at, stats.damage, rarity);
             return;
 
         case PetalBehaviourKind::BloodLeaf: {
@@ -1759,11 +1789,26 @@ void PetalSystem::emitDamageBurst(World& world, Entity player, Vec2 at, double r
     if (lightning) world.add<LightningBurst>(burst);
 }
 
-void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double damage) {
-    // The strike carries the petal's raw stat: unlike ring contact, the
-    // reference hands it straight over without the flower's damage multiplier.
-    emitDamageBurst(world, player, at, kLightningRadius,
-                    damage > 0.0 ? damage : kLightningFallbackDamage, true);
+void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double damage,
+                                  Rarity rarity) {
+    // A strike is a petal hitting something, so it is paid at the PETAL rate --
+    // the steep effect table getDamageMultiplier() puts a puff, a pulse and a
+    // shot on, not the gentle stat table a body slam takes. The reference hands
+    // the raw stat over instead; that is a bug there, and it is the one thing
+    // a fully talented flower could do that its Damage talent did not touch.
+    //
+    // Applied here rather than at each of the three callers, so the lightning
+    // petal's strike, the cutter's and the battery's discharge cannot drift
+    // apart: they are one strike with three triggers.
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(player);
+    const double scale = modifiers != nullptr ? modifiers->petalDamageScale : 1.0;
+    // `damage` arrives already up the rarity ladder -- it is stats.damage, and
+    // petalStats multiplied it. The fallback has not been anywhere, so it is
+    // put on the SAME ladder here rather than landing a common's number on an
+    // apex petal.
+    const double base =
+        damage > 0.0 ? damage : kLightningFallbackDamage * petalStatScale(rarity);
+    emitDamageBurst(world, player, at, kLightningRadius, base * scale, true);
     reportLightning(world, player, at, kLightningRadius);
 }
 
@@ -1955,6 +2000,10 @@ void PetalSystem::strikeWornLightning(World& world, const ContentRegistry& regis
     // -- there is no ring instance to hang a timer off -- so the loadout is
     // what drives this, and the flower's own limiter is what paces it.
     double damage = 0;
+    // The tier that produced `damage`, carried along so a cutter with no damage
+    // stat at all falls back onto the ladder at its OWN tier rather than at
+    // common's.
+    Rarity tier = Rarity::Common;
     bool worn = false;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
@@ -1962,13 +2011,70 @@ void PetalSystem::strikeWornLightning(World& world, const ContentRegistry& regis
         if (registry.petal(slot.configIndex).id != "lightning_cutter") continue;
         worn = true;
         damage = std::max(damage, registry.petalStats(slot.configIndex, slot.rarity).damage);
+        // Maximised independently of the damage, as the raindrop aura maximises
+        // its reach: two cutters are one strike, and it is thrown at the best
+        // of everything the flower is wearing.
+        if (rarityIndex(slot.rarity) > rarityIndex(tier)) tier = slot.rarity;
     }
     if (!worn) return;
 
     // Armed before the strike: emitting creates an entity, and nothing after
     // this line may depend on the flower's columns staying put.
     state->nextLightningMillis = nowMillis + kLightningCutterIntervalMillis;
-    strikeLightning(world, player, transform->position, damage);
+    strikeLightning(world, player, transform->position, damage, tier);
+}
+
+void PetalSystem::strikeBatteries(World& world, const ContentRegistry& registry, Entity player,
+                                  double nowMillis) {
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    const Transform* transform = world.tryGet<Transform>(player);
+    const Body* body = world.tryGet<Body>(player);
+    if (loadout == nullptr || transform == nullptr || body == nullptr) return;
+
+    // Which batteries could fire at all, before anything is asked about the
+    // world: the sweep below is linear in the mobs on the field, and a loadout
+    // with no battery -- which is nearly every loadout -- must not pay for it.
+    batteryList_.clear();
+    for (const Entity petal : loadout->spawned) {
+        const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        if (instance == nullptr || instance->charges == 0) continue;
+        if (nowMillis < instance->nextChargeMillis) continue;
+        if (registry.petal(instance->configIndex).id != "battery") continue;
+        batteryList_.push_back(petal);
+    }
+    if (batteryList_.empty()) return;
+
+    // The FLOWER's body, not the petal's. A battery is discharged by ramming
+    // something, so a mob the ring happens to sweep across is not a trigger and
+    // a mob wedged against the flower is one whatever the ring is doing --
+    // which is also what makes the charge worth spending while the ring is
+    // pulled in and the petals are nowhere near the mob.
+    const Vec2 at = transform->position;
+    if (!touchesMob(world, transform->realm, at, body->radius)) return;
+
+    // Each battery pays its own charge on the same slam: they are separate
+    // petals holding separate charges, and one cell going flat says nothing
+    // about the next.
+    for (const Entity petal : batteryList_) {
+        PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        if (instance == nullptr) continue;
+        // Everything the strike needs is read, and the charge is spent, BEFORE
+        // the strike is thrown: emitting creates entities and spending the
+        // petal moves it between archetypes, so nothing past this block may
+        // reach back through `instance`.
+        const Rarity batteryRarity = instance->rarity;
+        const PetalStats stats = registry.petalStats(instance->configIndex, batteryRarity);
+        const std::uint8_t slotId = instance->slot;
+        const std::uint8_t subIndex = instance->subIndex;
+        instance->nextChargeMillis = nowMillis + kBatteryStrikeIntervalMillis;
+        const bool flat = --instance->charges == 0;
+
+        strikeLightning(world, player, at, stats.damage, batteryRarity);
+        // The last charge retires the petal. spendPetal finds no Health on it
+        // and takes the by-hand path: off the ring now, back on the slot's own
+        // cooldown, holding three again.
+        if (flat) spendPetal(world, player, petal, slotId, subIndex, stats, nowMillis);
+    }
 }
 
 void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registry, Entity player,

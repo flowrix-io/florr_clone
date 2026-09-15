@@ -252,6 +252,17 @@ private:
     void strikeWornLightning(World& world, const ContentRegistry& registry, Entity player,
                              double nowMillis);
 
+    /// The battery's discharge: the same strike, armed by the FLOWER's body
+    /// touching a mob and paid for out of the petal's own charges.
+    ///
+    /// Not part of the action pass, for the two reasons the pass could not
+    /// serve it. Its trigger is a collision the flower walks into rather than a
+    /// timer, and a battery declares no timed action to reach that gate with;
+    /// and the thing it collides with is the flower, which a per-petal loop
+    /// keyed on the petal's own position has no business asking about.
+    void strikeBatteries(World& world, const ContentRegistry& registry, Entity player,
+                         double nowMillis);
+
     /// `health` <= 0 spawns the petal with no Health component at all, which is
     /// what an unbreakable petal is: not one with zero hit points, which would
     /// break on its first tick.
@@ -293,7 +304,10 @@ private:
     /// reports for it.
     void emitDamageBurst(World& world, Entity player, Vec2 at, double radius, double damage,
                          bool lightning = false);
-    void strikeLightning(World& world, Entity player, Vec2 at, double damage);
+    /// One strike. `damage` is the petal's own stat, already up the rarity
+    /// ladder; `rarity` is the tier it came from, which is what puts the
+    /// fallback on that same ladder for a petal whose `damage` is 0.
+    void strikeLightning(World& world, Entity player, Vec2 at, double damage, Rarity rarity);
     /// The strike's visual half: one event carrying the bolts' endpoints. The
     /// damage half is a field, and a field has nothing on the wire the client
     /// could draw a strike from.
@@ -385,6 +399,10 @@ private:
 
     std::vector<Entity> playerList_;
     std::vector<Entity> actionList_;
+    /// The batteries with a charge ready this tick, snapshotted before the
+    /// first one fires: a discharge creates entities and can put its slot on
+    /// the reload, and neither is legal while the loadout's own list is walked.
+    std::vector<Entity> batteryList_;
     /// One player's live petals bucketed by slot, rebuilt per player. Members
     /// so the per-tick work does not allocate.
     std::array<std::vector<Entity>, kLoadoutSlots> bySlot_;

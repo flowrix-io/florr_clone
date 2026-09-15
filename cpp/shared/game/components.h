@@ -664,6 +664,20 @@ struct PetalInstance {
     /// cracking open. Without it the behaviour fires on every overlapping tick
     /// instead of once per life.
     bool collisionFired = false;
+
+    /// Shots left on a petal that is spent by BEING USED rather than by being
+    /// killed: the battery's three discharges. Zero on every other petal, and
+    /// zero for the one tick a spent battery spends waiting to be reaped.
+    ///
+    /// Per instance rather than per slot because the charges belong to the
+    /// petal that is carrying them: the count comes back full with the petal a
+    /// reload hands over, and a second battery in another slot has its own.
+    std::uint8_t charges = 0;
+    /// Next time a charge may be spent. Not nextActionMillis: that gate is the
+    /// action pass's, driven by a timer, and a charge is armed by a collision
+    /// the flower walks into -- a battery declares no timed action and never
+    /// reaches that gate at all.
+    double nextChargeMillis = 0;
 };
 
 struct Projectile {

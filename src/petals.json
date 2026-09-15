@@ -1065,10 +1065,9 @@
         "health": null,
         "size": 1.0,
         "cooldown": 2500,
-        "description": "Adds a temporary shield to your flower",
+        "description": "Holds three charges. Ram a mob and it discharges one as lightning",
         "color": "#fcdd86",
         "count": 1,
-        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\"><rect width=\"10\" height=\"6\" fill=\"#888888\" x=\"11\" y=\"2\" rx=\"1\"/><rect width=\"18\" height=\"24\" fill=\"#333333\" x=\"7\" y=\"8\" stroke-width=\"3\" stroke=\"#222222\" rx=\"1\"/><rect width=\"18\" height=\"8\" fill=\"#f0b467\" x=\"7\" y=\"8\" stroke-width=\"3\" stroke=\"#bf9052\" rx=\"1\"/></svg>",
         "isAdminPetal": false
     }

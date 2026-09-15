@@ -359,6 +359,12 @@ constexpr ChangelogEntry kChangelog[] = {
       "Both fireflies shock the flower they collide with -- hitting one with "
       "your petals does not set it off",
       "Lightning damage numbers are cyan now"}},
+    {"September 14, 2026",
+     {"Battery holds three charges: ram a mob and it discharges one as "
+      "lightning, half a second apart, and reloads once the third is gone",
+      "Lightning strikes climb the rarity ladder and take your Damage talent "
+      "now, like every other thing a petal does -- an apex shock was landing "
+      "a common one's damage"}},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
