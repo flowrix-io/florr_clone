@@ -383,6 +383,15 @@ struct PlayerVisuals {
     std::uint8_t faceFlags = FaceNone;
     std::uint8_t equipFlags = EquipNone;
     std::uint32_t renderFlags = PlayerRenderNone;
+    /// A user-created skin worn on this body, by catalog id; empty for none.
+    ///
+    /// Replicated as the id rather than as its shapes: the whole catalog is
+    /// broadcast to every client on authentication precisely so a wearer costs
+    /// one short string, and so a republished skin changes on everyone's
+    /// screen without anyone respawning. It takes priority over `renderFlags`
+    /// when the client draws the body, so the two are kept mutually exclusive
+    /// at every point that sets either.
+    std::string equippedSkinId;
     bool glitched = false;
     /// Set by the Flower petal's 5% break outcome. Distinct from `glitched`:
     /// corruption turns the flower hostile to everyone rather than only

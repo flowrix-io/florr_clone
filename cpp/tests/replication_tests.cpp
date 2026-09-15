@@ -286,7 +286,8 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
         static_cast<std::uint8_t>(EquipCutter | EquipThirdEye | EquipObserver |
                                   EquipAntennae | EquipTest1),
         static_cast<std::uint32_t>(PlayerRenderPumpkin | PlayerRenderRobot),
-        true,
+        "",     // no custom skin: this case is about the built-in flag bits
+        true,   // glitched
     });
     Afflictions poisoned;
     poisoned.poisonPerSecond = 1;
@@ -330,6 +331,29 @@ TEST(player_visual_flags_round_trip_and_update_independently) {
                                FaceSquareEyes | FaceHasCorruption)) == 0);
     CHECK_EQ(second.equipFlags, std::uint8_t(EquipNone));
     CHECK_EQ(second.renderFlags, std::uint32_t(PlayerRenderRobot));
+}
+
+TEST(equipped_custom_skin_id_reaches_the_client) {
+    Fixture f;
+    f.world.add<PlayerVisuals>(f.viewer, PlayerVisuals{});
+    f.world.get<PlayerVisuals>(f.viewer).equippedSkinId = "sk_abc_123";
+
+    // On the SPAWN record: a flower that walks into view already wearing a
+    // skin has to arrive wearing it, or it draws plain until it next changes.
+    WorldView client;
+    f.tick(client, 1, 1000);
+    CHECK_EQ(client.entities().at(client.self().netId).equippedSkinId, std::string("sk_abc_123"));
+
+    // And as a delta, with nothing else about the body moving.
+    f.world.get<PlayerVisuals>(f.viewer).equippedSkinId = "sk_def_456";
+    f.tick(client, 2, 1040);
+    CHECK_EQ(client.entities().at(client.self().netId).equippedSkinId, std::string("sk_def_456"));
+
+    // Taking it off is a change like any other; the empty string must not be
+    // read as "unchanged".
+    f.world.get<PlayerVisuals>(f.viewer).equippedSkinId.clear();
+    f.tick(client, 3, 1080);
+    CHECK(client.entities().at(client.self().netId).equippedSkinId.empty());
 }
 
 TEST(entities_leaving_view_are_removed) {

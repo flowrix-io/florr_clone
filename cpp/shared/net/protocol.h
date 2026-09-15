@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 22;
+inline constexpr std::uint16_t kProtocolVersion = 23;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -319,8 +319,9 @@ enum class EntityKind : std::uint8_t {
 /// Immutable per-entity facts, sent once when an entity first enters view.
 ///
 /// A Player record additionally carries u8 face flags, u8 equipment flags,
-/// u32 render flags, u16 level, u8 best-loadout rarity and u32 arena score
-/// (zero outside the PVP ring, where nothing keeps one); a Petal record
+/// u32 render flags, u16 level, u8 best-loadout rarity, u32 arena score
+/// (zero outside the PVP ring, where nothing keeps one) and the str id of the
+/// custom skin that flower is wearing, "" for none; a Petal record
 /// carries the u32 net id of the flower it orbits, which is what lets the
 /// client anchor a ring to the DRAWN owner rather than to a snapshot-old one.
 enum SpawnFlags : std::uint8_t {
@@ -410,8 +411,9 @@ enum UpdateFields : std::uint8_t {
     FieldState    = 1 << 3,   ///< u8 EntityState bits
     FieldSize     = 1 << 4,   ///< f32 radius; changes only on level-up or growth
     /// u8 face flags, u8 equipment flags, u32 render/skin flags, u16 level,
-    /// u8 best loadout rarity, u32 arena score. Set only for players; the
-    /// payload remains self-contained for decoding.
+    /// u8 best loadout rarity, u32 arena score, str equipped custom-skin id
+    /// ("" for none). Set only for players; the payload remains
+    /// self-contained for decoding.
     FieldPlayerVisuals = 1 << 5,
     /// Modifies FieldHealth: the fraction is an f32, not a u16. Meaningless
     /// on its own, and never set without FieldHealth.

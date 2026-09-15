@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "client/net_client.h"
+#include "client/render/skin_render.h"
 #include "client/ui/draw.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
@@ -133,19 +134,8 @@ std::string numberText(double v) {
     return buf;
 }
 
-bool isHexColor(const std::string& s) {
-    if (s.size() != 7 || s[0] != '#') return false;
-    for (std::size_t i = 1; i < 7; ++i) {
-        const char c = s[i];
-        const bool digit = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-        if (!digit) return false;
-    }
-    return true;
-}
-
 std::uint32_t hexColor(const std::string& s, std::uint32_t fallback = kInk) {
-    if (!isHexColor(s)) return fallback;
-    return static_cast<std::uint32_t>(std::strtoul(s.c_str() + 1, nullptr, 16));
+    return skinHexColor(s, fallback);
 }
 
 std::size_t utf8Length(const std::string& s) {
@@ -271,80 +261,6 @@ std::vector<Shape> starterShapes() {
         out.push_back(eye);
     }
     return out;
-}
-
-/// Draws a skin's shapes about the current origin. The editor authors against
-/// a body radius of 25, so `radius` is what scales an authored skin onto
-/// whatever circle it is being shown in.
-void renderSkinShapes(Canvas& canvas, const std::vector<Shape>& shapes, double radius) {
-    const double scale = radius / 25.0;
-    const float tau = static_cast<float>(kPi * 2.0);
-    canvas.save();
-    canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-    canvas.beginPath();
-    canvas.arc(0.0f, 0.0f, 100.0f, 0.0f, tau);
-    canvas.clip();
-    for (const Shape& s : shapes) {
-        canvas.save();
-        canvas.translate(static_cast<float>(s.x), static_cast<float>(s.y));
-        if (s.rot != 0) canvas.rotate(static_cast<float>(s.rot * kPi / 180.0));
-        canvas.beginPath();
-        switch (s.t) {
-            case ShapeType::Circle:
-                canvas.arc(0.0f, 0.0f, static_cast<float>(s.r != 0 ? s.r : 1.0), 0.0f, tau);
-                break;
-            case ShapeType::Ellipse:
-                canvas.ellipse(0.0f, 0.0f, static_cast<float>(s.rx != 0 ? s.rx : 1.0),
-                               static_cast<float>(s.ry != 0 ? s.ry : 1.0), 0.0f, 0.0f, tau);
-                break;
-            case ShapeType::Rect: {
-                const double rx = s.rx != 0 ? s.rx : 1.0;
-                const double ry = s.ry != 0 ? s.ry : 1.0;
-                canvas.rect(static_cast<float>(-rx), static_cast<float>(-ry),
-                            static_cast<float>(rx * 2), static_cast<float>(ry * 2));
-                break;
-            }
-            case ShapeType::Line:
-                // The endpoint is absolute local space; translate() already
-                // moved the origin onto (x, y).
-                canvas.moveTo(0.0f, 0.0f);
-                canvas.lineTo(static_cast<float>(s.x2 - s.x), static_cast<float>(s.y2 - s.y));
-                break;
-            case ShapeType::Curve:
-                // Endpoint and both control points are absolute local space
-                // too. A fill closes the path implicitly, chord from end back
-                // to start, which is what turns a curve into a blob.
-                canvas.moveTo(0.0f, 0.0f);
-                canvas.bezierCurveTo(
-                    static_cast<float>(s.cx1 - s.x), static_cast<float>(s.cy1 - s.y),
-                    static_cast<float>(s.cx2 - s.x), static_cast<float>(s.cy2 - s.y),
-                    static_cast<float>(s.x2 - s.x), static_cast<float>(s.y2 - s.y));
-                break;
-            case ShapeType::Polygon:
-                if (s.points.size() >= 6) {
-                    canvas.moveTo(static_cast<float>(s.points[0]), static_cast<float>(s.points[1]));
-                    for (std::size_t j = 2; j + 1 < s.points.size(); j += 2) {
-                        canvas.lineTo(static_cast<float>(s.points[j]),
-                                      static_cast<float>(s.points[j + 1]));
-                    }
-                    canvas.closePath();
-                }
-                break;
-        }
-        if (!s.fill.empty() && s.t != ShapeType::Line) {
-            setFill(canvas, hexColor(s.fill));
-            canvas.fill();
-        }
-        if (!s.stroke.empty() && s.sw > 0) {
-            setStroke(canvas, hexColor(s.stroke));
-            canvas.setLineWidth(static_cast<float>(s.sw));
-            canvas.setLineJoin("round");
-            canvas.setLineCap("round");
-            canvas.stroke();
-        }
-        canvas.restore();
-    }
-    canvas.restore();
 }
 
 /// One shape as one editable command line; round-trips through parseShapes.
@@ -1402,7 +1318,7 @@ std::string Studio::parseShapes(const std::string& source, std::vector<Shape>& o
         }
         for (const char* key : {"fill", "stroke"}) {
             const std::string* v = find(key);
-            if (v && !v->empty() && !isHexColor(*v)) {
+            if (v && !v->empty() && !isSkinHexColor(*v)) {
                 return where + "\"" + key + "\" must be a #rrggbb color";
             }
         }

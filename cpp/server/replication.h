@@ -13,6 +13,7 @@
 // discrepancy exists.
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -62,6 +63,15 @@ public:
         std::uint16_t level = 0;      ///< 0 is not a valid level, forcing a first send
         std::uint8_t bestRarity = 0xFF;
         std::uint32_t arenaScore = 0;
+        /// A hash of the equipped skin id, not the id itself.
+        ///
+        /// One Tracked exists per entity per viewer -- mobs, petals, drops and
+        /// all -- so a std::string here would be 32 bytes on every one of them
+        /// to describe something only players ever have. The hash is used for
+        /// change detection alone; the wire always carries the real id. 0 is
+        /// the hash of "", so the sentinel for "never sent" has to be
+        /// something else.
+        std::uint32_t skinIdHash = 0xFFFFFFFFu;
         bool seenThisTick = false;
     };
 
@@ -287,7 +297,20 @@ struct PlayerVisualState {
     Rarity bestRarity = Rarity::Common;
     /// The arena leaderboard's number; zero for anyone not in the ring.
     std::uint32_t arenaScore = 0;
+    /// Borrowed from PlayerVisuals, never owned: this is rebuilt for every
+    /// player in every viewer's snapshot, and copying a ~20-character id that
+    /// many times a second is a heap allocation per player per viewer for a
+    /// string that has not changed since login. Null is "no custom skin", and
+    /// the pointee outlives the snapshot it is written into -- the world is
+    /// not mutated while one is being built.
+    const std::string* equippedSkinId = nullptr;
 };
+
+/// The id a visual state names, or "" when it names none.
+inline const std::string& skinIdOf(const PlayerVisualState& visuals) {
+    static const std::string none;
+    return visuals.equippedSkinId ? *visuals.equippedSkinId : none;
+}
 
 PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis);
 

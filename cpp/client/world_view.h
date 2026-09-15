@@ -75,6 +75,12 @@ struct RemoteEntity {
     /// Player-only: the arena leaderboard's number, zero outside the ring.
     std::uint32_t arenaScore = 0;
 
+    /// Player-only: the catalog id of the user-created skin this flower wears,
+    /// empty for none. Resolved against NetClient's catalog at draw time
+    /// rather than carrying the shapes: the wearer's record is then a short
+    /// string, and a republished skin changes on this screen at once.
+    std::string equippedSkinId;
+
     /// The guild whose tag hangs under this flower's health bar. Nothing sets
     /// it yet: there is no guild protocol, exactly as menu_guild.cpp records,
     /// so the tag draws for nobody -- which is what the reference draws for a

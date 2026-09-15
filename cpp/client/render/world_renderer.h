@@ -21,6 +21,7 @@
 #include "client/world_view.h"
 #include "shared/core/types.h"
 #include "shared/game/constants.h"
+#include "shared/game/skin_format.h"
 // TileOrientation and tileOrientation(): the map format owns that transform
 // now, because the collision shapes are turned by the same one.
 #include "shared/game/tiled_map.h"
@@ -162,6 +163,12 @@ public:
     /// previews a cosmetic by drawing the very same body the world does --
     /// a second, panel-only copy of each skin is exactly how the two drift.
     void drawFlowerBody(Canvas&, const RemoteEntity&, double timeSeconds) const;
+
+    /// The published skin catalog a wearer's id is resolved against, borrowed
+    /// from NetClient. Optional: without it -- a tool, a test, a replay -- a
+    /// flower wearing a custom skin falls back to the default body, which is
+    /// also what a wearer of a skin that was taken down since draws.
+    void setSkinCatalog(const std::vector<CustomSkin>* catalog) { skinCatalog_ = catalog; }
 
     /// Terrain is optional: a client that has not yet been sent the map draws a
     /// plain biome ground rather than nothing.
@@ -347,8 +354,13 @@ private:
     /// back out by what the flower's level alone would have asked for.
     double playerSizeMultiplier(const RemoteEntity&) const;
 
+    /// The skin a flower is wearing, or null when it wears none, its id is
+    /// unknown to this client, or no catalog is set.
+    const CustomSkin* wornSkin(const RemoteEntity&) const;
+
     const ContentRegistry* content_ = nullptr;
     const SpriteCache* sprites_ = nullptr;
+    const std::vector<CustomSkin>* skinCatalog_ = nullptr;
     const Terrain* terrain_ = nullptr;
     const WorldMaps* worldMaps_ = nullptr;
     const MapData* map_ = nullptr;

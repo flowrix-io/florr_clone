@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "client/render/art_cache.h"
+#include "client/render/skin_render.h"
 #include "client/ui/draw.h"
 #include "client/ui/item_tile.h"
 #include "shared/game/config.h"
@@ -1600,8 +1601,30 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
     canvas.restore();
 }
 
+const CustomSkin* WorldRenderer::wornSkin(const RemoteEntity& entity) const {
+    if (entity.equippedSkinId.empty() || skinCatalog_ == nullptr) return nullptr;
+    for (const CustomSkin& skin : *skinCatalog_) {
+        // A skin with no shapes would paint nothing at all and read as an
+        // invisible flower, so it falls back to the default body instead.
+        if (skin.id == entity.equippedSkinId) return skin.shapes.empty() ? nullptr : &skin;
+    }
+    // Taken down since this snapshot was built, or published before this
+    // client authenticated. Either way there is nothing to draw.
+    return nullptr;
+}
+
 void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
                                    double timeSeconds) const {
+    // A user-created skin outranks a built-in one, as it does in
+    // player-drawing.ts: the server keeps the two mutually exclusive, and this
+    // is the tie-break if an old account row ever carries both.
+    if (const CustomSkin* skin = wornSkin(entity)) {
+        // kFlowerArtRadius, not the flower's grown radius: the caller has
+        // already scaled into the artwork's own radius-25 space, which is the
+        // space the studio authors in.
+        renderSkinShapes(canvas, skin->shapes, kFlowerArtRadius);
+        return;
+    }
     // Registration order in player-skins.ts is Pumpkin, then Robot. Preserve
     // that deterministic priority when a saved account somehow has both bits.
     if (entity.renderFlags & PlayerRenderPumpkin) {

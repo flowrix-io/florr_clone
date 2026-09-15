@@ -1894,9 +1894,15 @@ void GameServer::handleSetSkin(Session& session, net::Connection& connection, By
 
     PlayerRecord& record = database_.progress(session.userId);
     record.renderFlags = flags;
+    // The mirror of handleEquipSkin's rule. A custom skin WINS over a built-in
+    // when the client draws the body, so leaving one on here would make
+    // picking a built-in look like it did nothing at all.
+    if (flags != PlayerRenderNone) record.equippedSkinId.clear();
     database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) {
-        world_.ensure<PlayerVisuals>(session.entity).renderFlags = flags;
+        PlayerVisuals& visuals = world_.ensure<PlayerVisuals>(session.entity);
+        visuals.renderFlags = flags;
+        visuals.equippedSkinId = record.equippedSkinId;
     }
     sendProfile(session, connection);
 }
@@ -2102,7 +2108,11 @@ void GameServer::handleEquipSkin(Session& session, net::Connection& connection,
     if (!id.empty()) record.renderFlags = PlayerRenderNone;
     database_.markDirty();
     if (session.playing() && world_.isAlive(session.entity)) {
-        world_.ensure<PlayerVisuals>(session.entity).renderFlags = record.renderFlags;
+        // Onto the live body too, or the change waits for the next respawn:
+        // the snapshot reads the component, never the account row.
+        PlayerVisuals& visuals = world_.ensure<PlayerVisuals>(session.entity);
+        visuals.renderFlags = record.renderFlags;
+        visuals.equippedSkinId = id;
     }
 }
 
@@ -3307,9 +3317,13 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
     state.level = progress.level;
     state.stars = record.stars;
 
-    // Cosmetic skin bits are account data. The temporary glitch bit stays on
+    // Cosmetic skin bits are account data, and so is the worn custom skin --
+    // the body is rebuilt on every respawn, so without this line a player who
+    // dies comes back a plain flower. The temporary glitch bit stays on
     // PlayerVisuals and is intentionally not reset by a loadout edit.
-    world_.ensure<PlayerVisuals>(entity).renderFlags = record.renderFlags;
+    PlayerVisuals& cosmetics = world_.ensure<PlayerVisuals>(entity);
+    cosmetics.renderFlags = record.renderFlags;
+    cosmetics.equippedSkinId = record.equippedSkinId;
 
     // The tree is copied onto the body so the tick never reaches into storage.
     // Every path that changes it -- login, respawn, buying a tier, a reset --

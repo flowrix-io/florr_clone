@@ -8,6 +8,26 @@
 
 namespace flix {
 
+namespace {
+
+/// FNV-1a over a skin id, for Tracked's change detection only.
+///
+/// A collision would cost one player one missed skin change until anything
+/// else about their visuals moved, which for server-minted ids (a millisecond
+/// clock plus a random tail) is not a case that occurs. The alternative --
+/// keeping the id itself beside every tracked entity in every view -- costs
+/// memory on every mob on the map, for all of them.
+std::uint32_t skinIdHash(const std::string& id) {
+    std::uint32_t h = 2166136261u;
+    for (const char c : id) {
+        h ^= static_cast<std::uint8_t>(c);
+        h *= 16777619u;
+    }
+    return h;
+}
+
+} // namespace
+
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
     std::uint8_t state = 0;
 
@@ -39,6 +59,8 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
         out.faceFlags = visuals->faceFlags;
         out.equipFlags = visuals->equipFlags;
         out.renderFlags = visuals->renderFlags;
+        // Borrowed, not copied; see PlayerVisualState::equippedSkinId.
+        if (!visuals->equippedSkinId.empty()) out.equippedSkinId = &visuals->equippedSkinId;
         if (visuals->glitched) out.renderFlags |= PlayerRenderGlitch;
         // Corruption is a FACE, not a skin: the flower that cracked a Flower
         // petal open turns on everyone, and the face is the only warning the
@@ -317,6 +339,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u16(visuals.level);
             out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
             out.u32(visuals.arenaScore);
+            out.str(skinIdOf(visuals));
         }
         if (info.kind == net::EntityKind::Petal) {
             // Petals are placed on an absolute ring around the owner's SERVER
@@ -349,6 +372,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.level = visuals.level;
         tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
         tracked.arenaScore = visuals.arenaScore;
+        tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
         view.tracked.emplace(candidate.netId, tracked);
     }
     out.patchU16(spawnCountAt, spawnCount);
@@ -416,7 +440,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
              visuals.renderFlags != tracked.renderFlags ||
              visuals.level != tracked.level ||
              static_cast<std::uint8_t>(visuals.bestRarity) != tracked.bestRarity ||
-             visuals.arenaScore != tracked.arenaScore)) {
+             visuals.arenaScore != tracked.arenaScore ||
+             skinIdHash(skinIdOf(visuals)) != tracked.skinIdHash)) {
             mask |= net::FieldPlayerVisuals;
         }
         if (mask == 0) continue;
@@ -450,12 +475,14 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u16(visuals.level);
             out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
             out.u32(visuals.arenaScore);
+            out.str(skinIdOf(visuals));
             tracked.faceFlags = visuals.faceFlags;
             tracked.equipFlags = visuals.equipFlags;
             tracked.renderFlags = visuals.renderFlags;
             tracked.level = visuals.level;
             tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
             tracked.arenaScore = visuals.arenaScore;
+            tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
         }
         ++updateCount;
     }

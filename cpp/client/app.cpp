@@ -739,6 +739,11 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
 
     renderer_.setContent(&content());
     renderer_.setSprites(&sprites_);
+    // The published skins, for the flowers wearing them. NetClient owns the
+    // list and replaces it on every SkinCatalog/SkinPublished/SkinDeleted, so
+    // the renderer holds the container and looks a wearer up per frame rather
+    // than caching a resolved pointer that a takedown would dangle.
+    renderer_.setSkinCatalog(&net_.skinCatalog());
     // NetClient keeps this object alive for the entire connection and replaces
     // its grid with the server's authoritative one when a game is joined.
     renderer_.setTerrain(&net_.terrain());

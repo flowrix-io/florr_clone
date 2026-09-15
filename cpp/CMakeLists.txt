@@ -157,6 +157,7 @@ add_library(flix_client STATIC
   client/ui/tutorial.cpp
   client/render/art_cache.cpp
   client/render/mob_art.cpp
+  client/render/skin_render.cpp
   client/render/sprites.cpp
   client/render/world_renderer.cpp
   client/web/reload.cpp
