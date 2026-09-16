@@ -502,6 +502,16 @@ struct MobAi {
     /// which paces contact damage: a hornet shoots on its config cooldown the
     /// whole way in and touches on a different clock once it arrives.
     double lastProjectileMillis = 0;
+    /// Shots still owed on the burst in progress -- 0 for a mob at rest, and
+    /// always 0 for the shooters that fire one volley per cooldown.
+    ///
+    /// Only the REMAINDER is stored, not the position in the burst: the gate in
+    /// fireVolley is "another shot is owed and the burst has not gone stale", and
+    /// nothing downstream cares whether a mantis is on its second pea or its
+    /// third. A burst left hanging by a target walking out of range is dropped
+    /// rather than resumed -- see fireVolley -- so this can never hand a mob a
+    /// free volley on re-acquisition.
+    std::uint8_t burstRemaining = 0;
     /// Which way round a stinger shooter is part way through swinging: +1, -1,
     /// or 0 for a mob sitting nose-on with no swing in progress.
     ///

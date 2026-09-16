@@ -722,6 +722,90 @@ TEST(a_hornets_missile_reaches_the_client_at_the_size_it_was_fired_at) {
     CHECK(seenRadius < ammoStats.radius);
 }
 
+TEST(a_mantis_bursts_its_peas_through_the_real_server_loop) {
+    // The AI tests drive MobAiSystem directly. This one goes through the whole
+    // shipping path -- GameServer's tick, the spawner's component set, the
+    // wire -- because "the burst is gone in the actual game" is a claim about
+    // THAT, and a unit test on the gate cannot answer it.
+    Harness h("mantisburst", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "mantiswatch", "password9"));
+    client.joinGame(2600, 2600);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const std::uint32_t selfNetId = client.view().self().netId;
+    Query<PlayerTag, NetId, Transform> flowers(world);
+    Vec2 at{0, 0};
+    bool found = false;
+    flowers.each([&](Entity, PlayerTag&, NetId& id, Transform& transform) {
+        if (id.value == selfNetId) { at = transform.position; found = true; }
+    });
+    CHECK(found);
+    if (!found) return;
+
+    // Built the way the spawner builds one, and far enough out that it opens
+    // fire long before it is close enough to chew the flower up.
+    const std::uint16_t mantisIndex = content().mobIndex("mantis");
+    const MobStats stats = content().mobStats(mantisIndex, Rarity::Common);
+    const Entity mantis = world.create();
+    world.add<MobTag>(mantis);
+    world.add<Transform>(mantis, Transform{at + Vec2{420, 0}, 0.0});
+    world.add<Motion>(mantis);
+    world.add<Body>(mantis, Body{stats.radius, stats.mass});
+    world.add<Health>(mantis, Health{stats.health, stats.health, 0, 0});
+    world.add<MobType>(mantis, MobType{mantisIndex, Rarity::Common, 1.0});
+    world.add<Faction>(mantis, Faction{Team::Hostiles, false});
+    world.add<ContactDamage>(mantis, ContactDamage{stats.damage, kMobHitIntervalMillis});
+    MobAi brain;
+    brain.kind = stats.ai;
+    brain.anchor = at + Vec2{420, 0};
+    brain.aggroRange = stats.aggroRange;
+    world.add<MobAi>(mantis, brain);
+
+    // Every pea THIS mantis fires, timed by the server's own clock. Keyed on
+    // net id because a pea only lives about a second: counting what is alive
+    // would lose the first one as the fourth goes out.
+    std::vector<double> firedAt;
+    std::vector<std::uint32_t> seen;
+    bool reachedClient = false;
+    Query<Projectile, NetId> shots(world);
+    h.stepUntil({&client}, [&] {
+        shots.each([&](Entity, Projectile& shot, NetId& id) {
+            if (shot.owner != mantis) return;
+            if (std::find(seen.begin(), seen.end(), id.value) != seen.end()) return;
+            seen.push_back(id.value);
+            firedAt.push_back(h.clock);
+            const auto entry = client.view().entities().find(id.value);
+            if (entry != client.view().entities().end() &&
+                entry->second.kind == net::EntityKind::Projectile) {
+                reachedClient = true;
+            }
+        });
+        return firedAt.size() >= 5;
+    }, 300);
+
+    // Five peas is a burst, the pause, and the opening pea of the next one --
+    // enough to see the shape rather than just the rate.
+    CHECK_EQ(firedAt.size(), std::size_t(5));
+    if (firedAt.size() < 5) return;
+    CHECK(reachedClient);
+
+    const ProjectileSpec& spec = content().mob(mantisIndex).projectile;
+    const double cadence = stats.attackCooldownMillis;
+    for (std::size_t i = 1; i < firedAt.size(); ++i) {
+        const double gap = firedAt[i] - firedAt[i - 1];
+        const double expected = i % 3 == 0 ? cadence : spec.burstIntervalMillis;
+        CHECK(gap >= expected - 1e-9);
+        CHECK(gap < expected + 2.0 * net::kTickMillis);
+    }
+    // Which is to say the three peas of a burst really are closer together
+    // than the pause that follows them -- the thing a player sees.
+    CHECK(firedAt[1] - firedAt[0] < firedAt[3] - firedAt[2]);
+}
+
 TEST(persist_all_writes_the_database_and_keeps_serving) {
     Harness h("persist-all");
     if (!h.ready) { CHECK(false); return; }

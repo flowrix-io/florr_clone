@@ -349,6 +349,16 @@ ProjectileSpec parseProjectile(Ctx& ctx, const Json& owner,
     // degrees produces a tidy five-way star that hits different mobs.
     spec.spreadAngle = ctx.range(node, "spreadAngle", 0.2, -1e4, 1e4);
 
+    // Sequential shots off one cooldown; see ProjectileSpec. The interval is
+    // only read when there is a burst to space out, and an omitted one is the
+    // default rather than zero: a burst fired on consecutive ticks is a single
+    // fat shot as far as the player can see.
+    spec.burstCount = ctx.integer(node, "burstCount", 1, 1, 16);
+    spec.burstIntervalMillis =
+        spec.burstCount > 1
+            ? ctx.range(node, "burstInterval", kDefaultBurstIntervalMillis, 1.0, 10000.0)
+            : 0.0;
+
     if (petalIds != nullptr) {
         spec.ammoPetalId = ctx.text(node, "petalType");
         spec.ammoPetalIndex = ctx.link(*petalIds, spec.ammoPetalId, "projectile petalType");

@@ -57,6 +57,7 @@
 // sight, and is retired when it drifts off their screen. None of that is "wild
 // mob with a different target list".
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
@@ -206,6 +207,17 @@ inline constexpr double kDefaultVolleyCooldownMillis = 2000.0;
 
 /// Shot speed for a projectile block that omits one, units per second.
 inline constexpr double kDefaultProjectileSpeed = 200.0;
+
+/// How many of its own gaps a burst may go quiet for before it counts as
+/// abandoned rather than in progress. Two: one gap is the shot being due, and
+/// anything past a second one is a mob that stopped firing.
+///
+/// This is the ONLY thing in the burst path that is not the authored number.
+/// It is a liveness rule rather than a rate -- it decides whether a burst is
+/// still happening, never how fast one fires -- which is what keeps it clear
+/// of the trap that a cap, a ramp and a floor all fell into: an engine firing
+/// a gap the author never asked for and cannot see.
+inline constexpr double kBurstStaleFactor = 2.0;
 
 /// The tier a mob's authored projectile `distance` is stated AGAINST.
 ///

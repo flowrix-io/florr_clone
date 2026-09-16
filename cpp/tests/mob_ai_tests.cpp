@@ -1596,6 +1596,146 @@ TEST(a_bigger_hornet_fires_a_bigger_missile) {
     CHECK(mythic.world.get<Body>(large).radius > common.world.get<Body>(small).radius);
 }
 
+TEST(a_mantis_fires_its_peas_in_bursts_of_three) {
+    CHECK(contentReady());
+    Sim sim;
+    sim.spawnMob("mantis", kOrigin);
+    sim.spawnPlayer(kOrigin + Vec2{300, 0});
+
+    const ProjectileSpec& spec = content().mob(content().mobIndex("mantis")).projectile;
+    CHECK(spec.present);
+    CHECK_EQ(spec.burstCount, 3);
+    // One pea per shot, three shots: a burst, not a fan. Were this the other
+    // way round the mantis would be a shotgun and the test below would pass on
+    // a single volley.
+    CHECK_EQ(spec.count, 1);
+    CHECK(spec.burstIntervalMillis > 0.0);
+
+    // The INTENT phase only: nothing moves, so the bearing holds and no shot
+    // ever expires -- shotCount is a pure fire counter, and the clock at the
+    // tick a shot appears is the moment it was fired.
+    std::vector<double> firedAt;
+    int counted = 0;
+    for (int i = 0; i < 200; ++i) {
+        const double at = sim.now;
+        sim.tickIntent();
+        const int total = shotCount(sim);
+        for (; counted < total; ++counted) firedAt.push_back(at);
+    }
+    // Eight seconds of ticks against a cycle of a cadence plus two gaps: two
+    // full bursts over is a floor, not the expected count.
+    CHECK(firedAt.size() >= 6);
+    if (firedAt.size() < 6) return;
+
+    // And what it fires is peas: the shot carries the ammunition's own petal,
+    // which is what the client draws it as.
+    const Entity pea = firstShot(sim);
+    CHECK(pea != NULL_ENTITY);
+    if (pea == NULL_ENTITY) return;
+    CHECK_EQ(sim.world.get<Projectile>(pea).petalConfigIndex, content().petalIndex("peas"));
+
+    const double cadence = content().mobStats(content().mobIndex("mantis"), Rarity::Common)
+                               .attackCooldownMillis;
+    CHECK(cadence > 0.0);
+    // What the config ASKS FOR, not what this test would like it to be: the
+    // whole contract of `burstInterval` is that the authored number is the
+    // number that fires, so the expectation is derived from the data and the
+    // test says nothing about which of the two clocks is the longer one. A
+    // mantis authored to space its peas a full cadence apart is a mantis whose
+    // peas come out evenly, and that is a config decision, not a bug.
+    const double inBurst = spec.burstIntervalMillis;
+    for (std::size_t i = 1; i < firedAt.size(); ++i) {
+        const double gap = firedAt[i] - firedAt[i - 1];
+        // The cadence runs from the LAST pea of a burst, so a new burst opens a
+        // full cooldown later -- the burst is not squeezed inside the mantis's
+        // stated rate.
+        const double expected = i % 3 == 0 ? cadence : inBurst;
+        // Never early, and never later than the first tick that owes the shot.
+        CHECK(gap >= expected - 1e-9);
+        CHECK(gap < expected + net::kTickMillis);
+    }
+}
+
+TEST(a_mantis_fires_its_authored_gap_at_every_tier_including_the_biggest) {
+    CHECK(contentReady());
+    const std::uint16_t mantis = content().mobIndex("mantis");
+    const ProjectileSpec& spec = content().mob(mantis).projectile;
+
+    // The authored gap is what fires, at EVERY tier, apex included. A number in
+    // mobs.json that the engine scales, clamps or floors behind the author's
+    // back is a number that cannot be tuned -- and the failure is invisible:
+    // the biggest mantis is exactly where a size-derived adjustment grows to
+    // the length of the cadence, and a burst whose gap equals its own pause is
+    // a burst the player cannot see at all.
+    //
+    // The whole ladder, because the top of it is where that goes wrong.
+    for (int tier = rarityIndex(Rarity::Common); tier < kRarityCount; ++tier) {
+        const Rarity rarity = static_cast<Rarity>(tier);
+        Sim sim;
+        const Entity mob = sim.spawnMob("mantis", kOrigin, rarity);
+        // Clear of the mob's own skin -- at ultra the body alone is hundreds of
+        // units across -- and well inside the aggro range of every tier.
+        sim.spawnPlayer(kOrigin + Vec2{sim.world.get<Body>(mob).radius + 200.0, 0});
+
+        double firedAt[2] = {0.0, 0.0};
+        int counted = 0;
+        for (int i = 0; i < 400 && counted < 2; ++i) {
+            const double at = sim.now;
+            sim.tickIntent();
+            const int total = shotCount(sim);
+            while (counted < total && counted < 2) firedAt[counted++] = at;
+        }
+        CHECK_EQ(counted, 2);
+        if (counted < 2) continue;
+
+        const Entity pea = firstShot(sim);
+        CHECK(pea != NULL_ENTITY);
+        if (pea == NULL_ENTITY) continue;
+
+        const double gap = firedAt[1] - firedAt[0];
+        CHECK(gap >= spec.burstIntervalMillis - 1e-9);
+        CHECK(gap < spec.burstIntervalMillis + net::kTickMillis);
+        // And it still READS as a burst at this tier: the gap inside one is a
+        // fraction of the pause that follows it. This is the assertion that an
+        // engine-side adjustment fails -- stretch the gap with the shooter's
+        // size and the line above still passes while an apex mantis fires an
+        // even stream of peas, which is precisely the bug this pair guards.
+        const double cadence =
+            content().mobStats(mantis, rarity).attackCooldownMillis;
+        CHECK(gap < cadence * 0.75);
+    }
+}
+
+TEST(a_burst_left_hanging_by_a_lost_target_starts_over_rather_than_resuming) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity mantis = sim.spawnMob("mantis", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{300, 0});
+
+    Entity shot = NULL_ENTITY;
+    for (int i = 0; i < 200 && shot == NULL_ENTITY; ++i) {
+        sim.tickIntent();
+        shot = firstShot(sim);
+    }
+    CHECK(shot != NULL_ENTITY);
+    // Two peas still owed when the flower leaves.
+    CHECK_EQ(int(sim.brainOf(mantis).burstRemaining), 2);
+
+    // Well outside the mantis's aggro range, for longer than its whole cadence.
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{20000, 0};
+    const int before = shotCount(sim);
+    sim.tickIntent(100);
+    CHECK_EQ(shotCount(sim), before);
+
+    // Back in range: the remainder of the abandoned burst must NOT go off on
+    // the tick the mantis re-acquires -- what follows is a fresh burst of
+    // three, opening with a shot that leaves the counter at two again.
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{300, 0};
+    for (int i = 0; i < 200 && shotCount(sim) == before; ++i) sim.tickIntent();
+    CHECK(shotCount(sim) == before + 1);
+    CHECK_EQ(int(sim.brainOf(mantis).burstRemaining), 2);
+}
+
 TEST(a_volley_carries_the_shooters_own_travel) {
     CHECK(contentReady());
     Sim sim;

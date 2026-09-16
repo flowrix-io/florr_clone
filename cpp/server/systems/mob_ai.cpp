@@ -562,13 +562,51 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // config that states none, not the rate every shooter fires at.
     const double cooldown = drive.attackCooldownMillis > 0.0 ? drive.attackCooldownMillis
                                                              : kDefaultVolleyCooldownMillis;
-    if (nowMillis - ai.lastProjectileMillis < cooldown) return;
+
+    // A BURST is several volleys off one cooldown -- a mantis's three peas --
+    // and the only difference it makes here is which clock the next shot is
+    // gated on: the burst's own gap while it runs, the mob's full cadence to
+    // start a new one.
+    //
+    // The authored gap fires AS WRITTEN. Not scaled by the tier, not capped
+    // against the cadence, not floored by how big the shots have grown -- all
+    // three were tried and all three are the same mistake, which is an engine
+    // that quietly fires a number other than the one in the data. The failure
+    // is silent and it is infuriating: the author edits mobs.json, nothing
+    // moves, and there is nothing on screen to say why.
+    //
+    // The thing those adjustments were reaching for is real -- a shot's calibre
+    // grows with the shooter's body while its speed does not, so at the very
+    // top of the ladder an apex mantis's peas are wider than the gap a short
+    // interval leaves between them and the burst arrives as one blob. That is
+    // a TUNING problem and it has tuning answers in the same file: a longer
+    // `burstInterval`, or a faster `speed`. It is not a reason for this
+    // function to overrule the author.
+    const int burst = std::max(1, spec.burstCount);
+    const double burstInterval = spec.burstIntervalMillis;
+
+    // The staleness test is what keeps a burst from outliving the engagement
+    // that started it. A mob whose target walks out of range mid-burst stops
+    // being asked to fire at all, so its remainder would otherwise sit there
+    // and go off the instant something wandered back in -- two peas with no
+    // wind-up, from a mob that had been idle for a minute.
+    //
+    // Measured against the burst's OWN gap and not against the cooldown: those
+    // are different clocks, a burst is perfectly entitled to fire slower than
+    // the mob re-arms, and a window tied to the cadence would silently cut a
+    // burst short the moment a config asked for a gap that long.
+    const bool inBurst = ai.burstRemaining > 0 &&
+                         nowMillis - ai.lastProjectileMillis < burstInterval * kBurstStaleFactor;
+    if (!inBurst) ai.burstRemaining = 0;
+    const double gate = inBurst ? burstInterval : cooldown;
+    if (nowMillis - ai.lastProjectileMillis < gate) return;
+
+    const std::size_t tier = static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
+    const double scaling = kMobSizeScale[tier];
 
     // Ammunition is graded at the SHOOTER's tier rather than at the rarity its
     // config names, so an apex hornet fires apex missiles.
     const PetalStats ammo = registry.petalStats(spec.ammoPetalIndex, type.rarity);
-    const std::size_t tier = static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
-    const double scaling = kMobSizeScale[tier];
 
     const double speed = spec.speed > 0.0 ? spec.speed : kDefaultProjectileSpeed;
     // Stated in COMMON-TIER units: `distance` IS the reach a common shooter
@@ -642,6 +680,10 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     shot.glitchInfecting = registry.mob(type.configIndex).glitchInfecting;
 
     ai.lastProjectileMillis = nowMillis;
+    // Counted down from the shot that OPENS the burst, so `burstRemaining` is
+    // what is still owed after this one and a burstless mob never leaves zero.
+    ai.burstRemaining = inBurst ? static_cast<std::uint8_t>(ai.burstRemaining - 1)
+                                : static_cast<std::uint8_t>(burst - 1);
     ++stats_.volleys;
 
     const int count = std::max(1, spec.count);
@@ -1020,9 +1062,14 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
             ai.lastProjectileMillis =
                 nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
         }
+        // A burst still owing shots counts as wound up whatever the clock says:
+        // the mob is already rear-on with the flower in its sights, and sending
+        // it back through a full swing between two shots of the same burst
+        // would be a different weapon -- three separate volleys, not a burst.
         const bool winding =
+            ai.burstRemaining > 0 ||
             nowMillis - ai.lastProjectileMillis >=
-            cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
+                cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
         // Off the mob's own angle and the bearing, never off `desired`: a mob
         // slowed to a standstill by a web still has a flower to swing about,
         // and a zero desired would hand it to the fallback in steerMob.
@@ -1373,8 +1420,11 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
                     ai.lastProjectileMillis =
                         nowMillis - cooldown + kStingerWindupMillis + kStingerAimHoldMillis;
                 }
-                const bool winding = nowMillis - ai.lastProjectileMillis >=
-                                     cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
+                // A burst in progress holds the pose; see steerAggressive.
+                const bool winding =
+                    ai.burstRemaining > 0 ||
+                    nowMillis - ai.lastProjectileMillis >=
+                        cooldown - kStingerWindupMillis - kStingerAimHoldMillis;
                 facing = Vec2::fromAngle(
                     stingerFacing(bearing, transform.angle, winding, kStingerTurnRate * dt,
                                   ai.stingerSide));

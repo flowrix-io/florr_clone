@@ -45,6 +45,11 @@ using Rgba = std::uint32_t;
 
 inline constexpr Rgba kOpaqueWhite = 0xFFFFFFFFu;
 
+/// Gap between the shots of a burst for a config that names a `burstCount` and
+/// no interval, at the common tier. Three server ticks, so the shots leave as a
+/// readable string of separate projectiles rather than as one clump.
+inline constexpr double kDefaultBurstIntervalMillis = 100.0;
+
 /// A volley. `present` is what distinguishes "fires nothing" from "fires a
 /// projectile whose fields all happen to be zero".
 struct ProjectileSpec {
@@ -63,6 +68,25 @@ struct ProjectileSpec {
     /// within, radians. Applied once, at launch: the shot then flies straight,
     /// which is what keeps the client's dead reckoning exact.
     double seekCone = kPi * 0.25;
+
+    /// Shots in a BURST -- volleys fired one after another off a single
+    /// cooldown, which is a different thing from `count` (the shots that leave
+    /// together, fanned by `spreadAngle`). A mantis fires three peas in a row
+    /// down one bearing, so it is `count` 1 and `burstCount` 3, not the other
+    /// way round: three at once would be a shotgun.
+    ///
+    /// 1 -- the default -- is a mob with no burst at all, and every existing
+    /// shooter keeps the cadence it had.
+    int burstCount = 1;
+    /// Gap between the shots WITHIN a burst, milliseconds, stated at COMMON.
+    /// It ramps with rarity and is capped against the mob's own cadence -- see
+    /// fireVolley, which is also where the reason lives: a flat gap bunches,
+    /// because the shots grow with the shooter and their speed does not.
+    ///
+    /// The full cooldown then runs from the LAST shot of a burst, so a burst
+    /// costs `(burstCount - 1)` gaps on top of the mob's stated cadence rather
+    /// than being squeezed inside it.
+    double burstIntervalMillis = 0;
 
     /// A mob fires a named petal as ammunition; a petal fires itself and
     /// leaves this empty.
