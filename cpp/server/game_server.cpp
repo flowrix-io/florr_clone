@@ -56,11 +56,6 @@ constexpr double kMaxDeltaSeconds = net::kTickSeconds * 3.0;
 /// Low-pass factor on the step, ~a ten-tick time constant.
 constexpr double kDeltaSmoothing = 0.1;
 
-/// How often the leaderboard reward tiers are recomputed. The ranking is a
-/// sort of every account and its answer changes over hours, so it is cached
-/// rather than resolved per kill.
-constexpr double kRankRefreshMillis = 15000.0;
-
 /// The batch a craft consumes.
 constexpr int kCraftBatch = 5;
 
@@ -573,10 +568,6 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // The spawner has no view of the socket list, so it queues the bosses it
     // admitted rather than announcing them.
     announceBossSpawns();
-
-    // The leaderboard reward tiers ride on the account component, refreshed on
-    // a slow clock rather than resolved per kill.
-    refreshRankMultipliers(nowMillis);
 }
 
 void GameServer::announceBossSpawns() {
@@ -628,49 +619,6 @@ void GameServer::announceBossSpawns() {
         }
     }
     spawning_->bossSpawns.clear();
-}
-
-void GameServer::refreshRankMultipliers(double nowMillis) {
-    if (nowMillis < nextRankRefreshMillis_) return;
-    nextRankRefreshMillis_ = nowMillis + kRankRefreshMillis;
-
-    // The ranking is POSITIONAL, not a score threshold: the top ten accounts by
-    // lifetime XP trade half their kill XP for a fifth again as many drops, and
-    // the next ten trade a quarter for a tenth. Staff are off the board, as
-    // they are off the leaderboard panel.
-    struct Row {
-        const std::string* userId;
-        double totalXp;
-    };
-    std::vector<Row> rows;
-    rows.reserve(database_.userCount());
-    for (const std::string& username : database_.usernames()) {
-        const Account* account = database_.findUser(username);
-        if (account == nullptr || account->admin) continue;
-        const PlayerRecord* record = database_.findProgress(account->id);
-        rows.push_back({&account->id, record ? record->totalXp : 0.0});
-    }
-    constexpr std::size_t kTopDrop = 10;
-    constexpr std::size_t kTopHalf = 20;
-    const std::size_t ranked = std::min(kTopHalf, rows.size());
-    std::partial_sort(rows.begin(), rows.begin() + static_cast<long>(ranked), rows.end(),
-                      [](const Row& a, const Row& b) { return a.totalXp > b.totalXp; });
-
-    Query<PlayerTag, PlayerAccount> accounts{world_};
-    accounts.each([&](Entity, PlayerTag&, PlayerAccount& account) {
-        // A guest -- and every bot -- ranks nowhere, which is the reference's
-        // answer for an undefined user id.
-        double xpMultiplier = 1.0;
-        double dropMultiplier = 1.0;
-        for (std::size_t i = 0; i < ranked; ++i) {
-            if (*rows[i].userId != account.userId) continue;
-            if (i < kTopDrop) { xpMultiplier = 0.5; dropMultiplier = 1.2; }
-            else { xpMultiplier = 0.75; dropMultiplier = 1.1; }
-            break;
-        }
-        account.xpMultiplier = xpMultiplier;
-        account.dropMultiplier = dropMultiplier;
-    });
 }
 
 void GameServer::bankPickups() {

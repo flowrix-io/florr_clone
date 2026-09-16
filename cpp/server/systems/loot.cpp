@@ -461,28 +461,16 @@ void LootSystem::awardDeaths(World& world, Rng& rng, double nowMillis) {
         world.add<LootAwarded>(corpse);
         if (eligible_.empty()) continue;
 
-        // A drop is ONE roll for the whole mob, so it is keyed to one player:
-        // the credited killer, falling back to the biggest damage dealer when
-        // the killing blow was nobody's -- a poison tick, a mob finishing a
-        // mob, a pet whose owner left. If that player is no longer in the world
-        // the mob pays out nothing at all, which is the reference's gate: the
-        // roll needs an account to read its multiplier off.
+        // A drop is ONE roll for the whole mob, and it needs a live player to
+        // credit it to: the killer, falling back to the biggest damage dealer
+        // when the killing blow was nobody's -- a poison tick, a mob finishing
+        // a mob, a pet whose owner left. If that player is no longer in the
+        // world the mob pays out nothing at all, which is the reference's gate.
         const Entity credit = world.has<PlayerTag>(killer) ? killer : ranked_.front().player;
         if (!world.has<PlayerTag>(credit)) continue;
 
-        // The drop half of that player's leaderboard reward tier: a chance at a
-        // second, independent roll of the whole table. The XP half of the same
-        // trade is paid per recipient, by the combat system.
-        double dropMultiplier = 1.0;
-        if (const PlayerAccount* account = world.tryGet<PlayerAccount>(credit)) {
-            dropMultiplier = account->dropMultiplier;
-        }
-
         selected_.clear();
         rollTable(table, mobRarity, rng);
-        if (dropMultiplier > 1.0 && rng.chance(dropMultiplier - 1.0)) {
-            rollTable(table, mobRarity, rng);
-        }
 
         const int copies = mobRarity == Rarity::Apex ? 10 : 1;
         for (const DropTables::Entry* entry : selected_) {

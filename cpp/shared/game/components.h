@@ -329,14 +329,6 @@ struct PlayerAccount {
     std::string username;
     net::ConnectionId connection = 0;
     bool admin = false;
-
-    /// This account's leaderboard reward tier, refreshed from the ranking on
-    /// the owner's cadence rather than looked up per kill. The top accounts
-    /// trade XP for drops, and the two halves are resolved differently: the XP
-    /// factor applies per RECIPIENT of a kill, the drop factor once per mob
-    /// from whoever led its damage.
-    double xpMultiplier = 1.0;
-    double dropMultiplier = 1.0;
 };
 
 /// The talent tree as the simulation sees it.

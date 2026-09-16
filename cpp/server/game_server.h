@@ -488,11 +488,6 @@ private:
     /// not by a mob at the same numbers on another.
     void collectSpawnBlockers(Realm realm, std::vector<MobDisc>& out) const;
 
-    /// Refreshes each live account's leaderboard reward tier from the ranking.
-    /// Cached rather than looked up per kill, as the reference caches it: the
-    /// ranking is a sort of every account and the answer changes slowly.
-    void refreshRankMultipliers(double nowMillis);
-
     /// Drains the spawner's boss queue into chat. Worded per recipient: a
     /// player standing in the boss's own section is told it spawned, everyone
     /// else that it spawned "somewhere".
@@ -951,8 +946,6 @@ private:
     /// Counts snapshots actually sent, which is what the far-band update
     /// cadence is staggered against (Replicator::farSnapshotStride).
     std::uint32_t snapshotIndex_ = 0;
-
-    double nextRankRefreshMillis_ = 0;
 
     /// The clock every deadline this class owns is measured against: the
     /// `nowMillis` the last tick was given.

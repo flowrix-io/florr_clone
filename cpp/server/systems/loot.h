@@ -232,8 +232,7 @@ private:
     /// expiry. The push is not a nicety -- nothing resolves the spawn scatter.
     void maintainDrops(double dt, CommandBuffer& commands);
     void awardDeaths(World& world, Rng& rng, double nowMillis);
-    /// One full pass of a mob's table into `selected_`. A leaderboard bonus
-    /// runs it a second time, which is what "an extra drop roll" means.
+    /// One full pass of a mob's table into `selected_`.
     void rollTable(const std::vector<DropTables::Entry>& table, Rarity mobRarity, Rng& rng);
 
     World* boundWorld_ = nullptr;

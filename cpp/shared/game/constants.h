@@ -203,19 +203,6 @@ inline double playerRadiusForLevel(int) {
     return kPlayerBaseRadius;
 }
 
-// -- leaderboard rewards -----------------------------------------------------
-//
-// The top accounts trade XP for loot. Membership is POSITIONAL -- the first ten
-// and first twenty non-admin accounts by lifetime XP, with no minimum -- so on
-// a small server everybody is "top ten" and everybody is on the reduced rate.
-// The ranking is cached rather than recomputed per kill.
-
-inline constexpr double kTopTenXpMultiplier = 0.5;
-inline constexpr double kTopTenDropMultiplier = 1.2;
-inline constexpr double kTopTwentyXpMultiplier = 0.75;
-inline constexpr double kTopTwentyDropMultiplier = 1.1;
-inline constexpr double kTopRankCacheMillis = 15000.0;
-
 // ---------------------------------------------------------------------------
 // Petals
 // ---------------------------------------------------------------------------

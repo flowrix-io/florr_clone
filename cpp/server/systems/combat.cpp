@@ -527,24 +527,12 @@ void CombatSystem::awardBounty(World& world, Entity victim) {
     std::vector<Entity> recipients;
     selectLootRecipients(shares, lootSlotsForRarity(rarity), squads, recipients);
 
-    // Resolved and rounded per RECIPIENT rather than once per mob, because the
-    // leaderboard factor is a property of the account being paid: the top ten
-    // accounts earn half XP off every kill and the next ten three quarters,
-    // which is the whole of the catch-up mechanic. payFullXpToEach() rounds
-    // AFTER multiplying, so a 0.5x share of 45 XP is 23 and not 22.
-    const double baseXp = bounty->xp;
+    // Every recipient is paid the mob's full XP -- the corpse is not split
+    // between them, and no account earns at a different rate than another.
+    const double xp = std::round(bounty->xp);
     for (const Entity recipient : recipients) {
         PlayerProgress* progress = world.tryGet<PlayerProgress>(recipient);
         if (progress == nullptr) continue;
-        const PlayerAccount* account = world.tryGet<PlayerAccount>(recipient);
-        // A ranking the owner has not written yet is worth full XP, never a
-        // NaN: this figure is added to a total that is persisted.
-        const double multiplier =
-            (account != nullptr && std::isfinite(account->xpMultiplier) &&
-             account->xpMultiplier >= 0.0)
-                ? account->xpMultiplier
-                : 1.0;
-        const double xp = std::round(baseXp * multiplier);
         progress->totalXp += xp;
         // The arena leaderboard counts the XP earned inside the ring
         // (src/server/playerManager.ts:929); a flower outside it has no score.
