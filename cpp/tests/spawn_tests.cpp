@@ -36,9 +36,9 @@ bool inSpawnPoint(const MapData& map, const std::string& spawnId, Vec2 at) {
 
 /// True when a band over `at` is DANGEROUS ground -- difficulty
 /// kDangerousGroundDifficulty or above, which is where the curve's blend first
-/// CAN produce a rare (difficulty 16.61, the top of pure uncommon). A spawn
-/// that lands in one of these is a spawn into mobs a fresh flower cannot
-/// fight.
+/// CAN produce a rare (difficulty 16.61, the top of pure uncommon), or the
+/// random-spread sentinel, whose spread reaches mythic. A spawn that lands in
+/// one of these is a spawn into mobs a fresh flower cannot fight.
 ///
 /// The invariant this expresses is the same one the old `spawnType` version
 /// did -- "no door under rare-or-better ground" -- said on the scale the map
@@ -47,6 +47,26 @@ bool inSpawnPoint(const MapData& map, const std::string& spawnId, Vec2 at) {
 bool onDangerousGround(const MapData& map, Vec2 at) {
     for (const MapElement& element : map.elements()) {
         if (!element.isSpawnBand()) continue;
+        if (!isDangerousGround(element.difficulty)) continue;
+        if (element.contains(at)) return true;
+    }
+    return false;
+}
+
+/// The same question asked of a door the AUTHOR drew, which is a weaker one: a
+/// RANDOM band (-1) is exempt.
+///
+/// Two different questions hide behind "is this ground safe". When the engine
+/// has to GUESS where to put a body -- a bot's birthplace, the fallback a
+/// door-less map uses -- a random band is dangerous and it refuses it, because
+/// its spread reaches mythic and nobody said to put anyone there. A door drawn
+/// inside one is the opposite case: the author placed that rectangle in that
+/// band deliberately, and the two statements together are the answer. Hel is
+/// the map that says it -- one random band, one door inside it.
+bool onDangerousGradedGround(const MapData& map, Vec2 at) {
+    for (const MapElement& element : map.elements()) {
+        if (!element.isSpawnBand()) continue;
+        if (isRandomDifficulty(element.difficulty)) continue;
         if (element.difficulty < kDangerousGroundDifficulty) continue;
         if (element.contains(at)) return true;
     }
@@ -231,15 +251,16 @@ TEST(the_shipped_catalogue_loads_and_resolves_its_defaults) {
         // The BAND COUNT IS NOT PINNED either: the author draws difficulty
         // onto a map as it is balanced. What is pinned is that each band the
         // file carries is one the engine can act on -- a difficulty at or
-        // above zero (a negative one would clamp and read as a mistake nobody
-        // was told about), an area that can contain a point, and either its
-        // own mob group that the content actually defines or none at all,
-        // which falls back to the map's.
+        // above zero, or the random-spread sentinel (-1, kRandomDifficulty),
+        // and nothing else in between; an area that can contain a point; and
+        // either its own mob group that the content actually defines or none
+        // at all, which falls back to the map's.
         int bands = 0, regions = 0, doors = 0, teleporters = 0;
         for (const MapElement& element : world.elements()) {
             if (element.isSpawnBand()) {
                 ++bands;
-                CHECK(element.difficulty >= 0.0);
+                CHECK(element.difficulty >= 0.0 ||
+                      element.difficulty == kRandomDifficulty);
                 CHECK(element.bounds.w > 0.0);
                 CHECK(element.bounds.h > 0.0);
                 for (const ZoneMobEntry& row : element.mobDistribution) {
@@ -976,6 +997,12 @@ TEST(every_pickable_door_stands_on_safe_open_ground) {
     // that can roll a rare at all. Checked over every staged map, so a hand
     // edit that slides a difficulty-40 band over a door does not ship
     // unnoticed.
+    //
+    // GRADED ground only -- see onDangerousGradedGround(). A door inside a
+    // random band is the author saying "this is where people arrive" on top of
+    // "this ground is the whole spread", and both are deliberate. The rule is
+    // about a band that CREPT over a door, and a -1 band never creeps: it is
+    // the one difficulty nobody types by accident.
     Terrain terrain;
     WorldMaps maps;
     std::string error;
@@ -995,7 +1022,7 @@ TEST(every_pickable_door_stands_on_safe_open_ground) {
         const MapElement& door = map->elements()[static_cast<std::size_t>(choice.element)];
         const Vec2 centre = door.centre();
         ++doors;
-        if (onDangerousGround(*map, centre)) {
+        if (onDangerousGradedGround(*map, centre)) {
             ::testing::reportFailure(__FILE__, __LINE__,
                                      "door " + choice.id + " on " + map->id() +
                                          " sits under a band of difficulty " +
@@ -1310,3 +1337,4 @@ TEST(every_body_a_dense_map_places_stands_on_open_ground) {
 
     flix::testsupport::removeDataDir(dir);
 }
+

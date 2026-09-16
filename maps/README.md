@@ -359,7 +359,7 @@ it carries decides which kind of object it is:
 
 | property | meaning |
 | --- | --- |
-| `difficulty` | **how dangerous** this ground is, a number from 0 up. Makes this a **band**. |
+| `difficulty` | **how dangerous** this ground is, a number from 0 up, or `-1` for the random spread. Makes this a **band**. |
 | `mobs` | the **distribution**: what actually appears here |
 
 - A shape with `difficulty` is a **band**. It owns a population of its own,
@@ -464,6 +464,44 @@ up — every point of a player's luck above neutral adds a hundredth of a tier, 
 a clover buys a percentage point of the tier above wherever its owner is
 standing. There is no downward drift: a difficulty-0 band is fully common for
 everyone, always.
+
+#### `difficulty: -1` — the random band
+
+One value is not a point on that curve at all. **`-1` means "don't grade this
+ground": roll the whole natural spread here**, common through mythic side by
+side, with no progression across the shape.
+
+| rarity | share |
+| --- | ---: |
+| common | 40% |
+| uncommon | 30% |
+| rare | 15% |
+| epic | 10% |
+| legendary | 4% |
+| mythic | 1% |
+
+Those are the TypeScript server's own `ENEMY_TIERS` probabilities
+(`src/constants.ts`) — what every ambient mob rolled there when it was *not*
+standing in a spawn zone — so a `-1` band is the old unbanded world, drawn as a
+shape. Luck works on it exactly as it does on the curve: a hundredth of a tier
+per point above neutral, here spent as that much chance of one tier up.
+
+Ultra and above are **not** in the spread. A boss is something a band asks for
+by difficulty; random ground never hands one out.
+
+Two consequences worth knowing before drawing one:
+
+- **The engine never *infers* a random band as beginner ground.** Its spread
+  reaches mythic, so a bot's birthplace and the fallback a door-less map uses
+  both refuse it, exactly as they refuse anything at difficulty 16.6 or above —
+  the sentinel being numerically *below* zero does not make it safe. **A door
+  you actually drew inside one still stands**, though: that rectangle in that
+  band is two deliberate statements, and `hel`'s door is exactly that.
+- **Anything that has to paint one colour on it** — the minimap, the map's load
+  line, a bot sizing up where to farm — reads the spread's *average* (tier 1.11,
+  a shade past uncommon). That is an appraisal, not what it rolls.
+
+`hel.tmj` is the map drawn this way: one band over the whole thing, `-1`.
 
 The curve lives in exactly one place, `cpp/shared/game/difficulty.h`. Its anchor
 table is the design statement; move it and every number in this section moves
@@ -814,8 +852,11 @@ derived from the file rather than pinned, because the author is still drawing)
 
 - `the_difficulty_curve_hits_the_four_authored_anchors` — 0, 100, 200 and 300
   give exactly the four sentences at the head of this section.
-- `difficulty_clamps_below_zero_and_ramps_past_three_hundred` — below 0 is
-  common; above 300 keeps climbing and stops at apex.
+- `difficulty_ramps_past_three_hundred` — above 300 the curve keeps climbing
+  and stops at apex.
+- `a_negative_difficulty_rolls_the_whole_natural_spread` — `-1` is the random
+  band: the 40/30/15/10/4/1 spread, nothing above mythic, appraised at the
+  spread's mean, and never beginner ground the engine picks for itself.
 - `a_higher_difficulty_never_spawns_a_lower_tier` — the curve is monotonic all
   the way up.
 - `luck_shifts_the_curve_upward_and_never_down`.

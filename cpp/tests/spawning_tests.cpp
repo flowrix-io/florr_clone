@@ -437,8 +437,12 @@ TEST(a_higher_difficulty_never_spawns_a_lower_tier) {
     // Monotonicity, over the whole authored range and past the end of it. A
     // curve that dipped anywhere would make a stretch of a map's progression
     // run backwards, which is the one thing a difficulty scale must not do.
+    //
+    // From zero up, because that is the scale: a NEGATIVE difficulty is the
+    // random-spread sentinel and not a point on this curve at all, so it is no
+    // more "gentler than zero" than a colour is. See the test below.
     double previous = -1.0;
-    for (double difficulty = -200.0; difficulty <= 600.0; difficulty += 0.25) {
+    for (double difficulty = 0.0; difficulty <= 600.0; difficulty += 0.25) {
         const double expected = expectedTier(difficulty);
         if (expected < previous - 1e-12) {
             ::testing::reportFailure(__FILE__, __LINE__,
@@ -454,14 +458,76 @@ TEST(a_higher_difficulty_never_spawns_a_lower_tier) {
     }
 }
 
-TEST(difficulty_clamps_below_zero_and_ramps_past_three_hundred) {
-    // Below zero clamps: there is nothing gentler than fully common.
-    for (const double difficulty : {-1.0, -50.0, -10000.0}) {
-        const TierMix mix = tierMixForDifficulty(difficulty);
-        CHECK(mix.lower == Rarity::Common);
-        CHECK_EQ(mix.upperChance, 0.0);
+TEST(a_negative_difficulty_rolls_the_whole_natural_spread) {
+    // The ONE difficulty that is not a point on the curve. -1 means "don't
+    // grade this ground": roll the reference's own unbanded distribution
+    // (ENEMY_TIERS, src/constants.ts) -- 40/30/15/10/4/1 over common..mythic --
+    // so one band holds every tier at once instead of a two-tier blend.
+    //
+    // The bug this pins is the one it was written for: a negative difficulty
+    // used to CLAMP, so a `-1` band grew nothing but commons and an author had
+    // no way at all to ask for a mixed one.
+    const auto spread = rolledSpread(kRandomDifficulty, 200000);
+    for (std::size_t tier = 0; tier < kNaturalRaritySpread.size(); ++tier) {
+        CHECK_NEAR(spread[tier], kNaturalRaritySpread[tier], 0.01);
+    }
+    // Every tier the table names actually comes up, and no tier it zeroes ever
+    // does: a random band is not a lottery for a boss.
+    for (std::size_t tier = 0; tier < kNaturalRaritySpread.size(); ++tier) {
+        if (kNaturalRaritySpread[tier] > 0.0) {
+            CHECK(spread[tier] > 0.0);
+        } else {
+            CHECK_EQ(spread[tier], 0.0);
+        }
+    }
+    CHECK(hardestNaturalRarity() == Rarity::Mythic);
+
+    // Any negative number is the sentinel, not a typo that clamps.
+    for (const double difficulty : {-1.0, -2.0, -50.0}) {
+        CHECK(isRandomDifficulty(difficulty));
+        Rng rng(11);
+        bool sawAboveCommon = false;
+        for (int i = 0; i < 1000; ++i) {
+            if (rollSpawnRarity(difficulty, kNeutralSpawnLuck, rng) != Rarity::Common) {
+                sawAboveCommon = true;
+            }
+        }
+        CHECK(sawAboveCommon);
     }
 
+    // Appraised at the spread's MEAN wherever one number is all there is room
+    // for -- the minimap's colour, a bot sizing up a band. An average, not a
+    // roll.
+    CHECK_NEAR(tierValueForDifficulty(kRandomDifficulty), 1.11, 1e-12);
+
+    // And it is never beginner ground, however far below zero it sorts: the
+    // spread reaches mythic, so a door and a newborn bot both refuse it.
+    CHECK(isDangerousGround(kRandomDifficulty));
+    CHECK(!isDangerousGround(0.0));
+    CHECK(isDangerousGround(kDangerousGroundDifficulty));
+
+    // Luck buys the same thing here as on the curve: a hundredth of a tier per
+    // point, spent as that much chance of one tier up.
+    double plainMean = 0.0, luckyMean = 0.0;
+    for (std::size_t tier = 0; tier < spread.size(); ++tier) {
+        plainMean += spread[tier] * static_cast<double>(tier);
+    }
+    {
+        Rng rng(99);
+        std::array<int, kRarityCount> counts{};
+        const double luck = kNeutralSpawnLuck + 100.0;
+        for (int i = 0; i < 200000; ++i) {
+            ++counts[static_cast<std::size_t>(rarityIndex(rollNaturalRarity(luck, rng)))];
+        }
+        for (std::size_t tier = 0; tier < counts.size(); ++tier) {
+            luckyMean += static_cast<double>(counts[tier]) / 200000.0 * static_cast<double>(tier);
+        }
+    }
+    // A hundred points of luck is a whole tier of expected gain.
+    CHECK_NEAR(luckyMean - plainMean, 1.0, 0.05);
+}
+
+TEST(difficulty_ramps_past_three_hundred) {
     // Above 300 CONTINUES the 200-to-300 slope instead of behaving like 300: a
     // bigger number must always mean at least as dangerous, and eventually
     // means apex. On the shipped anchors the slope is 0.0105 tiers per point,
@@ -2980,3 +3046,4 @@ TEST(a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground) {
         }
     }
 }
+

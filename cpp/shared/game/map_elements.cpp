@@ -388,23 +388,42 @@ std::string MapData::bandSummary() const {
     // absence: bands are the only source of ambient mobs there are, so such a
     // map grows nothing at all, and an author who sees an empty world needs to
     // be told it is their data rather than the spawner.
-    int bands = 0;
+    //
+    // A RANDOM band (kRandomDifficulty) is counted apart from the range rather
+    // than folded into it: it is not a point on the curve, and -1 at the soft
+    // end of a printed range would read as a typo instead of as the whole
+    // spread the author asked for.
+    int bands = 0, graded = 0, random = 0;
     double softest = 0.0;
     double hardest = 0.0;
     for (const MapElement& element : elements_) {
         if (!element.isSpawnBand()) continue;
-        if (bands == 0) softest = hardest = element.difficulty;
+        ++bands;
+        if (isRandomDifficulty(element.difficulty)) { ++random; continue; }
+        if (graded == 0) softest = hardest = element.difficulty;
         softest = std::min(softest, element.difficulty);
         hardest = std::max(hardest, element.difficulty);
-        ++bands;
+        ++graded;
     }
     if (bands == 0) return "NO SPAWN BANDS -- no mobs will spawn on this map";
 
-    char text[160];
-    std::snprintf(text, sizeof(text), "%d band%s difficulty %g (%s)..%g (%s)", bands,
+    char text[200];
+    if (graded == 0) {
+        // Every band on the map is a random one, so there is no range to print
+        // at all -- just what random ground grows.
+        std::snprintf(text, sizeof(text), "%d band%s, all random (common..%s)", bands,
+                      bands == 1 ? "" : "s", rarityName(hardestNaturalRarity()));
+        return text;
+    }
+    char randomText[64] = "";
+    if (random > 0) {
+        std::snprintf(randomText, sizeof(randomText), ", %d random (common..%s)", random,
+                      rarityName(hardestNaturalRarity()));
+    }
+    std::snprintf(text, sizeof(text), "%d band%s difficulty %g (%s)..%g (%s)%s", bands,
                   bands == 1 ? "" : "s", softest,
                   rarityName(dominantTierForDifficulty(softest)), hardest,
-                  rarityName(dominantTierForDifficulty(hardest)));
+                  rarityName(dominantTierForDifficulty(hardest)), randomText);
     return text;
 }
 
@@ -662,7 +681,7 @@ Vec2 MapData::defaultSpawn(Rng& rng, const Terrain& terrain,
     std::vector<const MapElement*> common;
     for (const MapElement& element : elements_) {
         if (!element.isSpawnBand()) continue;
-        if (element.difficulty >= kDangerousGroundDifficulty) continue;
+        if (isDangerousGround(element.difficulty)) continue;
         common.push_back(&element);
     }
     for (std::size_t i = common.size(); i > 1; --i) {

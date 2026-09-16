@@ -118,6 +118,10 @@ struct MapElement {
     /// band: see isMobRegion() below. Difficulty ZERO is a real answer -- a
     /// band that says `difficulty: 0` is a band of commons -- so it is the
     /// PRESENCE of the property, not its value, that makes a band.
+    ///
+    /// -1 (kRandomDifficulty) is the one value that is not a point on that
+    /// scale: it means "roll the whole natural spread here", common through
+    /// mythic side by side, the way the reference's unbanded world did.
     double difficulty = 0.0;
     bool hasDifficulty = false;
 

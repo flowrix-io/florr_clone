@@ -48,9 +48,11 @@ struct DifficultyAnchor {
 /// between common and ultra in tier value (t = 3.01: epic, with a per-cent of
 /// legendary in it) rather than halfway along the rarity ladder by count.
 ///
-/// Below the first anchor the curve clamps -- negative difficulty is difficulty
-/// zero, and "fully common" means fully common. ABOVE the last anchor it
-/// CONTINUES the final segment's slope toward apex and clamps t at 9: a
+/// Below the first anchor the curve clamps -- difficulty zero is the floor, and
+/// "fully common" means fully common. A NEGATIVE difficulty is not a point on
+/// this curve at all: it is the random-spread sentinel, see kRandomDifficulty.
+/// ABOVE the last anchor it CONTINUES the final segment's slope toward apex and
+/// clamps t at 9: a
 /// difficulty of 400 must never quietly mean the same as 300, so the tail is a
 /// ramp rather than a cap. On these numbers the final slope is 0.0105 tiers per
 /// point, so t reaches apex at difficulty 390.48.
@@ -82,8 +84,85 @@ inline constexpr double kTierValuePerLuckPoint = 0.01;
 /// The highest tier value: apex.
 inline constexpr double kMaxTierValue = static_cast<double>(kRarityCount - 1);
 
+// ---------------------------------------------------------------------------
+// The random band
+// ---------------------------------------------------------------------------
+
+/// The difficulty an author writes to mean "don't grade this ground -- roll the
+/// whole natural spread here".
+///
+/// A band on the curve above says one thing about its mobs, however finely: a
+/// difficulty is a point, and the blend either side of it is two tiers wide at
+/// most. Some ground wants the opposite -- everything from common to mythic
+/// side by side, the way the reference's UNBANDED world rolled every ambient
+/// mob (ENEMY_TIERS in src/constants.ts). That is what a negative difficulty
+/// asks for, and -1 is how it is written on a map.
+///
+/// Any negative number reads as the sentinel rather than as a mistake that
+/// clamps to common: authors type -1, and -2 meaning "slightly less than
+/// common" was never a thing the curve could express anyway.
+inline constexpr double kRandomDifficulty = -1.0;
+
+/// True when this difficulty is the sentinel above rather than a point on the
+/// curve.
+constexpr bool isRandomDifficulty(double difficulty) { return difficulty < 0.0; }
+
+/// THE NATURAL SPREAD: how often each tier comes up on random ground.
+///
+/// Copied verbatim off the reference's ENEMY_TIERS probabilities
+/// (src/constants.ts:260), which is the distribution every ambient mob in the
+/// TypeScript server rolled when it was not standing in a spawn zone. Ultra and
+/// above are zero here for the same reason they are zero there: a boss is an
+/// event a band asks for by difficulty, never something random ground hands
+/// out.
+inline constexpr std::array<double, kRarityCount> kNaturalRaritySpread = {{
+    0.40,  // common
+    0.30,  // uncommon
+    0.15,  // rare
+    0.10,  // epic
+    0.04,  // legendary
+    0.01,  // mythic
+    0.0,   // ultra
+    0.0,   // super
+    0.0,   // unique
+    0.0,   // apex
+}};
+
+/// The hardest tier the natural spread can actually produce -- mythic on these
+/// numbers. What "random ground" means said as a range, for anything reporting
+/// a band to a person.
+constexpr Rarity hardestNaturalRarity() {
+    int top = 0;
+    for (std::size_t i = 0; i < kNaturalRaritySpread.size(); ++i) {
+        if (kNaturalRaritySpread[i] > 0.0) top = static_cast<int>(i);
+    }
+    return clampRarity(top);
+}
+
+/// The tier value random ground is APPRAISED at -- the mean of the spread above
+/// (1.11 on these numbers: a shade past uncommon).
+///
+/// A random band has no single tier, so anything that has to put one number on
+/// it -- the minimap's colour, a bot deciding whether a band suits its gear,
+/// the map's summary line -- reads this. It is an average and nothing rolls it:
+/// the SPAWN goes through rollNaturalRarity() and can still come out mythic.
+constexpr double randomSpreadTierValue() {
+    double total = 0.0, weight = 0.0;
+    for (std::size_t i = 0; i < kNaturalRaritySpread.size(); ++i) {
+        total += kNaturalRaritySpread[i] * static_cast<double>(i);
+        weight += kNaturalRaritySpread[i];
+    }
+    return weight > 0.0 ? total / weight : 0.0;
+}
+inline constexpr double kRandomDifficultyTierValue = randomSpreadTierValue();
+
 /// The tier value `difficulty` spawns at. See kDifficultyAnchors.
+///
+/// Random ground (kRandomDifficulty) answers with the spread's MEAN, because
+/// one number is all this can return and the average is the honest one. It is
+/// not what a spawn there rolls -- see rollSpawnRarity().
 constexpr double tierValueForDifficulty(double difficulty) {
+    if (isRandomDifficulty(difficulty)) return kRandomDifficultyTierValue;
     // `!(x > y)` rather than `<=` so a NaN difficulty reads as the floor
     // instead of walking off the end of the table.
     if (!(difficulty > kDifficultyAnchors.front().difficulty)) {
@@ -152,6 +231,23 @@ constexpr double difficultyForTierValue(double tier) {
 inline constexpr double kDangerousGroundDifficulty =
     difficultyForTierValue(static_cast<double>(rarityIndex(Rarity::Rare)) - 1.0);
 
+/// Whether the engine may put a fresh flower down on ground of this difficulty
+/// when nobody told it where to put one.
+///
+/// The comparison itself, rather than each caller writing `>=` against the
+/// constant, because RANDOM ground is dangerous whatever its number says: its
+/// spread reaches mythic, and a sentinel that sorts below every threshold would
+/// otherwise read as the safest ground on the map -- which is how a newborn bot
+/// would end up standing in it.
+///
+/// This is about ground the engine PICKS: a bot's birthplace, the beginner-band
+/// fallback a door-less map uses. A door the author drew inside a random band
+/// is not this question -- that rectangle in that band is deliberate, and it
+/// stands. See `onDangerousGradedGround` in cpp/tests/spawn_tests.cpp.
+constexpr bool isDangerousGround(double difficulty) {
+    return isRandomDifficulty(difficulty) || difficulty >= kDangerousGroundDifficulty;
+}
+
 /// The two-tier blend a tier value spawns: `upper` with probability
 /// `upperChance`, `lower` otherwise.
 struct TierMix {
@@ -187,9 +283,34 @@ inline Rarity rollTierMix(const TierMix& mix, Rng& rng) {
     return rng.chance(mix.upperChance) ? mix.upper : mix.lower;
 }
 
+/// One roll of the natural spread: what random ground (kRandomDifficulty)
+/// grows, for a player of this luck.
+///
+/// Luck buys the same thing here as it does on the curve -- kTierValuePerLuckPoint
+/// of a tier, which off a discrete table is that much CHANCE of one tier up --
+/// so a clover is worth the same wherever its owner is standing.
+inline Rarity rollNaturalRarity(double luck, Rng& rng) {
+    double roll = rng.unit();
+    int index = 0;
+    for (std::size_t i = 0; i < kNaturalRaritySpread.size(); ++i) {
+        if (!(kNaturalRaritySpread[i] > 0.0)) continue;
+        // Set before the test, so a roll that rounding leaves past the end of
+        // the table lands on the last tier the spread actually contains rather
+        // than falling back to common.
+        index = static_cast<int>(i);
+        roll -= kNaturalRaritySpread[i];
+        if (roll < 0.0) break;
+    }
+    if (rng.chance(luckTierDrift(luck))) ++index;
+    return clampRarity(index);
+}
+
 /// THE spawn roll: the rarity a mob appearing on difficulty-`difficulty` ground
 /// comes out at, for a player of this luck.
 inline Rarity rollSpawnRarity(double difficulty, double luck, Rng& rng) {
+    // Random ground is not a point on the curve: it rolls the whole spread, so
+    // a common and a mythic can stand next to each other in one band.
+    if (isRandomDifficulty(difficulty)) return rollNaturalRarity(luck, rng);
     return rollTierMix(tierMixForTierValue(tierValueForDifficulty(difficulty) +
                                           luckTierDrift(luck)),
                        rng);

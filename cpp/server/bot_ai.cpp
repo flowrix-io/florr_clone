@@ -393,7 +393,7 @@ Vec2 GameServer::pickBotSpawn(const std::vector<MobDisc>& blockers) {
         for (const MapElement& element : map->elements()) {
             if (element.bounds.w <= 0 || element.bounds.h <= 0) continue;
             if (!element.isSpawnBand()) continue;
-            if (element.difficulty >= kDangerousGroundDifficulty) continue;
+            if (isDangerousGround(element.difficulty)) continue;
             anchors.push_back(&element);
         }
     }
