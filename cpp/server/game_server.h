@@ -388,7 +388,12 @@ private:
     /// travel as a Notice.
     void sendShopResult(net::Connection&, net::ShopResultKind, bool ok, double stars,
                         const std::string& message);
-    void broadcastChat(net::ChatChannel, const std::string& author, const std::string& text);
+    /// `speakerNetId` is the flower that said it, which is what lets every
+    /// client float the line over that body as well as printing it. Zero --
+    /// the default -- is the server talking in its own voice, and draws no
+    /// bubble over anybody.
+    void broadcastChat(net::ChatChannel, const std::string& author, const std::string& text,
+                       std::uint32_t speakerNetId = 0);
     /// One chat line to one connection, under a chosen author. The guild's own
     /// announcements are signed "[Guild NAME]" rather than "System", which a
     /// Notice -- whose author is always System -- cannot express.

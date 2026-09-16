@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "client/chat_bubbles.h"
 #include "client/world_view.h"
 #include "shared/game/config.h"
 #include "shared/game/skin_format.h"
@@ -179,6 +180,9 @@ struct ChatLine {
     net::ChatChannel channel = net::ChatChannel::Global;
     std::string author;
     std::string text;
+    /// The flower that said it, or 0 for anything the server said in its own
+    /// voice. What the bubble over a speaker's head is anchored to.
+    std::uint32_t speakerNetId = 0;
     double receivedAtMillis = 0;
     /// Unix milliseconds, for the "[3:04:05 PM]" stamp the transcript prints.
     /// Separate from `receivedAtMillis`, which is monotonic uptime and so
@@ -372,6 +376,10 @@ public:
     const Profile& profile() const { return profile_; }
     const std::string& sessionToken() const { return sessionToken_; }
     const std::vector<ChatLine>& chat() const { return chat_; }
+    /// The same lines, as the world-anchored bubbles over the flowers that
+    /// said them. Aged by ageChatBubbles(), drawn by the world renderer.
+    const ChatBubbles& chatBubbles() const { return chatBubbles_; }
+    void ageChatBubbles(double dtSeconds) { chatBubbles_.update(dtSeconds); }
     const DailyStreak& dailyStreak() const { return dailyStreak_; }
 
     /// Every published skin the server has told this client about, the one this
@@ -506,8 +514,10 @@ private:
     void handleMazeInfo(ByteReader&);
     void handleChat(ByteReader&);
     void handleNotice(ByteReader&);
-    /// Appends one line and trims the transcript to its cap.
-    void pushChat(net::ChatChannel, std::string author, std::string text);
+    /// Appends one line and trims the transcript to its cap. A non-zero
+    /// `speakerNetId` also raises a bubble over that flower.
+    void pushChat(net::ChatChannel, std::string author, std::string text,
+                  std::uint32_t speakerNetId = 0);
     void handleDied(ByteReader&);
     void handleRevived(ByteReader&);
     void handleCraftResult(ByteReader&);
@@ -561,6 +571,7 @@ private:
     Profile profile_;
     std::string sessionToken_;
     std::vector<ChatLine> chat_;
+    ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 
     std::vector<CustomSkin> skinCatalog_;

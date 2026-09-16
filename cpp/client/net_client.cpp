@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 
+#include "client/ui/markup.h"
 #include "client/web/reload.h"
 #include "shared/game/map_elements.h"
 
@@ -130,6 +131,7 @@ void NetClient::disconnect() {
     dialer_.disconnect();
     status_ = Status::Offline;
     view_.clear();
+    chatBubbles_.clear();
     dead_ = false;
     revived = false;
     // An explicit disconnect is a decision, not an accident: nothing redials
@@ -259,6 +261,7 @@ void NetClient::logout() {
     craftOutcome_ = CraftOutcome{};
     shopOutcome_ = ShopOutcome{};
     view_.clear();
+    chatBubbles_.clear();
     dead_ = false;
     revived = false;
     killerName_.clear();
@@ -293,6 +296,7 @@ void NetClient::leaveGame() {
     send(w);
     if (status_ == Status::Playing) status_ = Status::LoggedIn;
     view_.clear();
+    chatBubbles_.clear();
     dead_ = false;
     revived = false;
 }
@@ -556,6 +560,7 @@ void NetClient::onDisconnect(net::Connection&, const std::string& reason) {
     status_ = Status::Failed;
     lastError_ = reason;
     view_.clear();
+    chatBubbles_.clear();
     // A server restart looks exactly like this from here, and it is the case
     // the redial exists for.
     armReconnect();
@@ -869,6 +874,7 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     dead_ = false;
     revived = false;
     view_.clear();
+    chatBubbles_.clear();
     // After the clear, which resets it: the realm is the one thing about the
     // new body the snapshot stream never restates. The maze is built from the
     // server's day number so the walls drawn are the walls collided with.
@@ -900,6 +906,7 @@ void NetClient::handleRealmChange(ByteReader& reader) {
     // The view holds entities in the realm it was streaming; every one of them
     // is in another coordinate space now and none of them will be restated.
     view_.clear();
+    chatBubbles_.clear();
     view_.setRealm(realm);
     // The camera must not ease across two worlds. The App snaps it to the
     // arrival on the frame it sees the realm change, which is what this flag
@@ -915,13 +922,30 @@ void NetClient::handleMazeInfo(ByteReader& reader) {
     setActiveMazeDay(day);
 }
 
-void NetClient::pushChat(net::ChatChannel channel, std::string author, std::string text) {
+void NetClient::pushChat(net::ChatChannel channel, std::string author, std::string text,
+                         std::uint32_t speakerNetId) {
     ChatLine line;
     line.channel = channel;
     line.author = std::move(author);
     line.text = std::move(text);
+    line.speakerNetId = speakerNetId;
     line.receivedAtMillis = nowMillis();
     line.wallClockMillis = wallClockMillis();
+
+    // Only what somebody in the world said floats over the world: a System
+    // announcement or a squad's private line has no body to sit over.
+    //
+    // Flattened through the same parser the transcript styles itself with, so
+    // the bubble says what the transcript says. A bubble is one pill of one
+    // colour, so the styling is dropped rather than honoured -- but a line
+    // whose tags were left in it would show them as literal angle brackets.
+    if (channel == net::ChatChannel::Global) {
+        std::string spoken = ui::markupPlainText(line.text);
+        // A bubble is one pill on one row; a hard break inside it would
+        // otherwise draw as a missing glyph in the middle of the line.
+        std::replace(spoken.begin(), spoken.end(), '\n', ' ');
+        chatBubbles_.add(speakerNetId, std::move(spoken));
+    }
 
     chat_.push_back(std::move(line));
     if (chat_.size() > kMaxChatLines) {
@@ -990,8 +1014,9 @@ void NetClient::handleChat(ByteReader& reader) {
     const auto channel = static_cast<net::ChatChannel>(reader.u8());
     std::string author = reader.str();
     std::string text = reader.str();
+    const std::uint32_t speakerNetId = reader.u32();
     if (!reader.ok()) return;
-    pushChat(channel, std::move(author), std::move(text));
+    pushChat(channel, std::move(author), std::move(text), speakerNetId);
 }
 
 void NetClient::handleNotice(ByteReader& reader) {

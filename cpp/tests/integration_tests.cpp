@@ -280,6 +280,55 @@ TEST(chat_reaches_the_other_player) {
     CHECK(found);
 }
 
+TEST(a_spoken_line_is_anchored_to_the_speakers_body) {
+    // The whole point of the speaker id on the wire: a listener has to be able
+    // to find the flower that said it in their OWN view, which means the id is
+    // the one the snapshot stream uses and not an index into anything local.
+    Harness h("bubble");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice, bob;
+    CHECK(connectClient(h, alice));
+    CHECK(connectClient(h, bob));
+    alice.requestRegister("alice", "password1");
+    bob.requestRegister("bob", "password2");
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return alice.status() == NetClient::Status::LoggedIn &&
+               bob.status() == NetClient::Status::LoggedIn;
+    }));
+    alice.joinGame(1280, 720, {}, "alice");
+    bob.joinGame(1280, 720, {}, "bob");
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return alice.status() == NetClient::Status::Playing &&
+               bob.status() == NetClient::Status::Playing &&
+               alice.view().self().netId != 0;
+    }));
+
+    const std::size_t before = bob.chat().size();
+    alice.sendChat("over my head");
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return bob.chat().size() > before; }));
+
+    const std::uint32_t aliceNetId = alice.view().self().netId;
+    bool anchored = false;
+    for (const ChatLine& line : bob.chat()) {
+        if (line.text == "over my head") anchored = line.speakerNetId == aliceNetId;
+    }
+    CHECK(anchored);
+
+    // And the speaker's own client raises the bubble over its own body, which
+    // is the case a "broadcast to everyone else" would quietly miss.
+    CHECK_EQ(alice.chatBubbles().all().size(), std::size_t{1});
+    if (!alice.chatBubbles().all().empty()) {
+        CHECK_EQ(alice.chatBubbles().all()[0].speakerNetId, aliceNetId);
+        CHECK_EQ(alice.chatBubbles().all()[0].text, std::string("over my head"));
+    }
+
+    // Nobody said the server's own announcements, so they float over no body.
+    const std::size_t bubblesBefore = bob.chatBubbles().all().size();
+    bob.addSystemMessage("A super Hornet has spawned!");
+    CHECK_EQ(bob.chatBubbles().all().size(), bubblesBefore);
+}
+
 TEST(chat_flooding_is_rate_limited) {
     Harness h("flood");
     if (!h.ready) { CHECK(false); return; }

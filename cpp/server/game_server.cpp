@@ -1210,12 +1210,13 @@ void GameServer::sendShopResult(net::Connection& connection, net::ShopResultKind
 }
 
 void GameServer::broadcastChat(net::ChatChannel channel, const std::string& author,
-                               const std::string& text) {
+                               const std::string& text, std::uint32_t speakerNetId) {
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Chat));
     w.u8(static_cast<std::uint8_t>(channel));
     w.str(author);
     w.str(text);
+    w.u32(speakerNetId);
     listener_.each([&](net::Connection& connection) {
         const Session* session = sessionFor(connection.id());
         if (session && session->authenticated()) connection.send(w);
@@ -1409,7 +1410,15 @@ void GameServer::handleChat(Session& session, net::Connection& connection, ByteR
         return;
     }
 
-    broadcastChat(net::ChatChannel::Global, session.username, text);
+    // The body the line is said FROM, so every client can float it over that
+    // flower. Zero while the speaker is on the title screen or dead -- there
+    // is nothing in the world to anchor a bubble to then, and the line is
+    // still printed in the transcript.
+    std::uint32_t speakerNetId = 0;
+    if (session.playing()) {
+        if (const NetId* id = world_.tryGet<NetId>(session.entity)) speakerNetId = id->value;
+    }
+    broadcastChat(net::ChatChannel::Global, session.username, text, speakerNetId);
 
     // Somebody saying "super" or "unique" rallies every bot onto the best boss
     // in the world, exactly as the reference's chat handler does. Only those
@@ -1929,6 +1938,7 @@ void sendSkinChat(net::Connection& connection, const std::string& text) {
     w.u8(static_cast<std::uint8_t>(net::ChatChannel::System));
     w.str("Skins");
     w.str(text);
+    w.u32(0);   // the studio, not a flower: no bubble over anybody
     connection.send(w);
 }
 
@@ -2283,6 +2293,9 @@ void GameServer::sendChatTo(net::Connection& connection, net::ChatChannel channe
     w.u8(static_cast<std::uint8_t>(channel));
     w.str(author);
     w.str(text);
+    // Nobody in the world said this: a directed line is the server answering
+    // one player, so it prints in the transcript and floats over no flower.
+    w.u32(0);
     connection.send(w);
 }
 

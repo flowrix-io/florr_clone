@@ -129,6 +129,7 @@ target_link_libraries(flowrix_server PRIVATE flix_server)
 # --- client ------------------------------------------------------------------
 add_library(flix_client STATIC
   client/app.cpp
+  client/chat_bubbles.cpp
   client/net_client.cpp
   client/world_view.cpp
   client/ui/draw.cpp

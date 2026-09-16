@@ -744,6 +744,10 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // the renderer holds the container and looks a wearer up per frame rather
     // than caching a resolved pointer that a takedown would dangle.
     renderer_.setSkinCatalog(&net_.skinCatalog());
+    // What each flower was last heard saying, for the bubbles over their
+    // heads. Owned by NetClient for the same reason the catalog is: the lines
+    // arrive on the socket, and the renderer reads the live list per frame.
+    renderer_.setChatBubbles(&net_.chatBubbles());
     // NetClient keeps this object alive for the entire connection and replaces
     // its grid with the server's authoritative one when a game is joined.
     renderer_.setTerrain(&net_.terrain());
@@ -1136,6 +1140,10 @@ void App::frame(double dt) {
     if (inWorld) {
         renderer_.ingestEvents(net_.view());
         renderer_.update(dt);
+        // Bubbles expire on the frame clock, like every other timed visual
+        // here, and only while there is a world for them to float over --
+        // leaving the game clears them outright.
+        net_.ageChatBubbles(dt);
         // Pinned, not eased: the reference keeps the flower exactly on the
         // screen centre, which is what the cursor-relative control law reads.
         // The EASE is on the flower itself, one frame earlier -- see frame().

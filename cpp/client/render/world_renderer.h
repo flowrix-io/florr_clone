@@ -17,6 +17,7 @@
 #include "canvas.h"
 
 #include "client/camera.h"
+#include "client/chat_bubbles.h"
 #include "client/render/sprites.h"
 #include "client/world_view.h"
 #include "shared/core/types.h"
@@ -163,6 +164,11 @@ public:
     /// previews a cosmetic by drawing the very same body the world does --
     /// a second, panel-only copy of each skin is exactly how the two drift.
     void drawFlowerBody(Canvas&, const RemoteEntity&, double timeSeconds) const;
+
+    /// What every flower on screen has been heard saying, borrowed from
+    /// NetClient. Optional: without it -- a tool, a test, a preview -- nobody
+    /// speaks and no bubble is drawn.
+    void setChatBubbles(const ChatBubbles* bubbles) { chatBubbles_ = bubbles; }
 
     /// The published skin catalog a wearer's id is resolved against, borrowed
     /// from NetClient. Optional: without it -- a tool, a test, a replay -- a
@@ -331,6 +337,10 @@ private:
     void drawPlayerPlate(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
                          double timeSeconds) const;
     void drawCorpse(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
+    /// Every live bubble, over the flower that said it. Drawn last of all, on
+    /// top of the whole world: a line somebody is saying must not end up
+    /// behind a mob that happens to be standing in front of them.
+    void drawChatBubbles(Canvas&, const EntityMap&, const Camera&, Vec2 selfDrawn) const;
     void drawPetalSprite(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
                          double timeSeconds) const;
     /// The soft disc under an emissive petal. cpp_canvas has no radial
@@ -361,6 +371,7 @@ private:
     const ContentRegistry* content_ = nullptr;
     const SpriteCache* sprites_ = nullptr;
     const std::vector<CustomSkin>* skinCatalog_ = nullptr;
+    const ChatBubbles* chatBubbles_ = nullptr;
     const Terrain* terrain_ = nullptr;
     const WorldMaps* worldMaps_ = nullptr;
     const MapData* map_ = nullptr;

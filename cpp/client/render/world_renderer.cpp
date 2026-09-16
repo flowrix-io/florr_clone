@@ -101,6 +101,24 @@ constexpr double kFramesPerSecond = 60.0;
 /// which grows with level -- the body never does.
 constexpr double kFlowerArtRadius = 25.0;
 
+// --- chat bubbles ----------------------------------------------------------
+//
+// The reference's geometry (rysteria_gardn Client/Render/RenderChat.cc and
+// Server/Process/Chat.cc), in world units: an 18-unit line inside a pill three
+// units taller on each side, floating 45 units clear of the speaker's body
+// with each older line 28 units above the one under it.
+constexpr double kChatBubbleTextSize = 18.0;
+constexpr double kChatBubblePadding = 3.0;      ///< pill half-height minus half the text
+constexpr double kChatBubbleGap = 45.0;         ///< clear of the body's edge
+constexpr double kChatBubbleRowStep = 28.0;     ///< one row to the next
+/// The pill is the flower's own yellow at the reference's 0xc0 alpha, so a
+/// bubble reads as coming off the body it sits over.
+constexpr std::uint32_t kChatBubbleFill = 0xFFE763u;
+constexpr double kChatBubbleFillAlpha = 0.75;   // 0xc0/255
+/// A retiring bubble grows as it fades, which is what the reference's
+/// `scale(1 + 0.5 * deletion_animation)` does.
+constexpr double kChatBubbleExitScale = 0.5;
+
 /// A petal's artwork is 20 world units of diameter per size unit -- gardn's
 /// petal radius, and the scale the item tile states its icons in
 /// (ui::kPetalArtSize). Its hit radius is the same 10 per size unit -- a petal
@@ -1492,6 +1510,80 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
     }
 }
 
+void WorldRenderer::drawChatBubbles(Canvas& canvas, const EntityMap& entities,
+                                    const Camera& camera, Vec2 selfDrawn) const {
+    if (chatBubbles_ == nullptr) return;
+    const double zoom = camera.zoom();
+
+    for (const ChatBubble& bubble : chatBubbles_->all()) {
+        // A bubble is anchored to a body, not to a place: it has nowhere to be
+        // while its speaker is out of the stream or lying dead, and it ages on
+        // regardless so it cannot reappear stale.
+        const auto found = entities.find(bubble.speakerNetId);
+        if (found == entities.end()) continue;
+        const RemoteEntity& speaker = found->second;
+        if (speaker.kind != net::EntityKind::Player || speaker.dead()) continue;
+
+        // The same position rule the entity pass uses, so the bubble tracks the
+        // flower exactly rather than lagging it by the viewer's own ease.
+        const Vec2 at = speaker.isSelf() ? selfDrawn : speaker.position;
+        const Vec2 screen = camera.worldToScreen(at);
+
+        const double alpha = ChatBubbles::fade(bubble);
+        if (alpha <= 0.0) continue;
+        // Grows as it goes, about its own centre.
+        const double scale = 1.0 + kChatBubbleExitScale * (1.0 - alpha);
+
+        // Clear of the DRAWN body, not the hitbox: the artwork is what the
+        // player sees the bubble sitting over, and the two differ by the size
+        // modifiers a loadout carries.
+        const double bodyRadius = kFlowerArtRadius * playerSizeMultiplier(speaker);
+        const double lift = bodyRadius + kChatBubbleGap + bubble.row * kChatBubbleRowStep;
+        const double centreY = screen.y - lift * zoom;
+
+        const double textSize = kChatBubbleTextSize * zoom * scale;
+        if (textSize < 1.0) continue;   // too far to read, and too small to cost a path
+        const double pillHeight = (kChatBubbleTextSize + 2.0 * kChatBubblePadding) * zoom * scale;
+        const double textWidth = ui::textWidth(canvas, bubble.text, textSize);
+        // The reference draws the pill as one round-capped stroke, so the caps
+        // add half its height at each end; a rounded rect of the same radius is
+        // the same shape without a line-cap join to rasterize.
+        const double pillWidth = textWidth + pillHeight;
+
+        // Against the camera's viewport, which is in DESIGN units -- the space
+        // worldToScreen answers in. canvas.width() is a pixel count, and on a
+        // window the base transform is scaling down it is the smaller number,
+        // so culling against it drops bubbles that are on screen.
+        if (screen.x + pillWidth * 0.5 < 0 ||
+            screen.x - pillWidth * 0.5 > camera.viewportWidth() ||
+            centreY + pillHeight < 0 || centreY - pillHeight > camera.viewportHeight()) {
+            continue;
+        }
+
+        // One alpha over the pill AND its text: a bubble fades as one object,
+        // and tinting the two separately leaves the letters hanging in the air
+        // after the pill under them has gone.
+        canvas.save();
+        if (alpha < 1.0) canvas.setGlobalAlpha(static_cast<float>(alpha));
+
+        ui::setFill(canvas, kChatBubbleFill, kChatBubbleFillAlpha);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(screen.x - pillWidth * 0.5),
+                         static_cast<float>(centreY - pillHeight * 0.5),
+                         static_cast<float>(pillWidth), static_cast<float>(pillHeight),
+                         static_cast<float>(pillHeight * 0.5));
+        canvas.fill();
+
+        ui::TextStyle style;
+        style.size = textSize;
+        style.align = ui::Align::Centre;
+        style.baseline = ui::Baseline::Middle;
+        style.strokeWidth = textSize * 0.16;
+        ui::text(canvas, bubble.text, screen.x, centreY, style);
+        canvas.restore();
+    }
+}
+
 void WorldRenderer::drawCorpse(Canvas& canvas, const RemoteEntity& entity, const Camera& camera,
                                Vec2 at, double timeSeconds) const {
     const double zoom = camera.zoom();
@@ -2767,6 +2859,9 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     }
 
     drawEffects(canvas, camera);
+    // Last of all, over every body and every effect: what somebody is saying
+    // is the one thing on screen that must never be hidden behind the fight.
+    drawChatBubbles(canvas, entities, camera, selfDrawn);
 }
 
 } // namespace flix

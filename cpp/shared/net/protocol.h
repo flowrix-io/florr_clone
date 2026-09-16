@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 24;
+inline constexpr std::uint16_t kProtocolVersion = 25;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -114,7 +114,10 @@ enum class ServerMessage : std::uint8_t {
                         ///< server is playing, so the client builds the same
                         ///< walls without any of them going over the wire.
     Snapshot,           ///< see below
-    Chat,               ///< u8 channel, str author, str text
+    Chat,               ///< u8 channel, str author, str text, u32 speakerNetId.
+                        ///< `speakerNetId` is the flower that said it, so the
+                        ///< line can also be drawn as a bubble over that body;
+                        ///< 0 for anything the server said in its own voice.
     Notice,             ///< u8 severity, str text
     Died,               ///< str killerName, u32 xpLost, u32 survivedTicks
     CraftResult,        ///< u8 success, u16 itemType, u8 rarity, u16 crafted,
