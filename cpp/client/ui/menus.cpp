@@ -166,28 +166,63 @@ bool menuKeyIsRebindable(int menu) {
 
 // --- the loadout bar --------------------------------------------------------
 
-/// The browser's two HContainers, in design px at scale 1: 70px primary slots
-/// 20 apart over 50px secondary slots 15 apart, with the trash appended to the
-/// second row. `kLoadoutBottomPad` is NOT scaled -- it is the phone-keyboard
-/// gap, and the browser leaves it at 34 whatever the slots do.
-constexpr double kLoadoutPrimarySize = 70.0;
-constexpr double kLoadoutSecondarySize = 50.0;
-constexpr double kLoadoutPrimaryGap = 20.0;
-constexpr double kLoadoutSecondaryGap = 15.0;
-constexpr double kLoadoutPrimaryMargin = 5.0;
-constexpr double kLoadoutSecondaryMargin = 10.0;
-constexpr double kLoadoutBottomPad = 34.0;
+/// One of the bar's two shapes, in design px at scale 1. Every metric is
+/// scaled by `inGameScale` in game and drawn at 1 on the title screen, except
+/// `bottomPad`, which is the phone-keyboard gap and never scales.
+struct LoadoutMetrics {
+    double primarySize;
+    double secondarySize;
+    double primaryGap;
+    double secondaryGap;
+    /// Vertical padding above the primary row and around the secondary one --
+    /// gardn's HContainer margins. Their sum is the gap between the rows.
+    double primaryMargin;
+    double secondaryMargin;
+    double bottomPad;
+    double inGameScale;
+    /// Key caps under the secondary row rather than above the primary one.
+    /// They follow the secondary row's columns either way; the two rows are
+    /// separately centred, so the tenth of one is never above the tenth of
+    /// the other.
+    bool capsBelow;
+    /// The trash slot on the end of the second row, the [T] that empties the
+    /// armed slot, and the Q/E selection that arms it. The reference game has
+    /// none of the three -- its second row is reached with the number keys
+    /// alone, and a petal is thrown away by dragging it off the bar -- so they
+    /// belong to the classic shape only.
+    bool secondaryPicker;
+};
+
+/// The bar the reference game draws, measured off it at this client's design
+/// width: 70px primary slots 10 apart over 51px secondary slots 6 apart, both
+/// rows full size in game, the number captions under the second row. This is
+/// the default.
+constexpr LoadoutMetrics kModernLoadout{70.0, 51.0, 10.0, 6.0, 5.0, 5.0, 19.0, 1.0, true, false};
+
+/// What this client shipped before, and what ClientSettings::classicLoadoutBar
+/// puts back: the browser port's two HContainers -- 70px primary slots 20
+/// apart over 50px secondary slots 15 apart, shrunk to three quarters in game,
+/// captions above the primary row.
+constexpr LoadoutMetrics kClassicLoadout{70.0, 50.0, 20.0, 15.0, 5.0, 10.0, 34.0, 0.75, false, true};
+
+constexpr const LoadoutMetrics& loadoutMetrics(bool classic) {
+    return classic ? kClassicLoadout : kModernLoadout;
+}
 
 /// The title screen hands the bar a fixed box below centre rather than the
 /// whole window, so it sits under the spawn picker's two rows (tabs, then
-/// doors) instead of on the bottom edge. In game it owns the viewport at
-/// three-quarter scale.
+/// doors) instead of on the bottom edge. In game it owns the viewport, at
+/// whatever scale its metrics ask for.
 constexpr double kTitleLoadoutWidth = 900.0;
 constexpr double kTitleLoadoutHeight = 210.0;
 constexpr double kTitleLoadoutDrop = 50.0;
-constexpr double kInGameLoadoutScale = 0.75;
 
-/// The captions above the primary row. Bracketed, as gardn draws them, and
+/// How far a key cap sits from the row it names: above its top edge with the
+/// classic metrics, below its bottom edge with the modern ones.
+constexpr double kLoadoutCapAbove = 15.0;
+constexpr double kLoadoutCapBelow = 13.0;
+
+/// The captions for the primary row. Bracketed, as gardn draws them, and
 /// ending on [0] because the tenth slot is the zero key.
 constexpr const char* kLoadoutKeyCaps[kLoadoutBarPrimary] = {"[1]", "[2]", "[3]", "[4]", "[5]",
                                                              "[6]", "[7]", "[8]", "[9]", "[0]"};
@@ -206,24 +241,44 @@ struct LoadoutLayout {
     Rect trash{};
 };
 
-LoadoutLayout layoutLoadout(Rect box, double scale) {
-    const double primarySize = kLoadoutPrimarySize * scale;
-    const double secondarySize = kLoadoutSecondarySize * scale;
-    const double primaryGap = kLoadoutPrimaryGap * scale;
-    const double secondaryGap = kLoadoutSecondaryGap * scale;
-    const double primaryMargin = kLoadoutPrimaryMargin * scale;
-    const double secondaryMargin = kLoadoutSecondaryMargin * scale;
+/// How much the metrics have to give back for the wider of the two rows to
+/// fit the box the bar is centred in. 1 at every ordinary window shape -- the
+/// modern primary row is 790 design units across and the design space is
+/// 1920 -- and below 1 only where the viewport is narrower than the bar
+/// itself, which is a window far taller than it is wide. Without it the row
+/// simply runs off both edges.
+double loadoutFitScale(const LoadoutMetrics& metrics, double boxWidth, double scale) {
+    const int cols = kLoadoutBarPrimary;
+    const double primaryRowW =
+        (cols * metrics.primarySize + (cols - 1) * metrics.primaryGap) * scale;
+    const double secondaryRowW =
+        (cols * metrics.secondarySize + (cols - 1) * metrics.secondaryGap +
+         (metrics.secondaryPicker ? metrics.secondaryGap + metrics.secondarySize : 0.0)) *
+        scale;
+    const double widest = std::max(primaryRowW, secondaryRowW);
+    if (!(widest > 0) || !(boxWidth > 0) || widest <= boxWidth) return 1.0;
+    return boxWidth / widest;
+}
+
+LoadoutLayout layoutLoadout(Rect box, const LoadoutMetrics& metrics, double scale) {
+    const double primarySize = metrics.primarySize * scale;
+    const double secondarySize = metrics.secondarySize * scale;
+    const double primaryGap = metrics.primaryGap * scale;
+    const double secondaryGap = metrics.secondaryGap * scale;
+    const double primaryMargin = metrics.primaryMargin * scale;
+    const double secondaryMargin = metrics.secondaryMargin * scale;
     const int cols = kLoadoutBarPrimary;
 
     const double primaryRowW = cols * primarySize + (cols - 1) * primaryGap;
-    // The secondary row's width counts the trash, which is why the two rows do
-    // not share a start x.
-    const double secondaryRowW =
-        cols * secondarySize + (cols - 1) * secondaryGap + secondaryGap + secondarySize;
+    // The secondary row's width counts the trash where there is one, which is
+    // part of why the two rows do not share a start x; the other part is that
+    // its slots are smaller. Both rows are centred in the box either way.
+    const double secondaryRowW = cols * secondarySize + (cols - 1) * secondaryGap +
+                                 (metrics.secondaryPicker ? secondaryGap + secondarySize : 0.0);
     const double primaryStartX = box.x + (box.w - primaryRowW) * 0.5;
     const double secondaryStartX = box.x + (box.w - secondaryRowW) * 0.5;
 
-    const double bottomPad = kLoadoutBottomPad + secondaryMargin;
+    const double bottomPad = metrics.bottomPad + secondaryMargin;
     const double secondaryY = box.y + box.h - bottomPad - secondarySize;
     const double primaryY = secondaryY - secondaryMargin - primaryMargin - primarySize;
 
@@ -242,13 +297,27 @@ LoadoutLayout layoutLoadout(Rect box, double scale) {
 
 } // namespace
 
-double inGameLoadoutBarHeight() {
+double inGameLoadoutBarHeight(bool classic, double viewWidth) {
     // The primary row's top, measured from the bottom edge: everything
-    // layoutLoadout stacks between the two, at the in-game scale.
-    const double scale = kInGameLoadoutScale;
-    return kLoadoutBottomPad + (kLoadoutSecondaryMargin + kLoadoutSecondarySize +
-                                kLoadoutSecondaryMargin + kLoadoutPrimaryMargin +
-                                kLoadoutPrimarySize) * scale;
+    // layoutLoadout stacks between the two, at the in-game scale -- and at
+    // whatever that scale had to give back to fit a narrow viewport, so this
+    // stays the height of the bar actually drawn.
+    const LoadoutMetrics& metrics = loadoutMetrics(classic);
+    const double scale =
+        metrics.inGameScale * loadoutFitScale(metrics, viewWidth, metrics.inGameScale);
+    return metrics.bottomPad + (metrics.secondaryMargin + metrics.secondarySize +
+                                metrics.secondaryMargin + metrics.primaryMargin +
+                                metrics.primarySize) * scale;
+}
+
+double titleHintsOffsetY(bool classic) {
+    const LoadoutMetrics& metrics = loadoutMetrics(classic);
+    // The lowest slot edge the title box holds, then whatever hangs under it.
+    // The hints start just inside the box's own lower edge when nothing does,
+    // which is where the reference puts them.
+    const double rowBottom =
+        kTitleLoadoutDrop + kTitleLoadoutHeight - metrics.bottomPad - metrics.secondaryMargin;
+    return rowBottom + (metrics.capsBelow ? kLoadoutCapBelow + 10.0 : 9.0);
 }
 
 namespace {
@@ -441,6 +510,7 @@ bool ClientSettings::load(const std::string& path) {
         // the player had chosen; only ever written under the new name.
         else if (key == "biome") spawnChoice = (value == "-" ? std::string() : value);
         else if (key == "mouseControls") useMouseControls = number != 0;
+        else if (key == "classicLoadout") classicLoadoutBar = number != 0;
         // The key being on disk at all is the choice: an absent one leaves the
         // device to answer, which is what touchControlsWanted does with it.
         else if (key == "requestMobile") { requestMobile = number != 0; requestMobileChosen = true; }
@@ -486,6 +556,7 @@ bool ClientSettings::save(const std::string& path) const {
          // and an empty value would swallow the next key as its own.
          << "spawn " << (spawnChoice.empty() ? std::string("-") : spawnChoice) << '\n'
          << "mouseControls " << (useMouseControls ? 1 : 0) << '\n'
+         << "classicLoadout " << (classicLoadoutBar ? 1 : 0) << '\n'
          << "tutorialDone " << (tutorialCompleted ? 1 : 0) << '\n'
          << "tutorialStep " << tutorialStep << '\n';
     // Written only once the player has actually chosen. Writing the resolved
@@ -598,10 +669,16 @@ bool MenuSystem::handleKeys(Window& window) {
     // And they are the game screen's alone. The browser binds Q/E/T and the
     // number row inside Game's own keydown; the title screen's inventory
     // manager has no keyboard path to the bar at all, only drag and drop.
+    //
+    // Q/E/T go with the trash slot they arm and empty, so the modern bar --
+    // which has neither -- leaves all three keys free rather than recording
+    // presses nothing will ever act on.
     if (inGame_) {
-        if (window.keyPressed(Key::E)) { pendingCycle_ = 1; return true; }
-        if (window.keyPressed(Key::Q)) { pendingCycle_ = -1; return true; }
-        if (window.keyPressed(Key::T)) { pendingSecondaryDelete_ = true; return true; }
+        if (loadoutMetrics(settings_.classicLoadoutBar).secondaryPicker) {
+            if (window.keyPressed(Key::E)) { pendingCycle_ = 1; return true; }
+            if (window.keyPressed(Key::Q)) { pendingCycle_ = -1; return true; }
+            if (window.keyPressed(Key::T)) { pendingSecondaryDelete_ = true; return true; }
+        }
         static constexpr Key kLoadoutKeys[kLoadoutBarPrimary] = {
             Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5,
             Key::Num6, Key::Num7, Key::Num8, Key::Num9, Key::Num0,
@@ -1006,19 +1083,31 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         return;
     }
 
-    // The title screen gives the bar a fixed box below centre; in game it owns
-    // the viewport and every metric shrinks to three quarters.
-    const double scale = inGame_ ? kInGameLoadoutScale : 1.0;
+    // The title screen gives the bar a fixed box below centre and draws it at
+    // full size; in game it owns the viewport at whatever scale its metrics
+    // ask for -- three quarters for the classic shape, full size for the
+    // modern one.
+    const LoadoutMetrics& metrics = loadoutMetrics(settings_.classicLoadoutBar);
     const Rect box = inGame_
         ? Rect{0.0, 0.0, static_cast<double>(canvas.width()),
                static_cast<double>(canvas.height())}
         : Rect{(canvas.width() - kTitleLoadoutWidth) * 0.5,
                canvas.height() * 0.5 + kTitleLoadoutDrop, kTitleLoadoutWidth,
                kTitleLoadoutHeight};
-    const LoadoutLayout layout = layoutLoadout(box, scale);
+    const double natural = inGame_ ? metrics.inGameScale : 1.0;
+    const double scale = natural * loadoutFitScale(metrics, box.w, natural);
+    const LoadoutLayout layout = layoutLoadout(box, metrics, scale);
 
     // Q/E/T and the number keys were recorded by handleKeys, which has no
-    // network client; this is the first place that can act on them.
+    // network client; this is the first place that can act on them. The first
+    // three only ever arrive with the classic shape up, and a bar that loses
+    // the picker mid-game -- the setting is live -- drops the armed slot with
+    // them rather than leaving a ring on a row nothing can reach.
+    if (!metrics.secondaryPicker) {
+        selectedSecondary_ = -1;
+        pendingCycle_ = 0;
+        pendingSecondaryDelete_ = false;
+    }
     if (selectedSecondary_ >= 0 && timeSeconds - lastSelectTime_ > 5.0) selectedSecondary_ = -1;
     if (pendingCycle_ != 0) {
         // Q with nothing selected behaves as E: there is no "previous" to step
@@ -1056,7 +1145,9 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     for (int i = 0; i < kLoadoutBarSlots; ++i) {
         if (insideInclusive(layout.slots[static_cast<std::size_t>(i)], mouse)) hovered = i;
     }
-    if (hovered < 0 && insideInclusive(layout.trash, mouse)) hovered = kLoadoutTrashSlot;
+    if (metrics.secondaryPicker && hovered < 0 && insideInclusive(layout.trash, mouse)) {
+        hovered = kLoadoutTrashSlot;
+    }
     loadoutHovered_ = hovered;
     // The browser intercepts a press on the bar only to begin a drag, so this
     // is exactly the condition under which the click is the bar's at all.
@@ -1066,20 +1157,24 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     canvas.save();
     canvas.translate(0.0f, static_cast<float>((1.0 - loadoutSlide_) * 120.0));
 
-    drawLoadoutSlot(canvas, layout.trash, kLoadoutTrashFill, hovered == kLoadoutTrashSlot);
-    drawKeyLabel(canvas, "[T]", layout.trash.right() + 16.0,
-                 layout.trash.y + layout.trash.h * 0.5, Align::Left);
-    if (drag_.active()) {
-        TextStyle del;
-        del.size = std::round(layout.trash.h / 4.0);
-        del.bold = true;
-        del.fill = kPaper;
-        del.stroke = kInk;
-        del.strokeWidth = 3.0;
-        del.align = Align::Centre;
-        del.baseline = Baseline::Middle;
-        text(canvas, "Delete", layout.trash.x + layout.trash.w * 0.5,
-             layout.trash.y + layout.trash.h * 0.5, del);
+    // The modern bar has no trash: a petal is thrown away by dragging it off
+    // the bar, which is what a drop anywhere but a slot already does.
+    if (metrics.secondaryPicker) {
+        drawLoadoutSlot(canvas, layout.trash, kLoadoutTrashFill, hovered == kLoadoutTrashSlot);
+        drawKeyLabel(canvas, "[T]", layout.trash.right() + 16.0,
+                     layout.trash.y + layout.trash.h * 0.5, Align::Left);
+        if (drag_.active()) {
+            TextStyle del;
+            del.size = std::round(layout.trash.h / 4.0);
+            del.bold = true;
+            del.fill = kPaper;
+            del.stroke = kInk;
+            del.strokeWidth = 3.0;
+            del.align = Align::Centre;
+            del.baseline = Baseline::Middle;
+            text(canvas, "Delete", layout.trash.x + layout.trash.w * 0.5,
+                 layout.trash.y + layout.trash.h * 0.5, del);
+        }
     }
 
     for (int i = 0; i < kLoadoutBarSlots; ++i) {
@@ -1087,10 +1182,16 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         const bool selected = i >= kLoadoutBarPrimary &&
                               i - kLoadoutBarPrimary == selectedSecondary_;
         drawLoadoutSlot(canvas, slot, kLoadoutSlotFill, hovered == i || selected);
-        // The bracketed captions belong to the primary row only; the second
-        // row is reached with Q/E, not with a key of its own.
+        // The bracketed captions name the primary slots only -- the second
+        // row is reached with Q/E, not with a key of its own -- but they are
+        // drawn along whichever row the metrics put them on.
         if (i < kLoadoutBarPrimary) {
-            drawKeyLabel(canvas, kLoadoutKeyCaps[i], slot.x + slot.w * 0.5, slot.y - 15.0,
+            const Rect under = metrics.capsBelow
+                ? layout.slots[static_cast<std::size_t>(kLoadoutBarPrimary + i)]
+                : slot;
+            const double capY = metrics.capsBelow ? under.bottom() + kLoadoutCapBelow
+                                                  : under.y - kLoadoutCapAbove;
+            drawKeyLabel(canvas, kLoadoutKeyCaps[i], under.x + under.w * 0.5, capY,
                          Align::Centre);
         }
     }

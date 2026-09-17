@@ -148,6 +148,7 @@ enum Toggle : int {
     kShowAdminsOnLeaderboard,
     kDebugMenuEnabled,
     kNumberKeysUseItems,
+    kClassicLoadoutBar,
     kUseMouseControls,
     kRequestMobile,
     kToggleCount,
@@ -243,6 +244,7 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kShowHitboxes: return &settings.render.hitboxes;
         case kShowStats: return &settings.showStats;
         case kDebugMenuEnabled: return &settings.showDebugButton;
+        case kClassicLoadoutBar: return &settings.classicLoadoutBar;
         case kUseMouseControls: return &settings.useMouseControls;
         case kRequestMobile: return &settings.requestMobile;
         // Everything else lands in the panel's own copy, because ClientSettings
@@ -625,6 +627,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
         }
 
         case Tab::Graphics: {
+            p.checkbox(kClassicLoadoutBar, "Classic Loadout Bar (smaller slots, wider gaps)");
             p.checkbox(kShowHitboxes, "Show Hitboxes");
             p.checkbox(kShowStats, "Show Performance Stats");
             p.checkbox(kDynamicSkybox, "Dynamic Skybox");

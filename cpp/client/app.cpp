@@ -42,12 +42,23 @@ namespace {
 /// Window::setDesignSize for the machinery, and client/camera.h for why the
 /// world's own zoom is left flat.
 ///
-/// 1920x900 rather than the 1280x720 the window opens at, because it is the
+/// 1920 wide rather than the 1280 the window opens at, because it is the
 /// resolution the browser build's layout numbers were authored against: at
-/// this size uiScale is 1 on an ordinary display and the frame is identical,
+/// that width uiScale is 1 on an ordinary display and the frame is identical,
 /// pixel for pixel, to what this client drew before the design space existed.
+///
+/// The height is 1080 -- a full 16:9 -- and not the ~930 a browser viewport
+/// has left at that width, because the height is a CAP, not a target: the
+/// window's LONGER axis sets the scale (see Window::setDesignSize), so a
+/// design space no taller than the HUD needs would hand the height that job
+/// on every ordinary 16:9 monitor and scale the whole interface up with it.
+/// The reference game sizes its interface off the window's WIDTH alone, and
+/// at 1080 so does this one for every window from 16:9 up to the ultrawides.
+/// Past that -- a window taller than 16:9 -- the height takes the scale back
+/// and the cap does its real job: without one, a window dragged tall and thin
+/// is a zoom control that reveals a strip of world nobody else can see.
 constexpr int kDesignWidth = 1920;
-constexpr int kDesignHeight = 930;
+constexpr int kDesignHeight = 1080;
 
 /// The spawn picker's two rows. A row is sized so all of its buttons fit the
 /// design width with a gap between them, shrinking from the natural width
@@ -1048,7 +1059,9 @@ void App::frame(double dt) {
     // its side changes the viewport between one frame and the next, and the
     // claim handler is asked about a contact using whatever the last frame
     // placed.
-    mobile_.layout(window_.width(), window_.height(), inGameLoadoutBarHeight());
+    mobile_.layout(window_.width(), window_.height(),
+                   inGameLoadoutBarHeight(menus_.settings().classicLoadoutBar,
+                                          window_.width()));
     // This frame's contacts, before any screen reads them. Here rather than in
     // updatePlaying because the frames the controls are NOT up for are the
     // ones that matter: dying, or a panel opening over a deflected stick, has
@@ -2488,12 +2501,18 @@ void App::drawLobby(Canvas& canvas, double time) {
         "Use Q and E to swap petals",
         "Use T to unequip the selected petal",
     };
-    // Below the loadout bar, which occupies centreY+50 to centreY+260. The
-    // block starts inside its lower edge on purpose; that is where the
-    // reference puts it.
-    double y = centreY + 225.0;
-    for (const char* line : lines) {
-        text(canvas, line, centreX, y, hint);
+    // The last two lines name the keys that arm and empty the trash slot,
+    // which only the classic bar has. The modern one leaves Q/E/T unbound, so
+    // it must not go on advertising them.
+    const std::size_t shown =
+        std::size(lines) - (menus_.settings().classicLoadoutBar ? 0u : 2u);
+    // Below the loadout bar, which occupies centreY+50 to centreY+260 and
+    // paints a different amount of that box depending on which shape it is in
+    // -- the modern metrics hang the number captions under the second row,
+    // where the classic ones keep them above the first.
+    double y = centreY + titleHintsOffsetY(menus_.settings().classicLoadoutBar);
+    for (std::size_t i = 0; i < shown; ++i) {
+        text(canvas, lines[i], centreX, y, hint);
         y += 20.0;
     }
 

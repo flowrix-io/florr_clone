@@ -155,8 +155,19 @@ double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry
 /// How far the loadout bar reaches up from the bottom edge of an in-game
 /// viewport. What anything else anchored to the bottom hangs above -- the bar
 /// is centred and already nearly touches the edge, so there is no room under
-/// it. Derived from the same constants the bar is laid out from.
-double inGameLoadoutBarHeight();
+/// it. Derived from the same constants the bar is laid out from, so it has to
+/// be asked about the same shape the bar is drawn in: pass
+/// ClientSettings::classicLoadoutBar.
+/// `viewWidth` is the viewport's width in design units, which the bar may have
+/// had to shrink to fit; 0 asks for the unclamped height.
+double inGameLoadoutBarHeight(bool classic = false, double viewWidth = 0.0);
+
+/// Where the title screen's block of control hints starts, as an offset down
+/// from the centre of the window. Under whatever the loadout bar paints
+/// lowest inside its own box: the secondary row with the classic metrics, the
+/// key caps beneath that row with the modern ones. Takes the same flag
+/// inGameLoadoutBarHeight does, and for the same reason.
+double titleHintsOffsetY(bool classic = false);
 
 /// Everything the settings menu owns. Kept in one struct so it can be written
 /// to disk and read back as a unit, and so nothing else has to know which of
@@ -212,6 +223,11 @@ struct ClientSettings {
     /// scheme it has always shipped with, and defaulting to the browser's
     /// value would take it away from every existing player.
     bool useMouseControls = true;
+    /// Draws the loadout bar the way this client used to: three-quarter-size
+    /// slots, the browser port's wide gaps, and the number captions above the
+    /// top row. Off by default -- the bar's own shape now follows the
+    /// reference game's, which is bigger, tighter and captioned underneath.
+    bool classicLoadoutBar = false;
     /// Whether the on-screen touch controls are up: the stick, and the two
     /// buttons that stand in for the extend/retract keys. The browser keeps
     /// the same flag in `localStorage.requestMobile`, and resolves an unset
