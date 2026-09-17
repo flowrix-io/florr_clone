@@ -292,6 +292,16 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     hit.altText = "Damage: " + exactNumber(damage);
     lines.push_back(hit);
 
+    // Bur alone. Its description says the petal debuffs armour and cannot say
+    // by how much, and how much is the entire question a player has about it:
+    // whether this one out-strips the tier standing in front of them.
+    if (stats.armorReduction > 0.0) {
+        TooltipLine strip{"Armor Shred: -" + abbreviate(stats.armorReduction), 12.0};
+        strip.alpha = 0.56;
+        strip.altText = "Armor Shred: -" + exactNumber(stats.armorReduction);
+        lines.push_back(strip);
+    }
+
     // Only the cutters have one, and theirs moves with rarity, so the number
     // has to be on the card -- the description alone cannot say how much.
     if (stats.bodyDamage > 0.0) {

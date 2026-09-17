@@ -106,6 +106,19 @@ inline constexpr std::array<double, kRarityCount> kMobDamageScale = {
     1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0, 1968300.0,
 };
 
+/// Mob armour per tier: a flat amount subtracted from every DIRECT hit.
+///
+/// The same 3x ladder as damage, but it STOPS AT ULTRA and repeats that figure
+/// for the three tiers above it. Carried to apex the ladder would reach 1.9m,
+/// which is more than most apex-tier rings do in a swing -- a mob nothing can
+/// scratch is not a wall, it is a bug report. Ultra is where the cap belongs
+/// for the same reason isBossRarity() draws its line one tier higher: below it
+/// a mob is something you find and fight, above it a thing a raid is called
+/// for, and a raid's damage is not what armour is meant to be balanced against.
+inline constexpr std::array<double, kRarityCount> kMobArmorScale = {
+    1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 729.0, 729.0, 729.0,
+};
+
 /// Mob body size per tier. Grows far more slowly than health so a mythic is
 /// intimidating without filling the screen.
 inline constexpr std::array<double, kRarityCount> kMobSizeScale = {

@@ -107,6 +107,26 @@ struct Health {
     bool alive() const { return current > 0; }
 };
 
+/// Flat damage subtracted from every DIRECT hit this entity takes.
+///
+/// Only mobs carry one. It is a MOB stat in the same sense health and contact
+/// damage are: derived from the config and the tier at spawn and never touched
+/// again, which is what lets applyDamage() read it without the registry.
+///
+/// A flat reduction rather than a percentage on purpose. Both the armour ladder
+/// and the petal damage ladder are 3x per tier, so a flat number holds the same
+/// proportion at every tier when the two are matched -- and turns lopsided in
+/// the direction the tier gap points, which is the whole reason to grade a mob.
+/// A percentage would be identical at every tier and say nothing.
+///
+/// NEGATIVE IS LEGAL and is the point of the bur petal: effective armour is
+/// this less whatever has been stripped off it (Afflictions::armorShred), and
+/// below zero it ADDS to every hit instead. Nothing clamps it, so a stripped
+/// mob is a mob that takes extra -- see effectiveArmor() in combat.
+struct Armor {
+    double amount = 0;
+};
+
 /// Damage dealt by touching this entity.
 struct ContactDamage {
     double amount = 0;
@@ -198,8 +218,25 @@ struct Afflictions {
     double slowFactor = 1.0;      ///< multiplies speed; 1 = unaffected
     double slowUntilMillis = 0;
 
+    /// Armour a bur has stripped, and when it grows back. Subtracted from
+    /// Armor::amount while live, which is what takes a mob's effective armour
+    /// below zero when the bur out-tiers what it hit.
+    ///
+    /// ONE debuff, and the deepest one wins for as long as it lasts, exactly
+    /// as a slow does two lines up. Accumulating instead would run away: a ring
+    /// touching a mob strips on every contact, and thirty contacts a second
+    /// against a number nothing clamps is an unbounded damage multiplier rather
+    /// than a counter to armour.
+    double armorShred = 0;
+    double armorShredUntilMillis = 0;
+
     bool poisoned(double nowMillis) const { return nowMillis < poisonUntilMillis && poisonPerSecond > 0; }
     bool slowed(double nowMillis) const { return nowMillis < slowUntilMillis && slowFactor < 1.0; }
+
+    /// Armour currently stripped off, or zero once the debuff has lapsed.
+    double shred(double nowMillis) const {
+        return nowMillis < armorShredUntilMillis ? armorShred : 0.0;
+    }
 
     /// The live stack owned by `source`, or nullptr. Linear: a victim carries a
     /// handful of these at most, one per player currently fighting it.
@@ -818,6 +855,7 @@ FLIX_COMPONENT(flix::Body);
 FLIX_COMPONENT(flix::Knockback);
 FLIX_COMPONENT(flix::Faction);
 FLIX_COMPONENT(flix::Health);
+FLIX_COMPONENT(flix::Armor);
 FLIX_COMPONENT(flix::ContactDamage);
 FLIX_COMPONENT(flix::HitCooldowns);
 FLIX_COMPONENT(flix::Afflictions);

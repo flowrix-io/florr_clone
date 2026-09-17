@@ -162,6 +162,7 @@ struct Fixture {
     std::uint16_t spore = kInvalidIndex;
     std::uint16_t grunt = kInvalidIndex;
     std::uint16_t glitch = kInvalidIndex;
+    std::uint16_t burr = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -181,7 +182,8 @@ const Fixture& fixture() {
               "plain":{"name":"Plain","damage":10,"health":5,"size":1},
               "jelly":{"name":"Jelly","damage":1,"health":5,"size":1,"knockback":15},
               "venom":{"name":"Venom","damage":1,"health":5,"size":1,"poison":0.01,"poisonDuration":2000},
-              "spore":{"name":"Spore","damage":0,"health":6,"size":1,"knockback":3,"poison":0.01,"poisonDuration":2000}
+              "spore":{"name":"Spore","damage":0,"health":6,"size":1,"knockback":3,"poison":0.01,"poisonDuration":2000},
+              "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5}
             })");
         if (!wrote) {
             f.error = "cannot write the fixture content";
@@ -196,6 +198,7 @@ const Fixture& fixture() {
         f.spore = f.registry.petalIndex("spore");
         f.grunt = f.registry.mobIndex("grunt");
         f.glitch = f.registry.mobIndex("glitch");
+        f.burr = f.registry.petalIndex("burr");
         return f;
     }();
     return state;
@@ -1403,4 +1406,148 @@ TEST(the_hit_cooldown_list_is_pruned_rather_than_growing_without_bound) {
     }
     // Every entry expired long before the sweep; none of them survive it.
     CHECK_EQ(a.world.get<HitCooldowns>(attacker).entries.size(), std::size_t(0));
+}
+
+// ---------------------------------------------------------------------------
+// Armour, and the bur that strips it
+// ---------------------------------------------------------------------------
+
+TEST(armor_is_a_flat_subtraction_from_direct_hits_only) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0, 60.0);
+    a.world.add<Armor>(mob, Armor{4.0});
+
+    a.combat.applyDamage(a.world, mob, player, 10.0, 1000.0);
+    CHECK_NEAR(a.health(mob), 94.0, 1e-9);
+    // A strike is a landed hit, so armour answers it too.
+    a.combat.applyDamage(a.world, mob, player, 10.0, 1100.0, DamageKind::Lightning);
+    CHECK_NEAR(a.health(mob), 88.0, 1e-9);
+
+    // A drip is not a hit. Armour that taxed each poison tick would be
+    // immunity, since a tick is a thirtieth of a second's worth.
+    a.combat.applyDamage(a.world, mob, player, 10.0, 1200.0, DamageKind::Poison);
+    CHECK_NEAR(a.health(mob), 78.0, 1e-9);
+    a.combat.applyDamage(a.world, mob, player, 10.0, 1300.0, DamageKind::Periodic);
+    CHECK_NEAR(a.health(mob), 68.0, 1e-9);
+}
+
+TEST(armor_heavier_than_the_swing_absorbs_it_without_locking_the_mob) {
+    Arena a;
+    const Entity one = a.player({1000, 1000});
+    const Entity two = a.player({1000, 1040});
+    const Entity mob = a.mob({1000, 1000}, 100.0, 60.0);
+    a.world.add<Armor>(mob, Armor{50.0});
+
+    // Absorbed whole -- and NOT refused: the swing landed, it simply took
+    // nothing off, which is what keeps a bur's strip and a petal's poison
+    // working against something they cannot damage.
+    const DamageResult soft = a.combat.applyDamage(a.world, mob, one, 20.0, 1000.0);
+    CHECK(!soft.refused);
+    CHECK_NEAR(soft.applied, 0.0, 1e-12);
+    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+    // No post-hit window: a mob's is shared by everyone attacking it, so the
+    // weakest petal in a ring must not be able to shield it from the rest.
+    CHECK_NEAR(a.world.get<Health>(mob).invulnerableUntilMillis, 0.0, 1e-12);
+
+    const DamageResult hard = a.combat.applyDamage(a.world, mob, two, 80.0, 1000.0);
+    CHECK_NEAR(hard.applied, 30.0, 1e-9);
+    CHECK_NEAR(a.health(mob), 70.0, 1e-9);
+}
+
+TEST(negative_effective_armor_adds_to_every_hit) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0, 60.0);
+    a.world.add<Armor>(mob, Armor{-5.0});
+
+    a.combat.applyDamage(a.world, mob, player, 10.0, 1000.0);
+    CHECK_NEAR(a.health(mob), 85.0, 1e-9);
+}
+
+TEST(an_armor_strip_takes_the_deepest_and_grows_back) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 1000.0, 60.0);
+    a.world.add<Armor>(mob, Armor{10.0});
+
+    a.combat.applyArmorShred(a.world, mob, 4.0, 1000.0);
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, mob, 1000.0), 6.0, 1e-9);
+    // Deeper wins.
+    a.combat.applyArmorShred(a.world, mob, 25.0, 1100.0);
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, mob, 1100.0), -15.0, 1e-9);
+    // Shallower does not dilute it, and does not shorten it either.
+    a.combat.applyArmorShred(a.world, mob, 1.0, 1200.0);
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, mob, 1200.0), -15.0, 1e-9);
+
+    // The deep strip was refreshed at 1100 and the shallow one at 1200, so the
+    // window runs from the later of the two.
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, mob, 1200.0 + kArmorShredMillis - 1.0),
+               -15.0, 1e-9);
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, mob, 1200.0 + kArmorShredMillis), 10.0, 1e-9);
+
+    // And the lapsed number is cleared off the component rather than left
+    // sitting there reading as a live debuff.
+    a.step(1200.0 + kArmorShredMillis);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).armorShred, 0.0, 1e-12);
+}
+
+TEST(a_flower_has_no_armor_to_strip) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.combat.applyArmorShred(a.world, player, 10.0, 1000.0);
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, player, 1000.0), 0.0, 1e-12);
+}
+
+TEST(a_bur_strips_armor_on_contact_even_when_armor_ate_its_damage) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.burr == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1040, 1000}, 500.0, 60.0);
+    // Heavier than the bur's own 5 damage, so the first contact takes nothing
+    // off the health bar -- and must still strip.
+    a.world.add<Armor>(mob, Armor{9.0});
+    equipPetal(a, player, f.burr, Rarity::Common, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 500.0, 1e-9);
+    CHECK_NEAR(a.world.get<Afflictions>(mob).armorShred, 1.5, 1e-9);
+    CHECK_NEAR(CombatSystem::effectiveArmor(a.world, mob, 0.0), 7.5, 1e-9);
+
+    // Once stripped below the swing, the same petal starts landing.
+    a.world.get<Armor>(mob).amount = 1.0;
+    a.step(net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(mob), 500.0 - (5.0 - (1.0 - 1.5)), 1e-9);
+}
+
+TEST(a_burs_strip_rides_the_plain_three_times_ladder) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.burr == kInvalidIndex) return;
+
+    // The figures the design states, tier by tier.
+    static const double kExpected[kRarityCount] = {
+        1.5, 4.5, 13.5, 40.5, 121.5, 364.5, 1093.5, 3280.5, 9841.5, 29524.5,
+    };
+    for (int t = 0; t < kRarityCount; ++t) {
+        const PetalStats s = f.registry.petalStats(f.burr, clampRarity(t));
+        CHECK_NEAR(s.armorReduction, kExpected[t], kExpected[t] * 1e-9);
+    }
+}
+
+TEST(mob_armor_triples_per_tier_and_flattens_above_ultra) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.grunt == kInvalidIndex) return;
+
+    // `grunt` states no armour, so it wears the default 1 at common.
+    static const double kExpected[kRarityCount] = {
+        1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 729.0, 729.0, 729.0,
+    };
+    for (int t = 0; t < kRarityCount; ++t) {
+        CHECK_NEAR(f.registry.mobStats(f.grunt, clampRarity(t)).armor, kExpected[t], 1e-9);
+    }
 }

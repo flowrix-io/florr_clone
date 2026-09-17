@@ -2292,6 +2292,10 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         world.add<Knockback>(pet);
         world.add<Body>(pet, Body{mob.radius, mob.mass});
         world.add<Health>(pet, Health{mob.health, mob.health, 0.0, 0.0});
+        // A summon is the same animal at the same tier, so it wears the same
+        // armour. Unscaled by petStatMultiplier: that nerf is the digger's
+        // health and damage, which is what made it worth summoning.
+        world.add<Armor>(pet, Armor{mob.armor});
         world.add<Faction>(pet, faction);
         world.add<MobType>(pet, MobType{mobIndex, rarity, 1.0});
 

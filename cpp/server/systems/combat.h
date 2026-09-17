@@ -61,6 +61,14 @@ inline constexpr double kPvpPetalSelfDamage = 1.0;
 inline constexpr double kGroundEffectSlowLingerMillis = 250.0;
 inline constexpr double kPostHitInvulnerabilityMillis = 50.0;
 
+/// How long a bur's armour strip lasts after the last hit that refreshed it.
+///
+/// Long enough to survive a reload -- a bur's own cooldown is 2000 ms, and a
+/// debuff that lapsed inside that would be a petal that never has its effect
+/// up when the rest of the ring lands -- and short enough that a boss somebody
+/// grazed and walked away from is whole again by the time it is found.
+inline constexpr double kArmorShredMillis = 5000.0;
+
 /// Slack added to every broadphase query, in world units.
 ///
 /// The exact circle test decides what was hit. This slack also covers bodies
@@ -211,6 +219,21 @@ public:
     void applySlow(World& world, Entity victim, double factor, double durationMillis,
                    Rarity sourceRarity, double nowMillis);
 
+    /// A bur strips `amount` of armour off `victim` for kArmorShredMillis.
+    ///
+    /// The DEEPEST live strip wins and its expiry never comes closer, the rule
+    /// applySlow() already runs on: a ring of five burs is one debuff at the
+    /// strength of one of them, not five, and the common bur a second player
+    /// happens to be carrying cannot wipe the mythic strip already on the mob.
+    ///
+    /// Only a mob can be stripped -- a flower has no armour to take.
+    void applyArmorShred(World& world, Entity victim, double amount, double nowMillis);
+
+    /// What `victim` actually subtracts from a direct hit right now: its armour
+    /// less whatever a bur has stripped. Negative means the strip out-ran the
+    /// armour and the victim takes EXTRA, which is bur's whole purpose.
+    static double effectiveArmor(const World& world, Entity victim, double nowMillis);
+
     /// The PLAYER answerable for what `source` does: through Projectile::
     /// creditTo, Pet::owner, PetalInstance::owner and GroundEffect::owner,
     /// transitively. NULL_ENTITY when nothing player-owned is behind it, which
@@ -254,6 +277,8 @@ private:
         double poisonDurationMillis = 0;
         double slowFactor = 1.0;
         double slowDurationMillis = 0;
+        /// Armour this body strips on contact. Bur, and nothing else.
+        double armorReduction = 0;
         Rarity rarity = Rarity::Common;
         /// What kind of body this is, decided once in the gather rather than
         /// re-derived per candidate. The throttle, the reciprocal petal bleed,

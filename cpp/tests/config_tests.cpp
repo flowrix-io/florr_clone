@@ -655,6 +655,24 @@ TEST(finite_zero_placeholder_mobs_keep_typescript_semantics) {
     }
 }
 
+TEST(the_shipped_content_states_the_armor_exceptions) {
+    const ContentRegistry& r = shipped().registry;
+    // Every mob is armoured; mobs.json states only the ones that differ.
+    CHECK_NEAR(r.mob(r.mobIndex("bee")).armor, 1.0, 1e-12);
+    CHECK_NEAR(r.mob(r.mobIndex("leafbug")).armor, 10.0, 1e-12);
+    CHECK_NEAR(r.mob(r.mobIndex("golden_leafbug")).armor, 10.0, 1e-12);
+    // A leafbug is the armour mob: ten at common, and the ladder on top of it.
+    CHECK_NEAR(r.mobStats(r.mobIndex("leafbug"), Rarity::Mythic).armor, 2430.0, 1e-9);
+
+    // Bur is the only petal that strips, and one of its own tier takes 1.5x
+    // what a mob of that tier is wearing.
+    CHECK_NEAR(r.petal(r.petalIndex("bur")).armorReduction, 1.5, 1e-12);
+    CHECK_NEAR(r.petalStats(r.petalIndex("bur"), Rarity::Mythic).armorReduction, 364.5, 1e-9);
+    for (const char* id : {"basic", "rose", "stinger", "iris"}) {
+        CHECK_NEAR(r.petal(r.petalIndex(id)).armorReduction, 0.0, 1e-12);
+    }
+}
+
 TEST(a_spread_angle_is_read_as_radians_however_odd_the_number_looks) {
     const ContentRegistry& r = shipped().registry;
     const ProjectileSpec& spec = r.petal(r.petalIndex("flower")).projectile;

@@ -393,6 +393,20 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         return result;
     }
 
+    // Armour: the victim's flat reduction on every DIRECT hit, less whatever a
+    // bur has stripped. Only mobs carry one.
+    //
+    // DIRECT ONLY, for the reason the shield below is direct-only: poison and a
+    // sponge repayment arrive as a per-tick drip -- thirty slivers a second --
+    // and a flat subtraction from each of them is not a tax, it is immunity.
+    // Armour answers hits; poison is what gets through it.
+    //
+    // Below zero the subtraction ADDS, which is what a stripped mob is for.
+    if (isDirectHit(kind)) {
+        const double armor = effectiveArmor(world, victim, nowMillis);
+        if (armor != 0.0) amount = std::max(0.0, amount - armor);
+    }
+
     // Shell's shield is a temporary flat reduction per DIRECT hit. It neither
     // depletes nor applies to poison/radiation, matching getShieldAmount() in
     // the TypeScript hit paths.
@@ -410,9 +424,18 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         // TypeScript still grants the brief post-hit protection after a shield
         // absorbs the full number; this was a legitimate hit, not a rejected
         // target. Callers therefore still arm their attacker cooldown.
-        world.get<Health>(victim).invulnerableUntilMillis =
-            std::max(world.get<Health>(victim).invulnerableUntilMillis,
-                     nowMillis + kPostHitInvulnerabilityMillis);
+        //
+        // The FLOWER only. A mob's invulnerability window is shared by
+        // everything attacking it, so granting one here would let the weakest
+        // petal in a ring -- the one armour happens to absorb whole -- lock the
+        // mob for 50 ms against every other petal and every other player.
+        // Nothing but armour can zero a mob's hit, so this is where that would
+        // have started.
+        if (directPlayerHit) {
+            Health& health = world.get<Health>(victim);
+            health.invulnerableUntilMillis = std::max(health.invulnerableUntilMillis,
+                                                      nowMillis + kPostHitInvulnerabilityMillis);
+        }
         return result;
     }
 
@@ -729,6 +752,35 @@ void CombatSystem::applySlow(World& world, Entity victim, double factor, double 
     afflictions.slowUntilMillis = std::max(afflictions.slowUntilMillis, nowMillis + durationMillis);
 }
 
+void CombatSystem::applyArmorShred(World& world, Entity victim, double amount,
+                                   double nowMillis) {
+    if (!std::isfinite(amount) || amount <= 0.0) return;
+    if (!world.isAlive(victim) || !world.has<Health>(victim)) return;
+    // Armour is a mob stat, so a strip is a mob debuff. A petal landing on
+    // another flower in the arena takes nothing off it, and an orphaned bur
+    // cannot follow a slow's old bug into hurting whoever walks past.
+    if (!world.has<MobTag>(victim)) return;
+
+    // Deepest wins, expiry never comes closer -- applySlow's rule, for the
+    // reason Afflictions::armorShred gives: a strip that ACCUMULATED across
+    // every contact of a spinning ring would have no bound at all.
+    Afflictions& afflictions = world.ensure<Afflictions>(victim);
+    if (nowMillis >= afflictions.armorShredUntilMillis) afflictions.armorShred = 0.0;
+    afflictions.armorShred = std::max(afflictions.armorShred, amount);
+    afflictions.armorShredUntilMillis =
+        std::max(afflictions.armorShredUntilMillis, nowMillis + kArmorShredMillis);
+}
+
+double CombatSystem::effectiveArmor(const World& world, Entity victim, double nowMillis) {
+    const Armor* armor = world.tryGet<Armor>(victim);
+    if (armor == nullptr) return 0.0;
+    const Afflictions* afflictions = world.tryGet<Afflictions>(victim);
+    const double shred = afflictions != nullptr ? afflictions->shred(nowMillis) : 0.0;
+    // Not clamped at zero: past it the mob takes EXTRA, which is the whole
+    // reason a bur strips 1.5x what the tier it matches is wearing.
+    return armor->amount - shred;
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
@@ -829,6 +881,14 @@ void CombatSystem::tickAfflictions(World& world, double nowMillis, double dt) {
         if (afflictions.slowFactor < 1.0 && nowMillis >= afflictions.slowUntilMillis) {
             afflictions.slowFactor = 1.0;
             afflictions.slowUntilMillis = 0;
+        }
+        // Armour grows back. Afflictions::shred() already reads zero past the
+        // expiry, so this is housekeeping rather than the rule -- it keeps a
+        // mob that was stripped an hour ago from carrying the number, and keeps
+        // an inspector's dump honest about what is actually on it.
+        if (afflictions.armorShred != 0.0 && nowMillis >= afflictions.armorShredUntilMillis) {
+            afflictions.armorShred = 0.0;
+            afflictions.armorShredUntilMillis = 0;
         }
         // A mob holds one stack per poisoning player and EVERY one of them
         // ticks, so three flowers running blue_iris on the same boss deal
@@ -1115,7 +1175,8 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
 
         const PetalStats stats = content.petalStats(petal.configIndex, petal.rarity);
         const bool inert = stats.damage <= 0.0 && stats.poisonPerSecond <= 0.0 &&
-                           stats.slowFactor >= 1.0 && stats.knockback <= 0.0;
+                           stats.slowFactor >= 1.0 && stats.knockback <= 0.0 &&
+                           stats.armorReduction <= 0.0;
         if (inert) return;
 
         MeleeSource source;
@@ -1130,6 +1191,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         source.poisonDurationMillis = stats.poisonDurationMillis;
         source.slowFactor = stats.slowFactor;
         source.slowDurationMillis = stats.slowDurationMillis;
+        source.armorReduction = stats.armorReduction;
         source.rarity = petal.rarity;
         source.isPetal = true;
         // The flower's damage bonus is a property of the flower, not of the
@@ -1296,6 +1358,12 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                             source.poisonDurationMillis, nowMillis);
                 applySlow(world, victim, source.slowFactor, source.slowDurationMillis,
                           source.rarity, nowMillis);
+                // A rider like the other two, and for the same reason it has to
+                // be: armour can absorb a bur's own damage whole, and a strip
+                // that only landed when the damage did would be a petal that
+                // cannot counter the one thing it exists to counter. `landed`
+                // covers that -- a swing of nothing is still a swing.
+                applyArmorShred(world, victim, source.armorReduction, nowMillis);
             }
 
             // The petal pays for the hit out of its own health, at the mob's

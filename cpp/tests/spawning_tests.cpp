@@ -609,6 +609,28 @@ TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
     CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
 }
 
+TEST(a_spawned_mob_wears_its_tiers_armor) {
+    Sim sim;
+    const std::uint16_t leafbug = shipped().mobIndex("leafbug");
+    const Entity common = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), leafbug,
+                                               Rarity::Common, kCentre, Realm::Overworld, 0.0,
+                                               sim.rng);
+    CHECK_NEAR(sim.world.get<Armor>(common).amount, 10.0, 1e-9);
+
+    // The cap: ultra and apex wear the same 729x, so a leafbug tops out at
+    // 7290 rather than running the damage ladder to the end of the table.
+    const Entity apex = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), leafbug,
+                                             Rarity::Apex, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    CHECK_NEAR(sim.world.get<Armor>(apex).amount, 7290.0, 1e-9);
+
+    // A mob that states nothing wears the default 1 at common.
+    const Entity bee = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(),
+                                            shipped().mobIndex("bee"), Rarity::Common, kCentre,
+                                            Realm::Overworld, 0.0, sim.rng);
+    CHECK_NEAR(sim.world.get<Armor>(bee).amount, 1.0, 1e-9);
+}
+
 TEST(an_unknown_mob_index_spawns_nothing) {
     Sim sim;
     CHECK_EQ(sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), kInvalidIndex, Rarity::Common,

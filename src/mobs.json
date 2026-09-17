@@ -651,6 +651,7 @@
     "leafbug": {
         "name": "Leafbug",
         "health": 50,
+        "armor": 10,
         "damage": 30,
         "size": 1.2,
         "visual_scale": 2,
@@ -689,6 +690,7 @@
     "golden_leafbug": {
         "name": "Golden Leafbug",
         "health": 50,
+        "armor": 10,
         "damage": 30,
         "size": 1.2,
         "visual_scale": 2,

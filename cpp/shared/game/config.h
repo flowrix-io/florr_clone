@@ -233,6 +233,11 @@ struct MobConfig {
 
     double damage = 0;
     double health = 1;
+    /// Flat damage subtracted from every direct hit, at the COMMON tier;
+    /// mobStats() applies kMobArmorScale on top. One is the default rather
+    /// than zero -- every mob in the game is armoured, and mobs.json states
+    /// only the exceptions (leafbug's 10).
+    double armor = 1.0;
     double size = 1;            ///< body diameter in "size units"; see mobStats()
     double speed = 0;           ///< config units; mobStats() converts to units/s
     double cooldownMillis = 0;  ///< gap between attacks
@@ -364,6 +369,9 @@ struct PetalConfig {
     double knockback = 5;
     ProjectileSpec projectile;
     double range = 0;           ///< reach for the petals that have one
+    /// Armour this petal STRIPS from what it touches, before rarity. Only bur
+    /// has one. Stated at the common tier like every other petal stat.
+    double armorReduction = 0;
     /// What a worn cutter adds to the flower's BODY damage, before rarity.
     /// Scaled on the damage ladder, so it is stated at the common tier like
     /// every other damage figure. Not `damage` itself: nothing about this
@@ -466,6 +474,9 @@ struct PetalConfig {
 struct MobStats {
     double health = 1;
     double damage = 0;
+    /// Flat reduction applied to every direct hit this mob takes. Negative is
+    /// legal and means the opposite -- see Armor in components.h.
+    double armor = 0;
     double radius = 0;          ///< world units
     double mass = 1;            ///< proportional to area
     double speed = 0;           ///< world units per second
@@ -502,6 +513,8 @@ struct PetalStats {
     double health = 0;
     /// Body damage granted to the wearer, scaled for this tier.
     double bodyDamage = 0;
+    /// Armour stripped from the victim per hit, scaled for this tier.
+    double armorReduction = 0;
     double reloadMillis = kDefaultPetalReloadMillis;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;

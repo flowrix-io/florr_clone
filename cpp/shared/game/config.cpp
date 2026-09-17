@@ -564,6 +564,10 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
 
     m.damage = ctx.range(src, "damage", 0.0, 0.0, kMaxBaseStat);
     m.health = ctx.range(src, "health", 1.0, 0.0, kMaxBaseStat);
+    // Negative is allowed and means a mob that takes MORE from every hit --
+    // the same axis armour already runs on once a bur has stripped it, so
+    // there is no reason content cannot author a mob that starts there.
+    m.armor = ctx.range(src, "armor", 1.0, -kMaxBaseStat, kMaxBaseStat);
     m.size = ctx.range(src, "size", 1.0, 0.0, kMaxSize);
     m.speed = ctx.speed(src, "speed");
     m.cooldownMillis = ctx.range(src, "cooldown", 0.0, 0.0, kMaxDurationMillis);
@@ -714,6 +718,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.projectile = parseProjectile(ctx, src, nullptr);
     p.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
     p.bodyDamage = ctx.range(src, "bodyDamage", 0.0, 0.0, kMaxBaseStat);
+    p.armorReduction = ctx.range(src, "armorReduction", 0.0, 0.0, kMaxBaseStat);
     p.equipFlags = parseEquipFlags(ctx.text(src, "equipFlags"));
     // The lightning cutter carries a second bit so the client can tell the two
     // blades apart and paint the cyan one. It is derived from the id rather
@@ -1187,6 +1192,7 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     const double scaledSize = c.size * kMobSizeScale[t];
     s.health = c.health * kMobHealthScale[t];
     s.damage = c.damage * kMobDamageScale[t];
+    s.armor = c.armor * kMobArmorScale[t];
     s.radius = scaledSize * kMobBaseRadius;
     s.mass = scaledSize * scaledSize;
     s.speed = c.speed * kMobSpeedUnitsPerSecond;
@@ -1265,6 +1271,10 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     PetalStats s;
     s.damage = c.damage * stat;
     s.health = c.health * stat;
+    // The plain 3x ladder, deliberately NOT kMobArmorScale: mob armour flattens
+    // above ultra and a bur that flattened with it would be dead weight at the
+    // three tiers where a raid actually needs one.
+    s.armorReduction = c.armorReduction * stat;
     s.reloadMillis = c.cooldownMillis;
     if (c.id == "yggdrasil") {
         // TypeScript overrides every row: it is always a 1/1 petal and its

@@ -1077,6 +1077,7 @@
         "health": 5,
         "size": 1,
         "cooldown": 2000,
+        "armorReduction": 1.5,
         "description": "Debuffs armor of enemies",
         "color": "#8B4513",
         "count": 1,

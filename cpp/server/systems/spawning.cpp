@@ -347,6 +347,10 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<Knockback>(e);
     world.add<Faction>(e, Faction{Team::Hostiles, false});
     world.add<Health>(e, Health{stats.health, stats.health, 0.0, 0.0});
+    // Every mob is armoured, so this is unconditional: added at spawn even at
+    // zero, the archetype is the same one a stripped mob sits in and a bur
+    // costs no row move to land on.
+    world.add<Armor>(e, Armor{stats.armor});
     // The config's cooldown is the gap between deliberate ATTACKS, which the AI
     // owns; touching a mob is throttled by the same rule for every mob.
     //

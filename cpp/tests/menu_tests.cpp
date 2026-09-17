@@ -601,6 +601,11 @@ TEST(killing_a_mob_credits_the_ledger_and_pays_its_stars) {
     const std::uint16_t mobIndex = world.get<MobType>(mob).configIndex;
     // Mythic, so the kill is worth a star as well as a tally.
     world.get<MobType>(mob).rarity = Rarity::Mythic;
+    // And unarmoured, because whatever this map happened to stock may be one
+    // whose armour a starting ring cannot get through -- an ultra bee wears
+    // 729, and the stock basic petal swings 10. This test is about the kill
+    // ledger; armour has its own tests.
+    if (world.has<Armor>(mob)) world.get<Armor>(mob).amount = 0.0;
 
     const bool credited = h.stepUntil({&client}, [&] {
         if (client.profile().killCount(mobIndex, Rarity::Mythic) > 0) return true;
