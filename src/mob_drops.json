@@ -638,6 +638,14 @@
         "probability": 1,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bur",
+        "rarity": "common",
+        "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },

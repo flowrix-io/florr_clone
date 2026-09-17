@@ -314,7 +314,12 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         // the reference selects the machine by mob type and nothing in the
         // numbers distinguishes a bee from anything else that flies.
         // firefly also has bee AI
-        drive.beeFlight = (config.id == "bee") || (config.id == "firefly") || (config.id == "magic_firefly");
+        // gardn runs hornets and wasps on tick_bee_passive: the stingers are
+        // bees that shoot, and off a target they cruise and weave rather than
+        // hopping like something that walks.
+        drive.beeFlight = (config.id == "bee") || (config.id == "firefly") ||
+                          (config.id == "magic_firefly") || (config.id == "hornet") ||
+                          (config.id == "wasp");
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
         // Stated in COMMON-TIER units: `distance` IS the reach a common shooter
@@ -802,6 +807,9 @@ void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Moti
     // mob's hop proportional to its body instead of merely slower.
     const double accel = speed * kPassiveAccelScale * sizeFactor(body.radius);
     Vec2 push{0, 0};
+    // What the drift may reach. A cruise has a tighter one of its own; see
+    // kBeeCruiseSpeed.
+    double limit = kMaxWanderSpeed;
 
     if (const Wobble* wobble = world.tryGet<Wobble>(self)) {
         // Bees do not hop. They cruise, and the heading sways at 1.5 rad/s
@@ -821,6 +829,7 @@ void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Moti
             magnitude *= kBeePulseScale;
         }
         push = Vec2::fromAngle(ai.wanderAngle, magnitude);
+        limit = std::min(limit, kBeeCruiseSpeed * sizeFactor(body.radius));
     } else {
         const double elapsed = nowMillis - passive->stateStartMillis;
         if (passive->state == PassiveState::Idle) {
@@ -846,9 +855,10 @@ void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Moti
     // Friction is per TICK, not per second: this is a fixed-step integrator and
     // spreading it over dt changes how far every idle mob in the world travels.
     // The clamp is what stops radius-proportional acceleration from drifting an
-    // apex mob at several times a player's top speed.
+    // apex mob at several times a player's top speed -- `limit` above, which is
+    // the hop's ceiling or the tighter one a cruise flies under.
     passive->velocity =
-        (passive->velocity * (1.0 - kPassiveFriction) + push).clampedLength(kMaxWanderSpeed);
+        (passive->velocity * (1.0 - kPassiveFriction) + push).clampedLength(limit);
     motion.velocity = passive->velocity;
 }
 

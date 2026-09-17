@@ -1869,6 +1869,92 @@ TEST(a_firing_mob_rocks_back_a_little_and_no_further) {
 }
 
 // ---------------------------------------------------------------------------
+// The bee cruise
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The slowest and the fastest the mob travelled over `ticks` of having
+/// nothing to chase. A hopper rests between hops and a cruiser never does, so
+/// the pair of them is what tells the two machines apart.
+struct DriftSpeeds {
+    double slowest = 1e30;
+    double fastest = 0.0;
+};
+
+DriftSpeeds driftSpeeds(const char* id, int ticks = 120) {
+    Sim sim;
+    const Entity mob = sim.spawnMob(id, kOrigin);
+    DriftSpeeds out;
+    // A second of settling first: every drift starts from a standstill, and
+    // the first hop's worth of that would look like a rest to the test.
+    sim.tick(30);
+    for (int i = 0; i < ticks; ++i) {
+        sim.tick();
+        const double speed = sim.velocityOf(mob).length();
+        out.slowest = std::min(out.slowest, speed);
+        out.fastest = std::max(out.fastest, speed);
+    }
+    return out;
+}
+
+/// The ceiling on that mob's cruise: the bee's own rate, scaled by its body.
+double cruiseCeiling(const char* id) {
+    const MobStats stats = content().mobStats(content().mobIndex(id), Rarity::Common);
+    return kBeeCruiseSpeed * stats.radius / kWanderRefRadius;
+}
+
+} // namespace
+
+TEST(hornets_and_wasps_cruise_instead_of_hopping) {
+    CHECK(contentReady());
+    // gardn runs both on tick_bee_passive, so off a target they fly the bee's
+    // weaving line rather than the walker's hop. The two machines are told
+    // apart by what happens BETWEEN moves: a hopper spends a second of every
+    // cycle at a standstill, and a cruiser never stops.
+    for (const char* id : {"hornet", "wasp", "bee"}) {
+        const DriftSpeeds drift = driftSpeeds(id);
+        CHECK(drift.fastest > 0.0);
+        CHECK(drift.slowest > 0.25 * drift.fastest);
+    }
+    // The contrast, so the assertion above is known to be able to fail: a
+    // ladybug hops, and comes to a dead stop between hops.
+    const DriftSpeeds hopper = driftSpeeds("ladybug");
+    CHECK(hopper.slowest < 0.05 * hopper.fastest);
+}
+
+TEST(a_cruise_is_flown_at_the_bees_rate_whatever_the_mob_is_authored_at) {
+    CHECK(contentReady());
+    // The cruise is sustained where the hop is pulsed, so the same authored
+    // speed carries a cruising mob some six times as fast as a hopping one. A
+    // hornet is authored at four times a bee's speed; uncapped it would drift
+    // at 280 u/s, faster than it chases.
+    for (const char* id : {"hornet", "wasp"}) {
+        const DriftSpeeds drift = driftSpeeds(id);
+        CHECK(drift.fastest <= cruiseCeiling(id) + 1e-9);
+        CHECK(drift.fastest < content().mobStats(content().mobIndex(id), Rarity::Common).speed);
+    }
+    // And the ceiling is the BEE's own cruise restated, so the mob it was
+    // tuned on is untouched by it: a bee still reaches the speed it always
+    // flew at rather than being clipped down to a new one.
+    const DriftSpeeds bee = driftSpeeds("bee");
+    CHECK(bee.fastest > 0.95 * cruiseCeiling("bee"));
+    CHECK(bee.fastest <= cruiseCeiling("bee") + 1e-9);
+}
+
+TEST(a_cruising_stinger_still_drops_everything_for_a_flower) {
+    CHECK(contentReady());
+    // The flag is on the PASSIVE machine only. A hornet that cruised past a
+    // flower rather than turning on it would be a very peaceful hornet.
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    sim.tick(60);                       // long enough to be well into a cruise
+    sim.spawnPlayer(kOrigin + Vec2{200, 0});
+    CHECK(fireAndCatch(sim) != NULL_ENTITY);
+    CHECK(sim.brainOf(hornet).target != NULL_ENTITY);
+}
+
+// ---------------------------------------------------------------------------
 // Standoff
 // ---------------------------------------------------------------------------
 

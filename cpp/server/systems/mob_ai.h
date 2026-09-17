@@ -146,6 +146,23 @@ inline constexpr double kBeePulsePeriodMillis = 1500.0;
 inline constexpr double kBeePulseMillis = 500.0;
 inline constexpr double kBeePulseScale = 0.5;
 
+/// What a cruise tops out at, per kWanderRefRadius of body, in units a second.
+///
+/// The cruise is SUSTAINED where the hop is pulsed, so the same acceleration
+/// carries a cruising mob some six times as fast as a hopping one. That went
+/// unnoticed while the machine was the bee's alone -- a bee is authored at 30
+/// u/s and cruises at 54 -- but the flag is on the mob TYPE, and a hornet
+/// authored at 120 would cruise at 280: faster than it chases, and faster
+/// than most things it would be cruising past.
+///
+/// The number is the reference's own cruise, which is flat: 1.5 units of
+/// acceleration against 1/3 friction a tick at 20 ticks a second, for every
+/// mob that runs the bee machine whatever its stated speed. Scaled here by the
+/// body the way everything else in the drift is, which lands the common bee on
+/// exactly the 54 it already flies at -- this ceiling is that bee's own cruise
+/// restated, and it binds on nothing that was cruising sanely to begin with.
+inline constexpr double kBeeCruiseSpeed = 90.0;
+
 // -- walking to a point ------------------------------------------------------
 //
 // Centipede heads and ownerless pets wander to a POINT rather than on a

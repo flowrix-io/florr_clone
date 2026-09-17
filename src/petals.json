@@ -1070,5 +1070,17 @@
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\"><rect width=\"10\" height=\"6\" fill=\"#888888\" x=\"11\" y=\"2\" rx=\"1\"/><rect width=\"18\" height=\"24\" fill=\"#333333\" x=\"7\" y=\"8\" stroke-width=\"3\" stroke=\"#222222\" rx=\"1\"/><rect width=\"18\" height=\"8\" fill=\"#f0b467\" x=\"7\" y=\"8\" stroke-width=\"3\" stroke=\"#bf9052\" rx=\"1\"/></svg>",
         "isAdminPetal": false
+    },
+    "bur": {
+        "name": "Bur",
+        "damage": 5,
+        "health": 5,
+        "size": 1,
+        "cooldown": 2000,
+        "description": "Debuffs armor of enemies",
+        "color": "#8B4513",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\">  <g><path d=\"M 32 16 L 32 16 A 4.14 4.14 0 0 1 29.856 24 L 29.856 24 A 4.14 4.14 0 0 1 24 29.856 L 24 29.856 A 4.14 4.14 0 0 1 16 32 L 16 32 A 4.14 4.14 0 0 1 8 29.856 L 8 29.856 A 4.14 4.14 0 0 1 2.144 24 L 2.144 24 A 4.14 4.14 0 0 1 0 16 L 0 16 A 4.14 4.14 0 0 1 2.144 8 L 2.144 8 A 4.14 4.14 0 0 1 8 2.144 L 8 2.144 A 4.14 4.14 0 0 1 16 0 L 16 0 A 4.14 4.14 0 0 1 24 2.144 L 24 2.144 A 4.14 4.14 0 0 1 29.856 8 L 29.856 8 A 4.14 4.14 0 0 1 32 16 Z\" fill=\"#7E0D0D\"/><path d=\"M 5.333 16 a 10.667 10.667 0 1 0 21.334 0 a 10.667 10.667 0 1 0 -21.334 0 Z\" fill=\"#9C1010\"/>  </g></svg>",
+        "isAdminPetal": false
     }
 }
