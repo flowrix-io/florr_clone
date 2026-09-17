@@ -22,6 +22,7 @@ enum class SkillId : std::uint8_t {
     PlayerHealth,
     Healing,
     Absorbing,
+    Reload,
     SecondChance,
     Count,
 };
@@ -32,11 +33,12 @@ inline constexpr int kSkillCount = static_cast<int>(SkillId::Count);
 /// derived from the enum so a reordering here cannot silently rename a saved
 /// branch out from under an account.
 inline constexpr std::array<const char*, kSkillCount> kSkillKeys = {
-    "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "secondChance",
+    "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "reload",
+    "secondChance",
 };
 
 inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
-    "Damage", "Petal Health", "Flower Health", "Healing", "Absorption", "Second Chance",
+    "Damage", "Petal Health", "Flower Health", "Healing", "Absorption", "Reload", "Second Chance",
 };
 
 /// One line of what the branch actually does, shown in its tooltip.
@@ -46,12 +48,13 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
     "Multiplies your flower's maximum health.",
     "Multiplies healing from petals.",
     "Multiplies XP from absorbed petals.",
+    "Shortens every petal cooldown.",
     "Survive a killing blow at 1 HP.",
 };
 
 /// How many tiers each branch has. Two of them stop short of the full ladder.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
-    kRarityCount, kRarityCount, kRarityCount, 4, kRarityCount, 2,
+    kRarityCount, kRarityCount, kRarityCount, 4, kRarityCount, kRarityCount, 2,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -98,6 +101,14 @@ inline constexpr std::array<double, kRarityCount> kAbsorbSkillScale = {
     1.0, 1.26, 1.59, 2.0, 2.52, 3.17, 4.0, 5.04, 6.35, 8.0,
 };
 
+/// Applied to petal COOLDOWNS, and the only table that shrinks its input: a
+/// reload is a wait, so the branch is worth having when the number goes DOWN.
+/// Geometric like the absorb curve, so apex lands on exactly a quarter of the
+/// petal's own reload and every step is worth the same proportion of the last.
+inline constexpr std::array<double, kRarityCount> kReloadSkillScale = {
+    1.0, 0.857, 0.735, 0.630, 0.540, 0.463, 0.397, 0.340, 0.292, 0.25,
+};
+
 /// `tier` is a rarity index, or -1 for a branch never touched. Out-of-range
 /// tiers read as neutral rather than clamping, because the only way to get one
 /// is a corrupt record, and a corrupt record must not grant a bonus.
@@ -130,6 +141,10 @@ struct SkillSet {
 
     double statScale(SkillId id) const { return scaleAt(kStatSkillScale, level(id)); }
     double effectScale(SkillId id) const { return scaleAt(kEffectSkillScale, level(id)); }
+
+    /// What every petal cooldown is multiplied by. A factor below one, so it
+    /// is the one scale a caller must not clamp UP to 1.0 on a missing tree.
+    double reloadScale() const { return scaleAt(kReloadSkillScale, level(SkillId::Reload)); }
 
     /// True when Second Chance's prerequisite is satisfied.
     bool secondChanceUnlocked() const {

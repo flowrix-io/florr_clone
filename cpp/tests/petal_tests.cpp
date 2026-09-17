@@ -883,6 +883,76 @@ TEST(a_petal_at_zero_health_breaks_and_returns_on_its_cooldown) {
     CHECK_NEAR(rig.healthOf(rig.petals(0).front()), 10.0, 1e-9);
 }
 
+TEST(the_reload_talent_shortens_a_broken_petals_cooldown) {
+    if (!contentLoaded()) return;
+
+    // The same break on two flowers, one of them at the top of the Reload
+    // branch. Basic's own cooldown is 1200ms, which apex must quarter.
+    const auto breakBasic = [](Rig& rig) {
+        rig.equip(0, "basic");
+        rig.settleEquips();
+        rig.damage(rig.petals(0).front(), 10.0);
+        const double brokenAt = rig.now + net::kTickMillis;
+        rig.tick();
+        CHECK(rig.slot(0).broken);
+        return rig.slot(0).reloadReadyAtMillis - brokenAt;
+    };
+
+    Rig plain;
+    CHECK_NEAR(breakBasic(plain), 1200.0, 1e-9);
+
+    Rig apex;
+    apex.world.add<PlayerSkillTree>(apex.player);
+    apex.world.get<PlayerSkillTree>(apex.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
+    CHECK_NEAR(breakBasic(apex), 300.0, 1e-9);
+
+    // And it is a real wait, not just a shorter number on the slot. Ten ticks
+    // is a third of a second: enough for apex to have its petal back, and far
+    // short of the full cooldown the plain flower is still serving.
+    plain.tick(10);
+    apex.tick(10);
+    CHECK(!apex.slot(0).broken);
+    CHECK_EQ(apex.petals(0).size(), std::size_t(1));
+    CHECK(plain.slot(0).broken);
+}
+
+TEST(the_reload_talent_paces_a_projectile_petals_volleys) {
+    if (!contentLoaded()) return;
+
+    // A missile petal's reload is its rate of fire: it is spent by the shot and
+    // the slot pays the cooldown. Counting volleys over a fixed window is what
+    // tells the two halves of that apart from a slot that merely LOOKS ready.
+    const auto volleys = [](Rig& rig, int ticks) {
+        rig.equip(0, "peas");
+        rig.settleEquips();
+        rig.setFlags(net::InputAttack);
+        int fired = 0;
+        bool wasBroken = rig.slot(0).broken;
+        for (int i = 0; i < ticks; ++i) {
+            rig.tick();
+            if (rig.slot(0).broken && !wasBroken) ++fired;
+            wasBroken = rig.slot(0).broken;
+        }
+        return fired;
+    };
+
+    Rig plain;
+    const int slow = volleys(plain, 300);
+
+    Rig apex;
+    apex.world.add<PlayerSkillTree>(apex.player);
+    apex.world.get<PlayerSkillTree>(apex.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
+    const int fast = volleys(apex, 300);
+
+    CHECK(slow > 0);
+    // Not an exact ratio: the first volley of each run is paced by the equip
+    // reload rather than by the shot timer, so apex is a volley ahead of four
+    // times the count rather than exactly four times it.
+    CHECK(fast >= slow * 3);
+}
+
 TEST(partial_damage_does_not_break_a_petal) {
     if (!contentLoaded()) return;
     Rig rig;

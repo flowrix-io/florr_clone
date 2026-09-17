@@ -346,9 +346,12 @@ private:
     void retireDistantPets(World& world, const ContentRegistry& registry, Entity player,
                            double nowMillis);
     /// Put the petal that hatches `mobIndex` back on its reload, if one is
-    /// equipped and not already reloading.
+    /// equipped and not already reloading. `reloadScale` is the owner's Reload
+    /// talent: the slot state and loadout arrive here as references rather than
+    /// as the player they belong to, so the tree has to come with them.
     void reloadEggForPet(World& world, const ContentRegistry& registry, PetalSlotState& state,
-                         Loadout& loadout, std::uint16_t mobIndex, double nowMillis);
+                         Loadout& loadout, std::uint16_t mobIndex, double reloadScale,
+                         double nowMillis);
 
     /// `rarity` is the EQUIPPED petal's tier, which is what the pet inherits:
     /// the config's own `petMobRarity` is written in the JSON and read by

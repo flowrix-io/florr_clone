@@ -1,6 +1,6 @@
 // The talent tree.
 //
-// Five branches fan out from the flower, one per stat, each a chain of tiers
+// Six branches fan out from the flower, one per stat, each a chain of tiers
 // on the rarity ladder. A branch walks outward in equal steps and turns a
 // little more with each step past the third, which is what keeps ten nodes
 // evenly spaced instead of crossing their neighbours. Second Chance is not a
@@ -234,53 +234,21 @@ std::string effectLine(SkillId skill, int tier) {
                       scaleAt(kAbsorbSkillScale, tier) * 100.0);
         return buffer;
     }
+    // Quoted as the share of the wait that is LEFT, not as the share taken
+    // off: every other row on the card is a multiplier on the petal's own
+    // number, and "25% reload time" reads against them without the player
+    // having to work out which direction this one runs in.
+    if (skill == SkillId::Reload) {
+        std::snprintf(buffer, sizeof buffer, "%.0f%% reload time",
+                      scaleAt(kReloadSkillScale, tier) * 100.0);
+        return buffer;
+    }
     // The effect curve for every branch, including the three whose own numbers
     // follow the gentler stat curve. That is what the browser quotes, and a
     // tooltip promising 190% where the panel is showing 480% would be worse.
     std::snprintf(buffer, sizeof buffer, "%.0f%% multiplier",
                   scaleAt(kEffectSkillScale, tier) * 100.0);
     return buffer;
-}
-
-/// One blade of the absorption rotor: a comma that starts thin at the hub and
-/// widens to a rounded tip, swept a fixed arc around the centre.
-///
-/// Filled as a ribbon rather than stroked, because the taper IS the shape --
-/// a constant-width stroke of the same spiral reads as a snail's shell, which
-/// is what this icon used to be.
-void rotorBlade(Canvas& canvas, Vec2 at, double radius, double from, double sweep) {
-    constexpr int kSteps = 10;
-    const double hub = radius * 0.18;
-    const double tip = radius * 0.30;
-
-    Vec2 left[kSteps + 1];
-    Vec2 right[kSteps + 1];
-    for (int i = 0; i <= kSteps; ++i) {
-        const double t = static_cast<double>(i) / kSteps;
-        const double angle = from + sweep * t;
-        // The spine runs from the hub to the rim; the half-width grows with it,
-        // so the blade is a wedge with a rounded end rather than a bar.
-        const Vec2 spine = at + Vec2::fromAngle(angle, hub + (radius - tip * 0.6 - hub) * t);
-        const double half = radius * (0.055 + 0.155 * t);
-        const Vec2 normal = Vec2::fromAngle(angle + kPi * 0.5, half);
-        left[i] = spine + normal;
-        right[i] = spine - normal;
-    }
-
-    canvas.beginPath();
-    canvas.moveTo(static_cast<float>(left[0].x), static_cast<float>(left[0].y));
-    for (int i = 1; i <= kSteps; ++i) {
-        canvas.lineTo(static_cast<float>(left[i].x), static_cast<float>(left[i].y));
-    }
-    for (int i = kSteps; i >= 0; --i) {
-        canvas.lineTo(static_cast<float>(right[i].x), static_cast<float>(right[i].y));
-    }
-    canvas.closePath();
-    canvas.fill();
-
-    const Vec2 end = at + Vec2::fromAngle(from + sweep, radius - tip * 0.6);
-    canvas.fillCircle(static_cast<float>(end.x), static_cast<float>(end.y),
-                      static_cast<float>(radius * 0.21));
 }
 
 /// A rounded plus. Two overlapping capsules rather than one traced outline:
@@ -334,25 +302,23 @@ void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
                               static_cast<float>(half * 0.30));
             break;
         }
-        case SkillId::PetalHealth: {    // a reload arrow: a thick ring, cut open
-            const double weight = size * 0.29;
+        case SkillId::PetalHealth: {    // a plus inside a ring
+            // The same mark Flower Health wears, boxed in: the two branches do
+            // the same thing to two different pools, and reading as a pair is
+            // the point. The ring is what says WHOSE health -- the petal is the
+            // thing that goes round the flower.
+            const double weight = size * 0.12;
             const double ring = half - weight * 0.5;
             canvas.setLineWidth(static_cast<float>(weight));
-            canvas.setLineCap("butt");
             canvas.beginPath();
-            // A narrow slot, not a half-open crescent: the gap says "this comes
-            // back round", where a 90-degree mouth would just read as a C. The
-            // sweep runs the LONG way -- clockwise from just below the slot all
-            // the way round to just above it -- so the arc is the ring and the
-            // gap is what is left over, not the other way about.
-            canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y), static_cast<float>(ring),
-                       static_cast<float>(0.33), static_cast<float>(kTau - 0.20), false);
+            canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y),
+                       static_cast<float>(ring), 0.0f, static_cast<float>(kTau));
             canvas.stroke();
-            // The arrow head: a square block filling the corner above the ring's
-            // upper end, flush with its outer edge.
-            canvas.fillRect(static_cast<float>(at.x + half * 0.19), static_cast<float>(at.y - half),
-                            static_cast<float>(half * 0.81), static_cast<float>(half * 0.94));
-            canvas.setLineCap("round");
+            // Sized so the cross's corners clear the ring's inner edge with a
+            // little air: the arms reach 0.54 of the glyph and the bar is 0.20
+            // of it, putting the furthest corner inside the 0.76 the ring
+            // leaves. Filling that gap makes the two read as one blob.
+            roundedCross(canvas, at, size * 0.54, size * 0.20);
             break;
         }
         case SkillId::Healing: {        // a heart, drawn as an outline
@@ -382,13 +348,97 @@ void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
             canvas.fill();
             break;
         }
-        case SkillId::Absorbing: {      // a rotor drawing inward
-            constexpr int kBlades = 8;
-            for (int i = 0; i < kBlades; ++i) {
-                rotorBlade(canvas, at, half, (i / static_cast<double>(kBlades)) * kTau, 0.62);
+        case SkillId::Reload: {         // a stopwatch
+            const double face = half * 0.80;
+            const double weight = size * 0.11;
+            canvas.setLineWidth(static_cast<float>(weight));
+            // The case, left open at the top so the crown has somewhere to sit:
+            // a closed ring with a stub on it reads as a balloon.
+            canvas.beginPath();
+            canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y + half * 0.12),
+                       static_cast<float>(face), static_cast<float>(-kPi * 0.36),
+                       static_cast<float>(kPi + kPi * 0.36), false);
+            canvas.stroke();
+            // The crown: a short bar across the gap, and a stem joining it to
+            // the two ends of the case.
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(at.x - half * 0.30),
+                          static_cast<float>(at.y - half * 0.86));
+            canvas.lineTo(static_cast<float>(at.x + half * 0.30),
+                          static_cast<float>(at.y - half * 0.86));
+            canvas.stroke();
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(at.x), static_cast<float>(at.y - half * 0.86));
+            canvas.lineTo(static_cast<float>(at.x), static_cast<float>(at.y - half * 0.52));
+            canvas.stroke();
+            // The hands: noon and three. Both stop well inside the case -- a
+            // round cap adds half the line width to each end, and a minute hand
+            // drawn to the rim joins the crown's stem into one stalk through
+            // the middle of the face.
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(at.x), static_cast<float>(at.y + half * 0.12));
+            canvas.lineTo(static_cast<float>(at.x), static_cast<float>(at.y - half * 0.22));
+            canvas.stroke();
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(at.x), static_cast<float>(at.y + half * 0.12));
+            canvas.lineTo(static_cast<float>(at.x + half * 0.36),
+                          static_cast<float>(at.y + half * 0.12));
+            canvas.stroke();
+            break;
+        }
+        case SkillId::Absorbing: {      // a fork and a knife
+            // Absorbing a petal is EATING it, and the place setting is the one
+            // mark for that a player does not have to be taught. Both pieces
+            // are built the same way -- a filled handle with a head on top --
+            // so they sit at the same weight beside each other.
+            const double fork = at.x - half * 0.45;
+            const double blade = at.x + half * 0.45;
+
+            canvas.setLineWidth(static_cast<float>(size * 0.10));
+            for (int tine = -1; tine <= 1; ++tine) {
+                const double x = fork + tine * half * 0.26;
+                canvas.beginPath();
+                canvas.moveTo(static_cast<float>(x), static_cast<float>(at.y - half * 0.80));
+                canvas.lineTo(static_cast<float>(x), static_cast<float>(at.y - half * 0.34));
+                canvas.stroke();
             }
-            canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y),
-                              static_cast<float>(half * 0.15));
+            // The head the three tines run into, and the handle below it. Two
+            // shapes rather than one outline: the tines are strokes, and a
+            // traced fork would have to re-describe every one of them.
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(fork - half * 0.37),
+                             static_cast<float>(at.y - half * 0.44),
+                             static_cast<float>(half * 0.74), static_cast<float>(half * 0.32),
+                             static_cast<float>(half * 0.12));
+            canvas.fill();
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(fork - half * 0.13),
+                             static_cast<float>(at.y - half * 0.25),
+                             static_cast<float>(half * 0.26), static_cast<float>(half * 1.10),
+                             static_cast<float>(half * 0.13));
+            canvas.fill();
+
+            // The blade: a straight spine down the left, the cutting edge
+            // bellying out to the right and tapering back to the point. The
+            // belly carries the whole shape -- at a third of the glyph wide it
+            // is a knife, and at the handle's own width it is a second fork
+            // handle with nothing on the end.
+            canvas.beginPath();
+            canvas.moveTo(static_cast<float>(blade - half * 0.12),
+                          static_cast<float>(at.y - half * 0.88));
+            canvas.quadraticCurveTo(
+                static_cast<float>(blade + half * 0.34), static_cast<float>(at.y - half * 0.52),
+                static_cast<float>(blade + half * 0.26), static_cast<float>(at.y - half * 0.08));
+            canvas.lineTo(static_cast<float>(blade - half * 0.12),
+                          static_cast<float>(at.y - half * 0.08));
+            canvas.closePath();
+            canvas.fill();
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(blade - half * 0.13),
+                             static_cast<float>(at.y - half * 0.16),
+                             static_cast<float>(half * 0.26), static_cast<float>(half * 1.02),
+                             static_cast<float>(half * 0.13));
+            canvas.fill();
             break;
         }
         default: break;

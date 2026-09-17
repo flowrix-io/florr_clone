@@ -185,8 +185,22 @@ double petStatMultiplier(const std::string& mobId) {
 
 /// A cooldown of zero is a config that forgot to say how long, not a petal that
 /// returns the instant it breaks.
-double reloadMillisFor(const PetalStats& stats) {
-    return stats.reloadMillis > 0.0 ? stats.reloadMillis : kDefaultPetalReloadMillis;
+///
+/// `scale` is the Reload talent, which only ever shortens: a quarter of the
+/// petal's own reload at apex. Floored at one tick, because a cooldown shorter
+/// than the tick that measures it is no cooldown at all -- the slot would be
+/// ready again on the same frame it broke.
+double reloadMillisFor(const PetalStats& stats, double scale) {
+    const double base = stats.reloadMillis > 0.0 ? stats.reloadMillis : kDefaultPetalReloadMillis;
+    return std::max(base * scale, net::kTickMillis);
+}
+
+/// The Reload talent as a multiplier. A flower with no tree at all reads as
+/// neutral rather than as an error: the ring runs on entities, and not every
+/// entity carrying a loadout came from an account.
+double reloadScaleOf(World& world, Entity player) {
+    const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
+    return tree ? tree->skills.reloadScale() : 1.0;
 }
 
 /// `range` is a multiple of the ring radius. The JSON leaves it out for every
@@ -490,6 +504,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
     const double petalHealthScale =
         tree ? tree->skills.statScale(SkillId::PetalHealth) : 1.0;
+    const double reloadScale = tree ? tree->skills.reloadScale() : 1.0;
 
     // Bucket the live petals by slot, dropping the handles the world has
     // already reaped and the ones combat killed this tick. Both count as
@@ -545,7 +560,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // 25.2 here, and blocks a sixth 5-damage hit the reference lets kill it.
         stats.health = std::round(stats.health * petalHealthScale);
         const int count = std::max(0, stats.count);
-        const double reload = reloadMillisFor(stats);
+        const double reload = reloadMillisFor(stats, reloadScale);
 
         if (slotState.configIndex != slot.configIndex || slotState.rarity != slot.rarity) {
             destroySlotPetals(world, loadout, slotId);
@@ -1402,8 +1417,12 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
 
         if (config.projectile.present && attacking &&
             nowMillis >= instance->nextProjectileMillis) {
+            // The same cooldown the break path pays, on the same talent: a
+            // missile petal's reload IS its rate of fire, so a tree that halves
+            // one and leaves the other would cap the ring at the slower of two
+            // numbers that are meant to be one.
             instance->nextProjectileMillis =
-                nowMillis + std::max(stats.reloadMillis, net::kTickMillis);
+                nowMillis + reloadMillisFor(stats, reloadScaleOf(world, player));
             // Read before the volley: firing is structural, and spending the
             // petal below moves the instance out from under the pointer.
             const std::uint8_t firedSlot = instance->slot;
@@ -1480,7 +1499,7 @@ void PetalSystem::spendPetal(World& world, Entity player, Entity petal, std::uin
     PetalSlotState* state = world.tryGet<PetalSlotState>(player);
     if (loadout == nullptr || state == nullptr || slotId >= kLoadoutActiveSlots) return;
     PetalSlotState::Slot& slotState = state->slots[slotId];
-    const double reload = reloadMillisFor(stats);
+    const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
     if (slotState.independent) {
         // One grain at a time, on the same array the break path stamps.
         if (subIndex < slotState.instanceReadyAtMillis.size()) {
@@ -2137,7 +2156,8 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
             // screen has not died, so it raises no death event and drops
             // nothing.
             world.destroy(pet);
-            reloadEggForPet(world, registry, *state, *loadout, mobIndex, nowMillis);
+            reloadEggForPet(world, registry, *state, *loadout, mobIndex,
+                            reloadScaleOf(world, player), nowMillis);
         }
         slotState.pets.resize(kept);
     }
@@ -2145,7 +2165,7 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
 
 void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,
                                   PetalSlotState& state, Loadout& loadout,
-                                  std::uint16_t mobIndex, double nowMillis) {
+                                  std::uint16_t mobIndex, double reloadScale, double nowMillis) {
     if (mobIndex == kInvalidIndex) return;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         const auto index = static_cast<std::size_t>(i);
@@ -2158,7 +2178,7 @@ void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,
         if (registry.petal(slot.configIndex).petMobIndex != mobIndex) continue;
 
         const PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
-        const double reload = reloadMillisFor(stats);
+        const double reload = reloadMillisFor(stats, reloadScale);
         PetalSlotState::Slot& slotState = state.slots[index];
         destroySlotPetals(world, loadout, static_cast<std::uint8_t>(i));
         // Not "the cluster was just destroyed": left set, the fold at the top

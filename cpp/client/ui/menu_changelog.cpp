@@ -365,6 +365,12 @@ constexpr ChangelogEntry kChangelog[] = {
       "Lightning strikes climb the rarity ladder and take your Damage talent "
       "now, like every other thing a petal does -- an apex shock was landing "
       "a common one's damage"}},
+    {"September 16, 2026",
+     {"New talent: Reload, a sixth branch of the tree -- every tier shortens "
+      "the time a broken petal takes to come back, down to a quarter of it at "
+      "apex",
+      "Reload paces missile petals too: a peas or missile slot fires as fast "
+      "as it reloads"}},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

@@ -146,6 +146,25 @@ TEST(talents_are_bought_one_tier_at_a_time) {
     CHECK_EQ(client.profile().skills.level(SkillId::Damage), 0);
 }
 
+TEST(the_reload_branch_is_bought_over_the_wire_like_any_other) {
+    Harness h("talent-reload");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "reloadie", "password7"));
+
+    // The branch was added between Absorption and Second Chance, which moved
+    // the fork's id along by one. Both halves of the wire read that id out of
+    // the same table, so buying the new branch and finding the fork untouched
+    // is what says they still agree.
+    client.requestUpgradeSkill(SkillId::Reload, 0);
+    CHECK(awaitProfile(h, client, [](const Profile& p) {
+        return p.skills.level(SkillId::Reload) == 0;
+    }));
+    CHECK_EQ(client.profile().skills.level(SkillId::SecondChance), -1);
+    CHECK_NEAR(client.profile().skills.reloadScale(), kReloadSkillScale[0], 1e-12);
+}
+
 TEST(second_chance_stays_locked_until_flower_health_is_rare) {
     Harness h("talent-fork");
     if (!h.ready) { CHECK(false); return; }
@@ -643,6 +662,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         record.totalXp = 100000;
         record.skills.set(SkillId::Healing, rarityIndex(Rarity::Epic));
         record.skills.set(SkillId::Absorbing, rarityIndex(Rarity::Common));
+        record.skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
         db.markDirty();
         CHECK(db.save());
     }
@@ -658,6 +678,10 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         if (record != nullptr) {
             CHECK_EQ(record->skills.level(SkillId::Healing), rarityIndex(Rarity::Epic));
             CHECK_EQ(record->skills.level(SkillId::Absorbing), rarityIndex(Rarity::Common));
+            // The newest branch, at the tier the tree's own key table has to
+            // spell correctly for a saved account to keep it.
+            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Apex));
+            CHECK_NEAR(record->skills.reloadScale(), 0.25, 1e-12);
             CHECK_EQ(record->skills.level(SkillId::Damage), -1);
         }
     }
