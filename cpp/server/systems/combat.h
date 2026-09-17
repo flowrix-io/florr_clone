@@ -333,6 +333,11 @@ private:
     struct ShotSource {
         Entity entity = NULL_ENTITY;
         Vec2 position;
+        /// Where the shot was before this tick's movement. `position` is the
+        /// head of the segment it flew and this is the tail; the overlap test
+        /// is against the whole segment, so a shot faster than its own reach
+        /// cannot step over a body between one tick and the next.
+        Vec2 from;
         double radius = 0;
         double travelled = 0;
         /// Momentum, for the shove a hit delivers and the recoil it repays.

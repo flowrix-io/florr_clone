@@ -1532,12 +1532,13 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
 void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                                    const ContentRegistry& content, double nowMillis, double dt) {
     shots_.clear();
-    queries_->projectiles.each([&](Entity e, Projectile&, Transform& transform, Body& body,
-                                   Motion& motion) {
+    queries_->projectiles.each([&](Entity e, Projectile& projectile, Transform& transform,
+                                   Body& body, Motion& motion) {
         // Movement has already flown the shot this tick, so the budget spent
         // is the distance it just covered -- not one it is about to.
-        shots_.push_back({e, transform.position, body.radius, motion.velocity.length() * dt,
-                          body.mass, motion.velocity.length(), transform.realm});
+        shots_.push_back({e, transform.position, projectile.lastPosition, body.radius,
+                          motion.velocity.length() * dt, body.mass, motion.velocity.length(),
+                          transform.realm});
     });
 
     for (const ShotSource& shot : shots_) {
@@ -1559,8 +1560,13 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         const Rarity rarity = projectile->rarity;
         const bool infecting = projectile->glitchInfecting;
 
-        grid.query(shot.realm, shot.position, shot.radius + shot.travelled + kBroadphasePad,
-                   candidates_);
+        // Centred on the segment, so the pad the broadphase already spends on
+        // the tick's travel covers the whole of it rather than only the end.
+        const Vec2 flown = shot.position - shot.from;
+        const double flownLength = flown.length();
+        const Vec2 midpoint = shot.from + flown * 0.5;
+        grid.query(shot.realm, midpoint,
+                   shot.radius + flownLength * 0.5 + shot.travelled + kBroadphasePad, candidates_);
 
         // Gathered whole before a single hit lands. The loop below marks
         // victims Dead and that relocates their rows, so nothing here may hold
@@ -1573,7 +1579,23 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             const Body* body = world.tryGet<Body>(victim);
             if (transform == nullptr || body == nullptr) continue;
 
-            const Vec2 offset = transform->position - shot.position;
+            // Against the SEGMENT the shot just flew, not its endpoint. A
+            // shot's speed rides its calibre, so a big one covers more ground
+            // in a tick than its own hit reach, and an endpoint test would let
+            // it step clean over a flower -- in front of it one tick, behind it
+            // the next, never touching. `offset` stays the vector from the
+            // point of closest approach, which is what the shove below pushes
+            // along and what the nearest-first ordering sorts on.
+            const Vec2 toVictim = transform->position - shot.from;
+            double along = 0.0;
+            if (flownLength > 1e-9) {
+                const Vec2 axis = flown * (1.0 / flownLength);
+                along = clamp(toVictim.x * axis.x + toVictim.y * axis.y, 0.0, flownLength);
+            }
+            const Vec2 nearest = shot.from + (flownLength > 1e-9
+                                                  ? flown * (along / flownLength)
+                                                  : Vec2{});
+            const Vec2 offset = transform->position - nearest;
             const double reach = shot.radius + body->radius;
             const double distanceSquared = offset.lengthSq();
             if (distanceSquared > reach * reach) continue;

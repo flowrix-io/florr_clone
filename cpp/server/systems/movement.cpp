@@ -410,6 +410,14 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
             return;
         }
 
+        // The tail of this tick's segment, recorded before anything moves so
+        // that combat can test the whole path the shot flew. Written here and
+        // not derived from velocity * dt afterwards, because the weave carries
+        // the shot sideways off its axis and the range budget can shorten the
+        // last step: both would leave the derived tail somewhere the shot was
+        // never at.
+        projectile.lastPosition = transform.position;
+
         Vec2 velocity = sanitizeMovementVelocity(motion.velocity);
 
         // Seeking is a LAUNCH correction, not a guidance system: the shot

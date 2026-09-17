@@ -756,6 +756,10 @@ Entity spawnShot(Arena& a, Vec2 at, Vec2 velocity, double damage, double range,
     projectile.creditTo = creditTo;
     projectile.damage = damage;
     projectile.remainingDistance = range;
+    // Where the server seeds it at spawn. Left at the origin the shot would
+    // read as having flown a segment from {0,0} to here, and combat tests that
+    // whole segment.
+    projectile.lastPosition = at;
     a.world.add<Projectile>(e, projectile);
     a.world.add<Transform>(e, Transform{at, 0.0});
     a.world.add<Motion>(e, Motion{velocity});
@@ -780,6 +784,40 @@ TEST(a_projectile_hits_the_nearest_target_once_and_expires) {
     // Already marked: a second tick must not deal the damage again.
     a.step(40.0);
     CHECK_NEAR(a.health(near), 75.0, 1e-9);
+}
+
+TEST(a_fast_projectile_cannot_step_over_a_body_between_ticks) {
+    Arena a;
+    const Entity player = a.player({500, 2000});
+    const Entity mob = a.mob({800, 1000}, 100.0);
+
+    // An apex shooter's missile flies faster than its own hit reach is wide,
+    // because speed rides the calibre: this one covered 200 units in the tick
+    // and is 25 units of reach across. Tested at its ENDPOINT it has already
+    // passed the mob and misses forever; tested along the segment it flew, it
+    // hits the thing that was standing in the way.
+    const Entity shot = spawnShot(a, {900, 1000}, {5000, 0}, 25.0, 500.0, player, player);
+    a.world.get<Projectile>(shot).lastPosition = Vec2{700, 1000};
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(mob), 75.0, 1e-9);
+    CHECK(a.world.has<Dead>(shot));
+}
+
+TEST(a_projectile_still_misses_what_its_path_went_wide_of) {
+    Arena a;
+    const Entity player = a.player({500, 2000});
+    // Beside the line rather than on it, by more than the two radii: sweeping
+    // the segment must not turn the test into a corridor the width of the
+    // whole tick's travel.
+    const Entity mob = a.mob({800, 1040}, 100.0);
+
+    const Entity shot = spawnShot(a, {900, 1000}, {5000, 0}, 25.0, 500.0, player, player);
+    a.world.get<Projectile>(shot).lastPosition = Vec2{700, 1000};
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+    CHECK(!a.world.has<Dead>(shot));
 }
 
 TEST(a_projectile_expires_when_its_range_runs_out) {

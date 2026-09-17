@@ -56,7 +56,14 @@ struct ProjectileSpec {
     bool present = false;
     int count = 1;
     double distance = 0;      ///< units travelled before it expires
-    double speed = 0;         ///< units per second
+    /// Units per second AT THE STOCK CALIBRE -- the shot a size-1 common
+    /// shooter, or an ungrown flower, puts out. The firing site multiplies it
+    /// by how much bigger the shot actually came out, so a shot twice the size
+    /// flies twice as fast and a volley is one picture at two scales. A speed
+    /// held flat across the ladder makes a big shot read as a heavier, slower
+    /// weapon and closes the clear air a burst or a spread was authored to
+    /// leave between its shots.
+    double speed = 0;
     /// Angular STEP between adjacent projectiles, RADIANS -- not the total fan
     /// width, and not degrees however large it looks. `flower` ships 72, which
     /// is 72 radians: the five shots wrap to a lopsided pattern rather than the
@@ -78,10 +85,11 @@ struct ProjectileSpec {
     /// 1 -- the default -- is a mob with no burst at all, and every existing
     /// shooter keeps the cadence it had.
     int burstCount = 1;
-    /// Gap between the shots WITHIN a burst, milliseconds, stated at COMMON.
-    /// It ramps with rarity and is capped against the mob's own cadence -- see
-    /// fireVolley, which is also where the reason lives: a flat gap bunches,
-    /// because the shots grow with the shooter and their speed does not.
+    /// Gap between the shots WITHIN a burst, milliseconds. It fires exactly as
+    /// written -- not scaled by tier, not capped against the cadence; see
+    /// fireVolley, which is also where the reason lives. What keeps a burst
+    /// legible at the top of the ladder is `speed` riding the calibre, so the
+    /// gap a given interval opens grows with the shots it separates.
     ///
     /// The full cooldown then runs from the LAST shot of a burst, so a burst
     /// costs `(burstCount - 1)` gaps on top of the mob's stated cadence rather
@@ -431,6 +439,14 @@ struct PetalConfig {
     /// times the calibre of a common one and weaves four times as wide, which
     /// is the same picture at a different size. A figure in world units would
     /// read as a twitch at the top of the ladder.
+    ///
+    /// `waveFrequency` is the rate at the petal's STOCK calibre. A wavelength is
+    /// speed over frequency, and the shape wants one proportional to the
+    /// calibre: left to itself the frequency would hold the crossings where a
+    /// common missile puts them while the amplitude grew past them, and the
+    /// four-times-wider apex missile would buzz rather than draw the same curve
+    /// larger. `ProjectileSpec::speed` rides the calibre and supplies exactly
+    /// that growth, so the authored rate is what a shot of any size weaves at.
     double waveAmplitude = 0;
     double waveFrequency = 0;
 

@@ -197,6 +197,8 @@ void spawnShot(World& world, const VolleyShot& shot) {
     projectile.waveAmplitude = shot.waveAmplitude;
     projectile.waveFrequency = shot.waveFrequency;
     projectile.glitchInfecting = shot.glitchInfecting;
+    // A shot that has not moved yet has flown a segment of zero length.
+    projectile.lastPosition = shot.from;
     world.add<Projectile>(e, projectile);
 
     // Distance is the authority on range; the lifetime is the same limit
@@ -576,12 +578,12 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // moves, and there is nothing on screen to say why.
     //
     // The thing those adjustments were reaching for is real -- a shot's calibre
-    // grows with the shooter's body while its speed does not, so at the very
-    // top of the ladder an apex mantis's peas are wider than the gap a short
-    // interval leaves between them and the burst arrives as one blob. That is
-    // a TUNING problem and it has tuning answers in the same file: a longer
-    // `burstInterval`, or a faster `speed`. It is not a reason for this
-    // function to overrule the author.
+    // grows with the shooter's body, so at the very top of the ladder an apex
+    // mantis's peas are wider than the gap a short interval leaves between
+    // them and the burst arrives as one blob. The answer is on the SHOT and
+    // not on the clock: speed rides the calibre (see below), so the gap a
+    // given interval opens grows with the peas it is separating and the burst
+    // reads at every tier. The interval itself still fires as written.
     const int burst = std::max(1, spec.burstCount);
     const double burstInterval = spec.burstIntervalMillis;
 
@@ -637,15 +639,33 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
                     ? from + Vec2::fromAngle(aimAngle, shooterBody->radius)
                     : from;
     if (const Transform* shooterAt = world.tryGet<Transform>(shooter)) shot.realm = shooterAt->realm;
-    shot.speed = speed;
     // The shot's calibre comes off the ammunition petal's `size` stat, then is
     // scaled by the SHOOTER's body on its own divisor -- reach and size grow at
     // different rates with rarity. Off `size` and not off the ammunition's
     // radius, matching the reference (`petalStats.size * scaling / 3` into a
     // `size * 20 / 2` body): a hornet's missile is the same calibre it always
     // was however the petal it is made of collides.
+    //
+    // The stock calibre -- the same shot off a size-1 common shooter -- is kept
+    // beside it because `speed` and the weave are both stated against it.
+    const double stockRadius =
+        std::max(1.0, ammo.size * kProjectileRadiusPerSize / kProjectileSizeDivisor);
     shot.radius = std::max(
         1.0, ammo.size * kProjectileRadiusPerSize * ownerScale / kProjectileSizeDivisor);
+    // SPEED rides the calibre. `speed` in mobs.json is what a stock shot flies
+    // at, and a shot twice that size flies twice as fast, so the volley is one
+    // picture at two scales rather than two different weapons: at the top of
+    // the ladder the shots are wider, so an unscaled speed leaves less clear
+    // air between them than the author laid out, and a burst spaced to read as
+    // three peas arrives as one blob. Speed is the honest place to fix that --
+    // the alternative, quietly stretching `burstInterval`, fires a cadence the
+    // author never wrote and gives them nothing on screen to explain it.
+    //
+    // Reach is NOT divided back out: `distance` is a budget in world units and
+    // it scales on its own line above, so a bigger shot covers its longer reach
+    // in about the same time a common one covers its shorter one.
+    const double calibreScale = shot.radius / stockRadius;
+    shot.speed = speed * calibreScale;
     shot.distance = reach;
     shot.damage = ammo.damage;
     // Graded at the shooter's tier alongside the damage, so an apex hornet's
@@ -669,9 +689,21 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // snakes whoever throws it. Amplitude is stated against the shot's own
     // radius, so it needs no tier scaling of its own -- the calibre above
     // already carries the whole ladder.
+    //
+    // The PITCH has to ride the same ladder or the weave is not a shape: a
+    // wavelength is speed over frequency, and what the weave wants is a
+    // wavelength proportional to the calibre, so that an apex missile draws a
+    // common missile's curve at four times the size instead of swinging four
+    // times as wide between crossings spaced for a smaller shot.
+    //
+    // Speed already carries exactly that growth, so the two ratios cancel and
+    // the authored frequency is what a shot of any size flies at. Written as
+    // the ratio rather than as a bare assignment because the cancellation is
+    // the whole argument: if speed ever stops riding the calibre, this line
+    // keeps the shape instead of silently turning the weave into a buzz.
     const PetalConfig& ammoConfig = registry.petal(spec.ammoPetalIndex);
     shot.waveAmplitude = ammoConfig.waveAmplitude * shot.radius;
-    shot.waveFrequency = ammoConfig.waveFrequency;
+    shot.waveFrequency = ammoConfig.waveFrequency * (shot.speed / speed) / calibreScale;
     shot.petalIndex = spec.ammoPetalIndex;
     shot.rarity = type.rarity;
     // The reference stamps the shooter's TYPE on every shot so the player

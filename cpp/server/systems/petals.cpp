@@ -1533,6 +1533,17 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
             ? std::max(0.05, ownerBody->radius / kPlayerBaseRadius)
             : 1.0;
     const double shotRadius = std::max(1.0, stats.size * kProjectileRadiusPerSize * ownerScale);
+    // The same calibre at a stock flower. `speed` and the weave are both stated
+    // against it, so a grown shot is the stock one at a larger scale rather
+    // than a bigger body moving at a smaller body's pace.
+    const double stockShotRadius = std::max(1.0, stats.size * kProjectileRadiusPerSize);
+    const double calibreScale = shotRadius / stockShotRadius;
+    // Speed rides the calibre for the same reason a mob's does (see fireVolley):
+    // `speed` in petals.json is what a stock flower's shot flies at, and the
+    // shot a grown flower fires is the same shot drawn bigger -- a wider pea
+    // travelling at a stock pea's speed reads as a heavier, slower weapon, and
+    // it closes the gap a multi-shot spread leaves between grains.
+    const double shotSpeed = spec.speed * calibreScale;
 
     // The flower's own motion, carried into the volley. Taken from the FLOWER
     // and not from the petal because a petal's velocity is dominated by its
@@ -1559,7 +1570,7 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         const Entity shot = world.create();
         world.add<ProjectileTag>(shot);
         world.add<Transform>(shot, Transform{from, angle, realm});
-        world.add<Motion>(shot, Motion{Vec2::fromAngle(angle, spec.speed) + inherited});
+        world.add<Motion>(shot, Motion{Vec2::fromAngle(angle, shotSpeed) + inherited});
         // Mass is area on the same scale a mob's is, so the shove a shot
         // delivers grows with the square of the flower that grew it.
         world.add<Body>(shot, Body{shotRadius, projectileMass(shotRadius)});
@@ -1581,14 +1592,23 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         // A petal that fires ITSELF is its own ammunition, so the weave comes
         // off the same config either way. Stated against the shot's radius,
         // which is where the flower's own growth already landed.
+        //
+        // The wavelength has to grow with the calibre the same way, or a grown
+        // shot swings a bigger amplitude between crossings spaced for a stock
+        // one -- a buzz rather than the same curve at a larger size. Speed
+        // supplies that growth on its own, so the two ratios cancel and the
+        // authored frequency stands; written out so the cancellation stays
+        // visible if speed ever stops riding the calibre (see fireVolley).
         projectile.waveAmplitude = config.waveAmplitude * shotRadius;
-        projectile.waveFrequency = config.waveFrequency;
+        projectile.waveFrequency = config.waveFrequency * (shotSpeed / spec.speed) / calibreScale;
+        // A shot that has not moved yet has flown a segment of zero length.
+        projectile.lastPosition = from;
         world.add<Projectile>(shot, projectile);
 
         // Distance is the authority on range; the lifetime is the same limit
         // expressed in time, so a projectile that never hits anything still
         // dies on schedule even if nothing decrements the distance.
-        world.add<Lifetime>(shot, Lifetime{spec.distance / spec.speed});
+        world.add<Lifetime>(shot, Lifetime{spec.distance / shotSpeed});
         world.add<PetalEffect>(shot, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
                                                  stats.knockback, stats.slowFactor,
                                                  stats.slowDurationMillis});

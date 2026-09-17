@@ -1520,9 +1520,12 @@ TEST(a_wasp_throws_its_own_weaving_missile_and_a_hornet_does_not) {
     const Projectile& p = wasp.world.get<Projectile>(stinger);
     CHECK(p.waveAmplitude > 0.0);
     CHECK(p.waveFrequency > 0.0);
-    CHECK_NEAR(p.waveAmplitude,
-               content().petal(waspMissile).waveAmplitude * wasp.world.get<Body>(stinger).radius,
-               1e-9);
+    const double radius = wasp.world.get<Body>(stinger).radius;
+    CHECK_NEAR(p.waveAmplitude, content().petal(waspMissile).waveAmplitude * radius, 1e-9);
+    // The frequency is the authored rate, untouched: speed rides the calibre,
+    // so the wavelength already grows with the shot and the pitch does not
+    // have to be bent to make the shape hold.
+    CHECK_NEAR(p.waveFrequency, content().petal(waspMissile).waveFrequency, 1e-9);
 
     Sim hornet;
     hornet.spawnMob("hornet", kOrigin);
@@ -1537,12 +1540,12 @@ TEST(a_wasp_throws_its_own_weaving_missile_and_a_hornet_does_not) {
 TEST(a_bigger_wasp_weaves_wider) {
     CHECK(contentReady());
     Sim common;
-    common.spawnMob("wasp", kOrigin);
+    const Entity smallWasp = common.spawnMob("wasp", kOrigin);
     common.spawnPlayer(kOrigin + Vec2{300, 0});
     const Entity small = fireAndCatch(common);
 
     Sim mythic;
-    mythic.spawnMob("wasp", kOrigin, Rarity::Mythic);
+    const Entity bigWasp = mythic.spawnMob("wasp", kOrigin, Rarity::Mythic);
     mythic.spawnPlayer(kOrigin + Vec2{300, 0});
     const Entity large = fireAndCatch(mythic);
 
@@ -1551,10 +1554,77 @@ TEST(a_bigger_wasp_weaves_wider) {
     if (small == NULL_ENTITY || large == NULL_ENTITY) return;
     // Amplitude is stated against the shot's own radius, so the ladder carries
     // it for free and the two missiles trace the same shape at two sizes.
-    CHECK(mythic.world.get<Projectile>(large).waveAmplitude >
-          common.world.get<Projectile>(small).waveAmplitude);
-    CHECK_NEAR(mythic.world.get<Projectile>(large).waveFrequency,
-               common.world.get<Projectile>(small).waveFrequency, 1e-12);
+    const Projectile& big = mythic.world.get<Projectile>(large);
+    const Projectile& little = common.world.get<Projectile>(small);
+    CHECK(big.waveAmplitude > little.waveAmplitude);
+    const double amplitudeRatio = big.waveAmplitude / little.waveAmplitude;
+    CHECK_NEAR(amplitudeRatio,
+               mythic.world.get<Body>(large).radius / common.world.get<Body>(small).radius, 1e-9);
+
+    // The PITCH is untouched, and that is the point rather than an oversight:
+    // speed rides the calibre, so a wavelength -- speed over frequency -- grows
+    // by exactly the factor the amplitude does and the two missiles trace one
+    // curve at two sizes. Bending the frequency as well would over-correct it
+    // into a wavelength growing with the SQUARE of the calibre.
+    CHECK_NEAR(big.waveFrequency, little.waveFrequency, 1e-12);
+
+    // Which is the claim worth testing: wavelength is speed over frequency, and
+    // it comes out in the same proportion the amplitude did. Measured off the
+    // muzzle rather than the launch vector, so the wasp's own travel -- its
+    // business, not the weave's -- stays out of the number.
+    const auto muzzle = [](Sim& sim, Entity shot, Entity shooter) {
+        return (sim.world.get<Motion>(shot).velocity -
+                sim.world.get<Motion>(shooter).velocity)
+            .length();
+    };
+    const double bigWavelength = muzzle(mythic, large, bigWasp) / big.waveFrequency;
+    const double littleWavelength = muzzle(common, small, smallWasp) / little.waveFrequency;
+    CHECK_NEAR(bigWavelength / littleWavelength, amplitudeRatio, 1e-9);
+}
+
+TEST(a_bigger_shooters_shot_flies_proportionally_faster) {
+    CHECK(contentReady());
+    Sim common;
+    const Entity smallHornet = common.spawnMob("hornet", kOrigin);
+    common.spawnPlayer(kOrigin + Vec2{200, 0});
+    const Entity slow = fireAndCatch(common);
+
+    Sim mythic;
+    const Entity bigHornet = mythic.spawnMob("hornet", kOrigin, Rarity::Mythic);
+    mythic.spawnPlayer(kOrigin + Vec2{200, 0});
+    const Entity fast = fireAndCatch(mythic);
+
+    CHECK(slow != NULL_ENTITY);
+    CHECK(fast != NULL_ENTITY);
+    if (slow == NULL_ENTITY || fast == NULL_ENTITY) return;
+
+    // `speed` in mobs.json is the STOCK rate, and the shot an apex hornet
+    // throws is the same shot at a larger scale -- calibre and speed on one
+    // factor. Measured off the shot's own bearing so the shooter's inherited
+    // travel, which is its own business, stays out of it.
+    const auto gunSpeed = [](Sim& sim, Entity shot, Entity shooter) {
+        const Vec2 launched = sim.world.get<Motion>(shot).velocity;
+        return (launched - sim.world.get<Motion>(shooter).velocity).length();
+    };
+    const double radiusRatio =
+        mythic.world.get<Body>(fast).radius / common.world.get<Body>(slow).radius;
+    CHECK(radiusRatio > 1.5);
+    const double speedRatio =
+        gunSpeed(mythic, fast, bigHornet) / gunSpeed(common, slow, smallHornet);
+    CHECK_NEAR(speedRatio, radiusRatio, 1e-9);
+
+    // And the factor is the file's own number scaled, not a rescaling of it:
+    // the common hornet's shot flies at `speed` times its calibre over the
+    // stock calibre. Within the shooter's own walking speed, which rides along
+    // in the launch vector and is measured properly one test down.
+    const ProjectileSpec& spec = content().mob(content().mobIndex("hornet")).projectile;
+    const double stock = std::max(
+        1.0, content().petalStats(spec.ammoPetalIndex, Rarity::Common).size *
+                 kProjectileRadiusPerSize / kProjectileSizeDivisor);
+    const double expected = spec.speed * (common.world.get<Body>(slow).radius / stock);
+    CHECK_NEAR(gunSpeed(common, slow, smallHornet), expected, 1e-6);
+    CHECK(expected > spec.speed);   // a size-1.3 shooter really is above stock
+    CHECK(mythic.world.get<Body>(bigHornet).radius > common.world.get<Body>(smallHornet).radius);
 }
 
 TEST(a_glitch_volley_carries_the_infection_and_a_hornets_does_not) {
@@ -1752,12 +1822,18 @@ TEST(a_volley_carries_the_shooters_own_travel) {
     const Vec2 launched = sim.world.get<Motion>(shot).velocity;
     const double bearing = sim.world.get<Transform>(shot).angle;
     const ProjectileSpec& spec = content().mob(content().mobIndex("hornet")).projectile;
-    const Vec2 gun = Vec2::fromAngle(bearing, spec.speed);
+    // The gun's own contribution is the authored speed scaled to this shot's
+    // calibre, which is what a hornet -- a size-1.3 mob -- actually fires.
+    const double stock = std::max(
+        1.0, content().petalStats(spec.ammoPetalIndex, Rarity::Common).size *
+                 kProjectileRadiusPerSize / kProjectileSizeDivisor);
+    const double muzzle = spec.speed * (sim.world.get<Body>(shot).radius / stock);
+    const Vec2 gun = Vec2::fromAngle(bearing, muzzle);
     const Vec2 inherited = launched - gun;
     // Something was inherited, and it is a mob's speed rather than a second
     // copy of the gun's.
     CHECK(inherited.length() > 1e-6);
-    CHECK(inherited.length() < spec.speed);
+    CHECK(inherited.length() < muzzle);
 }
 
 TEST(a_firing_mob_rocks_back_a_little_and_no_further) {
