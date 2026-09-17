@@ -238,6 +238,25 @@ double steerFacing(double current, Vec2 travel, bool hideRotation, bool reversed
 }
 
 // ---------------------------------------------------------------------------
+// Standoff
+// ---------------------------------------------------------------------------
+
+double shooterStandoff(double shotReach, double ownRadius, double targetRadius) {
+    // What the reference holds, measured from the two skins so the number
+    // means the same thing at every tier.
+    const double wanted = kShooterStandoffGap + ownRadius + targetRadius;
+    // What the weapon can actually cross. Without this a mob whose authored
+    // `distance` is short would back out of its own range and plink missiles
+    // into the dirt for the rest of the engagement.
+    const double usable = (shotReach + targetRadius) * kShooterStandoffReachFraction;
+    return std::min(wanted, std::max(0.0, usable));
+}
+
+bool shotCanReach(double gap, double shotReach, double targetRadius) {
+    return gap <= shotReach + targetRadius;
+}
+
+// ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
@@ -298,6 +317,16 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.beeFlight = (config.id == "bee") || (config.id == "firefly") || (config.id == "magic_firefly");
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
+        // Stated in COMMON-TIER units: `distance` IS the reach a common shooter
+        // gets, and a higher tier reaches further in proportion to its body.
+        // See kProjectileReachReferenceScale. Deliberately the tier scale and
+        // not the mob's own authored size (which the shot's CALIBRE uses): two
+        // same-tier mobs of different sizes shoot equally far, they just fire
+        // different-calibre shots.
+        drive.shotReach = drive.shoots ? config.projectile.distance *
+                                             kMobSizeScale[tier] /
+                                             kProjectileReachReferenceScale
+                                       : 0.0;
         // Only meaningful for something that actually shoots, and only for
         // something with a heading to turn: the flag decides which way a VOLLEY
         // leaves, a mob with no volley would spend its life flying backwards
@@ -611,12 +640,10 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     const PetalStats ammo = registry.petalStats(spec.ammoPetalIndex, type.rarity);
 
     const double speed = spec.speed > 0.0 ? spec.speed : kDefaultProjectileSpeed;
-    // Stated in COMMON-TIER units: `distance` IS the reach a common shooter
-    // gets, and a higher tier reaches further in proportion to its body.
-    // Deliberately the tier scale and not the shooter's own body (which the
-    // SIZE below uses): two same-tier mobs of different authored sizes shoot
-    // equally far, they just fire different-calibre shots.
-    const double reach = spec.distance * scaling / kProjectileReachReferenceScale;
+    // The same number the standoff is measured against -- taken off the Drive
+    // rather than recomputed, so a mob can never hold a gap its own missiles
+    // cannot cross. See Drive::shotReach.
+    const double reach = drive.shotReach;
     if (!(reach > 0.0) || !(speed > 0.0)) return;
 
     // How much bigger than a stock body this shooter is. It carries BOTH the
@@ -1045,7 +1072,8 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     const Vec2 toTarget = threat->position - transform.position;
     const double gap = toTarget.length();
     const Body* threatBody = world.tryGet<Body>(ai.target);
-    const double reach = body.radius + (threatBody != nullptr ? threatBody->radius : 0.0) + kMobContactSlack;
+    const double threatRadius = threatBody != nullptr ? threatBody->radius : 0.0;
+    const double reach = body.radius + threatRadius + kMobContactSlack;
     if (gap <= reach) stampAttack(world, self, ai, nowMillis, drive);
 
     desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
@@ -1053,6 +1081,34 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     facing = desired;
     if (drive.shoots) {
         const double bearing = toTarget.angle();
+        // A mob with a gun closes to its standoff and then HOLDS -- it keeps
+        // facing the flower, it keeps firing, and it stops travelling. What it
+        // never does is give ground: there is no branch here for "too close",
+        // and adding one is how a shooter becomes something a flower can never
+        // reach. Walking into it is the counterplay, and this is the line that
+        // leaves that counterplay in the game.
+        //
+        // Held even while the target is a pet, and held whatever the mob's
+        // chase speed is: the gap is the behaviour, not a consequence of being
+        // slower than what it is shooting at.
+        const double standoff = shooterStandoff(drive.shotReach, body.radius, threatRadius);
+        if (gap <= standoff) {
+            desired = Vec2{0, 0};
+        } else if (gap < standoff + kShooterStandoffEase) {
+            // Settling onto the ring rather than slamming into it; see
+            // kShooterStandoffEase.
+            desired *= (gap - standoff) / kShooterStandoffEase;
+        }
+        // Off the BEARING and not off `desired`, which is now zero whenever the
+        // mob is holding its ground: a shooter at its standoff still points at
+        // the flower, and a zero facing would hand it to the fallback in
+        // steerMob and leave it aimed wherever it last walked.
+        if (gap > 0.0) facing = toTarget * (1.0 / gap);
+        // Out of the weapon's range: close first. Returning before the volley
+        // cycle also keeps a stinger shooter from spending the approach
+        // swinging its tail at something it cannot hit yet -- it flies nose-on
+        // like anything else and starts the wind-up once in range.
+        if (!shotCanReach(gap, drive.shotReach, threatRadius)) return true;
         if (!drive.stingerShooter) {
             fireVolley(world, self, type, ai, drive, transform.position, bearing, desired,
                        nowMillis, commands);
@@ -1411,6 +1467,16 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
                     const Vec2 toPrey = prey->position - transform.position;
                     const double gap = toPrey.length();
                     if (gap > 0.0) desired = toPrey * (speed / gap);
+                    // A pet hornet fights the way a wild one does: it holds its
+                    // standoff and shoots rather than closing to body-slam what
+                    // it is meant to be shelling. See shooterStandoff().
+                    const Body* preyBody = world.tryGet<Body>(ai.target);
+                    const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
+                    if (drive.shoots &&
+                        gap <= shooterStandoff(drive.shotReach, body.radius, preyRadius)) {
+                        desired = Vec2{0, 0};
+                        facing = toPrey;
+                    }
                 }
             }
         } else {
@@ -1438,10 +1504,16 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
         if (const Transform* prey = world.tryGet<Transform>(ai.target)) {
             const Vec2 toPrey = prey->position - transform.position;
             const double bearing = toPrey.angle();
-            if (!drive.stingerShooter) {
+            const Body* preyBody = world.tryGet<Body>(ai.target);
+            const double preyRadius = preyBody != nullptr ? preyBody->radius : 0.0;
+            // Nothing to aim at yet; the pet is still closing, and it flies
+            // nose-on while it does. See steerAggressive, which gates its
+            // volley on the same question.
+            const bool armed = shotCanReach(toPrey.length(), drive.shotReach, preyRadius);
+            if (armed && !drive.stingerShooter) {
                 fireVolley(world, self, type, ai, drive, transform.position, bearing,
                            motion.velocity, nowMillis, commands);
-            } else if (toPrey.lengthSq() > kDirectionEpsilonSq) {
+            } else if (armed && toPrey.lengthSq() > kDirectionEpsilonSq) {
                 const double cooldown = drive.attackCooldownMillis > 0.0
                                             ? drive.attackCooldownMillis
                                             : kDefaultVolleyCooldownMillis;

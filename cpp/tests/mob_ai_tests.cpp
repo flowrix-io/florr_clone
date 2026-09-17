@@ -1809,8 +1809,12 @@ TEST(a_burst_left_hanging_by_a_lost_target_starts_over_rather_than_resuming) {
 TEST(a_volley_carries_the_shooters_own_travel) {
     CHECK(contentReady());
     Sim sim;
-    const Entity hornet = sim.spawnMob("hornet", kOrigin);
-    sim.spawnPlayer(kOrigin + Vec2{200, 0});
+    // A shooter STILL CLOSING, which is the only kind that has any travel to
+    // carry: one sitting at its standoff is stopped by design (see
+    // shooterStandoff) and its volley rightly inherits nothing. A mythic's
+    // reach is long enough to open fire from well outside the gap it holds.
+    sim.spawnMob("hornet", kOrigin, Rarity::Mythic);
+    sim.spawnPlayer(kOrigin + Vec2{1200, 0});
 
     const Entity shot = fireAndCatch(sim);
     CHECK(shot != NULL_ENTITY);
@@ -1862,6 +1866,113 @@ TEST(a_firing_mob_rocks_back_a_little_and_no_further) {
     CHECK(kick.length() <= kProjectileMaxRecoil + 1e-9);
     // The player is due east, so the shot went east and the shooter went west.
     CHECK(kick.x < 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// Standoff
+// ---------------------------------------------------------------------------
+
+TEST(a_shooter_closes_to_its_standoff_and_stops_there) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    // Inside the hornet's aggro range and outside the gap it wants to hold, so
+    // the only way it reaches the standoff is by walking there.
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{330, 0});
+
+    const std::uint16_t index = content().mobIndex("hornet");
+    const double radius = sim.world.get<Body>(hornet).radius;
+    // A common shooter's reach IS its authored `distance` (see
+    // kProjectileReachReferenceScale), which is what makes this readable.
+    const double standoff = shooterStandoff(content().mob(index).projectile.distance, radius,
+                                            kPlayerBaseRadius);
+    CHECK(standoff < 330.0);
+
+    sim.tick(200);
+    // It closed...
+    CHECK(sim.gap(hornet, player) < 330.0);
+    // ...to the gap and no further. A tick of travel of slack either way,
+    // because the mob stops on the tick it arrives rather than mid-step.
+    const double step =
+        2.0 * content().mobStats(index, Rarity::Common).speed * net::kTickSeconds;
+    CHECK(sim.gap(hornet, player) > standoff - step);
+    CHECK(sim.gap(hornet, player) < standoff + step + kProjectileMaxRecoil);
+    // And it has SETTLED: nothing here strafes, and what is left of its travel
+    // is the mob re-closing the few units its own recoil opens under it each
+    // volley -- inside the ease band that is a crawl, not a mob still closing.
+    CHECK(sim.velocityOf(hornet).length() <=
+          content().mobStats(index, Rarity::Common).speed * kProjectileMaxRecoil /
+                  kShooterStandoffEase +
+              1e-9);
+    // Holding is not disengaging -- it still has the flower and is still
+    // shooting at it from out there.
+    CHECK(sim.brainOf(hornet).target != NULL_ENTITY);
+    CHECK(shotCount(sim) > 0);
+}
+
+TEST(a_flower_that_walks_into_a_shooter_reaches_it) {
+    CHECK(contentReady());
+    // The standoff is a mob declining to CLOSE, never a mob giving ground. The
+    // difference is the whole of whether a shooter is dangerous or merely
+    // untouchable, and it is invisible in the code that holds the gap -- so it
+    // is asserted here, from the flower's side.
+    for (const char* id : {"hornet", "wasp", "mantis"}) {
+        Sim sim;
+        const Entity mob = sim.spawnMob(id, kOrigin);
+        const Entity player = sim.spawnPlayer(kOrigin + Vec2{330, 0});
+
+        const double touching = sim.world.get<Body>(mob).radius + kPlayerBaseRadius;
+        bool reached = false;
+        for (int i = 0; i < 400 && !reached; ++i) {
+            // A flower walking straight in at its own top speed.
+            Transform& at = sim.world.get<Transform>(player);
+            const Vec2 toMob = sim.positionOf(mob) - at.position;
+            const double gap = toMob.length();
+            if (gap > 0.0) {
+                at.position += toMob * (std::min(kPlayerMaxSpeed * net::kTickSeconds, gap) / gap);
+            }
+            sim.tick();
+            reached = sim.gap(mob, player) <= touching;
+        }
+        CHECK(reached);
+    }
+}
+
+TEST(a_shooter_holds_no_further_out_than_its_missiles_carry) {
+    CHECK(contentReady());
+    // The standoff is a feel number and the reach is a content one; nothing
+    // makes them agree. A mob that backed out of its own range would keep a
+    // textbook distance and never land a shot again.
+    for (const double reach : {50.0, 200.0, 333.0, 5000.0}) {
+        for (const double radius : {20.0, 200.0}) {
+            const double standoff = shooterStandoff(reach, radius, kPlayerBaseRadius);
+            CHECK(standoff <= reach + kPlayerBaseRadius);
+            CHECK(standoff <= kShooterStandoffGap + radius + kPlayerBaseRadius);
+            CHECK(standoff > 0.0);
+        }
+    }
+    // With reach to spare it is the reference's own gap, measured skin to skin.
+    CHECK_NEAR(shooterStandoff(1e6, 40.0, 20.0), kShooterStandoffGap + 60.0, 1e-9);
+}
+
+TEST(a_shooter_closes_instead_of_firing_at_what_it_cannot_hit) {
+    CHECK(contentReady());
+    Sim sim;
+    // A rare hornet notices a flower 600 units off and its missiles die at
+    // 433. Firing anyway is a mob visibly shooting at something it cannot
+    // reach, on a cadence then unavailable for the shot it could.
+    const Entity hornet = sim.spawnMob("hornet", kOrigin, Rarity::Rare);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{600, 0});
+
+    // Intent only: the mob holds the origin, so the gap stays the one set here.
+    sim.tickIntent(200);
+    CHECK(sim.brainOf(hornet).target != NULL_ENTITY);   // it did aggro
+    CHECK_EQ(shotCount(sim), 0);                        // and it held its fire
+
+    // Walk the flower into range and the volley comes.
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{400, 0};
+    for (int i = 0; i < 200 && shotCount(sim) == 0; ++i) sim.tickIntent();
+    CHECK(shotCount(sim) > 0);
 }
 
 TEST(a_top_tier_shooter_still_aggros_and_fires_from_outside_its_own_body) {

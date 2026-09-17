@@ -239,6 +239,42 @@ inline constexpr double kProjectileReachReferenceScale = kMobSizeScale[0];
 /// reach and size deliberately grow at different rates.
 inline constexpr double kProjectileSizeDivisor = 3.0;
 
+/// How far outside its own skin a mob with a projectile tries to keep whatever
+/// it is shooting at, in world units.
+///
+/// gardn's shooters -- hornet, wasp, mantis -- close to 300 units and then
+/// stop accelerating, and a flower's top speed is the same 300 units a second
+/// on both sides, so the number carries over unchanged. Measured skin to skin
+/// rather than centre to centre because a body grows nearly thirty times
+/// across the ladder: a flat centre distance would leave an apex mantis
+/// standing with the flower inside its own sprite.
+inline constexpr double kShooterStandoffGap = 300.0;
+
+/// The most of its shot's reach a shooter will spend on standing off.
+///
+/// The standoff above is a FEEL number and the reach is a CONTENT one, and
+/// nothing makes them agree: a common hornet's missile crosses 333 units, so
+/// held at a flat 300-from-the-skin it would sit out at 359 and fire volleys
+/// that expired in the air in front of the flower -- a mob that keeps its
+/// distance and can no longer fight. Clamping the standoff to a fraction of
+/// what the weapon can actually cross is what keeps "hold a gap" and "shoot
+/// the thing" the same behaviour at every tier. Short of 1 so the flower has
+/// to walk INTO the shot rather than out of a miss.
+inline constexpr double kShooterStandoffReachFraction = 0.8;
+
+/// The last stretch of the approach, over which a shooter eases onto its
+/// standoff instead of arriving at full speed, in world units.
+///
+/// A mob's velocity here is PUBLISHED, not integrated from an acceleration the
+/// way the reference's is, so "travel at 120 u/s until the gap closes, then
+/// stop" is a step function: a flower hovering on the ring makes the mob
+/// alternate between full speed and a dead stop from one tick to the next, and
+/// the client -- which eases positions -- draws that as a stutter rather than
+/// as a mob holding station. A band the width of a petal ring is enough to
+/// turn the arrival into a settle, and it costs nothing anywhere else: outside
+/// it the mob still closes at its full chase speed.
+inline constexpr double kShooterStandoffEase = 60.0;
+
 /// How fast a stinger shooter turns, radians a second. ONE rate: the swing
 /// onto the target and the swing back off it are the same manoeuvre played
 /// twice, so a half turn takes a quarter of a second either way.
@@ -356,6 +392,30 @@ inline constexpr double kMinSpawnIntervalMillis = 100.0;
 double steerFacing(double current, Vec2 travel, bool hideRotation, bool reversed, double maxTurn);
 
 // ---------------------------------------------------------------------------
+// Standoff
+// ---------------------------------------------------------------------------
+
+/// How far from its target a mob with a projectile wants to sit, centre to
+/// centre, given how far one of its shots travels and the two bodies involved.
+///
+/// Free-standing and pure because it is the whole of a behaviour that is
+/// otherwise invisible in a diff: a shooter closes to this and then STOPS --
+/// it never backs away, and it has no separate "too close" branch. That
+/// asymmetry is deliberate and is the reason the reference's shooters are
+/// dangerous without being untouchable: a flower that walks in reaches them,
+/// because the mob holding its ground is the whole of the rule.
+double shooterStandoff(double shotReach, double ownRadius, double targetRadius);
+
+/// Whether a shot fired now could still reach `gap` away: the shot has only to
+/// cross to the target's SKIN, not to its centre.
+///
+/// A mob's aggro range routinely outruns its weapon -- an unusual hornet
+/// notices a flower 500 units off and throws missiles that die at 366 -- and
+/// firing anyway is a mob visibly shooting at something it cannot hit, on a
+/// cadence that is then unavailable for the shot it could.
+bool shotCanReach(double gap, double shotReach, double targetRadius);
+
+// ---------------------------------------------------------------------------
 // Spawning escorts
 // ---------------------------------------------------------------------------
 
@@ -454,6 +514,10 @@ private:
         bool beeFlight = false;
         /// Has a projectile block, so the volley path is worth entering.
         bool shoots = false;
+        /// How far one of this mob's shots travels at this tier, world units.
+        /// Computed here rather than in fireVolley so the standoff and the
+        /// volley cannot disagree about how far the weapon reaches.
+        double shotReach = 0;
         /// Shoots over its TAIL: keeps its rear on the target and holds the
         /// volley until it has come round. See MobConfig::stingerShooter.
         bool stingerShooter = false;
