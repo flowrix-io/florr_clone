@@ -379,7 +379,28 @@ PetalRingSpec parsePetalRing(Ctx& ctx, const Json& owner,
     spec.petalId = ctx.text(node, "petalType");
     spec.petalIndex = ctx.link(petalIds, spec.petalId, "petal_ring petalType");
     spec.count = ctx.integer(node, "count", 0, 0, 64);
+    spec.orbitScale = ctx.range(node, "orbit", kMobPetalRingOrbitScale, 0.0, 16.0);
+    spec.petalScale = ctx.range(node, "petalScale", kMobPetalRingPetalScale, 0.0, 16.0);
+    spec.hitScale = ctx.range(node, "hitScale", kMobPetalRingHitScale, 0.0, 16.0);
+    // Both default to what the ring already did, so a ring that says neither
+    // draws exactly as it did before either was a knob.
+    spec.spins = ctx.boolean(node, "spin", true);
+    spec.followRotation = ctx.boolean(node, "follow", false);
+    spec.flowerFace = ctx.boolean(node, "face");
+    spec.shootOnHit = ctx.boolean(node, "shootOnHit");
+    spec.shotSpeed = ctx.range(node, "shotSpeed", 0.0, 0.0, kMaxSpeedUnits);
+    spec.shotDistance = ctx.range(node, "shotDistance", 0.0, 0.0, kWorldSize);
     spec.present = spec.petalIndex != kInvalidIndex && spec.count > 0;
+    // A ring that is ammunition has to hold still. Everything the server does
+    // with one -- placing a seat to collide from, knowing which seat a shed
+    // seed left -- needs the petals to be where it says they are, and a
+    // spinning ring's phase is the viewer's own clock. Refused here, once, so
+    // no pass downstream has to carry the combination.
+    if (spec.shootOnHit && spec.spins) {
+        ctx.warn("petal_ring is shootOnHit but spins; a ring that is ammunition must "
+                 "declare \"spin\": false. Treating it as decoration");
+        spec.shootOnHit = false;
+    }
     return spec;
 }
 
@@ -730,6 +751,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
 
     p.poisonPerSecond = ctx.range(src, "poison", 0.0, 0.0, kMaxPoisonPerMillis) * 1000.0;
     p.poisonDurationMillis = ctx.range(src, "poisonDuration", 0.0, 0.0, kMaxDurationMillis);
+    p.noHealDurationMillis = ctx.range(src, "noHealDuration", 0.0, 0.0, kMaxDurationMillis);
 
     p.speed = ctx.range(src, "speed", 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
     p.noPhysics = ctx.boolean(src, "noPhysics");
@@ -1301,6 +1323,9 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.bodyDamage = c.bodyDamage * stat;
     s.poisonPerSecond = c.poisonPerSecond * stat;
     s.poisonDurationMillis = c.poisonDurationMillis;
+    // Flat, on purpose: gardn's dandelion locks healing for ten seconds at
+    // every tier. See PetalConfig::noHealDurationMillis.
+    s.noHealDurationMillis = c.noHealDurationMillis;
     s.heal = c.burstHeal * heal;
     s.healChargeMillis = c.burstHealChargeMillis;
     s.passiveHealPerSecond = c.passiveHeal * heal;

@@ -1013,3 +1013,36 @@ TEST(a_healed_slot_stops_being_reported_and_reads_full_again) {
     f.tick(client, 2, 2050);
     CHECK_EQ(client.self().slotHealthFraction[1], 1.0);
 }
+
+TEST(a_mobs_ammunition_ring_spawns_with_its_count_and_updates_when_it_sheds) {
+    Fixture f;
+    WorldView client;
+    const Entity mob = f.addMob({1020, 1000});
+    MobPetalRing ring;
+    ring.remaining = 10;
+    f.world.add<MobPetalRing>(mob, ring);
+
+    f.tick(client, 1, 1000.0);
+    const std::uint32_t id = netIdOf(f.world, mob);
+    const RemoteEntity& seen = client.entities().at(id);
+    // The count travels WITH the spawn: a dandelion that comes into view
+    // already half-shed must not draw a full head until it is next hit.
+    CHECK((seen.spawnFlags & net::SpawnHasRing) != 0);
+    CHECK_EQ(int(seen.ringCount), 10);
+
+    // Nothing moved, so nothing is said about it.
+    const std::size_t quiet = f.tick(client, 2, 1033.0);
+    CHECK_EQ(int(client.entities().at(id).ringCount), 10);
+
+    f.world.get<MobPetalRing>(mob).remaining = 7;
+    const std::size_t spoke = f.tick(client, 3, 1066.0);
+    CHECK_EQ(int(client.entities().at(id).ringCount), 7);
+    CHECK(spoke > quiet);
+
+    // A mob with no ring carries neither the flag nor the byte.
+    const Entity plain = f.addMob({1040, 1000});
+    f.tick(client, 4, 1100.0);
+    const RemoteEntity& other = client.entities().at(netIdOf(f.world, plain));
+    CHECK((other.spawnFlags & net::SpawnHasRing) == 0);
+    CHECK_EQ(int(other.ringCount), 0);
+}

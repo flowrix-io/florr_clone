@@ -229,6 +229,27 @@ public:
     /// Only a mob can be stripped -- a flower has no armour to take.
     void applyArmorShred(World& world, Entity victim, double amount, double nowMillis);
 
+    /// A dandelion's lockout: `victim` heals from nothing for `durationMillis`.
+    ///
+    /// The LONGEST live lockout wins and the expiry never comes closer -- the
+    /// rule applySlow() and applyArmorShred() already run on -- so a ring of
+    /// five dandelions is one ten-second lockout rather than five, and the
+    /// common dandelion a second player happens to be carrying cannot cut the
+    /// one already running short.
+    ///
+    /// Flowers AND mobs, unlike the slow above: gardn keeps `dandy_ticks` on
+    /// the entity rather than on the flower, and a lifesteal leech that could
+    /// not be stopped from healing is the whole point of the petal.
+    void applyNoHeal(World& world, Entity victim, double durationMillis, double nowMillis);
+
+    /// Whether `entity` may be healed at all right now.
+    ///
+    /// Static and public because every healing path in the game has to ask,
+    /// and most of them live in the petal system rather than here. One
+    /// function so that a new heal cannot quietly become the one the lockout
+    /// does not cover.
+    static bool healingBlocked(const World& world, Entity entity, double nowMillis);
+
     /// What `victim` actually subtracts from a direct hit right now: its armour
     /// less whatever a bur has stripped. Negative means the strip out-ran the
     /// armour and the victim takes EXTRA, which is bur's whole purpose.
@@ -277,6 +298,9 @@ private:
         double poisonDurationMillis = 0;
         double slowFactor = 1.0;
         double slowDurationMillis = 0;
+        /// How long a hit from this body stops the victim healing. Dandelion,
+        /// and nothing else.
+        double noHealDurationMillis = 0;
         /// Armour this body strips on contact. Bur, and nothing else.
         double armorReduction = 0;
         Rarity rarity = Rarity::Common;
@@ -426,6 +450,23 @@ private:
                       double range, double nowMillis);
     void gatherPetals(World& world, const ContentRegistry& content);
     void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
+    /// Contact with a mob's OWN ring of petals -- a dandelion's seed head.
+    ///
+    /// A pass of its own rather than a MeleeSource per seed, for the reason
+    /// the raindrop aura is one: this is a second contact source on a body
+    /// that already has one, on its own clock (RingCooldowns), and folding it
+    /// into the melee loop would mean teaching that loop a third kind of
+    /// attacker it otherwise has no use for.
+    ///
+    /// The test is per PETAL and exact, where the reference's is a BAND around
+    /// the whole orbit. The reference had no choice: its ring was drawn from
+    /// the viewer's own wallclock and never broadcast, so an angle-exact
+    /// server test would have disagreed with every client. Ours is authored
+    /// still (`spin: false`) and its petal count is replicated, so the server
+    /// knows exactly where each seed is drawn -- and what the player sees hit
+    /// them is what hit them.
+    void tickMobPetalRings(World& world, const SpatialGrid& grid, const ContentRegistry& content,
+                           double nowMillis);
     /// A petal swinging at another flower, which is a different collision from
     /// the petal-vs-mob one beside it: gated by the arena/corruption rule
     /// rather than by the faction alone, throttled per victim, costing the
@@ -456,6 +497,21 @@ private:
     std::vector<ShotImpact> impacts_;
     std::vector<PoisonTick> poison_;
     std::vector<PoisonTick> spongeTicks_;
+
+    /// One flower touched by one mob's ring this tick, gathered before any of
+    /// them is resolved.
+    ///
+    /// `outward` points from the MOB to the flower, not from the seed that was
+    /// touched. A seed sits on a ring the flower can be INSIDE of -- between
+    /// the hull and the orbit -- and a push away from the seed would drive it
+    /// through the body it is standing next to. The reference measures from
+    /// the mob's centre for the same reason.
+    struct RingHit {
+        Entity mob = NULL_ENTITY;
+        Entity victim = NULL_ENTITY;
+        Vec2 outward;
+    };
+    std::vector<RingHit> ringHits_;
     std::vector<Entity> candidates_;
     /// A strike's own broadphase answer and the two lists it builds from it.
     /// Separate from candidates_ because a contact strike is thrown from INSIDE

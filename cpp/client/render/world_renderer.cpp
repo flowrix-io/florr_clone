@@ -327,10 +327,6 @@ constexpr double kMobBarHeight = 8.0;
 /// of these two is that they look like flowers.
 constexpr std::uint32_t kDiggerBodyColor = 0x999999u;
 constexpr std::uint32_t kPetalRingBodyColor = 0xFFE763u;
-/// The ring a petal_ring mob carries, as multiples of its own radius.
-constexpr double kPetalRingOrbitScale = 2.4;
-constexpr double kPetalRingPetalScale = 0.55;
-
 /// A petal's `visual_scale`, as everything that paints one has to read it: art
 /// only, and a zero (or an absent field) means "unscaled" rather than
 /// "invisible", exactly as MobConfig::visualScale is treated.
@@ -674,6 +670,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     mob.radius = shadow->second.radius;
                     mob.typeIndex = shadow->second.typeIndex;
                     mob.rarity = shadow->second.rarity;
+                    mob.ringCount = shadow->second.ringCount;
                     dying_.push_back(mob);
                 }
                 mobShadows_.erase(shadow);
@@ -2046,6 +2043,28 @@ void WorldRenderer::drawHitbox(Canvas& canvas, const RemoteEntity& entity, const
         // A mob's circle is its COLLISION size, drawn in its own tier colour:
         // visual_scale moves the artwork and never the body.
         color = rarityColor(entity.rarity);
+        // ...and a mob whose ring is AMMUNITION hits from its seats as well as
+        // from its hull, so the overlay has to show those too. Drawn from the
+        // same three numbers the server resolves at spawn -- the mob's world
+        // radius, `orbit` and `hitScale` -- and for the seats still ON it, so
+        // a shed ring's overlay goes gap-toothed exactly as its artwork does.
+        // Without this the seeds are the one thing in the game that hits you
+        // with nothing drawn around it.
+        const MobConfig* config = content_ ? &content_->mob(entity.typeIndex) : nullptr;
+        if (config != nullptr && config->petalRing.shootOnHit) {
+            const PetalRingSpec& ring = config->petalRing;
+            const int seats = std::min(static_cast<int>(entity.ringCount), ring.count);
+            const double orbit = entity.radius * ring.orbitScale * zoom;
+            const double seed = entity.radius * ring.hitScale * zoom;
+            ui::setStroke(canvas, color);
+            canvas.setLineWidth(static_cast<float>(2.0 * zoom));
+            for (int i = 0; i < seats; ++i) {
+                const double angle = i * (kTau / std::max(1, ring.count));
+                canvas.strokeCircle(static_cast<float>(screen.x + std::cos(angle) * orbit),
+                                    static_cast<float>(screen.y + std::sin(angle) * orbit),
+                                    static_cast<float>(seed));
+            }
+        }
     } else if (entity.kind == net::EntityKind::Drop) {
         // A drop is picked up by walking a square over it, so its overlay is
         // the browser build's yellow 30-unit box rather than a circle.
@@ -2154,32 +2173,79 @@ void WorldRenderer::drawDiggerMob(Canvas& canvas, const MobDraw& mob, double rad
 }
 
 void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, const MobDraw& mob,
-                                     double radius, double timeSeconds) const {
-    const double scale = radius / kFlowerArtRadius;
-    canvas.save();
-    canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-    const Vec2 eye = mobEye(mob.netId, mob.angle);
-    drawFace(canvas, FaceSquareEyes, EquipNone, eye.x, eye.y, 14.5, timeSeconds,
-             kPetalRingBodyColor);
-    canvas.restore();
+                                     double radius, double rotation, bool mirrored,
+                                     double timeSeconds) const {
+    // A flower FACE, or the mob's own artwork. Stated by the config rather
+    // than inferred from whether artwork exists: the glitch flower ships an
+    // SVG it deliberately does not use, and a rule that preferred the drawing
+    // whenever there was one would change the one mob this path was written
+    // for. See PetalRingSpec::flowerFace.
+    if (config.petalRing.flowerFace || !sprites_ || !sprites_->mobDrawable(mob.typeIndex)) {
+        const double scale = radius / kFlowerArtRadius;
+        canvas.save();
+        canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
+        const Vec2 eye = mobEye(mob.netId, mob.angle);
+        drawFace(canvas, FaceSquareEyes, EquipNone, eye.x, eye.y, 14.5, timeSeconds,
+                 kPetalRingBodyColor);
+        canvas.restore();
+    } else {
+        // At the origin: the caller has already translated to where the mob is.
+        // The world radius is handed over beside the drawn one for the reason
+        // drawMobBody gives -- a code-drawn mob cuts its detail from how big it
+        // IS, not from how big it is being painted.
+        const double visualScale = config.visualScale > 0 ? config.visualScale : 1.0;
+        sprites_->drawMob(canvas, mob.typeIndex, 0.0, 0.0, radius * 2.0, rotation, timeSeconds,
+                          mirrored, mob.radius * visualScale);
+    }
 
     const std::uint16_t index = config.petalRing.petalIndex;
     if (!sprites_ || !content_ || index == kInvalidIndex) return;
     const PetalConfig& petal = content_->petal(index);
-    const int count = static_cast<int>(clamp(config.petalRing.count, 0, 16));
+    // A ring that is AMMUNITION draws what the server says is left on it; a
+    // decorative one draws the config's full count, because nothing on the
+    // wire ever moves it. The clamp is against a hand-edited count, not
+    // against the byte.
+    const int authored = static_cast<int>(clamp(config.petalRing.count, 0, 16));
+    const int count = config.petalRing.shootOnHit
+                          ? std::min(authored, static_cast<int>(mob.ringCount))
+                          : authored;
     if (count <= 0) return;
 
     // Every distance is a multiple of the mob's own radius, so the ring grows
     // with rarity along with the body and stays where the server damages from.
-    const double orbit = radius * kPetalRingOrbitScale;
-    const double size = radius * kPetalRingPetalScale * petal.size * petalArtScale(&petal);
+    //
+    // The mob's WORLD radius, which is why `visual_scale` is divided back out:
+    // the ring is a place the server hits from (CombatSystem::tickMobPetalRings
+    // walks these same seats), and the server is not allowed to read an
+    // art-only field. Anything the death animation did to `radius` survives the
+    // division, so a popping mob's ring still balloons with it.
+    //
+    // The ring's SPACING is the authored count and not what is left: a
+    // dandelion that has shed three seeds shows seven gap-toothed petals in
+    // the places they were, rather than seven respaced into a fresh circle.
+    const double artScale = config.visualScale > 0 ? config.visualScale : 1.0;
+    const double ringRadius = radius / artScale;
+    const double orbit = ringRadius * config.petalRing.orbitScale;
+    const double size =
+        ringRadius * config.petalRing.petalScale * petal.size * petalArtScale(&petal);
     const double speed = petal.speed > 0 ? petal.speed : 1.0;
-    const double rotation = std::fmod(timeSeconds * kPetalSpinRate * speed, kTau);
-    const double step = kTau / count;
+    // The RING's own spin, which has nothing to do with the mob's facing. A
+    // ring that is part of the BODY does not have one: a dandelion's seed head
+    // is attached to it, and seeds sweeping past a mob that is standing still
+    // read as something orbiting it rather than something growing out of it.
+    const double spin = config.petalRing.spins
+                            ? std::fmod(timeSeconds * kPetalSpinRate * speed, kTau)
+                            : 0.0;
+    const double step = kTau / std::max(1, authored);
     for (int i = 0; i < count; ++i) {
-        const double angle = i * step + rotation;
+        const double angle = i * step + spin;
+        // gardn's kFollowRot: a petal turned to its own outward bearing, so
+        // whatever its artwork puts at the petal's -X end -- a dandelion's
+        // stem -- points back into the body. An upright petal is what the
+        // glitch flower's squares want, so this is per ring.
+        const double facing = config.petalRing.followRotation ? angle : 0.0;
         sprites_->drawPetal(canvas, index, std::cos(angle) * orbit, std::sin(angle) * orbit, size,
-                            0.0, timeSeconds);
+                            facing, timeSeconds);
     }
 }
 
@@ -2252,12 +2318,12 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
     } else if (config && config->petalRing.present) {
         const double radius = diameter * 0.5;
         const auto paint = [&](Canvas& target) {
-            drawPetalRingMob(target, *config, mob, radius, timeSeconds);
+            drawPetalRingMob(target, *config, mob, radius, rotation, mirrored, timeSeconds);
         };
         if (id == "glitch_flower") {
             // The wrapper has to cover the RING, not just the body: it sizes
             // its buffer from the radius it is handed.
-            drawGlitched(canvas, screen, radius * (kPetalRingOrbitScale * 0.5 + 0.3),
+            drawGlitched(canvas, screen, radius * (config->petalRing.orbitScale * 0.5 + 0.3),
                          mob.netId, timeSeconds, paint);
         } else {
             canvas.save();
@@ -2483,6 +2549,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mob.rarity = entity.rarity;
             mob.healthFraction = entity.healthFraction;
             mob.chasing = (entity.state & net::StateChasing) != 0;
+            mob.ringCount = entity.ringCount;
             drawMobBody(canvas, camera, mob, timeSeconds);
 
             // A Killed event arrives after the snapshot has already erased the
@@ -2897,6 +2964,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             mob.radius = dying.radius;
             mob.typeIndex = dying.typeIndex;
             mob.rarity = dying.rarity;
+            mob.ringCount = dying.ringCount;
             mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
             drawMobBody(canvas, camera, mob, timeSeconds);
         }

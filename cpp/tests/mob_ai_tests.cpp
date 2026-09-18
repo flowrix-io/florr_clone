@@ -142,7 +142,33 @@ struct Sim {
         brain.anchor = at;
         brain.aggroRange = stats.aggroRange;
         world.add<MobAi>(e, brain);
+
+        // As SpawnSystem does: a ring that is ammunition is stocked at spawn.
+        const PetalRingSpec& ring = content().mob(index).petalRing;
+        if (ring.present && ring.shootOnHit) {
+            MobPetalRing ammo;
+            ammo.count = ring.count;
+            ammo.remaining = ammo.count;
+            ammo.orbit = stats.radius * ring.orbitScale;
+            ammo.seedRadius = stats.radius * ring.hitScale;
+            ammo.outerReach = ammo.orbit + ammo.seedRadius;
+            world.add<MobPetalRing>(e, ammo);
+        }
         return e;
+    }
+
+    int ringOf(Entity mob) {
+        const MobPetalRing* ring = world.tryGet<MobPetalRing>(mob);
+        return ring != nullptr ? ring->remaining : -1;
+    }
+
+    /// Shots in flight. The ring pass defers its create, so this is only
+    /// meaningful after the tick that fired has flushed.
+    std::size_t shots() {
+        std::size_t count = 0;
+        Query<Projectile> live{world};
+        live.each([&](Entity, Projectile&) { ++count; });
+        return count;
     }
 
     Entity spawnPlayer(Vec2 at, double aggroBonus = 0.0) {
@@ -2165,4 +2191,136 @@ TEST(a_shooter_can_always_reach_what_it_has_aggroed) {
         }
         CHECK(reach >= stats.aggroRange);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ammunition rings
+// ---------------------------------------------------------------------------
+
+TEST(the_dandelion_ships_a_ring_of_ten_seeds_it_can_shed) {
+    CHECK(contentReady());
+    const PetalRingSpec& ring = content().mob(content().mobIndex("dandelion")).petalRing;
+    CHECK(ring.present);
+    CHECK(ring.shootOnHit);
+    CHECK_EQ(ring.count, 10);
+    CHECK_EQ(ring.petalId, std::string("dandelion"));
+    // A seed head is part of the BODY: it holds still and every seed is turned
+    // to face outward so its stem reaches back into the mob. Asserted here
+    // because these are the two the renderer has no other test for, and a
+    // dandelion whose ring sweeps past it is the bug they exist to prevent.
+    CHECK(!ring.spins);
+    CHECK(ring.followRotation);
+
+    // The seats have to be somewhere a flower can actually stand, or the ring
+    // is collision nobody will ever meet: outside the hull, and wide enough
+    // that a seed reaches past it. Both measured against the shipped body.
+    const MobStats stats = content().mobStats(content().mobIndex("dandelion"), Rarity::Common);
+    const double orbit = stats.radius * ring.orbitScale;
+    const double seedReach = stats.radius * ring.hitScale + kPlayerBaseRadius;
+    CHECK(ring.hitScale > 0.0);
+    CHECK(orbit > stats.radius);
+    CHECK(orbit + seedReach > stats.radius + kPlayerBaseRadius);
+
+    // The glitch flower's ring is the other kind of ring in every respect:
+    // decoration the server never touches, spinning, upright, and left on the
+    // defaults that were constants before any of this was a knob.
+    const PetalRingSpec& glitch = content().mob(content().mobIndex("glitch_flower")).petalRing;
+    CHECK(!glitch.shootOnHit);
+    CHECK(glitch.spins);
+    CHECK(!glitch.followRotation);
+    CHECK_NEAR(glitch.orbitScale, kMobPetalRingOrbitScale, 1e-9);
+    CHECK_NEAR(glitch.petalScale, kMobPetalRingPetalScale, 1e-9);
+}
+
+TEST(a_hit_dandelion_sheds_one_seed_along_the_bearing_it_sat_on) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{200.0, 0.0});
+    const Entity mob = sim.spawnMob("dandelion", kOrigin);
+    CHECK_EQ(sim.ringOf(mob), 10);
+
+    // Nothing owed, nothing fired: a dandelion nobody is fighting stands there
+    // with a full head of seeds.
+    sim.tick(10);
+    CHECK_EQ(sim.ringOf(mob), 10);
+    CHECK_EQ(sim.shots(), std::size_t(0));
+
+    // One hit, booked the way combat books it.
+    sim.hurt(mob, player, 5.0);
+    sim.world.get<MobPetalRing>(mob).pending = 1;
+    sim.tick();
+    CHECK_EQ(sim.ringOf(mob), 9);
+    CHECK_EQ(sim.shots(), std::size_t(1));
+
+    // It leaves along the bearing of the seat it just vacated -- NOT at the
+    // flower that hit it, which is standing due east. Ten seeds, so the one
+    // that goes is index 9: a tenth of a turn short of due east.
+    const PetalRingSpec& spec = content().mob(content().mobIndex("dandelion")).petalRing;
+    const double seat = wrapAngle(9.0 * kTau / spec.count);
+    Entity shot = NULL_ENTITY;
+    Query<Projectile, Transform> live{sim.world};
+    live.each([&](Entity e, Projectile&, Transform&) { shot = e; });
+    CHECK(shot != NULL_ENTITY);
+    if (shot == NULL_ENTITY) return;
+    CHECK_NEAR(wrapAngle(sim.world.get<Transform>(shot).angle - seat), 0.0, 1e-6);
+    CHECK(std::fabs(wrapAngle(sim.world.get<Transform>(shot).angle)) > 0.1);
+
+    // And it is born on the RING, at the seat it left, rather than in the
+    // middle of the body: what the player watched vanish is what flew.
+    const double mobRadius = sim.world.get<Body>(mob).radius;
+    const Vec2 from = sim.positionOf(mob) + Vec2::fromAngle(seat, mobRadius * spec.orbitScale);
+    CHECK_NEAR(distance(sim.world.get<Transform>(shot).position, from), 0.0, 1e-6);
+
+    // At the SIZE it was on the ring, which is the same radius the ring
+    // collided with. A seed that halved on the way out -- which is what the
+    // ammunition petal's own calibre ladder gave -- reads as a different
+    // object being thrown rather than as the seed coming off.
+    CHECK_NEAR(sim.world.get<Body>(shot).radius, mobRadius * spec.hitScale, 1e-9);
+    // The seed IS a dandelion petal, which is what carries the healing lockout
+    // to whatever it lands on.
+    CHECK_EQ(sim.world.get<Projectile>(shot).petalConfigIndex, content().petalIndex("dandelion"));
+}
+
+TEST(a_dandelion_sheds_one_seed_a_tick_and_stops_when_it_is_bald) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{200.0, 0.0});
+    const Entity mob = sim.spawnMob("dandelion", kOrigin);
+
+    // A ring of petals is thirty contacts a second. Paying them all off in the
+    // tick they arrived would empty the mob instantly and stack ten shots on
+    // one pixel, so the debt is capped at the ring and spent one a tick.
+    sim.hurt(mob, player, 1.0);
+    sim.world.get<MobPetalRing>(mob).pending = 40;
+    sim.tick();
+    CHECK_EQ(sim.ringOf(mob), 9);
+    CHECK_EQ(sim.shots(), std::size_t(1));
+
+    sim.tick(9);
+    CHECK_EQ(sim.ringOf(mob), 0);
+    CHECK_EQ(sim.shots(), std::size_t(10));
+
+    // Bald: the rest of the debt is dropped rather than carried, or it would
+    // all come out again the moment a seed grew back.
+    sim.tick(5);
+    CHECK_EQ(sim.shots(), std::size_t(10));
+    CHECK_EQ(sim.world.get<MobPetalRing>(mob).pending, 0);
+}
+
+TEST(a_shed_seed_never_grows_back) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{200.0, 0.0});
+    const Entity mob = sim.spawnMob("dandelion", kOrigin);
+
+    sim.hurt(mob, player, 1.0);
+    sim.world.get<MobPetalRing>(mob).pending = 2;
+    sim.tick(2);
+    CHECK_EQ(sim.ringOf(mob), 8);
+
+    // The ring is a magazine the mob was built with, not a resource it
+    // recovers: half a minute of being left alone puts nothing back.
+    sim.tick(900);
+    CHECK_EQ(sim.ringOf(mob), 8);
+    CHECK_EQ(sim.shots(), std::size_t(2));
 }

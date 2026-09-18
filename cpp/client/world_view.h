@@ -115,6 +115,11 @@ struct RemoteEntity {
     std::uint32_t ownerNetId = 0;
     Vec2 ownerOffset;
 
+    /// Mob-only: petals still on an ammunition ring, for the mobs that carry
+    /// one. Zero for everything else, which is every entity but a dandelion --
+    /// the glitch flower's ring is decoration and is drawn from its config.
+    std::uint8_t ringCount = 0;
+
     /// Smoothed eye-pupil offset in the flower's radius=25 local space.
     double eyeX = 0;
     double eyeY = 0;

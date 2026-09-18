@@ -130,6 +130,10 @@ struct DyingMob {
     std::uint16_t typeIndex = 0;
     Rarity rarity = Rarity::Common;
     double ageSeconds = 0;
+    /// What its ammunition ring still held. Carried through the death so a
+    /// dandelion killed with three seeds left does not pop back to ten for the
+    /// half second its corpse is on screen.
+    std::uint8_t ringCount = 0;
 };
 
 class WorldRenderer {
@@ -293,6 +297,10 @@ private:
         bool chasing = false;
         /// Negative for a live mob; 0..1 while the death animation runs.
         double deathProgress = -1.0;
+        /// Petals left on an AMMUNITION ring, straight off the wire. Zero for
+        /// every mob but the ones that shed theirs; a decorative ring (the
+        /// glitch flower's) ignores this and draws its config's count.
+        std::uint8_t ringCount = 0;
     };
 
     /// `clockSeconds` is the frame clock; a chasing mob's artwork is advanced
@@ -302,9 +310,14 @@ private:
     void drawMobLabel(Canvas&, const Camera&, const MobDraw&) const;
     /// The digger: a grey flower carrying a spinning cutter, never its SVG.
     void drawDiggerMob(Canvas&, const MobDraw&, double radius, double timeSeconds) const;
-    /// A mob that carries an orbiting ring of petals (the glitch flower).
+    /// A mob that carries an orbiting ring of petals: the glitch flower, whose
+    /// ring is decoration, and the dandelion, whose ring is ammunition.
+    ///
+    /// `rotation` and `mirrored` are the ones drawMobBody resolved for the
+    /// ordinary artwork path, passed in rather than re-derived: a mob drawn
+    /// here has to face the way the same mob would if it had no ring.
     void drawPetalRingMob(Canvas&, const MobConfig&, const MobDraw&, double radius,
-                          double timeSeconds) const;
+                          double rotation, bool mirrored, double timeSeconds) const;
     /// The garbage mob, whose artwork in mobs.json is an empty document: a
     /// deterministic pile of petals seeded on where it stands.
     void drawGarbagePile(Canvas&, Vec2 at, double baseSize, double timeSeconds) const;

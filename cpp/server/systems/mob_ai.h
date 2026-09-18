@@ -72,6 +72,12 @@
 
 namespace flix {
 
+/// A mob's petal ring, as mobs.json declares it (shared/game/config.h). Named
+/// rather than included: this header is included by half the server and
+/// config.h is not otherwise needed here. NOT the PetalRing component of the
+/// same family in components.h -- that one is a flower's.
+struct PetalRingSpec;
+
 // ---------------------------------------------------------------------------
 // Tunables
 // ---------------------------------------------------------------------------
@@ -224,6 +230,11 @@ inline constexpr double kDefaultVolleyCooldownMillis = 2000.0;
 
 /// Shot speed for a projectile block that omits one, units per second.
 inline constexpr double kDefaultProjectileSpeed = 200.0;
+
+/// Reach for a shed ring petal whose config states no `shotDistance`, on the
+/// same scale a volley's authored `distance` is (kProjectileReachReferenceScale
+/// below): what a COMMON shooter gets, in world units.
+inline constexpr double kDefaultRingShotDistance = 400.0;
 
 /// How many of its own gaps a burst may go quiet for before it counts as
 /// abandoned rather than in progress. Two: one gap is the shot being due, and
@@ -694,10 +705,37 @@ private:
     void placeFollower(World& world, const Terrain& terrain, Entity self, Entity ahead);
     void driveSpawners(World& world, const Terrain& terrain, double nowMillis, CommandBuffer& commands);
 
+    /// Pays off the seeds a dandelion owes.
+    ///
+    /// The hit that knocks a petal off is booked by combat (see
+    /// MobPetalRing::pending) rather than fired there, because a shot is a
+    /// create() and the damage path is walked by every system that deals any.
+    /// This is where the bill is settled.
+    ///
+    /// Deliberately NOT LOD-gated, for the reason driveSpawners is not: a mob
+    /// only accrues a debt by being hit, so the work is bounded by what
+    /// players are actually doing, and a seed that waited for the mob's turn
+    /// in the stride would leave the ring on a tick nobody could connect to
+    /// the blow that took it.
+    void shedRingPetals(World& world, CommandBuffer& commands);
+
+    /// One seed, launched from the seat at `aim` and at the size it was
+    /// sitting there: `orbit` and `seedRadius` come off the mob's own
+    /// MobPetalRing, which is where the ring's world geometry is resolved.
+    ///
+    /// Split out of the walk above so that the shot is assembled where the
+    /// registry lookup already is and the walk stays a bookkeeping loop.
+    void fireRingPetal(World& world, Entity self, const PetalRingSpec& spec, const MobType& type,
+                       Vec2 from, double orbit, double seedRadius, Realm realm, double aim,
+                       CommandBuffer& commands);
+
     Query<Transform, Motion, Body, MobType, MobAi> mobs_;
     Query<Pet, Transform, Motion, Body, MobType, MobAi> pets_;
     Query<BodySegment, Transform> segments_;
     Query<Spawner, Transform, MobType> nests_;
+    /// Mobs whose petal ring is ammunition. Corpses are kept out: a dead
+    /// dandelion owes nothing, and its debt is cleared rather than fired.
+    Query<MobPetalRing, Transform, MobType, Body> rings_;
     Query<PlayerTag, PlayerModifiers> playerModifiers_;
 
     SpawnHook spawnHook_;

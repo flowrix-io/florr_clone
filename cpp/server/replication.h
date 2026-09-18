@@ -73,6 +73,9 @@ public:
         /// the hash of "", so the sentinel for "never sent" has to be
         /// something else.
         std::uint32_t skinIdHash = 0xFFFFFFFFu;
+        /// Petals left on a mob's ammunition ring, and 0xFF until one has been
+        /// sent. Only a mob whose spawn carried SpawnHasRing ever moves it.
+        std::uint8_t ringCount = 0xFF;
         bool seenThisTick = false;
     };
 

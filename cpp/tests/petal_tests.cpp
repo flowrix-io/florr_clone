@@ -1520,6 +1520,30 @@ TEST(a_burst_heal_charges_homes_consumes_and_reloads) {
     CHECK(rig.tickUntil([&] { return rig.world.get<Health>(rig.player).current > 70.0; }, 50));
 }
 
+TEST(a_dandelions_lockout_stops_the_ring_healing_at_all) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "healer");
+    rig.settleEquips();
+    rig.world.get<Health>(rig.player).current = 50.0;
+    // Well past the burst's own charge and past a second of passive
+    // regeneration, so a lockout that leaked anywhere would show.
+    rig.world.ensure<Afflictions>(rig.player).noHealUntilMillis = rig.now + 10000.0;
+    rig.setFlags(net::InputAttack);
+    rig.tick(60);
+
+    CHECK_NEAR(rig.world.get<Health>(rig.player).current, 50.0, 1e-9);
+    // The rose is still in orbit: gardn refuses the CHARGE, so the petal is
+    // not spent on a heal that would land nothing and is still there when the
+    // lockout lapses.
+    CHECK(!rig.slot(0).broken);
+    CHECK_EQ(rig.petals(0).size(), std::size_t(1));
+
+    // And once it lapses, both come back.
+    rig.world.get<Afflictions>(rig.player).noHealUntilMillis = 0.0;
+    CHECK(rig.tickUntil([&] { return rig.world.get<Health>(rig.player).current > 55.0; }, 200));
+}
+
 TEST(a_shell_homes_grants_one_temporary_shield_and_is_consumed) {
     if (!contentLoaded()) return;
     Rig rig;

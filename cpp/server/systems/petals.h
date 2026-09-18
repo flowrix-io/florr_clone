@@ -237,7 +237,8 @@ private:
     /// a flower has any, and this system is the one holding the loadout.
     /// Combat SPENDS what this banks -- see ArmorStackState.
     void tickArmorStacks(World& world, Entity player, const Aggregate& aggregate, double dt);
-    void applyPassiveHeal(World& world, Entity player, const Aggregate& aggregate, double dt);
+    void applyPassiveHeal(World& world, Entity player, const Aggregate& aggregate,
+                          double nowMillis, double dt);
     void updateRing(World& world, Entity player, const Aggregate& aggregate, double dt);
     /// Step every one of the player's petals: where its orbit point is, which
     /// mob (if any) has captured it, and the spring or glide that carries it
@@ -343,7 +344,8 @@ private:
     /// The scripted heal, which is a different curve from a burst petal's:
     /// the reference multiplies the script's literal by sqrt(3) per rarity and
     /// by a flat 3 on top of the Healing talent.
-    void healFromBehaviour(World& world, Entity player, double amount, Rarity rarity);
+    void healFromBehaviour(World& world, Entity player, double amount, Rarity rarity,
+                           double nowMillis);
     /// True once the petal's body overlaps any live wild mob IN ITS REALM,
     /// which is what arms a behaviour that parks until it hits something.
     /// Every one of these three sweeps the world linearly rather than through

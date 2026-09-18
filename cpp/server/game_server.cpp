@@ -530,7 +530,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
     grid_.clear();
     Query<Transform, Body> afterPlayers{world_};
     afterPlayers.each([&](Entity e, Transform& transform, Body& body) {
-        grid_.insert(e, transform.realm, transform.position, body.radius);
+        grid_.insert(e, transform.realm, transform.position,
+                     broadphaseRadius(world_.tryGet<MobPetalRing>(e), body.radius));
     });
 
     // The reference server resolves flower bodies and the petal ring inside
@@ -548,7 +549,8 @@ void GameServer::runSystems(double nowMillis, double dt) {
     grid_.clear();
     Query<Transform, Body> afterMovement{world_};
     afterMovement.each([&](Entity e, Transform& transform, Body& body) {
-        grid_.insert(e, transform.realm, transform.position, body.radius);
+        grid_.insert(e, transform.realm, transform.position,
+                     broadphaseRadius(world_.tryGet<MobPetalRing>(e), body.radius));
     });
     combat_->runWorldPhase(world_, grid_, content(), nowMillis, dt);
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,

@@ -261,8 +261,8 @@ bool shotCanReach(double gap, double shotReach, double targetRadius) {
 // ---------------------------------------------------------------------------
 
 MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
-    : mobs_(world), pets_(world), segments_(world), nests_(world), playerModifiers_(world),
-      rng_(seed) {
+    : mobs_(world), pets_(world), segments_(world), nests_(world), rings_(world),
+      playerModifiers_(world), rng_(seed) {
     // A pet is not a wild mob with a different target list: it follows an
     // owner, pops back to them and is retired off their screen, so it runs its
     // own pass below. Dead mobs still exist until the reaper runs, and a corpse
@@ -273,6 +273,7 @@ MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
     playerModifiers_.without<Dead>();
     // nests_ deliberately keeps Dead spawners: a dying nest is exactly when its
     // brood has to be released.
+    rings_.without<Dead>();
 }
 
 // ---------------------------------------------------------------------------
@@ -1778,6 +1779,114 @@ void MobAiSystem::driveSpawners(World& world, const Terrain& terrain, double now
 }
 
 // ---------------------------------------------------------------------------
+// Ammunition rings
+// ---------------------------------------------------------------------------
+
+void MobAiSystem::fireRingPetal(World& world, Entity self, const PetalRingSpec& spec,
+                                const MobType& type, Vec2 from, double orbit, double seedRadius,
+                                Realm realm, double aim, CommandBuffer& commands) {
+    const ContentRegistry& registry = content();
+
+    // Graded at the SHOOTER's tier, not at the tier the ring's config names,
+    // for the reason fireVolley states: an apex dandelion sheds apex seeds.
+    const PetalStats ammo = registry.petalStats(spec.petalIndex, type.rarity);
+
+    VolleyShot shot;
+    // The seed leaves at THE SIZE IT WAS ON THE RING, which is the whole point
+    // of a ring that is ammunition: the player watches a particular seed go,
+    // and a shot that were half the size of the thing that vanished would read
+    // as a different object entirely.
+    //
+    // So NOT fireVolley's calibre ladder (the ammunition petal's `size` over
+    // kProjectileSizeDivisor). That ladder answers "how big is a missile this
+    // mob throws"; here the answer is already on the mob, drawn and collided
+    // with, and it is `hitScale`. The two disagreed by a factor of two.
+    shot.radius = std::max(1.0, seedRadius);
+    // The tier ladder, and only it: `shotSpeed` is what a COMMON sheds at, and
+    // reach below grows on the same scale, so flight time is the same picture
+    // at every tier rather than an apex seed drifting across a longer field.
+    const std::size_t tier =
+        static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
+    const double tierScale = kMobSizeScale[tier] / kProjectileReachReferenceScale;
+    const double speed = spec.shotSpeed > 0.0 ? spec.shotSpeed : kDefaultProjectileSpeed;
+    shot.speed = speed * tierScale;
+    const double reach = spec.shotDistance > 0.0 ? spec.shotDistance : kDefaultRingShotDistance;
+    shot.distance = reach * tierScale;
+    shot.angle = wrapAngle(aim);
+    // Off the RING, not off the centre: the seed is a petal that was orbiting
+    // out there, and a shot born in the middle of the body reads as the mob
+    // spitting rather than as the ring losing one.
+    shot.from = from + Vec2::fromAngle(shot.angle, orbit);
+    shot.realm = realm;
+    shot.damage = ammo.damage;
+    shot.health = ammo.breakable && ammo.health > 0.0 ? ammo.health : kProjectileDefaultHealth;
+    shot.owner = self;
+    // A wild mob answers for its own shot. A dandelion summoned as somebody's
+    // pet credits its owner, exactly as fireVolley does.
+    const Pet* pet = world.tryGet<Pet>(self);
+    shot.creditTo = pet != nullptr ? pet->owner : self;
+    const Faction* own = world.tryGet<Faction>(self);
+    shot.faction = own != nullptr ? *own : Faction{Team::Hostiles, false};
+    // The seed carries the petal's own riders -- which for a dandelion is the
+    // healing lockout -- because combat resolves them from this index and the
+    // tier it was fired at. Nothing has to be stamped on the shot for that.
+    shot.petalIndex = spec.petalIndex;
+    shot.rarity = type.rarity;
+    shot.identified = static_cast<bool>(allocateNetId);
+    shot.netId = shot.identified ? allocateNetId() : 0;
+    ++stats_.volleys;
+    commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
+}
+
+void MobAiSystem::shedRingPetals(World& world, CommandBuffer& commands) {
+    // Collected rather than walked in place, as every other pass in this file
+    // is: nothing below relocates a row today, but the body calls out into
+    // nearestAttacker and queues a create, and a walk that holds its columns
+    // across either is one edit away from the trap this file's header names.
+    rings_.collect(stepList_);
+    for (const Entity self : stepList_) {
+        MobPetalRing* ring = world.tryGet<MobPetalRing>(self);
+        const Transform* transform = world.tryGet<Transform>(self);
+        const MobType* type = world.tryGet<MobType>(self);
+        const Body* body = world.tryGet<Body>(self);
+        if (ring == nullptr || transform == nullptr || type == nullptr || body == nullptr) continue;
+        if (world.tryGet<Dead>(self) != nullptr) continue;
+
+        const PetalRingSpec& spec = content().mob(type->configIndex).petalRing;
+
+        if (ring->pending <= 0) continue;
+        if (ring->remaining <= 0) {
+            // A bald dandelion owes nothing, and nothing grows back, so the
+            // debt is dropped rather than carried for a magazine that will
+            // never be refilled.
+            ring->pending = 0;
+            continue;
+        }
+
+        // ONE seed per tick however many hits landed. A ring meeting a flower
+        // is thirty contacts a second, and paying every one of them off in the
+        // tick it arrived would empty a ten-petal dandelion in a third of a
+        // second and put ten shots on the same pixel.
+        --ring->pending;
+        --ring->remaining;
+
+        // The seed leaves along the bearing it was SITTING on, which is also
+        // the way it was drawn facing: a dandelion sprays outward rather than
+        // aiming, and whichever seed vanishes off the ring is the one the
+        // player watches fly.
+        //
+        // The index is `remaining` AFTER the decrement, because the ring draws
+        // and collides with 0..remaining-1 -- so this is exactly the seat that
+        // has just been emptied, and `fireRingPetal` launches the shot from
+        // that seat. It is only knowable because the ring holds still; see
+        // PetalRingSpec::spins.
+        const double aim = wrapAngle(ring->remaining * (kTau / std::max(1, ring->count)));
+        fireRingPetal(world, self, spec, *type, transform->position, ring->orbit,
+                      ring->seedRadius, transform->realm, aim, commands);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The tick
 // ---------------------------------------------------------------------------
 
@@ -1859,6 +1968,7 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     steerPets(world, terrain, grid, nowMillis, dt, commands);
     followChains(world, terrain, activePlayers);
     driveSpawners(world, terrain, nowMillis, commands);
+    shedRingPetals(world, commands);
 }
 
 } // namespace flix

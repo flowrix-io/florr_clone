@@ -51,6 +51,14 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
     return state;
 }
 
+/// What a mob's ammunition ring puts on the wire: petals still on it, clamped
+/// into the byte the field is. A null ring reads as zero and is never sent --
+/// the flag that would carry it is not set for a mob without the component.
+std::uint8_t ringCountOf(const MobPetalRing* ring) {
+    if (ring == nullptr) return 0;
+    return static_cast<std::uint8_t>(clamp(ring->remaining, 0, 255));
+}
+
 PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis) {
     PlayerVisualState out;
     if (!world.has<PlayerTag>(e)) return out;
@@ -69,6 +77,11 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
     }
     if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
         if (afflictions->poisoned(nowMillis)) out.faceFlags |= FacePoisoned;
+        // A dandelion's lockout, which the client washes the body toward white
+        // for. Derived from the timer rather than stored on PlayerVisuals for
+        // the reason poison is: the affliction expires on its own clock, and a
+        // flag written when it landed would need a second writer to clear it.
+        if (afflictions->healBlocked(nowMillis)) out.faceFlags |= FaceDandelioned;
     }
     if (const PlayerInput* input = world.tryGet<PlayerInput>(e)) {
         // The ring itself gives defend precedence when both keys are held, so
@@ -341,6 +354,10 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         if (spawnWide) flags |= net::SpawnHealthWide;
         const PlayerAccount* account = world.tryGet<PlayerAccount>(candidate.entity);
         if (account && !account->username.empty()) flags |= net::SpawnHasName;
+        // A mob whose ring is ammunition. Read once, here, because the flag is
+        // written near the top of the record and the count near the bottom.
+        const MobPetalRing* ring = world.tryGet<MobPetalRing>(candidate.entity);
+        if (ring != nullptr) flags |= net::SpawnHasRing;
 
         out.u32(candidate.netId);
         out.u8(static_cast<std::uint8_t>(info.kind));
@@ -382,6 +399,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             }
             out.u32(ownerNetId);
         }
+        if (flags & net::SpawnHasRing) out.u8(ringCountOf(ring));
         if (flags & net::SpawnHasName) out.str(account->username);
         ++spawnCount;
 
@@ -402,6 +420,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.arenaScore = visuals.arenaScore;
         tracked.shield = visuals.shield;
         tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
+        tracked.ringCount = ringCountOf(ring);
         view.tracked.emplace(candidate.netId, tracked);
     }
     out.patchU16(spawnCountAt, spawnCount);
@@ -473,6 +492,14 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
              skinIdHash(skinIdOf(visuals)) != tracked.skinIdHash)) {
             mask |= net::FieldPlayerVisuals;
         }
+        // Only ever set for an entity whose spawn carried SpawnHasRing: the
+        // sentinel makes the first send unconditional, and a mob with no ring
+        // has neither a component here nor a byte in its spawn record, so the
+        // two sides can never disagree about whether the field is present.
+        const MobPetalRing* ring = world.tryGet<MobPetalRing>(candidate.entity);
+        if (ring != nullptr && ringCountOf(ring) != tracked.ringCount) {
+            mask |= net::FieldRingCount;
+        }
         if (mask == 0) continue;
 
         out.u32(candidate.netId);
@@ -514,6 +541,10 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.arenaScore = visuals.arenaScore;
             tracked.shield = visuals.shield;
             tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
+        }
+        if (mask & net::FieldRingCount) {
+            out.u8(ringCountOf(ring));
+            tracked.ringCount = ringCountOf(ring);
         }
         ++updateCount;
     }

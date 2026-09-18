@@ -162,6 +162,54 @@ struct PetalRingSpec {
     std::string petalId;
     std::uint16_t petalIndex = kInvalidIndex;
     int count = 0;
+    /// Where the ring sits, as a multiple of the mob's own radius. The glitch
+    /// flower's 2.4 is the default because it was the only ring in the game
+    /// when this became a knob; a dandelion wears its seeds much closer in.
+    double orbitScale = kMobPetalRingOrbitScale;
+    /// A ring petal's drawn size, as a multiple of the mob's own radius --
+    /// the BOX the artwork is fitted into, so a petal whose `visual_scale`
+    /// says its document is wider than the petal still lands at the same size
+    /// beside one whose does not. The glitch flower's 0.55 is the default.
+    double petalScale = kMobPetalRingPetalScale;
+    /// What one ring petal HITS with, as a multiple of the mob's own radius.
+    ///
+    /// Authored rather than derived from `petalScale`, because the two are not
+    /// the same quantity: `petalScale` sizes the BOX the document is fitted
+    /// into, and how much of that box a petal's ink actually fills is a
+    /// property of its viewBox that no config can compute. The author reads
+    /// the drawn petal and states its radius. The dandelion's seeds fill
+    /// 20/39 of their box, so 0.7 of drawn box is 0.35 of hit radius.
+    double hitScale = kMobPetalRingHitScale;
+    /// The ring turns. A decorative ring spins like a flower's; a ring that is
+    /// part of the body -- a dandelion's seed head -- is ATTACHED and holds
+    /// still, so its petals stay on the mob rather than sweeping past it.
+    bool spins = true;
+    /// Each petal is turned to face OUTWARD along its own radius, which is
+    /// gardn's kFollowRot (Server/Process/Petal.cc: a petal's angle is the
+    /// bearing from its owner to itself). What it buys is a petal drawn with
+    /// something at its inner end -- a dandelion's stem -- reaching back into
+    /// the body it belongs to. False leaves the artwork upright, which is what
+    /// the glitch flower's square petals want.
+    bool followRotation = false;
+    /// Draw the body as a flower FACE rather than as the mob's own artwork.
+    ///
+    /// Stated rather than inferred from "has no artwork": the glitch flower
+    /// ships an SVG it deliberately does not use, so a rule that preferred the
+    /// artwork whenever one existed would change the one mob this branch was
+    /// written for.
+    bool flowerFace = false;
+
+    /// The ring is AMMUNITION: a hit knocks one petal off and fires it at
+    /// whoever landed the hit. A ring without this is pure decoration, which
+    /// is what the glitch flower's is (see cpp-mob-petal-ring-not-simulated).
+    ///
+    /// A shed petal never comes back. The ring is what the mob was BUILT with,
+    /// so stripping one bare is progress a fight keeps rather than something
+    /// that heals back between attempts -- the same reason its health does not
+    /// regenerate.
+    bool shootOnHit = false;
+    double shotSpeed = 0;      ///< units per second; 0 falls back to the default
+    double shotDistance = 0;   ///< reach in world units, before the tier scale
 };
 
 /// A nest that keeps producing escorts.
@@ -392,6 +440,12 @@ struct PetalConfig {
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
 
+    /// How long a hit from this petal stops the victim healing. gardn's
+    /// dandelion, and nothing else: `dandy_ticks` is a flat ten seconds at
+    /// every tier over there, so this is NOT on the rarity ladder -- an apex
+    /// dandelion locks healing for exactly as long as a common one.
+    double noHealDurationMillis = 0;
+
     double speed = 0;           ///< orbit speed for the petals that override it
     bool noPhysics = false;     ///< no body, no collision: a pure modifier
     bool defendOnly = false;    ///< only acts while the ring is pulled in
@@ -531,6 +585,8 @@ struct PetalStats {
     double reloadMillis = kDefaultPetalReloadMillis;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;
+    /// Flat across the ladder; see PetalConfig::noHealDurationMillis.
+    double noHealDurationMillis = 0;
     double heal = 0;                    ///< burst heal per charge
     double healChargeMillis = 0;
     double passiveHealPerSecond = 0;

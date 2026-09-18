@@ -398,6 +398,23 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
         ++census_.spawnedTotal;
     }
 
+    // A ring that is AMMUNITION gets its state at spawn rather than on the
+    // first tick the mob thinks: a dandelion standing beyond the AI's LOD
+    // stride can still be shot at, and a ring handed out lazily would owe its
+    // first seed to whenever the mob next got a turn.
+    if (config.petalRing.present && config.petalRing.shootOnHit) {
+        MobPetalRing ring;
+        ring.count = config.petalRing.count;
+        ring.remaining = ring.count;
+        // Resolved against THIS mob's body, once. Every later reader walks the
+        // seats without the registry, and the broadphase gets the one number
+        // it needs to file the mob wide enough to be found out there.
+        ring.orbit = radius * config.petalRing.orbitScale;
+        ring.seedRadius = radius * config.petalRing.hitScale;
+        ring.outerReach = ring.orbit + ring.seedRadius;
+        world.add<MobPetalRing>(e, ring);
+    }
+
     if (depth < kMaxNestDepth) {
         if (config.periodicSpawn.present) {
             Spawner spawner;

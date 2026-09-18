@@ -5,6 +5,7 @@
 #include <string>
 
 #include "server/replication.h"
+#include "server/systems/combat.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -265,8 +266,13 @@ double slotHealthFraction(World& world, const PetalSlotState::Slot& state,
     return clamp(standing / (stats.health * count), 0.0, 1.0);
 }
 
-void healPlayer(World& world, Entity player, double amount) {
+void healPlayer(World& world, Entity player, double amount, double nowMillis) {
     if (amount <= 0.0) return;
+    // A dandelion's lockout. Asked here rather than at each caller -- the
+    // flower's passive regeneration and a rose coming home -- for the reason
+    // CombatSystem::healingBlocked exists: a heal that forgot to ask would be
+    // the one hole the petal has.
+    if (CombatSystem::healingBlocked(world, player, nowMillis)) return;
     Health* health = world.tryGet<Health>(player);
     // Healing a corpse is a respawn, and that decision is not a petal's.
     if (!health || !health->alive()) return;
@@ -365,7 +371,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         reconcileSlots(world, registry, player, nowMillis);
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
         tickArmorStacks(world, player, aggregate, dt);
-        applyPassiveHeal(world, player, aggregate, dt);
+        applyPassiveHeal(world, player, aggregate, nowMillis, dt);
         applyRaindropAura(world, registry, player, world.get<PetalSlotState>(player), aggregate,
                           nowMillis);
         strikeWornLightning(world, registry, player, nowMillis);
@@ -1075,11 +1081,11 @@ void PetalSystem::tickArmorStacks(World& world, Entity player, const Aggregate& 
 }
 
 void PetalSystem::applyPassiveHeal(World& world, Entity player, const Aggregate& aggregate,
-                                   double dt) {
+                                   double nowMillis, double dt) {
     // Applied here, once per player, rather than per petal: the aggregate has
     // already summed every slot's contribution, and healing again per instance
     // would pay a clump its bonus `count` times.
-    healPlayer(world, player, aggregate.modifiers.passiveHealPerSecond * dt);
+    healPlayer(world, player, aggregate.modifiers.passiveHealPerSecond * dt, nowMillis);
 }
 
 void PetalSystem::updateRing(World& world, Entity player, const Aggregate& aggregate, double dt) {
@@ -1462,8 +1468,14 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // column the player owns can move with it.
             ShieldState& shield = world.get<ShieldState>(player);
             const Health* ownerHealth = world.tryGet<Health>(player);
+            // A locked flower does not even CALL its rose home: gardn refuses
+            // the charge itself (Process/Petal.cc asks `dandy_ticks == 0`
+            // beside the health test), so the petal stays in orbit and is
+            // still there when the lockout lapses rather than being spent on
+            // a heal that lands nothing.
             const bool wantsHeal = stats.heal > 0.0 && ownerHealth && ownerHealth->alive() &&
-                                   ownerHealth->current < ownerHealth->max;
+                                   ownerHealth->current < ownerHealth->max &&
+                                   !CombatSystem::healingBlocked(world, player, nowMillis);
             const bool wantsShield = stats.shield > 0.0 && !shield.active(nowMillis);
             const double charge = std::max(0.0, stats.healChargeMillis);
             instance->homing = nowMillis - instance->spawnedAtMillis >= charge &&
@@ -1476,7 +1488,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                     if (wantsHeal) {
                         const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
                         const double scale = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
-                        healPlayer(world, player, stats.heal * scale);
+                        healPlayer(world, player, stats.heal * scale, nowMillis);
                     } else if (wantsShield) {
                         shield.amount = stats.shield;
                         shield.untilMillis = nowMillis + kBurstShieldLifetimeMillis;
@@ -1843,7 +1855,7 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
                 if (!extended) return;
             }
             explodePetal(world, player, at, stats.size, 100.0, nowMillis);
-            healFromBehaviour(world, player, -1.0, rarity);
+            healFromBehaviour(world, player, -1.0, rarity, nowMillis);
             return;
         }
 
@@ -1853,7 +1865,7 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
                 const Health* health = world.tryGet<Health>(player);
                 if (health == nullptr || health->current >= kStarfishHealthThreshold) return;
             }
-            healFromBehaviour(world, player, 25.0, rarity);
+            healFromBehaviour(world, player, 25.0, rarity, nowMillis);
             return;
         }
 
@@ -1879,7 +1891,7 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
 
         case PetalBehaviourKind::Healing:
             if (trigger == PetalTrigger::Collision) return;
-            healFromBehaviour(world, player, 20.0, rarity);
+            healFromBehaviour(world, player, 20.0, rarity, nowMillis);
             return;
 
         case PetalBehaviourKind::TestExplosive:
@@ -2012,9 +2024,14 @@ void PetalSystem::explodePetal(World& world, Entity player, Vec2 at, double peta
     }
 }
 
-void PetalSystem::healFromBehaviour(World& world, Entity player, double amount, Rarity rarity) {
+void PetalSystem::healFromBehaviour(World& world, Entity player, double amount, Rarity rarity,
+                                    double nowMillis) {
     Health* health = world.tryGet<Health>(player);
     if (health == nullptr || !health->alive()) return;
+    // A scripted `heal -1` is SELF-DAMAGE and must still land: the lockout
+    // stops healing, it does not grant immunity to a petal that hurts its own
+    // flower. Only the positive half is refused.
+    if (amount > 0.0 && CombatSystem::healingBlocked(world, player, nowMillis)) return;
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
     const double talent = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
     const double scaled = amount * std::pow(std::sqrt(3.0), rarityIndex(rarity)) * talent *

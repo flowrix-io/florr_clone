@@ -1013,3 +1013,74 @@ TEST(a_root_prints_its_armour_stacks_on_the_owners_bar) {
     world.get<Loadout>(body).slots[0] = LoadoutSlot{};
     CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == -1; }));
 }
+
+TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
+    // The unit tests drive each link on its own -- combat books the seed, the
+    // AI fires it, the replicator carries what is left of the ring. This one
+    // goes through the shipping path end to end, because "hit a dandelion and
+    // a petal flies off" is a claim about THAT.
+    Harness h("dandelion", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(flix::testsupport::loginNew(h, client, "seedwatch", "password9"));
+    client.joinGame(2600, 2600);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const std::uint32_t selfNetId = client.view().self().netId;
+    Query<PlayerTag, NetId, Transform> flowers(world);
+    Vec2 at{0, 0};
+    Realm realm = Realm::Overworld;
+    bool found = false;
+    flowers.each([&](Entity, PlayerTag&, NetId& id, Transform& transform) {
+        if (id.value != selfNetId) return;
+        at = transform.position;
+        realm = transform.realm;
+        found = true;
+    });
+    CHECK(found);
+    if (!found) return;
+
+    // A dandelion the SPAWNER made, not one assembled here: the component set
+    // it arrives with is half of what is under test, and a hand-built mob
+    // would be the test asserting its own setup.
+    Entity dandelion = NULL_ENTITY;
+    const std::uint16_t dandelionIndex = content().mobIndex("dandelion");
+    Query<MobTag, MobType, Transform> mobs(world);
+    CHECK(h.stepUntil({&client}, [&] {
+        mobs.each([&](Entity e, MobTag&, MobType& type, Transform&) {
+            if (dandelion == NULL_ENTITY && type.configIndex == dandelionIndex) dandelion = e;
+        });
+        return dandelion != NULL_ENTITY;
+    }, 200));
+    CHECK(dandelion != NULL_ENTITY);
+    if (dandelion == NULL_ENTITY) return;
+
+    const MobPetalRing* ring = world.tryGet<MobPetalRing>(dandelion);
+    CHECK(ring != nullptr);
+    if (ring == nullptr) return;
+    CHECK_EQ(ring->remaining, 10);
+
+    // Put it in the flower's ring, where the petals will chew on it.
+    world.get<Transform>(dandelion).position = at;
+    world.get<Transform>(dandelion).realm = realm;
+
+    const std::uint32_t mobNetId = world.get<NetId>(dandelion).value;
+    // What the CLIENT ends up believing, which is the only place the ring is
+    // ever drawn from.
+    const bool shed = h.stepUntil({&client}, [&] {
+        const auto entry = client.view().entities().find(mobNetId);
+        return entry != client.view().entities().end() && entry->second.ringCount < 10;
+    }, 400);
+    CHECK(shed);
+
+    // And the seed itself reached the wire as a dandelion petal.
+    const std::uint16_t seedType = content().petalIndex("dandelion");
+    bool sawSeed = false;
+    for (const auto& entry : client.view().entities()) {
+        if (entry.second.kind != net::EntityKind::Projectile) continue;
+        if (entry.second.typeIndex == seedType) sawSeed = true;
+    }
+    CHECK(sawSeed);
+}

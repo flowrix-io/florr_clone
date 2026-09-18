@@ -108,6 +108,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         double shieldFraction;
         std::string equippedSkinId;
         std::uint32_t ownerNetId;
+        std::uint8_t ringCount;
         std::string name;
     };
     std::vector<Spawn> spawns;
@@ -137,6 +138,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             s.equippedSkinId = reader.str();
         }
         if (s.kind == net::EntityKind::Petal) s.ownerNetId = reader.u32();
+        if (s.flags & net::SpawnHasRing) s.ringCount = reader.u8();
         if (s.flags & net::SpawnHasName) s.name = reader.str();
         spawns.push_back(std::move(s));
         if (!reader.ok()) return false;
@@ -158,6 +160,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint32_t arenaScore;
         double shieldFraction;
         std::string equippedSkinId;
+        std::uint8_t ringCount;
     };
     std::vector<Update> updates;
     updates.reserve(updateCount);
@@ -183,6 +186,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             u.shieldFraction = reader.u8() / 255.0;
             u.equippedSkinId = reader.str();
         }
+        if (u.mask & net::FieldRingCount) u.ringCount = reader.u8();
         updates.push_back(std::move(u));
         if (!reader.ok()) return false;
     }
@@ -267,6 +271,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.shieldFraction = s.shieldFraction;
         e.equippedSkinId = std::move(s.equippedSkinId);
         e.ownerNetId = s.ownerNetId;
+        e.ringCount = s.ringCount;
         if (s.flags & net::SpawnIsSelf) {
             self_.netId = s.netId;
             // A spawn record for your own flower is a join or a respawn.
@@ -312,6 +317,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             e.shieldFraction = u.shieldFraction;
             e.equippedSkinId = u.equippedSkinId;
         }
+        if (u.mask & net::FieldRingCount) e.ringCount = u.ringCount;
     }
 
     for (const std::uint32_t netId : removals) entities_.erase(netId);

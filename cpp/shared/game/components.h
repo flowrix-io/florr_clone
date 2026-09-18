@@ -230,8 +230,16 @@ struct Afflictions {
     double armorShred = 0;
     double armorShredUntilMillis = 0;
 
+    /// While this is in the future, nothing may add health to the victim.
+    ///
+    /// gardn's `dandy_ticks`, and the same shape: one timer, refreshed by the
+    /// next dandelion hit and never stacked, carried by flowers and mobs
+    /// alike. It is a lockout rather than a rate, so there is nothing to sum.
+    double noHealUntilMillis = 0;
+
     bool poisoned(double nowMillis) const { return nowMillis < poisonUntilMillis && poisonPerSecond > 0; }
     bool slowed(double nowMillis) const { return nowMillis < slowUntilMillis && slowFactor < 1.0; }
+    bool healBlocked(double nowMillis) const { return nowMillis < noHealUntilMillis; }
 
     /// Armour currently stripped off, or zero once the debuff has lapsed.
     double shred(double nowMillis) const {
@@ -524,6 +532,19 @@ struct AuraCooldowns {
     HitCooldowns hits;
 };
 
+/// Per-(mob, victim) throttle for a mob's own petal ring.
+///
+/// A third component of the same shape, for the same reason AuraCooldowns is a
+/// second: the mob already carries a HitCooldowns for its BODY, on a different
+/// clock, and a ring sharing those entries would let a body contact silence
+/// the ring or the other way about. The ring is also the only thing on a mob
+/// that is throttled at all -- body contact is paced by the victim's own
+/// post-hit window and by nothing else -- so the two could not share a
+/// meaningful deadline even if they wanted to.
+struct RingCooldowns {
+    HitCooldowns hits;
+};
+
 // ---------------------------------------------------------------------------
 // Mobs
 // ---------------------------------------------------------------------------
@@ -669,6 +690,67 @@ struct BodySegment {
     /// 0 for the head, 1..n back along the body.
     int segmentIndex = 0;
 };
+
+/// A mob's own ring of petals, when the ring is AMMUNITION rather than decor.
+///
+/// Only a mob whose config asks for `shootOnHit` carries one: the glitch
+/// flower's five petals are painted by the client and simulate nothing, and a
+/// component on it would be a row that never changes.
+///
+/// `remaining` only ever falls. The ring is a magazine the mob was built with,
+/// not a resource it recovers, so a dandelion stripped of its seeds stays
+/// stripped for the rest of its life.
+///
+/// `remaining` is what the client draws, so it is the one field on the wire.
+/// The pending count is deliberately separate from it: the hit that knocks a
+/// seed off is resolved in the combat phase and the shot is fired by the AI
+/// pass, and a mob hit three times in one tick owes three seeds however few
+/// ticks it gets to fire them in.
+struct MobPetalRing {
+    /// Petals still on the ring. Seeded from the config at spawn.
+    int remaining = 0;
+    /// Hits this mob has taken that have not yet been answered with a seed,
+    /// capped at the ring: a mob cannot owe more shots than it has petals.
+    int pending = 0;
+
+    /// The ring the mob was BUILT with. Seat spacing is a full turn over this
+    /// rather than over `remaining`, so a shed ring keeps its gaps instead of
+    /// respacing -- and the renderer divides by the same number.
+    int count = 0;
+    /// Seat orbit and seed radius, in WORLD units, resolved at spawn from the
+    /// config and this mob's own body.
+    ///
+    /// Held here rather than re-derived, because three hot loops walk these
+    /// seats -- ring contact, the melee overlap test and the AI's shed pass --
+    /// and only one of them has a registry to hand. It is also what makes the
+    /// component's mere EXISTENCE the statement that this ring is simulated:
+    /// a ring the server cannot place (one that spins) never gets one.
+    double orbit = 0;
+    double seedRadius = 0;
+    /// `orbit + seedRadius`: how far the ring reaches from the mob's centre.
+    ///
+    /// The broadphase has to file the mob by THIS and not by its hull, or a
+    /// petal out at the ring is never even offered as a candidate -- the exact
+    /// test that would have said "hit" is never reached. See
+    /// broadphaseRadius().
+    double outerReach = 0;
+
+    /// Where seat `index` sits, relative to the mob's centre.
+    Vec2 seat(int index) const {
+        return count > 0 ? Vec2::fromAngle(index * (kTau / count), orbit) : Vec2{};
+    }
+};
+
+/// How widely the broadphase must file a body: its hull, or its ring if it has
+/// one that reaches further.
+///
+/// The grid files an entity under every cell its own radius touches, so a mob
+/// filed by its hull alone simply is not returned for a query out at its ring.
+/// Widening the filing costs a few more candidates and nothing else -- the
+/// exact tests still decide.
+inline double broadphaseRadius(const MobPetalRing* ring, double bodyRadius) {
+    return ring != nullptr && ring->outerReach > bodyRadius ? ring->outerReach : bodyRadius;
+}
 
 /// A nest that periodically produces escorts, up to a live cap.
 struct Spawner {
@@ -904,6 +986,7 @@ FLIX_COMPONENT(flix::PlayerModifiers);
 FLIX_COMPONENT(flix::PlayerLocation);
 FLIX_COMPONENT(flix::TeleporterState);
 FLIX_COMPONENT(flix::AuraCooldowns);
+FLIX_COMPONENT(flix::RingCooldowns);
 FLIX_COMPONENT(flix::MobType);
 FLIX_COMPONENT(flix::MobAi);
 FLIX_COMPONENT(flix::WanderTarget);
@@ -913,6 +996,7 @@ FLIX_COMPONENT(flix::HoleTether);
 FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::BodySegment);
 FLIX_COMPONENT(flix::Spawner);
+FLIX_COMPONENT(flix::MobPetalRing);
 FLIX_COMPONENT(flix::PetalInstance);
 FLIX_COMPONENT(flix::Projectile);
 FLIX_COMPONENT(flix::Lifetime);

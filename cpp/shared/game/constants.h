@@ -464,6 +464,11 @@ inline constexpr double kSegmentSpacingPerRadius = 1.8;
 // of the mob's own radius so it scales with rarity exactly as the body does.
 
 inline constexpr double kMobPetalRingOrbitScale = 2.4;
+/// A ring petal's drawn BOX, as a multiple of the mob's own radius. Here
+/// rather than in the renderer so PetalRingSpec can default to it -- both
+/// numbers are now per-ring knobs and a default belongs beside the field it
+/// defaults.
+inline constexpr double kMobPetalRingPetalScale = 0.55;
 inline constexpr double kMobPetalRingHitScale = 0.5;
 
 /// Roughly the interval at which a five-petal ring sweeps past a fixed point,
