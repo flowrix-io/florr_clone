@@ -122,6 +122,13 @@ struct ItemTile {
     /// Top-right, over the icon. gardn has no badge; the inventory needs one.
     std::string badge;
 
+    /// A live number printed along the tile's TOP edge, just inside the
+    /// border, mirroring the name along the bottom -- what a sponge is still
+    /// holding, and nothing at all for the petals that have no such number.
+    /// Only the owner's own loadout bar is told, as with `reload` and
+    /// `health`; every other surface leaves this empty.
+    std::string counter;
+
     /// gardn's cooldown wedge, swept as the petal reloads. 1.0 draws nothing.
     /// The owner's own bar is the only surface the server tells about a reload;
     /// everywhere else leaves this alone and gets no sweep.

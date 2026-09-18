@@ -1055,6 +1055,21 @@ double slotHealthFraction(const NetClient& net, int index) {
     return net.view().self().slotHealthFraction[static_cast<std::size_t>(index)];
 }
 
+/// The number printed inside slot `index`'s top border, "" for the slots that
+/// have none -- which is every storage slot, every slot on the title screen,
+/// and on the field every petal but the few that keep a figure of their own.
+///
+/// A petal that HAS a number always prints it, zero included. The figure is a
+/// gauge: a sponge reading 0 is holding nothing right now, which is a thing
+/// worth saying, and a number that came and went with the damage read as a
+/// bar that only worked sometimes.
+std::string slotCounterLabel(const NetClient& net, int index) {
+    if (index < 0 || index >= kLoadoutActiveSlots) return {};
+    const int counter = net.view().self().slotCounter[static_cast<std::size_t>(index)];
+    if (counter < 0) return {};
+    return std::to_string(counter);
+}
+
 }  // namespace
 
 void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
@@ -1228,6 +1243,7 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         tile.timeSeconds = timeSeconds;
         tile.reload = slotReloadProgress(net, i);
         tile.health = slotHealthFraction(net, i);
+        tile.counter = slotCounterLabel(net, i);
         drawItemTile(canvas, sprites, layout.slots[at], tile);
     }
     canvas.restore();

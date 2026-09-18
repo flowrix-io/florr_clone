@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 26;
+inline constexpr std::uint16_t kProtocolVersion = 28;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -304,16 +304,30 @@ struct InputFrame {
 /// How many of the viewer's own slots a snapshot can report on.
 ///
 /// The block is written as
-/// `u8 count, { u8 slot, u16 reloadRemainingMillis, u8 healthFraction }*`
+/// `u8 count, { u8 slot, u16 reloadRemainingMillis, u8 healthFraction, u16 counter }*`
 /// rather than a fixed entry per slot, because a bar of untouched petals is by
 /// far the common case and costs one byte that way. A slot appears when it is
-/// reloading, when it is damaged, or both -- the two travel together because a
-/// clump does both at once, having lost a grain while the rest orbit on.
+/// reloading, when it is damaged, when it has a counter to print, or any
+/// combination -- they travel together because a clump does several at once,
+/// having lost a grain while the rest orbit on.
+///
+/// `counter` is the number the bar prints inside that slot's top border, and
+/// kNoSlotCounter is "this petal has no number", which is nearly all of them.
+/// Zero is a VALUE, not an absence: a sponge holding nothing prints 0, because
+/// a gauge that disappears when it reads empty is one the player cannot tell
+/// from a petal that never had one -- and a slot carrying a counter is
+/// therefore reported on every snapshot, idle or not. It is a whole number
+/// because the bar prints it as one.
 ///
 /// It is STREAMED STATE, not one-shot break and damage events: a dropped event
 /// would leave the wedge stuck on a slot that reloaded long ago, or the tile
 /// drained on a petal back at full health, and the client has no way to notice.
 inline constexpr std::uint8_t kMaxReportedSlots = 10;
+
+/// A slot entry's `counter` when the petal in it has no number to print.
+/// Sentinel rather than zero, because zero is a number a sponge really does
+/// hold. A counter at the sentinel's own value is clamped one below it.
+inline constexpr std::uint16_t kNoSlotCounter = 0xFFFFu;
 
 /// What a networked entity is, which decides how the client draws it.
 enum class EntityKind : std::uint8_t {

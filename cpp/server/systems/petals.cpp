@@ -483,6 +483,12 @@ void PetalSystem::clearRing(World& world, Entity player) {
             // after a revive would otherwise charge every missing instance to
             // the shared pool and break the whole loadout at once.
             slot.populated = false;
+            // The bar's number goes with the ring. A corpse is stepped over by
+            // reconcileSlots, so whatever it was holding would otherwise FREEZE
+            // on the death card -- and a sponge's stored damage on a body that
+            // will never repay it is a number about nothing. A revive
+            // republishes it on the next tick from the state it kept.
+            slot.counter = -1;
         }
         // The flower may come back somewhere else entirely, and the ring is
         // laid out from where it was LAST tick: keeping the corpse's centre
@@ -505,6 +511,17 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     const double petalHealthScale =
         tree ? tree->skills.statScale(SkillId::PetalHealth) : 1.0;
     const double reloadScale = tree ? tree->skills.reloadScale() : 1.0;
+
+    // What every sponge on the bar is still holding. One figure for the whole
+    // flower, because the stored hits are the FLOWER's -- combat defers a hit
+    // against the player, not against the petal that earned the deferral --
+    // so two sponges print the same number rather than a share each.
+    double storedSpongeDamage = 0.0;
+    if (const SpongeDamageState* sponge = world.tryGet<SpongeDamageState>(player)) {
+        for (const SpongeDamageEffect& effect : sponge->effects) {
+            storedSpongeDamage += std::max(0.0, effect.remainingDamage);
+        }
+    }
 
     // Bucket the live petals by slot, dropping the handles the world has
     // already reaped and the ones combat killed this tick. Both count as
@@ -729,6 +746,18 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // Last, so it reads the pool this tick's damage has already been folded
         // into and the instances this tick's respawns have already put back.
         slotState.healthFraction = slotHealthFraction(world, slotState, stats, count, live);
+
+        // The bar's number for this slot. A sponge is the petal that has one:
+        // what it absorbed and has yet to pay back. Asked of the STATS rather
+        // than of the petal's id, so a petal that grows the behaviour in
+        // petals.json grows the number with it.
+        //
+        // Reported even while the body is broken: the hits it already took go
+        // on draining whether or not the sponge itself survived taking them,
+        // and a number that vanished at the moment it mattered most would read
+        // as the damage having been cancelled.
+        slotState.counter =
+            stats.spongeDamageDurationMillis > 0.0 ? storedSpongeDamage : -1.0;
     }
 
     // Instances destroyed above are still named by the loadout's list. Dropping

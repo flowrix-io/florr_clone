@@ -67,6 +67,16 @@ struct PetalSlotState {
         /// already does. The loadout bar drains its tile by it.
         double healthFraction = 1.0;
 
+        /// The number the loadout bar prints inside this slot's top border,
+        /// or -1 for a petal that has no number to show -- which is nearly all
+        /// of them. Sponge's outstanding damage is the only writer today.
+        ///
+        /// Derived here rather than at the wire, so that a petal which wants a
+        /// number publishes it from the system that owns the mechanic and the
+        /// snapshot stays a dumb copy. It is re-derived every tick, so a slot
+        /// whose petal was swapped for one with nothing to say clears itself.
+        double counter = -1;
+
         /// When cluster member i comes back, or 0 when it is already out.
         /// Sized to the petal's count; meaningful only while `independent`.
         std::vector<double> instanceReadyAtMillis;

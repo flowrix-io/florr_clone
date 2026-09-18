@@ -870,7 +870,57 @@ TEST(an_untouched_loadout_costs_the_snapshot_one_byte) {
     WorldView other;
     const std::size_t withOne = g.tick(other, 1, 1000);
 
-    CHECK_EQ(withOne - bare, std::size_t(4));
+    // slot, reload, health, counter.
+    CHECK_EQ(withOne - bare, std::size_t(6));
+}
+
+TEST(a_sponge_reports_the_damage_it_is_still_holding) {
+    // The number the bar prints inside the slot's top border. The petal system
+    // derives it; the snapshot only carries it, rounded UP so a sliver of a
+    // stored hit still reads as 1 rather than vanishing early.
+    Fixture f;
+    Loadout loadout;
+    loadout.slots[1] = LoadoutSlot{0, Rarity::Common, 0.0, false};
+    f.world.add<Loadout>(f.viewer, loadout);
+
+    PetalSlotState slotState;
+    slotState.slots[1].counter = 7.2;
+    f.world.add<PetalSlotState>(f.viewer, slotState);
+
+    WorldView client;
+    f.tick(client, 1, 2000);
+
+    CHECK_EQ(client.self().slotCounter[1], 8);
+    // A petal with no number of its own is not reported, and reads as none --
+    // which is -1, not 0: zero is a reading, not an absence.
+    CHECK_EQ(client.self().slotCounter[0], -1);
+}
+
+TEST(an_emptied_sponge_prints_a_standing_zero) {
+    // An idle gauge still reports. The slot stays in the list holding 0 rather
+    // than dropping out of it, because a number that vanished whenever it read
+    // empty is indistinguishable from a petal that never had one.
+    Fixture f;
+    Loadout loadout;
+    loadout.slots[1] = LoadoutSlot{0, Rarity::Common, 0.0, false};
+    f.world.add<Loadout>(f.viewer, loadout);
+
+    PetalSlotState slotState;
+    slotState.slots[1].counter = 12.0;
+    f.world.add<PetalSlotState>(f.viewer, slotState);
+
+    WorldView client;
+    f.tick(client, 1, 2000);
+    CHECK_EQ(client.self().slotCounter[1], 12);
+
+    f.world.get<PetalSlotState>(f.viewer).slots[1].counter = 0.0;
+    f.tick(client, 2, 2050);
+    CHECK_EQ(client.self().slotCounter[1], 0);
+
+    // Only the petal disowning the number takes it off the bar.
+    f.world.get<PetalSlotState>(f.viewer).slots[1].counter = -1.0;
+    f.tick(client, 3, 2100);
+    CHECK_EQ(client.self().slotCounter[1], -1);
 }
 
 TEST(a_clump_reports_a_reload_while_any_grain_is_missing) {

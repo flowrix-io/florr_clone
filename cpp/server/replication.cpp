@@ -247,6 +247,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     struct SlotReport {
         double reloadRemaining = 0;
         double health = 1.0;
+        /// The whole number the bar prints inside the slot's top border, or
+        /// net::kNoSlotCounter for a petal that has none. Rounded UP, so a
+        /// sponge still holding a sliver of a hit reads as 1 rather than
+        /// dropping to 0 a moment early.
+        std::uint16_t counter = net::kNoSlotCounter;
     };
     const auto report = [&](int i, SlotReport& out) {
         if (viewerLoadout == nullptr) return false;
@@ -273,8 +278,17 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         }
         out.reloadRemaining = std::max(0.0, out.reloadRemaining);
         if (live != nullptr) out.health = live->healthFraction;
+        if (live != nullptr && live->counter >= 0.0) {
+            out.counter = static_cast<std::uint16_t>(
+                std::clamp(std::ceil(live->counter), 0.0,
+                           static_cast<double>(net::kNoSlotCounter - 1)));
+        }
 
-        return out.reloadRemaining > 0.0 || out.health < 1.0;
+        // A slot with a counter is reported every snapshot, even sitting at
+        // zero with a whole petal: the number is a gauge, and a gauge that
+        // vanishes while it reads empty is one the player learns to distrust.
+        return out.reloadRemaining > 0.0 || out.health < 1.0 ||
+               out.counter != net::kNoSlotCounter;
     };
     // Counted before it is written: the count leads the list, and ten slots is
     // cheaper to walk twice than a patch-back is to add to the writer.
@@ -292,6 +306,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // anyway; clamping keeps the field two bytes.
         out.u16(static_cast<std::uint16_t>(std::min(slotReport.reloadRemaining, 65535.0)));
         out.unitByte(slotReport.health);
+        out.u16(slotReport.counter);
     }
 
     // --- spawns and updates ----------------------------------------------

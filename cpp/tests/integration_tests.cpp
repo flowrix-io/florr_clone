@@ -916,3 +916,52 @@ TEST(a_yggdrasil_revival_takes_the_death_screen_back_down) {
     }
     CHECK(distance(world.get<Transform>(aliceBody).position, before) > 50.0);
 }
+
+TEST(a_sponge_prints_its_stored_damage_on_the_owners_bar) {
+    // The whole path the loadout bar's number takes: a sponge in a real
+    // server's loadout, the petal system publishing what the flower is still
+    // holding, the snapshot carrying it, and the owner's client decoding it
+    // into what the bar prints inside that slot's top border.
+    Harness h("sponge-counter");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(flix::testsupport::loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.username == "alice") body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    const std::uint16_t sponge = content().petalIndex("sponge");
+    CHECK(sponge != kInvalidIndex);
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{sponge, Rarity::Common, 0.0, false};
+
+    // Nothing absorbed yet: an idle sponge stands at zero, and the petals
+    // beside it -- which have no number of their own -- print nothing.
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == 0; }));
+    CHECK_EQ(alice.view().self().slotCounter[1], -1);
+
+    // A hit combat deferred into the sponge. Held rather than draining, so the
+    // number this asserts on is a fixed one.
+    SpongeDamageEffect stored;
+    stored.remainingDamage = 12.0;
+    stored.damagePerSecond = 0.0;
+    world.ensure<SpongeDamageState>(body).effects.push_back(stored);
+
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == 12; }));
+
+    // Paid back: the gauge falls to zero and stays on the tile.
+    world.get<SpongeDamageState>(body).effects.clear();
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == 0; }));
+
+    // Unequipped: now there is no number at all.
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{};
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == -1; }));
+}

@@ -31,6 +31,24 @@ constexpr double kShadowAlpha = 0.15;
 constexpr double kNameSize = 12.0;
 constexpr double kNameBaseline = 20.0;
 constexpr double kNameStroke = 3.0;
+/// The plate's border: the 5 units of darker shade left showing around the
+/// face, on each side.
+constexpr double kPlateBorder = (kPlateSide - kFaceSide) * 0.5;
+
+/// The live counter's pill. It IS the border -- the same colour, centred on
+/// the border's own mid-line, so the top edge swells into a capsule around the
+/// number instead of carrying a badge on top of it. Half of it therefore falls
+/// outside the plate, which is what makes the swell read as a swell.
+///
+/// The width floats with the number, between a minimum that keeps "0" a pill
+/// rather than a dot and a maximum that keeps a four-figure reading inside the
+/// plate.
+constexpr double kCounterSize = 11.0;
+constexpr double kCounterHeight = 15.0;
+constexpr double kCounterPadX = 5.0;
+constexpr double kCounterMinWidth = 19.0;
+constexpr double kCounterMaxWidth = 46.0;
+constexpr double kCounterCentreY = -kPlateSide * 0.5 + kPlateBorder * 0.5;
 /// The stack count, top-right, tilted as the reference shot draws it. A count
 /// lying flat on a square plate reads as part of the artwork; the tilt is what
 /// makes it a sticker on the tile instead.
@@ -295,6 +313,45 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     }
 
     canvas.restore();  // unclip
+
+    // The counter's pill: the border itself, swollen around the number and
+    // centred on the border's mid-line. Outside the face clip, so neither the
+    // reload wedge nor a drained face eats it, and after the icon, so a
+    // cluster wide enough to reach the top edge passes under it.
+    //
+    // Being the border's own colour, the pill can land on a field of that
+    // colour -- a tile drained back to the bare plate -- so the number keeps
+    // the outline the petal's name wears for the same reason.
+    if (filled && !tile.counter.empty()) {
+        TextStyle label;
+        label.bold = true;
+        label.size = kCounterSize;
+        double measured = measure(tile.counter, kCounterSize, true);
+        // A four-figure counter shrinks to the pill rather than widening it
+        // past the plate: the pill is a fixture of the border, not a label
+        // that grows out of the tile.
+        const double widest = kCounterMaxWidth - kCounterPadX * 2;
+        if (measured > widest) {
+            label.size = std::max(6.0, kCounterSize * widest / measured);
+            measured = widest;
+        }
+        const double pillWidth =
+            std::clamp(measured + kCounterPadX * 2, kCounterMinWidth, kCounterMaxWidth);
+        setFill(canvas, border);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(-pillWidth * 0.5),
+                         static_cast<float>(kCounterCentreY - kCounterHeight * 0.5),
+                         static_cast<float>(pillWidth), static_cast<float>(kCounterHeight),
+                         static_cast<float>(kCounterHeight * 0.5));
+        canvas.fill();
+
+        label.fill = kPaper;
+        label.stroke = kInk;
+        label.strokeWidth = kNameStroke / scale;
+        label.align = Align::Centre;
+        label.baseline = Baseline::Middle;
+        text(canvas, tile.counter, 0.0, kCounterCentreY, label);
+    }
 
     // The badge sits OUTSIDE the face clip, so it reaches the plate's own
     // corner the way the reference's does. Inside it, the count was held a

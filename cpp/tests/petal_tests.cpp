@@ -223,6 +223,15 @@ struct Rig {
             .healthFraction;
     }
 
+    /// The number the loadout bar prints inside the slot's top border, and -1
+    /// for a petal that has none.
+    double slotCounter(int index) const {
+        return const_cast<World&>(world)
+            .get<PetalSlotState>(player)
+            .slots[static_cast<std::size_t>(index)]
+            .counter;
+    }
+
     const PetalRing& ring() const { return const_cast<World&>(world).get<PetalRing>(player); }
     const PlayerModifiers& modifiers() const {
         return const_cast<World&>(world).get<PlayerModifiers>(player);
@@ -1233,6 +1242,80 @@ TEST(a_sponge_defers_damage_only_while_its_body_is_alive) {
     rig.tick();
     CHECK(rig.slot(0).broken);
     CHECK_NEAR(rig.modifiers().spongeDamageDurationMillis, 0.0, 1e-12);
+}
+
+TEST(a_sponge_publishes_the_damage_it_is_holding_for_the_bar) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "sponge");
+    rig.equip(1, "basic");
+    rig.settleEquips();
+
+    // Two deferred hits: the bar prints what the FLOWER is still holding, not
+    // a share per hit -- combat defers a hit against the player.
+    SpongeDamageState& stored = rig.world.ensure<SpongeDamageState>(rig.player);
+    stored.effects.push_back(SpongeDamageEffect{9.0, 9.0, NULL_ENTITY});
+    stored.effects.push_back(SpongeDamageEffect{5.0, 5.0, NULL_ENTITY});
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(0), 14.0, 1e-9);
+    // A petal with no number of its own says so, rather than printing a zero.
+    CHECK(rig.slotCounter(1) < 0.0);
+
+    // Paid back: the number goes with the damage.
+    rig.world.get<SpongeDamageState>(rig.player).effects.clear();
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(0), 0.0, 1e-9);
+
+    // And a slot that stops being a sponge stops having a number at all, even
+    // while the flower is still paying the old hits back.
+    rig.world.get<SpongeDamageState>(rig.player)
+        .effects.push_back(SpongeDamageEffect{4.0, 4.0, NULL_ENTITY});
+    rig.equip(0, "basic");
+    rig.tick();
+    CHECK(rig.slotCounter(0) < 0.0);
+}
+
+TEST(a_broken_sponge_goes_on_printing_what_it_absorbed) {
+    // The stored hits drain whether or not the body that took them survived,
+    // so the number stays up while the slot reloads. A number that vanished at
+    // the moment it mattered most would read as the damage being cancelled.
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "sponge");
+    rig.settleEquips();
+
+    rig.world.ensure<SpongeDamageState>(rig.player)
+        .effects.push_back(SpongeDamageEffect{11.0, 11.0, NULL_ENTITY});
+    rig.damage(rig.petals(0).front(), 10.0);
+    rig.tick();
+
+    CHECK(rig.slot(0).broken);
+    CHECK_NEAR(rig.slotCounter(0), 11.0, 1e-9);
+}
+
+TEST(a_downed_flower_prints_no_stored_damage_on_its_death_card) {
+    // reconcileSlots steps over a corpse, so a number left standing would
+    // freeze there for as long as the death card is up -- which is how this
+    // read as a feature that only worked when you were dead. The ring pass
+    // drops it with the ring.
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "sponge");
+    rig.settleEquips();
+
+    rig.world.ensure<SpongeDamageState>(rig.player)
+        .effects.push_back(SpongeDamageEffect{18.0, 0.0, NULL_ENTITY});
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(0), 18.0, 1e-9);
+
+    rig.world.add<Dead>(rig.player);
+    rig.tick();
+    CHECK(rig.slotCounter(0) < 0.0);
+
+    // And a revive republishes it: the corpse kept what it was holding.
+    rig.world.remove<Dead>(rig.player);
+    rig.tick();
+    CHECK_NEAR(rig.slotCounter(0), 18.0, 1e-9);
 }
 
 TEST(a_clump_pays_its_modifier_once_not_once_per_grain) {

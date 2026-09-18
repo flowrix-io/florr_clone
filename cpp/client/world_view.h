@@ -145,6 +145,15 @@ inline std::array<double, kLoadoutActiveSlots> fullSlotHealth() {
     return full;
 }
 
+/// No slot printing a number, which is what a bar with no snapshot behind it
+/// yet must draw as. A zeroed array would open the game on ten tiles each
+/// claiming a gauge that reads empty.
+inline std::array<int, kLoadoutActiveSlots> noSlotCounters() {
+    std::array<int, kLoadoutActiveSlots> none{};
+    none.fill(-1);
+    return none;
+}
+
 /// The authoritative state of the player's own flower, straight from the
 /// snapshot and never interpolated -- prediction owns its position.
 struct SelfState {
@@ -174,6 +183,14 @@ struct SelfState {
     /// run on the frame clock: a petal loses health in the discrete steps
     /// something hits it in, and there is nothing between them to animate.
     std::array<double, kLoadoutActiveSlots> slotHealthFraction = fullSlotHealth();
+
+    /// The number the bar prints inside each slot's top border -- a sponge's
+    /// outstanding damage -- and -1 for a petal that has no number, which is
+    /// nearly all of them. Zero is a value a sponge really holds, so it is NOT
+    /// the absent case: the bar prints a standing 0 and prints nothing at -1.
+    /// Whole numbers, drawn as given: the server decides what the figure
+    /// means, the bar only prints it.
+    std::array<int, kLoadoutActiveSlots> slotCounter = noSlotCounters();
 };
 
 class WorldView {
