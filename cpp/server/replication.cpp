@@ -80,6 +80,18 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
     if (const PlayerProgress* progress = world.tryGet<PlayerProgress>(e)) {
         out.level = static_cast<std::uint16_t>(std::max(1, progress->level));
     }
+    // Shell's shield, measured against the pool it is protecting: the bar the
+    // client draws it on is the health bar, so max health is the only scale it
+    // can be quantised against. A lapsed shield reads zero rather than being
+    // left to linger -- ShieldState is only swept when that flower next runs
+    // its petal actions.
+    if (const ShieldState* shield = world.tryGet<ShieldState>(e)) {
+        const Health* health = world.tryGet<Health>(e);
+        if (shield->active(nowMillis) && health != nullptr && health->max > 0) {
+            out.shield = static_cast<std::uint8_t>(
+                std::lround(clamp(shield->amount / health->max, 0.0, 1.0) * 255.0));
+        }
+    }
     if (const ArenaScore* arena = world.tryGet<ArenaScore>(e)) {
         out.arenaScore = static_cast<std::uint32_t>(
             clamp(arena->score, 0.0, static_cast<double>(0xFFFFFFFFu)));
@@ -339,6 +351,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u16(visuals.level);
             out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
             out.u32(visuals.arenaScore);
+            out.u8(visuals.shield);
             out.str(skinIdOf(visuals));
         }
         if (info.kind == net::EntityKind::Petal) {
@@ -372,6 +385,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         tracked.level = visuals.level;
         tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
         tracked.arenaScore = visuals.arenaScore;
+        tracked.shield = visuals.shield;
         tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
         view.tracked.emplace(candidate.netId, tracked);
     }
@@ -440,7 +454,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
              visuals.renderFlags != tracked.renderFlags ||
              visuals.level != tracked.level ||
              static_cast<std::uint8_t>(visuals.bestRarity) != tracked.bestRarity ||
-             visuals.arenaScore != tracked.arenaScore ||
+             visuals.arenaScore != tracked.arenaScore || visuals.shield != tracked.shield ||
              skinIdHash(skinIdOf(visuals)) != tracked.skinIdHash)) {
             mask |= net::FieldPlayerVisuals;
         }
@@ -475,6 +489,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             out.u16(visuals.level);
             out.u8(static_cast<std::uint8_t>(visuals.bestRarity));
             out.u32(visuals.arenaScore);
+            out.u8(visuals.shield);
             out.str(skinIdOf(visuals));
             tracked.faceFlags = visuals.faceFlags;
             tracked.equipFlags = visuals.equipFlags;
@@ -482,6 +497,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.level = visuals.level;
             tracked.bestRarity = static_cast<std::uint8_t>(visuals.bestRarity);
             tracked.arenaScore = visuals.arenaScore;
+            tracked.shield = visuals.shield;
             tracked.skinIdHash = skinIdHash(skinIdOf(visuals));
         }
         ++updateCount;

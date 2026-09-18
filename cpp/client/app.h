@@ -218,7 +218,13 @@ private:
     /// HUD. Nothing at all when the player squads alone, which is the normal
     /// case and is why the block starts where the main HUD ends rather than
     /// reserving room for itself.
-    void drawSquadHud(Canvas&);
+    void drawSquadHud(Canvas&, double time);
+    /// One HUD avatar: the flower `netId` belongs to, drawn at `radius` around
+    /// (`centreX`, `centreY`) with its own colour, face, equipment and skin.
+    /// Falls back to the plain yellow face when that body is not in the stream
+    /// -- a squadmate between a death and a respawn has nothing else to show.
+    void drawHudFlower(Canvas&, std::uint32_t netId, double centreX, double centreY,
+                       double radius, double time);
     /// The minimap in the top-right corner -- 200 design units square, the
     /// whole of the map the flower is standing on fitted into it -- with its
     /// gold border and its map caption.
@@ -502,6 +508,7 @@ private:
     /// back to green over half a second from here.
     double invulEndedAt_ = -1;
     bool wasInvulnerable_ = false;
+
 
     /// The minimap's baked static layer and the map it was baked for. Rebuilt
     /// only when that map changes -- it fills the whole of the map's collision

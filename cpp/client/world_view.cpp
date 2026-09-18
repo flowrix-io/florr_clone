@@ -100,6 +100,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint16_t level;
         Rarity bestRarity;
         std::uint32_t arenaScore;
+        double shieldFraction;
         std::string equippedSkinId;
         std::uint32_t ownerNetId;
         std::string name;
@@ -127,6 +128,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             s.level = reader.u16();
             s.bestRarity = clampRarity(reader.u8());
             s.arenaScore = reader.u32();
+            s.shieldFraction = reader.u8() / 255.0;
             s.equippedSkinId = reader.str();
         }
         if (s.kind == net::EntityKind::Petal) s.ownerNetId = reader.u32();
@@ -149,6 +151,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         std::uint16_t level;
         Rarity bestRarity;
         std::uint32_t arenaScore;
+        double shieldFraction;
         std::string equippedSkinId;
     };
     std::vector<Update> updates;
@@ -172,6 +175,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             u.level = reader.u16();
             u.bestRarity = clampRarity(reader.u8());
             u.arenaScore = reader.u32();
+            u.shieldFraction = reader.u8() / 255.0;
             u.equippedSkinId = reader.str();
         }
         updates.push_back(std::move(u));
@@ -254,6 +258,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.level = s.level;
         e.bestRarity = s.bestRarity;
         e.arenaScore = s.arenaScore;
+        e.shieldFraction = s.shieldFraction;
         e.equippedSkinId = std::move(s.equippedSkinId);
         e.ownerNetId = s.ownerNetId;
         if (s.flags & net::SpawnIsSelf) {
@@ -298,6 +303,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
             e.level = u.level;
             e.bestRarity = u.bestRarity;
             e.arenaScore = u.arenaScore;
+            e.shieldFraction = u.shieldFraction;
             e.equippedSkinId = u.equippedSkinId;
         }
     }

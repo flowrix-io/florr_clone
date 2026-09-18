@@ -75,6 +75,13 @@ struct RemoteEntity {
     /// Player-only: the arena leaderboard's number, zero outside the ring.
     std::uint32_t arenaScore = 0;
 
+    /// Player-only: the live shield as a fraction of this flower's MAX health,
+    /// zero when none is up. It is what the WHITE pill on the health bar is
+    /// long -- the green under it is the health itself. Measured against max
+    /// rather than current health because that is the scale the bar is drawn
+    /// in; see the wire note on FieldPlayerVisuals.
+    double shieldFraction = 0;
+
     /// Player-only: the catalog id of the user-created skin this flower wears,
     /// empty for none. Resolved against NetClient's catalog at draw time
     /// rather than carrying the shapes: the wearer's record is then a short

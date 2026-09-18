@@ -1465,22 +1465,67 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
     if (options.healthBars) {
         // Always drawn, even at full health: the bar is part of how a flower
         // reads, not a warning that appears once you are hurt.
-        ui::setFill(canvas, ui::kHealthBack);
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(screen.x - 31.0 * zoom),
-                         static_cast<float>(barY - zoom), static_cast<float>(62.0 * zoom),
-                         static_cast<float>(10.0 * zoom), static_cast<float>(4.0 * zoom));
-        canvas.fill();
+        //
+        // The same three zones the HUD's own bar has -- flowerBar() in app.cpp
+        // is the other end of this: the green fill is the health, the white
+        // pill riding inside it is the SHIELD, and the dark plate past the
+        // fill is health that is gone. A MOB's bar is the plain two-zone one;
+        // only flowers wear a pill, and only while a shield is up.
+        const double width = 60.0 * zoom;
+        const double height = 8.0 * zoom;
+        // One eighth of the bar, which is the rim the HUD's own pill sits in.
+        const double inset = zoom;
+        const double innerHeight = height - inset * 2.0;
+        const double health = clamp(entity.healthFraction, 0.0, 1.0);
+        const double healthWidth = width * health;
+        // Clamped to the health under it, as the HUD's is: the pill is drawn
+        // INSIDE the fill, never hanging off the end of it.
+        const double pillWidth =
+            std::min(width * clamp(entity.shieldFraction, 0.0, 1.0), healthWidth) - inset * 2.0;
+        const bool hasHealth = healthWidth > 0;
+        const bool hasPill = pillWidth > 0 && innerHeight > 0;
 
-        const double fill = clamp(entity.healthFraction, 0.0, 1.0) * 60.0 * zoom;
-        if (fill > 0) {
+        const auto pillRect = [&](Path2D& path) {
+            path.roundRect(static_cast<float>(left + inset), static_cast<float>(barY + inset),
+                           static_cast<float>(pillWidth), static_cast<float>(innerHeight),
+                           static_cast<float>(innerHeight * 0.5));
+        };
+        const auto healthRect = [&](Path2D& path) {
+            path.roundRect(static_cast<float>(left), static_cast<float>(barY),
+                           static_cast<float>(healthWidth), static_cast<float>(height),
+                           static_cast<float>(height * 0.5));
+        };
+
+        // Punched, not stacked, and under one alpha -- again as the HUD does
+        // it. Laying the fill over the plate and the pill over the fill would
+        // blend each of them twice and come out muddy.
+        canvas.save();
+        canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
+
+        Path2D plate;
+        plate.roundRect(static_cast<float>(screen.x - 31.0 * zoom),
+                        static_cast<float>(barY - zoom), static_cast<float>(62.0 * zoom),
+                        static_cast<float>(10.0 * zoom), static_cast<float>(5.0 * zoom));
+        if (hasHealth) healthRect(plate);
+        ui::setFill(canvas, ui::kHealthBack);
+        canvas.fill(plate, hasHealth ? "evenodd" : "nonzero");
+
+        if (hasHealth) {
+            Path2D green;
+            healthRect(green);
+            if (hasPill) pillRect(green);
             ui::setFill(canvas, healthBarColor(entity, timeSeconds));
-            canvas.beginPath();
-            canvas.roundRect(static_cast<float>(left), static_cast<float>(barY),
-                             static_cast<float>(fill), static_cast<float>(8.0 * zoom),
-                             static_cast<float>(4.0 * zoom));
-            canvas.fill();
+            canvas.fill(green, hasPill ? "evenodd" : "nonzero");
         }
+
+        if (hasPill) {
+            Path2D pill;
+            pillRect(pill);
+            ui::setFill(canvas, ui::kPaper);
+            canvas.fill(pill);
+        }
+
+        canvas.restore();
     }
 
     if (options.names) {

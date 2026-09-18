@@ -21,9 +21,21 @@ inline constexpr std::uint32_t kSlot       = 0xEEEEEEu;  ///< empty loadout slot
 inline constexpr std::uint32_t kAccent     = 0x1DD129u;  ///< Ready / primary action
 inline constexpr std::uint32_t kDanger     = 0xFF4444u;
 inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
-inline constexpr std::uint32_t kHealth     = 0x73FF54u;
+/// Both decoded from the reference, not guessed: its HUD is one flattened
+/// layer over the world at kHudLayerAlpha, so a screenshot reads
+/// `alpha*colour + (1-alpha)*ground` and the ground cancels out of two samples
+/// over different floors. Every green bar in the game is this one green -- the
+/// HUD's track, a squadmate's, a mob's plate and the boss bar all decode to it.
+inline constexpr std::uint32_t kHealth     = 0x67D42Cu;
 inline constexpr std::uint32_t kHealthBack = 0x000000u;
-inline constexpr std::uint32_t kXpBar      = 0xFAFFC9u;
+inline constexpr std::uint32_t kXpBar      = 0xECF857u;
+/// The boss bar's track is the one dark plate that is NOT ink: a charcoal
+/// pill, which the same decode puts at 28 on all three channels.
+inline constexpr std::uint32_t kBossTrack  = 0x1C1C1Cu;
+/// What the whole top-left block and the boss bars are composited at. The
+/// reference's HUD is slightly see-through: its plate over a 140 floor reads
+/// 19 and over a 185 one reads 25, and the slope between them is this.
+inline constexpr double kHudLayerAlpha = 0.865;
 inline constexpr std::uint32_t kShade      = 0x000000u;  ///< modal scrim, at low alpha
 /// The green the browser build's auth form and chat field are made of.
 inline constexpr std::uint32_t kField      = 0x18CE18u;

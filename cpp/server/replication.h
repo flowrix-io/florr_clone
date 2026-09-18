@@ -63,6 +63,7 @@ public:
         std::uint16_t level = 0;      ///< 0 is not a valid level, forcing a first send
         std::uint8_t bestRarity = 0xFF;
         std::uint32_t arenaScore = 0;
+        std::uint8_t shield = 0;
         /// A hash of the equipped skin id, not the id itself.
         ///
         /// One Tracked exists per entity per viewer -- mobs, petals, drops and
@@ -297,6 +298,10 @@ struct PlayerVisualState {
     Rarity bestRarity = Rarity::Common;
     /// The arena leaderboard's number; zero for anyone not in the ring.
     std::uint32_t arenaScore = 0;
+    /// The live shield, as 255ths of this flower's MAX health -- which is the
+    /// scale the bar it is drawn on is measured in. Zero when none is up, so
+    /// a flower with no Shell in its loadout sends nothing but zeroes here.
+    std::uint8_t shield = 0;
     /// Borrowed from PlayerVisuals, never owned: this is rebuilt for every
     /// player in every viewer's snapshot, and copying a ~20-character id that
     /// many times a second is a heap allocation per player per viewer for a

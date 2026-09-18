@@ -447,6 +447,7 @@ private:
     /// netId -> the moment invulnerability ended, or -1 while it still holds.
     mutable std::unordered_map<std::uint32_t, double> invulnFade_;
 
+
     /// Which flower is the viewer's. Captured by the WorldView draw overload
     /// and used to decide whose petal ring follows the PREDICTED body rather
     /// than the interpolated one.
