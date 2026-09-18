@@ -166,30 +166,32 @@ struct PetalRingSpec {
     /// flower's 2.4 is the default because it was the only ring in the game
     /// when this became a knob; a dandelion wears its seeds much closer in.
     double orbitScale = kMobPetalRingOrbitScale;
-    /// A ring petal's drawn size, as a multiple of the mob's own radius --
-    /// the BOX the artwork is fitted into, so a petal whose `visual_scale`
-    /// says its document is wider than the petal still lands at the same size
-    /// beside one whose does not. The glitch flower's 0.55 is the default.
+    /// DECORATIVE rings only: a petal's drawn size, as a multiple of the mob's
+    /// own radius -- the BOX the artwork is fitted into. An AMMUNITION ring
+    /// ignores this, because its seeds are entities and are drawn from the
+    /// radius the server gave them, which is `hitScale` below.
     double petalScale = kMobPetalRingPetalScale;
-    /// What one ring petal HITS with, as a multiple of the mob's own radius.
-    ///
-    /// Authored rather than derived from `petalScale`, because the two are not
-    /// the same quantity: `petalScale` sizes the BOX the document is fitted
-    /// into, and how much of that box a petal's ink actually fills is a
-    /// property of its viewBox that no config can compute. The author reads
-    /// the drawn petal and states its radius. The dandelion's seeds fill
-    /// 20/39 of their box, so 0.7 of drawn box is 0.35 of hit radius.
+    /// AMMUNITION rings only: one seed's RADIUS, as a multiple of the mob's
+    /// own. It is the seed's whole size -- what it collides at, what it is
+    /// drawn at, and what it keeps when it is shot off -- so there is one
+    /// number rather than a drawn one and a hit one that can disagree.
     double hitScale = kMobPetalRingHitScale;
     /// The ring turns. A decorative ring spins like a flower's; a ring that is
     /// part of the body -- a dandelion's seed head -- is ATTACHED and holds
     /// still, so its petals stay on the mob rather than sweeping past it.
+    ///
+    /// An AMMUNITION ring must declare `"spin": false`. Its seats are where
+    /// the server places real bodies and where a shed seed leaves from, and
+    /// neither is knowable for a ring whose phase is a viewer's own clock.
+    /// The loader refuses the combination rather than leaving it to be found.
     bool spins = true;
-    /// Each petal is turned to face OUTWARD along its own radius, which is
-    /// gardn's kFollowRot (Server/Process/Petal.cc: a petal's angle is the
-    /// bearing from its owner to itself). What it buys is a petal drawn with
-    /// something at its inner end -- a dandelion's stem -- reaching back into
-    /// the body it belongs to. False leaves the artwork upright, which is what
-    /// the glitch flower's square petals want.
+    /// DECORATIVE rings only: each petal is turned to face OUTWARD along its
+    /// own radius, which is gardn's kFollowRot (Server/Process/Petal.cc: a
+    /// petal's angle is the bearing from its owner to itself). False leaves
+    /// the artwork upright, which is what the glitch flower's squares want.
+    ///
+    /// An AMMUNITION ring has no say: its seeds are entities, and an entity
+    /// sitting on a body faces out of it. There is nothing to configure.
     bool followRotation = false;
     /// Draw the body as a flower FACE rather than as the mob's own artwork.
     ///

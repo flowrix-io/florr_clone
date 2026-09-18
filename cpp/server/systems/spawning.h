@@ -651,6 +651,15 @@ private:
                         Entity head, const MobConfig& config, Rarity rarity, Vec2 headPosition,
                         Realm realm, double headAngle, double nowMillis, Rng& rng, int depth);
 
+    /// The seeds of a mob's ammunition ring, one entity per seat.
+    ///
+    /// Each is a body of its own -- Transform, Body, Health, Faction and
+    /// ContactDamage -- and nothing else: no AI, no bounty, no MobTag. It is a
+    /// piece of the mob that can be broken off, not a mob, so it drops nothing
+    /// and is worth no XP.
+    void spawnRingPetals(World& world, const ContentRegistry& content, Entity mob,
+                         const PetalRingSpec& spec, const MobStats& stats, Rarity rarity);
+
     /// One escort at an already-chosen spot, leashed to `parent`. Where that
     /// spot is belongs to the caller: a hole's guards and its waves stand off
     /// it on a bearing of their own, while a queen's soldiers come out

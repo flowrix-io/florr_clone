@@ -262,7 +262,7 @@ bool shotCanReach(double gap, double shotReach, double targetRadius) {
 
 MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
     : mobs_(world), pets_(world), segments_(world), nests_(world), rings_(world),
-      playerModifiers_(world), rng_(seed) {
+      seeds_(world), playerModifiers_(world), rng_(seed) {
     // A pet is not a wild mob with a different target list: it follows an
     // owner, pops back to them and is retired off their screen, so it runs its
     // own pass below. Dead mobs still exist until the reaper runs, and a corpse
@@ -274,6 +274,9 @@ MobAiSystem::MobAiSystem(World& world, std::uint64_t seed)
     // nests_ deliberately keeps Dead spawners: a dying nest is exactly when its
     // brood has to be released.
     rings_.without<Dead>();
+    // seeds_ deliberately keeps Dead ones OUT but nothing else: an orphan has
+    // to be found whatever state its mob left it in.
+    seeds_.without<Dead>();
 }
 
 // ---------------------------------------------------------------------------
@@ -1838,49 +1841,104 @@ void MobAiSystem::fireRingPetal(World& world, Entity self, const PetalRingSpec& 
     commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
 }
 
-void MobAiSystem::shedRingPetals(World& world, CommandBuffer& commands) {
-    // Collected rather than walked in place, as every other pass in this file
-    // is: nothing below relocates a row today, but the body calls out into
-    // nearestAttacker and queues a create, and a walk that holds its columns
-    // across either is one edit away from the trap this file's header names.
+void MobAiSystem::tickPetalRings(World& world, CommandBuffer& commands) {
+    // Orphans first, and from the SEED's side.
+    //
+    // A seed is a piece of an animal and goes when the animal does -- but the
+    // animal cannot be relied on to say so. It leaves by two roads: it DIES,
+    // which tags it Dead and excludes it from every query below (including the
+    // ring walk that would have torn its seats down), and it DESPAWNS, which
+    // destroys it outright with no tag at all and no chance to run anything.
+    // A ring cleaned up by its owner leaks on both, and a leaked seat is a
+    // hitbox standing in an empty field, damaging and being drawn, for the
+    // rest of the server's life.
+    //
+    // Asking the seed to watch its owner is the only arrangement that survives
+    // a teardown path nobody remembered to hook -- including one added later.
+    seeds_.collect(seedList_);
+    for (const Entity seed : seedList_) {
+        const MobRingPetal* petal = world.tryGet<MobRingPetal>(seed);
+        if (petal == nullptr) continue;
+        const bool ownerExists = world.isAlive(petal->mob);
+        if (ownerExists && world.tryGet<Dead>(petal->mob) == nullptr) continue;
+        // The seed leaves the way its mob left. A mob that DIED is marked and
+        // reaped, and the reaper announces it, so the ring pops with the body
+        // it was part of. A mob that DESPAWNED was destroyed with nothing said
+        // about it -- it is scenery being recycled, not a kill -- so its seeds
+        // go just as quietly rather than throwing ten death puffs across an
+        // empty field.
+        if (ownerExists) world.add<Dead>(seed);
+        else commands.destroy(seed);
+    }
+
+    // Collected rather than walked in place: marking a seed Dead and queueing
+    // a shot both change the world under an each().
     rings_.collect(stepList_);
     for (const Entity self : stepList_) {
         MobPetalRing* ring = world.tryGet<MobPetalRing>(self);
+        if (ring == nullptr || ring->seats.empty()) continue;
+
+        // `rings_` excludes Dead, so anything here is a live animal.
         const Transform* transform = world.tryGet<Transform>(self);
         const MobType* type = world.tryGet<MobType>(self);
-        const Body* body = world.tryGet<Body>(self);
-        if (ring == nullptr || transform == nullptr || type == nullptr || body == nullptr) continue;
-        if (world.tryGet<Dead>(self) != nullptr) continue;
+        if (transform == nullptr || type == nullptr) continue;
 
-        const PetalRingSpec& spec = content().mob(type->configIndex).petalRing;
+        // Sweep first, and unconditionally. A seed is an entity like any
+        // other: a flower's petals can break it, and the reaper destroys it
+        // without telling this system. A seat still naming a corpse would be
+        // placed, shot and counted forever.
+        for (std::size_t i = 0; i < ring->seats.size(); ++i) {
+            const Entity seed = ring->seats[i];
+            if (seed == NULL_ENTITY) continue;
+            if (!world.isAlive(seed) || world.tryGet<Dead>(seed) != nullptr) {
+                ring->seats[i] = NULL_ENTITY;
+                continue;
+            }
+            // Carried, not eased: the seat is a rigid offset from the mob, so
+            // the ring follows the body exactly rather than trailing it.
+            if (Transform* at = world.tryGet<Transform>(seed)) {
+                at->position = transform->position + ring->seat(i);
+                at->angle = ring->bearing(i);
+                at->realm = transform->realm;
+            }
+        }
 
         if (ring->pending <= 0) continue;
-        if (ring->remaining <= 0) {
+
+        // ONE seed per tick however many hits landed. A ring meeting a flower
+        // is thirty contacts a second, and paying every one of them off in the
+        // tick it arrived would empty a ten-petal dandelion in a third of a
+        // second and put ten shots on the same pixel.
+        //
+        // The outermost live seat goes first, so a ring empties in a readable
+        // order instead of at random.
+        std::size_t seat = ring->seats.size();
+        for (std::size_t i = ring->seats.size(); i-- > 0;) {
+            if (ring->seats[i] != NULL_ENTITY) { seat = i; break; }
+        }
+        if (seat == ring->seats.size()) {
             // A bald dandelion owes nothing, and nothing grows back, so the
             // debt is dropped rather than carried for a magazine that will
             // never be refilled.
             ring->pending = 0;
             continue;
         }
-
-        // ONE seed per tick however many hits landed. A ring meeting a flower
-        // is thirty contacts a second, and paying every one of them off in the
-        // tick it arrived would empty a ten-petal dandelion in a third of a
-        // second and put ten shots on the same pixel.
         --ring->pending;
-        --ring->remaining;
 
         // The seed leaves along the bearing it was SITTING on, which is also
         // the way it was drawn facing: a dandelion sprays outward rather than
-        // aiming, and whichever seed vanishes off the ring is the one the
-        // player watches fly.
-        //
-        // The index is `remaining` AFTER the decrement, because the ring draws
-        // and collides with 0..remaining-1 -- so this is exactly the seat that
-        // has just been emptied, and `fireRingPetal` launches the shot from
-        // that seat. It is only knowable because the ring holds still; see
-        // PetalRingSpec::spins.
-        const double aim = wrapAngle(ring->remaining * (kTau / std::max(1, ring->count)));
+        // aiming, and the seat the player watched empty is the one that flew.
+        const Entity seed = ring->seats[seat];
+        const double aim = wrapAngle(ring->bearing(seat));
+        ring->seats[seat] = NULL_ENTITY;
+        // The seat's own entity is retired and a projectile takes its place.
+        // Not the same object promoted: a seed on the ring is a body that
+        // collides and breaks, and a shot is a body that flies, penetrates and
+        // expires. One set of components cannot be both without a flag on
+        // every pass that walks either.
+        if (world.isAlive(seed)) world.add<Dead>(seed);
+
+        const PetalRingSpec& spec = content().mob(type->configIndex).petalRing;
         fireRingPetal(world, self, spec, *type, transform->position, ring->orbit,
                       ring->seedRadius, transform->realm, aim, commands);
     }
@@ -1968,7 +2026,6 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     steerPets(world, terrain, grid, nowMillis, dt, commands);
     followChains(world, terrain, activePlayers);
     driveSpawners(world, terrain, nowMillis, commands);
-    shedRingPetals(world, commands);
 }
 
 } // namespace flix

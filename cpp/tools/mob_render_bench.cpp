@@ -79,9 +79,9 @@ int main(int argc, char** argv) {
     view.seedForTest(self);
 
     const char* oneBig = std::getenv("ONEBIG");
-    // RING=<n> seeds a partly shed AMMUNITION ring, which is the one thing
-    // about such a mob that no amount of rendering locally will show you
-    // otherwise: nothing here feeds it the count the server would send.
+    // RING=<n> seats that many of an AMMUNITION ring's seeds around each mob.
+    // They are real entities on a server, so a scene assembled by hand has to
+    // place them itself -- and without this such a mob renders bald here.
     const char* ringEnv = std::getenv("RING");
     for (int i = 0; i < count; ++i) {
         RemoteEntity mob;
@@ -91,16 +91,40 @@ int main(int argc, char** argv) {
         mob.rarity = Rarity::Common;
         mob.healthFraction = 1.0;
         mob.radius = config.size * 25.0;
-        // A full ring, so a mob whose petals are AMMUNITION is measured (and
-        // dumped) carrying them rather than bald: nothing here feeds the count
-        // the server would send.
-        mob.ringCount = static_cast<std::uint8_t>(
-            clamp(ringEnv != nullptr ? std::atoi(ringEnv) : config.petalRing.count, 0, 255));
         if (i == 0 && oneBig != nullptr) mob.radius *= std::atof(oneBig);
         mob.position = mob.targetPosition =
             Vec2{centre.x - 400.0 + (i % 4) * 250.0, centre.y - 200.0 + (i / 4) * 220.0};
         mob.needsSnap = false;
         view.seedForTest(mob);
+    }
+
+    // An ammunition ring is made of petal entities anchored to their mob, so
+    // seat them the way the server does: one per seat, sized at the ring's own
+    // `hitScale`, flagged so the renderer turns each outward.
+    if (config.petalRing.present && config.petalRing.shootOnHit) {
+        const int seats = clamp(ringEnv != nullptr ? std::atoi(ringEnv) : config.petalRing.count,
+                                0, config.petalRing.count);
+        std::uint32_t nextId = 1000;
+        for (int i = 0; i < count; ++i) {
+            const auto owner = view.entities().find(static_cast<std::uint32_t>(100 + i));
+            if (owner == view.entities().end()) continue;
+            const Vec2 centre = owner->second.position;
+            const double bodyRadius = owner->second.radius;
+            for (int seat = 0; seat < seats; ++seat) {
+                const double bearing = seat * (kTau / config.petalRing.count);
+                RemoteEntity petal;
+                petal.netId = nextId++;
+                petal.kind = net::EntityKind::Petal;
+                petal.typeIndex = config.petalRing.petalIndex;
+                petal.spawnFlags = net::SpawnRingPetal;
+                petal.ownerNetId = owner->second.netId;
+                petal.radius = bodyRadius * config.petalRing.hitScale;
+                petal.ownerOffset = Vec2::fromAngle(bearing, bodyRadius * config.petalRing.orbitScale);
+                petal.position = petal.targetPosition = centre + petal.ownerOffset;
+                petal.needsSnap = false;
+                view.seedForTest(petal);
+            }
+        }
     }
 
     // Warm-up, so first-touch page faults and lazily compiled art are not in

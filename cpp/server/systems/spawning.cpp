@@ -301,6 +301,59 @@ double SpawnSystem::difficultyAt(Realm realm, Vec2 at) const {
 // Placing a mob
 // ---------------------------------------------------------------------------
 
+void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, Entity mob,
+                                  const PetalRingSpec& spec, const MobStats& stats,
+                                  Rarity rarity) {
+    if (spec.petalIndex == kInvalidIndex) return;
+    // Graded at the MOB's tier, not at the tier the ring's config names: an
+    // apex dandelion wears apex seeds, the same rule its shots are fired at.
+    const PetalStats seed = content.petalStats(spec.petalIndex, rarity);
+
+    // Read once, up front: every create() below relocates this row.
+    const MobPetalRing* ring = world.tryGet<MobPetalRing>(mob);
+    if (ring == nullptr || ring->seats.empty()) return;
+    const std::size_t count = ring->seats.size();
+    const double orbit = ring->orbit;
+    const double seedRadius = ring->seedRadius;
+    const Transform* at = world.tryGet<Transform>(mob);
+    if (at == nullptr) return;
+    const Vec2 centre = at->position;
+    const Realm realm = at->realm;
+    const Faction* faction = world.tryGet<Faction>(mob);
+    const Faction side = faction != nullptr ? *faction : Faction{Team::Hostiles, false};
+
+    for (std::size_t i = 0; i < count; ++i) {
+        const double bearing = i * (kTau / static_cast<double>(count));
+        const Entity e = world.create();
+        world.add<MobRingPetal>(e, MobRingPetal{mob, i, seed.noHealDurationMillis});
+        // The seed faces OUTWARD, which is gardn's kFollowRot and what puts a
+        // dandelion's stem back into the body it grew from.
+        world.add<Transform>(e, Transform{centre + Vec2::fromAngle(bearing, orbit), bearing, realm});
+        world.add<Body>(e, Body{seedRadius, stats.mass});
+        world.add<Faction>(e, side);
+        // Its own pool, so it breaks alone -- which is the whole point of the
+        // seeds being entities. Graded at the mob's tier like everything else
+        // about it.
+        world.add<Health>(e, Health{seed.health, seed.health, 0.0, 0.0});
+        // It hits for what the MOB hits for, on the mob's own cadence: the
+        // ring is how this animal touches you, so touching a seed and touching
+        // its hull cost the same. (The reference is explicit about this --
+        // applyPetalRingDamage deals `mobDamage(enemy.entity)`.)
+        world.add<ContactDamage>(e, ContactDamage{stats.damage, kMobHitIntervalMillis});
+        world.add<HitCooldowns>(e);
+        world.add<Knockback>(e);
+        Replicated replicated;
+        replicated.kind = net::EntityKind::Petal;
+        replicated.typeIndex = spec.petalIndex;
+        replicated.rarity = rarity;
+        replicated.spawnFlags = net::SpawnRingPetal;
+        world.add<Replicated>(e, replicated);
+        if (netIds != nullptr) world.add<NetId>(e, NetId{netIds->next()});
+        // Re-fetched every time, never held: the create above moved it.
+        if (MobPetalRing* live = world.tryGet<MobPetalRing>(mob)) live->seats[i] = e;
+    }
+}
+
 Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                              std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                              double nowMillis, Rng& rng) {
@@ -398,20 +451,19 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
         ++census_.spawnedTotal;
     }
 
-    // A ring that is AMMUNITION gets its state at spawn rather than on the
-    // first tick the mob thinks: a dandelion standing beyond the AI's LOD
-    // stride can still be shot at, and a ring handed out lazily would owe its
-    // first seed to whenever the mob next got a turn.
+    // A ring that is AMMUNITION is fitted at spawn rather than on the first
+    // tick the mob thinks: a dandelion standing beyond the AI's LOD stride can
+    // still be shot at, and a ring handed out lazily would owe its first seed
+    // to whenever the mob next got a turn.
+    //
+    // The SEATS are resolved here, against this mob's own body; the seeds
+    // themselves are created at the very bottom of this function, with the
+    // rest of the creates, for the reason stated there.
     if (config.petalRing.present && config.petalRing.shootOnHit) {
         MobPetalRing ring;
-        ring.count = config.petalRing.count;
-        ring.remaining = ring.count;
-        // Resolved against THIS mob's body, once. Every later reader walks the
-        // seats without the registry, and the broadphase gets the one number
-        // it needs to file the mob wide enough to be found out there.
+        ring.seats.assign(static_cast<std::size_t>(config.petalRing.count), NULL_ENTITY);
         ring.orbit = radius * config.petalRing.orbitScale;
         ring.seedRadius = radius * config.petalRing.hitScale;
-        ring.outerReach = ring.orbit + ring.seedRadius;
         world.add<MobPetalRing>(e, ring);
     }
 
@@ -449,6 +501,13 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     if (chainHead) {
         spawnBodyChain(world, terrain, content, e, config, rarity, at, realm, angle, nowMillis, rng,
                        depth + 1);
+    }
+    // Here with the other creates, and never above: every one of these
+    // relocates the rows the adds at the top of this function were writing
+    // into, which is why nothing may touch `e` by component pointer past this
+    // line. The ring is re-fetched inside.
+    if (config.petalRing.present && config.petalRing.shootOnHit) {
+        spawnRingPetals(world, content, e, config.petalRing, stats, rarity);
     }
     if (depth < kMaxNestDepth) {
         for (const std::uint16_t child : config.initialSpawns) {

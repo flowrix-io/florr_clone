@@ -310,6 +310,10 @@ private:
         /// off these.
         bool isPetal = false;
         bool isMobBody = false;
+        /// A seat on a mob's own ring (MobRingPetal). Neither a mob nor a
+        /// petal: a piece of the animal's body that happens to be breakable,
+        /// so it bumps and is paced exactly as the hull is.
+        bool isMobRing = false;
         bool isPet = false;
         bool isPlayerBody = false;
         /// A glitch-family mob body: its touch marks the flower (see
@@ -450,23 +454,6 @@ private:
                       double range, double nowMillis);
     void gatherPetals(World& world, const ContentRegistry& content);
     void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
-    /// Contact with a mob's OWN ring of petals -- a dandelion's seed head.
-    ///
-    /// A pass of its own rather than a MeleeSource per seed, for the reason
-    /// the raindrop aura is one: this is a second contact source on a body
-    /// that already has one, on its own clock (RingCooldowns), and folding it
-    /// into the melee loop would mean teaching that loop a third kind of
-    /// attacker it otherwise has no use for.
-    ///
-    /// The test is per PETAL and exact, where the reference's is a BAND around
-    /// the whole orbit. The reference had no choice: its ring was drawn from
-    /// the viewer's own wallclock and never broadcast, so an angle-exact
-    /// server test would have disagreed with every client. Ours is authored
-    /// still (`spin: false`) and its petal count is replicated, so the server
-    /// knows exactly where each seed is drawn -- and what the player sees hit
-    /// them is what hit them.
-    void tickMobPetalRings(World& world, const SpatialGrid& grid, const ContentRegistry& content,
-                           double nowMillis);
     /// A petal swinging at another flower, which is a different collision from
     /// the petal-vs-mob one beside it: gated by the arena/corruption rule
     /// rather than by the faction alone, throttled per victim, costing the
@@ -498,20 +485,6 @@ private:
     std::vector<PoisonTick> poison_;
     std::vector<PoisonTick> spongeTicks_;
 
-    /// One flower touched by one mob's ring this tick, gathered before any of
-    /// them is resolved.
-    ///
-    /// `outward` points from the MOB to the flower, not from the seed that was
-    /// touched. A seed sits on a ring the flower can be INSIDE of -- between
-    /// the hull and the orbit -- and a push away from the seed would drive it
-    /// through the body it is standing next to. The reference measures from
-    /// the mob's centre for the same reason.
-    struct RingHit {
-        Entity mob = NULL_ENTITY;
-        Entity victim = NULL_ENTITY;
-        Vec2 outward;
-    };
-    std::vector<RingHit> ringHits_;
     std::vector<Entity> candidates_;
     /// A strike's own broadphase answer and the two lists it builds from it.
     /// Separate from candidates_ because a contact strike is thrown from INSIDE

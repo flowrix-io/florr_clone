@@ -471,10 +471,6 @@ inline constexpr double kMobPetalRingOrbitScale = 2.4;
 inline constexpr double kMobPetalRingPetalScale = 0.55;
 inline constexpr double kMobPetalRingHitScale = 0.5;
 
-/// Roughly the interval at which a five-petal ring sweeps past a fixed point,
-/// so standing in one costs about what being swept by each petal would.
-inline constexpr double kMobPetalRingHitIntervalMillis = 600.0;
-
 // -- pets --------------------------------------------------------------------
 //
 // A summoned mob keeps its config's own behaviour -- a passive pet stays

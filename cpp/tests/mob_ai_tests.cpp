@@ -143,23 +143,43 @@ struct Sim {
         brain.aggroRange = stats.aggroRange;
         world.add<MobAi>(e, brain);
 
-        // As SpawnSystem does: a ring that is ammunition is stocked at spawn.
-        const PetalRingSpec& ring = content().mob(index).petalRing;
-        if (ring.present && ring.shootOnHit) {
-            MobPetalRing ammo;
-            ammo.count = ring.count;
-            ammo.remaining = ammo.count;
-            ammo.orbit = stats.radius * ring.orbitScale;
-            ammo.seedRadius = stats.radius * ring.hitScale;
-            ammo.outerReach = ammo.orbit + ammo.seedRadius;
-            world.add<MobPetalRing>(e, ammo);
+        // As SpawnSystem does: a ring that is ammunition is stocked at spawn,
+        // seats and seeds both.
+        const PetalRingSpec& spec = content().mob(index).petalRing;
+        if (spec.present && spec.shootOnHit && spec.petalIndex != kInvalidIndex) {
+            const PetalStats seed = content().petalStats(spec.petalIndex, rarity);
+            MobPetalRing ring;
+            ring.seats.assign(static_cast<std::size_t>(spec.count), NULL_ENTITY);
+            ring.orbit = stats.radius * spec.orbitScale;
+            ring.seedRadius = stats.radius * spec.hitScale;
+            world.add<MobPetalRing>(e, ring);
+            for (int i = 0; i < spec.count; ++i) {
+                const double bearing = i * (kTau / spec.count);
+                const Entity petal = world.create();
+                world.add<MobRingPetal>(petal, MobRingPetal{e, static_cast<std::size_t>(i),
+                                                            seed.noHealDurationMillis});
+                world.add<Transform>(
+                    petal, Transform{at + Vec2::fromAngle(bearing, ring.orbit), bearing});
+                world.add<Body>(petal, Body{ring.seedRadius, 1.0});
+                world.add<Faction>(petal, Faction{Team::Hostiles, false});
+                world.add<Health>(petal, Health{seed.health, seed.health, 0, 0});
+                world.add<ContactDamage>(petal, ContactDamage{stats.damage, kMobHitIntervalMillis});
+                world.add<HitCooldowns>(petal);
+                world.get<MobPetalRing>(e).seats[static_cast<std::size_t>(i)] = petal;
+            }
         }
         return e;
     }
 
+    /// Seeds still seated on `mob`.
     int ringOf(Entity mob) {
         const MobPetalRing* ring = world.tryGet<MobPetalRing>(mob);
-        return ring != nullptr ? ring->remaining : -1;
+        if (ring == nullptr) return -1;
+        int seated = 0;
+        for (const Entity seed : ring->seats) {
+            if (seed != NULL_ENTITY) ++seated;
+        }
+        return seated;
     }
 
     /// Shots in flight. The ring pass defers its create, so this is only
@@ -244,6 +264,9 @@ struct Sim {
             movers.each([&](Entity, Transform& transform, Motion& motion) {
                 transform.position += motion.velocity * dt;
             });
+            // After the stand-in movement, which is where GameServer calls it:
+            // a seat is a rigid offset from a body that has just moved.
+            ai.tickPetalRings(world, commands);
             commands.flush();
             now += net::kTickMillis;
         }
@@ -2204,12 +2227,10 @@ TEST(the_dandelion_ships_a_ring_of_ten_seeds_it_can_shed) {
     CHECK(ring.shootOnHit);
     CHECK_EQ(ring.count, 10);
     CHECK_EQ(ring.petalId, std::string("dandelion"));
-    // A seed head is part of the BODY: it holds still and every seed is turned
-    // to face outward so its stem reaches back into the mob. Asserted here
-    // because these are the two the renderer has no other test for, and a
-    // dandelion whose ring sweeps past it is the bug they exist to prevent.
+    // A seed head is part of the BODY and holds still. It has to: the seats
+    // are where the server puts real bodies and where a shed seed leaves
+    // from, and a spinning ring's phase belongs to the viewer.
     CHECK(!ring.spins);
-    CHECK(ring.followRotation);
 
     // The seats have to be somewhere a flower can actually stand, or the ring
     // is collision nobody will ever meet: outside the hull, and wide enough
@@ -2227,7 +2248,7 @@ TEST(the_dandelion_ships_a_ring_of_ten_seeds_it_can_shed) {
     const PetalRingSpec& glitch = content().mob(content().mobIndex("glitch_flower")).petalRing;
     CHECK(!glitch.shootOnHit);
     CHECK(glitch.spins);
-    CHECK(!glitch.followRotation);
+    CHECK(!glitch.followRotation);   // decoration keeps its own knobs
     CHECK_NEAR(glitch.orbitScale, kMobPetalRingOrbitScale, 1e-9);
     CHECK_NEAR(glitch.petalScale, kMobPetalRingPetalScale, 1e-9);
 }
@@ -2323,4 +2344,40 @@ TEST(a_shed_seed_never_grows_back) {
     sim.tick(900);
     CHECK_EQ(sim.ringOf(mob), 8);
     CHECK_EQ(sim.shots(), std::size_t(2));
+}
+
+TEST(a_rings_seeds_do_not_outlive_the_mob_they_grew_on) {
+    CHECK(contentReady());
+
+    // A seed is a piece of an animal, so it goes when the animal does -- by
+    // either road. A mob DIES (Dead, then the reaper) and a mob DESPAWNS
+    // (destroyed outright, no Dead tag ever), and a ring left behind by
+    // either is a hitbox sitting in an empty field damaging whoever walks
+    // through it, for the rest of the server's life.
+    {
+        Sim sim;
+        const Entity mob = sim.spawnMob("dandelion", kOrigin);
+        CHECK_EQ(sim.ringOf(mob), 10);
+        std::vector<Entity> seeds;
+        for (const Entity seed : sim.world.get<MobPetalRing>(mob).seats) seeds.push_back(seed);
+
+        sim.world.add<Dead>(mob);
+        sim.tick(2);
+        // Marked, so the reaper announces them and the ring pops with the body.
+        for (const Entity seed : seeds) {
+            CHECK(sim.world.tryGet<Dead>(seed) != nullptr);
+        }
+    }
+    {
+        Sim sim;
+        const Entity mob = sim.spawnMob("dandelion", kOrigin);
+        std::vector<Entity> seeds;
+        for (const Entity seed : sim.world.get<MobPetalRing>(mob).seats) seeds.push_back(seed);
+
+        sim.world.destroy(mob);
+        sim.tick(2);
+        // Destroyed outright, as the mob was: scenery being recycled says
+        // nothing, so its ring throws no death puffs either.
+        for (const Entity seed : seeds) CHECK(!sim.world.isAlive(seed));
+    }
 }

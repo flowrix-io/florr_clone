@@ -1060,27 +1060,53 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
     const MobPetalRing* ring = world.tryGet<MobPetalRing>(dandelion);
     CHECK(ring != nullptr);
     if (ring == nullptr) return;
-    CHECK_EQ(ring->remaining, 10);
+    CHECK_EQ(ring->seats.size(), std::size_t(10));
+    // Every seat is filled with a real entity by the spawner, not a count.
+    for (const Entity seedSeat : ring->seats) CHECK(seedSeat != NULL_ENTITY);
 
     // Put it in the flower's ring, where the petals will chew on it.
     world.get<Transform>(dandelion).position = at;
     world.get<Transform>(dandelion).realm = realm;
 
-    const std::uint32_t mobNetId = world.get<NetId>(dandelion).value;
     // What the CLIENT ends up believing, which is the only place the ring is
-    // ever drawn from.
-    const bool shed = h.stepUntil({&client}, [&] {
-        const auto entry = client.view().entities().find(mobNetId);
-        return entry != client.view().entities().end() && entry->second.ringCount < 10;
-    }, 400);
+    // ever drawn from: one petal entity per seat, anchored to this mob, and
+    // one fewer of them once a seed has gone.
+    const std::uint32_t mobNetId = world.get<NetId>(dandelion).value;
+    const auto seatsSeen = [&] {
+        std::size_t seen = 0;
+        for (const auto& entry : client.view().entities()) {
+            if (entry.second.kind != net::EntityKind::Petal) continue;
+            if (!entry.second.isRingPetal()) continue;
+            if (entry.second.ownerNetId == mobNetId) ++seen;
+        }
+        return seen;
+    };
+    CHECK(h.stepUntil({&client}, [&] { return seatsSeen() == 10; }, 200));
+    const bool shed = h.stepUntil({&client}, [&] { return seatsSeen() < 10; }, 400);
     CHECK(shed);
 
     // And the seed itself reached the wire as a dandelion petal.
     const std::uint16_t seedType = content().petalIndex("dandelion");
-    bool sawSeed = false;
-    for (const auto& entry : client.view().entities()) {
-        if (entry.second.kind != net::EntityKind::Projectile) continue;
-        if (entry.second.typeIndex == seedType) sawSeed = true;
-    }
-    CHECK(sawSeed);
+    const auto shotsInFlight = [&] {
+        std::size_t seen = 0;
+        for (const auto& entry : client.view().entities()) {
+            if (entry.second.kind != net::EntityKind::Projectile) continue;
+            if (entry.second.typeIndex == seedType) ++seen;
+        }
+        return seen;
+    };
+    CHECK(shotsInFlight() > 0);
+
+    // ...and it LEAVES. A shed seed that never expires is a lingering entity,
+    // which on this stack is always a server liveness bug and never a lost
+    // message -- the client erases only what a removal names. The shot's own
+    // range is the clock: `distance / speed` seconds, plus slack for the
+    // dandelion still being shot at while this runs.
+    const PetalRingSpec& spec = content().mob(dandelionIndex).petalRing;
+    const double flightMillis = spec.shotSpeed > 0.0
+                                    ? 1000.0 * spec.shotDistance / spec.shotSpeed
+                                    : 1000.0;
+    const int budget = static_cast<int>(flightMillis / net::kTickMillis) + 200;
+    world.get<Transform>(dandelion).position = at + Vec2{6000.0, 0.0};   // stop feeding it hits
+    CHECK(h.stepUntil({&client}, [&] { return shotsInFlight() == 0; }, budget));
 }

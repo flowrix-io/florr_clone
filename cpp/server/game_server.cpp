@@ -530,8 +530,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     grid_.clear();
     Query<Transform, Body> afterPlayers{world_};
     afterPlayers.each([&](Entity e, Transform& transform, Body& body) {
-        grid_.insert(e, transform.realm, transform.position,
-                     broadphaseRadius(world_.tryGet<MobPetalRing>(e), body.radius));
+        grid_.insert(e, transform.realm, transform.position, body.radius);
     });
 
     // The reference server resolves flower bodies and the petal ring inside
@@ -542,6 +541,10 @@ void GameServer::runSystems(double nowMillis, double dt) {
 
     mobAi_->run(world_, *terrain_, grid_, activePlayers_, nowMillis, net::kTickSeconds, commands_);
     movement_->runWorldPhase(world_, *terrain_, nowMillis, net::kTickSeconds);
+    // AFTER the mobs have moved, for the reason a flower's ring is placed
+    // after its own movement: a seat is a rigid offset from the body, and a
+    // ring carried before the body moves trails it by a tick.
+    mobAi_->tickPetalRings(world_, commands_);
 
     // Combat exact-tests current transforms, but its candidate set comes from
     // this grid. Rebuild after mob/projectile flight so a cell crossing cannot
@@ -549,8 +552,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     grid_.clear();
     Query<Transform, Body> afterMovement{world_};
     afterMovement.each([&](Entity e, Transform& transform, Body& body) {
-        grid_.insert(e, transform.realm, transform.position,
-                     broadphaseRadius(world_.tryGet<MobPetalRing>(e), body.radius));
+        grid_.insert(e, transform.realm, transform.position, body.radius);
     });
     combat_->runWorldPhase(world_, grid_, content(), nowMillis, dt);
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,

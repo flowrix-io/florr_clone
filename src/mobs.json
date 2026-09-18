@@ -284,12 +284,10 @@
             "petalType": "dandelion",
             "count": 10,
             "orbit": 1.65,
-            "petalScale": 0.7,
             "hitScale": 0.35,
             "spin": false,
-            "follow": true,
             "shootOnHit": true,
-            "shotSpeed": 220,
+            "shotSpeed": 50,
             "shotDistance": 500
         }
     },

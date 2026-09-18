@@ -1014,35 +1014,38 @@ TEST(a_healed_slot_stops_being_reported_and_reads_full_again) {
     CHECK_EQ(client.self().slotHealthFraction[1], 1.0);
 }
 
-TEST(a_mobs_ammunition_ring_spawns_with_its_count_and_updates_when_it_sheds) {
+TEST(a_mobs_ring_seed_is_replicated_as_a_petal_anchored_to_it) {
     Fixture f;
     WorldView client;
     const Entity mob = f.addMob({1020, 1000});
-    MobPetalRing ring;
-    ring.remaining = 10;
-    f.world.add<MobPetalRing>(mob, ring);
+
+    // A seat, built the way the spawner builds one: its own body, and a Petal
+    // record that names the mob rather than a flower.
+    const Entity seed = f.world.create();
+    f.world.add<MobRingPetal>(seed, MobRingPetal{mob, 0, 0.0});
+    f.world.add<Transform>(seed, Transform{{1060, 1000}, 0.0});
+    f.world.add<Body>(seed, Body{8.0, 1.0});
+    f.world.add<Health>(seed, Health{20, 20, 0, 0});
+    f.world.add<NetId>(seed, NetId{f.ids.next()});
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Petal;
+    replicated.typeIndex = 3;
+    replicated.spawnFlags = net::SpawnRingPetal;
+    f.world.add<Replicated>(seed, replicated);
 
     f.tick(client, 1, 1000.0);
-    const std::uint32_t id = netIdOf(f.world, mob);
-    const RemoteEntity& seen = client.entities().at(id);
-    // The count travels WITH the spawn: a dandelion that comes into view
-    // already half-shed must not draw a full head until it is next hit.
-    CHECK((seen.spawnFlags & net::SpawnHasRing) != 0);
-    CHECK_EQ(int(seen.ringCount), 10);
+    const RemoteEntity& seen = client.entities().at(netIdOf(f.world, seed));
+    CHECK_EQ(static_cast<int>(seen.kind), static_cast<int>(net::EntityKind::Petal));
+    // The flag is what tells the client to turn it outward and to size it from
+    // the radius below rather than from its petal config.
+    CHECK(seen.isRingPetal());
+    CHECK_NEAR(seen.radius, 8.0, 1e-4);
+    // Anchored to the MOB, which is what lets the ring ride the drawn body
+    // rather than a snapshot-old position.
+    CHECK_EQ(seen.ownerNetId, netIdOf(f.world, mob));
 
-    // Nothing moved, so nothing is said about it.
-    const std::size_t quiet = f.tick(client, 2, 1033.0);
-    CHECK_EQ(int(client.entities().at(id).ringCount), 10);
-
-    f.world.get<MobPetalRing>(mob).remaining = 7;
-    const std::size_t spoke = f.tick(client, 3, 1066.0);
-    CHECK_EQ(int(client.entities().at(id).ringCount), 7);
-    CHECK(spoke > quiet);
-
-    // A mob with no ring carries neither the flag nor the byte.
-    const Entity plain = f.addMob({1040, 1000});
-    f.tick(client, 4, 1100.0);
-    const RemoteEntity& other = client.entities().at(netIdOf(f.world, plain));
-    CHECK((other.spawnFlags & net::SpawnHasRing) == 0);
-    CHECK_EQ(int(other.ringCount), 0);
+    // And a broken seat leaves: the client is told, as it is for any entity.
+    f.world.destroy(seed);
+    f.tick(client, 2, 1033.0);
+    CHECK(client.entities().count(netIdOf(f.world, mob)) == 1);
 }

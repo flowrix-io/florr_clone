@@ -30,7 +30,17 @@ using flix::testsupport::Harness;
 ///
 /// Everything incoming counts, not only snapshots: a budget that excludes a
 /// channel is one that can be met by moving bytes into the channel it excludes.
-constexpr std::uint32_t kBudgetBytesPerSecond = 20000;
+///
+/// Raised from 20000 on 2026-09-18, when a mob's petal ring stopped being a
+/// replicated COUNT and became one entity per seat. Measured across the same
+/// three windows, before and after: 10383 -> 10656, 13875 -> 13601 (down),
+/// 19735 -> 20049 B/s, while entities in view went 68 -> 83, 104 -> 196 and
+/// 165 -> 287. Seventy-four percent more entities for under two percent more
+/// bytes, one window of which moved the other way -- which is this protocol
+/// working, not failing. A seat that holds still costs one spawn record and
+/// nothing afterwards. The headroom is deliberately small: the thing this
+/// guard is for is the two-orders-of-magnitude mistake its header describes.
+constexpr std::uint32_t kBudgetBytesPerSecond = 21000;
 
 /// Bytes received over one simulated second of play at this window size.
 ///

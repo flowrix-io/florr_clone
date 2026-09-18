@@ -670,7 +670,6 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     mob.radius = shadow->second.radius;
                     mob.typeIndex = shadow->second.typeIndex;
                     mob.rarity = shadow->second.rarity;
-                    mob.ringCount = shadow->second.ringCount;
                     dying_.push_back(mob);
                 }
                 mobShadows_.erase(shadow);
@@ -1682,7 +1681,17 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
     // noPhysics petals carry no body at all, so neither is usable as a drawing
     // size -- and visual_scale must never reach either of them.
     const double artSize = (config ? config->size : 1.0) * petalArtScale(config);
-    const double diameter = kPetalArtSize * artSize * zoom;
+    // A seat on a MOB's ring is sized from the radius the server replicated
+    // for it -- a bigger mob carries bigger seeds, and the same number is what
+    // the seed collides at. Twice the radius times `visual_scale` is the same
+    // formula a projectile of the same petal is drawn by, and for a flower's
+    // own petal (whose radius IS the nominal 10 per size unit) it would come
+    // out at exactly kPetalArtSize * size * visual_scale -- but it is left
+    // keyed on the flag rather than applied to everything, because the three
+    // `noPhysics` petals carry no body and would be sized from a default.
+    const double diameter = entity.isRingPetal()
+                                ? 2.0 * entity.radius * petalArtScale(config) * zoom
+                                : kPetalArtSize * artSize * zoom;
     if (diameter <= 0.5) return;
 
     // The sprite's own spin is the ring's shared phase and nothing else, so
@@ -1690,7 +1699,15 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
     // than fanning outward like spokes. entity.angle is the orbit POSITION and
     // must not be reused here.
     double rotation = 0;
-    if (config && config->hasFixedDirection) {
+    if (entity.isRingPetal()) {
+        // gardn's kFollowRot: turned to its own outward bearing, so whatever
+        // the artwork puts at the petal's -X end -- a dandelion's stem --
+        // points back into the body it grew on. `ownerOffset` is the smoothed
+        // offset from the mob, so this follows the DRAWN body rather than a
+        // snapshot-old one, exactly as the anchoring does.
+        const Vec2 out = entity.ownerOffset;
+        rotation = out.lengthSq() > 0.0 ? out.angle() : entity.angle;
+    } else if (config && config->hasFixedDirection) {
         rotation = config->fixedDirection;
     } else {
         const double speed = (config && config->speed > 0) ? config->speed : 1.0;
@@ -2038,33 +2055,15 @@ void WorldRenderer::drawHitbox(Canvas& canvas, const RemoteEntity& entity, const
     if (entity.kind == net::EntityKind::Player) {
         radius = kPlayerBaseRadius * playerSizeMultiplier(entity) * zoom;
     } else if (entity.kind == net::EntityKind::Petal && content_) {
-        radius = kPetalHitSize * content_->petal(entity.typeIndex).size * zoom;
+        // A flower's petal collides at 10 units per size unit whatever its
+        // artwork does; a mob's ring seed collides at the radius the server
+        // gave it, which is scaled by the mob it grew on.
+        radius = entity.isRingPetal() ? entity.radius * zoom
+                                      : kPetalHitSize * content_->petal(entity.typeIndex).size * zoom;
     } else if (entity.kind == net::EntityKind::Mob) {
         // A mob's circle is its COLLISION size, drawn in its own tier colour:
         // visual_scale moves the artwork and never the body.
         color = rarityColor(entity.rarity);
-        // ...and a mob whose ring is AMMUNITION hits from its seats as well as
-        // from its hull, so the overlay has to show those too. Drawn from the
-        // same three numbers the server resolves at spawn -- the mob's world
-        // radius, `orbit` and `hitScale` -- and for the seats still ON it, so
-        // a shed ring's overlay goes gap-toothed exactly as its artwork does.
-        // Without this the seeds are the one thing in the game that hits you
-        // with nothing drawn around it.
-        const MobConfig* config = content_ ? &content_->mob(entity.typeIndex) : nullptr;
-        if (config != nullptr && config->petalRing.shootOnHit) {
-            const PetalRingSpec& ring = config->petalRing;
-            const int seats = std::min(static_cast<int>(entity.ringCount), ring.count);
-            const double orbit = entity.radius * ring.orbitScale * zoom;
-            const double seed = entity.radius * ring.hitScale * zoom;
-            ui::setStroke(canvas, color);
-            canvas.setLineWidth(static_cast<float>(2.0 * zoom));
-            for (int i = 0; i < seats; ++i) {
-                const double angle = i * (kTau / std::max(1, ring.count));
-                canvas.strokeCircle(static_cast<float>(screen.x + std::cos(angle) * orbit),
-                                    static_cast<float>(screen.y + std::sin(angle) * orbit),
-                                    static_cast<float>(seed));
-            }
-        }
     } else if (entity.kind == net::EntityKind::Drop) {
         // A drop is picked up by walking a square over it, so its overlay is
         // the browser build's yellow 30-unit box rather than a circle.
@@ -2201,14 +2200,11 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
     const std::uint16_t index = config.petalRing.petalIndex;
     if (!sprites_ || !content_ || index == kInvalidIndex) return;
     const PetalConfig& petal = content_->petal(index);
-    // A ring that is AMMUNITION draws what the server says is left on it; a
-    // decorative one draws the config's full count, because nothing on the
-    // wire ever moves it. The clamp is against a hand-edited count, not
-    // against the byte.
-    const int authored = static_cast<int>(clamp(config.petalRing.count, 0, 16));
-    const int count = config.petalRing.shootOnHit
-                          ? std::min(authored, static_cast<int>(mob.ringCount))
-                          : authored;
+    // Only a DECORATIVE ring is painted here. A ring that is ammunition is
+    // made of real entities, each replicated and drawn as a petal anchored to
+    // this mob, so painting it again would double every seed.
+    if (config.petalRing.shootOnHit) return;
+    const int count = static_cast<int>(clamp(config.petalRing.count, 0, 16));
     if (count <= 0) return;
 
     // Every distance is a multiple of the mob's own radius, so the ring grows
@@ -2220,9 +2216,6 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
     // art-only field. Anything the death animation did to `radius` survives the
     // division, so a popping mob's ring still balloons with it.
     //
-    // The ring's SPACING is the authored count and not what is left: a
-    // dandelion that has shed three seeds shows seven gap-toothed petals in
-    // the places they were, rather than seven respaced into a fresh circle.
     const double artScale = config.visualScale > 0 ? config.visualScale : 1.0;
     const double ringRadius = radius / artScale;
     const double orbit = ringRadius * config.petalRing.orbitScale;
@@ -2236,7 +2229,7 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
     const double spin = config.petalRing.spins
                             ? std::fmod(timeSeconds * kPetalSpinRate * speed, kTau)
                             : 0.0;
-    const double step = kTau / std::max(1, authored);
+    const double step = kTau / std::max(1, count);
     for (int i = 0; i < count; ++i) {
         const double angle = i * step + spin;
         // gardn's kFollowRot: a petal turned to its own outward bearing, so
@@ -2549,7 +2542,6 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mob.rarity = entity.rarity;
             mob.healthFraction = entity.healthFraction;
             mob.chasing = (entity.state & net::StateChasing) != 0;
-            mob.ringCount = entity.ringCount;
             drawMobBody(canvas, camera, mob, timeSeconds);
 
             // A Killed event arrives after the snapshot has already erased the
@@ -2964,7 +2956,6 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             mob.radius = dying.radius;
             mob.typeIndex = dying.typeIndex;
             mob.rarity = dying.rarity;
-            mob.ringCount = dying.ringCount;
             mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
             drawMobBody(canvas, camera, mob, timeSeconds);
         }

@@ -503,6 +503,21 @@ public:
              const std::vector<RealmPoint>& activePlayers,
              double nowMillis, double dt, CommandBuffer& commands);
 
+    /// Carries a mob's ring seeds on their seats, retires the ones that have
+    /// been broken, and pays off the seeds it owes.
+    ///
+    /// The hit that knocks a petal off is booked by combat (see
+    /// MobPetalRing::pending) rather than fired there, because a shot is a
+    /// create() and the damage path is walked by every system that deals any.
+    /// This is where the bill is settled.
+    ///
+    /// Deliberately NOT LOD-gated, for the reason driveSpawners is not: the
+    /// seeds are real bodies that a flower can be standing in whether or not
+    /// their mob is taking a turn in the stride, and a ring left un-carried
+    /// would be a hitbox sitting where the mob used to be.
+    void tickPetalRings(World& world, CommandBuffer& commands);
+
+
     /// Per-run counters. Reset at the top of every run(), so they describe the
     /// last tick and nothing else. `targetScans` is the one that matters: it is
     /// the number of broadphase queries the AI spent, and it is what tells a
@@ -705,20 +720,6 @@ private:
     void placeFollower(World& world, const Terrain& terrain, Entity self, Entity ahead);
     void driveSpawners(World& world, const Terrain& terrain, double nowMillis, CommandBuffer& commands);
 
-    /// Pays off the seeds a dandelion owes.
-    ///
-    /// The hit that knocks a petal off is booked by combat (see
-    /// MobPetalRing::pending) rather than fired there, because a shot is a
-    /// create() and the damage path is walked by every system that deals any.
-    /// This is where the bill is settled.
-    ///
-    /// Deliberately NOT LOD-gated, for the reason driveSpawners is not: a mob
-    /// only accrues a debt by being hit, so the work is bounded by what
-    /// players are actually doing, and a seed that waited for the mob's turn
-    /// in the stride would leave the ring on a tick nobody could connect to
-    /// the blow that took it.
-    void shedRingPetals(World& world, CommandBuffer& commands);
-
     /// One seed, launched from the seat at `aim` and at the size it was
     /// sitting there: `orbit` and `seedRadius` come off the mob's own
     /// MobPetalRing, which is where the ring's world geometry is resolved.
@@ -736,6 +737,10 @@ private:
     /// Mobs whose petal ring is ammunition. Corpses are kept out: a dead
     /// dandelion owes nothing, and its debt is cleared rather than fired.
     Query<MobPetalRing, Transform, MobType, Body> rings_;
+    /// Every ring seed in the world, so an orphan can be found from its own
+    /// side. The query above cannot do it: a mob that died is excluded from
+    /// it, and a mob that despawned is not there to be walked at all.
+    Query<MobRingPetal> seeds_;
     Query<PlayerTag, PlayerModifiers> playerModifiers_;
 
     SpawnHook spawnHook_;
@@ -762,6 +767,7 @@ private:
 
     // Scratch, reused so that a steady-state tick allocates nothing.
     std::vector<Entity> stepList_;
+    std::vector<Entity> seedList_;
     std::vector<Entity> gridScratch_;
     std::vector<Candidate> candidates_;
     /// This tick's pets, snapshotted before anything moves -- which is where

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 29;
+inline constexpr std::uint16_t kProtocolVersion = 30;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -355,12 +355,16 @@ enum SpawnFlags : std::uint8_t {
     /// This record's health fraction is an f32 rather than a u16. See
     /// healthFieldIsWide(): it is the pool that decides, not the kind.
     SpawnHealthWide = 1 << 3,
-    /// A mob whose petal ring is ammunition: a u8 count of the petals still on
-    /// it follows, and FieldRingCount updates it. Self-describing rather than
-    /// re-derived from the type index, for the reason the health width is: a
-    /// reader that has to look a config up before it knows how many bytes to
-    /// consume loses the rest of the frame the one time it guesses wrong.
-    SpawnHasRing    = 1 << 4,
+    /// A Petal record that is a seat on a MOB's ring rather than one of a
+    /// flower's own. It is drawn turned to its outward bearing -- gardn's
+    /// kFollowRot, which is what points a dandelion seed's stem back into the
+    /// body -- and sized from the radius the server replicated for it rather
+    /// than from its config, because a bigger mob carries bigger seeds.
+    ///
+    /// A flag rather than a lookup through the owner: the client would have to
+    /// have already spawned the owner to ask what kind it is, and a spawn
+    /// record has to decode on its own.
+    SpawnRingPetal  = 1 << 4,
 };
 
 // ---------------------------------------------------------------------------
@@ -449,9 +453,6 @@ enum UpdateFields : std::uint8_t {
     /// Modifies FieldHealth: the fraction is an f32, not a u16. Meaningless
     /// on its own, and never set without FieldHealth.
     FieldHealthWide = 1 << 6,
-    /// u8: petals still on a mob's ammunition ring. Only ever set for an
-    /// entity whose spawn record carried SpawnHasRing.
-    FieldRingCount = 1 << 7,
 };
 
 /// Transient visual state, refreshed whenever FieldState is set.

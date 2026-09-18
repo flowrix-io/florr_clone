@@ -61,8 +61,7 @@ struct Arena {
     void rebuildGrid() {
         grid.clear();
         collidable.each([&](Entity e, Transform& transform, Body& body) {
-            grid.insert(e, Realm::Overworld, transform.position,
-                        broadphaseRadius(world.tryGet<MobPetalRing>(e), body.radius));
+            grid.insert(e, Realm::Overworld, transform.position, body.radius);
         });
     }
 
@@ -1776,36 +1775,6 @@ TEST(the_longest_lockout_wins_and_never_comes_closer) {
     CHECK(!CombatSystem::healingBlocked(a.world, other, 1000.0));
 }
 
-TEST(a_hit_books_a_seed_against_a_mobs_ammunition_ring) {
-    Arena a;
-    const Entity player = a.player({1000, 1000});
-    const Entity mob = a.mob({1000, 1000}, 100.0);
-    MobPetalRing ring;
-    ring.remaining = 10;
-    a.world.add<MobPetalRing>(mob, ring);
-
-    a.combat.applyDamage(a.world, mob, player, 10.0, 1000.0);
-    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 1);
-
-    // A poison tick is not a blow: a dandelion standing in a cloud would
-    // otherwise empty itself thirty times a second.
-    a.combat.applyDamage(a.world, mob, player, 5.0, 1100.0, DamageKind::Poison);
-    a.combat.applyDamage(a.world, mob, player, 5.0, 1200.0, DamageKind::Periodic);
-    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 1);
-
-    // The debt never runs past the ring: nine more hits fill it and the tenth
-    // adds nothing.
-    for (int i = 0; i < 20; ++i) {
-        a.combat.applyDamage(a.world, mob, player, 1.0, 1300.0 + i, DamageKind::Lightning);
-    }
-    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 10);
-
-    // And a killing blow books nothing: a corpse sheds no seeds.
-    a.world.get<MobPetalRing>(mob).pending = 0;
-    CHECK(a.combat.applyDamage(a.world, mob, player, 500.0, 2000.0).killed);
-    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 0);
-}
-
 TEST(a_dandelion_seed_carries_the_lockout_to_what_it_lands_on) {
     const Fixture& f = fixture();
     CHECK(f.ok);
@@ -1832,18 +1801,16 @@ TEST(a_dandelion_seed_carries_the_lockout_to_what_it_lands_on) {
     CHECK(!CombatSystem::healingBlocked(a.world, player, 11001.0));
 }
 
+
 // ---------------------------------------------------------------------------
-// A mob's own petal ring, as something you can walk into
+// A mob's own petal ring, which is made of entities
 // ---------------------------------------------------------------------------
 
 namespace {
 
-/// A mob carrying a ring the server owns: `count` seeds on a fixed orbit, which
-/// is what lets the test place a flower on one of them by hand.
-// The orbit is deliberately well clear of the body: at four radii a flower
-// standing on a seed is nowhere near the hull, so a hit here can only have
-// come from the ring. (At the dandelion's own 1.65 the two overlap, and every
-// assertion below would be measuring body contact instead.)
+/// A mob carrying a ring the server owns. The orbit is deliberately well clear
+/// of the hull: at four radii a flower standing on a seed is nowhere near the
+/// body, so a hit there can only have come from the seed.
 const char* const kRingMobsJson = R"({
   "seedhead":{"name":"Seedhead","health":100,"damage":12,"size":1,"speed":0,"section":[0],
               "petal_ring":{"petalType":"dandy","count":8,"orbit":4.0,"hitScale":0.5,
@@ -1862,8 +1829,8 @@ struct RingFixture {
     bool ok = false;
     std::uint16_t seedhead = kInvalidIndex;
     std::uint16_t spinner = kInvalidIndex;
-    std::uint16_t tightring = kInvalidIndex;
     std::uint16_t dandy = kInvalidIndex;
+    std::uint16_t tightring = kInvalidIndex;
 };
 
 const RingFixture& ringFixture() {
@@ -1874,7 +1841,7 @@ const RingFixture& ringFixture() {
         const bool wrote =
             writeText(mobs, kRingMobsJson) &&
             writeText(petals,
-                      R"({"dandy":{"name":"Dandy","damage":8,"health":8,"size":1,
+                      R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1,
                                    "noHealDuration":10000}})");
         if (!wrote) {
             f.error = "cannot write the ring fixture content";
@@ -1883,31 +1850,46 @@ const RingFixture& ringFixture() {
         f.ok = f.registry.loadFiles(mobs, petals, std::string(), f.error);
         f.seedhead = f.registry.mobIndex("seedhead");
         f.spinner = f.registry.mobIndex("spinner");
-        f.tightring = f.registry.mobIndex("tightring");
         f.dandy = f.registry.petalIndex("dandy");
+        f.tightring = f.registry.mobIndex("tightring");
         return f;
     }();
     return state;
 }
 
-/// A ring mob with `remaining` seeds still on it, built the way the spawner
-/// builds one.
-Entity ringMob(Arena& a, std::uint16_t configIndex, Vec2 at, int remaining, double radius = 20.0) {
+/// A ring mob and its seeds, built the way SpawnSystem builds them: the seats
+/// resolved against this mob's own body, one entity per seat.
+Entity ringMob(Arena& a, std::uint16_t configIndex, Vec2 at, int seated, double radius = 20.0) {
     const Entity e = a.mob(at, 100.0, 0.0, radius);
     a.world.add<MobType>(e, MobType{configIndex, Rarity::Common, 1.0});
     a.world.add<ContactDamage>(e, ContactDamage{12.0, kMobHitIntervalMillis});
-    // Built the way SpawnSystem builds one, gate included: a ring the server
-    // cannot place gets no component at all, and the ring's world geometry is
-    // resolved against this mob's own body, once.
     const PetalRingSpec& spec = ringFixture().registry.mob(configIndex).petalRing;
+    // A ring the loader refused as ammunition -- one that spins -- is fitted
+    // to nothing at all, exactly as the spawner leaves it.
     if (!spec.present || !spec.shootOnHit) return e;
+
+    const PetalStats seed = ringFixture().registry.petalStats(spec.petalIndex, Rarity::Common);
     MobPetalRing ring;
-    ring.count = spec.count;
-    ring.remaining = remaining;
+    ring.seats.assign(static_cast<std::size_t>(spec.count), NULL_ENTITY);
     ring.orbit = radius * spec.orbitScale;
     ring.seedRadius = radius * spec.hitScale;
-    ring.outerReach = ring.orbit + ring.seedRadius;
     a.world.add<MobPetalRing>(e, ring);
+
+    for (int i = 0; i < seated; ++i) {
+        const double bearing = i * (kTau / spec.count);
+        const Entity petal = a.world.create();
+        a.world.add<MobRingPetal>(petal,
+                                  MobRingPetal{e, static_cast<std::size_t>(i),
+                                               seed.noHealDurationMillis});
+        a.world.add<Transform>(
+            petal, Transform{at + Vec2::fromAngle(bearing, radius * spec.orbitScale), bearing});
+        a.world.add<Body>(petal, Body{radius * spec.hitScale, 1.0});
+        a.world.add<Faction>(petal, Faction{Team::Hostiles, false});
+        a.world.add<Health>(petal, Health{seed.health, seed.health, 0.0, 0.0});
+        a.world.add<ContactDamage>(petal, ContactDamage{12.0, kMobHitIntervalMillis});
+        a.world.add<HitCooldowns>(petal);
+        a.world.get<MobPetalRing>(e).seats[static_cast<std::size_t>(i)] = petal;
+    }
     return e;
 }
 
@@ -1916,14 +1898,9 @@ Vec2 seat(Vec2 mobAt, int index, int count = 8, double orbit = 80.0) {
     return mobAt + Vec2::fromAngle(index * kTau / count, orbit);
 }
 
-/// When this mob's ring may next swing at this flower, or -1 if it never has.
-double ringReadyAt(World& world, Entity mob, Entity victim) {
-    const RingCooldowns* cooldowns = world.tryGet<RingCooldowns>(mob);
-    if (cooldowns == nullptr) return -1.0;
-    for (const HitCooldowns::Entry& e : cooldowns->hits.entries) {
-        if (e.victim == victim) return e.readyAtMillis;
-    }
-    return -1.0;
+Entity seatEntity(Arena& a, Entity mob, int index) {
+    const MobPetalRing& ring = a.world.get<MobPetalRing>(mob);
+    return ring.seats[static_cast<std::size_t>(index)];
 }
 
 } // namespace
@@ -1935,7 +1912,6 @@ TEST(a_flower_standing_on_a_seed_takes_the_mobs_damage) {
 
     Arena a;
     ringMob(a, f.seedhead, {1000, 1000}, 8);
-    // Right on seed 0, which is out along +x at twice the body radius.
     const Entity player = a.player(seat({1000, 1000}, 0));
 
     a.step(1000.0, f.registry);
@@ -1945,60 +1921,69 @@ TEST(a_flower_standing_on_a_seed_takes_the_mobs_damage) {
     CHECK(CombatSystem::healingBlocked(a.world, player, 1000.0));
 }
 
-TEST(the_gaps_in_a_shed_ring_are_gaps_you_can_stand_in) {
+TEST(a_seed_is_broken_individually_and_its_seat_stays_empty) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
     if (!f.ok) return;
 
+    // The whole reason the seeds are entities: a flower's petals can take them
+    // off one at a time, and the one they break is the one they were touching.
     Arena a;
-    // Three seeds left, so seats 0..2 bite and seats 3..7 are empty air --
-    // the same 0..remaining-1 the renderer draws and shedRingPetals empties.
-    ringMob(a, f.seedhead, {1000, 1000}, 3);
-    const Entity onSeed = a.player(seat({1000, 1000}, 1));
-    const Entity inGap = a.player(seat({1000, 1000}, 5));
+    const Entity mob = ringMob(a, f.seedhead, {1000, 1000}, 8);
+    const Entity owner = a.player({1400, 1000});   // far away; only the petal is close
+    const Entity petal = equipPetal(a, owner, f.dandy, Rarity::Common, seat({1000, 1000}, 0));
+    a.world.add<Health>(petal, Health{100.0, 100.0, 0.0, 0.0});
 
+    const Entity target = seatEntity(a, mob, 0);
+    CHECK(target != NULL_ENTITY);
+    const double before = a.world.get<Health>(target).current;
     a.step(1000.0, f.registry);
-    CHECK_NEAR(a.health(onSeed), 88.0, 1e-9);
-    CHECK_NEAR(a.health(inGap), 100.0, 1e-9);
+    CHECK(a.world.get<Health>(target).current < before);
 
-    // Nor is it a band: the gap between the hull and the ring is open ground.
-    // The reference could not say this -- its test was an annulus around the
-    // whole orbit, because it could not know where the petals were.
-    // 45 out: past the hull's 40 units of reach, short of the 50 at which the
-    // flower's own body would start to overlap a seed sitting at 80.
-    const Entity inside = a.player({1000 + 45.0, 1000});
-    a.step(2000.0, f.registry);
-    CHECK_NEAR(a.health(inside), 100.0, 1e-9);
+    // Kept at it, the seed breaks -- and the MOB is untouched, because what
+    // the petal was hitting was the seed.
+    CHECK(a.world.get<Health>(mob).current > 99.0);
+    for (int i = 1; i < 40 && !a.world.has<Dead>(target); ++i) {
+        a.step(1000.0 + i * net::kTickMillis, f.registry);
+    }
+    CHECK(a.world.has<Dead>(target));
+
+    // Standing in that seat is now safe; the neighbouring one still bites.
+    Arena b;
+    const Entity mob2 = ringMob(b, f.seedhead, {1000, 1000}, 8);
+    b.world.add<Dead>(seatEntity(b, mob2, 0));
+    const Entity inGap = b.player(seat({1000, 1000}, 0));
+    const Entity onSeed = b.player(seat({1000, 1000}, 2));
+    b.step(1000.0, f.registry);
+    CHECK_NEAR(b.health(inGap), 100.0, 1e-9);
+    CHECK_NEAR(b.health(onSeed), 88.0, 1e-9);
 }
 
-TEST(a_ring_hit_is_throttled_on_its_own_clock) {
+TEST(a_whole_animal_lands_one_contact_a_tick_however_many_seeds_it_wears) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
     if (!f.ok) return;
 
+    // Eight seeds plus a hull is nine contact bodies on one animal. They share
+    // the one-per-tick rule, so walking into the middle of it costs what
+    // walking into any other mob costs -- one hit and one shove, not nine.
+    //
+    // The tight ring is the shipped dandelion's shape, where the seats sit
+    // INSIDE the hull's own reach: 33 units out on a body that reaches a
+    // flower's centre at 40, so a flower at 35 is touching the hull and a
+    // seed at once. That overlap is the whole reason this rule has to be
+    // shared rather than per-body.
     Arena a;
-    ringMob(a, f.seedhead, {1000, 1000}, 8);
-    const Entity player = a.player(seat({1000, 1000}, 0));
+    ringMob(a, f.tightring, {1000, 1000}, 8);
+    const Entity player = a.player({1035, 1000});
+    a.world.add<Health>(player, Health{10000.0, 10000.0, 0.0, 0.0});
 
-    // Walked back onto the seed after every step: a ring hit shoves the flower
-    // 25 units clear, exactly as the hull does, so "standing in it" is a player
-    // pushing back in rather than a body that never moves.
-    const Vec2 on = seat({1000, 1000}, 0);
-    const auto reseat = [&](double at) {
-        a.world.get<Transform>(player).position = on;
-        a.step(at, f.registry);
-    };
-
-    reseat(1000.0);
-    CHECK_NEAR(a.health(player), 88.0, 1e-9);
-
-    // Not thirty hits a second: the ring pays kMobPetalRingHitIntervalMillis
-    // between swings at the same flower, on a clock of its own.
-    for (int i = 1; i < 15; ++i) reseat(1000.0 + i * net::kTickMillis);
-    CHECK_NEAR(a.health(player), 88.0, 1e-9);
-
-    reseat(1000.0 + kMobPetalRingHitIntervalMillis + 1.0);
-    CHECK_NEAR(a.health(player), 76.0, 1e-9);
+    const Vec2 start = a.world.get<Transform>(player).position;
+    const double before = a.health(player);
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(before - a.health(player), 12.0, 1e-9);
+    CHECK_NEAR(distance(a.world.get<Transform>(player).position, start), kMobContactKnockback,
+               1e-9);
 }
 
 TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
@@ -2008,12 +1993,12 @@ TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
 
     // The server cannot say where a spinning ring's petals are -- the phase is
     // the viewer's own clock -- so it does not pretend to. Asked for both at
-    // once, the LOADER is what says no, so a spinning ring never reaches the
-    // simulation in the first place. This is the glitch flower's ring, and it
-    // stays as untouchable as it has always been.
+    // once, the LOADER is what says no, so a spinning ring is never fitted
+    // with seeds in the first place.
     CHECK(!f.registry.mob(f.spinner).petalRing.shootOnHit);
     Arena a;
-    ringMob(a, f.spinner, {1000, 1000}, 8);
+    const Entity mob = ringMob(a, f.spinner, {1000, 1000}, 8);
+    CHECK(!a.world.has<MobPetalRing>(mob));
     const Entity player = a.player(seat({1000, 1000}, 0));
     const Vec2 on = seat({1000, 1000}, 0);
 
@@ -2024,141 +2009,43 @@ TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
 }
 
-TEST(a_bald_ring_and_a_dead_one_bite_nobody) {
+TEST(a_bald_ring_bites_nobody) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
     if (!f.ok) return;
 
     Arena a;
     ringMob(a, f.seedhead, {1000, 1000}, 0);
-    const Entity onStripped = a.player(seat({1000, 1000}, 0));
-    a.step(1000.0, f.registry);
-    CHECK_NEAR(a.health(onStripped), 100.0, 1e-9);
-
-    const Entity corpse = ringMob(a, f.seedhead, {3000, 3000}, 8);
-    a.world.add<Dead>(corpse);
-    const Entity onCorpse = a.player(seat({3000, 3000}, 0));
-    a.step(2000.0, f.registry);
-    CHECK_NEAR(a.health(onCorpse), 100.0, 1e-9);
-}
-
-TEST(a_ring_inside_its_own_hulls_reach_still_lands_the_first_hit) {
-    const RingFixture& f = ringFixture();
-    CHECK(f.ok);
-    if (!f.ok) return;
-
-    // The shipped dandelion's shape: seeds at 1.65 radii, which for a body
-    // whose hull already reaches a flower's centre at 40 units puts nearly the
-    // whole ring INSIDE the hull's own reach. Whichever of the two resolves
-    // first opens the 50 ms window that refuses the other, so this is the
-    // arrangement that decides whether a seed is ever felt at all.
-    Arena a;
-    const Entity mob = ringMob(a, f.tightring, {1000, 1000}, 8);
-    const Entity player = a.player({1035, 1000});   // touching hull AND seed 0
-
-    a.step(1000.0, f.registry);
-    CHECK_NEAR(a.health(player), 88.0, 1e-9);
-    // The RING is what landed it -- the hull's hit was the one refused.
-    CHECK_NEAR(ringReadyAt(a.world, mob, player), 1000.0 + kMobPetalRingHitIntervalMillis, 1e-9);
-}
-
-TEST(a_refused_ring_swing_does_not_cost_the_ring_its_window) {
-    const RingFixture& f = ringFixture();
-    CHECK(f.ok);
-    if (!f.ok) return;
-
-    // The bug this is here for: charging the throttle for a swing the victim's
-    // 50 ms post-hit window refused. Those two clocks are 600 ms and 50 ms, so
-    // a ring that paid for refusals was re-armed by the hull roughly twelve
-    // times per window and never swung again after the first contact.
-    Arena a;
-    const Entity mob = ringMob(a, f.tightring, {1000, 1000}, 8);
-    const Entity player = a.player({1035, 1000});
-    a.world.add<Health>(player, Health{10000.0, 10000.0, 0.0, 0.0});
-
-    const Vec2 on = a.world.get<Transform>(player).position;
-    int ringHits = 0;
-    double armed = -1.0;
-    for (int i = 0; i < 60; ++i) {
-        a.world.get<Transform>(player).position = on;   // shoved out every time; walk back in
-        a.step(1000.0 + i * net::kTickMillis, f.registry);
-        const double now = ringReadyAt(a.world, mob, player);
-        if (now != armed) { ++ringHits; armed = now; }
-    }
-    // Two seconds of contact at a 600 ms throttle: three or four swings, not
-    // the single one a burnt window allowed.
-    CHECK(ringHits >= 3);
-}
-
-TEST(a_players_petals_reach_a_mob_through_its_own_ring) {
-    const RingFixture& f = ringFixture();
-    CHECK(f.ok);
-    if (!f.ok) return;
-
-    // The complaint this is here for: a ring that bites a flower at 80 units
-    // while the flower's own petals, sitting right on the seeds, swing at a
-    // hull 50 units away and connect with nothing.
-    Arena a;
-    const Entity mob = ringMob(a, f.seedhead, {1000, 1000}, 8);
-    const Entity owner = a.player({1400, 1000});          // far away; only the petal is close
-    // On seed 0 and nowhere near the hull: 80 units out, hull radius 20.
-    const Entity petal = equipPetal(a, owner, f.dandy, Rarity::Common, seat({1000, 1000}, 0));
-    a.world.add<Health>(petal, Health{8.0, 8.0, 0.0, 0.0});
-
-    a.step(1000.0, f.registry);
-    CHECK_NEAR(a.health(mob), 92.0, 1e-9);   // the dandy petal's 8
-    // And the exchange is the ordinary one: the petal paid for the swing out
-    // of its own health, exactly as it does against a hull.
-    CHECK(a.world.get<Health>(petal).current < a.world.get<Health>(petal).max);
-}
-
-TEST(a_petal_in_the_gap_between_hull_and_ring_reaches_neither) {
-    const RingFixture& f = ringFixture();
-    CHECK(f.ok);
-    if (!f.ok) return;
-
-    // The other half of the claim: the ring is seats, not an annulus, and not
-    // a blanket enlargement of the mob. A petal parked between the hull and a
-    // seed touches nothing.
-    Arena a;
-    const Entity mob = ringMob(a, f.seedhead, {1000, 1000}, 8);
-    const Entity owner = a.player({1400, 1000});
-    equipPetal(a, owner, f.dandy, Rarity::Common, {1000 + 45.0, 1000});
-
-    a.step(1000.0, f.registry);
-    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
-
-    // Nor does a shed seat: seats 0..2 only, so the one at index 4 is gone.
-    Arena b;
-    const Entity stripped = ringMob(b, f.seedhead, {1000, 1000}, 3);
-    const Entity owner2 = b.player({1400, 1000});
-    equipPetal(b, owner2, f.dandy, Rarity::Common, seat({1000, 1000}, 4));
-    b.step(1000.0, f.registry);
-    CHECK_NEAR(b.health(stripped), 100.0, 1e-9);
-}
-
-TEST(a_ring_never_shoves_a_flower_it_cannot_hit) {
-    const RingFixture& f = ringFixture();
-    CHECK(f.ok);
-    if (!f.ok) return;
-
-    // "The knockback is weird": a bump applied above the hit gate fires on
-    // every tick of contact rather than on the ring's own 600 ms clock, which
-    // is 25 units of displacement thirty times a second.
-    Arena a;
-    ringMob(a, f.seedhead, {1000, 1000}, 8);
     const Entity player = a.player(seat({1000, 1000}, 0));
-    a.world.add<Health>(player, Health{10000.0, 10000.0, 0.0, 0.0});
-
-    const Vec2 start = a.world.get<Transform>(player).position;
     a.step(1000.0, f.registry);
-    const double first = distance(a.world.get<Transform>(player).position, start);
-    CHECK_NEAR(first, kMobContactKnockback, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+}
 
-    // Walked back on and held there for half the throttle: not one more shove.
-    for (int i = 1; i < 9; ++i) {
-        a.world.get<Transform>(player).position = start;
-        a.step(1000.0 + i * net::kTickMillis, f.registry);
-        CHECK_NEAR(distance(a.world.get<Transform>(player).position, start), 0.0, 1e-9);
+TEST(a_hit_books_a_seed_against_a_mobs_ammunition_ring) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    MobPetalRing ring;
+    ring.seats.assign(10, NULL_ENTITY);
+    a.world.add<MobPetalRing>(mob, ring);
+
+    a.combat.applyDamage(a.world, mob, player, 10.0, 1000.0);
+    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 1);
+
+    // A poison tick is not a blow: a dandelion standing in a cloud would
+    // otherwise empty itself thirty times a second.
+    a.combat.applyDamage(a.world, mob, player, 5.0, 1100.0, DamageKind::Poison);
+    a.combat.applyDamage(a.world, mob, player, 5.0, 1200.0, DamageKind::Periodic);
+    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 1);
+
+    // The debt never runs past the ring it was built with.
+    for (int i = 0; i < 20; ++i) {
+        a.combat.applyDamage(a.world, mob, player, 1.0, 1300.0 + i, DamageKind::Lightning);
     }
+    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 10);
+
+    // And a killing blow books nothing: a corpse sheds no seeds.
+    a.world.get<MobPetalRing>(mob).pending = 0;
+    CHECK(a.combat.applyDamage(a.world, mob, player, 500.0, 2000.0).killed);
+    CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 0);
 }

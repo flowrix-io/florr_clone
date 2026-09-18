@@ -234,7 +234,7 @@ struct CombatSystem::Queries {
     explicit Queries(World& world)
         : progress(world), afflicted(world), auras(world), contact(world), strikers(world),
           petals(world), projectiles(world), fields(world), cooldowns(world),
-          auraCooldowns(world), rings(world) {
+          auraCooldowns(world) {
         // A dead flower projects nothing, which is the same guard the
         // reference's pre-movement pass opens with.
         auras.without<Dead>();
@@ -250,7 +250,6 @@ struct CombatSystem::Queries {
         projectiles.without<Dead>();
         fields.without<Dead>();
         strikers.without<Dead>();
-        rings.without<Dead>();
     }
 
     Query<PlayerProgress> progress;
@@ -274,10 +273,6 @@ struct CombatSystem::Queries {
     Query<GroundEffect, Transform> fields;
     Query<HitCooldowns> cooldowns;
     Query<AuraCooldowns> auraCooldowns;
-    /// Mobs carrying a ring the server owns the count of. Corpses excluded --
-    /// a dying dandelion's seeds stop biting the moment it is marked, which is
-    /// the rule the contact query above already runs on.
-    Query<MobPetalRing, MobType, Transform, Body> rings;
 };
 
 CombatSystem::CombatSystem() = default;
@@ -550,16 +545,19 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         }
     }
 
-    // A dandelion sheds a seed at whoever just hit it. Booked here rather than
-    // fired here: the shot is a create(), and creating one from inside the
-    // damage path would relocate the rows every caller of this function is
-    // walking. The mob AI pass pays it off (see MobAiSystem::shedRingPetals).
+    // A dandelion sheds a seed when it is hit. Booked here rather than fired
+    // here: letting one go retires an entity and creates another, and the
+    // damage path is walked by every system that deals any. The mob AI pass
+    // pays it off (see MobAiSystem::tickPetalRings).
     //
     // DIRECT hits only, so the poison already on a dandelion does not empty it
     // thirty times a second, and never a fatal one -- a corpse fires nothing.
+    // Capped at the seats it HAS rather than the seats still filled: counting
+    // the live ones means walking the ring on every hit, and the pass that
+    // spends the debt drops whatever it cannot fill anyway.
     if (isDirectHit(kind) && !fatal) {
         if (MobPetalRing* ring = world.tryGet<MobPetalRing>(victim)) {
-            if (ring->pending < ring->remaining) ++ring->pending;
+            if (ring->pending < static_cast<int>(ring->seats.size())) ++ring->pending;
         }
     }
 
@@ -904,115 +902,9 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     // swings, so the ring neither hits it again nor is credited for it.
     gatherAuras(world, content);
     resolveAuras(world, grid, nowMillis);
-    // BEFORE body contact, which is where the reference runs it
-    // (applyPetalRingDamage is called from updatePlayerPreMovement, ahead of
-    // the movement/collision block). The order decides which of the two lands
-    // when a flower is touching both, because whichever goes first opens the
-    // 50 ms window that refuses the other -- and a dandelion's seeds sit
-    // almost entirely inside its own hull's reach, so a ring that went second
-    // would lose every contested tick and never be felt at all.
-    tickMobPetalRings(world, grid, content, nowMillis);
     gatherContact(world, content);
     gatherPetals(world, content);
     resolveMelee(world, grid, nowMillis);
-}
-
-void CombatSystem::tickMobPetalRings(World& world, const SpatialGrid& grid,
-                                     const ContentRegistry& content, double nowMillis) {
-    // Gathered whole before a single hit lands: applyDamage can mark a flower
-    // Dead, and that relocates the very rows an each() over the mobs would be
-    // holding. The list is almost always empty -- it costs a walk of the ring
-    // mobs currently in the world, and nothing else, for everyone else.
-    ringHits_.clear();
-    queries_->rings.each([&](Entity mob, MobPetalRing& ring, MobType&, Transform& transform,
-                             Body&) {
-        // Carrying the component at all is the statement that this ring is
-        // simulated: the spawner only fits one to a ring the server can place.
-        if (ring.remaining <= 0 || ring.count <= 0 || !(ring.seedRadius > 0.0)) return;
-
-        // One query for the whole ring rather than one per seed: every seed is
-        // inside `outerReach`, so one circle covers all of them and the exact
-        // test below decides which one was touched.
-        grid.query(transform.realm, transform.position, ring.outerReach + kBroadphasePad,
-                   candidates_);
-        if (candidates_.empty()) return;
-
-        for (const Entity victim : candidates_) {
-            // Flowers only. Every mob in the world is on the same side as this
-            // one, and a ring that shoved its neighbours would turn a field of
-            // dandelions into a scrum.
-            if (!world.has<PlayerTag>(victim)) continue;
-            const Transform* at = world.tryGet<Transform>(victim);
-            const Body* hull = world.tryGet<Body>(victim);
-            if (at == nullptr || hull == nullptr || at->realm != transform.realm) continue;
-
-            // The seeds still ON the ring are indices 0..remaining-1, which is
-            // exactly what the renderer draws and exactly what shedRingPetals
-            // takes them off in. A shed seed is gone from here on the same tick
-            // it stops being drawn.
-            for (int i = 0; i < ring.remaining; ++i) {
-                const Vec2 seat = transform.position + ring.seat(i);
-                const Vec2 offset = at->position - seat;
-                const double reach = ring.seedRadius + hull->radius;
-                if (offset.lengthSq() > reach * reach) continue;
-                // From the MOB, not from the seed: see RingHit::outward.
-                ringHits_.push_back({mob, victim, at->position - transform.position});
-                break;   // one seed per victim per tick; the rest are the same touch
-            }
-        }
-    });
-
-    for (const RingHit& hit : ringHits_) {
-        if (!world.isAlive(hit.mob) || world.has<Dead>(hit.mob)) continue;
-        if (!world.isAlive(hit.victim) || world.has<Dead>(hit.victim)) continue;
-
-        // ONE gate, above everything, and it is the victim's own state rather
-        // than this pass's throttle: alive, on the other side, and past its
-        // post-hit window. A flower that cannot be hurt right now is not
-        // shoved either -- and, just as importantly, the throttle below is not
-        // charged for the swing that would have been refused.
-        //
-        // Both halves of that matter and they pull against each other. Bump a
-        // flower the hit gate then refuses and the shove is unthrottled -- the
-        // seeds fling it 25 units EVERY TICK it is touching them, which is
-        // what "the knockback is weird" was. Charge the throttle for it
-        // instead and the opposite happens: the throttle is 600 ms against a
-        // 50 ms window, so the hull re-arms the ring roughly twelve times per
-        // window and the seeds never swing again after first contact. Refusing
-        // early is the only answer that is neither.
-        if (!canHit(world, hit.victim, hit.mob, nowMillis)) continue;
-
-        const RingCooldowns* armed = world.tryGet<RingCooldowns>(hit.mob);
-        if (armed != nullptr && !armed->hits.ready(hit.victim, nowMillis)) continue;
-        world.ensure<RingCooldowns>(hit.mob).hits.arm(
-            hit.victim, nowMillis + kMobPetalRingHitIntervalMillis);
-
-        // The bump is the body's, because the ring IS the body: the reference
-        // pushes the flower 25 units clear of the ring it walked into, which is
-        // the same displacement a mob's own hull gives.
-        applyMobContactKnockback(world, hit.victim, hit.outward);
-
-        // The MOB's damage, not the petal's, matching the reference: the ring
-        // is how this mob hits, so it hits for what this mob hits for.
-        const double damage = contactDamageOf(world, hit.mob);
-        const DamageResult landed = applyDamage(world, hit.victim, hit.mob, damage, nowMillis);
-
-        // ...and the petal's own riders on top, because the thing that touched
-        // the flower really is a petal. A dandelion's seed head locks healing
-        // exactly as its loose seeds and the player's own dandelion do.
-        if (!landed.refused && !landed.killed) {
-            const MobType* type = world.tryGet<MobType>(hit.mob);
-            if (type != nullptr) {
-                const PetalRingSpec& spec = content.mob(type->configIndex).petalRing;
-                if (spec.petalIndex != kInvalidIndex) {
-                    const PetalStats seed = content.petalStats(spec.petalIndex, type->rarity);
-                    applyPoison(world, hit.victim, hit.mob, seed.poisonPerSecond,
-                                seed.poisonDurationMillis, nowMillis);
-                    applyNoHeal(world, hit.victim, seed.noHealDurationMillis, nowMillis);
-                }
-            }
-        }
-    }
 }
 
 void CombatSystem::tickMobLightning(World& world, const SpatialGrid& grid,
@@ -1303,6 +1195,16 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
         source.isMobBody = world.has<MobTag>(e);
         source.isPet = world.has<Pet>(e);
         source.isPlayerBody = world.has<PlayerTag>(e);
+        // A seed of a mob's ring is a piece of that mob's body, so it hits
+        // like one: the fixed 25-unit displacement, and the one-contact-per-
+        // tick rule shared with the hull, so an animal wearing ten of them
+        // still only touches a flower once a tick. It brings the ring PETAL's
+        // own riders along, resolved at spawn -- a dandelion's seed head locks
+        // healing exactly as its loose seeds do.
+        if (const MobRingPetal* seed = world.tryGet<MobRingPetal>(e)) {
+            source.isMobRing = true;
+            source.noHealDurationMillis = seed->noHealDurationMillis;
+        }
         // Contact with a mob moves a player by the fixed TypeScript 25-unit
         // displacement; resolveMelee handles that special case directly.
         source.knockback = 0.0;
@@ -1388,31 +1290,6 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
     });
 }
 
-namespace {
-
-/// Whether `from` (a swinging body of radius `sourceRadius`) is touching any
-/// seed still on `victim`'s ammunition ring.
-///
-/// This is what makes a dandelion's seed head part of what a player's PETALS
-/// can hit. Without it the ring is a one-way weapon: it reaches out to bite a
-/// flower at 80 units while the flower's own ring, sitting on the seeds, is
-/// swinging at a hull 50 units away and connecting with nothing.
-///
-/// Seat geometry comes off the component, so this costs one sparse probe for
-/// the mobs that have no ring -- which is all but a handful of them.
-bool touchesRing(const World& world, Entity victim, Vec2 victimAt, Vec2 from,
-                 double sourceRadius) {
-    const MobPetalRing* ring = world.tryGet<MobPetalRing>(victim);
-    if (ring == nullptr || ring->remaining <= 0 || ring->count <= 0) return false;
-    const double reach = sourceRadius + ring->seedRadius;
-    for (int i = 0; i < ring->remaining; ++i) {
-        if (distanceSq(from, victimAt + ring->seat(i)) <= reach * reach) return true;
-    }
-    return false;
-}
-
-} // namespace
-
 void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double nowMillis) {
     for (const MeleeSource& source : melee_) {
         if (!world.isAlive(source.attacker) || world.has<Dead>(source.attacker)) continue;
@@ -1430,6 +1307,8 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A petal only ever bleeds inside its OWN hit block, below. The
             // reference has no mob-vs-petal collision at all, so letting a mob
             // body melee the ring as well would charge the exchange twice.
+            // A MOB's ring seed is not a PetalInstance and is deliberately
+            // not covered by this: it is a body, and bodies collide.
             if (!source.isPetal && world.has<PetalInstance>(victim)) continue;
 
             if (source.isPetal && world.has<PlayerTag>(victim)) {
@@ -1455,18 +1334,12 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             const Vec2 offset = transform->position - source.position;
             const double reach = source.radius + body->radius +
                                  (petPair ? kMobCollisionBuffer : 0.0);
-            // The hull, or a seed on the victim's own ring. `offset` stays the
-            // vector to the mob's CENTRE either way: what a hit shoves is the
-            // animal, not the seed that happened to be in the way.
-            if (offset.lengthSq() > reach * reach &&
-                !touchesRing(world, victim, transform->position, source.position, source.radius)) {
-                continue;
-            }
+            if (offset.lengthSq() > reach * reach) continue;
 
             // A TypeScript mob bump is independent of damage: it still lands
             // during respawn invulnerability, is not throttled by the damage
             // cooldown, and occurs before a lethal hit is handled.
-            const bool mobTouchesPlayer = source.isMobBody &&
+            const bool mobTouchesPlayer = (source.isMobBody || source.isMobRing) &&
                                           world.has<PlayerTag>(victim) &&
                                           !world.has<Dead>(victim) &&
                                           world.has<Health>(victim) &&
