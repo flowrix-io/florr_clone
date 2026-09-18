@@ -144,6 +144,13 @@ constexpr GardnIconRadius kGardnIconRadius[] = {
 /// The id lookup is resolved once into a table indexed by petal index: the
 /// content registry is loaded before anything draws and never reloaded, and a
 /// panel of sixty tiles would otherwise run sixty string scans a frame.
+///
+/// `visual_scale` multiplies whichever figure is used, because it is a
+/// property of the ARTWORK and this tile draws the same artwork the world
+/// does. Root is why: gardn scales its drawing by `radius / 7` over a picture
+/// 26 units tall, so the petal is drawn at nearly twice the diameter its
+/// radius states, and a tile that ignored that would show a twig beside the
+/// root standing in the world.
 double iconDiameter(std::uint16_t petalIndex, double sizeStat) {
     static const std::vector<double> byIndex = [] {
         std::vector<double> out(content().petalCount(), 0.0);
@@ -158,8 +165,13 @@ double iconDiameter(std::uint16_t petalIndex, double sizeStat) {
         }
         return out;
     }();
-    if (petalIndex < byIndex.size() && byIndex[petalIndex] > 0) return byIndex[petalIndex];
-    return kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0);
+    if (petalIndex >= byIndex.size()) return kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0);
+    // Zero (or an absent field) means "unscaled" rather than "invisible",
+    // exactly as the world renderer's petalArtScale() reads it.
+    const double scale = content().petal(petalIndex).visualScale;
+    const double art = scale > 0 ? scale : 1.0;
+    if (byIndex[petalIndex] > 0) return byIndex[petalIndex] * art;
+    return kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0) * art;
 }
 
 /// gardn's smootherstep on the remaining fraction: the sweep eases in and out

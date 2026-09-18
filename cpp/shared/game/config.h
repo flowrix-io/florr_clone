@@ -372,6 +372,15 @@ struct PetalConfig {
     /// Armour this petal STRIPS from what it touches, before rarity. Only bur
     /// has one. Stated at the common tier like every other petal stat.
     double armorReduction = 0;
+    /// Armour one of root's stacks absorbs, before rarity. A petal that
+    /// states this is a root: the flower wearing it collects a stack every
+    /// kArmorStackIntervalMillis and spends one to blunt each direct hit.
+    ///
+    /// Stated at the common tier and scaled on the DAMAGE ladder, for the
+    /// reason Armor in components.h gives: both it and mob damage triple per
+    /// tier, so one figure holds the same proportion at every matched tier
+    /// instead of quietly becoming immunity or dead weight at the ends.
+    double armorPerStack = 0;
     /// What a worn cutter adds to the flower's BODY damage, before rarity.
     /// Scaled on the damage ladder, so it is stated at the common tier like
     /// every other damage figure. Not `damage` itself: nothing about this
@@ -515,6 +524,10 @@ struct PetalStats {
     double bodyDamage = 0;
     /// Armour stripped from the victim per hit, scaled for this tier.
     double armorReduction = 0;
+    /// What one of this petal's armour stacks absorbs, scaled for this tier.
+    /// Zero for every petal but root, and what marks a slot as one that
+    /// prints a stack count on the loadout bar.
+    double armorPerStack = 0;
     double reloadMillis = kDefaultPetalReloadMillis;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;

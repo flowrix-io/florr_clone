@@ -32,6 +32,7 @@ const char* const kPetalsJson = R"JSON({
   "web":      {"name":"Web","damage":5,"health":10,"size":1.2,"cooldown":3000,"count":1,"defendOnly":true,"webRadius":90,"color":"#FFFFFF"},
   "pollen":   {"name":"Pollen","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"color":"#FFE763"},
   "sponge":   {"name":"Sponge","damage":10,"health":10,"size":1,"cooldown":2000,"count":1,"spongeDamageDuration":1000,"color":"#FF96E0"},
+  "root":     {"name":"Root","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"armorPerStack":12,"defendOnly":true,"color":"#B86C32"},
   "peas":     {"name":"Peas","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":3,"spreadAngle":0.5,"speed":800,"distance":1000},"color":"#00FF00"},
   "peaclump": {"name":"Peaclump","damage":6,"health":5,"size":1,"cooldown":1000,"count":4,"clumped":true,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#00FF00"},
   "emitter":  {"name":"Emitter","damage":2,"health":null,"size":1,"cooldown":1000,"count":1,"projectile":{"count":2,"spreadAngle":0.3,"speed":400,"distance":400},"color":"#00FF00"},
@@ -1316,6 +1317,153 @@ TEST(a_downed_flower_prints_no_stored_damage_on_its_death_card) {
     rig.world.remove<Dead>(rig.player);
     rig.tick();
     CHECK_NEAR(rig.slotCounter(0), 18.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Root: banking the armour combat spends
+// ---------------------------------------------------------------------------
+
+namespace {
+/// The stacks a flower is holding, and 0 for one that has never had a root on.
+int bankedStacks(Rig& rig) {
+    const ArmorStackState* state = rig.world.tryGet<ArmorStackState>(rig.player);
+    return state != nullptr ? state->stacks : 0;
+}
+
+/// Ticks between two stacks. ROUNDED, not truncated: a tick is 33.333... ms
+/// and sixty of them sum to a hair under two seconds, so the honest answer is
+/// sixty and the truncating one is fifty-nine.
+const int kTicksPerStack =
+    static_cast<int>(std::lround(kArmorStackIntervalMillis / net::kTickMillis));
+}  // namespace
+
+TEST(a_root_banks_one_stack_every_two_seconds_and_stops_at_ten) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.tick();
+
+    // Nothing at first: the bank starts empty and the interval has to pass
+    // before it pays out. A stack on the equipping tick would hand a flower
+    // one for free every time it swapped the petal in.
+    CHECK_EQ(bankedStacks(rig), 0);
+
+    rig.tick(kTicksPerStack);
+    CHECK_EQ(bankedStacks(rig), 1);
+    rig.tick(kTicksPerStack);
+    CHECK_EQ(bankedStacks(rig), 2);
+
+    // Capped. Twenty seconds fills it; another twenty adds nothing.
+    rig.tick(kTicksPerStack * (kMaxArmorStacks + 4));
+    CHECK_EQ(bankedStacks(rig), kMaxArmorStacks);
+
+    // And the petal publishes what a stack is worth, which is what combat
+    // subtracts. Common tier: the authored figure, unscaled.
+    CHECK_NEAR(rig.world.get<ArmorStackState>(rig.player).perStack, 12.0, 1e-9);
+    CHECK_NEAR(rig.modifiers().armorPerStack, 12.0, 1e-9);
+}
+
+TEST(a_stack_spent_at_the_cap_comes_back_on_the_timers_own_cadence) {
+    // gardn cycles the counter whether or not a stack is owed, so a flower
+    // that spends one while full is not made to wait a fresh full interval.
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.tick(kTicksPerStack * (kMaxArmorStacks + 1));
+    CHECK_EQ(bankedStacks(rig), kMaxArmorStacks);
+
+    // Spend one just before the next crossing, as combat would.
+    rig.tick(kTicksPerStack - 2);
+    --rig.world.get<ArmorStackState>(rig.player).stacks;
+    rig.tick(2);
+    CHECK_EQ(bankedStacks(rig), kMaxArmorStacks);
+}
+
+TEST(taking_the_root_off_empties_the_bank) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.tick(kTicksPerStack * 3);
+    CHECK_EQ(bankedStacks(rig), 3);
+
+    // Banked stacks are not a possession. Carrying them over would let a
+    // player bank ten and then fight on a loadout with no root in it.
+    rig.unequip(0);
+    rig.tick();
+    CHECK_EQ(bankedStacks(rig), 0);
+    CHECK_NEAR(rig.world.get<ArmorStackState>(rig.player).perStack, 0.0, 1e-12);
+}
+
+TEST(a_broken_root_goes_on_banking) {
+    // Unlike a sponge, which has to be out to catch a hit: root banks on a
+    // timer the FLOWER runs, and a petal that stopped earning the moment it
+    // broke would stop exactly while the flower is being hit.
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.settleEquips();
+    rig.damage(rig.petals(0).front(), 100.0);
+    rig.tick();
+    CHECK(rig.slot(0).broken);
+
+    const int before = bankedStacks(rig);
+    rig.tick(kTicksPerStack);
+    CHECK_EQ(bankedStacks(rig), before + 1);
+}
+
+TEST(a_downed_flower_loses_the_armour_it_banked) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.tick(kTicksPerStack * 4);
+    CHECK_EQ(bankedStacks(rig), 4);
+
+    rig.world.add<Dead>(rig.player);
+    rig.tick();
+    CHECK_EQ(bankedStacks(rig), 0);
+
+    // A revive starts the bank over rather than handing back what the corpse
+    // was holding.
+    rig.world.remove<Dead>(rig.player);
+    rig.tick();
+    CHECK_EQ(bankedStacks(rig), 0);
+}
+
+TEST(two_roots_are_one_bank_at_the_better_petals_strength) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.equip(1, "root", Rarity::Rare);
+    rig.tick(kTicksPerStack);
+
+    // One stack for the pair, not one each -- and worth the rare petal's
+    // figure, which is the common one up two tiers of the 3x ladder.
+    CHECK_EQ(bankedStacks(rig), 1);
+    CHECK_NEAR(rig.modifiers().armorPerStack, 12.0 * 9.0, 1e-9);
+}
+
+TEST(a_root_prints_the_stacks_it_is_holding_on_the_bar) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "root");
+    rig.equip(1, "basic");
+    rig.settleEquips();
+
+    // A root always prints, zero included: the gauge is the petal saying how
+    // much it has ready, and one that disappeared while empty could not be
+    // told from a petal that never had one.
+    CHECK_NEAR(rig.slotCounter(0), static_cast<double>(bankedStacks(rig)), 1e-9);
+    CHECK(rig.slotCounter(1) < 0.0);
+
+    rig.tick(kTicksPerStack * 2);
+    const double printed = rig.slotCounter(0);
+    CHECK_NEAR(printed, static_cast<double>(bankedStacks(rig)), 1e-9);
+    CHECK(printed >= 2.0);
+
+    // And a slot that stops being a root stops having a number at all.
+    rig.equip(0, "basic");
+    rig.tick();
+    CHECK(rig.slotCounter(0) < 0.0);
 }
 
 TEST(a_clump_pays_its_modifier_once_not_once_per_grain) {

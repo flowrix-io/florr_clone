@@ -407,10 +407,32 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         if (armor != 0.0) amount = std::max(0.0, amount - armor);
     }
 
+    const bool directPlayerHit = isDirectHit(kind) && world.has<PlayerTag>(victim);
+
+    // Root's armour, which is the flower's answer to the Armor a mob carries
+    // above -- and the opposite kind of thing. A mob's is a standing property
+    // of the mob; a flower's is AMMUNITION the petal system banked, and one
+    // stack is spent here to blunt this hit by what the stack is worth.
+    //
+    // Spent even when it absorbs the blow whole. A stack that survived the
+    // hits it stopped would make ten of them a permanent reduction rather
+    // than a bank, and the post-hit window below is what keeps a single mob
+    // from draining the bank in one tick's worth of contact.
+    //
+    // Direct only, for the reason the mob's armour is: a flat subtraction
+    // from each sliver of a poison drip is immunity, not a tax.
+    if (directPlayerHit) {
+        if (ArmorStackState* armor = world.tryGet<ArmorStackState>(victim)) {
+            if (armor->stacks > 0 && armor->perStack > 0.0) {
+                --armor->stacks;
+                amount = std::max(0.0, amount - armor->perStack);
+            }
+        }
+    }
+
     // Shell's shield is a temporary flat reduction per DIRECT hit. It neither
     // depletes nor applies to poison/radiation, matching getShieldAmount() in
     // the TypeScript hit paths.
-    const bool directPlayerHit = isDirectHit(kind) && world.has<PlayerTag>(victim);
     if (directPlayerHit) {
         if (ShieldState* shield = world.tryGet<ShieldState>(victim)) {
             if (shield->active(nowMillis)) amount = std::max(0.0, amount - shield->amount);

@@ -371,6 +371,12 @@ constexpr ChangelogEntry kChangelog[] = {
       "apex",
       "Reload paces missile petals too: a peas or missile slot fires as fast "
       "as it reloads"}},
+    {"September 17, 2026",
+     {"New petal: Root -- it banks a stack of armour every two seconds, up to "
+      "ten, and spends one to blunt each hit you take",
+      "Its loadout tile prints the stacks it is holding, the way a sponge "
+      "prints the damage it owes you",
+      "Leafbugs drop it"}},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

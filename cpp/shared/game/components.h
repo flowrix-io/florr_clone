@@ -279,6 +279,30 @@ struct ShieldState {
     }
 };
 
+/// Root's armour, which a flower COLLECTS and SPENDS.
+///
+/// Unlike the flat Armor a mob carries, this is ammunition: a stack arrives
+/// every kArmorStackIntervalMillis while a root is worn, and each direct hit
+/// spends one to blunt itself by `perStack`. That is what makes root a petal
+/// you bank between fights rather than a permanent damage reduction -- a
+/// flower that has just been swarmed is out of stacks and takes the next hit
+/// whole.
+///
+/// The petal system owns the growth and `perStack` (it is the only thing that
+/// knows what is worn); combat owns the spending. Only flowers carry one, and
+/// only while a root is equipped -- taking the petal off zeroes it rather than
+/// leaving the stacks banked for the next time it goes on.
+struct ArmorStackState {
+    /// Stacks in hand, never above kMaxArmorStacks.
+    int stacks = 0;
+    /// What one stack absorbs, republished from the loadout every tick.
+    double perStack = 0;
+    /// Milliseconds since the last stack arrived. Runs on whether or not the
+    /// flower is at the cap, so a stack spent while full is replaced on the
+    /// timer's own cadence rather than restarting it.
+    double chargeMillis = 0;
+};
+
 struct SpongeDamageEffect {
     double remainingDamage = 0;
     double damagePerSecond = 0;
@@ -460,6 +484,10 @@ struct PlayerModifiers {
     /// Flat poison DPS absorbed. Multiple lotus petals use the strongest one,
     /// rather than stacking.
     double poisonArmor = 0.0;
+    /// What one of root's armour stacks absorbs. Multiple roots use the
+    /// strongest one rather than summing, as lotus does one line up: two
+    /// roots are one bank of stacks, at the better petal's strength.
+    double armorPerStack = 0.0;
     double spongeDamageDurationMillis = 0.0;
 };
 
@@ -856,6 +884,7 @@ FLIX_COMPONENT(flix::Knockback);
 FLIX_COMPONENT(flix::Faction);
 FLIX_COMPONENT(flix::Health);
 FLIX_COMPONENT(flix::Armor);
+FLIX_COMPONENT(flix::ArmorStackState);
 FLIX_COMPONENT(flix::ContactDamage);
 FLIX_COMPONENT(flix::HitCooldowns);
 FLIX_COMPONENT(flix::Afflictions);

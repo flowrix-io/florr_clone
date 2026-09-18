@@ -719,6 +719,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
     p.bodyDamage = ctx.range(src, "bodyDamage", 0.0, 0.0, kMaxBaseStat);
     p.armorReduction = ctx.range(src, "armorReduction", 0.0, 0.0, kMaxBaseStat);
+    p.armorPerStack = ctx.range(src, "armorPerStack", 0.0, 0.0, kMaxBaseStat);
     p.equipFlags = parseEquipFlags(ctx.text(src, "equipFlags"));
     // The lightning cutter carries a second bit so the client can tell the two
     // blades apart and paint the cyan one. It is derived from the id rather
@@ -1275,6 +1276,10 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // above ultra and a bur that flattened with it would be dead weight at the
     // three tiers where a raid actually needs one.
     s.armorReduction = c.armorReduction * stat;
+    // Root's stack, on the same plain ladder and for the mirror of that
+    // reason: what a stack absorbs has to keep pace with what a mob of the
+    // same tier hits for, and mob damage is the 3x ladder all the way up.
+    s.armorPerStack = c.armorPerStack * stat;
     s.reloadMillis = c.cooldownMillis;
     if (c.id == "yggdrasil") {
         // TypeScript overrides every row: it is always a 1/1 petal and its

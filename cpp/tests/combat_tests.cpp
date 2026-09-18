@@ -163,6 +163,7 @@ struct Fixture {
     std::uint16_t grunt = kInvalidIndex;
     std::uint16_t glitch = kInvalidIndex;
     std::uint16_t burr = kInvalidIndex;
+    std::uint16_t taproot = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -183,7 +184,8 @@ const Fixture& fixture() {
               "jelly":{"name":"Jelly","damage":1,"health":5,"size":1,"knockback":15},
               "venom":{"name":"Venom","damage":1,"health":5,"size":1,"poison":0.01,"poisonDuration":2000},
               "spore":{"name":"Spore","damage":0,"health":6,"size":1,"knockback":3,"poison":0.01,"poisonDuration":2000},
-              "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5}
+              "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5},
+              "taproot":{"name":"Taproot","damage":10,"health":10,"size":1,"armorPerStack":12}
             })");
         if (!wrote) {
             f.error = "cannot write the fixture content";
@@ -199,6 +201,7 @@ const Fixture& fixture() {
         f.grunt = f.registry.mobIndex("grunt");
         f.glitch = f.registry.mobIndex("glitch");
         f.burr = f.registry.petalIndex("burr");
+        f.taproot = f.registry.petalIndex("taproot");
         return f;
     }();
     return state;
@@ -1550,4 +1553,133 @@ TEST(mob_armor_triples_per_tier_and_flattens_above_ultra) {
     for (int t = 0; t < kRarityCount; ++t) {
         CHECK_NEAR(f.registry.mobStats(f.grunt, clampRarity(t)).armor, kExpected[t], 1e-9);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Root's stacking armour
+// ---------------------------------------------------------------------------
+
+TEST(a_root_stack_blunts_a_direct_hit_and_is_spent_doing_it) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ArmorStackState>(player, ArmorStackState{2, 12.0, 0.0});
+
+    a.combat.applyDamage(a.world, player, mob, 20.0, 1000.0);
+    CHECK_NEAR(a.health(player), 92.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 1);
+
+    // One stack per hit, not one per point of damage: the second blow is
+    // blunted by the same twelve and takes the bank to nothing.
+    a.combat.applyDamage(a.world, player, mob, 20.0, 1100.0);
+    CHECK_NEAR(a.health(player), 84.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 0);
+
+    // Out of stacks, the third lands whole. That is the petal: a bank, not a
+    // standing reduction.
+    a.combat.applyDamage(a.world, player, mob, 20.0, 1200.0);
+    CHECK_NEAR(a.health(player), 64.0, 1e-9);
+}
+
+TEST(a_root_stack_is_spent_even_when_it_swallows_the_blow_whole) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ArmorStackState>(player, ArmorStackState{1, 50.0, 0.0});
+
+    // Absorbed entirely -- and the stack goes with it. A stack that survived
+    // the hits it stopped would make ten of them permanent immunity to
+    // anything below the per-stack figure.
+    a.combat.applyDamage(a.world, player, mob, 30.0, 1000.0);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 0);
+    // The flower still gets the post-hit window a shielded blow grants, which
+    // is what stops one mob in contact draining the whole bank in a tick.
+    CHECK(a.world.get<Health>(player).invulnerableUntilMillis > 1000.0);
+}
+
+TEST(a_drip_neither_spends_a_root_stack_nor_is_blunted_by_one) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ArmorStackState>(player, ArmorStackState{3, 12.0, 0.0});
+
+    // A poison tick is a thirtieth of a second's worth of damage; subtracting
+    // twelve from each of them would be immunity, and spending a stack on
+    // each would empty a full bank in a third of a second.
+    a.combat.applyDamage(a.world, player, mob, 5.0, 1000.0, DamageKind::Poison);
+    a.combat.applyDamage(a.world, player, mob, 5.0, 1100.0, DamageKind::Periodic);
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 3);
+
+    // A strike is a landed hit in every other respect, so it spends one.
+    a.combat.applyDamage(a.world, player, mob, 20.0, 1200.0, DamageKind::Lightning);
+    CHECK_NEAR(a.health(player), 82.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 2);
+}
+
+TEST(a_mob_never_spends_a_root_stack) {
+    // The component is a flower's. A mob carrying one -- which nothing puts
+    // there -- must not get a second armour system behind Armor.
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ArmorStackState>(mob, ArmorStackState{5, 40.0, 0.0});
+
+    a.combat.applyDamage(a.world, mob, player, 20.0, 1000.0);
+    CHECK_NEAR(a.health(mob), 80.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(mob).stacks, 5);
+}
+
+TEST(root_armour_lands_ahead_of_a_shell_shield_and_a_sponge) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ArmorStackState>(player, ArmorStackState{1, 12.0, 0.0});
+    a.world.add<ShieldState>(player, ShieldState{5.0, 5000.0});
+    PlayerModifiers modifiers;
+    modifiers.spongeDamageDurationMillis = 1000.0;
+    a.world.add<PlayerModifiers>(player, modifiers);
+
+    // 30 - 12 (stack) - 5 (shield) = 13, and what is left is what the sponge
+    // takes on to pay back rather than damage landing now.
+    a.combat.applyDamage(a.world, player, mob, 30.0, 1000.0);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    const SpongeDamageState& stored = a.world.get<SpongeDamageState>(player);
+    CHECK_EQ(stored.effects.size(), std::size_t(1));
+    if (!stored.effects.empty()) CHECK_NEAR(stored.effects[0].remainingDamage, 13.0, 1e-9);
+}
+
+TEST(a_root_stack_stated_as_zero_blunts_nothing) {
+    // perStack is republished from the loadout every tick, so a zero here is
+    // a flower whose root has just come off with the tick's write still to
+    // come. It must not eat a stack for nothing.
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<ArmorStackState>(player, ArmorStackState{4, 0.0, 0.0});
+
+    a.combat.applyDamage(a.world, player, mob, 20.0, 1000.0);
+    CHECK_NEAR(a.health(player), 80.0, 1e-9);
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 4);
+}
+
+TEST(a_roots_stack_rides_the_plain_three_times_ladder) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.taproot == kInvalidIndex) return;
+
+    // Matched to mob damage, which is the same 3x ladder all the way up: what
+    // a stack absorbs has to keep pace with what a mob of the tier hits for,
+    // or root is immunity at one end and dead weight at the other.
+    static const double kExpected[kRarityCount] = {
+        12.0, 36.0, 108.0, 324.0, 972.0, 2916.0, 8748.0, 26244.0, 78732.0, 236196.0,
+    };
+    for (int t = 0; t < kRarityCount; ++t) {
+        const PetalStats s = f.registry.petalStats(f.taproot, clampRarity(t));
+        CHECK_NEAR(s.armorPerStack, kExpected[t], kExpected[t] * 1e-9);
+    }
+    // And a petal that states none has none, which is what keeps the counter
+    // off every other tile on the bar.
+    CHECK_NEAR(f.registry.petalStats(f.burr, Rarity::Common).armorPerStack, 0.0, 1e-12);
 }

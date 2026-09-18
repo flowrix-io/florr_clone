@@ -27,6 +27,15 @@ namespace flix {
 class Terrain;
 class EventQueue;
 
+/// How long a root takes to bank one armour stack, and how many it may hold.
+///
+/// gardn's figures (`2 * SIM_RATE` ticks, ten stacks), and they are the whole
+/// shape of the petal: twenty seconds of quiet buys a full bank, which is
+/// spent in as many hits as it holds. Raising the cap or shortening the wait
+/// turns root from something you prepare with into flat damage reduction.
+inline constexpr double kArmorStackIntervalMillis = 2000.0;
+inline constexpr int kMaxArmorStacks = 10;
+
 /// Live state for one loadout slot's petals.
 ///
 /// LoadoutSlot is the account-facing half -- what is equipped, whether it is
@@ -221,6 +230,13 @@ private:
     void reconcileSlots(World& world, const ContentRegistry& registry, Entity player,
                         double nowMillis);
     Aggregate recomputeModifiers(World& world, const ContentRegistry& registry, Entity player);
+    /// Bank root's armour: one stack per kArmorStackIntervalMillis, capped at
+    /// kMaxArmorStacks, and nothing at all for a flower wearing no root.
+    ///
+    /// Here rather than in combat because the loadout is what decides whether
+    /// a flower has any, and this system is the one holding the loadout.
+    /// Combat SPENDS what this banks -- see ArmorStackState.
+    void tickArmorStacks(World& world, Entity player, const Aggregate& aggregate, double dt);
     void applyPassiveHeal(World& world, Entity player, const Aggregate& aggregate, double dt);
     void updateRing(World& world, Entity player, const Aggregate& aggregate, double dt);
     /// Step every one of the player's petals: where its orbit point is, which

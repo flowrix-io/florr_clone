@@ -350,6 +350,13 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         pendingBreaks_.clear();
         if (playerIsDown(world, player)) {
             clearRing(world, player);
+            // The bank dies with the flower. It is armour a standing flower
+            // accumulated, not a possession like the loadout, and carrying it
+            // through the death card would hand a respawn ten free hits'
+            // worth of it at the moment it is most protected anyway.
+            if (ArmorStackState* armor = world.tryGet<ArmorStackState>(player)) {
+                *armor = ArmorStackState{};
+            }
             continue;
         }
         // Before the slot pass, because retiring a pet puts the petal that
@@ -357,6 +364,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         retireDistantPets(world, registry, player, nowMillis);
         reconcileSlots(world, registry, player, nowMillis);
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
+        tickArmorStacks(world, player, aggregate, dt);
         applyPassiveHeal(world, player, aggregate, dt);
         applyRaindropAura(world, registry, player, world.get<PetalSlotState>(player), aggregate,
                           nowMillis);
@@ -521,6 +529,14 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         for (const SpongeDamageEffect& effect : sponge->effects) {
             storedSpongeDamage += std::max(0.0, effect.remainingDamage);
         }
+    }
+
+    // And what a root has banked, on the same footing and for the same reason:
+    // the stacks are the flower's, so two roots print one figure rather than
+    // half of it each.
+    double bankedArmorStacks = 0.0;
+    if (const ArmorStackState* armor = world.tryGet<ArmorStackState>(player)) {
+        bankedArmorStacks = armor->stacks;
     }
 
     // Bucket the live petals by slot, dropping the handles the world has
@@ -747,17 +763,20 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // into and the instances this tick's respawns have already put back.
         slotState.healthFraction = slotHealthFraction(world, slotState, stats, count, live);
 
-        // The bar's number for this slot. A sponge is the petal that has one:
-        // what it absorbed and has yet to pay back. Asked of the STATS rather
-        // than of the petal's id, so a petal that grows the behaviour in
-        // petals.json grows the number with it.
+        // The bar's number for this slot. Two petals have one: a sponge prints
+        // what it absorbed and has yet to pay back, a root how many armour
+        // stacks are in hand. Asked of the STATS rather than of the petal's
+        // id, so a petal that grows either behaviour in petals.json grows the
+        // number with it.
         //
-        // Reported even while the body is broken: the hits it already took go
-        // on draining whether or not the sponge itself survived taking them,
-        // and a number that vanished at the moment it mattered most would read
-        // as the damage having been cancelled.
-        slotState.counter =
-            stats.spongeDamageDurationMillis > 0.0 ? storedSpongeDamage : -1.0;
+        // Reported even while the body is broken: a sponge's stored hits go on
+        // draining whether or not the sponge survived taking them, and a root
+        // banks on the flower's timer rather than on its petal being out. A
+        // number that vanished at the moment it mattered most would read as
+        // the effect having been cancelled.
+        if (stats.spongeDamageDurationMillis > 0.0) slotState.counter = storedSpongeDamage;
+        else if (stats.armorPerStack > 0.0) slotState.counter = bankedArmorStacks;
+        else slotState.counter = -1.0;
     }
 
     // Instances destroyed above are still named by the loadout's list. Dropping
@@ -938,6 +957,17 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
             aggregate.modifiers.poisonArmor =
                 std::max(aggregate.modifiers.poisonArmor, mods.poisonArmor);
+            // Root, maximised for the reason lotus is: the stacks are the
+            // FLOWER's one bank, so a second root makes the bank stronger
+            // rather than giving the flower a second one to spend.
+            //
+            // Counted whether or not the body is standing, unlike the sponge
+            // two lines down. A sponge has to be out to catch a hit, but root
+            // banks on a timer the flower runs -- and a petal that stopped
+            // earning the moment it broke would stop precisely while the
+            // flower is being hit, which is when the armour is for.
+            aggregate.modifiers.armorPerStack =
+                std::max(aggregate.modifiers.armorPerStack, stats.armorPerStack);
             // A cutter is worn, not swung: it deals no contact damage of its
             // own and instead adds to the flower's body slam, as gardn's
             // `BASE_BODY_DAMAGE + 20` does. Maximised rather than summed --
@@ -1006,6 +1036,42 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
         visuals->equipFlags = equipFlags;
     }
     return aggregate;
+}
+
+void PetalSystem::tickArmorStacks(World& world, Entity player, const Aggregate& aggregate,
+                                  double dt) {
+    const double perStack = aggregate.modifiers.armorPerStack;
+    if (perStack <= 0.0) {
+        // Zeroed rather than left alone: taking the root off spends nothing,
+        // and a bank that survived the swap would let a player carry ten
+        // stacks into a fight on a loadout with no root in it at all. The
+        // component is left on the flower -- it is three numbers, and adding
+        // and removing it would relocate the entity every time a root goes on
+        // or comes off.
+        if (ArmorStackState* state = world.tryGet<ArmorStackState>(player)) {
+            *state = ArmorStackState{};
+        }
+        return;
+    }
+
+    ArmorStackState& state = world.ensure<ArmorStackState>(player);
+    // Republished every tick, so upgrading the petal upgrades the stacks
+    // already banked. They are the FLOWER's armour rather than an inventory of
+    // the individual hits the old petal would have blunted.
+    state.perStack = perStack;
+    state.chargeMillis += dt * 1000.0;
+    // Served on the NEAREST tick rather than the first one past the deadline.
+    // Two seconds is sixty ticks of 33.333..., which sums to a hair under
+    // 2000 -- so an exact comparison would make every stack take sixty-one
+    // ticks and put the petal permanently 1.7% slower than the figure it is
+    // authored with.
+    if (state.chargeMillis + net::kTickMillis * 0.5 < kArmorStackIntervalMillis) return;
+    // Reset rather than subtract, and the timer runs at the cap too: gardn
+    // cycles the counter whether or not a stack is owed, so a stack spent
+    // while full comes back on the next crossing rather than a full interval
+    // after the hit.
+    state.chargeMillis = 0.0;
+    if (state.stacks < kMaxArmorStacks) ++state.stacks;
 }
 
 void PetalSystem::applyPassiveHeal(World& world, Entity player, const Aggregate& aggregate,

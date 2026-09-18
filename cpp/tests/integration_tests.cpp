@@ -965,3 +965,51 @@ TEST(a_sponge_prints_its_stored_damage_on_the_owners_bar) {
     world.get<Loadout>(body).slots[0] = LoadoutSlot{};
     CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == -1; }));
 }
+
+TEST(a_root_prints_its_armour_stacks_on_the_owners_bar) {
+    // The whole path the number takes for the other petal that has one: a
+    // root in a real server's loadout, the petal system banking stacks on the
+    // tick clock, the snapshot carrying the count, and the owner's client
+    // decoding it into what the bar prints inside that slot's top border.
+    Harness h("root-counter");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(flix::testsupport::loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.username == "alice") body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    const std::uint16_t root = content().petalIndex("root");
+    CHECK(root != kInvalidIndex);
+    if (root == kInvalidIndex) return;
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{root, Rarity::Common, 0.0, false};
+
+    // An empty bank still prints, and the petal beside it -- which has no
+    // number of its own -- prints nothing.
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == 0; }));
+    CHECK_EQ(alice.view().self().slotCounter[1], -1);
+
+    // Banked on the server's own clock, so the bar counts up on its own.
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] >= 1; }));
+
+    // Spent by a hit, and the bar reports the fall as it reported the climb.
+    const int banked = alice.view().self().slotCounter[0];
+    world.get<ArmorStackState>(body).stacks = banked + 4;
+    CHECK(h.stepUntil(
+        {&alice}, [&] { return alice.view().self().slotCounter[0] == banked + 4; }));
+    world.get<ArmorStackState>(body).stacks = 0;
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == 0; }));
+
+    // Unequipped: now there is no number at all.
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{};
+    CHECK(h.stepUntil({&alice}, [&] { return alice.view().self().slotCounter[0] == -1; }));
+}

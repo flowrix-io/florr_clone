@@ -596,6 +596,14 @@
         "probability": 1,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "root",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
