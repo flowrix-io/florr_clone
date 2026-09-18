@@ -618,10 +618,10 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // The thing those adjustments were reaching for is real -- a shot's calibre
     // grows with the shooter's body, so at the very top of the ladder an apex
     // mantis's peas are wider than the gap a short interval leaves between
-    // them and the burst arrives as one blob. The answer is on the SHOT and
-    // not on the clock: speed rides the calibre (see below), so the gap a
-    // given interval opens grows with the peas it is separating and the burst
-    // reads at every tier. The interval itself still fires as written.
+    // them and the burst can arrive as one blob. That is still the author's to
+    // fix, in `burstIntervalMillis`, where they can see it: speed is stated in
+    // the file and no longer grows with the shot (see below), so nothing here
+    // silently compensates. The interval fires as written.
     const int burst = std::max(1, spec.burstCount);
     const double burstInterval = spec.burstIntervalMillis;
 
@@ -683,25 +683,26 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // was however the petal it is made of collides.
     //
     // The stock calibre -- the same shot off a size-1 common shooter -- is kept
-    // beside it because `speed` and the weave are both stated against it.
+    // beside it because the weave is stated against it.
     const double stockRadius =
         std::max(1.0, ammo.size * kProjectileRadiusPerSize / kProjectileSizeDivisor);
     shot.radius = std::max(
         1.0, ammo.size * kProjectileRadiusPerSize * ownerScale / kProjectileSizeDivisor);
-    // SPEED rides the calibre. `speed` in mobs.json is what a stock shot flies
-    // at, and a shot twice that size flies twice as fast, so the volley is one
-    // picture at two scales rather than two different weapons: at the top of
-    // the ladder the shots are wider, so an unscaled speed leaves less clear
-    // air between them than the author laid out, and a burst spaced to read as
-    // three peas arrives as one blob. Speed is the honest place to fix that --
-    // the alternative, quietly stretching `burstInterval`, fires a cadence the
-    // author never wrote and gives them nothing on screen to explain it.
+    // SPEED does NOT ride the calibre. `speed` in mobs.json is what a shot of
+    // this mob flies at whatever size it came out, so an apex missile is a
+    // common one drawn bigger rather than a faster weapon, and the file stays
+    // the only authority on how fast anything travels.
     //
-    // Reach is NOT divided back out: `distance` is a budget in world units and
-    // it scales on its own line above, so a bigger shot covers its longer reach
-    // in about the same time a common one covers its shorter one.
+    // What that costs is real and is accepted: a big shot is wider than the
+    // clear air a short `burstInterval` leaves between shots of stock size, so
+    // a burst tightens as the ladder climbs, and a reach that grows with the
+    // tier now takes proportionally longer to cross. Both are the author's to
+    // tune in mobs.json -- the engine firing a speed nobody wrote is worse
+    // than either.
+    //
+    // The calibre is still needed for the weave below.
     const double calibreScale = shot.radius / stockRadius;
-    shot.speed = speed * calibreScale;
+    shot.speed = speed;
     shot.distance = reach;
     shot.damage = ammo.damage;
     // Graded at the shooter's tier alongside the damage, so an apex hornet's
@@ -732,14 +733,11 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // common missile's curve at four times the size instead of swinging four
     // times as wide between crossings spaced for a smaller shot.
     //
-    // Speed already carries exactly that growth, so the two ratios cancel and
-    // the authored frequency is what a shot of any size flies at. Written as
-    // the ratio rather than as a bare assignment because the cancellation is
-    // the whole argument: if speed ever stops riding the calibre, this line
-    // keeps the shape instead of silently turning the weave into a buzz.
+    // Speed is the same at every size, so the pitch is the only place that
+    // growth can come from: the authored frequency over the calibre.
     const PetalConfig& ammoConfig = registry.petal(spec.ammoPetalIndex);
     shot.waveAmplitude = ammoConfig.waveAmplitude * shot.radius;
-    shot.waveFrequency = ammoConfig.waveFrequency * (shot.speed / speed) / calibreScale;
+    shot.waveFrequency = ammoConfig.waveFrequency / calibreScale;
     shot.petalIndex = spec.ammoPetalIndex;
     shot.rarity = type.rarity;
     // The reference stamps the shooter's TYPE on every shot so the player
@@ -1805,14 +1803,20 @@ void MobAiSystem::fireRingPetal(World& world, Entity self, const PetalRingSpec& 
     // mob throws"; here the answer is already on the mob, drawn and collided
     // with, and it is `hitScale`. The two disagreed by a factor of two.
     shot.radius = std::max(1.0, seedRadius);
-    // The tier ladder, and only it: `shotSpeed` is what a COMMON sheds at, and
-    // reach below grows on the same scale, so flight time is the same picture
-    // at every tier rather than an apex seed drifting across a longer field.
+    // `shotSpeed` is what a seed sheds at, at every tier -- the same rule
+    // fireVolley now follows: the file is the only authority on how fast
+    // anything travels, and a seed that is bigger because its dandelion is
+    // bigger is not thereby a faster seed.
+    //
+    // REACH still rides the tier ladder, because that is a distance and an
+    // apex dandelion is throwing across a proportionally larger field. The two
+    // no longer cancel, so an apex seed is in the air longer than a common
+    // one: that is the honest reading of a longer throw at a stated speed.
     const std::size_t tier =
         static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
     const double tierScale = kMobSizeScale[tier] / kProjectileReachReferenceScale;
     const double speed = spec.shotSpeed > 0.0 ? spec.shotSpeed : kDefaultProjectileSpeed;
-    shot.speed = speed * tierScale;
+    shot.speed = speed;
     const double reach = spec.shotDistance > 0.0 ? spec.shotDistance : kDefaultRingShotDistance;
     shot.distance = reach * tierScale;
     shot.angle = wrapAngle(aim);

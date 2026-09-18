@@ -287,8 +287,8 @@
             "hitScale": 0.35,
             "spin": false,
             "shootOnHit": true,
-            "shotSpeed": 50,
-            "shotDistance": 500
+            "shotSpeed": 250,
+            "shotDistance": 1000
         }
     },
     "soldier_fire_ant": {

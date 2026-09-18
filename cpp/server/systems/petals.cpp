@@ -1659,17 +1659,15 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
             ? std::max(0.05, ownerBody->radius / kPlayerBaseRadius)
             : 1.0;
     const double shotRadius = std::max(1.0, stats.size * kProjectileRadiusPerSize * ownerScale);
-    // The same calibre at a stock flower. `speed` and the weave are both stated
-    // against it, so a grown shot is the stock one at a larger scale rather
-    // than a bigger body moving at a smaller body's pace.
+    // The same calibre at a stock flower. The weave is stated against it, so a
+    // grown shot draws the stock shot's curve at a larger size.
     const double stockShotRadius = std::max(1.0, stats.size * kProjectileRadiusPerSize);
     const double calibreScale = shotRadius / stockShotRadius;
-    // Speed rides the calibre for the same reason a mob's does (see fireVolley):
-    // `speed` in petals.json is what a stock flower's shot flies at, and the
-    // shot a grown flower fires is the same shot drawn bigger -- a wider pea
-    // travelling at a stock pea's speed reads as a heavier, slower weapon, and
-    // it closes the gap a multi-shot spread leaves between grains.
-    const double shotSpeed = spec.speed * calibreScale;
+    // Speed does NOT ride the calibre. `speed` in petals.json is what the shot
+    // flies at, full stop: a grown flower fires a wider pea at the same pace,
+    // not a faster one. Size and speed are separate knobs and the file is the
+    // only authority on the second.
+    const double shotSpeed = spec.speed;
 
     // The flower's own motion, carried into the volley. Taken from the FLOWER
     // and not from the petal because a petal's velocity is dominated by its
@@ -1721,12 +1719,12 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         //
         // The wavelength has to grow with the calibre the same way, or a grown
         // shot swings a bigger amplitude between crossings spaced for a stock
-        // one -- a buzz rather than the same curve at a larger size. Speed
-        // supplies that growth on its own, so the two ratios cancel and the
-        // authored frequency stands; written out so the cancellation stays
-        // visible if speed ever stops riding the calibre (see fireVolley).
+        // one -- a buzz rather than the same curve at a larger size. Wavelength
+        // is speed over frequency and speed no longer grows with the shot, so
+        // the pitch is what has to carry it: dividing the authored frequency by
+        // the calibre is what keeps the shape.
         projectile.waveAmplitude = config.waveAmplitude * shotRadius;
-        projectile.waveFrequency = config.waveFrequency * (shotSpeed / spec.speed) / calibreScale;
+        projectile.waveFrequency = config.waveFrequency / calibreScale;
         // A shot that has not moved yet has flown a segment of zero length.
         projectile.lastPosition = from;
         world.add<Projectile>(shot, projectile);

@@ -1738,10 +1738,10 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             if (transform == nullptr || body == nullptr) continue;
 
             // Against the SEGMENT the shot just flew, not its endpoint. A
-            // shot's speed rides its calibre, so a big one covers more ground
-            // in a tick than its own hit reach, and an endpoint test would let
-            // it step clean over a flower -- in front of it one tick, behind it
-            // the next, never touching. `offset` stays the vector from the
+            // fast shot covers more ground in a tick than its own hit reach is
+            // wide, and an endpoint test would let it step clean over a flower
+            // -- in front of it one tick, behind it the next, never touching.
+            // `offset` stays the vector from the
             // point of closest approach, which is what the shove below pushes
             // along and what the nearest-first ordering sorts on.
             const Vec2 toVictim = transform->position - shot.from;

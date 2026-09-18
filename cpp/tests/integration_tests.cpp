@@ -1103,8 +1103,15 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
     // range is the clock: `distance / speed` seconds, plus slack for the
     // dandelion still being shot at while this runs.
     const PetalRingSpec& spec = content().mob(dandelionIndex).petalRing;
+    // Reach rides the tier ladder and the speed does not, so a seed off a big
+    // dandelion is in the air for longer. Taken off the mob that actually
+    // spawned rather than assumed common, so the budget cannot silently go
+    // short if the spawner hands this test a graded one.
+    const std::size_t tier = static_cast<std::size_t>(
+        clamp(rarityIndex(world.get<MobType>(dandelion).rarity), 0, kRarityCount - 1));
+    const double tierScale = kMobSizeScale[tier] / kProjectileReachReferenceScale;
     const double flightMillis = spec.shotSpeed > 0.0
-                                    ? 1000.0 * spec.shotDistance / spec.shotSpeed
+                                    ? 1000.0 * spec.shotDistance * tierScale / spec.shotSpeed
                                     : 1000.0;
     const int budget = static_cast<int>(flightMillis / net::kTickMillis) + 200;
     world.get<Transform>(dandelion).position = at + Vec2{6000.0, 0.0};   // stop feeding it hits

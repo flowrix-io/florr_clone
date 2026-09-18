@@ -56,13 +56,13 @@ struct ProjectileSpec {
     bool present = false;
     int count = 1;
     double distance = 0;      ///< units travelled before it expires
-    /// Units per second AT THE STOCK CALIBRE -- the shot a size-1 common
-    /// shooter, or an ungrown flower, puts out. The firing site multiplies it
-    /// by how much bigger the shot actually came out, so a shot twice the size
-    /// flies twice as fast and a volley is one picture at two scales. A speed
-    /// held flat across the ladder makes a big shot read as a heavier, slower
-    /// weapon and closes the clear air a burst or a spread was authored to
-    /// leave between its shots.
+    /// Units per second, AT EVERY CALIBRE. Nothing scales it: a shot twice the
+    /// size flies at this number too, so a grown flower's pea is a stock pea
+    /// drawn bigger rather than a different weapon, and this file is the only
+    /// place anything says how fast a shot travels. The cost is that a big
+    /// shot leaves less clear air behind it than a stock one does at the same
+    /// `burstIntervalMillis` or `spreadAngle` -- tune those, here, where the
+    /// change is visible.
     double speed = 0;
     /// Angular STEP between adjacent projectiles, RADIANS -- not the total fan
     /// width, and not degrees however large it looks. `flower` ships 72, which
@@ -87,9 +87,9 @@ struct ProjectileSpec {
     int burstCount = 1;
     /// Gap between the shots WITHIN a burst, milliseconds. It fires exactly as
     /// written -- not scaled by tier, not capped against the cadence; see
-    /// fireVolley, which is also where the reason lives. What keeps a burst
-    /// legible at the top of the ladder is `speed` riding the calibre, so the
-    /// gap a given interval opens grows with the shots it separates.
+    /// fireVolley, which is also where the reason lives. Since `speed` does not
+    /// grow with the calibre either, a burst does tighten as the shots get
+    /// bigger: widen the gap here if an apex shooter's burst reads as a blob.
     ///
     /// The full cooldown then runs from the LAST shot of a burst, so a burst
     /// costs `(burstCount - 1)` gaps on top of the mob's stated cadence rather
@@ -210,7 +210,9 @@ struct PetalRingSpec {
     /// that heals back between attempts -- the same reason its health does not
     /// regenerate.
     bool shootOnHit = false;
-    double shotSpeed = 0;      ///< units per second; 0 falls back to the default
+    /// Units per second, at every tier -- nothing scales it, as with
+    /// `ProjectileSpec::speed`. 0 falls back to the default.
+    double shotSpeed = 0;
     double shotDistance = 0;   ///< reach in world units, before the tier scale
 };
 
@@ -518,8 +520,8 @@ struct PetalConfig {
     /// calibre: left to itself the frequency would hold the crossings where a
     /// common missile puts them while the amplitude grew past them, and the
     /// four-times-wider apex missile would buzz rather than draw the same curve
-    /// larger. `ProjectileSpec::speed` rides the calibre and supplies exactly
-    /// that growth, so the authored rate is what a shot of any size weaves at.
+    /// larger. `ProjectileSpec::speed` is the same at every calibre, so the
+    /// firing site divides this rate by the calibre to supply that growth.
     double waveAmplitude = 0;
     double waveFrequency = 0;
 

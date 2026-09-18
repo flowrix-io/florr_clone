@@ -837,8 +837,8 @@ struct Projectile {
     double wavePhase = 0;
     /// Where the shot stood when this tick's movement began -- the tail of the
     /// segment it just flew. Combat tests that SEGMENT against a victim rather
-    /// than the endpoint alone, because a shot's speed rides its calibre and a
-    /// big one covers more ground in a tick than its own hit reach: an endpoint
+    /// than the endpoint alone, because a fast shot covers more ground in a
+    /// tick than its own hit reach is wide: an endpoint
     /// test would let it step over a flower from one side to the other without
     /// ever overlapping it. Seeded to the spawn position so the shot's first
     /// tick tests a degenerate segment rather than a line from the origin.

@@ -800,9 +800,9 @@ TEST(a_fast_projectile_cannot_step_over_a_body_between_ticks) {
     const Entity player = a.player({500, 2000});
     const Entity mob = a.mob({800, 1000}, 100.0);
 
-    // An apex shooter's missile flies faster than its own hit reach is wide,
-    // because speed rides the calibre: this one covered 200 units in the tick
-    // and is 25 units of reach across. Tested at its ENDPOINT it has already
+    // A fast missile flies further in a tick than its own hit reach is wide:
+    // this one covered 200 units in the tick and is 25 units of reach across.
+    // Tested at its ENDPOINT it has already
     // passed the mob and misses forever; tested along the segment it flew, it
     // hits the thing that was standing in the way.
     const Entity shot = spawnShot(a, {900, 1000}, {5000, 0}, 25.0, 500.0, player, player);
