@@ -232,6 +232,9 @@
         "color": "#ff8800",
         "image": "<svg id=\"worker-fire-ant-svg\" width=\"32\" height=\"32\" viewBox=\"-40 -35 80 70\" xmlns=\"http://www.w3.org/2000/svg\">\n  <circle cx=\"-12\" cy=\"0\" r=\"10\" fill=\"#b02a22\" stroke=\"#8c221b\" stroke-width=\"7\" />\n  <path fill=\"none\" stroke=\"#3d1512\" stroke-width=\"7\" stroke-linecap=\"round\">\n    <animate attributeName=\"d\"\n             dur=\"1s\"\n             repeatCount=\"indefinite\"\n             calcMode=\"spline\" keySplines=\"0.4 0 0.6 1; 0.6 0 0.4 1\"\n             keyTimes=\"0; 0.5; 1\"\n             values=\"M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5;\n                     M 4 -7 Q 15 -9 26 -4 M 4 7 Q 15 9 26 4;\n                     M 4 -7 Q 15 -10 26 -5 M 4 7 Q 15 10 26 5\" />\n             </path>\n\n  <circle cx=\"4\" cy=\"0\" r=\"14\" fill=\"#b02a22\" stroke=\"#8c221b\" stroke-width=\"7\" />\n</svg>",
         "ai_type": "neutral",
+        "groups": [
+            "fire_ant_hell"
+        ],
         "range": 300
     },
     "baby_fire_ant": {
@@ -244,6 +247,9 @@
         "cooldown": 2000,
         "description": "Weak, but can still sting",
         "color": "#ff8800",
+        "groups": [
+            "fire_ant_hell"
+        ],
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-20 -20 50 40\">\n  <path fill=\"none\" stroke=\"#3d1512\" stroke-width=\"7\" stroke-linecap=\"round\" d=\"M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5\">\n    <animate attributeName=\"d\"\n             values=\"M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5;\n                     M 0 -7 Q 11 -9 22 -4 M 0 7 Q 11 9 22 4;\n                     M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5;\n                     M 0 -7 Q 11 -11 22 -6 M 0 7 Q 11 11 22 6;\n                     M 0 -7 Q 11 -10 22 -5 M 0 7 Q 11 10 22 5\"\n             keyTimes=\"0; 0.25; 0.5; 0.75; 1\"\n             calcMode=\"spline\"\n             keySplines=\"0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1; 0.42 0 0.58 1\"\n             dur=\"2s\"\n             repeatCount=\"indefinite\" />\n  </path>\n\n  <circle cx=\"0\" cy=\"0\" r=\"14\" fill=\"#b02a22\" stroke=\"#8c221b\" stroke-width=\"7\" />\n</svg>\n",
         "ai_type": "passive",
         "range": 300
@@ -305,7 +311,7 @@
         "ai_type": "hostile",
         "range": 600,
         "groups": [
-            "desert"
+            "fire_ant_hell"
         ]
     },
     "shiny_ladybug": {
@@ -1141,9 +1147,8 @@
         "ai_type": "hostile",
         "range": 500,
         "groups": {
-            "garden": 0.1
+            "jungle": 0.2
         },
-        "min_rarity": "rare",
         "poison": 0.005,
         "poisonDuration": 2000
     },
@@ -1160,9 +1165,10 @@
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-45 -45 90 90\" xmlns=\"http://www.w3.org/2000/svg\">\n  <circle cx=\"0\" cy=\"-30\" r=\"15\" fill=\"#333333\" />\n  <circle cx=\"0\" cy=\"30\" r=\"15\" fill=\"#333333\" />\n  <circle cx=\"0\" cy=\"0\" r=\"35\" fill=\"#905db0\" stroke=\"#734a8d\" stroke-width=\"7\" />\n</svg>",
         "ai_type": "hostile",
         "range": 0,
-        "groups": ["jungle"],
+        "groups": {
+            "jungle": 0
+        },
         "noEggDrop": true,
-        "min_rarity": "rare",
         "poison": 0.005,
         "poisonDuration": 2000
     },
