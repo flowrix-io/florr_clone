@@ -6,6 +6,7 @@ dist/inventory.json
 # The single-file offline build (npm run build:offline). A build product no
 # deployment reads, and five megabytes a commit if it were tracked.
 dist/offline.html
+dist/offline-asmjs.html
 public_build_florrclone.zip
 db_backups/
 src/inventory.json

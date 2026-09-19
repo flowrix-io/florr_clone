@@ -1581,6 +1581,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     if (drawn_ == MenuId::None) return;
     MenuContext ctx{canvas,    window,      net, sprites,    renderer, settings_,
                     drag_,     timeSeconds, dt,  panelRect_, false};
+    ctx.adminGrantOffered = adminGrantOffered_;
     bool keepOpen = true;
     // The setting is the single source of truth for the debug panel: unchecking
     // "Enable Debug Menu" while it is open closes it on the next frame rather
@@ -1613,6 +1614,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     // its own panel on the same click, so the request would never survive to
     // be read if it were picked up after that early return.
     if (ctx.logoutRequested) logoutRequested_ = true;
+    if (ctx.adminGrantRequested) adminGrantRequested_ = true;
 
     // A card on its way out still paints, but it has no say any more: it is
     // already closed, and a search field it happened to hold would go on

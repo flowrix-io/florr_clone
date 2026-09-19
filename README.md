@@ -30,12 +30,23 @@ compiled into one wasm and embedded in the page. Open it straight from disk —
 no server, no network. Your account and progress are kept in that browser's
 local storage. See `cpp/docs/ARCHITECTURE.md`, "The offline build".
 
+For a browser that cannot run WebAssembly at all:
+
+```bash
+npm run build:offline:asmjs   # -> dist/offline-asmjs.html
+```
+
+The same page with the module translated to JavaScript. It is bigger (~8.5MB)
+and slower, and the build takes several minutes, so it is built only when
+asked for.
+
 ## Scripts
 
 | Script | Purpose |
 | --- | --- |
 | `npm run build` | Build cpp module, bundle client (production), compress bundle |
 | `npm run build:offline` | Single-file offline build: server and client in one page, `dist/offline.html`, opens from disk with no server |
+| `npm run build:offline:asmjs` | The same page without WebAssembly (wasm2js), `dist/offline-asmjs.html` — bigger, slower, several minutes to build |
 | `npm run build:server` | TypeScript compile of the server only |
 | `npm run build:client` | TypeScript compile of the client only |
 | `npm start` | Build server and run `dist/server.js` |

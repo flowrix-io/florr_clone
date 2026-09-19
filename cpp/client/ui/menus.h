@@ -310,6 +310,13 @@ struct MenuContext {
     /// app's business -- it owns the stored token and the screen -- so the
     /// panel only says that it was asked for.
     bool logoutRequested = false;
+    /// Whether this build can make its own player an admin, which is true of
+    /// the offline page and nothing else -- see AppConfig::grantAdmin. The
+    /// settings panel draws its Grant Admin row only when this is set.
+    bool adminGrantOffered = false;
+    /// Set by that row, and read the way the logout request is: the grant
+    /// itself belongs to whoever owns the server, which is never a panel.
+    bool adminGrantRequested = false;
 
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -636,6 +643,17 @@ public:
         return requested;
     }
 
+    /// Whether Settings offers its Grant Admin row. Off unless the app says
+    /// otherwise, so a client with no way to grant one draws no button.
+    void setAdminGrantOffered(bool offered) { adminGrantOffered_ = offered; }
+
+    /// Set when that row was clicked, read and cleared like the two above.
+    bool takeAdminGrantRequest() {
+        const bool requested = adminGrantRequested_;
+        adminGrantRequested_ = false;
+        return requested;
+    }
+
     /// Anything the caller needs painted between the icon strip and the
     /// loadout bar. In game that gap is the death card's: it goes over the
     /// strip and the HUD but under the bar, and there is no other seam in this
@@ -767,6 +785,8 @@ private:
     bool inGame_ = false;
     bool exitRequested_ = false;
     bool logoutRequested_ = false;
+    bool adminGrantOffered_ = false;
+    bool adminGrantRequested_ = false;
     int changelogEntries_ = 1;
 
     /// The icon artwork, compiled on first use. One document per glyph, shared

@@ -414,6 +414,43 @@ page reloads, which is "the same build, started fresh". `update` answers that
 there is nothing to install into. Without storage (a private window) both
 halves still run and simply forget, as the online client does.
 
+One thing this page has that no other build does: **Grant Admin**, in
+Settings > Advanced. The server is in the player's own tab and the world is
+nobody else's, so the console is theirs to take; the alternative is editing an
+account out of browser storage by hand. The button calls
+`GameServer::grantAdmin` directly, in-process, through `AppConfig::grantAdmin`
+— a hook only `offline/main.cpp` sets. Nothing on the wire carries the grant,
+so a client dialling a real server draws no button and the shipping server
+gains no way to hand itself the console. What it sets is the permanent
+`Account::admin` flag (not the one-life loan `/admin grant_admin` lends), and
+the server answers by resending the skin catalog, whose leading flag is where
+a client learns its own standing.
+
+### Without WebAssembly
+
+```
+cmake --build cpp/build-web --target flowrix_offline_asmjs  # -> offline-asmjs.html
+npm run build:offline:asmjs                                 # staged as dist/offline-asmjs.html
+```
+
+The same page for a browser with no wasm engine — an old one, or one where it
+is switched off. `-sWASM=0` runs the linked module through wasm2js, which
+rewrites it into the JavaScript the asm.js era compiled to, and the glue
+carries a `WebAssembly` shim of its own so nothing reaches for the engine's.
+Everything else is the link the wasm page uses, stated once in
+`FLIX_OFFLINE_LINK_OPTIONS` so the two cannot drift into different programs.
+
+Two differences that are not optional:
+
+* **no `-msimd128`.** wasm2js cannot translate SIMD, and the link fails if
+  `-flto`'s codegen emits any. Nothing here writes intrinsics, so this costs
+  the autovectoriser and nothing else.
+* **not in `all`.** wasm2js re-codegens the whole module, which takes minutes,
+  so the target is `EXCLUDE_FROM_ALL` and built by name.
+
+The page it produces is around 8.5MB against the wasm page's 6MB, and slower
+to start and to run. That is the trade for playing where wasm cannot.
+
 ## Transports
 
 `shared/net/web_channel.h` is the seam. Natively `transport.cpp` moves bytes

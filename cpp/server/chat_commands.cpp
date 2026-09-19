@@ -295,6 +295,33 @@ bool GameServer::effectiveAdmin(const Session& session) const {
     return session.admin || tempAdmins_.count(session.connection) != 0;
 }
 
+bool GameServer::grantAdmin(const std::string& username) {
+    Account* account = database_.findUser(username);
+    if (account == nullptr) return false;
+    if (!account->admin) {
+        account->admin = true;
+        // In memory only until the database is written, and the next write is
+        // the periodic save half a minute out -- which a page closed before it
+        // lands would lose, along with the grant.
+        database_.markDirty();
+    }
+
+    // The session carries its own copy of the flag, taken at login: without
+    // this the grant would not be real until the player logged in again.
+    Session* session = sessionForUser(account->username);
+    if (session == nullptr) return true;
+    session->admin = true;
+    net::Connection* connection = listener_.find(session->connection);
+    if (connection == nullptr) return true;
+    // The same resend a temporary grant does, and for the same reason: the
+    // catalog's leading flag is where the client learns its standing, and it
+    // is what un-hides the /admin rows in the command autocomplete.
+    sendSkinCatalog(*session, *connection);
+    sendSystem(*connection, "<span style=\"color: #ffb74d;\">You are now an admin. Use /admin "
+                            "&lt;command&gt; or /help.</span>");
+    return true;
+}
+
 void GameServer::revokeTempAdmin(net::ConnectionId id) {
     if (tempAdmins_.erase(id) == 0) return;
     // The client learns its admin standing from the skin catalog's leading

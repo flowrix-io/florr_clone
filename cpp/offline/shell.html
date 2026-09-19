@@ -86,8 +86,9 @@
       status.textContent = text;
     },
     onAbort: (what) => {
+      canvas.style.display = 'none';
       status.hidden = false;
-      status.textContent = 'error: ' + what;
+      status.innerHTML = '<b style="color: red;">game crashed: ' + what + '</b>';
     },
   };
   window.Module = Module;

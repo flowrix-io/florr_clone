@@ -156,7 +156,7 @@ enum Toggle : int {
 
 enum Slider : int { kRenderScale, kMobFramerate, kInterpolation };
 
-enum Button : int { kSaveControls, kResetControls, kResetTutorial, kLogOut };
+enum Button : int { kSaveControls, kResetControls, kResetTutorial, kLogOut, kGrantAdmin };
 
 /// The Controls tab's rows are ControlAction's own order, and every binding
 /// they show lives in ClientSettings -- see controlMeta() in menus.h. The
@@ -717,6 +717,28 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kDebugMenuEnabled, "Enable Debug Menu button (J in-game)");
 
             p.cy += 10.0;
+            // Offline only: the row is there when this build has a server of
+            // its own to ask (see AppConfig::grantAdmin), which is the
+            // single-file page and nothing else. A client dialling a real
+            // server has no hook, draws no row, and has nothing to send.
+            if (ctx.adminGrantOffered) {
+                const Rect grant{contentX, p.cy, 160.0, 32.0};
+                if (ctx.net.isSkinAdmin()) {
+                    // Painted, not laid out as a button: there is nothing left
+                    // to press, and a row that lit up under the cursor would
+                    // say there is. The row stays so the panel goes on
+                    // answering "am I an admin?" -- `isSkinAdmin` is the same
+                    // flag the chat autocomplete hides its /admin rows behind.
+                    ui::button(canvas, grant, "Admin Granted", false, false,
+                               gardnStyle(kNeutralFill, 14.0));
+                } else if (p.button(grant, "Grant Admin", kActionFill, 14.0, kGrantAdmin)) {
+                    // The app owns the server object in that build; the panel
+                    // only says it was asked, exactly as Log Out does. The
+                    // label flips on its own once the server's answer lands.
+                    ctx.adminGrantRequested = true;
+                }
+                p.cy += 42.0;
+            }
             // The app does the work -- revoking the token, forgetting the
             // stored one and going back to the auth form. All this row knows
             // is that it was clicked, and that its own card goes away with the

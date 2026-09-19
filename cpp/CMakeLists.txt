@@ -492,6 +492,24 @@ if(EMSCRIPTEN)
   # storage-backed mount; the server's stack size, because this wasm carries
   # the server's JSON parser too. The linked output is offline.html; the .js
   # and .wasm that would otherwise sit beside it do not exist.
+  #
+  # Everything the two offline links share. They differ in one thing -- what
+  # they compile the module TO -- and stating the rest once is what keeps the
+  # asm.js page the same program as the wasm one rather than a second
+  # configuration that drifts.
+  set(FLIX_OFFLINE_LINK_OPTIONS
+    ${FLIX_WEB_LINK_OPTIONS}
+    "-sENVIRONMENT=web"
+    "-sWASMFS"
+    "-sSINGLE_FILE=1"
+    "-sSTACK_SIZE=4194304"
+    "-flto"
+    "-sEVAL_CTORS=0"
+    "-fno-rtti"
+    ${FLIX_WEB_CLIENT_OPT}
+    ${FLIX_EMBED_DATA}
+    "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html")
+
   add_executable(flowrix_offline offline/main.cpp)
   target_link_libraries(flowrix_offline PRIVATE flix_server flix_client)
   add_dependencies(flowrix_offline flix_data)
@@ -502,21 +520,42 @@ if(EMSCRIPTEN)
   target_compile_options(flowrix_offline PRIVATE
    "-flto"
    "-fno-rtti"
-   "-fno-exceptions"
   )
   target_link_options(flowrix_offline PRIVATE
-    ${FLIX_WEB_LINK_OPTIONS}
-    "-sENVIRONMENT=web"
-    "-sWASMFS"
-    "-sSINGLE_FILE=1"
-    "-sSTACK_SIZE=4194304"
-    "-flto"
-    "-msimd128"
-    "-sEVAL_CTORS=0"
-    "-fno-rtti -fno-exceptions"
-    ${FLIX_WEB_CLIENT_OPT}
-    ${FLIX_EMBED_DATA}
-    "--shell-file" "${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html")
+    ${FLIX_OFFLINE_LINK_OPTIONS}
+    "-msimd128")
+
+  # --- the offline build, without WebAssembly --------------------------------
+  # The same page for a browser that has no wasm engine: -sWASM=0 runs the
+  # linked module through wasm2js, which rewrites it into the JavaScript the
+  # asm.js era compiled to, and the glue carries its own WebAssembly shim so
+  # nothing reaches for the engine's. With -sSINGLE_FILE that is still one
+  # HTML file that opens from disk -- 8.6MB against the wasm page's 5.9MB, and
+  # slower to start and to run, which is the trade for playing at all where
+  # wasm is off or missing.
+  #
+  # Two things this link must NOT have, both of which the wasm page does:
+  #   * -msimd128. wasm2js cannot translate SIMD instructions, and the link
+  #     fails outright if -flto's codegen emits any. Nothing here writes
+  #     intrinsics, so dropping the flag costs nothing but the autovectoriser.
+  #   * a place in `all`. wasm2js re-codegens the whole module and takes
+  #     minutes, so this target is built by name (`npm run build:offline:asmjs`)
+  #     and never as a side effect of building something else.
+  add_executable(flowrix_offline_asmjs EXCLUDE_FROM_ALL offline/main.cpp)
+  target_link_libraries(flowrix_offline_asmjs PRIVATE flix_server flix_client)
+  add_dependencies(flowrix_offline_asmjs flix_data)
+  set_target_properties(flowrix_offline_asmjs PROPERTIES
+                        OUTPUT_NAME offline-asmjs SUFFIX ".html")
+  set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS ${FLIX_DATA_STAGED})
+  set_property(TARGET flowrix_offline_asmjs APPEND PROPERTY LINK_DEPENDS
+               "${CMAKE_CURRENT_SOURCE_DIR}/offline/shell.html")
+  target_compile_options(flowrix_offline_asmjs PRIVATE
+   "-flto"
+   "-fno-rtti"
+  )
+  target_link_options(flowrix_offline_asmjs PRIVATE
+    ${FLIX_OFFLINE_LINK_OPTIONS}
+    "-sWASM=0")
 endif()
 
 # --- tools -------------------------------------------------------------------

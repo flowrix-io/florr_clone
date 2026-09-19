@@ -130,6 +130,18 @@ public:
     /// accounts were written.
     std::size_t persistAll();
 
+    /// Makes an account a permanent admin, and tells it so if it is signed in.
+    /// False when no such account exists; granting one that already has the
+    /// flag is a no-op that still reports true.
+    ///
+    /// Deliberately not reachable from a socket: no message carries it and no
+    /// chat command calls it. The one caller is the single-file offline build,
+    /// where the server runs inside the player's own page -- there "give me
+    /// the console" is a button on a world only they can reach, not an
+    /// escalation. A network build links this and never calls it, which is
+    /// what keeps `/admin grant_admin` the only way in from outside.
+    bool grantAdmin(const std::string& username);
+
     /// Safe to call from a signal handler: it only stores to an atomic flag,
     /// and the shutdown work itself happens on the main thread.
     void stop() { running_.store(false); }

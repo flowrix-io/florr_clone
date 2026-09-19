@@ -444,6 +444,55 @@ TEST(a_temporary_grant_opens_the_console_and_closes_on_respawn) {
     CHECK(sawText(helper, "Command does not exist."));
 }
 
+TEST(a_local_grant_makes_an_admin_the_respawn_does_not_take_back) {
+    // GameServer::grantAdmin is what the offline page's Grant Admin button
+    // calls: the server is in the player's own page, so the grant is a direct
+    // call rather than anything on a wire. It is the PERMANENT flag, which is
+    // the whole difference from `/admin grant_admin` -- a console lent for one
+    // life would be gone the first time that page's player died.
+    Harness h("cmd-local-grant", [](const std::string& path) {
+        seedUser(path, "solo", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "solo", "password7"));
+    client.joinGame(1920, 1080, {}, "Solo");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    CHECK(!client.isSkinAdmin());
+
+    // No such account is a refusal, not a silently invented one.
+    CHECK(!h.server.grantAdmin("nobody-at-all"));
+
+    CHECK(h.server.grantAdmin("solo"));
+    // The client is told, the same resend a temporary grant does: that flag is
+    // what stops the command autocomplete hiding the /admin rows.
+    CHECK(h.stepUntil({&client}, [&] { return client.isSkinAdmin(); }, 120));
+    CHECK(say(h, client, "/admin list-players"));
+    CHECK(sawText(client, "[ADMIN] solo executed: list-players"));
+
+    // Survives the life the loan would have ended with.
+    client.requestRespawn();
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    CHECK(client.isSkinAdmin());
+
+    // And survives the page: the account carries the flag, and the database is
+    // dirty so the next write puts it on disk rather than in nothing.
+    const Account* account = h.server.database().findUser("solo");
+    CHECK(account != nullptr);
+    if (account != nullptr) CHECK(account->admin);
+    h.server.persistAll();
+    Database probe;
+    std::string error;
+    CHECK(probe.load(h.dbPath, error));
+    const Account* stored = probe.findUser("solo");
+    CHECK(stored != nullptr);
+    if (stored != nullptr) CHECK(stored->admin);
+
+    // Granting it twice is a no-op that still reports the standing.
+    CHECK(h.server.grantAdmin("solo"));
+}
+
 TEST(set_bot_count_clamps_and_applies) {
     Harness h("cmd-botcount", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

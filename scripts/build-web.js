@@ -18,18 +18,23 @@
  *   server.wasm   the server, with the same content embedded
  *   offline.html  the offline build: server AND client in one wasm, embedded
  *                 in one page with nothing beside it. Opens from disk.
+ *   offline-asmjs.html
+ *                 the same page for a browser with no wasm engine: the module
+ *                 is translated to JavaScript (-sWASM=0). Bigger and slower;
+ *                 built only when asked for, because the translation takes
+ *                 minutes.
  *
  * bundle.html becomes dist/index.html because that is the name a web root is
  * served at. styles.css and favicon.ico are copied too: the shell references
  * both, and neither is inside the wasm.
  *
  * Usage:
- *   node scripts/build-web.js [client|server|offline|all] [--copy-only]
+ *   node scripts/build-web.js [client|server|offline|offline-asmjs|all] [--copy-only]
  *
- *   `all` is the deployment: client and server. The offline page is asked for
- *   by name -- it is not something `npm start` serves, and dist/offline.html
- *   is gitignored so a rebuilt five-megabyte page does not land in every
- *   commit of the (otherwise committed) dist/.
+ *   `all` is the deployment: client and server. Either offline page is asked
+ *   for by name -- neither is something `npm start` serves, and both are
+ *   gitignored in dist/ so a rebuilt multi-megabyte page does not land in
+ *   every commit of the (otherwise committed) dist/.
  *
  *   --copy-only   skip cmake and stage whatever is already in cpp/build-web.
  *                 For machines without emscripten; it will happily copy a
@@ -89,6 +94,16 @@ const TARGETS = {
         ],
         sidecars: [],
     },
+    // The same page with the module translated to JavaScript, for a browser
+    // that cannot run wasm at all. Excluded from cmake's `all` as well as this
+    // script's, because wasm2js re-codegens the whole module and takes minutes.
+    'offline-asmjs': {
+        cmakeTarget: 'flowrix_offline_asmjs',
+        artifacts: [
+            ['offline-asmjs.html', 'offline-asmjs.html'],
+        ],
+        sidecars: [],
+    },
 };
 const DEPLOYMENT = ['client', 'server'];
 
@@ -101,7 +116,10 @@ const args = process.argv.slice(2);
 const copyOnly = args.includes('--copy-only');
 const which = args.find((a) => !a.startsWith('-')) || 'all';
 if (which !== 'all' && !TARGETS[which]) {
-    fail(`unknown target '${which}' — expected client, server, offline or all`);
+    fail(
+        `unknown target '${which}' — expected client, server, offline, ` +
+        `offline-asmjs or all`
+    );
 }
 const selected = which === 'all' ? DEPLOYMENT : [which];
 

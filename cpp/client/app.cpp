@@ -965,6 +965,10 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     titleRng_.reseed(static_cast<std::uint64_t>(wallClockMillis()));
 
     loadSession();
+    // Whether Settings offers a Grant Admin row at all. A hook is the only way
+    // this client can make anybody an admin, so a build without one -- every
+    // build that dials a real server -- draws no button.
+    menus_.setAdminGrantOffered(static_cast<bool>(config_.grantAdmin));
     // A missing settings file is a first run, not a failure: the defaults in
     // ClientSettings are already the shipped configuration.
     menus_.settings().load(settingsPath());
@@ -1303,6 +1307,13 @@ void App::frame(double dt) {
     // No inWorld guard: Settings' Log Out is offered on the title screen too,
     // and it is the one action that has to work from either of them.
     if (menus_.takeLogoutRequest()) logout();
+    // Nor here: the offline page's Grant Admin row is drawn wherever the panel
+    // is, and an account is all the grant needs. Nothing is sent -- the hook
+    // reaches the server object in this same process, and the server answers
+    // by resending the catalog that carries the flag.
+    if (menus_.takeAdminGrantRequest() && config_.grantAdmin) {
+        config_.grantAdmin(net_.profile().username);
+    }
 
     // --- draw -------------------------------------------------------------
     // Forgotten before the draw, and set again by whoever paints it. Both the

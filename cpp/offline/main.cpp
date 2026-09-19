@@ -31,6 +31,13 @@
 //     are registered with the document for drawing too, and text is set in
 //     the same bytes it was measured with.
 //
+// One thing this build offers that the others do not: a Grant Admin button in
+// Settings > Advanced. The server is in this page and the world is nobody
+// else's, so the console is the player's to take -- and the alternative is
+// hand-editing an account out of browser storage. It calls
+// GameServer::grantAdmin directly, in-process; no message carries the grant,
+// which is why the shipping server gains no way in from a socket.
+//
 // A scheduled `restart` is honoured the way a process restart would be: the
 // page reloads. Everything that matters is in storage by then, and a reload
 // is exactly "the same build, started fresh", which is what the command means.
@@ -222,6 +229,15 @@ int main(int argc, char** argv) {
     clientConfig.host = "127.0.0.1";
     clientConfig.port = kPort;
     clientConfig.dataDir = "data";
+    // The one thing this build can do that a client dialling a real server
+    // cannot: hand its own player the admin console. The server is in this
+    // page, the world is nobody else's, and the alternative is hand-editing
+    // the account out of browser storage. Settings > Advanced draws the button
+    // because this hook is set; no message carries the grant, so there is
+    // nothing here for a network build to reach.
+    clientConfig.grantAdmin = [](const std::string& username) {
+        return g_server != nullptr && g_server->grantAdmin(username);
+    };
     if (stored) {
         clientConfig.sessionFile = std::string(flix::web::kStorageDirectory) + "/" + kSessionName;
     }

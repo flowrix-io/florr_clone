@@ -6,6 +6,7 @@
 // immediate-mode pass is simpler to follow and impossible to leave stale.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -104,6 +105,16 @@ struct AppConfig {
     /// line in it. Delivered exactly as a server line would be, markup and
     /// all, so what is photographed is the real parse and the real layout.
     std::vector<std::string> seedChat;
+
+    /// Makes this account an admin, for a build that can do that locally.
+    ///
+    /// Set only by the single-file offline build, where the server object is
+    /// in this very process and the call reaches it directly. Its presence is
+    /// also what puts the Grant Admin button in Settings > Advanced: a client
+    /// dialling a real server has no hook, so it offers no button, and there
+    /// is nothing on the wire for one to press anyway. Takes the account name
+    /// and reports whether the grant landed.
+    std::function<bool(const std::string& username)> grantAdmin;
 };
 
 class App {
