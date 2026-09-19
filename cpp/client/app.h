@@ -497,10 +497,16 @@ private:
     int chatSuggestion_ = -1;
 
     // -- death ---------------------------------------------------------------
-    /// The card can be dismissed with Close while the player stays dead and
-    /// the world keeps rendering, which is the whole difference between Close
-    /// and Continue.
+    /// Whether the card is up. Raised when the server says the body is gone,
+    /// and lowered by Close, by a yggdrasil putting the body back, or by
+    /// leaving for the title screen. Close is the only one of the three that
+    /// leaves the player dead: the card slides away and the dimmed world, the
+    /// HUD and the minimap keep drawing.
     bool deathCardVisible_ = true;
+    /// How far the card has slid up into place, 0 to 1. The reference's
+    /// container animation, which translates the whole stack up from 60% of a
+    /// screen below and eases it back down again when the card goes away.
+    double deathCardSlide_ = 0.0;
 
     // -- HUD -----------------------------------------------------------------
     /// When invulnerability last ended, in app seconds; negative before the

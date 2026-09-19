@@ -1665,7 +1665,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // The bar and the strip trade places between the screens. The title screen
     // runs drawTitleLoadout and then canvasButtons.draw; in game the strip is
     // the last thing graphics.render() paints and the bar is the first thing
-    // Game paints after it, which keeps the hotbar over the death scrim -- the
+    // Game paints after it, which keeps the hotbar over the death card -- the
     // one thing that ever falls in between the two. The open card is no longer
     // in that sandwich: in game it is always painted after the bar, so the
     // hotbar sits behind the menus instead of cutting across them.

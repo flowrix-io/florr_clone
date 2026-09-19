@@ -637,9 +637,9 @@ public:
     }
 
     /// Anything the caller needs painted between the icon strip and the
-    /// loadout bar. In game that gap is the death scrim's: it dims the strip
-    /// and the HUD but leaves the bar at full brightness, and there is no
-    /// other seam in this call it could be dropped into.
+    /// loadout bar. In game that gap is the death card's: it goes over the
+    /// strip and the HUD but under the bar, and there is no other seam in this
+    /// call it could be dropped into.
     using OverlayFn = std::function<void()>;
 
     /// One frame of every menu: the open card, the loadout bar, the icon strip

@@ -17,6 +17,7 @@
 #include "client/render/art_cache.h"
 #include "client/ui/draw.h"
 #include "client/ui/markup.h"
+#include "client/ui/menu_style.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/web/reload.h"
@@ -59,6 +60,16 @@ namespace {
 /// is a zoom control that reveals a strip of world nobody else can see.
 constexpr int kDesignWidth = 1920;
 constexpr int kDesignHeight = 1080;
+
+/// How far the world is dimmed while the player is dead.
+///
+/// `~/gardn` paints `0x20000000` here -- black at 32 of 255 -- and this build
+/// deliberately does not: at 12.5% the world barely moved, and against a HUD
+/// that stays at full brightness there was nothing to tell you the game had
+/// stopped being yours. This is the browser build's old death scrim by
+/// strength, over the world ALONE by placement. Turning it back down to
+/// gardn's number is a one-line change; it is not a parity bug.
+constexpr double kDeathDimAlpha = 0.65;
 
 /// The spawn picker's two rows. A row is sized so all of its buttons fit the
 /// design width with a gap between them, shrinking from the natural width
@@ -1108,7 +1119,7 @@ void App::pollNetwork() {
     }
     if (net_.dead() && screen_ == Screen::Playing) {
         // Nothing is closed on death. An open panel and the icon strip keep
-        // rendering under the scrim, exactly as they do in the reference.
+        // rendering behind the card, exactly as they do in the reference.
         deathCardVisible_ = true;
         screen_ = Screen::Dead;
     }
@@ -1233,6 +1244,21 @@ void App::frame(double dt) {
         }
     }
 
+    // The death card eases in from below and back out again, the way the
+    // reference's container animation does: a fifth of the remaining distance
+    // per 60Hz frame. Advanced here rather than in updateDead, because the
+    // frames it slides back OUT on are frames the player is alive for.
+    {
+        const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
+        const double target = (screen_ == Screen::Dead && deathCardVisible_) ? 1.0 : 0.0;
+        // Snapped rather than eased when there is nothing to animate over:
+        // leaving the world takes the card with it, and a scripted capture
+        // wants the card where it comes to rest rather than wherever the
+        // requested frame happens to catch it.
+        if (!inWorld || config_.screenshotAfterFrames > 0) deathCardSlide_ = target;
+        else deathCardSlide_ += (target - deathCardSlide_) * (1.0 - std::pow(0.8, dt * 60.0));
+    }
+
     switch (screen_) {
         case Screen::Connecting:   updateConnecting(); break;
         case Screen::Login:        updateLogin(dt); break;
@@ -1303,6 +1329,13 @@ void App::frame(double dt) {
             net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival();
         camera_.snapTo(selfDrawn);
         renderer_.draw(canvas, net_.view(), camera_, selfDrawn, timeSeconds_);
+        // Dead: the WORLD goes dim, and only the world. The reference's wash
+        // goes between `render_game()` and its game UI window, so the HUD, the
+        // minimap, the loadout bar and the card itself all stay at full
+        // brightness over it; this sits in the same seam, at this build's own
+        // depth (see kDeathDimAlpha). Switched, not faded -- in the reference
+        // it appears on the frame `alive()` goes false.
+        if (screen_ == Screen::Dead) scrim(canvas, kDeathDimAlpha);
         drawHud(canvas, timeSeconds_);
         // The reference hides the whole chat box while one of the three
         // petal-handling panels is up, rather than letting it poke out beside
@@ -1310,14 +1343,17 @@ void App::frame(double dt) {
         const MenuId open = menus_.open();
         const bool panelHidesChat = open == MenuId::Inventory || open == MenuId::Crafting;
         if (menus_.settings().showChat && !panelHidesChat) drawChat(canvas, timeSeconds_);
-        // Panels and the icon strip keep drawing while dead, and the scrim goes
-        // over both -- but NOT over the loadout bar, which the reference paints
-        // in Game once graphics.render() has already laid the death screen
-        // down. Handing the card to the menus as their between-strip-and-bar
-        // slot is the only way to land it there. Only the paint moves: the
-        // card's buttons are still answered by updateDead, before any of this.
+        // Panels and the icon strip keep drawing while dead, undimmed, with
+        // the card over both -- but UNDER the loadout bar, which the reference paints
+        // after the death screen: the card is the first child of its game UI
+        // window and the loadout the fourth. Handing the card to the menus as
+        // their between-strip-and-bar slot is the only way to land it there.
+        // Only the paint moves: the card's button is still answered by
+        // updateDead, before any of this.
         menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt, [&] {
-            if (screen_ == Screen::Dead && deathCardVisible_) drawDeathCard(canvas, timeSeconds_);
+            // The slide, not the flag: the card keeps painting on its way back
+            // down after a yggdrasil has put the body on its feet.
+            if (deathCardSlide_ > 0.01) drawDeathCard(canvas, timeSeconds_);
         });
         if (net_.status() == NetClient::Status::Failed) drawDisconnectBanner(canvas);
         // Ping and the rest live here and nowhere else: the reference has no
@@ -2067,10 +2103,78 @@ void App::updatePlaying(double dt) {
     }
 }
 
+namespace {
+
+/// The death card's geometry, so the paint and the hit test cannot drift.
+///
+/// The reference's `make_death_main_screen` is a centred VContainer with a
+/// 10px inner gap over five children: a 25px line, a 30px line, an empty
+/// 100-tall spacer, a 145x40 button and a 14px line. The container is centred
+/// on the screen, so every row's position follows from that stack -- there is
+/// no hand-placed pixel in here to drift from it.
+struct DeathCard {
+    Vec2 killedBy;      ///< centre of "You were killed by"
+    Vec2 killer;        ///< centre of the killer's name
+    Rect continueBox;
+    Rect closeBox;
+    Vec2 hint;          ///< centre of "(or press ENTER to continue)"
+};
+
+constexpr double kDeathKilledBySize = 25.0;
+constexpr double kDeathKillerSize = 30.0;
+constexpr double kDeathHintSize = 14.0;
+constexpr double kDeathGap = 10.0;
+constexpr double kDeathSpacer = 100.0;
+constexpr double kDeathButtonWidth = 145.0;
+constexpr double kDeathButtonHeight = 40.0;
+constexpr double kDeathButtonTextSize = 28.0;
+/// Close is not in the reference's stack -- it is this build's own row, added
+/// under Continue. Deliberately not a second gardn button: it wears the
+/// crafting panel's chip in its greyed-out state, so the pair reads as one
+/// primary action with a quiet secondary under it rather than as two choices.
+/// Proportioned off Continue at the ratio the browser build's own Close had to
+/// its Continue (0.7 by 0.75).
+constexpr double kDeathCloseWidth = 100.0;
+constexpr double kDeathCloseHeight = 30.0;
+
+/// `slide` is the container's animation: 1 is home and 0 parks the whole stack
+/// 60% of a screen below it, which is the reference's animate hook --
+/// `translate(0, (animation - 1) * height * 0.6)`.
+DeathCard deathCardLayout(double width, double height, double slide) {
+    const std::array<double, 6> rows{kDeathKilledBySize, kDeathKillerSize, kDeathSpacer,
+                                     kDeathButtonHeight, kDeathCloseHeight, kDeathHintSize};
+    double stack = kDeathGap * static_cast<double>(rows.size() - 1);
+    for (const double row : rows) stack += row;
+
+    const double centreX = width * 0.5;
+    double top = height * 0.5 - stack * 0.5 + (slide - 1.0) * height * 0.6;
+    std::array<double, 6> centres{};
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        centres[i] = top + rows[i] * 0.5;
+        top += rows[i] + kDeathGap;
+    }
+
+    DeathCard card;
+    card.killedBy = {centreX, centres[0]};
+    card.killer = {centreX, centres[1]};
+    card.continueBox = {centreX - kDeathButtonWidth * 0.5,
+                        centres[3] - kDeathButtonHeight * 0.5, kDeathButtonWidth,
+                        kDeathButtonHeight};
+    card.closeBox = {centreX - kDeathCloseWidth * 0.5, centres[4] - kDeathCloseHeight * 0.5,
+                     kDeathCloseWidth, kDeathCloseHeight};
+    card.hint = {centreX, centres[5]};
+    return card;
+}
+
+} // namespace
+
 void App::updateDead(double dt) {
     (void)dt;
-    // ENTER is the Continue button by another name, and stays live after the
-    // card has been dismissed: it is gated on being dead, not on the card.
+    // ENTER is the Continue button by another name, and is gated on being
+    // dead rather than on where the card has slid to. The reference takes the
+    // key on the same condition, though it spends it on an immediate respawn:
+    // there the title screen IS the respawn screen, and here Continue is the
+    // way back to it.
     if (window_.keyPressed(Key::Enter)) {
         leaveToTitle();
         return;
@@ -2084,15 +2188,17 @@ void App::updateDead(double dt) {
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
     // The tutorial box is painted over the death card and swallows the click.
     if (tutorial_.capturesMouse(mouse)) return;
-    const double centreX = window_.width() * 0.5;
-    const double centreY = window_.height() * 0.5;
-    if (hit(Rect{centreX - 100, centreY + 30, 200, 50}, mouse)) {
+    // The ANIMATED boxes, not the resting ones: a button is only where it is
+    // painted, and during the slide-in that is on its way up the screen.
+    const DeathCard card = deathCardLayout(window_.width(), window_.height(), deathCardSlide_);
+    if (hit(card.continueBox, mouse)) {
         leaveToTitle();
         return;
     }
-    // Close only takes the card away. The player stays dead, and the world,
-    // the HUD and the minimap keep drawing behind where it was.
-    if (hit(Rect{centreX - 70, centreY + 95, 140, 36}, mouse)) deathCardVisible_ = false;
+    // Close only takes the card away -- it slides back down the way it came.
+    // The player stays dead, and the dimmed world, the HUD and the minimap
+    // keep drawing behind where it was.
+    if (hit(card.closeBox, mouse)) deathCardVisible_ = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -4105,69 +4211,47 @@ void App::drawChatField(Canvas& canvas, Rect box, double time) {
 
 void App::drawDeathCard(Canvas& canvas, double time) {
     (void)time;   // static: the card's only variable is which button is hovered
-    scrim(canvas, 0.65);
-    const double centreX = canvas.width() * 0.5;
-    const double centreY = canvas.height() * 0.5;
+    // No scrim of its own. The death dim is a wash over the WORLD alone,
+    // painted long before this -- see the call in frame() -- and the card is
+    // one of the things that stays at full brightness over it.
+    const DeathCard card = deathCardLayout(canvas.width(), canvas.height(), deathCardSlide_);
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
 
-    TextStyle heading;
-    heading.size = 48;
-    heading.align = Align::Centre;
-    heading.bold = true;
-    heading.fill = kDanger;
-    heading.strokeWidth = 5;
-    text(canvas, "You Died!", centreX, centreY - 60, heading);
+    // Plain white text with its ordinary 0.12-of-size outline, at the
+    // reference's two sizes. Nothing here is bold or coloured: the card says
+    // what killed you, it does not shout about it.
+    TextStyle line;
+    line.align = Align::Centre;
+    line.size = kDeathKilledBySize;
+    text(canvas, "You were killed by", card.killedBy.x, card.killedBy.y, line);
 
-    TextStyle by;
-    by.size = 22;
-    by.align = Align::Centre;
-    by.strokeWidth = 3;
+    line.size = kDeathKillerSize;
     const std::string killer = net_.killerName().empty()
-        ? "A mysterious entity"
+        ? "a mysterious entity"
         : net_.killerName();
-    text(canvas, "You were destroyed by: " + killer, centreX, centreY - 10, by);
+    text(canvas, killer, card.killer.x, card.killer.y, line);
 
-    // Drawn by hand rather than through ui::button: these two have exactly two
-    // states, an explicit hover colour that is not a brightness step off the
-    // base, and a CENTRED outline that makes the silhouette three pixels wider
-    // than the box. ui::button gives none of the three.
-    const auto card = [&](Rect box, const std::string& label, double textSize,
-                          std::uint32_t fill, std::uint32_t hoverFill, std::uint32_t outline) {
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(box.x), static_cast<float>(box.y),
-                         static_cast<float>(box.w), static_cast<float>(box.h), 10.0f);
-        setFill(canvas, hit(box, mouse) ? hoverFill : fill);
-        canvas.fill();
-        canvas.save();
-        canvas.setLineWidth(3.0f);
-        canvas.setLineJoin("miter");
-        setStroke(canvas, outline);
-        canvas.stroke();
-        canvas.restore();
+    const bool over = hit(card.continueBox, mouse);
+    ButtonStyle continueStyle;
+    continueStyle.fill = kAccent;
+    continueStyle.outlineWidth = 5.0;
+    continueStyle.radius = 3.0;
+    continueStyle.textSize = kDeathButtonTextSize;
+    continueStyle.textStrokeWidth = kDeathButtonTextSize * kTextStrokeRatio;
+    button(canvas, card.continueBox, "Continue", over,
+           over && window_.mouseDown(MouseButton::Left), continueStyle);
 
-        TextStyle caption;
-        caption.size = textSize;
-        caption.align = Align::Centre;
-        caption.bold = true;
-        caption.strokeWidth = 3;
-        text(canvas, label, box.x + box.w * 0.5, box.y + box.h * 0.5, caption);
-    };
+    // The crafting panel's chip, in the greyed-out state `chip` draws for a
+    // disabled control: 0x8A8A8A over 0x5A5A5A at 0.45. It still answers a
+    // click -- the grey is about weight, not about being dead -- but nothing
+    // here brightens under the cursor, which is what keeps Continue reading as
+    // the button the card is actually asking for.
+    ChipStyle closeStyle;
+    closeStyle.enabled = false;
+    chip(canvas, card.closeBox, "Close", hit(card.closeBox, mouse), closeStyle);
 
-    const Rect continueBox{centreX - 100, centreY + 30, 200, 50};
-    card(continueBox, "Continue", 22, 0x4A8E3Au, 0x5A9E4Au, 0x2D5A22u);
-    const Rect closeBox{centreX - 70, centreY + 95, 140, 36};
-    card(closeBox, "Close", 16, 0x666666u, 0x777777u, 0x444444u);
-
-    // Translucent white rather than a flat grey, so the hint picks up the
-    // colour of the scrimmed world behind it.
-    TextStyle hint;
-    hint.size = 14;
-    hint.align = Align::Centre;
-    hint.fill = kPaper;
-    hint.strokeWidth = 0;
-    canvas.setGlobalAlpha(0.6f);
-    text(canvas, "Press ENTER to continue", centreX, closeBox.bottom() + 25, hint);
-    canvas.setGlobalAlpha(1.0f);
+    line.size = kDeathHintSize;
+    text(canvas, "(or press ENTER to continue)", card.hint.x, card.hint.y, line);
 }
 
 void App::drawDisconnectBanner(Canvas& canvas) {
