@@ -12,7 +12,7 @@
 //    1920x1080 of world at every window size and on every display -- exactly
 //    that at 16:9, and less on the short axis of any other shape. The scale
 //    that absorbs the window's real size is a single base transform on the
-//    whole frame (see kDesignWidth in client/app.cpp), applied to the world
+//    whole frame (see kDesignWidth in client/app_internal.h), applied to the world
 //    and the HUD together.
 //
 //    That togetherness is the point. This camera did once scale its own zoom

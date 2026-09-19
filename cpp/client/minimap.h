@@ -12,10 +12,10 @@
 // minimap is worse than a small one: a player reads distance and direction off
 // it, and neither survives two different scales.
 //
-// Split out of app.cpp because it is the part of the minimap that can be
-// checked without painting anything: the fit is arithmetic over a rectangle
-// and the solid walk below is a question about the map, while everything else
-// in the path is pixels.
+// Split out of the minimap painter (client/app_minimap.cpp) because it is the
+// part of the minimap that can be checked without painting anything: the fit
+// is arithmetic over a rectangle and the solid walk below is a question about
+// the map, while everything else in the path is pixels.
 
 #include <algorithm>
 #include <cmath>

@@ -1897,7 +1897,7 @@ void sendSkinChat(net::Connection& connection, const std::string& text) {
 /// A guest account, which may play but may not add to the shared catalog.
 ///
 /// The reference tests `/^User\d{8}$/`; this build's guest minting does not
-/// zero-pad (client/app.cpp), so the digit run is matched at any length rather
+/// zero-pad (client/app_login.cpp), so the digit run is matched at any length rather
 /// than at exactly eight -- otherwise the rule would miss the very accounts it
 /// exists to stop.
 bool isGuestName(const std::string& name) {

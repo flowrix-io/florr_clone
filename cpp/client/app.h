@@ -4,6 +4,10 @@
 // One state machine drives the whole client. Each screen owns its layout and
 // its hit-testing; there is no retained widget tree, because at this size an
 // immediate-mode pass is simpler to follow and impossible to leave stale.
+//
+// Declared here, implemented across client/app*.cpp: app.cpp is the shell --
+// the frame loop, the socket, the session -- and each screen and each in-game
+// surface has a file of its own beside it. The list is at the top of app.cpp.
 
 #include <cstdint>
 #include <functional>

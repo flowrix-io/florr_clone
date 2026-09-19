@@ -1462,7 +1462,7 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // Always drawn, even at full health: the bar is part of how a flower
         // reads, not a warning that appears once you are hurt.
         //
-        // The same three zones the HUD's own bar has -- flowerBar() in app.cpp
+        // The same three zones the HUD's own bar has -- flowerBar() in app_hud.cpp
         // is the other end of this: the green fill is the health, the white
         // pill riding inside it is the SHIELD, and the dark plate past the
         // fill is health that is gone. A MOB's bar is the plain two-zone one;
