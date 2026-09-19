@@ -509,9 +509,15 @@ private:
         };
         std::vector<ResolvedRow> resolved;
         /// The population this band is aimed at: kTargetMobDensity over the
-        /// area of its own outline. `latent.size() + liveMobs` is measured
-        /// against it, and the band stocks itself until they meet.
+        /// area of its own outline, or exactly ONE when the band is singular.
+        /// `latent.size() + liveMobs` is measured against it, and the band
+        /// stocks itself until they meet.
         int targetMobs = 1;
+        /// This band holds one mob however big it is drawn, and rolls that
+        /// mob's position over the whole outline again when it dies rather
+        /// than handing the slot back where it fell. See MapElement::singular:
+        /// the shape is one creature's range, not a patch of ground.
+        bool singular = false;
         /// This band's share of the world that is not simulated. Held HERE
         /// rather than in one flat list because both hot questions are per
         /// band: "is this band worth walking at all" is one rectangle test

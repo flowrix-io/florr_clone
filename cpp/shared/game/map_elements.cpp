@@ -393,12 +393,13 @@ std::string MapData::bandSummary() const {
     // than folded into it: it is not a point on the curve, and -1 at the soft
     // end of a printed range would read as a typo instead of as the whole
     // spread the author asked for.
-    int bands = 0, graded = 0, random = 0;
+    int bands = 0, graded = 0, random = 0, singular = 0;
     double softest = 0.0;
     double hardest = 0.0;
     for (const MapElement& element : elements_) {
         if (!element.isSpawnBand()) continue;
         ++bands;
+        if (element.singular) ++singular;
         if (isRandomDifficulty(element.difficulty)) { ++random; continue; }
         if (graded == 0) softest = hardest = element.difficulty;
         softest = std::min(softest, element.difficulty);
@@ -407,12 +408,20 @@ std::string MapData::bandSummary() const {
     }
     if (bands == 0) return "NO SPAWN BANDS -- no mobs will spawn on this map";
 
-    char text[200];
+    // A SINGULAR band is counted apart too, and for the same reason the random
+    // ones are: it is in the range but it is not a population, so a map whose
+    // hardest number comes from a band holding exactly one mob reads as far
+    // more dangerous ground than it is unless the line says how many of its
+    // bands are hunts rather than habitats.
+    char singularText[48] = "";
+    if (singular > 0) std::snprintf(singularText, sizeof(singularText), ", %d singular", singular);
+
+    char text[256];
     if (graded == 0) {
         // Every band on the map is a random one, so there is no range to print
         // at all -- just what random ground grows.
-        std::snprintf(text, sizeof(text), "%d band%s, all random (common..%s)", bands,
-                      bands == 1 ? "" : "s", rarityName(hardestNaturalRarity()));
+        std::snprintf(text, sizeof(text), "%d band%s, all random (common..%s)%s", bands,
+                      bands == 1 ? "" : "s", rarityName(hardestNaturalRarity()), singularText);
         return text;
     }
     char randomText[64] = "";
@@ -420,10 +429,10 @@ std::string MapData::bandSummary() const {
         std::snprintf(randomText, sizeof(randomText), ", %d random (common..%s)", random,
                       rarityName(hardestNaturalRarity()));
     }
-    std::snprintf(text, sizeof(text), "%d band%s difficulty %g (%s)..%g (%s)%s", bands,
+    std::snprintf(text, sizeof(text), "%d band%s difficulty %g (%s)..%g (%s)%s%s", bands,
                   bands == 1 ? "" : "s", softest,
                   rarityName(dominantTierForDifficulty(softest)), hardest,
-                  rarityName(dominantTierForDifficulty(hardest)), randomText);
+                  rarityName(dominantTierForDifficulty(hardest)), randomText, singularText);
     return text;
 }
 
@@ -508,6 +517,20 @@ void MapData::adopt(const Json& array) {
                 if (!warning.empty()) {
                     std::fprintf(stderr, "[map] spawn band \"%s\": %s\n", mobs.c_str(),
                                  warning.c_str());
+                }
+            }
+            // One mob for the whole shape instead of a population sized by its
+            // area. Only a BAND owns a population, so the flag means nothing on
+            // a region and is said out loud rather than ignored: an author who
+            // ticked it on the wrong object drew a shape that grows a hundred
+            // of the mob they wanted one of, and nothing else would tell them.
+            if (properties.contains("singular")) {
+                element.singular = properties["singular"].asBool();
+                if (element.singular && !element.hasDifficulty) {
+                    std::fprintf(stderr,
+                                 "[map] a spawn object is marked `singular` but has no "
+                                 "`difficulty`, so it is a mob region and owns no population; "
+                                 "the flag does nothing\n");
                 }
             }
 

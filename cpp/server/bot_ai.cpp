@@ -1896,6 +1896,10 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
     std::vector<const MapElement*> all;
     for (const MapElement& element : map->elements()) {
         if (!element.isSpawnBand()) continue;
+        // Never a SINGULAR band. It covers a district and stocks one mob, so a
+        // bot that picked it would spread itself over thousands of units of
+        // ground with nothing on it and report the hunting ground as dead.
+        if (element.singular) continue;
         if (element.bounds.w <= 0 || element.bounds.h <= 0) continue;
         all.push_back(&element);
         for (const Entity human : humans) {

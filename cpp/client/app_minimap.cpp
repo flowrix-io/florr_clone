@@ -166,6 +166,12 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
             // lost in it. The world renderer's rarity glow makes the same
             // distinction.
             if (!element.isSpawnBand()) continue;
+            // A SINGULAR band is not ground either. It is drawn over the whole
+            // range its one mob may turn up in, so painting it would tint a
+            // district in that mob's tier and hide every real band under it --
+            // and it would promise a district's worth of ultras where there is
+            // exactly one. See MapElement::singular.
+            if (element.singular) continue;
             // The whole map is in the box, so a band is only culled when it
             // lies off the MAP -- which an authored one never does.
             const Vec2 topLeft = toBox({element.bounds.x, element.bounds.y});

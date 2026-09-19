@@ -2441,6 +2441,11 @@ void WorldRenderer::drawMapElements(Canvas& canvas, const Camera& camera, Realm 
             // mostly produces -- the same colour the minimap gives the band,
             // off the same curve the spawner rolls against.
             if (!element.isSpawnBand()) continue;
+            // And not the singular ones: a band holding one mob is drawn over
+            // everywhere that mob may be, and tinting it says the whole
+            // district is that tier. The minimap's ALT overlay drops them for
+            // the same reason. See MapElement::singular.
+            if (element.singular) continue;
             ui::setFill(canvas, rarityColor(dominantTierForDifficulty(element.difficulty)), 0.25);
             // The OUTLINE, not the bounding box. Filling the box would show a
             // player a tier band covering ground it does not cover, which is

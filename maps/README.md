@@ -361,6 +361,7 @@ it carries decides which kind of object it is:
 | --- | --- |
 | `difficulty` | **how dangerous** this ground is, a number from 0 up, or `-1` for the random spread. Makes this a **band**. |
 | `mobs` | the **distribution**: what actually appears here |
+| `singular` | a bool. This band holds **exactly one mob**, however large it is drawn. Bands only. |
 
 - A shape with `difficulty` is a **band**. It owns a population of its own,
   stocked to a density scaled by the outline's area. **Bands are the only thing
@@ -397,6 +398,41 @@ it carries decides which kind of object it is:
 
 A band with `difficulty: 0` is still a band — it owns its population and grows
 commons. It is the *presence* of the property that makes it one, not its value.
+
+#### `singular` — one mob, not a population
+
+A band's population is its **area** times a density, which is the right rule
+for ground and the wrong one for a creature there is meant to be *one* of. Tick
+`singular` and the band's target is **1**, whatever its area:
+
+```
+difficulty = 105
+mobs       = queen_ant
+singular   = true
+```
+
+Draw it over everywhere the queen may be. The size now buys **reach, not
+numbers**: one queen, placed somewhere inside the outline, and when she is
+killed the replacement is rolled over the **whole outline** again rather than
+handed back within a few hundred units of the corpse the way an ordinary band's
+population is. That is the difference between a hunt across the hell and a farm
+at one coordinate.
+
+A singular band is deliberately **invisible to both rarity overlays** — the
+minimap's while ALT is held and the world one — because it claims a district
+while stocking one mob, and tinting the district in that mob's tier would both
+promise a district's worth of ultras and bury every real band under it. The
+bots skip it as a hunting ground for the same reason: it is one creature's
+range, not ground that grows anything. It is still counted in the map's load
+line, with how many of the map's bands are singular said separately:
+
+```
+[map] ant_hell: 128x128 tiles, biome "ant_hell", mobs "ant_hell", 8 bands
+difficulty 0 (common)..130 (ultra), 2 singular, 1 region, ...
+```
+
+`singular` on a shape with no `difficulty` does nothing — a region owns no
+population to cap — and the loader says so on stderr rather than ignoring it.
 
 The two have different shapes on purpose: danger runs in bands along a
 coastline, while "this is the desert" covers a quarter of the map.

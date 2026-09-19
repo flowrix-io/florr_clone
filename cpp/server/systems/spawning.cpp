@@ -974,6 +974,7 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             zone.difficulty = element.difficulty;
             zone.realm = map.realm();
             zone.mobs = element.mobDistribution;
+            zone.singular = element.singular;
 
             // The rows are resolved to indices ONCE, here, rather than on every
             // spawn: a group name is a hash probe and a busy band rolls several
@@ -1012,8 +1013,14 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
             // Rounded UP and never zero: the smallest bands on the map are a
             // few hundred units across and would otherwise be permanently
             // empty.
+            //
+            // Unless the band is SINGULAR, which is the one band whose size
+            // says nothing about its population: it is drawn over everywhere
+            // its one mob may be, so area buys reach, not numbers.
             zone.targetMobs =
-                std::max(1, static_cast<int>(std::ceil(kTargetMobDensity * element.area())));
+                element.singular
+                    ? 1
+                    : std::max(1, static_cast<int>(std::ceil(kTargetMobDensity * element.area())));
             zones_.push_back(std::move(zone));
         }
 
@@ -1270,8 +1277,13 @@ void SpawnSystem::bankCasualties(World& world, const Terrain& terrain,
     // back somewhere else in the band rather than being lost.
     for (const Casualty& casualty : casualtyList_) {
         SpawnZone& zone = zones_[casualty.zone];
+        // A singular band gets its one mob back ANYWHERE in its outline. The
+        // scatter exists to keep a big band evenly full, and a band of one has
+        // no evenness to keep; handing the slot back where it fell would put
+        // the next queen in the room the last one was killed in, every time,
+        // which turns a hunt across the map into a farm at one coordinate.
         stockZone(world, terrain, content, zone, casualty.zone, viewers, rng, nowMillis,
-                  casualty.position, kRespawnScatter);
+                  casualty.position, zone.singular ? 0.0 : kRespawnScatter);
     }
 }
 

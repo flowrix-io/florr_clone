@@ -116,6 +116,11 @@ const WorldMaps& authoredMaps();
 void makeBandedWorld(WorldMaps& out, const std::vector<Rect>& bands, const std::string& mobs,
                      double difficulty = 0.0);
 
+/// The same, with ONE band and the `singular` flag on it: a band that holds a
+/// single mob however large it is drawn. See MapElement::singular.
+void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& mobs,
+                           double difficulty = 0.0);
+
 /// The population a band of these bounds is stocked to: the same figure
 /// SpawnSystem derives from kTargetMobDensity, so a test can say "its target"
 /// rather than write a number down.
@@ -851,6 +856,103 @@ TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
     // instead, they would have gone to a hundred and forty million square
     // units of somewhere else and left the corner permanently thin.
     CHECK(sim.populationIn(watched) >= before - 3);
+}
+
+TEST(a_singular_band_holds_one_mob_however_large_it_is_drawn) {
+    // The one band whose SIZE says nothing about its population. An ordinary
+    // band is stocked to its area times a density, which is the right rule for
+    // ground and the wrong one for a creature there is meant to be one of: the
+    // queen's band is drawn over the whole hell because she may be anywhere in
+    // it, not because the hell should hold a hundred queens.
+    //
+    // Stated against bandTarget() rather than against a bare 1, because that
+    // is the number the flag has to beat: a band this size is worth dozens of
+    // mobs, so "exactly one" would also be what a band the spawner had simply
+    // failed to fill looks like.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    CHECK(bandTarget(band) > 20);
+
+    WorldMaps maps;
+    makeSingularBandWorld(maps, band, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+
+    // POPULATION, awake or not: most of a band this size is latent at any
+    // moment, and counting entities would be counting the flower's viewport.
+    CHECK_EQ(sim.populationIn(band), 1);
+    // And it holds there rather than creeping up by a mob a pass.
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+    CHECK_EQ(sim.populationIn(band), 1);
+}
+
+TEST(a_singular_bands_one_mob_comes_back_anywhere_in_it) {
+    // The counterpoint to the scatter rule above. A casualty's slot is handed
+    // back within kRespawnScatter of the corpse, which is what keeps a band the
+    // size of a district evenly full -- and a band of ONE has no evenness to
+    // keep. Hand its slot back where it fell and the next queen is always in
+    // the room the last one died in, which turns a hunt across the map into a
+    // farm at one coordinate.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeSingularBandWorld(maps, band, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+
+    // Where the band's one mob is, awake or not. A record is not an entity, so
+    // this is the only question that can be asked between kills.
+    const auto where = [&]() -> Vec2 {
+        Vec2 at{};
+        bool found = false;
+        Query<MobTag, Transform> mobs{sim.world};
+        mobs.each([&](Entity, MobTag&, Transform& transform) {
+            if (!found) { at = transform.position; found = true; }
+        });
+        if (found) return at;
+        const std::vector<SpawnSystem::LatentSite> records = sim.latent();
+        return records.empty() ? Vec2{} : records.front().position;
+    };
+
+    for (int i = 0; i < 400; ++i) sim.tick(std::vector<Vec2>{kCentre});
+
+    double furthest = 0;
+    for (int round = 0; round < 8; ++round) {
+        // Walk to it. One mob in a band this size is latent almost everywhere,
+        // and a record nobody is near is never an entity to kill.
+        const std::vector<Vec2> visiting{where()};
+        Entity target = NULL_ENTITY;
+        for (int i = 0; i < 600 && target == NULL_ENTITY; ++i) {
+            sim.tick(visiting);
+            Query<MobTag> mobs{sim.world};
+            mobs.each([&](Entity e, MobTag&) {
+                if (target == NULL_ENTITY && !sim.world.has<Dead>(e)) target = e;
+            });
+        }
+        if (target == NULL_ENTITY) {
+            std::fprintf(stderr, "[test] the singular band never woke its mob\n");
+            CHECK(false);
+            return;
+        }
+
+        // Killed the way a player kills it: marked Dead so the spawner meets a
+        // casualty rather than a mob that vanished, then reaped.
+        const Vec2 died = sim.world.get<Transform>(target).position;
+        sim.world.add<Dead>(target, Dead{NULL_ENTITY});
+        sim.tick(visiting);
+        if (sim.world.isAlive(target)) sim.world.destroy(target);
+        // Past the in-view wait its replacement was given: this is somebody's
+        // screen, so the slot does not come back on the next tick.
+        for (int i = 0; i < 500; ++i) sim.tick(visiting);
+
+        CHECK_EQ(sim.populationIn(band), 1);
+        furthest = std::max(furthest, distance(where(), died));
+    }
+
+    // Rolled over the whole outline, so across eight kills it turns up a long
+    // way from where it was killed at least once -- which under the scatter
+    // rule it could not, by construction.
+    CHECK(furthest > kRespawnScatter * 2.0);
 }
 
 TEST(a_boss_is_a_live_mob_wherever_it_rolled_and_never_sleeps) {
@@ -1968,7 +2070,7 @@ std::string fixtureMapBody(const std::string& spawns, const std::string& propert
 /// a band of commons, which is why the marker for "no difficulty" is a missing
 /// property rather than a zero.
 std::string spawnObject(int id, double x, double y, double w, double h, bool hasDifficulty,
-                        double difficulty, const std::string& mobs) {
+                        double difficulty, const std::string& mobs, bool singular = false) {
     std::string out = "{\"id\": " + std::to_string(id) + ", \"class\": \"spawn\", \"x\": " +
                       std::to_string(x) + ", \"y\": " + std::to_string(y) + ", \"width\": " +
                       std::to_string(w) + ", \"height\": " + std::to_string(h) +
@@ -1977,6 +2079,10 @@ std::string spawnObject(int id, double x, double y, double w, double h, bool has
         out += "{\"name\": \"difficulty\", \"type\": \"float\", \"value\": " +
                std::to_string(difficulty) + "},";
     }
+    // Written the way Tiled writes a checkbox, and only when it is ticked: the
+    // loader reads the flag by presence-then-value, so a fixture that always
+    // emitted `false` would not exercise the same path as an authored map.
+    if (singular) out += "{\"name\": \"singular\", \"type\": \"bool\", \"value\": true},";
     out += "{\"name\": \"mobs\", \"type\": \"string\", \"value\": \"" + mobs + "\"}]}";
     return out;
 }
@@ -2007,6 +2113,23 @@ std::string regionObject(int id, double x, double y, double w, double h,
 std::string bandObject(int id, double x, double y, double w, double h, double difficulty,
                        const std::string& mobs) {
     return spawnObject(id, x, y, w, h, true, difficulty, mobs);
+}
+
+void makeSingularBandWorld(WorldMaps& out, const Rect& band, const std::string& mobs,
+                           double difficulty) {
+    const std::string path = writeTiledFixture(
+        "flix_singular_world.tmj",
+        fixtureMapBody(spawnObject(1, band.x, band.y, band.w, band.h, true, difficulty, mobs,
+                                   true)));
+    MapData map;
+    map.setId("singular");
+    std::string error;
+    if (!map.loadTiled(path, error)) {
+        std::fprintf(stderr, "[test] the singular fixture world did not load: %s\n",
+                     error.c_str());
+    }
+    std::remove(path.c_str());
+    out.adoptSingle(map);
 }
 
 void makeBandedWorld(WorldMaps& out, const std::vector<Rect>& bands, const std::string& mobs,
@@ -3068,4 +3191,3 @@ TEST(a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground) {
         }
     }
 }
-

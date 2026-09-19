@@ -340,7 +340,7 @@
         "ai_type": "neutral",
         "range": 400,
         "groups": [
-            "garden"
+            "jungle"
         ]
     },
     "sandstorm": {
@@ -1160,9 +1160,7 @@
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-45 -45 90 90\" xmlns=\"http://www.w3.org/2000/svg\">\n  <circle cx=\"0\" cy=\"-30\" r=\"15\" fill=\"#333333\" />\n  <circle cx=\"0\" cy=\"30\" r=\"15\" fill=\"#333333\" />\n  <circle cx=\"0\" cy=\"0\" r=\"35\" fill=\"#905db0\" stroke=\"#734a8d\" stroke-width=\"7\" />\n</svg>",
         "ai_type": "hostile",
         "range": 0,
-        "groups": {
-            "hel": 0
-        },
+        "groups": ["jungle"],
         "noEggDrop": true,
         "min_rarity": "rare",
         "poison": 0.005,
@@ -1181,9 +1179,7 @@
         "image": "<svg id=\"queen-ant-svg\" width=\"32\" height=\"32\" viewBox=\"-70 -45 140 90\" xmlns=\"http://www.w3.org/2000/svg\">\n  <circle cx=\"-25\" cy=\"0\" r=\"30\" fill=\"#555555\" stroke=\"#454545\" stroke-width=\"7\" />\n\n  <g fill=\"#eeeeee\" fill-opacity=\"0.5\">\n    <ellipse cx=\"0\" cy=\"0\" rx=\"30\" ry=\"14\" transform=\"translate(-14 -16) rotate(-18)\">\n      <animateTransform attributeName=\"transform\"\n                        type=\"rotate\"\n                        additive=\"sum\"\n                        values=\"0; 24; 0\" keyTimes=\"0; 0.5; 1\"\n                        dur=\"1s\"\n                        repeatCount=\"indefinite\"\n                        calcMode=\"spline\" keySplines=\"0.4 0 0.6 1; 0.6 0 0.4 1\" />\n    </ellipse>\n    <ellipse cx=\"0\" cy=\"0\" rx=\"30\" ry=\"14\" transform=\"translate(-14 16) rotate(18)\">\n      <animateTransform attributeName=\"transform\"\n                        type=\"rotate\"\n                        additive=\"sum\"\n                        values=\"0; -24; 0\" keyTimes=\"0; 0.5; 1\"\n                        dur=\"1s\"\n                        repeatCount=\"indefinite\"\n                        calcMode=\"spline\" keySplines=\"0.4 0 0.6 1; 0.6 0 0.4 1\" />\n    </ellipse>\n  </g>\n\n  <circle cx=\"0\" cy=\"0\" r=\"25\" fill=\"#555555\" stroke=\"#454545\" stroke-width=\"7\" />\n\n  <path fill=\"none\" stroke=\"#292929\" stroke-width=\"7\" stroke-linecap=\"round\">\n    <animate attributeName=\"d\"\n             dur=\"1s\"\n             repeatCount=\"indefinite\"\n             calcMode=\"spline\" keySplines=\"0.4 0 0.6 1; 0.6 0 0.4 1\"\n             keyTimes=\"0; 0.5; 1\"\n             values=\"M 25 -10.5 Q 41.5 -15 58 -7.5 M 25 10.5 Q 41.5 15 58 7.5;\n                     M 25 -10.5 Q 41.5 -11 58 -3.5 M 25 10.5 Q 41.5 11 58 3.5;\n                     M 25 -10.5 Q 41.5 -15 58 -7.5 M 25 10.5 Q 41.5 15 58 7.5\" />\n  </path>\n\n  <circle cx=\"25\" cy=\"0\" r=\"21\" fill=\"#555555\" stroke=\"#454545\" stroke-width=\"7\" />\n</svg>",
         "ai_type": "hostile",
         "range": 750,
-        "groups": {
-            "ant_hell": 0.1
-        },
+        "groups": [],
         "min_rarity": "rare",
         "periodic_spawn": {
             "mobType": "soldier_ant",

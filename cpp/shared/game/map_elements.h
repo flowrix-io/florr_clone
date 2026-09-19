@@ -129,6 +129,24 @@ struct MapElement {
     /// Empty on a band means "whatever the region under it says".
     std::vector<ZoneMobEntry> mobDistribution;
 
+    /// Bands only: this shape holds exactly ONE mob, however large it is.
+    ///
+    /// An ordinary band's population is its area times a density: draw it
+    /// bigger and it grows more. That is the right rule for ground, and the
+    /// wrong one for a creature there is meant to be one of -- the queen at
+    /// the bottom of the ant hell, say. Such a band is drawn wide because the
+    /// queen may be ANYWHERE in it, not because the hell should hold a hundred
+    /// queens, and sizing it by area says the opposite of what its author
+    /// meant.
+    ///
+    /// So a singular band is a hunt, not a habitat: one mob, placed somewhere
+    /// in the outline, and when it dies its replacement is rolled over the
+    /// whole outline again rather than handed back where it fell. It is also
+    /// left out of the ALT overlays for the same reason -- it claims a
+    /// district while stocking one mob, and painting the district in that
+    /// mob's tier would tell a player the whole district is that dangerous.
+    bool singular = false;
+
     /// True when this `spawn` object owns a POPULATION: a difficulty band,
     /// stocked to a density of its own.
     ///
@@ -155,6 +173,12 @@ struct MapElement {
     bool isMobRegion() const {
         return kind == MapElementKind::Spawn && !hasDifficulty && !mobDistribution.empty();
     }
+
+    /// True when this band holds one mob rather than a population; see
+    /// `singular`. Asked by everything that reads a band as GROUND -- the two
+    /// rarity overlays, the bots' choice of hunting ground -- because a
+    /// singular band is not ground, it is one creature's range.
+    bool isSingularBand() const { return isSpawnBand() && singular; }
 
     /// Player spawn points only: the id a teleporter or a saved preference
     /// names this point by. Unique within its map; WorldMaps qualifies it with
