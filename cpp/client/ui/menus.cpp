@@ -230,13 +230,12 @@ constexpr const char* kLoadoutKeyCaps[kLoadoutBarPrimary] = {"[1]", "[2]", "[3]"
 constexpr std::uint32_t kLoadoutSlotFill = 0xEEEEEEu;
 constexpr std::uint32_t kLoadoutTrashFill = 0xCF8888u;
 
-/// A petal dragged out of the INVENTORY, riding the cursor: a translucent
-/// tile in game, and on the title screen the bare sprite the browser's HTML5
-/// drag image is. A petal dragged off the BAR needs none of this -- the tile
-/// itself is what moves, as it does in gardn.
+/// What a petal on the cursor is drawn at where there is no bar to measure a
+/// slot against -- the title screen before a loadout has arrived. Everywhere
+/// else it takes the bar's own slot size, because it IS a loadout tile: one
+/// dragged off the bar is that slot's tile, and one dragged out of the
+/// inventory is drawn as the tile it is about to become.
 constexpr double kDragGhostSize = 50.0;
-constexpr double kDragGhostAlpha = 0.85;
-constexpr double kDragImageSize = 40.0;
 
 /// How much a loadout tile swells, in design units, when it is on the cursor
 /// and when Q/E has armed it. gardn's `parent_slot->width + 10` and `+ 20`.
@@ -1151,6 +1150,8 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         // a bar that comes back on the next screen puts its tiles straight
         // into their slots instead of flying them in from the last one's.
         loadoutTiles_.fill(LoadoutTileAnim{});
+        loadoutRects_.fill(Rect{});
+        loadoutSlotSide_ = 0;
         expectedLoadout_.clear();
         return;
     }
@@ -1213,6 +1214,10 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
             lastSelectTime_ = timeSeconds;
         }
     }
+
+    loadoutRects_ = layout.slots;
+    loadoutSlotSide_ = metrics.primarySize * scale;
+    loadoutScale_ = scale;
 
     const Vec2 mouse{window.mouseX(), window.mouseY()};
     int hovered = -1;
@@ -1490,35 +1495,60 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeS
 }
 
 void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& sprites,
-                             double timeSeconds) {
-    if (!drag_.active() || drag_.petalIndex == kNoPetal) return;
+                             double timeSeconds, double dt) {
     // A petal dragged off the BAR is not drawn here: its own tile lifts off
     // the bar and rides the cursor, which is gardn's drag and the reason a
     // drop reads as putting something down rather than as a click that
-    // happened to work. Only the inventory, which has no such tile to lend,
-    // still needs a ghost.
-    if (drag_.source == DragState::Source::LoadoutSlot) return;
-    if (!inGame_) {
-        // The title screen's drag image is the sprite alone -- no plate, no
-        // outline -- with the cursor at its centre.
-        const PetalStats stats = content().petalStats(drag_.petalIndex, drag_.rarity);
-        drawPetalCluster(canvas, sprites, drag_.petalIndex, stats.size, stats.count,
-                         window.mouseX(), window.mouseY(), kDragImageSize, timeSeconds);
+    // happened to work. This is the same tile, for a petal the INVENTORY
+    // lent instead -- there is no slot for it to have lifted out of, so the
+    // bar cannot animate it and this does.
+    if (!drag_.active() || drag_.petalIndex == kNoPetal ||
+        drag_.source == DragState::Source::LoadoutSlot) {
+        dragTile_.live = false;
         return;
     }
 
-    // In game the petal rides the cursor as the same tile it was picked up
-    // from, just translucent: half a drag showing a different object is how
-    // the player loses track of what they are holding.
-    const Rect ghost{window.mouseX() - kDragGhostSize * 0.5,
-                     window.mouseY() - kDragGhostSize * 0.5, kDragGhostSize, kDragGhostSize};
+    // The size a petal on the cursor is drawn at, which is a bar slot plus
+    // gardn's lift -- or, with no bar up to measure, the lifted size alone.
+    const double scale = loadoutScale_ > 0 ? loadoutScale_ : 1.0;
+    const double side =
+        (loadoutSlotSide_ > 0 ? loadoutSlotSide_ : kDragGhostSize) + kLoadoutTileLift * scale;
+
+    // Over a slot it could land in, the tile sits IN that slot at that slot's
+    // size, exactly as one lifted off the bar does.
+    const int over = loadoutHovered_;
+    const bool snapped = over >= 0 && over < kLoadoutBarSlots &&
+                         loadoutRects_[static_cast<std::size_t>(over)].w > 0;
+    const Rect slot = snapped ? loadoutRects_[static_cast<std::size_t>(over)] : Rect{};
+    const double targetX = snapped ? slot.x + slot.w * 0.5 : window.mouseX();
+    const double targetY = snapped ? slot.y + slot.h * 0.5 : window.mouseY();
+    const double targetW = snapped ? slot.w : side;
+    const double targetH = snapped ? slot.h : side;
+
+    if (!dragTile_.live) {
+        // Picked up this frame: it starts under the cursor rather than easing
+        // in from wherever the last drag ended.
+        dragTile_ = {window.mouseX(), window.mouseY(), targetW, targetH, drag_.petalIndex,
+                     drag_.rarity, true};
+    }
+    const double ease = loadoutEase(dt);
+    easeTo(dragTile_.cx, targetX, ease);
+    easeTo(dragTile_.cy, targetY, ease);
+    easeTo(dragTile_.w, targetW, ease);
+    easeTo(dragTile_.h, targetH, ease);
+
     ItemTile tile;
     tile.petalIndex = drag_.petalIndex;
     tile.rarity = drag_.rarity;
-    tile.showName = false;
-    tile.alpha = kDragGhostAlpha;
     tile.timeSeconds = timeSeconds;
-    drawItemTile(canvas, sprites, ghost, tile);
+    canvas.save();
+    canvas.translate(static_cast<float>(dragTile_.cx), static_cast<float>(dragTile_.cy));
+    if (!snapped) {
+        canvas.rotate(static_cast<float>(std::sin(timeSeconds * 1000.0 / 150.0) * 0.1));
+    }
+    drawItemTile(canvas, sprites,
+                 {-dragTile_.w * 0.5, -dragTile_.h * 0.5, dragTile_.w, dragTile_.h}, tile);
+    canvas.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -1894,7 +1924,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // drop into the card must reach the card before the bar decides it landed
     // on nothing.
     updateLoadoutInput(window, net, timeSeconds);
-    drawDragged(canvas, window, sprites, timeSeconds);
+    drawDragged(canvas, window, sprites, timeSeconds, dt);
 }
 
 void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeconds) {

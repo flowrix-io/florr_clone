@@ -34,7 +34,7 @@
         "description": "A sharp petal that prioritizes offense",
         "color": "#FFD700",
         "count": 1,
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" xmlns=\"http://www.w3.org/2000/svg\">\n  <polygon points=\"16,0 32,32 0,32\" fill=\"black\" />\n</svg>"
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-5 -7.75 13.5 15.5\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 7 0 L -3.5 6.062 L -3.5 -6.062 Z\"\n        fill=\"#333333\"\n        stroke=\"#292929\"\n        stroke-width=\"3\"\n        stroke-linecap=\"round\"\n        stroke-linejoin=\"round\" />\n</svg>"
     },
     "light": {
         "name": "Light",

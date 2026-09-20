@@ -134,52 +134,53 @@ struct GardnIcon {
     double box;
 };
 constexpr GardnIcon kGardnIcon[] = {
-    {"antennae",        33,    12.5, 0, 0, 1},
-    {"basic",           23,    10,   0, 0, 1},
-    {"bone",            45,    12,   0, 1, 0.664},   // art fills 66% of its box
-    {"bubble",          27,    12,   0, 0, 1},
-    {"cactus",          33,    15,   0, 0, 0.824},   // art fills 82% of its box
-    {"corn",            51.2,  16,   0, 0.5, 0.965},   // art fills 96% of its box
-    {"cutter",          70,    40,   0, 0, 0.875},   // art fills 88% of its box
-    {"dahlia",          17,     7,  10, 0, 1},
-    {"dandelion",       31,    10,   0, 1, 0.795},   // art fills 79% of its box
-    {"egg",             28,    12.5, 0, 0, 0.938},   // art fills 94% of its box
-    {"faster",          17,     7,   0, 0, 1},
-    {"heaviest",        35,    12,   0, 0, 1},
-    {"honey",           25,    11,   0, 0, 1},
-    {"iris",            17,     7,   0, 0, 1},
-    {"leaf",            38,    10,   0, -1, 1},
-    {"lightning",       21,    10,   0, 0, 0.775},   // art fills 78% of its box
-    {"lotus",           26.4,  12,   0, 0.1, 1},
-    {"magnet",          52.8,  12,   0, 0, 1},
-    {"missile",         27,    10,   0, 1, 1},
-    {"moon",           125.747, 50,  0, 0, 1},
-    {"observer",        35,    12.5, 0, 0, 1},
-    {"peas",            17,     7,   8, 0, 1},
-    {"pincer",          23,    10,   0, 0.7, 1},
-    {"pollen",          17,     7,   0, 0, 1},
-    {"powder",          15.222, 10,  0, 0, 0.727},   // art fills 73% of its box
-    {"rice",            25,    13,   0, 0.7, 1},
-    {"rock",            29.269, 12,  0, 0, 0.986},   // art fills 99% of its box
-    {"rose",            23,    10,   0, 0, 1},
-    {"sand",            17,     7,  10, 0, 0.852},   // art fills 85% of its box
-    {"shell",           32.5,  10,   0, 0, 0.973},   // art fills 97% of its box
-    {"soil",            24,    10,   0, 0, 0.488},   // art fills 49% of its box
-    {"sponge",          34.494, 12,  0, 0, 1},
-    {"square",          23.46, 15,   0, 1.7854, 0.969},   // art fills 97% of its box
-    {"starfish",        25.658, 8,   0, 0, 0.797},   // art fills 80% of its box
-    {"stick",           27,    15,   0, 1, 1},
-    {"stinger",         15.124, 7,   0, 0, 1},
-    // radius, so its icon comes out a 10.75-unit speck -- the one place the
+    {"antennae",           33, 12.5,  0,       0,     1},
+    {"basic",              23,   10,  0,       0,     1},
+    {"bone",             38.5,   12,  0,       1, 0.664},   // art fills 66% of its box
+    {"bubble",             27,   12,  0,       0,     1},
+    {"cactus",           33.5,   15,  0,       0, 0.824},   // art fills 82% of its box
+    {"corn",               32,   16,  0,     0.5, 0.965},   // art fills 96% of its box
+    {"cutter",             70,   40,  0,       0, 0.875},   // shrinks 20/40; fills 88% of its box
+    {"dahlia",             17,    7, 10,       0,     1},
+    {"dandelion",          31,   10,  0,       1, 0.795},   // art fills 80% of its box
+    {"egg",                28, 12.5,  0,       0, 0.938},   // art fills 94% of its box
+    {"faster",             17,    7,  0,       0,     1},
+    {"heaviest",           35,   12,  0,       0,     1},
+    {"honey",              25,   11,  0,       0,     1},
+    {"iris",               17,    7,  0,       0,     1},
+    {"leaf",            38.25,   10,  0,      -1,     1},
+    {"lightning",          21,   10,  0,       0, 0.775},   // art fills 78% of its box
+    {"lotus",            26.5,   12,  0,     0.1,     1},
+    {"magnet",           42.5,   12,  0,       0,     1},
+    {"missile",            27,   10,  0,       1,     1},
+    {"moon",              126,   50,  0,       0,     1},   // shrinks 20/50
+    {"observer",           35, 12.5,  0,       0,     1},
+    {"peas",               17,    7,  8,       0,     1},
+    {"pincer",             23,   10,  0,     0.7,     1},
+    {"pollen",             17,    7,  0,       0,     1},
+    {"powder",           15.5,   10,  0,       0, 0.727},   // art fills 73% of its box
+    {"rice",               25,   13,  0,     0.7,     1},
+    {"rock",             29.5,   12,  0,       0, 0.986},   // art fills 99% of its box
+    {"rose",               23,   10,  0,       0,     1},
+    {"sand",               17,    7, 10,       0, 0.852},   // art fills 85% of its box
+    {"shell",              31,   10,  0,       0, 0.973},   // art fills 97% of its box
+    {"soil",               24,   10,  0,       0, 0.488},   // art fills 49% of its box
+    {"sponge",           34.5,   12,  0,       0,     1},
+    {"square",           23.5,   15,  0,  1.7854, 0.969},   // art fills 97% of its box
+    {"starfish",           26,    8,  0,       0, 0.797},   // art fills 80% of its box
+    {"stick",              27,   15,  0,       1,     1},
+    {"stinger",          15.5,    7,  0,       0,     1},
+    // gardn's drawing of this one hard-codes `ctx.scale(0.5)` and ignores the
+    // radius, so its picture is a 10.75-unit speck -- the one place the
     // measurement does not transfer. Sized from the radius like every other
     // petal instead: 2r plus its 1.5 outline.
-    {"third_eye",       41.5,  20,   0, 0, 1},
-    {"uranium",         21,    10,   0, 0, 1},
-    {"web",             23.92, 10,   0, 0, 0.957},   // art fills 96% of its box
-    {"wing",            33,    10,   0, 1, 1},
-    {"yggdrasil",       26.55, 12,   0, kPi, 0.932},   // art fills 93% of its box
-    {"yin_yang",        23,    10,   0, 0, 0.926},   // art fills 93% of its box
-    {"yucca",           31,    10,   0, -1, 0.969},   // art fills 97% of its box
+    {"third_eye",        41.5,   20,  0,       0,     1},
+    {"uranium",            21,   10,  0,       0,     1},
+    {"web",                24,   10,  0,       0, 0.957},   // art fills 96% of its box
+    {"wing",               33,   10,  0,       1,     1},
+    {"yggdrasil",        26.5,   12,  0,     kPi, 0.932},   // art fills 93% of its box
+    {"yin_yang",           23,   10,  0,       0, 0.926},   // art fills 93% of its box
+    {"yucca",              31,   10,  0,      -1, 0.969},   // art fills 97% of its box
 };
 
 /// How one petal is laid out inside a tile, in design units.

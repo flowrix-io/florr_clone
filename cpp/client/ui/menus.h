@@ -776,7 +776,7 @@ private:
     void setLoadoutSlot(NetClient&, double timeSeconds, int slot, std::uint16_t petalIndex,
                         Rarity rarity);
     void clearLoadoutSlot(NetClient&, double timeSeconds, int slot);
-    void drawDragged(Canvas&, Window&, const SpriteCache&, double timeSeconds);
+    void drawDragged(Canvas&, Window&, const SpriteCache&, double timeSeconds, double dt);
     void activateStripSlot(int slot);
 
     MenuId open_ = MenuId::None;
@@ -861,6 +861,19 @@ private:
         bool live = false;
     };
     std::array<LoadoutTileAnim, kLoadoutBarSlots> loadoutTiles_{};
+    /// The tile a petal dragged out of the INVENTORY rides on. Same object as
+    /// a bar tile and animated the same way -- it grows, rocks, follows the
+    /// cursor and drops into whichever slot it is over -- because a drag that
+    /// changed what it was carrying halfway across the screen is how a player
+    /// loses track of it.
+    LoadoutTileAnim dragTile_{};
+    /// Where the bar's slots landed this frame, so a drag that began in a
+    /// panel can snap into one. Zeroed while the bar is down.
+    std::array<Rect, kLoadoutBarSlots> loadoutRects_{};
+    /// The primary row's slot side and the bar's scale, both in canvas units,
+    /// which is what a tile riding the cursor is sized against.
+    double loadoutSlotSide_ = 0;
+    double loadoutScale_ = 0;
 
     /// What the bar draws while the server catches up.
     ///
