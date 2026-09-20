@@ -47,6 +47,20 @@
             transform: translate(-50%, -50%);
             color: #fff;
         }
+        /* The two lines of the decompression screen, in the browser client's
+           colours -- it showed this same message while it inflated its own
+           bundle. Sized here rather than inheriting the 88px above, which is
+           for the one word the screen otherwise holds. */
+        #loadingScreen .stage {
+            color: #ff0;
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        #loadingScreen .detail {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 20px;
+        }
 
     </style>
     <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
@@ -58,41 +72,6 @@
     <script>
         console.log('Hello');
     </script>
-    <!-- <script>
-        async function fetchAndDecompress(url) {
-            // 1. Fetch the compressed binary file (never cache — always get the
-            //    freshest build so a rebuilt bundle.bin shows up on reload).
-            const response = await fetch(url, { cache: 'no-store' });
-            
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-            // 2. Create a DecompressionStream with 'deflate-raw'
-            const decompressionStream = new DecompressionStream('deflate-raw');
-
-            // 3. Pipe the response body (a ReadableStream) through the decompressor
-            const decompressedStream = response.body.pipeThrough(decompressionStream);
-
-            // 4. Read the resulting data (e.g., as an ArrayBuffer or Blob)
-            const decompressedResponse = new Response(decompressedStream);
-            const buffer = await decompressedResponse.arrayBuffer();
-
-            return new Uint8Array(buffer);
-        }
-        const loadingScreen = document.createElement('div');
-        loadingScreen.innerHTML = '<div style="text-align: center;"><h1 style="color: yellow; font-size: 48px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Decompressing bundle...</h1><p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 30px;">Please wait while we decompress the bundle...</p></div>';
-        document.body.appendChild(loadingScreen);
-        console.log('Decompressing bundle...');
-
-        const fetchedBundle = fetchAndDecompress('bundle.bin');
-        fetchedBundle.then(bundle => {
-            const scriptData = new TextDecoder().decode(bundle);
-            const script = document.createElement('script');
-            script.textContent = scriptData;
-            document.body.removeChild(loadingScreen);
-            document.body.appendChild(script);
-
-        });
-    </script> -->
     <script>
 (function () {
   const query = new URLSearchParams(location.search);
@@ -144,6 +123,129 @@
   window.Module = Module;
 })();
 </script>
-    {{{ SCRIPT }}}
+    <script>
+(function () {
+  const Module = window.Module;
+  const status = document.getElementById('loadingScreen');
+
+  // What the page downloads is bundle.js -- emscripten's runtime glue -- and
+  // bundle.wasm, the client itself with mobs.json, petals.json, the maps and
+  // the fonts embedded inside it: four megabytes of it. `npm run build`
+  // stages a raw-deflate copy of each beside the original, bundle.js.bin and
+  // bundle.wasm.bin, and this prefers them. Deflate takes the wasm to about a
+  // third, and on a first visit that transfer is most of the wait.
+  //
+  // This is the browser client's compression scheme, carried over: the
+  // TypeScript page deflated its bundle.js into bundle.bin at build time and
+  // inflated it here with DecompressionStream, for the same reason and with
+  // no library either side. What is new is that the wasm goes through it too,
+  // since it is now where all the bytes are.
+  //
+  // The uncompressed files still ship, and nothing depends on the compressed
+  // pair being there: a build served straight out of cpp/build-web has none
+  // (compressing is a staging step -- an incremental relink should not spend
+  // a second deflating four megabytes), and DecompressionStream is missing
+  // from browsers older than 2023. Either way this falls through to the plain
+  // file.
+  const canInflate = typeof DecompressionStream === 'function';
+
+  // Revalidate every load, but reuse the bytes when the build has not moved.
+  // The failure worth designing against is a page still running the build
+  // from before the last deploy: the server refuses that handshake and the
+  // client reloads (client/web/reload.h), which is only an answer if the
+  // reload fetches the new build. A 304 on an unchanged file costs nothing,
+  // which is why this is no-cache where the TypeScript page said no-store --
+  // re-downloading a megabyte of unchanged wasm on every load would give back
+  // more than the compression saves.
+  const fetchOptions = { cache: 'no-cache' };
+
+  // Said while the inflating is going on, which on a first visit over a real
+  // connection is the whole of the wait. The browser client put up this same
+  // message for the same reason. It goes in the page's one status surface, so
+  // nothing has to take it down: the glue's first setStatus ("Running...",
+  // then "") replaces the markup with text and then hides the element.
+  const announceInflating = () => {
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    stage.textContent = 'Decompressing bundle...';
+    const detail = document.createElement('div');
+    detail.className = 'detail';
+    detail.textContent = 'Please wait while we decompress the bundle...';
+    status.hidden = false;
+    status.textContent = '';
+    status.append(stage, detail);
+  };
+
+  // The named artifact as a Response, inflated from its .bin when there is
+  // one. Streamed rather than buffered, so what reads this Response sees the
+  // bytes as they arrive -- the same thing the browser would hand
+  // compileStreaming if it had fetched an uncompressed .wasm itself.
+  const load = async (name, contentType) => {
+    if (canInflate) {
+      const packed = await fetch(name + '.bin', fetchOptions).catch(() => null);
+      if (packed && packed.ok) {
+        announceInflating();
+        const inflating = new DecompressionStream('deflate-raw');
+        return new Response(packed.body.pipeThrough(inflating),
+                            { headers: { 'Content-Type': contentType } });
+      }
+    }
+    const plain = await fetch(name, fetchOptions);
+    if (!plain.ok) throw new Error(name + ': HTTP ' + plain.status);
+    return plain;
+  };
+
+  const fail = (what) => {
+    console.error('[loader] ' + what);
+    status.hidden = false;
+    status.textContent = 'client error: ' + what;
+  };
+
+  // Started now, before the glue: compiling the module is the long pole, and
+  // this way it runs against the download instead of after it. compileStreaming
+  // over a Response the page built itself is specified to work -- the MIME
+  // type above is what it checks -- and the retry is for an engine that
+  // disagrees. A module that simply does not compile fails the retry too,
+  // with the same message.
+  const compiled = load('bundle.wasm', 'application/wasm')
+    .then((response) => WebAssembly.compileStreaming(response))
+    .catch(async (error) => {
+      console.warn('[loader] streaming compile failed (' + error + '); buffering');
+      const response = await load('bundle.wasm', 'application/wasm');
+      return WebAssembly.compile(await response.arrayBuffer());
+    });
+
+  // The glue asks for the module through this hook rather than going looking
+  // for bundle.wasm, which is what keeps it off the uncompressed copy.
+  // Returning an empty object is emscripten's "not yet": the instance arrives
+  // through the callback whenever the compile above finishes.
+  Module.instantiateWasm = (imports, ready) => {
+    compiled.then((module) => WebAssembly.instantiate(module, imports))
+            .then(ready)
+            .catch((error) => fail('bundle.wasm: ' + error));
+    return {};
+  };
+
+  // The glue itself, injected rather than left to the <script src> tag emcc
+  // emits (parked in the comment at the end of this file), because the copy
+  // worth loading is the compressed one. An injected script runs in global
+  // scope exactly as that tag's would, and the glue picks up the Module
+  // defined above the same way.
+  load('bundle.js', 'text/javascript')
+    .then((response) => response.text())
+    .then((source) => {
+      const script = document.createElement('script');
+      script.textContent = source;
+      document.body.appendChild(script);
+    })
+    .catch((error) => fail('bundle.js: ' + error));
+})();
+</script>
+    <!-- emcc replaces the token below with a <script> tag for bundle.js, and
+         refuses a shell that does not carry it. The loader above is what
+         loads the glue here, from bundle.js.bin when there is one, so the tag
+         is parked inside this comment: inert in the dev build, which keeps
+         comments, and gone from the release build, which strips them.
+         {{{ SCRIPT }}} -->
 </body>
 </html>

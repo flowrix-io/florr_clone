@@ -286,6 +286,22 @@ staged as `dist/index.html`. Only the web build is renamed, at the link, by
 `OUTPUT_NAME` in CMakeLists.txt: the native binaries are still `flowrix_client`
 and `flowrix_server`.
 
+The two files the page downloads are staged deflated as well, as
+`bundle.js.bin` and `bundle.wasm.bin`: `compress()` in `scripts/build-web.js`
+writes them, and the loader in `client/web/shell.html` prefers them, inflating
+them with the browser's own `DecompressionStream` and handing the wasm
+straight to `compileStreaming` so that the module still compiles while it is
+arriving. It takes what a first visit downloads from 4.5MB to 1.1MB. This is
+the browser client's scheme carried over — `scripts/compressbundle.js`
+deflated its `bundle.js` into `bundle.bin` and the page inflated it the same
+way — extended to the wasm, which is where the bytes are now. The
+uncompressed files still ship and are still what the loader falls back to: a
+build served straight out of `cpp/build-web` has no `.bin` beside it, because
+compressing is a staging step and not part of the link, and
+`DecompressionStream` is missing from browsers older than 2023. The two
+copies of one artifact have to travel together, though — a `.bin` from an
+older build than the file beside it is a page that loads yesterday's client.
+
 `-DFLIX_BUILD` picks the flavour, and is the only build knob: `CMAKE_BUILD_TYPE`
 follows from it rather than being set alongside it.
 
@@ -324,8 +340,9 @@ the software framebuffer in Wasm. The builds otherwise differ in three places.
   the server has no page to run a preload from at all.
 
 `client/web/shell.html` is the page. It does no rendering and picks no
-transport: it sizes nothing, hands the wasm the canvas element and the argv
-`main()` would have had natively, and gets out of the way. It defaults to its
+transport: it sizes nothing, fetches the glue and the wasm (compressed, as
+above), hands the wasm the canvas element and the argv `main()` would have had
+natively, and gets out of the way. It defaults to its
 own origin, so an untouched URL already points at the server that served it;
 `?host=`/`?port=` are only for a client build hosted somewhere else.
 

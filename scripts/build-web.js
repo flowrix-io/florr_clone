@@ -28,6 +28,11 @@
  * served at. styles.css and favicon.ico are copied too: the shell references
  * both, and neither is inside the wasm.
  *
+ * The two files the page downloads are also staged deflated, as bundle.js.bin
+ * and bundle.wasm.bin -- see compress() below. This is what the TypeScript
+ * build did with scripts/compressbundle.js, extended to the wasm, which is
+ * where the bytes are now.
+ *
  * Usage:
  *   node scripts/build-web.js [client|server|offline|offline-asmjs|all] [--copy-only]
  *
@@ -55,6 +60,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const os = require('os');
 
@@ -77,6 +83,10 @@ const TARGETS = {
             [path.join(ROOT, 'src', 'styles.css'), 'styles.css'],
             [path.join(ROOT, 'src', 'favicon.ico'), 'favicon.ico'],
         ],
+        // Staged deflated beside themselves, as <name>.bin. These are the
+        // two files the page pulls over the network; index.html is served
+        // uncompressed because nothing can inflate it before it has loaded.
+        compressed: ['bundle.js', 'bundle.wasm'],
     },
     server: {
         cmakeTarget: 'flowrix_server',
@@ -180,6 +190,37 @@ if (!copyOnly) {
 }
 
 // --- stage into dist ---------------------------------------------------------
+
+/**
+ * Writes dist/<name>.bin: the staged dist/<name>, raw-deflated.
+ *
+ * The page prefers these over the files they were made from and inflates them
+ * with DecompressionStream -- see the loader in cpp/client/web/shell.html.
+ * Raw deflate, not gzip, because 'deflate-raw' is what that API takes and the
+ * headers buy nothing here; this is the codec scripts/compressbundle.js used
+ * for the TypeScript client's bundle, and the page's half of it is that page's
+ * loader carried over.
+ *
+ * Done at staging rather than at the link, which is deliberate: a dev relink
+ * should not spend a second deflating four megabytes, and a build served
+ * straight out of cpp/build-web has no .bin beside it. The loader falls back
+ * to the uncompressed file, which is always staged too.
+ *
+ * Both copies of one artifact must move together. A dist/ holding a .bin from
+ * an older build than the file beside it is a client that loads the old wasm
+ * while everything else is new -- so a hand-carried deploy copies the pair,
+ * not just the file it noticed changing.
+ */
+function compress(name) {
+    const source = path.join(DIST, name);
+    const packed = zlib.deflateRawSync(fs.readFileSync(source), {
+        level: zlib.constants.Z_BEST_COMPRESSION,
+    });
+    fs.writeFileSync(path.join(DIST, `${name}.bin`), packed);
+    const ratio = (100 * packed.length) / Math.max(1, fs.statSync(source).size);
+    return [`${name}.bin`, packed.length, `${ratio.toFixed(0)}% of ${name}`];
+}
+
 fs.mkdirSync(DIST, { recursive: true });
 
 const copied = [];
@@ -202,12 +243,14 @@ for (const name of selected) {
         fs.copyFileSync(src, dest);
         copied.push([to, fs.statSync(dest).size]);
     }
+    for (const to of TARGETS[name].compressed || []) copied.push(compress(to));
 }
 
 // --copy-only builds nothing, so FLIX_BUILD says nothing about what was just
 // staged -- the cache of the tree it was copied from is the only witness.
 const staged = copyOnly ? (configuredFlavour() || 'unknown-flavour') : flavour;
 console.log(`\nStaged the ${staged} web build (${selected.join(', ')}) in dist/:`);
-for (const [name, size] of copied) {
-    console.log(`  ${name.padEnd(16)} ${(size / 1024).toFixed(1).padStart(9)} KiB`);
+for (const [name, size, note] of copied) {
+    const line = `  ${name.padEnd(16)} ${(size / 1024).toFixed(1).padStart(9)} KiB`;
+    console.log(note ? `${line}   ${note}` : line);
 }
