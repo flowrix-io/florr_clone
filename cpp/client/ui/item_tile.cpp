@@ -29,8 +29,17 @@ constexpr double kShadowRadius = 4.0;
 constexpr double kShadowAlpha = 0.15;
 
 constexpr double kNameSize = 12.0;
-constexpr double kNameBaseline = 20.0;
-constexpr double kNameStroke = 3.0;
+/// Where the name's middle sits, measured from the RISEN origin the icon is
+/// drawn about -- gardn writes it at `translate(0, 20)` on top of the
+/// `translate(0, -5)` that lifted the icon, so it lands at +15 in the cell.
+/// Reading that 20 as an absolute baseline is what had this game's names five
+/// units low, crowding the plate's bottom edge.
+constexpr double kNameBaseline = 20.0 - kItemTileIconRise;
+/// Every outline inside a tile, as a fraction of its own text size: gardn's
+/// `TextArgs::stroke_scale`. A fraction, not a constant screen width -- an
+/// outline pinned to 3px made the name on a 46px bar tile nearly three times
+/// as heavy as gardn's and turned a small tile's caption into a black blob.
+constexpr double kTextStrokeScale = 0.12;
 /// The plate's border: the 5 units of darker shade left showing around the
 /// face, on each side.
 constexpr double kPlateBorder = (kPlateSide - kFaceSide) * 0.5;
@@ -69,109 +78,167 @@ constexpr std::uint32_t kDisabledFill = 0x3A3A3Au;
 constexpr double kReloadRadius = 90.0;
 constexpr double kReloadAlpha = 0.25;
 
-/// gardn's `clump_radius` (10) over its clustered petals' radius (7).
+/// The ring a cluster is spaced on when the petal names no `clump_radius` of
+/// its own: gardn's `draw_static_petal` default.
+constexpr double kClusterRing = 10.0;
+
+/// gardn's `clump_radius` over its clustered petals' radius, for the petals
+/// gardn does not have -- see kGardnIcon for the ones it does.
 constexpr double kClusterRingRatio = 10.0 / 7.0;
 
-/// gardn's icon radius for every petal both games have, ported from
-/// PETAL_DATA in ~/gardn/Shared/StaticData.cc. Rarity-invariant there, and so
-/// here: gardn calls radius a tactical knob, not a power knob.
+/// gardn's `radius` past which it shrinks a petal to fit its plate, and the
+/// radius it shrinks it to. `draw_loadout_background` does this as
+/// `if (data.radius > 20) ctx.scale(20 / data.radius)` -- so it is the PETAL's
+/// own radius that decides, and the whole cluster that shrinks, ring included.
+constexpr double kGardnShrinkAbove = 20.0;
+
+/// What gardn actually DRAWS for every petal both games have.
 ///
-/// This table exists because `size` and gardn's `radius` are not the same
-/// quantity and no single multiplier reconciles them. Scaling by size alone
-/// (kPetalIconSize) is exact for nineteen of these and close for a dozen more,
-/// but it draws basic at twice gardn's, stinger, peas, pollen and sand at
-/// 1.43x, and third eye, dahlia, corn, square and cactus at half to two
-/// thirds -- which is exactly the "some too big, some too small" it reads as.
-/// The comments below are the ones where the two disagree; a row with no
-/// comment is one the fallback would already have got right, kept so the table
-/// is a straight transcription rather than a diff nobody can check.
+/// `drawn` is the width of the picture `draw_static_petal_single` puts on the
+/// canvas -- outline included -- measured off ~/gardn's own Petal.cc by
+/// running it against a Renderer that records a bounding box instead of
+/// painting. It is not `radius`: gardn strokes almost every petal with a
+/// three-unit line and lets plenty of them run well past their radius, so a
+/// leaf is 38 units across on a radius of 10 and a bone 45 on a radius of 12.
+/// Sizing an icon by radius drew those at half of gardn's, which is what made
+/// this game's bar read as a row of specks.
 ///
-/// A petal gardn does not have -- every egg, and this game's own additions --
-/// is not in here and falls back to kPetalIconSize. Add a row when gardn
-/// grows one, never to hand-tune an icon: this is a port, not a taste.
-struct GardnIconRadius {
+/// `radius` is gardn's PETAL_DATA radius, and it is here only for the shrink
+/// rule above -- moon and cutter are the two petals it fires for.
+/// `clump` is gardn's `clump_radius`, 0 for "use kClusterRing".
+///
+/// All three are rarity-invariant in gardn: it calls radius a tactical knob,
+/// not a power knob. A petal gardn does not have -- every egg past the ant's,
+/// and this game's own additions -- is not in here and falls back to
+/// kPetalIconSize x `sizeStat` x `visual_scale`. Add a row when gardn grows
+/// one, never to hand-tune an icon: this is a port, not a taste.
+struct GardnIcon {
     const char* id;
-    double radius;
+    double drawn;   ///< the picture's width in gardn units, outline included
+    double radius;  ///< gardn's PETAL_DATA radius, for the shrink rule
+    double clump;   ///< gardn's clump_radius; 0 means kClusterRing
+    double tilt;    ///< gardn's `icon_angle`, radians, applied to each icon
+    /// How much of ITS OWN viewBox this game's artwork actually covers.
+    ///
+    /// A sprite is fitted to the box it is asked for, so a document whose
+    /// viewBox is padded -- soil covers under half of its own, bone two
+    /// thirds, dandelion four fifths because its box is kept symmetric about
+    /// the stalk's pivot -- draws that much under the size asked for. The
+    /// diameter is divided by this so what lands on the plate is `drawn`.
+    /// 1 for the thirty-three petals whose box already hugs their picture.
+    ///
+    /// Measured by rasterising each document at 512px in a browser and
+    /// taking the alpha bounding box, which is the same fit the sprite cache
+    /// applies. Sponge has no document -- it is a C++ painter, which draws
+    /// to the size it is handed -- so it takes 1.
+    double box;
 };
-constexpr GardnIconRadius kGardnIconRadius[] = {
-    {"antennae", 12.5},  // size 1 -> 10
-    {"basic", 10},  // size 2 -> 20
-    {"bone", 12},  // size 1 -> 10
-    {"bubble", 12},  // size 1 -> 10
-    {"cactus", 15},  // size 1 -> 10
-    {"corn", 16},  // size 1 -> 10
-    {"cutter", 40},  // size 4 -> 40
-    {"dahlia", 7},  // size 0.33 -> 3.3
-    {"dandelion", 10},
-    {"egg", 12.5},  // size 1 -> 10
-    {"faster", 7},  // size 0.5 -> 5
-    {"heaviest", 12},  // size 1.3 -> 13
-    {"honey", 11},
-    {"iris", 7},
-    {"leaf", 10},
-    {"lightning", 10},
-    {"lotus", 12},
-    {"magnet", 10},
-    {"missile", 10},
-    {"moon", 50},  // size 2.6 -> 26
-    {"observer", 12.5},  // size 1 -> 10
-    {"peas", 7},  // size 1 -> 10
-    {"pincer", 10},
-    {"pollen", 7},  // size 1 -> 10
-    {"powder", 10},
-    {"rice", 13},
-    {"rock", 12},  // size 1 -> 10
-    {"rose", 10},  // size 0.9 -> 9
-    {"sand", 7},  // size 1 -> 10
-    {"shell", 10},  // size 1.1 -> 11
-    {"soil", 10},
-    {"sponge", 12},  // size 1 -> 10
-    {"square", 15},  // size 1 -> 10
-    {"starfish", 8},  // size 1 -> 10
-    {"stick", 15},  // size 1.3 -> 13
-    {"stinger", 7},  // size 1 -> 10
-    {"third_eye", 20},  // size 1 -> 10
-    {"uranium", 10},
-    {"web", 10},  // size 1.2 -> 12
-    {"wing", 10},
-    {"yggdrasil", 12},  // size 1 -> 10
-    {"yin_yang", 10},
-    {"yucca", 10},
+constexpr GardnIcon kGardnIcon[] = {
+    {"antennae",        33,    12.5, 0, 0, 1},
+    {"basic",           23,    10,   0, 0, 1},
+    {"bone",            45,    12,   0, 1, 0.664},   // art fills 66% of its box
+    {"bubble",          27,    12,   0, 0, 1},
+    {"cactus",          33,    15,   0, 0, 0.824},   // art fills 82% of its box
+    {"corn",            51.2,  16,   0, 0.5, 0.965},   // art fills 96% of its box
+    {"cutter",          70,    40,   0, 0, 0.875},   // art fills 88% of its box
+    {"dahlia",          17,     7,  10, 0, 1},
+    {"dandelion",       31,    10,   0, 1, 0.795},   // art fills 79% of its box
+    {"egg",             28,    12.5, 0, 0, 0.938},   // art fills 94% of its box
+    {"faster",          17,     7,   0, 0, 1},
+    {"heaviest",        35,    12,   0, 0, 1},
+    {"honey",           25,    11,   0, 0, 1},
+    {"iris",            17,     7,   0, 0, 1},
+    {"leaf",            38,    10,   0, -1, 1},
+    {"lightning",       21,    10,   0, 0, 0.775},   // art fills 78% of its box
+    {"lotus",           26.4,  12,   0, 0.1, 1},
+    {"magnet",          52.8,  12,   0, 0, 1},
+    {"missile",         27,    10,   0, 1, 1},
+    {"moon",           125.747, 50,  0, 0, 1},
+    {"observer",        35,    12.5, 0, 0, 1},
+    {"peas",            17,     7,   8, 0, 1},
+    {"pincer",          23,    10,   0, 0.7, 1},
+    {"pollen",          17,     7,   0, 0, 1},
+    {"powder",          15.222, 10,  0, 0, 0.727},   // art fills 73% of its box
+    {"rice",            25,    13,   0, 0.7, 1},
+    {"rock",            29.269, 12,  0, 0, 0.986},   // art fills 99% of its box
+    {"rose",            23,    10,   0, 0, 1},
+    {"sand",            17,     7,  10, 0, 0.852},   // art fills 85% of its box
+    {"shell",           32.5,  10,   0, 0, 0.973},   // art fills 97% of its box
+    {"soil",            24,    10,   0, 0, 0.488},   // art fills 49% of its box
+    {"sponge",          34.494, 12,  0, 0, 1},
+    {"square",          23.46, 15,   0, 1.7854, 0.969},   // art fills 97% of its box
+    {"starfish",        25.658, 8,   0, 0, 0.797},   // art fills 80% of its box
+    {"stick",           27,    15,   0, 1, 1},
+    {"stinger",         15.124, 7,   0, 0, 1},
+    // radius, so its icon comes out a 10.75-unit speck -- the one place the
+    // measurement does not transfer. Sized from the radius like every other
+    // petal instead: 2r plus its 1.5 outline.
+    {"third_eye",       41.5,  20,   0, 0, 1},
+    {"uranium",         21,    10,   0, 0, 1},
+    {"web",             23.92, 10,   0, 0, 0.957},   // art fills 96% of its box
+    {"wing",            33,    10,   0, 1, 1},
+    {"yggdrasil",       26.55, 12,   0, kPi, 0.932},   // art fills 93% of its box
+    {"yin_yang",        23,    10,   0, 0, 0.926},   // art fills 93% of its box
+    {"yucca",           31,    10,   0, -1, 0.969},   // art fills 97% of its box
 };
 
-/// The icon diameter for one petal, in design units.
+/// How one petal is laid out inside a tile, in design units.
+struct ClusterShape {
+    double diameter = 0;  ///< one icon
+    double ring = 0;      ///< how far each icon of a stack sits off centre
+    double shrink = 1;    ///< gardn's oversize clamp, applied to both
+    /// gardn's `icon_angle`: a fixed tilt each icon is turned by, on top of
+    /// whichever way round the ring it sits. Thirteen petals carry one -- a
+    /// leaf lies back, a square stands on its corner, yggdrasil is upside
+    /// down -- and without it they read as the same shapes lying flat.
+    double tilt = 0;
+};
+
+/// gardn's own numbers where gardn has the petal, and this game's fallback
+/// where it does not.
 ///
 /// The id lookup is resolved once into a table indexed by petal index: the
 /// content registry is loaded before anything draws and never reloaded, and a
 /// panel of sixty tiles would otherwise run sixty string scans a frame.
 ///
-/// `visual_scale` multiplies whichever figure is used, because it is a
-/// property of the ARTWORK and this tile draws the same artwork the world
-/// does. Root is why: gardn scales its drawing by `radius / 7` over a picture
-/// 26 units tall, so the petal is drawn at nearly twice the diameter its
-/// radius states, and a tile that ignored that would show a twig beside the
-/// root standing in the world.
-double iconDiameter(std::uint16_t petalIndex, double sizeStat) {
-    static const std::vector<double> byIndex = [] {
-        std::vector<double> out(content().petalCount(), 0.0);
+/// `visual_scale` multiplies the FALLBACK only. It is this game's way of
+/// saying "gardn draws this one much bigger than its radius" -- root is
+/// authored at 1.87 for exactly that reason -- and for a petal that is in the
+/// table above, that statement is already the measurement.
+ClusterShape clusterShape(std::uint16_t petalIndex, double sizeStat, int count) {
+    static const std::vector<const GardnIcon*> byIndex = [] {
+        std::vector<const GardnIcon*> out(content().petalCount(), nullptr);
         for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
             const std::string& id = content().petal(i).id;
-            for (const GardnIconRadius& row : kGardnIconRadius) {
+            for (const GardnIcon& row : kGardnIcon) {
                 if (id == row.id) {
-                    out[i] = row.radius * 2.0;
+                    out[i] = &row;
                     break;
                 }
             }
         }
         return out;
     }();
-    if (petalIndex >= byIndex.size()) return kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0);
+
+    ClusterShape out;
+    const GardnIcon* gardn = petalIndex < byIndex.size() ? byIndex[petalIndex] : nullptr;
+    if (gardn != nullptr) {
+        out.diameter = gardn->drawn / (gardn->box > 0 ? gardn->box : 1.0);
+        out.ring = count > 1 ? (gardn->clump > 0 ? gardn->clump : kClusterRing) : 0.0;
+        out.tilt = gardn->tilt;
+        if (gardn->radius > kGardnShrinkAbove) out.shrink = kGardnShrinkAbove / gardn->radius;
+        return out;
+    }
     // Zero (or an absent field) means "unscaled" rather than "invisible",
     // exactly as the world renderer's petalArtScale() reads it.
-    const double scale = content().petal(petalIndex).visualScale;
-    const double art = scale > 0 ? scale : 1.0;
-    if (byIndex[petalIndex] > 0) return byIndex[petalIndex] * art;
-    return kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0) * art;
+    const double scale =
+        petalIndex < content().petalCount() ? content().petal(petalIndex).visualScale : 0.0;
+    out.diameter = kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0) * (scale > 0 ? scale : 1.0);
+    // Kept as a RATIO rather than gardn's fixed ring, because this game authors
+    // petal size per petal: a fixed ring would leave a large petal's cluster
+    // fused into a blob and a small one's scattered.
+    out.ring = count > 1 ? out.diameter * 0.5 * kClusterRingRatio : 0.0;
+    return out;
 }
 
 /// gardn's smootherstep on the remaining fraction: the sweep eases in and out
@@ -187,34 +254,34 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
                       double timeSeconds) {
     if (petalIndex == kNoPetal || !sprites.petalDrawable(petalIndex)) return;
 
-    const double diameter = iconDiameter(petalIndex, sizeStat);
     // A configured count below one means "not a stack" -- third eye, antennae
     // and the observer all declare zero and are drawn as a single icon.
     const int drawCount = count >= 1 ? count : 1;
-    // gardn spaces a cluster on a ring a little wider than the petal itself:
-    // its clustered petals are radius 7 on a `clump_radius` of 10. Kept as a
-    // RATIO rather than gardn's fixed 10, because this game authors petal size
-    // per petal -- a fixed ring would leave a large petal's cluster fused into
-    // a blob and a small one's scattered.
-    const double ring = drawCount > 1 ? diameter * 0.5 * kClusterRingRatio : 0.0;
+    const ClusterShape shape = clusterShape(petalIndex, sizeStat, drawCount);
 
-    // Shrink only what would overflow. A cluster that already fits keeps its
-    // natural size, which is the whole point of drawing petals to scale.
-    const double clusterDiameter = ring * 2.0 + diameter;
-    const double fit =
-        (maxDiameter > 0 && clusterDiameter > maxDiameter) ? maxDiameter / clusterDiameter : 1.0;
+    // gardn's own clamp is the `shrink` inside the shape; `maxDiameter` is a
+    // caller's backstop on top of it, and a petal gardn measures is already
+    // inside its plate without one, so the tile passes none.
+    double fit = shape.shrink;
+    const double clusterDiameter = (shape.ring * 2.0 + shape.diameter) * fit;
+    if (maxDiameter > 0 && clusterDiameter > maxDiameter) fit *= maxDiameter / clusterDiameter;
+
+    const double diameter = shape.diameter * fit;
+    const double ring = shape.ring * fit;
 
     if (drawCount == 1) {
-        sprites.drawPetal(canvas, petalIndex, cx, cy, diameter * fit, 0.0, timeSeconds);
+        sprites.drawPetal(canvas, petalIndex, cx, cy, diameter, shape.tilt, timeSeconds);
         return;
     }
 
     for (int i = 0; i < drawCount; ++i) {
         const double angle = (static_cast<double>(i) / drawCount) * kTau;
-        // Rotated to its own angle, so the ring reads as petals facing outward
-        // rather than a row of identical stamps.
-        sprites.drawPetal(canvas, petalIndex, cx + std::cos(angle) * ring * fit,
-                          cy + std::sin(angle) * ring * fit, diameter * fit, angle, timeSeconds);
+        // Turned to face outward AND tilted by the petal's own icon angle,
+        // which is the order gardn applies them in: it rotates to the ring
+        // place, steps out along it, then rotates again by `icon_angle`.
+        sprites.drawPetal(canvas, petalIndex, cx + std::cos(angle) * ring,
+                          cy + std::sin(angle) * ring, diameter, angle + shape.tilt,
+                          timeSeconds);
     }
 }
 
@@ -294,8 +361,11 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         canvas.translate(0.0f, static_cast<float>(-kItemTileIconRise));
         canvas.scale(static_cast<float>(kItemTileIconScale),
                      static_cast<float>(kItemTileIconScale));
-        drawPetalCluster(canvas, sprites, tile.petalIndex, stats.size, stats.count, 0.0, 0.0,
-                         kItemTileIconCap, tile.timeSeconds);
+        // No cap: gardn's own oversize rule lives inside the cluster, and every
+        // petal it measures already fits its plate. The face clip is what
+        // catches anything this game later adds that does not.
+        drawPetalCluster(canvas, sprites, tile.petalIndex, stats.size, stats.count, 0.0, 0.0, 0.0,
+                         tile.timeSeconds);
         canvas.restore();
     }
 
@@ -315,9 +385,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
             }
             label.fill = kPaper;
             label.stroke = kInk;
-            // In design units, so the outline lands at a constant 3 screen px
-            // whatever size the tile is drawn at.
-            label.strokeWidth = kNameStroke / scale;
+            label.strokeWidth = label.size * kTextStrokeScale;
             label.align = Align::Centre;
             label.baseline = Baseline::Middle;
             text(canvas, name, 0.0, kNameBaseline, label);
@@ -359,7 +427,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
 
         label.fill = kPaper;
         label.stroke = kInk;
-        label.strokeWidth = kNameStroke / scale;
+        label.strokeWidth = label.size * kTextStrokeScale;
         label.align = Align::Centre;
         label.baseline = Baseline::Middle;
         text(canvas, tile.counter, 0.0, kCounterCentreY, label);
@@ -375,7 +443,7 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         badge.size = kBadgeSize;
         badge.fill = kPaper;
         badge.stroke = kInk;
-        badge.strokeWidth = kNameStroke / scale;
+        badge.strokeWidth = badge.size * kTextStrokeScale;
         badge.align = Align::Right;
         badge.baseline = Baseline::Top;
         badge.roundJoin = true;

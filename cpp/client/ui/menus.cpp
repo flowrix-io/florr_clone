@@ -230,11 +230,24 @@ constexpr const char* kLoadoutKeyCaps[kLoadoutBarPrimary] = {"[1]", "[2]", "[3]"
 constexpr std::uint32_t kLoadoutSlotFill = 0xEEEEEEu;
 constexpr std::uint32_t kLoadoutTrashFill = 0xCF8888u;
 
-/// The petal riding the cursor mid-drag: a translucent tile in game, and on
-/// the title screen the bare sprite the browser's HTML5 drag image is.
+/// A petal dragged out of the INVENTORY, riding the cursor: a translucent
+/// tile in game, and on the title screen the bare sprite the browser's HTML5
+/// drag image is. A petal dragged off the BAR needs none of this -- the tile
+/// itself is what moves, as it does in gardn.
 constexpr double kDragGhostSize = 50.0;
 constexpr double kDragGhostAlpha = 0.85;
 constexpr double kDragImageSize = 40.0;
+
+/// How much a loadout tile swells, in design units, when it is on the cursor
+/// and when Q/E has armed it. gardn's `parent_slot->width + 10` and `+ 20`.
+constexpr double kLoadoutTileLift = 10.0;
+constexpr double kLoadoutTileArmed = 20.0;
+
+/// How long a locally shown loadout edit is trusted before the profile takes
+/// over again. Long enough for a round trip on a bad connection, short enough
+/// that an edit the server refuses does not stay on screen. See
+/// MenuSystem::expectedLoadout_.
+constexpr double kLoadoutEchoGrace = 1.0;
 
 struct LoadoutLayout {
     std::array<Rect, kLoadoutBarSlots> slots{};
@@ -363,13 +376,14 @@ void drawKeyLabel(Canvas& canvas, const std::string& label, double x, double y, 
 }
 
 /// Advances the secondary selection to the next non-empty slot in `step`'s
-/// direction, or -1 when the whole row is empty.
-int cycleSecondary(const Profile& profile, int current, int step) {
+/// direction, or -1 when the whole row is empty. Takes the loadout the bar is
+/// SHOWING, which for a few frames after an edit is not the profile's.
+int cycleSecondary(const std::vector<Profile::Slot>& loadout, int current, int step) {
     int cur = current < 0 ? -1 : current;
     for (int i = 0; i < kLoadoutBarPrimary; ++i) {
         cur = (cur + step + kLoadoutBarPrimary) % kLoadoutBarPrimary;
         const auto at = static_cast<std::size_t>(kLoadoutBarPrimary + cur);
-        if (at < profile.loadout.size() && !profile.loadout[at].empty()) return cur;
+        if (at < loadout.size() && !loadout[at].empty()) return cur;
     }
     return -1;
 }
@@ -1072,10 +1086,48 @@ std::string slotCounterLabel(const NetClient& net, int index) {
 
 }  // namespace
 
+namespace {
+
+/// gardn's per-frame easing, frame-rate corrected the way gardn corrects it:
+/// `Ui::lerp_amount = 1 - pow(1 - 0.2, dt * 60)`, and the loadout's tiles take
+/// three quarters of that. 0.15 a frame at 60fps, and the same curve in
+/// wall-clock terms at any other rate.
+double loadoutEase(double dt) {
+    if (!(dt > 0)) return 1.0;
+    return clamp(1.0 - std::pow(0.8, dt * 60.0), 0.0, 1.0) * 0.75;
+}
+
+void easeTo(double& value, double target, double amount) {
+    value += (target - value) * amount;
+}
+
+bool sameSlot(const Profile::Slot& a, const Profile::Slot& b) {
+    return a.petalIndex == b.petalIndex && a.rarity == b.rarity;
+}
+
+bool sameLoadout(const std::vector<Profile::Slot>& a, const std::vector<Profile::Slot>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (!sameSlot(a[i], b[i])) return false;
+    }
+    return true;
+}
+
+}  // namespace
+
 void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
-                                const SpriteCache& sprites, double timeSeconds) {
+                                const SpriteCache& sprites, double timeSeconds, double dt) {
     const Profile& profile = net.profile();
-    const int owned = static_cast<int>(profile.loadout.size());
+    // A local edit is shown at once and dropped the moment the server agrees
+    // with it -- or the deadline passes, which is how a refused one corrects
+    // itself. See expectedLoadout_.
+    if (!expectedLoadout_.empty() &&
+        (timeSeconds > expectedLoadoutUntil_ || sameLoadout(expectedLoadout_, profile.loadout))) {
+        expectedLoadout_.clear();
+    }
+    const std::vector<Profile::Slot>& shown =
+        expectedLoadout_.empty() ? profile.loadout : expectedLoadout_;
+    const int owned = static_cast<int>(shown.size());
 
     // Rises into place over its first frames and sinks back the same way. A
     // plain per-frame lerp with no time term, as in the browser: the ratio is
@@ -1095,6 +1147,11 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         pendingCycle_ = 0;
         pendingSwapSlot_ = -1;
         pendingSecondaryDelete_ = false;
+        // And no boxes to ease from. gardn's on_render_skip does the same:
+        // a bar that comes back on the next screen puts its tiles straight
+        // into their slots instead of flying them in from the last one's.
+        loadoutTiles_.fill(LoadoutTileAnim{});
+        expectedLoadout_.clear();
         return;
     }
 
@@ -1128,7 +1185,7 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         // Q with nothing selected behaves as E: there is no "previous" to step
         // back to, and doing nothing would read as a dead key.
         const int step = (pendingCycle_ < 0 && selectedSecondary_ < 0) ? 1 : pendingCycle_;
-        selectedSecondary_ = cycleSecondary(profile, selectedSecondary_, step);
+        selectedSecondary_ = cycleSecondary(shown, selectedSecondary_, step);
         lastSelectTime_ = timeSeconds;
         pendingCycle_ = 0;
     }
@@ -1136,8 +1193,8 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         pendingSecondaryDelete_ = false;
         if (selectedSecondary_ >= 0) {
             const int slot = kLoadoutBarPrimary + selectedSecondary_;
-            if (slot < owned) net.setLoadoutSlot(slot, kNoPetal, Rarity::Common);
-            selectedSecondary_ = cycleSecondary(profile, selectedSecondary_, 1);
+            if (slot < owned) clearLoadoutSlot(net, timeSeconds, slot);
+            selectedSecondary_ = cycleSecondary(shown, selectedSecondary_, 1);
             lastSelectTime_ = timeSeconds;
         }
     }
@@ -1148,9 +1205,11 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         // advances the selection; otherwise it swaps with the slot below.
         const int secondary =
             kLoadoutBarPrimary + (selectedSecondary_ >= 0 ? selectedSecondary_ : primary);
-        if (primary < owned && secondary < owned) net.swapLoadoutSlots(primary, secondary);
+        if (primary < owned && secondary < owned) {
+            swapLoadoutSlots(net, timeSeconds, primary, secondary);
+        }
         if (selectedSecondary_ >= 0) {
-            selectedSecondary_ = cycleSecondary(profile, selectedSecondary_, 1);
+            selectedSecondary_ = cycleSecondary(shown, selectedSecondary_, 1);
             lastSelectTime_ = timeSeconds;
         }
     }
@@ -1167,7 +1226,7 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     // The browser intercepts a press on the bar only to begin a drag, so this
     // is exactly the condition under which the click is the bar's at all.
     loadoutGrabbable_ = hovered >= 0 && hovered < kLoadoutBarSlots && hovered < owned &&
-                        !profile.loadout[static_cast<std::size_t>(hovered)].empty();
+                        !shown[static_cast<std::size_t>(hovered)].empty();
 
     canvas.save();
     canvas.translate(0.0f, static_cast<float>((1.0 - loadoutSlide_) * 120.0));
@@ -1211,47 +1270,185 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         }
     }
 
-    if (selectedSecondary_ >= 0) {
-        const Rect slot = layout.slots[static_cast<std::size_t>(kLoadoutBarPrimary +
-                                                                selectedSecondary_)];
-        const double cx = slot.x + slot.w * 0.5;
-        const double cy = slot.y + slot.h * 0.5;
-        canvas.save();
-        canvas.translate(static_cast<float>(cx), static_cast<float>(cy));
-        canvas.rotate(static_cast<float>(std::sin(timeSeconds * 1000.0 / 150.0) * 0.06));
-        setStroke(canvas, kPaper);
-        canvas.setLineWidth(4.0f);
-        canvas.beginPath();
-        canvas.roundRect(static_cast<float>(-slot.w * 0.5 - 6.0),
-                         static_cast<float>(-slot.h * 0.5 - 6.0),
-                         static_cast<float>(slot.w + 12.0), static_cast<float>(slot.h + 12.0),
-                         static_cast<float>(slot.w / 20.0 + 2.0));
-        canvas.stroke();
-        canvas.restore();
+    // --- the tiles ---------------------------------------------------------
+    //
+    // gardn's UiLoadoutPetal, ported. Each tile keeps its own box and eases
+    // toward wherever its slot is, which is what makes a swap slide, a
+    // picked-up petal grow and follow the cursor, and a petal let go over
+    // nothing float back home.
+
+    // Which slot the cursor would drop on. gardn ignores the tile's OWN slot
+    // here, so hovering where you picked a petal up keeps it on the cursor
+    // rather than snapping it back under your hand.
+    const int dropTarget = (hovered >= 0 && hovered <= kLoadoutTrashSlot) ? hovered : -1;
+    const int heldSlot = drag_.source == DragState::Source::LoadoutSlot ? drag_.slot : -1;
+    const double ease = loadoutEase(dt);
+    const double wobble = std::sin(timeSeconds * 1000.0 / 150.0) * 0.1;
+
+    // A swap trades two slots' contents, so each tile takes over the box the
+    // other one had and eases back from there. Read from a snapshot: both
+    // sides of a swap change in the same frame, and each has to see where the
+    // other WAS, not where it has just been put.
+    const std::array<LoadoutTileAnim, kLoadoutBarSlots> before = loadoutTiles_;
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        LoadoutTileAnim& tile = loadoutTiles_[at];
+        const Profile::Slot slot = i < owned ? shown[at] : Profile::Slot{};
+        const bool sameAsBefore = before[at].live && before[at].petalIndex == slot.petalIndex &&
+                                  before[at].rarity == slot.rarity;
+        if (!sameAsBefore) {
+            // The slot this petal came from, if it came from one: the partner
+            // of a two-way swap, which is the only way a petal moves along
+            // the bar. Anything else appears where it belongs.
+            int from = -1;
+            for (int j = 0; j < kLoadoutBarSlots && from < 0; ++j) {
+                if (j == i || !before[static_cast<std::size_t>(j)].live) continue;
+                const auto other = static_cast<std::size_t>(j);
+                const bool holdsOurs = before[other].petalIndex == slot.petalIndex &&
+                                       before[other].rarity == slot.rarity;
+                const bool tookOurs = j < owned && before[at].live &&
+                                      shown[other].petalIndex == before[at].petalIndex &&
+                                      shown[other].rarity == before[at].rarity;
+                if (holdsOurs && tookOurs) from = j;
+            }
+            const Rect home = layout.slots[at];
+            if (from >= 0) {
+                const LoadoutTileAnim& source = before[static_cast<std::size_t>(from)];
+                tile.cx = source.cx;
+                tile.cy = source.cy;
+                tile.w = source.w;
+                tile.h = source.h;
+            } else {
+                tile.cx = home.x + home.w * 0.5;
+                tile.cy = home.y + home.h * 0.5;
+                tile.w = home.w;
+                tile.h = home.h;
+            }
+            tile.petalIndex = slot.petalIndex;
+            tile.rarity = slot.rarity;
+        }
+        tile.live = i < owned && !slot.empty();
     }
 
+    // Where each tile is heading this frame, and how it is drawn when it gets
+    // there. An armed secondary slot and a petal on the cursor both swell and
+    // rock, which is gardn's whole vocabulary for "this one is in your hand".
+    struct TileDraw {
+        int slot;
+        bool rock;
+    };
+    std::array<TileDraw, kLoadoutBarSlots> order{};
+    std::size_t queued = 0;
+    int onTop = -1;
     for (int i = 0; i < kLoadoutBarSlots; ++i) {
-        if (i >= owned) break;
         const auto at = static_cast<std::size_t>(i);
-        if (profile.loadout[at].empty()) continue;
-        // The slot a petal is being dragged out of renders as a plain empty
-        // slot: only its icon is lifted, not the chrome.
-        if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot == i) continue;
+        LoadoutTileAnim& tile = loadoutTiles_[at];
+        if (!tile.live) continue;
+        const Rect home = layout.slots[at];
+        const bool held = i == heldSlot;
+        const bool armed = i >= kLoadoutBarPrimary &&
+                           i - kLoadoutBarPrimary == selectedSecondary_;
+        double targetX = home.x + home.w * 0.5;
+        double targetY = home.y + home.h * 0.5;
+        double targetW = home.w;
+        double targetH = home.h;
+        bool rock = false;
+        if (held && dropTarget >= 0 && dropTarget != i) {
+            // Over a slot it could land in: the tile sits IN that slot, at
+            // that slot's size, so the drop is previewed rather than guessed.
+            const auto over = dropTarget == kLoadoutTrashSlot
+                                  ? layout.trash
+                                  : layout.slots[static_cast<std::size_t>(dropTarget)];
+            targetX = over.x + over.w * 0.5;
+            targetY = over.y + over.h * 0.5;
+            targetW = over.w;
+            targetH = over.h;
+        } else if (held) {
+            targetX = window.mouseX();
+            targetY = window.mouseY();
+            targetW = home.w + kLoadoutTileLift * scale;
+            targetH = home.h + kLoadoutTileLift * scale;
+            rock = true;
+        } else if (armed) {
+            targetW = home.w + kLoadoutTileArmed * scale;
+            targetH = home.h + kLoadoutTileArmed * scale;
+            rock = true;
+        }
+        easeTo(tile.cx, targetX, ease);
+        easeTo(tile.cy, targetY, ease);
+        easeTo(tile.w, targetW, ease);
+        easeTo(tile.h, targetH, ease);
+        if (held) {
+            onTop = i;
+        } else {
+            order[queued++] = {i, rock};
+        }
+    }
+    // The one in hand goes down last, over every slot it might be crossing.
+    if (onTop >= 0) order[queued++] = {onTop, dropTarget < 0 || dropTarget == onTop};
+
+    for (std::size_t drawn = 0; drawn < queued; ++drawn) {
+        const TileDraw& entry = order[drawn];
+        const auto at = static_cast<std::size_t>(entry.slot);
+        const LoadoutTileAnim& anim = loadoutTiles_[at];
         ItemTile tile;
-        tile.petalIndex = profile.loadout[at].petalIndex;
-        tile.rarity = profile.loadout[at].rarity;
+        tile.petalIndex = anim.petalIndex;
+        tile.rarity = anim.rarity;
         tile.timeSeconds = timeSeconds;
-        tile.reload = slotReloadProgress(net, i);
-        tile.health = slotHealthFraction(net, i);
-        tile.counter = slotCounterLabel(net, i);
-        drawItemTile(canvas, sprites, layout.slots[at], tile);
+        tile.reload = slotReloadProgress(net, entry.slot);
+        tile.health = slotHealthFraction(net, entry.slot);
+        tile.counter = slotCounterLabel(net, entry.slot);
+        const Rect box{anim.cx - anim.w * 0.5, anim.cy - anim.h * 0.5, anim.w, anim.h};
+        if (!entry.rock) {
+            drawItemTile(canvas, sprites, box, tile);
+            continue;
+        }
+        canvas.save();
+        canvas.translate(static_cast<float>(anim.cx), static_cast<float>(anim.cy));
+        canvas.rotate(static_cast<float>(wobble));
+        drawItemTile(canvas, sprites, {-anim.w * 0.5, -anim.h * 0.5, anim.w, anim.h}, tile);
+        canvas.restore();
     }
     canvas.restore();
 }
 
-void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
-    const Profile& profile = net.profile();
-    const int owned = static_cast<int>(profile.loadout.size());
+/// Sends a loadout edit AND shows it, which is the only way the bar reads as
+/// direct. See expectedLoadout_ for why the two are not the same thing.
+void MenuSystem::expectLoadout(const NetClient& net, double timeSeconds) {
+    if (expectedLoadout_.empty()) expectedLoadout_ = net.profile().loadout;
+    expectedLoadoutUntil_ = timeSeconds + kLoadoutEchoGrace;
+}
+
+void MenuSystem::swapLoadoutSlots(NetClient& net, double timeSeconds, int a, int b) {
+    const int owned = static_cast<int>(net.profile().loadout.size());
+    if (a < 0 || b < 0 || a >= owned || b >= owned || a == b) return;
+    expectLoadout(net, timeSeconds);
+    std::swap(expectedLoadout_[static_cast<std::size_t>(a)],
+              expectedLoadout_[static_cast<std::size_t>(b)]);
+    net.swapLoadoutSlots(a, b);
+}
+
+void MenuSystem::setLoadoutSlot(NetClient& net, double timeSeconds, int slot,
+                                std::uint16_t petalIndex, Rarity rarity) {
+    const int owned = static_cast<int>(net.profile().loadout.size());
+    if (slot < 0 || slot >= owned) return;
+    expectLoadout(net, timeSeconds);
+    expectedLoadout_[static_cast<std::size_t>(slot)].petalIndex = petalIndex;
+    expectedLoadout_[static_cast<std::size_t>(slot)].rarity = rarity;
+    net.setLoadoutSlot(slot, petalIndex, rarity);
+}
+
+void MenuSystem::clearLoadoutSlot(NetClient& net, double timeSeconds, int slot) {
+    setLoadoutSlot(net, timeSeconds, slot, kNoPetal, Rarity::Common);
+}
+
+void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeSeconds) {
+    // The bar's own view of the loadout, not the profile's: a petal picked up
+    // one frame after a swap was sent must be the one the player can SEE in
+    // that slot. See expectedLoadout_.
+    const std::vector<Profile::Slot>& shown =
+        expectedLoadout_.empty() ? net.profile().loadout : expectedLoadout_;
+    const int owned = static_cast<int>(shown.size());
     const int hovered = loadoutHovered_;
 
     // Picking a petal up off the bar. Nothing is sent yet: a drag that ends
@@ -1259,10 +1456,10 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
     if (window.mousePressed(MouseButton::Left) && hovered >= 0 && hovered < kLoadoutBarSlots &&
         !drag_.active()) {
         const auto at = static_cast<std::size_t>(hovered);
-        if (hovered < owned && !profile.loadout[at].empty()) {
+        if (hovered < owned && !shown[at].empty()) {
             drag_.source = DragState::Source::LoadoutSlot;
-            drag_.petalIndex = profile.loadout[at].petalIndex;
-            drag_.rarity = profile.loadout[at].rarity;
+            drag_.petalIndex = shown[at].petalIndex;
+            drag_.rarity = shown[at].rarity;
             drag_.slot = hovered;
         }
     }
@@ -1272,9 +1469,9 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
     if (hovered >= 0 && hovered < kLoadoutBarSlots) {
         if (hovered < owned) {
             if (drag_.source == DragState::Source::Inventory) {
-                net.setLoadoutSlot(hovered, drag_.petalIndex, drag_.rarity);
+                setLoadoutSlot(net, timeSeconds, hovered, drag_.petalIndex, drag_.rarity);
             } else if (drag_.slot != hovered) {
-                net.swapLoadoutSlots(drag_.slot, hovered);
+                swapLoadoutSlots(net, timeSeconds, drag_.slot, hovered);
             }
         }
         drag_.clear();
@@ -1282,9 +1479,12 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
     }
 
     // Anywhere that is not a slot sends the petal back to the inventory --
-    // including the trash, and including a drop over an open panel.
+    // including the trash, and including a drop over an open panel. gardn has
+    // no such rule: it throws a petal away on its Delete slot and floats
+    // everything else home. This game keeps the rule because its bar has no
+    // Delete slot to offer instead.
     if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot < owned) {
-        net.setLoadoutSlot(drag_.slot, kNoPetal, Rarity::Common);
+        clearLoadoutSlot(net, timeSeconds, drag_.slot);
     }
     drag_.clear();
 }
@@ -1292,6 +1492,12 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net) {
 void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& sprites,
                              double timeSeconds) {
     if (!drag_.active() || drag_.petalIndex == kNoPetal) return;
+    // A petal dragged off the BAR is not drawn here: its own tile lifts off
+    // the bar and rides the cursor, which is gardn's drag and the reason a
+    // drop reads as putting something down rather than as a click that
+    // happened to work. Only the inventory, which has no such tile to lend,
+    // still needs a ghost.
+    if (drag_.source == DragState::Source::LoadoutSlot) return;
     if (!inGame_) {
         // The title screen's drag image is the sprite alone -- no plate, no
         // outline -- with the cursor at its centre.
@@ -1674,9 +1880,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     if (inGame_) {
         drawIconStrip(canvas, window, timeSeconds);
         if (overStripUnderBar) overStripUnderBar();
-        drawLoadoutBar(canvas, window, net, sprites, timeSeconds);
+        drawLoadoutBar(canvas, window, net, sprites, timeSeconds, dt);
     } else {
-        drawLoadoutBar(canvas, window, net, sprites, timeSeconds);
+        drawLoadoutBar(canvas, window, net, sprites, timeSeconds, dt);
         drawIconStrip(canvas, window, timeSeconds);
     }
     if (layer == PanelLayer::Over) {
@@ -1687,7 +1893,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // was painted on: a press the card is standing on stays the card's, and a
     // drop into the card must reach the card before the bar decides it landed
     // on nothing.
-    updateLoadoutInput(window, net);
+    updateLoadoutInput(window, net, timeSeconds);
     drawDragged(canvas, window, sprites, timeSeconds);
 }
 

@@ -56,15 +56,10 @@ inline constexpr double kPetalArtSize = 20.0;
 ///
 /// The same figure as kPetalArtSize, and not the same constant: a tile is
 /// written in its own 60-unit design cell and the world in world units, so the
-/// two are free to move apart again. They agree today because both are stated
-/// against gardn's petal radius.
-///
-/// Ten units of radius per unit of size is what lines this game's `size` stat
-/// up with gardn's `radius` field ON AVERAGE: it is exact for 19 of the 43
-/// petals both games have and within a fifth for a dozen more. It is only the
-/// FALLBACK though, because on average is not good enough -- see
-/// kGardnIconRadius in the .cpp for the petals the two games genuinely
-/// disagree about.
+/// two are free to move apart again. This is where they HAVE moved apart --
+/// see kGardnIcon in the .cpp, which sizes a tile's icon from what gardn
+/// actually draws rather than from any radius. This constant is only the
+/// fallback for the petals gardn has never had.
 inline constexpr double kPetalIconSize = 20.0;
 
 /// gardn lifts the icon off centre to leave room for the name along the bottom
@@ -72,30 +67,24 @@ inline constexpr double kPetalIconSize = 20.0;
 inline constexpr double kItemTileIconRise = 5.0;
 inline constexpr double kItemTileIconScale = 0.833;
 
-/// gardn clamps a petal whose radius exceeds 20 design units, so a giant petal
-/// stays inside its plate instead of overflowing it. Expressed as a diameter
-/// because the clamp applies to a whole cluster here, not just a lone petal.
-///
-/// A CAP, not a box: anything already inside it is left at its natural size,
-/// which is what makes a moon read as a moon and a dahlia as a dahlia.
-inline constexpr double kItemTileIconCap = 40.0;
-
 /// The plate's border is the rarity colour at 0.8 HSV value -- gardn's
 /// `Renderer::HSV(RARITY_COLORS[rarity], 0.8)`.
 inline constexpr double kItemTilePlateShade = 0.8;
 
-/// Draws a petal the way gardn does: one icon at its NATURAL size, or `count`
-/// of them spaced evenly on a ring and each turned to face outward.
+/// Draws a petal the way gardn does: one icon at the size gardn draws it, or
+/// `count` of them spaced evenly on a ring and each turned to face outward.
 ///
-/// Natural size is the point. A basic petal is a small disc inside its plate
-/// and a giant one nearly fills it, which is how a player reads size at a
-/// glance; fitting every petal to the same box throws that away. `maxDiameter`
-/// caps the cluster for the few that would otherwise overflow -- anything that
-/// already fits is left alone.
+/// The size is the point. A basic petal is a small disc inside its plate and a
+/// bone nearly spans it, which is how a player reads a petal at a glance;
+/// fitting every petal to the same box throws that away, and so does sizing
+/// one by its collision radius when gardn's picture of it is twice that.
+/// gardn's measured drawing size is what kGardnIcon holds; a petal gardn does
+/// not have falls back to kPetalIconSize x `sizeStat` x `visual_scale`.
 ///
-/// Natural means gardn's own icon radius for this petal, falling back to
-/// kPetalIconSize x `sizeStat` -- the tile's own constant, in the tile's own
-/// design units, even where it currently holds the same number the world does.
+/// `maxDiameter` is a caller's backstop for that fallback and nothing more:
+/// gardn's own oversize rule (shrink a petal whose radius passes 20) is
+/// applied inside, and every petal it measures already fits its plate, so the
+/// tile passes 0 and lets the face clip catch the rest.
 ///
 /// `sizeStat` and `count` are the RARITY-scaled values (`petalStats`), not the
 /// base ones: a mythic light is five icons where a common one is a single icon.

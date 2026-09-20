@@ -762,11 +762,20 @@ private:
     /// The bar's box and slot scale for the screen it is being drawn on. The
     /// title screen gives it a fixed 900x210 region below centre; in game it
     /// owns the whole viewport at three-quarter scale.
-    void drawLoadoutBar(Canvas&, Window&, NetClient&, const SpriteCache&, double timeSeconds);
+    void drawLoadoutBar(Canvas&, Window&, NetClient&, const SpriteCache&, double timeSeconds,
+                        double dt);
     /// Pick-up and drop, run AFTER the open panel has had the same click. The
     /// bar is painted under the panel and so must not answer for a press the
     /// panel is standing on top of.
-    void updateLoadoutInput(Window&, NetClient&);
+    void updateLoadoutInput(Window&, NetClient&, double timeSeconds);
+    /// The three loadout edits the bar can make. Each one sends the request
+    /// AND records what the answer should be, so the tiles start moving on
+    /// the click rather than on the echo -- see expectedLoadout_.
+    void expectLoadout(const NetClient&, double timeSeconds);
+    void swapLoadoutSlots(NetClient&, double timeSeconds, int a, int b);
+    void setLoadoutSlot(NetClient&, double timeSeconds, int slot, std::uint16_t petalIndex,
+                        Rarity rarity);
+    void clearLoadoutSlot(NetClient&, double timeSeconds, int slot);
     void drawDragged(Canvas&, Window&, const SpriteCache&, double timeSeconds);
     void activateStripSlot(int slot);
 
@@ -828,6 +837,47 @@ private:
     /// -1 back, +1 forward, 0 none: which way Q/E asked the selection to move.
     int pendingCycle_ = 0;
     bool pendingSecondaryDelete_ = false;
+
+    /// One loadout tile's animated box, in canvas units.
+    ///
+    /// gardn animates the PETAL, not the slot: its UiLoadoutPetal owns an
+    /// x/y/w/h that eases toward wherever its slot happens to be, so a swap
+    /// slides two tiles past each other, a picked-up petal grows and rides the
+    /// cursor, and letting go over nothing floats it home. A tile painted
+    /// straight into its slot rect can do none of that.
+    ///
+    /// `petalIndex`/`rarity` are what this box was showing last frame, which
+    /// is how a swap is recognised: the two slots' contents trade, so each
+    /// takes over the other's box and eases back from there.
+    struct LoadoutTileAnim {
+        double cx = 0;
+        double cy = 0;
+        double w = 0;
+        double h = 0;
+        std::uint16_t petalIndex = kNoPetal;
+        Rarity rarity = Rarity::Common;
+        /// Whether the box is worth easing FROM. A tile that has never been
+        /// drawn appears in its slot rather than flying in from the origin.
+        bool live = false;
+    };
+    std::array<LoadoutTileAnim, kLoadoutBarSlots> loadoutTiles_{};
+
+    /// What the bar draws while the server catches up.
+    ///
+    /// The loadout is the server's, and a swap is a request: the profile does
+    /// not change until the echo lands, a round trip later. Waiting for it
+    /// reads as a dropped click -- and worse, the dragged tile and the slot it
+    /// was dropped on would both sit in that slot until the echo. So a local
+    /// edit is shown at once and reconciled: empty means "the profile", and it
+    /// is dropped the moment the profile agrees with it or the deadline
+    /// passes, whichever comes first. gardn does the same thing with
+    /// `Game::cached_loadout` and `no_change_ticks`.
+    ///
+    /// Nothing is ever SENT from here. The server stays the only authority,
+    /// and a refused edit corrects itself within the deadline.
+    std::vector<Profile::Slot> expectedLoadout_;
+    double expectedLoadoutUntil_ = 0;
+
     Rect panelRect_{};
 
     InventoryPanel inventory_;
