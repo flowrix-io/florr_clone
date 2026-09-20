@@ -1215,6 +1215,37 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         }
     }
 
+    // The bar's box is not fixed. It moves wholesale between the two screens
+    // -- below centre on the title screen, on the bottom edge in game, and at
+    // a different scale with it -- and again whenever the window is resized or
+    // the bar's shape is switched. A tile only ever EASES toward its slot, so
+    // a move like that left the bar arriving on its own while the petals
+    // trailed across the screen after it. Carry every box by the move its OWN
+    // slot made instead: the petals ride with the bar, and an animation still
+    // in flight -- a swap sliding, a tile floating home -- carries on from
+    // where it had got to rather than starting again.
+    //
+    // A tile on the cursor is left alone: it is anchored to the mouse, not to
+    // any slot, and moving it with the bar would tear it out of the hand
+    // holding it.
+    const int heldSlot = drag_.source == DragState::Source::LoadoutSlot ? drag_.slot : -1;
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        LoadoutTileAnim& tile = loadoutTiles_[at];
+        const Rect was = loadoutRects_[at];
+        const Rect now = layout.slots[at];
+        // `was.w` is zero on the bar's first frame up -- there is no previous
+        // layout to have moved from, and the tile pass below seats the tile in
+        // its slot anyway.
+        if (!tile.live || i == heldSlot || !(was.w > 0)) continue;
+        if (was.x == now.x && was.y == now.y && was.w == now.w) continue;
+        const double ratio = now.w / was.w;
+        tile.cx = now.x + now.w * 0.5 + (tile.cx - (was.x + was.w * 0.5)) * ratio;
+        tile.cy = now.y + now.h * 0.5 + (tile.cy - (was.y + was.h * 0.5)) * ratio;
+        tile.w *= ratio;
+        tile.h *= ratio;
+    }
+
     loadoutRects_ = layout.slots;
     loadoutSlotSide_ = metrics.primarySize * scale;
     loadoutScale_ = scale;
@@ -1286,7 +1317,6 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     // here, so hovering where you picked a petal up keeps it on the cursor
     // rather than snapping it back under your hand.
     const int dropTarget = (hovered >= 0 && hovered <= kLoadoutTrashSlot) ? hovered : -1;
-    const int heldSlot = drag_.source == DragState::Source::LoadoutSlot ? drag_.slot : -1;
     const double ease = loadoutEase(dt);
     const double wobble = std::sin(timeSeconds * 1000.0 / 150.0) * 0.1;
 
