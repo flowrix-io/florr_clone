@@ -671,6 +671,16 @@ struct BodySegment {
     /// Distance this segment holds behind the one in front.
     double spacing = 0;
     bool head = false;
+    /// The whole chain draws on ONE health pool -- a leech. Every hit lands on
+    /// the pool wherever it was thrown, every segment shows the same bar, and
+    /// emptying it kills the animal whole. A centipede leaves this false and
+    /// keeps a pool per segment, which is what lets it be cut in half.
+    ///
+    /// Carried per SEGMENT rather than looked up from the head's config on
+    /// every hit, because the damage path must answer this without the content
+    /// registry -- and because a severed half must keep answering the same way
+    /// as the head it no longer has.
+    bool sharedHealth = false;
     /// The chain's head, carried by every segment INCLUDING the head itself.
     /// Two segments of one centipede must not push each other apart, and that
     /// test has to be a field compare rather than a walk up the chain.

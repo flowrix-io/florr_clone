@@ -631,6 +631,10 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
         m.segmentBodyIndex = ctx.link(mobIds, id + "_body", "body segment");
         m.segmentCount = m.segmentBodyIndex != kInvalidIndex ? kCentipedeSegmentCount : 0;
     }
+    // A leech is one animal wearing ten bodies: the segments share a health
+    // pool, so hitting the tail hurts the head and the whole chain dies
+    // together. A centipede is the opposite and keeps a pool per bead.
+    m.sharedSegmentHealth = id == "leech" || id == "leech_body";
 
     if (src.contains("random_size")) {
         const Json& jitter = src["random_size"];

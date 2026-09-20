@@ -224,6 +224,41 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     if (credited != NULL_ENTITY) bounty->credit(credited, amount);
 }
 
+/// Which segment of a shared-health chain holds the pool: the one at the FRONT
+/// of whatever is still joined to `e`.
+///
+/// A leech is one animal, so its health has to be one number, one ledger and
+/// one death -- which means one entity has to own all three. The front segment
+/// is that entity because it is already the chain's root everywhere else: the
+/// AI steers it, the followers trace it, and repairChains() promotes whatever
+/// ends up at the front when a leader is lost. Resolving by WALKING rather than
+/// by reading `chainHead` is what keeps a half that outlived its head a whole
+/// animal instead of a body with no pool.
+///
+/// Returns `e` itself for anything that is not a shared chain, which is every
+/// mob in the game but the leech.
+Entity poolOwner(const World& world, Entity e) {
+    const BodySegment* segment = world.tryGet<BodySegment>(e);
+    if (segment == nullptr || !segment->sharedHealth) return e;
+
+    Entity owner = e;
+    // Bounded by the longest chain that can exist, plus the head. A cycle is
+    // cut by the AI pass on the tick after it forms, and until then this walk
+    // must end rather than spin the tick.
+    for (int hop = 0; hop <= kCentipedeSegmentCount; ++hop) {
+        const BodySegment* link = world.tryGet<BodySegment>(owner);
+        if (link == nullptr || !link->sharedHealth) return owner;
+        const Entity ahead = link->ahead;
+        // A leader the world has taken away -- despawned off-screen, or reaped
+        // after a tick this one somehow survived -- leaves this segment at the
+        // front. A leader marked Dead is NOT skipped: the pool is empty and
+        // the hit belongs to the corpse, where canHit() refuses it.
+        if (ahead == NULL_ENTITY || !world.isAlive(ahead)) return owner;
+        owner = ahead;
+    }
+    return owner;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -351,6 +386,17 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         result.refused = true;
         return result;
     }
+
+    // A shared chain answers as ONE mob from here down: armour, the ledger,
+    // the XP, the loot slots and the death all belong to the pool's owner,
+    // whichever of its ten bodies the hit actually landed on. Done at the top
+    // rather than at the health write so there is no second rule about which
+    // of the two entities each of those consequences attaches to.
+    //
+    // The struck segment is kept for exactly one purpose: the floating number
+    // pops where the player hit, not up at the head.
+    const Entity struck = victim;
+    victim = poolOwner(world, victim);
     if (!canHit(world, victim, source, nowMillis)) {
         // One refusal still pays the ledger. Every reference path writes the
         // contribution BEFORE it tests whether the mob is already dead --
@@ -403,6 +449,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         }
         result.applied = blocked ? 0.0 : amount;
         if (!blocked) creditSwing(world, victim, source, amount);
+        mirrorSharedChain(world, victim, false, NULL_ENTITY);
         return result;
     }
 
@@ -531,8 +578,13 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // is ever narrated. A petal paying for its own swing therefore loses
     // health silently, which is what setInstanceHealth() does.
     if (events_ != nullptr && (world.has<MobTag>(victim) || world.has<PlayerTag>(victim))) {
-        if (const NetId* id = world.tryGet<NetId>(victim)) {
-            const Transform* transform = world.tryGet<Transform>(victim);
+        // Reported against the body that was HIT. For everything but a leech
+        // that is the victim itself; for a leech it is the segment the petal
+        // touched, so the number rises off the bead the player is looking at
+        // while the pool it came out of lives up at the head.
+        const Entity shown = world.isAlive(struck) ? struck : victim;
+        if (const NetId* id = world.tryGet<NetId>(shown)) {
+            const Transform* transform = world.tryGet<Transform>(shown);
             std::uint8_t flags{0};
             if (kind == DamageKind::Poison) flags |= net::DamagePoison;
             // Every strike in the game reaches here as DamageKind::Lightning --
@@ -575,8 +627,58 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         // A player drops nothing: the account keeps the inventory, and the
         // Died message the server sends is the whole of the consequence.
         if (!world.has<PlayerTag>(victim)) awardBounty(world, victim);
+        mirrorSharedChain(world, victim, true, killer);
+        return result;
     }
+    mirrorSharedChain(world, victim, false, NULL_ENTITY);
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Shared segment health
+// ---------------------------------------------------------------------------
+
+void CombatSystem::mirrorSharedChain(World& world, Entity owner, bool fatal, Entity killer) {
+    const BodySegment* head = world.tryGet<BodySegment>(owner);
+    if (head == nullptr || !head->sharedHealth) return;
+    const Health* pool = world.tryGet<Health>(owner);
+    if (pool == nullptr) return;
+
+    // Read the pool out before anything structural happens below, and walk the
+    // chain into a list for the same reason: adding Dead to a segment moves it
+    // to another archetype and invalidates every column pointer this walk
+    // would otherwise still be holding.
+    const double fraction = pool->fraction();
+    const double flashUntil = pool->flashUntilMillis;
+
+    chainScratch_.clear();
+    Entity at = head->behind;
+    for (int hop = 0; hop < kCentipedeSegmentCount && at != NULL_ENTITY; ++hop) {
+        if (!world.isAlive(at)) break;
+        const BodySegment* link = world.tryGet<BodySegment>(at);
+        if (link == nullptr || !link->sharedHealth) break;
+        chainScratch_.push_back(at);
+        at = link->behind;
+    }
+
+    for (const Entity segment : chainScratch_) {
+        if (Health* health = world.tryGet<Health>(segment)) {
+            // By FRACTION, not by the number: the pool is the owner's bar, and
+            // a segment authored with a different max would otherwise show a
+            // bar that disagrees with the animal it belongs to. What the client
+            // is sent is the fraction anyway.
+            health->current = health->max * fraction;
+            health->flashUntilMillis = std::max(health->flashUntilMillis, flashUntil);
+        }
+        if (!fatal || world.has<Dead>(segment)) continue;
+        // One animal, one death. The segments carry no contributor ledger --
+        // every swing was credited to the pool's owner -- so they pay no XP,
+        // reserve no loot slot and enter nobody's kill gallery. They are the
+        // body of a mob that has already paid out, and this is what takes them
+        // off the map with it.
+        world.add<Dead>(segment, Dead{killer});
+        deaths_.push_back({segment, killer, false});
+    }
 }
 
 void CombatSystem::awardBounty(World& world, Entity victim) {
@@ -733,6 +835,10 @@ void CombatSystem::applyPoison(World& world, Entity victim, Entity source, doubl
                                double durationMillis, double nowMillis) {
     if (!std::isfinite(perSecond) || perSecond <= 0.0) return;
     if (!std::isfinite(durationMillis) || durationMillis <= 0.0) return;
+    // A status lands on the ANIMAL, and a shared chain is one animal: poison
+    // dripped into the tail has to tick against the pool the tail draws on, or
+    // it is a bite the leech never feels. See poolOwner().
+    victim = poolOwner(world, victim);
     if (!world.isAlive(victim) || !world.has<Health>(victim)) return;
 
     // Credited to the PLAYER rather than to the petal that applied it: the
@@ -774,6 +880,9 @@ void CombatSystem::applySlow(World& world, Entity victim, double factor, double 
                              Rarity sourceRarity, double nowMillis) {
     if (!std::isfinite(factor) || factor >= 1.0) return;
     if (!std::isfinite(durationMillis) || durationMillis <= 0.0) return;
+    // The head is also the only body a slow could possibly mean: the segments
+    // do not steer, they trace whatever is in front of them.
+    victim = poolOwner(world, victim);
     if (!world.isAlive(victim) || !world.has<Health>(victim)) return;
     // A flower is never slowed by anything. applyMobSlow() is the reference's
     // one and only slow implementation -- both the petal bridge and the web
@@ -806,6 +915,10 @@ void CombatSystem::applySlow(World& world, Entity victim, double factor, double 
 void CombatSystem::applyArmorShred(World& world, Entity victim, double amount,
                                    double nowMillis) {
     if (!std::isfinite(amount) || amount <= 0.0) return;
+    // A status lands on the ANIMAL, and a shared chain is one animal: a bur
+    // that stripped only the tail it touched would strip armour nothing reads,
+    // because the damage path bills the pool's owner. See poolOwner().
+    victim = poolOwner(world, victim);
     if (!world.isAlive(victim) || !world.has<Health>(victim)) return;
     // Armour is a mob stat, so a strip is a mob debuff. A petal landing on
     // another flower in the arena takes nothing off it, and an orphaned bur
@@ -825,6 +938,10 @@ void CombatSystem::applyArmorShred(World& world, Entity victim, double amount,
 void CombatSystem::applyNoHeal(World& world, Entity victim, double durationMillis,
                                double nowMillis) {
     if (!std::isfinite(durationMillis) || durationMillis <= 0.0) return;
+    // A status lands on the ANIMAL, and a shared chain is one animal: the
+    // lockout is asked of whoever owns the pool, so a lock on the tail alone
+    // would be a dandelion that never holds a leech down. See poolOwner().
+    victim = poolOwner(world, victim);
     if (!world.isAlive(victim) || !world.has<Health>(victim)) return;
 
     // Longest wins and the expiry never comes closer, the rule the slow and

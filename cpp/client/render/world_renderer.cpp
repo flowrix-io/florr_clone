@@ -2554,7 +2554,15 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mobShadows_[entity.netId] = mob;
             // Bars, names and tiers all go down after every body, so a mob
             // drawn later cannot cover an earlier one's label.
-            mobLabels_.push_back(mob);
+            //
+            // A leech's trailing bodies wear no plate at all. The chain is one
+            // animal on one health pool, so the head's bar is the whole truth
+            // about it and nine more copies of it would be nine bars saying
+            // the same thing -- stacked less than a diameter apart, over a
+            // name and a tier that are equally redundant. The plate is one
+            // block (see drawMobLabel), so it goes or stays whole.
+            const MobConfig* type = content_ ? &content_->mob(mob.typeIndex) : nullptr;
+            if (type == nullptr || !type->sharedChainBody()) mobLabels_.push_back(mob);
             break;
         }
 

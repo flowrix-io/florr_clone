@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <vector>
 
 using namespace flix;
 
@@ -290,6 +291,154 @@ TEST(a_target_with_no_health_component_cannot_be_damaged) {
     a.world.add<Transform>(scenery, Transform{{1000, 1000}, 0.0});
     CHECK(a.combat.applyDamage(a.world, scenery, player, 10.0, 0.0).refused);
     CHECK(!a.world.has<Dead>(scenery));
+}
+
+// ---------------------------------------------------------------------------
+// Shared segment health (the leech)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A leech: a head plus `count` bodies, joined both ways and all drawing on the
+/// head's pool. Built by hand rather than spawned so the test says what the
+/// damage path is promised, without a content registry in the way.
+std::vector<Entity> sharedChain(Arena& a, int count, double health) {
+    std::vector<Entity> chain;
+    chain.push_back(a.mob({1000, 1000}, health, 7.0));
+    for (int i = 1; i <= count; ++i) {
+        chain.push_back(a.mob({1000 + 40.0 * i, 1000}, health, 1.0));
+    }
+    for (std::size_t i = 0; i < chain.size(); ++i) {
+        BodySegment link;
+        link.sharedHealth = true;
+        link.head = i == 0;
+        link.chainHead = chain[0];
+        link.segmentIndex = static_cast<int>(i);
+        if (i > 0) link.ahead = chain[i - 1];
+        if (i + 1 < chain.size()) link.behind = chain[i + 1];
+        a.world.add<BodySegment>(chain[i], link);
+    }
+    return chain;
+}
+
+} // namespace
+
+TEST(a_leech_spends_one_health_pool_however_many_bodies_are_hit) {
+    Arena a;
+    const std::vector<Entity> chain = sharedChain(a, 9, 100.0);
+    const Entity player = a.player({1000, 1000});
+
+    // Hit the TAIL. The pool is the head's, so that is the bar that moves --
+    // and every body reads the same fraction back, because a leech shows one
+    // animal's health on ten sprites.
+    const DamageResult tail = a.combat.applyDamage(a.world, chain.back(), player, 30.0, 1000.0);
+    CHECK(!tail.refused);
+    CHECK_NEAR(tail.applied, 30.0, 1e-9);
+    for (const Entity segment : chain) CHECK_NEAR(a.health(segment), 70.0, 1e-9);
+    // Hit anywhere, flash everywhere: the animal reacts, not the bead.
+    for (const Entity segment : chain) {
+        CHECK(a.world.get<Health>(segment).flashUntilMillis > 1000.0);
+    }
+
+    // A second body takes the pool down further still rather than starting a
+    // fresh 100 of its own.
+    a.combat.applyDamage(a.world, chain[4], player, 30.0, 1010.0);
+    for (const Entity segment : chain) CHECK_NEAR(a.health(segment), 40.0, 1e-9);
+
+    // The ledger is the head's alone, wherever the swings landed, so the XP,
+    // the loot slots and the kill gallery cannot pay a leech out ten times.
+    CHECK_EQ(a.world.get<Bounty>(chain[0]).contributors.size(), std::size_t(1));
+    CHECK_NEAR(a.world.get<Bounty>(chain[0]).contributors[0].damage, 60.0, 1e-9);
+    for (std::size_t i = 1; i < chain.size(); ++i) {
+        CHECK(a.world.get<Bounty>(chain[i]).contributors.empty());
+    }
+}
+
+TEST(emptying_a_leechs_pool_kills_every_body_at_once) {
+    Arena a;
+    const std::vector<Entity> chain = sharedChain(a, 9, 100.0);
+    const Entity player = a.player({1000, 1000});
+
+    // The killing blow lands on a middle segment: an animal with one pool is
+    // finished wherever it is emptied, and nothing is left crawling.
+    const DamageResult killing = a.combat.applyDamage(a.world, chain[3], player, 500.0, 1000.0);
+    CHECK(killing.killed);
+    for (const Entity segment : chain) {
+        CHECK(a.world.has<Dead>(segment));
+        CHECK_EQ(a.world.get<Dead>(segment).killer, player);
+        CHECK_NEAR(a.health(segment), 0.0, 1e-9);
+    }
+    // One death record per body -- the reaper and the client both work off
+    // them -- but only the head carries a ledger, so only the head pays.
+    CHECK_EQ(a.combat.deaths().size(), chain.size());
+    CHECK_EQ(a.combat.deaths()[0].entity, chain[0]);
+
+    // And the corpse stays a corpse: a hit on any body afterwards is refused
+    // rather than killing the animal a second time.
+    CHECK(a.combat.applyDamage(a.world, chain.back(), player, 10.0, 1010.0).refused);
+    CHECK_EQ(a.combat.deaths().size(), chain.size());
+}
+
+TEST(a_status_thrown_at_any_leech_body_lands_on_the_animal) {
+    Arena a;
+    const std::vector<Entity> chain = sharedChain(a, 4, 100.0);
+    const Entity player = a.player({1000, 1000});
+    a.world.add<Armor>(chain[0], Armor{5.0});
+
+    // Poison, a slow and an armour strip, all thrown at the TAIL. Each has to
+    // arrive where the damage path will read it back: poison ticks against the
+    // pool, the strip is subtracted from the pool owner's armour, and the slow
+    // is only meaningful on the one body in the chain that steers.
+    a.combat.applyPoison(a.world, chain.back(), player, 10.0, 1000.0, 0.0);
+    a.combat.applySlow(a.world, chain.back(), 0.5, 1000.0, Rarity::Common, 0.0);
+    a.combat.applyArmorShred(a.world, chain.back(), 4.0, 0.0);
+
+    const Afflictions& head = a.world.get<Afflictions>(chain[0]);
+    CHECK_NEAR(head.poisonPerSecond, 10.0, 1e-9);
+    CHECK_NEAR(head.slowFactor, 0.5, 1e-9);
+    CHECK_NEAR(head.armorShred, 4.0, 1e-9);
+    for (std::size_t i = 1; i < chain.size(); ++i) CHECK(!a.world.has<Afflictions>(chain[i]));
+
+    // And the strip is worth what it says: 5 armour less 4 stripped leaves 1
+    // off a hit thrown at a body that carries no armour of its own.
+    const DamageResult hit = a.combat.applyDamage(a.world, chain.back(), player, 20.0, 0.0);
+    CHECK_NEAR(hit.applied, 19.0, 1e-9);
+}
+
+TEST(a_centipede_keeps_a_pool_per_segment) {
+    Arena a;
+    const std::vector<Entity> chain = sharedChain(a, 4, 100.0);
+    // The same chain with the flag off is the other family: each bead is its
+    // own mob, which is what lets a centipede be cut in half.
+    for (const Entity segment : chain) a.world.get<BodySegment>(segment).sharedHealth = false;
+    const Entity player = a.player({1000, 1000});
+
+    a.combat.applyDamage(a.world, chain[2], player, 500.0, 1000.0);
+    CHECK(a.world.has<Dead>(chain[2]));
+    CHECK(!a.world.has<Dead>(chain[0]));
+    CHECK(!a.world.has<Dead>(chain[3]));
+    CHECK_NEAR(a.health(chain[0]), 100.0, 1e-9);
+    CHECK_NEAR(a.health(chain[3]), 100.0, 1e-9);
+    CHECK_EQ(a.combat.deaths().size(), std::size_t(1));
+}
+
+TEST(a_severed_leech_half_carries_the_pool_it_was_left_with) {
+    Arena a;
+    const std::vector<Entity> chain = sharedChain(a, 4, 100.0);
+    const Entity player = a.player({1000, 1000});
+    a.combat.applyDamage(a.world, chain[2], player, 40.0, 1000.0);
+
+    // The head is taken off the map without dying -- the despawn sweep, which
+    // destroys rather than kills -- and the chain pass cuts the link behind
+    // it. What is left is a shorter animal, still one pool, still the one it
+    // had: the front of whatever remains owns it.
+    a.world.destroy(chain[0]);
+    a.world.get<BodySegment>(chain[1]).ahead = NULL_ENTITY;
+    a.world.get<BodySegment>(chain[1]).head = true;
+
+    a.combat.applyDamage(a.world, chain.back(), player, 25.0, 1010.0);
+    for (std::size_t i = 1; i < chain.size(); ++i) CHECK_NEAR(a.health(chain[i]), 35.0, 1e-9);
+    CHECK_NEAR(a.world.get<Bounty>(chain[1]).contributors[0].damage, 25.0, 1e-9);
 }
 
 // ---------------------------------------------------------------------------

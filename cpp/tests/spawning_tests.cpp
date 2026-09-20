@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/systems/combat.h"
 #include "server/systems/loot.h"
 #include "server/systems/spawning.h"
 
@@ -1305,8 +1306,8 @@ TEST(a_leech_reaches_the_world_as_a_whole_animal) {
     CHECK(head != NULL_ENTITY);
     CHECK(sim.world.get<BodySegment>(head).head);
 
-    // Collected by the link back to the head rather than walked forwards:
-    // `behind` is the chain pass's to fill in, and none has run yet.
+    // Collected by the link back to the head, which is the one the spawner
+    // builds the chain along.
     std::vector<Entity> chain(kCentipedeSegmentCount + 1, NULL_ENTITY);
     Query<BodySegment> segments{sim.world};
     segments.each([&](Entity e, BodySegment& link) {
@@ -1331,7 +1332,71 @@ TEST(a_leech_reaches_the_world_as_a_whole_animal) {
         CHECK_NEAR(sim.world.get<Body>(e).radius, bodyRadius, 1e-9);
         CHECK_NEAR(sim.world.get<BodySegment>(e).spacing,
                    bodyRadius * kSegmentSpacingPerRadius, 1e-9);
+        // Joined BOTH ways from birth, and sharing one pool. The damage path
+        // walks the chain forwards from the head to spread the pool, and a
+        // leech shot on the tick it spawned -- before the chain pass has ever
+        // run -- must be as whole an animal as one that has been crawling for
+        // a minute.
+        CHECK_EQ(sim.world.get<BodySegment>(chain[static_cast<std::size_t>(i - 1)]).behind, e);
+        CHECK(sim.world.get<BodySegment>(e).sharedHealth);
     }
+    CHECK(sim.world.get<BodySegment>(head).sharedHealth);
+    CHECK_EQ(sim.world.get<BodySegment>(chain[kCentipedeSegmentCount]).behind, NULL_ENTITY);
+}
+
+TEST(a_shipped_leech_dies_whole_when_its_tail_is_finished) {
+    Sim sim;
+    // The shipped animal, spawned by the real path and killed through the real
+    // one: the synthetic chains in combat_tests prove the rule, and this proves
+    // the leech in the ocean is wired to it.
+    const std::uint16_t leech = shipped().mobIndex("leech");
+    const Entity head = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), leech,
+                                             Rarity::Common, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    CHECK(head != NULL_ENTITY);
+
+    Entity tail = head;
+    for (int i = 0; i < kCentipedeSegmentCount; ++i) {
+        const Entity next = sim.world.get<BodySegment>(tail).behind;
+        CHECK(next != NULL_ENTITY);
+        if (next == NULL_ENTITY) break;
+        tail = next;
+    }
+
+    const Entity player = sim.world.create();
+    sim.world.add<Transform>(player, Transform{kCentre, 0.0});
+    sim.world.add<PlayerTag>(player);
+    sim.world.add<Faction>(player, Faction{Team::Players, false});
+
+    // Half the animal's health, thrown at the very last body. One pool, so the
+    // head's bar moves and the tail is still standing.
+    CombatSystem combat;
+    const double pool = sim.world.get<Health>(head).max;
+    CHECK(pool > 0.0);
+    // Measured off what the hit actually took: the leech wears the tier's
+    // armour, and this test is about where the health went, not how much of it
+    // a common leech's armour turns away.
+    const DamageResult first = combat.applyDamage(sim.world, tail, player, pool * 0.5, 0.0);
+    CHECK(first.applied > 0.0);
+    const double left = pool - first.applied;
+    CHECK_NEAR(sim.world.get<Health>(head).current, left, 1e-9);
+    CHECK_NEAR(sim.world.get<Health>(tail).current,
+               sim.world.get<Health>(tail).max * (left / pool), 1e-9);
+    CHECK(!sim.world.has<Dead>(head));
+
+    // The rest of it finishes the animal, not the bead.
+    combat.applyDamage(sim.world, tail, player, pool, 100.0);
+    CHECK_EQ(combat.deaths().size(), std::size_t(kCentipedeSegmentCount + 1));
+    Entity at = head;
+    for (int i = 0; i <= kCentipedeSegmentCount; ++i) {
+        CHECK(sim.world.has<Dead>(at));
+        CHECK_EQ(sim.world.get<Dead>(at).killer, player);
+        // One ledger for the whole leech: the bodies pay no XP of their own,
+        // reserve no loot slot and enter no kill gallery.
+        if (i > 0) CHECK(sim.world.get<Bounty>(at).contributors.empty());
+        at = sim.world.get<BodySegment>(at).behind;
+    }
+    CHECK_EQ(sim.world.get<Bounty>(head).contributors.size(), std::size_t(1));
 }
 
 TEST(random_size_jitters_the_body_and_nothing_else) {

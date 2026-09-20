@@ -463,6 +463,18 @@ private:
                          Vec2 victimPosition, double victimRadius, double nowMillis);
     void tickProjectiles(World& world, const SpatialGrid& grid, const ContentRegistry& content,
                          double nowMillis, double dt);
+    /// Spread a shared chain's pool across the bodies that draw on it: every
+    /// segment behind `owner` is given the owner's health FRACTION and its
+    /// flash, and -- when the hit was fatal -- the same death.
+    ///
+    /// Display and disposal only. The pool itself is one number on one entity
+    /// and applyDamage is still the only thing that writes it; this is what
+    /// makes ten health bars agree about it. No-op for anything that is not a
+    /// shared chain.
+    ///
+    /// Not const-safe against iteration: it adds Dead.
+    void mirrorSharedChain(World& world, Entity owner, bool fatal, Entity killer);
+
     void awardBounty(World& world, Entity victim);
 
     /// Turns a killing blow on a flower into 1 HP plus the talent's own
@@ -500,6 +512,9 @@ private:
     /// player each tick. Reused rather than allocated in resolveMelee().
     std::vector<Entity> mobContactedPlayers_;
     std::vector<DeathRecord> deaths_;
+    /// The segments behind a shared chain's pool owner, gathered before any of
+    /// them is touched. A member so a hit on a leech allocates nothing.
+    std::vector<Entity> chainScratch_;
 
     std::uint64_t tick_ = 0;
 };

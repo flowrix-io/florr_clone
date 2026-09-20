@@ -355,6 +355,25 @@ struct MobConfig {
     std::uint16_t segmentBodyIndex = kInvalidIndex;
     int segmentCount = 0;
 
+    /// The chain is ONE animal rather than a string of them: every segment
+    /// reads the same health pool, a hit anywhere takes it off that pool, and
+    /// emptying it kills the whole body at once. A leech; a centipede is the
+    /// other kind, where each bead is its own mob and cutting one in half
+    /// leaves two live halves.
+    ///
+    /// Derived from the id beside the chain link above, for the same reason
+    /// that is: which family a mob belongs to is a naming rule here, not a
+    /// JSON field, and a spawner reading it per tick wants a bool rather than
+    /// a string compare.
+    bool sharedSegmentHealth = false;
+
+    /// A TRAILING body of a shared chain, rather than the head that tows it:
+    /// it shares a pool but leads no chain of its own. The renderer asks this
+    /// to decide who wears the animal's name plate -- one plate on the head,
+    /// not ten identical ones a radius apart -- and it lives here beside the
+    /// two fields it reads so the rule cannot be spelled two ways.
+    bool sharedChainBody() const { return sharedSegmentHealth && segmentCount == 0; }
+
     /// Applied when this mob is SUMMONED rather than spawned wild. Only the
     /// digger is nerfed, and only as a pet: a wild digger keeps its full stats.
     double petHealthScale = 1.0;

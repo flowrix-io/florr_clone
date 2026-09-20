@@ -425,6 +425,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
         BodySegment link;
         link.head = true;
         link.chainHead = e;
+        link.sharedHealth = config.sharedSegmentHealth;
         world.add<BodySegment>(e, link);
     }
 
@@ -563,10 +564,15 @@ void SpawnSystem::spawnBodyChain(World& world, const Terrain& terrain,
         link.spacing = spacing;
         link.chainHead = head;
         link.segmentIndex = i;
+        link.sharedHealth = config.sharedSegmentHealth;
         world.add<BodySegment>(segment, link);
         // After the add, which relocated the row the spawn had just written.
         // A segment faces the way its head does or the body starts out kinked.
         if (Transform* transform = world.tryGet<Transform>(segment)) transform->angle = headAngle;
+        // Both directions, here rather than only in the AI pass that maintains
+        // them: a shared-health chain hit on its very first tick has to be
+        // walkable from the head before anything has had a chance to think.
+        if (BodySegment* leader = world.tryGet<BodySegment>(ahead)) leader->behind = segment;
         ahead = segment;
     }
 }
