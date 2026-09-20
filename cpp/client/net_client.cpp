@@ -69,6 +69,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::GuildLeave:          return "guildLeave";
         case net::ClientMessage::GuildSquadAll:       return "guildSquadAll";
         case net::ClientMessage::GuildInviteToSquad:  return "guildInviteToSquad";
+        case net::ClientMessage::ChangePassword:      return "changePassword";
     }
     return "unknown";
 }
@@ -100,6 +101,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::DebugStats:          return "debugStats";
         case net::ServerMessage::MazeInfo:            return "mazeInfo";
         case net::ServerMessage::RealmChange:         return "realmChange";
+        case net::ServerMessage::ChangePasswordResult: return "changePasswordResult";
     }
     return "unknown";
 }
@@ -221,6 +223,14 @@ void NetClient::requestLogin(const std::string& username, const std::string& pas
     send(w);
 }
 
+void NetClient::requestChangePassword(const std::string& current, const std::string& next) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::ChangePassword);
+    w.str(current);
+    w.str(next);
+    send(w);
+}
+
 void NetClient::resumeSession(const std::string& token) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::ResumeSession);
@@ -260,6 +270,7 @@ void NetClient::logout() {
     guildInvite_ = GuildInvite{};
     craftOutcome_ = CraftOutcome{};
     shopOutcome_ = ShopOutcome{};
+    passwordOutcome_ = PasswordOutcome{};
     view_.clear();
     chatBubbles_.clear();
     dead_ = false;
@@ -548,6 +559,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::DebugStats:    handleDebugStats(reader); break;
         case net::ServerMessage::MazeInfo:      handleMazeInfo(reader); break;
         case net::ServerMessage::RealmChange:   handleRealmChange(reader); break;
+        case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and
@@ -698,6 +710,24 @@ void NetClient::handleShopResult(ByteReader& reader) {
     if (!reader.ok()) return;
     outcome.pending = true;
     shopOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleChangePasswordResult(ByteReader& reader) {
+    PasswordOutcome outcome;
+    outcome.ok = reader.boolean();
+    const std::string token = reader.str();
+    outcome.message = reader.str();
+    if (!reader.ok()) return;
+
+    // The change revoked every token the account had, this client's included.
+    // Adopting the replacement is not optional: keep the old one and the next
+    // resume is refused, on a session that is otherwise perfectly alive.
+    if (outcome.ok && !token.empty()) {
+        sessionToken_ = token;
+        sessionTokenRenewed = true;
+    }
+    outcome.pending = true;
+    passwordOutcome_ = std::move(outcome);
 }
 
 void NetClient::handleLeaderboard(ByteReader& reader) {

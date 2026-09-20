@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/crypto.h"
 #include "server/db.h"
 #include "shared/core/json.h"
 
@@ -231,6 +232,63 @@ TEST(duplicate_registration_is_refused) {
     // The original password must still be the one that works.
     CHECK(db.verifyPassword("taken", "a-good-password"));
     CHECK(!db.verifyPassword("taken", "another-password"));
+
+    std::remove(path.c_str());
+}
+
+TEST(a_set_password_rehashes_and_survives_a_reload) {
+    const std::string path = scratchPath("setpassword");
+    std::remove(path.c_str());
+
+    Database db;
+    std::string error;
+    CHECK(db.load(path, error));
+    db.setPasswordCost(crypto::kBcryptMinCost);
+    CHECK(db.createUser("rotator", "a-good-password").ok());
+
+    std::string reason;
+    CHECK(db.setPassword("rotator", "a-better-password", reason));
+    CHECK(reason.empty());
+    CHECK(!db.verifyPassword("rotator", "a-good-password"));
+    CHECK(db.verifyPassword("rotator", "a-better-password"));
+
+    // Stored as a hash, never as what was typed -- the same property
+    // createUser has, and the one a reload has to preserve.
+    const Account* account = db.findUser("rotator");
+    CHECK(account != nullptr);
+    if (account) {
+        CHECK(crypto::isBcryptHash(account->passwordHash));
+        CHECK(!account->isPlainText);
+    }
+
+    CHECK(db.save());
+    Database reloaded;
+    CHECK(reloaded.load(path, error));
+    CHECK(reloaded.verifyPassword("rotator", "a-better-password"));
+
+    std::remove(path.c_str());
+}
+
+TEST(a_set_password_refuses_what_validPassword_refuses) {
+    const std::string path = scratchPath("setpassword-rules");
+    std::remove(path.c_str());
+
+    Database db;
+    std::string error;
+    CHECK(db.load(path, error));
+    db.setPasswordCost(crypto::kBcryptMinCost);
+    CHECK(db.createUser("picky", "a-good-password").ok());
+
+    std::string reason;
+    CHECK(!db.setPassword("picky", "short", reason));
+    CHECK(!reason.empty());
+    // Past bcrypt's 72 bytes, where the tail would silently do nothing.
+    CHECK(!db.setPassword("picky", std::string(73, 'x'), reason));
+    CHECK(!db.setPassword("nobody", "a-fine-password", reason));
+    CHECK(!reason.empty());
+
+    // A refusal leaves the account exactly as it was.
+    CHECK(db.verifyPassword("picky", "a-good-password"));
 
     std::remove(path.c_str());
 }

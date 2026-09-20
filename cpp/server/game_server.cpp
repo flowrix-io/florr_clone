@@ -804,6 +804,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Register:      handleRegister(*session, connection, reader); break;
         case net::ClientMessage::Login:         handleLogin(*session, connection, reader); break;
         case net::ClientMessage::ResumeSession: handleResume(*session, connection, reader); break;
+        case net::ClientMessage::ChangePassword:
+            handleChangePassword(*session, connection, reader);
+            break;
         case net::ClientMessage::JoinGame:      handleJoin(*session, connection, reader); break;
         case net::ClientMessage::LeaveGame:     handleLeave(*session, connection); break;
         case net::ClientMessage::Input:         handleInput(*session, reader); break;
@@ -1036,6 +1039,88 @@ void GameServer::handleResume(Session& session, net::Connection& connection, Byt
     sendProfile(session, connection);
     sendSkinCatalog(session, connection);
     sendGuildState(session, connection);
+}
+
+void GameServer::sendChangePasswordResult(net::Connection& connection, bool ok,
+                                          const std::string& token, const std::string& reason) {
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::ChangePasswordResult));
+    w.boolean(ok);
+    w.str(token);
+    w.str(reason);
+    connection.send(w);
+}
+
+void GameServer::handleChangePassword(Session& session, net::Connection& connection,
+                                      ByteReader& reader) {
+    const std::string current = reader.str();
+    const std::string next = reader.str();
+    if (!reader.ok()) return;
+
+    // WHOSE password this is comes from the session and from nowhere else. A
+    // username on the wire would make this an endpoint for changing another
+    // account's password, and an anonymous socket has no account to name.
+    if (!session.authenticated() || session.username.empty()) {
+        sendChangePasswordResult(connection, false, "", "You are not signed in.");
+        return;
+    }
+
+    // Held to the login budgets, both of them: this costs a bcrypt verify and
+    // then a bcrypt hash, so it is strictly dearer than a login, and a wrong
+    // `current` is a password guess like any other -- against an account whose
+    // socket may have been left open on a shared machine. The per-session
+    // budget bounds this connection; the per-address one outlives a reconnect.
+    if (!spend(session.loginAttemptsAllowed)) {
+        sendChangePasswordResult(connection, false, "", "Too many attempts. Wait a moment.");
+        return;
+    }
+    const std::string address = addressKey(connection.peer());
+    const LimitVerdict verdict = accountLimits_.spendLoginAttempt(address, monotonicMillis());
+    if (!verdict.allowed) {
+        sendChangePasswordResult(connection, false, "", verdict.message);
+        return;
+    }
+
+    if (!database_.verifyPassword(session.username, current)) {
+        sendChangePasswordResult(connection, false, "", "Your current password is not correct.");
+        return;
+    }
+    // Producing the current password is proof of the account, not a guess at
+    // it, so it does not spend from the budget -- the same reason a successful
+    // login refunds its attempt.
+    accountLimits_.refundLoginAttempt(address);
+
+    if (current == next) {
+        // Refused rather than quietly accepted: the sessions below would be
+        // revoked and the token reissued for a change that did not happen, so
+        // the player would be signed out elsewhere for nothing.
+        sendChangePasswordResult(connection, false, "", "That is already your password.");
+        return;
+    }
+
+    std::string reason;
+    if (!database_.setPassword(session.username, next, reason)) {
+        sendChangePasswordResult(connection, false, "", reason);
+        return;
+    }
+
+    // Every token the account had dies with the old password. That is most of
+    // what changing one is for: a session somebody else is holding would
+    // otherwise outlive it by up to thirty days, and a stolen token is the
+    // case a player changes their password over. This connection's own token
+    // is among them, so it is replaced in the same breath -- the socket stays
+    // authenticated either way, because the stage is in memory rather than in
+    // the token, but the client has to be holding a live one to resume with.
+    database_.revokeSessionsForUser(session.username);
+    session.token = database_.createSession(session.userId, session.username);
+
+    // Rate-limited rather than immediate, and not left to the thirty-second
+    // persist either: a player who changes a password and closes the game must
+    // not find the old one still working, and a whole-file write per request
+    // would be a stall anyone could ask for.
+    database_.maybeSave(monotonicMillis());
+
+    sendChangePasswordResult(connection, true, session.token, "");
 }
 
 void GameServer::sendProfile(Session& session, net::Connection& connection) {

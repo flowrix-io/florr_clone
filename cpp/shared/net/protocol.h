@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 30;
+inline constexpr std::uint16_t kProtocolVersion = 31;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -102,6 +102,11 @@ enum class ClientMessage : std::uint8_t {
     GuildLeave,         ///< (empty)
     GuildSquadAll,      ///< (empty)
     GuildInviteToSquad, ///< str username
+    ChangePassword,     ///< str currentPassword, str newPassword. The account
+                        ///< is the session's, never a name on the wire: an
+                        ///< authenticated socket already says whose password
+                        ///< this is, and accepting one would make this an
+                        ///< endpoint for changing somebody else's.
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -182,6 +187,19 @@ enum class ServerMessage : std::uint8_t {
                         ///< card comes down and the body takes input. The name
                         ///< is the reviver's nameplate, which is what the
                         ///< system line thanks.
+    ChangePasswordResult, ///< u8 ok, str token, str reason. The settings
+                        ///< panel's own reply channel, for the same reason
+                        ///< ShopResult is the shop's: the answer belongs on
+                        ///< the form that asked, not in the chat.
+                        ///<
+                        ///< `token` is a FRESH session token, sent only on
+                        ///< success: changing a password revokes every session
+                        ///< the account had, this one included, so without a
+                        ///< replacement the client that just succeeded would
+                        ///< be the one locked out at its next resume. It is
+                        ///< NOT an AuthResult -- that message also moves the
+                        ///< client's login state, and this client is already
+                        ///< logged in and staying that way.
 };
 
 // ---------------------------------------------------------------------------

@@ -89,6 +89,119 @@ TEST(a_wrong_password_is_refused_and_a_right_one_is_not) {
     CHECK_EQ(static_cast<int>(right.authStatus), static_cast<int>(net::AuthStatus::Ok));
 }
 
+TEST(a_changed_password_replaces_the_old_one) {
+    Harness h("changepw");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "changer", "first-password"));
+
+    client.requestChangePassword("first-password", "second-password");
+    CHECK(h.stepUntil({&client}, [&] { return client.passwordOutcome().pending; }));
+    CHECK(client.passwordOutcome().ok);
+    // The session that asked survives it. A change-password answer is not an
+    // auth answer, and must not put this client back on the login form.
+    CHECK(client.status() == NetClient::Status::LoggedIn);
+
+    NetClient stale;
+    CHECK(connectClient(h, stale));
+    stale.authAnswered = false;
+    stale.requestLogin("changer", "first-password");
+    CHECK(h.stepUntil({&stale}, [&] { return stale.authAnswered; }));
+    CHECK_EQ(static_cast<int>(stale.authStatus), static_cast<int>(net::AuthStatus::BadCredentials));
+
+    NetClient fresh;
+    CHECK(connectClient(h, fresh));
+    fresh.authAnswered = false;
+    fresh.requestLogin("changer", "second-password");
+    CHECK(h.stepUntil({&fresh}, [&] { return fresh.authAnswered; }));
+    CHECK_EQ(static_cast<int>(fresh.authStatus), static_cast<int>(net::AuthStatus::Ok));
+}
+
+TEST(a_change_password_needs_the_current_one) {
+    Harness h("changepw-wrong");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "guard", "right-password"));
+
+    client.requestChangePassword("not-the-password", "brand-new-password");
+    CHECK(h.stepUntil({&client}, [&] { return client.passwordOutcome().pending; }));
+    CHECK(!client.passwordOutcome().ok);
+    CHECK(!client.passwordOutcome().message.empty());
+
+    // Nothing moved: an account whose owner mistyped is not half-changed, and
+    // the token it was holding is not revoked either.
+    CHECK(!client.sessionTokenRenewed);
+    NetClient again;
+    CHECK(connectClient(h, again));
+    again.authAnswered = false;
+    again.requestLogin("guard", "right-password");
+    CHECK(h.stepUntil({&again}, [&] { return again.authAnswered; }));
+    CHECK_EQ(static_cast<int>(again.authStatus), static_cast<int>(net::AuthStatus::Ok));
+}
+
+TEST(a_new_password_the_rules_refuse_never_reaches_the_account) {
+    Harness h("changepw-rules");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "hasty", "long-enough-password"));
+
+    // Under Database::validPassword's eight characters. The client's own form
+    // catches this first; the server is what makes it true.
+    client.requestChangePassword("long-enough-password", "short");
+    CHECK(h.stepUntil({&client}, [&] { return client.passwordOutcome().pending; }));
+    CHECK(!client.passwordOutcome().ok);
+    CHECK(!client.passwordOutcome().message.empty());
+
+    NetClient again;
+    CHECK(connectClient(h, again));
+    again.authAnswered = false;
+    again.requestLogin("hasty", "long-enough-password");
+    CHECK(h.stepUntil({&again}, [&] { return again.authAnswered; }));
+    CHECK_EQ(static_cast<int>(again.authStatus), static_cast<int>(net::AuthStatus::Ok));
+}
+
+TEST(changing_a_password_revokes_the_tokens_it_replaces) {
+    Harness h("changepw-tokens");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "rotator", "old-password1"));
+    const std::string before = client.sessionToken();
+    CHECK(!before.empty());
+
+    client.requestChangePassword("old-password1", "new-password2");
+    CHECK(h.stepUntil({&client}, [&] { return client.passwordOutcome().pending; }));
+    CHECK(client.passwordOutcome().ok);
+
+    // This client is holding a REPLACEMENT, not the token the change revoked.
+    const std::string after = client.sessionToken();
+    CHECK(!after.empty());
+    CHECK(after != before);
+    CHECK(client.sessionTokenRenewed);
+
+    // A token minted before the change resumes nothing, which is most of the
+    // point: a session somebody else was holding is what a password change is
+    // meant to end, and thirty days is how long it would otherwise outlive it.
+    NetClient stolen;
+    CHECK(connectClient(h, stolen));
+    stolen.authAnswered = false;
+    stolen.resumeSession(before);
+    CHECK(h.stepUntil({&stolen}, [&] { return stolen.authAnswered; }));
+    CHECK_EQ(static_cast<int>(stolen.authStatus),
+             static_cast<int>(net::AuthStatus::SessionExpired));
+
+    // And the replacement is a real session, not a string that merely differs.
+    NetClient resumed;
+    CHECK(connectClient(h, resumed));
+    resumed.authAnswered = false;
+    resumed.resumeSession(after);
+    CHECK(h.stepUntil({&resumed}, [&] { return resumed.authAnswered; }));
+    CHECK_EQ(static_cast<int>(resumed.authStatus), static_cast<int>(net::AuthStatus::Ok));
+}
+
 TEST(a_content_mismatch_is_reported_rather_than_misparsed) {
     Harness h("proto");
     if (!h.ready) { CHECK(false); return; }

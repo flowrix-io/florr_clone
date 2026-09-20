@@ -176,6 +176,14 @@ struct ShopOutcome {
     std::string message;
 };
 
+/// The settings panel's change-password reply, read the way ShopOutcome is:
+/// the answer belongs on the form that asked, and a chat line is not that.
+struct PasswordOutcome {
+    bool pending = false;   ///< a result arrived that the panel has not read
+    bool ok = false;
+    std::string message;
+};
+
 struct ChatLine {
     net::ChatChannel channel = net::ChatChannel::Global;
     std::string author;
@@ -304,6 +312,11 @@ public:
     void requestBuyPetal(std::uint16_t petalIndex, Rarity rarity, int offerSlot = -1);
     /// Redeems a star code. The answer lands in shopOutcome().
     void requestRedeemCode(const std::string& code);
+    /// Changes this session's account password. The answer lands in
+    /// passwordOutcome(); on success the server also hands back a replacement
+    /// session token, because the change revokes the one this client holds.
+    /// Which account it is is the session's to say, so no name goes with it.
+    void requestChangePassword(const std::string& current, const std::string& next);
     void requestSkin(std::uint32_t renderFlags);
     /// Offers an authored skin to the shared catalog. The server re-sanitizes
     /// and assigns the id, so nothing here is authoritative -- the studio runs
@@ -476,6 +489,17 @@ public:
     /// once it has raised the modal for it.
     ShopOutcome& shopOutcome() { return shopOutcome_; }
 
+    /// The last change-password answer. The settings panel clears `pending`
+    /// once it has put the line under its form.
+    PasswordOutcome& passwordOutcome() { return passwordOutcome_; }
+
+    /// Set once each time the server issued a REPLACEMENT session token for a
+    /// session this client is already in -- which a password change does, and
+    /// nothing else does yet. Read and cleared by the app, whose business the
+    /// stored token is; a client that missed it would keep writing the revoked
+    /// token to disk and be asked to log in again on its next start.
+    bool sessionTokenRenewed = false;
+
     /// Set when the server reports the player died; cleared by respawning, or
     /// by a yggdrasil raising this body back up.
     bool dead() const { return dead_; }
@@ -522,6 +546,7 @@ private:
     void handleRevived(ByteReader&);
     void handleCraftResult(ByteReader&);
     void handleShopResult(ByteReader&);
+    void handleChangePasswordResult(ByteReader&);
     void handleLeaderboard(ByteReader&);
     void handleNotifications(ByteReader&);
     /// Schedules the next redial, lengthening the wait each time it is
@@ -596,6 +621,7 @@ private:
     GuildInvite guildInvite_;
     CraftOutcome craftOutcome_;
     ShopOutcome shopOutcome_;
+    PasswordOutcome passwordOutcome_;
 
     double pingMillis_ = 0;
     /// The last ten round trips and their mean. Ten is the reference's window.

@@ -339,6 +339,14 @@ void App::pollNetwork() {
             screen_ = Screen::Lobby;
         }
     }
+    if (net_.sessionTokenRenewed) {
+        // A password change reissued this session's token. Written out now
+        // rather than at shutdown: the old one is already dead server-side, so
+        // a crash between here and the exit would cost a login the player has
+        // no way to connect to what they just did.
+        net_.sessionTokenRenewed = false;
+        saveSession();
+    }
     if (net_.dead() && screen_ == Screen::Playing) {
         // Nothing is closed on death. An open panel and the icon strip keep
         // rendering behind the card, exactly as they do in the reference.

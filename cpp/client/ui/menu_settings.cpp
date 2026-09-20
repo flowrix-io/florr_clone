@@ -2,10 +2,11 @@
 //
 // Four tabs in a fixed 420x500 card pinned under the top icon row: the key
 // bindings, the graphics switches and sliders, the server address and the
-// account actions, and the credits. Everything here is local to this client:
-// nothing is sent to the server, and nothing in it can change what the
-// simulation does -- which is why hitboxes can be switched on without it being
-// a cheat.
+// account actions, and the credits. Every SWITCH here is local to this client
+// and none of them can change what the simulation does -- which is why
+// hitboxes can be switched on without it being a cheat. The Advanced tab's
+// account block is the exception and the only one: Change Password and Log Out
+// are requests to the server, and are marked as such below.
 //
 // The panel keeps more between frames than SettingsPanel has members for: a
 // tab, a press, a slider drag, a focused field, and the switches that have no
@@ -156,7 +157,17 @@ enum Toggle : int {
 
 enum Slider : int { kRenderScale, kMobFramerate, kInterpolation };
 
-enum Button : int { kSaveControls, kResetControls, kResetTutorial, kLogOut, kGrantAdmin };
+enum Button : int { kSaveControls, kResetControls, kResetTutorial, kLogOut, kGrantAdmin,
+                    kChangePassword };
+
+/// The three boxes of the change-password form, in the order they are laid
+/// out -- which is also the order Tab cycles them in.
+enum PasswordField : int {
+    kCurrentPassword,
+    kNewPassword,
+    kConfirmPassword,
+    kPasswordFieldCount,
+};
 
 /// The Controls tab's rows are ControlAction's own order, and every binding
 /// they show lives in ClientSettings -- see controlMeta() in menus.h. The
@@ -225,6 +236,20 @@ struct PanelState {
     bool tutorialResetArmed = false;
     double tutorialResetArmedUntil = 0;
 
+    // --- the change-password form ---
+    std::array<std::string, kPasswordFieldCount> passwords{};
+    /// One caret for all three boxes, as the auth form keeps one for its four:
+    /// only the focused field has a caret to draw, so three states would be
+    /// three copies of the same thing with two of them always stale.
+    ui::TextFieldState passwordField;
+    int focusedPassword = -1;   ///< index into PasswordField, or -1
+    /// True between sending a request and reading its answer. The button goes
+    /// grey and stops firing: a second click would be answered "your current
+    /// password is not correct", because by then it isn't.
+    bool passwordPending = false;
+    std::string passwordMessage;
+    bool passwordOk = false;
+
     PanelState() {
         toggles[kMobDeathAnimation] = true;
         toggles[kAntialiasing] = true;
@@ -259,6 +284,72 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
 /// The row index the panel lays out in, as the action it binds.
 ControlAction rowAction(int row) { return static_cast<ControlAction>(row); }
 
+// --- the change-password form -----------------------------------------------
+
+/// What the server will store. Longer is not refused politely -- bcrypt stops
+/// reading at its 72nd byte, so a password that ran past it would be a
+/// password whose tail did nothing -- so the two new-password boxes simply do
+/// not accept more.
+constexpr std::size_t kMaxNewPasswordBytes = 72;
+/// The current-password box takes what the LOGIN box takes instead: an account
+/// imported from the old server may hold something longer than this client
+/// would now let anyone choose, and a player has to be able to type the
+/// password they actually have.
+constexpr std::size_t kMaxTypedPasswordBytes = 100;
+/// Matches Database::validPassword, so the obvious mistake is caught on this
+/// side of a round trip. The server still checks: this is a courtesy, not the
+/// rule.
+constexpr std::size_t kMinNewPasswordBytes = 8;
+
+/// Moves focus between the password boxes, or to none with -1.
+///
+/// Blurs the server-IP field on the way: the two are the panel's only fields
+/// and exactly one of them can have the keyboard.
+void focusPassword(PanelState& st, int field, double timeSeconds) {
+    st.focusedPassword = field;
+    if (field < 0) {
+        st.passwordField.blur();
+        return;
+    }
+    st.ipField.blur();
+    // At the end rather than selecting all, because a masked field has no
+    // visible selection to explain what a keystroke is about to replace --
+    // the same reason App::editText pins the auth form's two password carets.
+    st.passwordField.focusAtEnd(st.passwords[static_cast<std::size_t>(field)], timeSeconds);
+}
+
+/// Checks what can be checked here and sends the request. Shared by the button
+/// and by Enter, so the two cannot drift apart.
+void submitPasswordChange(MenuContext& ctx, PanelState& st) {
+    if (st.passwordPending) return;
+
+    const std::string& current = st.passwords[kCurrentPassword];
+    const std::string& next = st.passwords[kNewPassword];
+    const std::string& confirm = st.passwords[kConfirmPassword];
+
+    st.passwordOk = false;
+    if (current.empty() || next.empty() || confirm.empty()) {
+        st.passwordMessage = "Fill in every field.";
+        return;
+    }
+    if (next != confirm) {
+        st.passwordMessage = "The new passwords do not match.";
+        return;
+    }
+    if (next.size() < kMinNewPasswordBytes) {
+        st.passwordMessage = "New password must be at least 8 characters.";
+        return;
+    }
+    if (next == current) {
+        st.passwordMessage = "That is already your password.";
+        return;
+    }
+
+    ctx.net.requestChangePassword(current, next);
+    st.passwordPending = true;
+    st.passwordMessage = "Changing...";
+}
+
 // --- primitives -------------------------------------------------------------
 
 TextStyle bodyStyle(double size, std::uint32_t fill, std::uint32_t stroke, double strokeWidth,
@@ -285,6 +376,39 @@ void insetSurface(Canvas& canvas, Rect r, std::uint32_t surface) {
 std::uint32_t surfaceColour(bool active, bool hovered) {
     if (active) return kSurfaceActive;
     return hovered ? kSurfaceHover : kSurfaceIdle;
+}
+
+/// One masked box of the change-password form, in the panel's own grey-on-white
+/// rather than the auth form's green plate, so the account block reads as part
+/// of this card.
+///
+/// Painted through ui::textField instead of insetSurface because that is where
+/// masking lives -- and where a field records its box for the on-screen
+/// keyboard, which a hand-rolled plate would have to remember to do.
+void passwordBox(Canvas& canvas, Rect box, const std::string& value, const char* placeholder,
+                 bool focused, bool hovered, double timeSeconds) {
+    TextFieldStyle style;
+    style.fill = surfaceColour(focused, hovered);
+    style.outline = kSurroundFill;
+    style.focusedOutline = kSurroundFill;
+    style.radius = 3.0;
+    style.outlineWidth = 3.0;
+    style.focusedOutlineWidth = 3.0;
+    style.textSize = 13.0;
+    style.textFill = kInk;
+    style.textStrokeWidth = 0.0;
+    style.bold = false;
+    style.caret = kInk;
+    style.padding = 8.0;
+
+    // That outline is CENTRED on the rect it is handed, so the rect is
+    // deflated by half of it and the painted edge lands exactly on `box` --
+    // the same 3px surround inside the same bounds that insetSurface gives the
+    // key boxes and the server-IP field.
+    const double half = style.outlineWidth * 0.5;
+    textField(canvas, Rect{box.x + half, box.y + half, box.w - style.outlineWidth,
+                           box.h - style.outlineWidth},
+              value, placeholder, focused, true, timeSeconds, style);
 }
 
 /// The run the endpoint field paints, scrolled so its caret stays in the box.
@@ -475,6 +599,16 @@ void SettingsPanel::reset() {
     st.pressed = WidgetId{};
     st.dragging = -1;
     st.ipField.blur();
+
+    // Typed passwords do not survive the card being closed, and neither does
+    // whatever the last attempt was told: reopening the panel is not a request
+    // to be shown a stale refusal, and a half-typed password left sitting in
+    // the process is worth nothing to anybody. `passwordPending` is left
+    // alone -- the request is still out there, and the answer is still due.
+    for (std::string& value : st.passwords) value.clear();
+    focusPassword(st, -1, 0.0);
+    st.passwordMessage.clear();
+    st.passwordOk = false;
 }
 
 bool SettingsPanel::render(MenuContext& ctx) {
@@ -489,6 +623,26 @@ bool SettingsPanel::render(MenuContext& ctx) {
     if (ctx.released()) {
         st.pressed = WidgetId{};
         st.dragging = -1;
+    }
+
+    // The change-password answer, read the way the shop panel reads its own.
+    PasswordOutcome& answer = ctx.net.passwordOutcome();
+    if (answer.pending) {
+        answer.pending = false;
+        st.passwordPending = false;
+        st.passwordOk = answer.ok;
+        st.passwordMessage = answer.ok ? "Password changed." : answer.message;
+        if (answer.ok) {
+            for (std::string& value : st.passwords) value.clear();
+            focusPassword(st, -1, ctx.timeSeconds);
+        }
+    }
+    // A request whose answer can no longer arrive must not leave the form
+    // disabled forever: the socket that would have carried it is gone.
+    if (st.passwordPending && !ctx.net.haveSession()) {
+        st.passwordPending = false;
+        st.passwordOk = false;
+        st.passwordMessage = "Lost the connection. Try again.";
     }
 
     const double contentX = panel.x + kPad;
@@ -522,8 +676,31 @@ bool SettingsPanel::render(MenuContext& ctx) {
             typing.asciiOnly = true;
             editText(ctx.window, st.serverIp, st.ipField, ctx.timeSeconds, typing);
         }
+    } else if (st.focusedPassword >= 0) {
+        if (ctx.window.keyPressed(Key::Escape)) {
+            focusPassword(st, -1, ctx.timeSeconds);
+        } else if (ctx.window.keyPressed(Key::Tab)) {
+            focusPassword(st, (st.focusedPassword + 1) % kPasswordFieldCount, ctx.timeSeconds);
+        } else if (ctx.window.keyPressed(Key::Enter)) {
+            // Enter submits from any of the three, as it does on the auth
+            // form: nothing here takes a newline.
+            submitPasswordChange(ctx, st);
+        } else {
+            std::string& value = st.passwords[static_cast<std::size_t>(st.focusedPassword)];
+            TextEditOptions typing;
+            typing.maxBytes = st.focusedPassword == kCurrentPassword ? kMaxTypedPasswordBytes
+                                                                     : kMaxNewPasswordBytes;
+            // Pasting INTO a masked field is fine; reading one back out is the
+            // thing the mask exists to stop. The caret is collapsed on both
+            // sides of the edit for the same reason -- a selection nobody can
+            // see is a keystroke that deletes something without saying so.
+            typing.copyable = false;
+            st.passwordField.selection.collapse(value.size());
+            editText(ctx.window, value, st.passwordField, ctx.timeSeconds, typing);
+            st.passwordField.selection.collapse(value.size());
+        }
     }
-    if (st.ipField.focused) ctx.wantsText = true;
+    if (st.ipField.focused || st.focusedPassword >= 0) ctx.wantsText = true;
 
     // --- card ---------------------------------------------------------------
     overlayCard(canvas, panel, kSettingsSkin);
@@ -716,7 +893,74 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kShowAdminsOnLeaderboard, "Show Admins on Leaderboard");
             p.checkbox(kDebugMenuEnabled, "Enable Debug Menu button (J in-game)");
 
-            p.cy += 10.0;
+            p.cy += 14.0;
+            // The one block on this card that talks to the server, and the
+            // only place in the client a password can be changed. Drawn only
+            // while there is a session: the request names no account -- the
+            // socket does -- so without one there is nothing to change, and a
+            // disconnected client would be typing into a form that could not
+            // send. (The login screen paints the icon strip and no panels at
+            // all, so this is really the mid-game drop case.)
+            if (ctx.net.haveSession()) {
+                p.label("Change Password", p.cy + 10.0, 15.0, kPaper, kInk, 2.0);
+                p.cy += 28.0;
+
+                // Named by a placeholder inside the box rather than a caption
+                // above it, as the auth form names its own four: three
+                // captions is sixty more pixels of a card that already
+                // scrolls, and a box a player is typing in does not need a
+                // label -- there is only one thing it could be.
+                static constexpr std::array<const char*, kPasswordFieldCount> kPasswordCaptions = {
+                    {"Current Password", "New Password", "Confirm New Password"}};
+                for (int i = 0; i < kPasswordFieldCount; ++i) {
+                    const auto at = static_cast<std::size_t>(i);
+                    const Rect box{contentX, p.cy, contentW, kFieldHeight};
+                    passwordBox(canvas, box, st.passwords[at], kPasswordCaptions[at],
+                                st.focusedPassword == i, p.over(box), ctx.timeSeconds);
+                    // On the release, like every other control on this card and
+                    // like the auth form's own fields -- and through p.click,
+                    // so the same release does not then read as a click on
+                    // nothing and blur what it just focused.
+                    if (p.click(box)) focusPassword(st, i, ctx.timeSeconds);
+                    if (p.over(box)) ctx.window.setCursorShape(CursorShape::Text);
+                    p.cy += kFieldHeight + 8.0;
+                }
+
+                // ABOVE the button, not under it as the auth form puts its
+                // own. This card scrolls and that form does not: an answer
+                // below the button can sit past the fold, so the one row the
+                // player is waiting for would be the one row they cannot see.
+                // Here it lands where the button they just pressed was, which
+                // is where they are already looking -- and the button moving
+                // down a row costs nothing, since nobody needs to press it
+                // twice.
+                p.cy += 4.0;
+                if (!st.passwordMessage.empty()) {
+                    // White while the request is out: "Changing..." is not a
+                    // refusal, and red is what this row means when it is one.
+                    const std::uint32_t tone =
+                        st.passwordPending ? kPaper : (st.passwordOk ? kAccent : kDanger);
+                    p.label(st.passwordMessage, p.cy + 8.0, 12.0, tone, kInk, 2.0);
+                    p.cy += 22.0;
+                }
+
+                const Rect change{contentX, p.cy, 160.0, 32.0};
+                if (st.passwordPending) {
+                    // Painted, not laid out: there is nothing to press until
+                    // the answer lands, and a row that lit up under the cursor
+                    // would say otherwise. Same reason Admin Granted below is.
+                    // The label does not change -- the line above already says
+                    // what is happening, and a button that renames itself
+                    // would say it twice.
+                    ui::button(canvas, change, "Change Password", false, false,
+                               gardnStyle(kNeutralFill, 14.0));
+                } else if (p.button(change, "Change Password", kActionFill, 14.0,
+                                    kChangePassword)) {
+                    submitPasswordChange(ctx, st);
+                }
+                p.cy += 42.0;
+            }
+
             // Offline only: the row is there when this build has a server of
             // its own to ask (see AppConfig::grantAdmin), which is the
             // single-file page and nothing else. A client dialling a real
@@ -773,6 +1017,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
         if (!p.consumed) {
             rebinding_ = -1;
             st.ipField.blur();
+            focusPassword(st, -1, ctx.timeSeconds);
         }
         return keepOpen;
     }

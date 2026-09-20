@@ -347,6 +347,18 @@ public:
     /// bcrypt here, on the one occasion the password is available.
     bool verifyPassword(const std::string& username, const std::string& password);
 
+    /// Replaces an account's password with a fresh bcrypt hash at the current
+    /// cost. Checks the new password against validPassword first and reports
+    /// why through `reasonOut`, so a caller never stores something the rules
+    /// would have refused.
+    ///
+    /// Says nothing about the OLD password: proving the account is yours is
+    /// the caller's job, and a database that also demanded it could not be
+    /// used by an administrative reset. It does not revoke sessions either --
+    /// see revokeSessionsForUser, which the caller decides the timing of.
+    bool setPassword(const std::string& username, const std::string& password,
+                     std::string& reasonOut);
+
     static bool validUsername(const std::string& username, std::string& reasonOut);
     static bool validPassword(const std::string& password, std::string& reasonOut);
 

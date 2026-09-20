@@ -936,6 +936,25 @@ bool Database::verifyPassword(const std::string& username, const std::string& pa
     return true;
 }
 
+bool Database::setPassword(const std::string& username, const std::string& password,
+                           std::string& reasonOut) {
+    if (!validPassword(password, reasonOut)) return false;
+
+    Account* account = findUser(username);
+    if (!account) {
+        reasonOut = "no such account";
+        return false;
+    }
+
+    account->passwordHash = crypto::bcryptHash(password, passwordCost_);
+    // An account imported with a bare password stops being one here, the same
+    // way a successful verify upgrades it: whatever the record was before, it
+    // holds a hash now and the flag has to say so.
+    account->isPlainText = false;
+    markDirty();
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Database: sessions
 // ---------------------------------------------------------------------------

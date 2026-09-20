@@ -175,6 +175,7 @@ private:
     void handleRegister(Session&, net::Connection&, ByteReader&);
     void handleLogin(Session&, net::Connection&, ByteReader&);
     void handleResume(Session&, net::Connection&, ByteReader&);
+    void handleChangePassword(Session&, net::Connection&, ByteReader&);
     void handleJoin(Session&, net::Connection&, ByteReader&);
     void handleLeave(Session&, net::Connection&);
     void handleInput(Session&, ByteReader&);
@@ -388,6 +389,10 @@ private:
 
     void sendAuthResult(net::Connection&, net::AuthStatus, const std::string& token,
                         const std::string& username, const std::string& reason);
+    /// The settings panel's change-password reply. `token` is the replacement
+    /// session, empty on a refusal.
+    void sendChangePasswordResult(net::Connection&, bool ok, const std::string& token,
+                                  const std::string& reason);
     void sendProfile(Session&, net::Connection&);
     /// Claims today's daily-login reward and tells the client, so the title
     /// screen's streak card has something to count down. Called BEFORE
