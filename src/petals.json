@@ -9,7 +9,7 @@
         "color": "#90EE90",
         "count": 1,
         "knockback": 5,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#d9d9d9\"/>\n</svg>"
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#cfcfcf\"/>\n</svg>"
     },
     "rose": {
         "name": "Rose",
@@ -46,7 +46,7 @@
         "color": "#90EE90",
         "count": 1,
         "independentHealth": true,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#d9d9d9\"/>\n</svg>"
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#cfcfcf\"/>\n</svg>"
     },
     "rock": {
         "name": "Rock",
@@ -278,7 +278,7 @@
         "description": "It comes and goes",
         "color": "#000000",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<path d=\"M 20 0 Q -5 16 20 32 M 20 32 Q 10 16 20 0 M 20 0 Z\" stroke=\"#e6e6e6\" stroke-width=\"2\" fill=\"#ffffff\" stroke-linecap=\"round\"/>\n</svg>",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<path d=\"M 20 0 Q -5 16 20 32 M 20 32 Q 10 16 20 0 M 20 0 Z\" stroke=\"#cfcfcf\" stroke-width=\"2\" fill=\"#ffffff\" stroke-linecap=\"round\"/>\n</svg>",
         "isAdminPetal": false
     },
     "square": {
@@ -487,7 +487,7 @@
         "description": "Makes your petals move faster",
         "color": "#000000",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#faffc9\"/>\n</svg>",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#feffc9\" stroke-width=\"4\" stroke=\"#cecfa3\"/>\n</svg>",
         "isAdminPetal": false,
         "playerModifiers": {
             "rotationSpeed": 1.1
