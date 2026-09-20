@@ -146,6 +146,23 @@ public:
     /// and the shutdown work itself happens on the main thread.
     void stop() { running_.store(false); }
 
+    /// What a process exiting on this server's own account should exit WITH,
+    /// once run() (or the last step()) is done. 0 for an ordinary shutdown --
+    /// a signal, a tab closing -- and kRestartExit when the server stopped in
+    /// order to be started again.
+    ///
+    /// The distinction is not cosmetic. A supervisor reads exit 0 as "this
+    /// process was meant to end": pm2's stop_exit_codes and systemd's
+    /// Restart=on-failure both leave a cleanly-exited server down. A restart
+    /// that exits 0 therefore stops the server instead of restarting it --
+    /// which is exactly what `restart` and the last step of `update` must not
+    /// do, since nothing else is coming to bring the server back.
+    int exitCode() const { return exitCode_; }
+
+    /// The code a restart exits with. Any non-zero value does the job; 1 is
+    /// the one the browser build's memory restart already used.
+    static constexpr int kRestartExit = 1;
+
     /// One fixed simulation step. Deliberately does NOT touch the network, so
     /// a test can drive the simulation deterministically without a clock.
     void tick(double nowMillis);
@@ -762,6 +779,9 @@ private:
 
     ServerConfig config_;
     std::atomic<bool> running_{false};
+    /// Written once, on the way out, by whatever asked the server to stop.
+    /// See exitCode().
+    int exitCode_ = 0;
 
     World world_;
     CommandBuffer commands_{world_};

@@ -382,6 +382,17 @@ It follows the TypeScript server here, because the two share these files:
   normalised and required to stay under the root, and `.wasm` is served as
   `application/wasm` so the browser will stream-compile it.
 
+**The server's exit code says whether it wants to come back.** An ordinary
+shutdown — a signal, `npm start` interrupted — exits 0. A `restart`, and the
+restart `update` schedules once its install lands, exit **1**: pm2's
+`stop_exit_codes` and systemd's `Restart=on-failure` both read 0 as "this
+process was meant to end" and leave a cleanly-exited server down, which turns
+a restart into a shutdown with a countdown and nothing coming to undo it.
+`GameServer::exitCode()` carries which of the two it was out of the loop, and
+`server/main.cpp` returns it — natively as the process's status, and under
+Node through `process.exit`, because a Node that merely runs out of work
+exits 0.
+
 ## The offline build
 
 The third web target is the whole game in one file:

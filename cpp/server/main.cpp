@@ -30,6 +30,21 @@ void onSignal(int) {
 }
 #endif
 
+/// The last line the process prints, and the code it leaves behind. A restart
+/// exits non-zero deliberately: pm2 and systemd both read exit 0 as "this one
+/// was meant to end" and leave the server down, so the exit that is supposed
+/// to be followed by a start must not look like a clean shutdown.
+int reportExit(int code) {
+    if (code == 0) {
+        std::printf("shut down cleanly\n");
+    } else {
+        std::printf("stopped for restart; exiting with code %d so the supervisor starts us "
+                    "again\n",
+                    code);
+    }
+    return code;
+}
+
 void usage(const char* program) {
     std::printf(
         "usage: %s [options]\n"
@@ -162,7 +177,19 @@ int main(int argc, char** argv) {
             if (running->step()) return;
             running->shutdown();
             emscripten_cancel_main_loop();
-            std::printf("shut down cleanly\n");
+            const int code = reportExit(running->exitCode());
+            // Cancelling the loop only lets Node run out of work, and a Node
+            // that runs out of work exits 0 -- the one code a restart may not
+            // leave behind, because 0 is what tells pm2 to leave the server
+            // down. Node's own exit is this process's exit, and it is reached
+            // directly rather than through emscripten_force_exit(): with
+            // EXIT_RUNTIME off that call still exits with the right code, but
+            // warns on the way out that it cannot shut the runtime down, and a
+            // line reading "cannot actually shut down" in the log of every
+            // restart is a false alarm an operator would have to learn to
+            // ignore. Nothing is left to tear down in any case -- shutdown()
+            // above has already flushed every account and the database.
+            if (code != 0) EM_ASM({ process.exit($0); }, code);
         },
         server,
         // 0 lets the runtime pick; on Node that is a timer well above the
@@ -187,7 +214,6 @@ int main(int argc, char** argv) {
 
     std::printf("listening on port %u\n", static_cast<unsigned>(config.port));
     server.run();
-    std::printf("shut down cleanly\n");
-    return 0;
+    return reportExit(server.exitCode());
 #endif
 }

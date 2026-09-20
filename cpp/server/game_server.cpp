@@ -2738,7 +2738,15 @@ void GameServer::serviceScheduledRestart(double nowMillis) {
         // The gap between the last word and the exit exists so the socket
         // writes actually leave: stopping in the same breath as the broadcast
         // drops the message that explains the disconnect.
-        if (nowMillis >= restart_.stopAtMillis) stop();
+        //
+        // Non-zero, and set before the stop so whoever reads it after the loop
+        // cannot see a half-finished answer: a supervisor that is told the
+        // server exited cleanly leaves it down, and a restart nobody restarts
+        // is just a shutdown with a countdown. See exitCode().
+        if (nowMillis >= restart_.stopAtMillis) {
+            exitCode_ = kRestartExit;
+            stop();
+        }
         return;
     }
     if (!restart_.pending) return;

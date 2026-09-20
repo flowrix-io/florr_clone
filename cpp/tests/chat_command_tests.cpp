@@ -823,6 +823,30 @@ TEST(a_restart_warns_and_can_be_called_off) {
     CHECK(player.chat().size() == before);
 }
 
+TEST(a_fired_restart_exits_non_zero) {
+    Harness h("cmd-restart-exit", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+
+    // Nothing has asked the server to stop, so there is no code to report yet.
+    CHECK(h.server.exitCode() == 0);
+
+    CHECK(say(h, boss, "/admin restart 1s"));
+    // A second to the deadline, another for the last notice to leave the
+    // sockets, and a margin on top.
+    h.step(150, {&boss});
+
+    CHECK(sawText(boss, "Server restarting now"));
+    // The whole point: pm2 and systemd leave a cleanly-exited process down, so
+    // the exit that is meant to be followed by a start is NOT a clean one.
+    CHECK(h.server.exitCode() == GameServer::kRestartExit);
+    CHECK(h.server.exitCode() != 0);
+}
+
 TEST(the_database_backs_up_and_lists_its_backups) {
     Harness h("cmd-backup", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
