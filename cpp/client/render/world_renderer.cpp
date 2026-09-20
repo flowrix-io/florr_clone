@@ -1167,7 +1167,29 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     }
 
     const double zoom = camera.zoom();
-    const double side = (kTileSize + kTileOverlap * 2.0) * zoom;
+    // Device pixels per design unit: the base transform the frame was opened
+    // with, read back off the canvas the way the tile cache reads it.
+    const double logical = canvas.width() > 0 ? static_cast<double>(canvas.width()) : 1.0;
+    const double perUnit = static_cast<double>(canvas.pixelWidth()) / logical;
+    const double toPixels = perUnit > 0.0 ? perUnit : 1.0;
+    // A WHOLE NUMBER of device pixels, and the same number for every tile.
+    //
+    // Whole, because a tile's box edge that falls inside a pixel is covered
+    // only fractionally, and a tile is a STACK of shapes: the background goes
+    // down over the neighbour's finished picture at that fraction and the
+    // shapes above it cannot put back what they covered, so a sliver of the
+    // tile's own background survives as a hairline. It is faint -- a couple of
+    // percent -- but it is at every boundary at once, which reads as a grid
+    // ruled over the map. On a whole pixel the edge is covered or it is not,
+    // and there is no fraction for the background to come through.
+    //
+    // The same number for all of them, because the alternative -- snapping
+    // each box's far edge as well -- makes neighbouring tiles differ in size
+    // by a pixel, and the web build bakes a bitmap per size (art_cache.h): one
+    // tile picture would occupy up to four entries instead of one. Only the
+    // CORNER moves per tile, so the art is scaled identically everywhere and
+    // the grid as a whole is quantised to the pixel it is drawn on.
+    const double side = std::round((kTileSize + kTileOverlap * 2.0) * zoom * toPixels) / toPixels;
     const double half = side * 0.5;
 
     // A cell's compiled artwork, or null: an empty cell, a tile whose art
@@ -1196,20 +1218,24 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // and every edge tile in the map is painted as four rotations of one
     // picture.
     const auto drawCell = [&](const SvgDocument& document, int tx, int ty, std::uint8_t flags) {
+        // The box's own corner, snapped. `side` is already whole pixels, so
+        // snapping this puts all four edges on one -- and the turned case
+        // takes its centre from here rather than from the cell's own centre,
+        // so that both paths keep drawing the SAME box.
+        const Vec2 corner = camera.worldToScreen(
+            {tx * kTileSize - kTileOverlap, ty * kTileSize - kTileOverlap});
+        const double left = std::round(corner.x * toPixels) / toPixels;
+        const double top = std::round(corner.y * toPixels) / toPixels;
         const TileOrientation orientation = tileOrientation(flags);
         if (orientation.radians == 0.0 && !orientation.mirror) {
-            const Vec2 at = camera.worldToScreen(
-                {tx * kTileSize - kTileOverlap, ty * kTileSize - kTileOverlap});
-            if (!drawCachedArt(canvas, document, at.x, at.y, side, side)) {
-                document.renderFitted(canvas, static_cast<float>(at.x), static_cast<float>(at.y),
+            if (!drawCachedArt(canvas, document, left, top, side, side)) {
+                document.renderFitted(canvas, static_cast<float>(left), static_cast<float>(top),
                                       static_cast<float>(side), static_cast<float>(side), 0.0f);
             }
             return;
         }
-        const Vec2 centre =
-            camera.worldToScreen({(tx + 0.5) * kTileSize, (ty + 0.5) * kTileSize});
         canvas.save();
-        canvas.translate(static_cast<float>(centre.x), static_cast<float>(centre.y));
+        canvas.translate(static_cast<float>(left + half), static_cast<float>(top + half));
         if (orientation.radians != 0.0) canvas.rotate(static_cast<float>(orientation.radians));
         if (orientation.mirror) canvas.scale(-1.0f, 1.0f);
         if (!drawCachedArt(canvas, document, -half, -half, side, side)) {
@@ -1219,17 +1245,22 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
         canvas.restore();
     };
 
-    // Cell by cell rather than layer by layer, so `covers_everything` can be
-    // honoured: a cell whose dirt tile fills its whole square opaquely has no
-    // need of the grass under it, and on this map that is most of the upper
-    // layers. The scan runs top down to find the lowest layer that can still
-    // be seen, then paints upward from it.
+    // The lowest layer each cell can still be seen through, worked out before
+    // anything is painted. `covers_everything` is what this is for: a cell
+    // whose dirt tile fills its whole square opaquely has no need of the grass
+    // under it, and on this map that is most of the upper layers. The scan
+    // runs top down and stops at the first covering tile.
     const std::size_t layerCount = map->layers().size();
+    const std::size_t spanX = static_cast<std::size_t>(x1 - x0 + 1);
+    const std::size_t spanY = static_cast<std::size_t>(y1 - y0 + 1);
+    // Kept between frames rather than allocated per frame: drawTerrain runs
+    // every frame and this is one number per cell on screen, a few dozen.
+    thread_local std::vector<std::size_t> bottoms;
+    bottoms.assign(spanX * spanY, 0);
     for (int ty = y0; ty <= y1; ++ty) {
         const std::size_t row = static_cast<std::size_t>(ty) * static_cast<std::size_t>(cols);
         for (int tx = x0; tx <= x1; ++tx) {
             const std::size_t index = row + static_cast<std::size_t>(tx);
-            std::size_t bottom = 0;
             for (std::size_t layer = layerCount; layer-- > 0;) {
                 const TiledCell& cell = map->layers()[layer].cells[index];
                 if ((cell.flags & kTileCoversEverything) == 0) continue;
@@ -1239,11 +1270,34 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
                 // one missing picture into a black hole with the ground it
                 // was painted over blanked out too.
                 if (resolve(cell) == nullptr) continue;
-                bottom = layer;
+                bottoms[static_cast<std::size_t>(ty - y0) * spanX +
+                        static_cast<std::size_t>(tx - x0)] = layer;
                 break;
             }
-            for (std::size_t layer = bottom; layer < layerCount; ++layer) {
-                const TiledCell& cell = map->layers()[layer].cells[index];
+        }
+    }
+
+    // Layer by layer, and NOT cell by cell. Every tile is painted kTileOverlap
+    // oversized, so each one reaches 1.5 units into all four of its
+    // neighbours; finishing a whole cell before starting the next one put a
+    // cell's LOWER layer on top of the layer ABOVE it in the cell before,
+    // which is the one thing the overlap cannot survive. Where an edge tile
+    // sat next to any other dirt -- every run of wall edging on the map --
+    // the grass under it was laid down after that neighbour's dirt and wiped
+    // the overlap back off, leaving the two tiles meeting on a bare seam
+    // again: a hairline of the layer below at exactly `boundary -
+    // kTileOverlap`, an anti-aliased edge's worth of it, which is the
+    // subpixel gap this order exists to close. Painting a layer across the
+    // whole visible rect before the next one starts is also what Tiled itself
+    // means by a layer.
+    for (std::size_t layer = 0; layer < layerCount; ++layer) {
+        const std::vector<TiledCell>& cells = map->layers()[layer].cells;
+        for (int ty = y0; ty <= y1; ++ty) {
+            const std::size_t row = static_cast<std::size_t>(ty) * static_cast<std::size_t>(cols);
+            const std::size_t bottomRow = static_cast<std::size_t>(ty - y0) * spanX;
+            for (int tx = x0; tx <= x1; ++tx) {
+                if (layer < bottoms[bottomRow + static_cast<std::size_t>(tx - x0)]) continue;
+                const TiledCell& cell = cells[row + static_cast<std::size_t>(tx)];
                 const SvgDocument* document = resolve(cell);
                 if (document == nullptr) continue;
                 drawCell(*document, tx, ty, cell.flags);

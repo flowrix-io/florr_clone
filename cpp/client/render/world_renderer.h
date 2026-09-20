@@ -232,13 +232,16 @@ public:
     const SectionTiming& sectionTiming() const { return timing_; }
 
 private:
-    /// A world realm, painted from its map's tile LAYERS: every visible cell,
-    /// bottom layer to top, each cell's artwork fitted to its kTileSize square
-    /// and turned by the flip bits Tiled gave it. Nothing here reads the
-    /// collision grid -- what a cell looks like and what it blocks are two
-    /// answers to two questions, and the picture is the map file's. Outside
-    /// the map, and in a cell every layer left empty, there is the black the
-    /// frame was cleared to.
+    /// A world realm, painted from its map's tile LAYERS: the bottom layer
+    /// across every visible cell, then the one above it, and so on, each
+    /// cell's artwork fitted to its kTileSize square and turned by the flip
+    /// bits Tiled gave it. A layer at a time rather than a cell at a time,
+    /// and on whole device pixels, because the tiles are painted oversized --
+    /// see kTileOverlap and the two seams that oversize leaves if either of
+    /// those is given up. Nothing here reads the collision grid -- what a cell
+    /// looks like and what it blocks are two answers to two questions, and the
+    /// picture is the map file's. Outside the map, and in a cell every layer
+    /// left empty, there is the black the frame was cleared to.
     void drawTerrain(Canvas&, const Camera&, Realm realm) const;
     /// The annotations of a realm: its entry in the catalogue, or the single
     /// map for the overworld when only that was handed over. Null for the
