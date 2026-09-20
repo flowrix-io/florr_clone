@@ -109,6 +109,13 @@ struct DyingDrop {
     /// Who is collecting it. Zero means nobody did: the drop timed out, and
     /// the spin-and-fade despawn plays instead of the flight.
     std::uint32_t takerNetId = 0;
+    /// Only meaningful in the live table: a flower OTHER than the viewer has
+    /// claimed this drop, and the flight to them is owed the moment the
+    /// snapshot stops carrying it. A shared drop pays out one copy per
+    /// eligible flower and survives until the last of them has taken it, so
+    /// somebody else's pickup is not by itself the end of the item -- see the
+    /// PickedUp case in ingestEvents().
+    std::uint32_t pendingTakerNetId = 0;
     double ageSeconds = 0;
     /// Only meaningful in the live table: cleared every frame so a drop that
     /// stopped being sent can be told apart from one that is still there.

@@ -231,6 +231,12 @@ public:
     /// scene with no socket behind it. Nothing on the wire path uses it.
     void seedForTest(const RemoteEntity& entity) { entities_[entity.netId] = entity; }
 
+    /// Names the viewer's own flower, which a snapshot otherwise does from
+    /// the SpawnIsSelf flag on its spawn record. For tests and tools that
+    /// assemble a scene with no socket behind it, where the difference
+    /// between the viewer and everyone else is the thing under test.
+    void setSelfNetIdForTest(std::uint32_t netId) { self_.netId = netId; }
+
     /// Moves an existing entity's authoritative position, leaving the
     /// interpolation state alone -- what a snapshot does, without needing one.
     /// seedForTest() cannot serve: it replaces the record, ease state included.

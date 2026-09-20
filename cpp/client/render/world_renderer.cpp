@@ -716,9 +716,32 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 break;
             }
             case net::EventKind::PickedUp: {
-                // The drop is erased from the snapshot in the same tick, so
-                // the flight to its taker is played from the record kept here.
+                // Somebody else's pickup is NOT by itself the end of the item.
+                // A drop is shared: it pays out one copy to each eligible
+                // flower and the entity survives until the last of them has
+                // taken it, so a squadmate collecting from a pile the viewer
+                // is standing in leaves every item exactly where it lies.
+                // Flying a copy off to them there shows the viewer an item
+                // leaving that has not left -- and, when the drop is one the
+                // viewer never held at all, an item that was never there.
+                //
+                // So a remote taker only stakes a CLAIM here. The flight is
+                // played below, by the same absence that plays the despawn
+                // spin, if and when the snapshot really does stop carrying the
+                // drop; nothing is conjured for a drop this client never saw.
                 const auto known = knownDrops_.find(event.netId);
+                if (event.otherNetId != view.self().netId) {
+                    if (known != knownDrops_.end()) {
+                        known->second.pendingTakerNetId = event.otherNetId;
+                    }
+                    break;
+                }
+
+                // The viewer's own pickup. This one is certain -- the item is
+                // in their inventory whatever the entity does next -- so the
+                // flight plays immediately, from the record kept here because
+                // the drop is usually erased from the snapshot in the same
+                // tick.
                 DyingDrop drop;
                 if (known != knownDrops_.end()) {
                     drop = known->second;
@@ -745,6 +768,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     }
                 }
                 drop.takerNetId = event.otherNetId;
+                drop.pendingTakerNetId = 0;
                 drop.ageSeconds = 0;
                 drop.seenThisFrame = false;
                 drop.sparkleCredit = 0;
@@ -791,12 +815,20 @@ void WorldRenderer::ingestEvents(WorldView& view) {
     for (auto it = knownDrops_.begin(); it != knownDrops_.end();) {
         if (it->second.seenThisFrame) {
             it->second.seenThisFrame = false;
+            // Still on the wire after somebody else collected from it, so
+            // theirs was one copy of a shared drop and the item has not gone
+            // anywhere. Dropping the claim matters: unless it is cleared, the
+            // drop's eventual TIMEOUT would fly it off to a flower that took
+            // its copy seconds earlier instead of spinning out where it lies.
+            it->second.pendingTakerNetId = 0;
             ++it;
             continue;
         }
-        // Gone without a pickup: it timed out where it lay.
+        // Gone. To the flower whose pickup claimed it this frame, if one did;
+        // otherwise it timed out where it lay and spins out instead.
         DyingDrop drop = it->second;
-        drop.takerNetId = 0;
+        drop.takerNetId = it->second.pendingTakerNetId;
+        drop.pendingTakerNetId = 0;
         drop.ageSeconds = 0;
         if (dyingDrops_.size() < kMaxDyingDrops) dyingDrops_.push_back(drop);
         dropSpawns_.erase(it->first);
