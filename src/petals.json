@@ -274,11 +274,11 @@
         "health": 10,
         "size": 1,
         "cooldown": 2500,
-        "range": 2,
+        "speed": 5,
         "description": "It comes and goes",
         "color": "#000000",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<path d=\"M 20 0 Q -5 16 20 32 M 20 32 Q 10 16 20 0 M 20 0 Z\" stroke=\"#cfcfcf\" stroke-width=\"2\" fill=\"#ffffff\" stroke-linecap=\"round\"/>\n</svg>",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-16.5 -16.5 33 33\"><path d=\"M0 -15A15 15 0 0 1 0 15Q10 0 0 -15\" fill=\"#ffffff\" stroke=\"#cfcfcf\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
         "isAdminPetal": false
     },
     "square": {

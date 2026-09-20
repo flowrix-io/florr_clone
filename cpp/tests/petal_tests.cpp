@@ -45,7 +45,8 @@ const char* const kPetalsJson = R"JSON({
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
-  "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"}
+  "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
+  "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"}
 })JSON";
 
 const char* const kMobsJson = R"JSON({
@@ -2010,4 +2011,96 @@ TEST(an_unbreakable_petal_never_drains_its_tile) {
     rig.settleEquips();
     rig.tick(20);
     CHECK_NEAR(rig.slotHealth(0), 1.0, 1e-9);
+}
+
+/// "It comes and goes": gardn's wing is the one petal that does not simply
+/// ride the ring out on a swing -- it is thrown a further 120 units past it on
+/// a squared sine and pulled back, over and over, for as long as the button is
+/// held. Everything about the petal reads as broken without it: the tooltip
+/// says nothing else, and a wing that just sits in the ring is a basic.
+TEST(a_wing_lunges_past_the_ring_and_comes_back_while_attacking) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wing");
+    // A turning ring makes the spring hold station slightly outside its target
+    // point, and this test measures distances against that target. Freezing it
+    // takes that steady offset out; the lunge itself is unaffected either way.
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    // At rest it is an ordinary petal. The lunge is gated on the button, not
+    // on the petal, so a wing left alone sits on the ring with everything else.
+    CHECK_NEAR(rig.radiusOf(rig.petals(0).front()), rig.ring().radius, 0.5);
+    rig.tick(60);
+    CHECK_NEAR(rig.radiusOf(rig.petals(0).front()), rig.ring().radius, 0.5);
+
+    rig.setFlags(net::InputAttack);
+    // Long enough for the extension ramp to finish, so every sample below is
+    // taken against a ring that has stopped moving and the only thing left
+    // travelling is the wing.
+    rig.tick(60);
+    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius * kPetalOrbitAttackExtension, 1e-6);
+
+    const double ring = rig.ring().radius;
+    std::vector<double> reach;
+    for (int i = 0; i < 120; ++i) {
+        rig.tick();
+        reach.push_back(rig.radiusOf(rig.petals(0).front()));
+    }
+
+    // The crest is a full lunge past the extended ring and the trough is back
+    // on it. The slack is the spring's: it is pulled toward the moving point
+    // rather than pinned to it, so it carries a little past the top and a
+    // little inside the bottom.
+    const double low = *std::min_element(reach.begin(), reach.end());
+    const double high = *std::max_element(reach.begin(), reach.end());
+    CHECK_NEAR(high, ring + kWingOrbitLungeReach, 5.0);
+    CHECK_NEAR(low, ring, 5.0);
+
+    // And it does it REPEATEDLY, on gardn's period: squaring the sine halves
+    // it, so one out-and-back is pi / 2.5 = 1.26s rather than 2.5s.
+    std::vector<int> crests;
+    for (std::size_t i = 1; i + 1 < reach.size(); ++i) {
+        if (reach[i] > reach[i - 1] && reach[i] >= reach[i + 1] && reach[i] > ring + 60.0) {
+            crests.push_back(static_cast<int>(i));
+        }
+    }
+    CHECK(crests.size() >= 2);
+    const double period = (kPi / kWingOrbitLungeRate) / net::kTickSeconds;
+    CHECK_NEAR(period, 37.7, 0.1);
+    for (std::size_t i = 1; i < crests.size(); ++i) {
+        CHECK_NEAR(static_cast<double>(crests[i] - crests[i - 1]), period, 2.0);
+    }
+
+    // Letting go brings it home and leaves it there: the lunge is not a
+    // wind-down the petal finishes on its own.
+    rig.setFlags(0);
+    rig.tick(120);
+    CHECK_NEAR(rig.radiusOf(rig.petals(0).front()), rig.ring().radius, 0.5);
+}
+
+/// The lunge belongs to the wing alone. Sharing a ring with one must not throw
+/// the rest of the loadout around -- it is read per petal, off the config the
+/// instance was spawned from.
+TEST(only_the_wing_lunges) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wing");
+    rig.equip(1, "basic");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    rig.setFlags(net::InputAttack);
+    rig.tick(60);
+
+    bool wingMoved = false;
+    for (int i = 0; i < 120; ++i) {
+        rig.tick();
+        const double ring = rig.ring().radius;
+        if (rig.radiusOf(rig.petals(0).front()) > ring + 60.0) wingMoved = true;
+        CHECK_NEAR(rig.radiusOf(rig.petals(1).front()), ring, 0.5);
+    }
+    CHECK(wingMoved);
 }

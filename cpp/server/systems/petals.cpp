@@ -211,6 +211,21 @@ double rangeMultiplier(const PetalConfig& config) {
     return config.range > 0.0 ? config.range : 1.0;
 }
 
+/// How far a petal is thrown OUTSIDE the ring by its own lunge, `ageMillis`
+/// after it spawned. The wing is the only petal with one, and it lunges only
+/// while the flower is attacking -- exactly as gardn does it, and exactly what
+/// "It comes and goes" describes.
+///
+/// Asked by id rather than read out of petals.json for the reason `chargesFor`
+/// is: that file is shared verbatim with the frozen browser build, and one
+/// petal's quirk is not worth a key in a schema two games parse. gardn spells
+/// the same thing as `petal.petal_id == PetalID::kWing`.
+double lungeReach(const PetalConfig& config, double ageMillis) {
+    if (config.id != "wing") return 0.0;
+    const double wave = std::sin(std::max(0.0, ageMillis) * 0.001 * kWingOrbitLungeRate);
+    return kWingOrbitLungeReach * wave * wave;
+}
+
 bool hasTimedAction(const PetalConfig& config, const PetalStats& stats) {
     return config.projectile.present || stats.heal > 0.0 || stats.shield > 0.0 ||
            config.radiation.present || config.petMobIndex != kInvalidIndex ||
@@ -1159,6 +1174,12 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     // than as a branch on the button.
     const double defendOnlyRadius =
         neutralRadius * std::min(ring->extension, 1.0) * rangeScale;
+    // Read here rather than off the ring's extension: the extension RAMPS, so
+    // it is still short of its target for a twelfth of a second after the
+    // button goes down, and a lunge gated on it would start late and -- worse
+    // -- keep going for that twelfth of a second after the button came up.
+    const PlayerInput* input = world.tryGet<PlayerInput>(player);
+    const bool attacking = input != nullptr && input->current.attacking();
     const double attractionRadius = std::max(0.0, aggregate.modifiers.petalAttractionRadius);
 
     // The ring is shared out among INSTANCES, not among slots. A clump counts
@@ -1208,7 +1229,15 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // noPhysics petals are pure modifiers and emitters: they ride on the
         // flower instead of taking a place on the ring.
         const double base = config.defendOnly ? defendOnlyRadius : ringRadius;
-        const double reach = config.noPhysics ? 0.0 : base * rangeMultiplier(config);
+        double reach = config.noPhysics ? 0.0 : base * rangeMultiplier(config);
+        // The lunge rides ON TOP of the extended ring and only while the
+        // button is down, which is where gardn puts it: a wing held at rest
+        // sits in the ring with everything else, and only a swing makes it
+        // come and go. Added rather than multiplied so it stays the same
+        // distance for a giant flower as for a new one.
+        if (attacking && reach > 0.0) {
+            reach += lungeReach(config, nowMillis - instance->spawnedAtMillis);
+        }
 
         Vec2 orbit = centre + Vec2::fromAngle(angle, reach);
         double facingAngle = angle;

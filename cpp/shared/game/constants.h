@@ -236,6 +236,26 @@ inline constexpr double kPetalRadiusDamp = 0.999;
 /// Ring spin, radians per second.
 inline constexpr double kPetalSpinRate = 2.0;
 
+/// The wing's "it comes and goes": while the flower is ATTACKING, a wing is
+/// carried this much further out than the rest of the ring, on a sine that is
+/// squared -- so it sits home for most of the cycle and lunges, rather than
+/// gliding in and out evenly. gardn's figure is a flat 120 (Flower.cc, the
+/// `PetalID::kWing` branch of the attack range), which is exactly one fully
+/// extended ring, so a wing at the crest reaches twice as far as its
+/// neighbours and is back among them two thirds of a second later.
+///
+/// Not on the rarity ladder and not scaled by the Range talent, for the same
+/// reason gardn does not scale it: the lunge is the petal's identity, not its
+/// power. Only the flat `+100` under it grows with `extra_range`.
+inline constexpr double kWingOrbitLungeReach = 120.0;
+
+/// Radians per second of that sine, before squaring. gardn writes it as
+/// `sinf(lifetime / (0.4 * SIM_RATE))` over a 20Hz tick, which is 2.5 rad/s;
+/// squaring halves the period, so one out-and-back takes pi / 2.5 = 1.26s.
+/// Measured from the petal's OWN spawn, so a wing that broke and reloaded
+/// starts its cycle at home rather than mid-lunge.
+inline constexpr double kWingOrbitLungeRate = 2.5;
+
 /// Petal art radius and hit radius, as multiples of the flower's radius. The
 /// hitbox is deliberately more generous than the art: petals are small and
 /// fast, and matching the hitbox to the sprite makes them feel like they miss.
