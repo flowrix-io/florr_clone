@@ -50,9 +50,7 @@ constexpr double kWheelStep = 100.0;
 constexpr std::uint32_t kBodyBorder = kChangelogSkin.border;
 constexpr std::uint32_t kLinkFill = 0xD8F7FFu;
 
-/// The longest entry holds 17 bullets; the spare slot keeps every row's list
-/// null-terminated, so the count is walked rather than stored beside it.
-constexpr int kMaxChanges = 18;
+constexpr int kMaxChanges = 32;
 
 struct ChangelogEntry {
     const char* date;
@@ -347,36 +345,36 @@ constexpr ChangelogEntry kChangelog[] = {
       "Changed some mob sizes"}},
     {"August 26, 2026",
      {"Fixed server crash bug"}},
-    {"September 11, 2026",
-     {"New mob: Scorpion",
-      "Rock, Cactus and Sandstorm are drawn by code now, so a bigger one has "
-      "more facets and spines rather than bigger ones"}},
-    {"September 12, 2026",
-     {"New mob: Crab",
-      "New mob: Leech, a long body that follows its head in one piece"}},
-    {"September 13, 2026",
-     {"Jellyfish shock any flower that comes near them",
-      "Both fireflies shock the flower they collide with -- hitting one with "
-      "your petals does not set it off",
-      "Lightning damage numbers are cyan now"}},
-    {"September 14, 2026",
-     {"Battery holds three charges: ram a mob and it discharges one as "
-      "lightning, half a second apart, and reloads once the third is gone",
-      "Lightning strikes climb the rarity ladder and take your Damage talent "
-      "now, like every other thing a petal does -- an apex shock was landing "
-      "a common one's damage"}},
-    {"September 16, 2026",
-     {"New talent: Reload, a sixth branch of the tree -- every tier shortens "
-      "the time a broken petal takes to come back, down to a quarter of it at "
-      "apex",
-      "Reload paces missile petals too: a peas or missile slot fires as fast "
-      "as it reloads"}},
-    {"September 17, 2026",
-     {"New petal: Root -- it banks a stack of armour every two seconds, up to "
-      "ten, and spends one to blunt each hit you take",
-      "Its loadout tile prints the stacks it is holding, the way a sponge "
-      "prints the damage it owes you",
-      "Leafbugs drop it"}},
+    {"September 20, 2026",
+      {"New map for many biomes",
+      "Jellyfish now spawns lightning",
+      "New mob: Leech",
+      "New mob: Crab",
+      "New mob: Leafbug",
+      "New mob: Firefly",
+      "New mob: Bush",
+      "New mob: Mantis",
+      "New mob: Golden Leafbug",
+      "New mob: Magic Firefly"
+      "Added ant hell ultra zone",
+      "Fixes skins not working",
+      "Changed loadout style",
+      "Changed petal style",
+      "Changed petal rarity colors",
+      "Nerfed apex mob HP",
+      "You can now change your password",
+      "Slightly change hornet color and AI",
+      "Dandelion now shoots projectiles",
+      "Added Grant Admin button in singleplayer mode",
+      "Squad menu changes",
+      "New petal: Root",
+      "New petal: Battery",
+      "New petal: Bur",
+      "Added Reload talents",
+      "Sponge now shows damage",
+      "Added chat bubble",
+      "Changed Rock visual"
+    }},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
