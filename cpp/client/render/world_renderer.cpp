@@ -2531,9 +2531,16 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 drawCorpse(canvas, entity, camera, at, timeSeconds);
                 break;
             }
+            // The viewer's own flower wears no plate: its name, bar and level
+            // are all already on the HUD, so a second copy of them under the
+            // body is clutter sitting exactly where the player is looking.
+            // Other flowers keep theirs -- that plate is how you read a
+            // stranger. The chat bubble is the one piece of furniture the
+            // local flower does keep, and drawChatBubbles draws it.
+            //
             // The plate goes down first so a grown flower paints over the top
             // of its own name rather than the other way round.
-            drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
+            if (!entity.isSelf()) drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
             drawFlower(canvas, entity, camera, at, timeSeconds);
             break;
 
