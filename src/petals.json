@@ -787,7 +787,7 @@
         "health": 15,
         "size": 1,
         "cooldown": 10000,
-        "description": "Allows you to have two players at once",
+        "description": "Splits you in two while equipped. Click it to swap to your other half.",
         "color": "#9B59B6",
         "count": 1,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-30 -30 60 60\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <clipPath id=\"eye-clip\">\n      <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n      <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n    </clipPath>\n    <clipPath id=\"split-clip\">\n      <path d=\"M 0 -30 L -10 -10 L 4 10 L 0 30 L -30 30L -30 -30\"/>\n    </clipPath>\n  </defs>\n\n  <g clip-path=\"url(#split-clip)\">\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#CFBB50\" />\n\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#FFE763\" />\n\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#000\" stroke-width=\"1.7\" stroke-linecap=\"round\" />\n\n  <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"#000\" />\n  <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"#000\" />\n\n  <g clip-path=\"url(#eye-clip)\">\n    <circle cx=\"-5.2\" cy=\"-4.8\" r=\"3\" fill=\"#fff\" />\n    <circle cx=\"8.8\" cy=\"-4.8\" r=\"3\" fill=\"#fff\" />\n  </g>\n\n  <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"1\" />\n  <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"1\" />\n  </g>\n</svg>",

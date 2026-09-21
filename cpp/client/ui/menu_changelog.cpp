@@ -377,6 +377,8 @@ constexpr ChangelogEntry kChangelog[] = {
     }},
     {"September 21, 2026",
      {"Added magic petals",
+      "Splitter now splits you the moment it is equipped, and clicking the "
+      "loaded petal swaps you to your other half",
       "Fixed some bugs",
     }},
 };

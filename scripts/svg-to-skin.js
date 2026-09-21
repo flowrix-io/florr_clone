@@ -3,13 +3,14 @@
  * SVG → skin commands.
  *
  * Turns an SVG drawing into the canvas-command lines the Skin Studio's Text mode
- * accepts (one shape per line, see parseShapes() in src/skinStudio.ts and the
- * data model in src/skin_format.ts). The output is deliberately the *text*
+ * accepts (one shape per line, see Studio::parseShapes() in
+ * cpp/client/ui/menu_skins.cpp and the data model in
+ * cpp/shared/game/skin_format.h). The output is deliberately the *text*
  * format, not JSON, because pasting it into the studio is the shortest path from
  * artwork to a publishable skin.
  *
  * The skin format is a tiny fixed vocabulary — circle / ellipse / rect / polygon
- * / line / curve — with hard limits (24 shapes, ±64 local coords, 16 polygon
+ * / line / curve — with hard limits (128 shapes, ±64 local coords, 16 polygon
  * points, #rrggbb colors, no alpha, no gradients, no clipping). So conversion is
  * lossy by construction and this file is mostly about *how* to lose things well:
  *
@@ -35,9 +36,9 @@
 (function (global) {
     'use strict';
 
-    // ── format limits (mirror src/skin_format.ts) ───────────────────────────
+    // ── format limits (mirror cpp/shared/game/skin_format.h) ────────────────
     var LIMITS = {
-        MAX_SKIN_SHAPES: 24,
+        MAX_SKIN_SHAPES: 128,
         MAX_POLY_POINTS: 16,
         SKIN_COORD_LIMIT: 64,
         SKIN_RADIUS_LIMIT: 64,
@@ -911,7 +912,7 @@
     /**
      * An open stroked path has no primitive: `polygon` would draw a closing edge
      * that isn't in the artwork. Emit it as a chain of `line` shapes, simplified
-     * first so a 60-point squiggle doesn't eat the whole 24-shape budget.
+     * first so a 60-point squiggle doesn't eat the whole shape budget.
      */
     Converter.prototype.emitOpenPolyline = function (pts, fill, stroke, sw) {
         var maxSegs = Math.max(2, Math.min(8, this.opt.maxShapes - 1));
@@ -1119,7 +1120,7 @@
      * Convert SVG source into skin shapes + command text.
      *
      * options:
-     *   maxShapes  shape budget (default/max 24)
+     *   maxShapes  shape budget (default/max 128)
      *   size       fit the drawing into a size×size box, centred on the origin
      *              (default 50 = the flower body's diameter)
      *   fit        'content' (default, uses the drawn bbox) or 'viewbox'
@@ -1333,7 +1334,7 @@
             'Usage: node scripts/svg-to-skin.js <input.svg> [options]',
             '',
             '  -o, --out <file>     write to a file instead of stdout',
-            '      --max-shapes <n> shape budget, 1-24 (default 24)',
+            '      --max-shapes <n> shape budget, 1-128 (default 128)',
             '      --size <n>       fit the art into an n×n box (default 50 = body diameter)',
             '      --fit <mode>     content (default) | viewbox',
             '      --precision <n>  decimals, 0-3 (default 1)',

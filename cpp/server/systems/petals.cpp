@@ -945,6 +945,39 @@ void PetalSystem::destroySlotPetals(World& world, Loadout& loadout, std::uint8_t
     loadout.spawned.resize(kept);
 }
 
+bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entity player,
+                            std::uint8_t slot, double nowMillis) {
+    if (slot >= kLoadoutActiveSlots) return false;
+    Loadout* loadout = world.tryGet<Loadout>(player);
+    PetalSlotState* state = world.tryGet<PetalSlotState>(player);
+    if (loadout == nullptr || state == nullptr) return false;
+    LoadoutSlot& entry = loadout->slots[slot];
+    if (entry.empty() || entry.broken) return false;
+
+    PetalSlotState::Slot& slotState = state->slots[slot];
+    // An independent slot has no single `broken` flag to read, so "already
+    // spent" is asked of its grains: one still out means the slot can act.
+    if (slotState.independent) {
+        const bool anyOut = std::any_of(slotState.instanceReadyAtMillis.begin(),
+                                        slotState.instanceReadyAtMillis.end(),
+                                        [](double ready) { return ready <= 0.0; });
+        if (!anyOut) return false;
+    }
+
+    const PetalStats stats = registry.petalStats(entry.configIndex, entry.rarity);
+    const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
+    destroySlotPetals(world, *loadout, slot);
+    recallPets(world, slotState);
+    // Not "the cluster was just destroyed": left set, the fold at the top of
+    // the next tick charges every missing instance to the shared pool and
+    // breaks a slot that is already serving this reload.
+    slotState.populated = false;
+    for (double& ready : slotState.instanceReadyAtMillis) ready = nowMillis + reload;
+    entry.broken = true;
+    entry.reloadReadyAtMillis = nowMillis + reload;
+    return true;
+}
+
 void PetalSystem::recallPets(World& world, PetalSlotState::Slot& state) {
     // Destroyed, not marked Dead: a recalled summon has not been killed, so it
     // must not raise a death event, award XP or drop anything.

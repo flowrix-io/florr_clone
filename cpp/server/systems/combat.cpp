@@ -343,6 +343,22 @@ bool CombatSystem::canDamage(const World& world, Entity source, Entity victim) {
                                                       : NULL_ENTITY;
     const Entity victimPlayer = creditedPlayer(world, victim);
     if (sourcePlayer != NULL_ENTITY && sourcePlayer == victimPlayer) return false;
+    // ONE PERSON, HOWEVER MANY BODIES. A splitter gives one connection two
+    // flowers, and in the PVP ring -- the one place flowers may hurt each
+    // other at all -- the pair would otherwise be duellists: the parked half
+    // stands there while the steered one walks its ring through it, and the
+    // petal killed you with your own petals. Asked of the CONNECTION rather
+    // than of any split bookkeeping, because that is the thing the two bodies
+    // actually share and because combat has no business knowing what a
+    // splitter is. A bot's connection is 0 and two bots are still enemies.
+    if (sourcePlayer != NULL_ENTITY && victimPlayer != NULL_ENTITY) {
+        const PlayerAccount* mine = world.tryGet<PlayerAccount>(sourcePlayer);
+        const PlayerAccount* theirs = world.tryGet<PlayerAccount>(victimPlayer);
+        if (mine != nullptr && theirs != nullptr && mine->connection != 0 &&
+            mine->connection == theirs->connection) {
+            return false;
+        }
+    }
 
     const TeamInfo attacker = teamOf(world, source);
     const TeamInfo defender = teamOf(world, victim);

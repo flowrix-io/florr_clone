@@ -181,6 +181,23 @@ public:
     /// replicated, which is what a headless test wants.
     std::function<std::uint32_t()> allocateNetId;
 
+    /// Spend one slot outright: take its petals off the ring and start its
+    /// reload, exactly as breaking the last of them would.
+    ///
+    /// Public because the thing that spends the splitter is not a petal action
+    /// at all -- it is a CLICK on the loadout bar, which arrives as a message
+    /// and is resolved by the connection layer. Everything the ring has to be
+    /// told about a spent slot is in here so that the click cannot do it half
+    /// way: a slot marked broken with its instances still on the field reads
+    /// to the next tick's fold as a cluster that was just destroyed, and pays
+    /// a second reload for it.
+    ///
+    /// False for a slot that is empty, out of the active row, or already
+    /// reloading -- which is also the "was this click allowed" answer the
+    /// caller needs, so the check and the act stay one thing.
+    bool spendSlot(World& world, const ContentRegistry& registry, Entity player,
+                   std::uint8_t slot, double nowMillis);
+
     /// A yggdrasil raised `revived` off the ground.
     ///
     /// The world half of a revival is this system's -- the Dead tag comes off,

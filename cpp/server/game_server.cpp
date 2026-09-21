@@ -14,6 +14,7 @@
 #include <limits>
 #include <optional>
 #include <thread>
+#include <utility>
 
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
@@ -467,6 +468,13 @@ void GameServer::tick(double nowMillis) {
 
     runSystems(nowMillis, smoothedDeltaSeconds_);
 
+    // BEFORE the reaper. A splitter gives one connection two bodies, and a
+    // half that died this tick has to stop being part of the session before
+    // the reaper meets it -- otherwise its owner is shown a death card for a
+    // flower they are no longer steering. It is also where the split follows
+    // the loadout: equipping the petal splits, taking it off merges.
+    serviceSplitters(nowMillis);
+
     reapDead(nowMillis);
     commands_.flush();
 
@@ -773,7 +781,11 @@ Session* GameServer::sessionFor(net::ConnectionId id) {
 
 Session* GameServer::sessionForEntity(Entity e) {
     for (auto& entry : sessions_) {
-        if (entry.second.entity == e) return &entry.second;
+        // EITHER half. A splitter's parked body is still this person's -- a
+        // drop it walks over, a kill its ring lands and a pad it is standing
+        // on all belong to the same account -- and a lookup that only knew
+        // about the steered one would credit them to nobody.
+        if (entry.second.owns(e)) return &entry.second;
     }
     return nullptr;
 }
@@ -830,6 +842,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Chat:          handleChat(*session, connection, reader); break;
         case net::ClientMessage::SetLoadout:    handleSetLoadout(*session, reader); break;
         case net::ClientMessage::SwapLoadout:   handleSwapLoadout(*session, reader); break;
+        case net::ClientMessage::UsePetal:      handleUsePetal(*session, reader); break;
         case net::ClientMessage::Craft:         handleCraft(*session, connection, reader); break;
         case net::ClientMessage::Respawn:       handleRespawn(*session); break;
         case net::ClientMessage::Ping:          handlePing(connection, reader); break;
@@ -1527,7 +1540,7 @@ void GameServer::handleSetLoadout(Session& session, ByteReader& reader) {
     }
     database_.markDirty();
 
-    if (session.playing()) applyAccountToEntity(record, session.entity);
+    if (session.playing()) applyAccountToSession(session);
     if (net::Connection* connection = listener_.find(session.connection)) {
         sendProfile(session, *connection);
     }
@@ -1551,7 +1564,7 @@ void GameServer::handleSwapLoadout(Session& session, ByteReader& reader) {
     std::swap(record.loadout[a], record.loadout[b]);
     database_.markDirty();
 
-    if (session.playing()) applyAccountToEntity(record, session.entity);
+    if (session.playing()) applyAccountToSession(session);
     if (net::Connection* connection = listener_.find(session.connection)) {
         sendProfile(session, *connection);
     }
@@ -1673,6 +1686,8 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
 
 void GameServer::bankKills() {
     std::vector<Bounty::Share> ranked;
+    // Connections already credited for the corpse in hand; see the loop.
+    std::vector<net::ConnectionId> paidAccounts;
     for (const CombatSystem::DeathRecord& death : combat_->deaths()) {
         if (death.wasPlayer) continue;
         const MobType* type = world_.tryGet<MobType>(death.entity);
@@ -1719,11 +1734,23 @@ void GameServer::bankKills() {
         const std::string mobId = content().mob(type->configIndex).id;
         const int stars = starsForKill(type->rarity);
 
+        paidAccounts.clear();
         for (const Bounty::Share& share : ranked) {
             // A contributor who has left still holds their slot -- nobody is
             // promoted into the gap -- but there is no account left to pay.
             Session* session = sessionForEntity(share.player);
             if (session == nullptr || session->userId.empty()) continue;
+            // ONE PERSON, ONE KILL. A splitter puts two of somebody's flowers
+            // on the same corpse, and both of them are in this ledger; paying
+            // each would enter the kill in their gallery twice for the price
+            // of wearing the petal. The slot is still spent -- the half that
+            // ranked into it keeps it, and nobody is promoted into the gap --
+            // which is the same rule loot_eligibility.h applies to drops.
+            if (std::find(paidAccounts.begin(), paidAccounts.end(), session->connection) !=
+                paidAccounts.end()) {
+                continue;
+            }
+            paidAccounts.push_back(session->connection);
 
             PlayerRecord& record = database_.progress(session->userId);
             record.recordKill(mobId, type->rarity);
@@ -1825,9 +1852,7 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
 
     skills.set(id, tier);
     database_.markDirty();
-    if (session.playing() && world_.isAlive(session.entity)) {
-        applyAccountToEntity(record, session.entity);
-    }
+    if (session.playing() && world_.isAlive(session.entity)) applyAccountToSession(session);
     sendProfile(session, connection);
 }
 
@@ -1841,9 +1866,7 @@ void GameServer::handleResetSkills(Session& session, net::Connection& connection
     if (session.playing() && session.realm == Realm::Maze) record.mazeSkills.clear();
     else record.skills.clear();
     database_.markDirty();
-    if (session.playing() && world_.isAlive(session.entity)) {
-        applyAccountToEntity(record, session.entity);
-    }
+    if (session.playing() && world_.isAlive(session.entity)) applyAccountToSession(session);
     sendProfile(session, connection);
     sendNotice(connection, net::NoticeSeverity::Info, "Talents reset; every point refunded.");
 }
@@ -3032,19 +3055,37 @@ void GameServer::sendSquadUpdate(net::Connection& connection, const Squad* squad
     w.boolean(true);
     w.str(squad->id);
     w.boolean(squad->isPublic);
-    w.u8(static_cast<std::uint8_t>(squad->members.size()));
+
+    // A ROW PER BODY, not per member. A splitter's owner is one member with
+    // two flowers, and the party HUD is a list of bars over bodies -- a member
+    // that showed only the half being steered would leave the other one, the
+    // one you cannot see because you are not looking through it, with no
+    // health bar anywhere on the screen.
+    std::vector<std::pair<SquadMemberId, Entity>> rows;
+    rows.reserve(squad->members.size() + 1);
     for (const SquadMemberId& member : squad->members) {
-        w.str(squadAccountName(member));
-        w.str(squadDisplayName(member));
+        rows.emplace_back(member, squadEntity(member));
+        if (member.bot()) continue;
+        const auto found = sessions_.find(member.connection);
+        if (found != sessions_.end() && found->second.split()) {
+            rows.emplace_back(member, found->second.splitOther);
+        }
+    }
+
+    w.u8(static_cast<std::uint8_t>(rows.size()));
+    for (const auto& row : rows) {
+        w.str(squadAccountName(row.first));
+        w.str(squadDisplayName(row.first));
         // The wire id, not the entity: it is what the client's own world is
         // keyed by, and it is 0 for a member with no body just now -- somebody
         // sitting on the title screen, or waiting on a death card.
-        const Entity body = squadEntity(member);
-        const NetId* id = body != NULL_ENTITY ? world_.tryGet<NetId>(body) : nullptr;
+        const NetId* id = row.second != NULL_ENTITY ? world_.tryGet<NetId>(row.second) : nullptr;
         w.u32(id != nullptr ? id->value : 0);
         std::uint8_t flags = 0;
-        if (squad->leader == member) flags |= 1u;
-        if (member.bot()) flags |= 2u;
+        // The leader mark rides the member's OWN row, which is the first one
+        // it has: a flower does not lead a squad twice for being two flowers.
+        if (squad->leader == row.first && row.second == squadEntity(row.first)) flags |= 1u;
+        if (row.first.bot()) flags |= 2u;
         w.u8(flags);
     }
     connection.send(w);
@@ -3245,6 +3286,20 @@ void GameServer::rebuildSquadIndex() {
         for (const SquadMemberId& member : entry.second.members) {
             const Entity body = squadEntity(member);
             if (body == NULL_ENTITY) continue;
+            // A split member brings BOTH its flowers. They are one person --
+            // contenderSize() in loot_eligibility.h counts them as one and
+            // pays them one share -- and filing only the steered one would
+            // leave the parked half ranking against its own owner as a
+            // stranger, competing for the slots the corpse has.
+            if (!member.bot()) {
+                const auto found = sessions_.find(member.connection);
+                if (found != sessions_.end() && found->second.split()) {
+                    const PlayerAccount* other =
+                        world_.tryGet<PlayerAccount>(found->second.splitOther);
+                    bodies.push_back(SquadBody{found->second.splitOther,
+                                               other != nullptr ? other->connection : 0});
+                }
+            }
             // BOTS INCLUDED. A bot is a member like any other here: its
             // damage pools into the squad's score and it counts in the
             // average, so a player squadded with bots is paid for what the
@@ -3279,6 +3334,11 @@ Squad* GameServer::squadOrCreate(Session& session, net::Connection& connection) 
 
 void GameServer::collectSquadBodies(const Session& session, std::vector<Entity>& out) {
     out.clear();
+    // A split flower's own other half, first and whatever else is true: it is
+    // the one body on the map this client must never lose sight of, because
+    // switching to it is one click away and a half that had scrolled off the
+    // viewport would be switched into blind.
+    if (session.split()) out.push_back(session.splitOther);
     const SquadMemberId me = squadIdOf(session);
     const Squad* squad = squads_.forMember(me);
     if (squad == nullptr) return;
@@ -3294,6 +3354,13 @@ void GameServer::handleGuildSquadAll(Session& session, net::Connection& connecti
     const std::string guildName = guildNameForUser(session.username);
     if (guildName.empty()) {
         sendNotice(connection, net::NoticeSeverity::Warning, "You are not in a guild.");
+        return;
+    }
+    // Before squadOrCreate, which would otherwise mint a squad for a flower
+    // that is about to be told it may not have one.
+    const std::string whileSplit = splitSquadRefusal(squadIdOf(session), "You are");
+    if (!whileSplit.empty()) {
+        sendNotice(connection, net::NoticeSeverity::Warning, whileSplit);
         return;
     }
     Squad* squad = squadOrCreate(session, connection);
@@ -3358,6 +3425,13 @@ void GameServer::guildInviteToSquad(Session& session, net::Connection& connectio
     Session* peerSession = sessionForUser(target);
     if (peerSession == nullptr) {
         sendNotice(connection, net::NoticeSeverity::Warning, target + " is offline.");
+        return;
+    }
+    const std::string whileSplit =
+        splitSquadRefusal(squadIdOf(session), "You are") +
+        splitSquadRefusal(squadIdOf(*peerSession), target + " is");
+    if (!whileSplit.empty()) {
+        sendNotice(connection, net::NoticeSeverity::Warning, whileSplit);
         return;
     }
     Squad* squad = squadOrCreate(session, connection);
@@ -3545,6 +3619,35 @@ Entity GameServer::spawnPlayer(Session& session) {
     session.arena.reset();
     if (realm == Realm::Arena) session.arena = startArenaRun(database_.progress(session.userId));
 
+    const Entity entity = createPlayerBody(session, realm, spawn);
+
+    // A FRESH body only: full health and the respawn window. createPlayerBody
+    // must never do either -- a splitter's second body is built by it too, and
+    // it inherits what the flower it was cut from was carrying.
+    Health& health = world_.get<Health>(entity);
+    health.current = health.max;
+    health.invulnerableUntilMillis = monotonicMillis() + kRespawnInvulnerabilitySeconds * 1000.0;
+
+    session.entity = entity;
+    session.stage = SessionStage::Playing;
+    // A fresh body has a death of its own still to announce.
+    session.deathReported = false;
+    // And a fresh life owes nothing to the last one's losses: a splitter on
+    // the bar cuts this body in two on the next tick.
+    session.splitReadyAtMillis = 0;
+    // A player picks their door on the title screen, and a squad they joined
+    // before going back to it is a squad they may now be standing three
+    // biomes away from. This is the hole the join-time checks cannot close,
+    // because nothing about the join goes through them.
+    enforceSquadBiome(squadIdOf(session));
+    // The roster carries WIRE IDS, and this player just acquired a new one.
+    // Without this a squadmate's dot and party bar stay pinned to the body
+    // they had before they died.
+    if (const Squad* squad = squads_.forMember(squadIdOf(session))) broadcastSquadUpdate(*squad);
+    return entity;
+}
+
+Entity GameServer::createPlayerBody(Session& session, Realm realm, Vec2 spawn) {
     const Entity entity = world_.create();
     world_.add<PlayerTag>(entity);
     world_.add<Transform>(entity, Transform{spawn, 0.0, realm});
@@ -3579,33 +3682,16 @@ Entity GameServer::spawnPlayer(Session& session) {
     const PlayerRecord& record = liveRecord(session);
     applyAccountToEntity(record, entity);
 
-    // A FRESH body only: full health and the respawn window. applyAccountToEntity
-    // must never do either -- see the note there -- because it also runs on
-    // every loadout edit and talent purchase, corpse included.
-    Health& health = world_.get<Health>(entity);
-    health.current = health.max;
-    health.invulnerableUntilMillis = monotonicMillis() + kRespawnInvulnerabilitySeconds * 1000.0;
-
     world_.add<NetId>(entity, NetId{netIds_.next()});
     Replicated replicated;
     replicated.kind = net::EntityKind::Player;
     world_.add<Replicated>(entity, replicated);
 
-    world_.bindName(entity, "conn:" + std::to_string(session.connection));
-
-    session.entity = entity;
-    session.stage = SessionStage::Playing;
-    // A fresh body has a death of its own still to announce.
-    session.deathReported = false;
-    // A player picks their door on the title screen, and a squad they joined
-    // before going back to it is a squad they may now be standing three
-    // biomes away from. This is the hole the join-time checks cannot close,
-    // because nothing about the join goes through them.
-    enforceSquadBiome(squadIdOf(session));
-    // The roster carries WIRE IDS, and this player just acquired a new one.
-    // Without this a squadmate's dot and party bar stay pinned to the body
-    // they had before they died.
-    if (const Squad* squad = squads_.forMember(squadIdOf(session))) broadcastSquadUpdate(*squad);
+    // A name per BODY, not per connection: a split flower has two, and giving
+    // them the same handle would let the second quietly replace the first in
+    // the world's name table.
+    world_.bindName(entity, "conn:" + std::to_string(session.connection) +
+                                (session.entity == NULL_ENTITY ? "" : ":split"));
     return entity;
 }
 
@@ -3678,6 +3764,13 @@ void GameServer::applyAccountToEntity(const PlayerRecord& record, Entity entity)
     }
 }
 
+void GameServer::applyAccountToSession(Session& session) {
+    const PlayerRecord& record = liveRecord(session);
+    for (const Entity body : bodiesOf(session)) {
+        if (body != NULL_ENTITY && world_.isAlive(body)) applyAccountToEntity(record, body);
+    }
+}
+
 void GameServer::persistPlayer(const Session& session) {
     if (!session.playing() || !world_.isAlive(session.entity)) return;
     const PlayerProgress* progress = world_.tryGet<PlayerProgress>(session.entity);
@@ -3695,6 +3788,10 @@ void GameServer::persistPlayer(const Session& session) {
 
 void GameServer::despawnPlayer(Session& session, bool persist) {
     if (session.entity == NULL_ENTITY) return;
+    // The other half first, and with no reload armed: the body it would have
+    // been armed on is about to be destroyed as well, and the split is ending
+    // because the PLAYER is leaving, not because a flower was lost.
+    endSplit(session, clockMillis_, false);
     if (persist) persistPlayer(session);
     // Leaving the ring, by any door, is the end of the run.
     if (session.arena) endArenaRun(session);

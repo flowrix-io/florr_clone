@@ -71,7 +71,7 @@ npm run svg2skin -- logo.svg --max-shapes 16 --hole-fill '#ffe763'
 Or open `SvgToSkin.html` for drag-and-drop with a live preview of the skin on a
 flower. Both use the same converter, which flattens transforms, turns paths into
 polygons/curves, fits the drawing to the flower body, and drops the smallest
-shapes when the artwork exceeds the 24-shape limit.
+shapes when the artwork exceeds the 128-shape limit.
 
 ### Rarities
 

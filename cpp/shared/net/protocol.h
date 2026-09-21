@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 32;
+inline constexpr std::uint16_t kProtocolVersion = 33;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -107,6 +107,12 @@ enum class ClientMessage : std::uint8_t {
                         ///< authenticated socket already says whose password
                         ///< this is, and accepting one would make this an
                         ///< endpoint for changing somebody else's.
+    UsePetal,           ///< u8 slot -- the loadout slot whose petal was CLICKED
+                        ///< on the bar. Only the petals that DO something when
+                        ///< they are used answer to it (petalIsClickToUse in
+                        ///< shared/game/config.h); every other slot is refused
+                        ///< server-side, so naming a slot cannot fire a petal
+                        ///< that has no action.
 };
 
 enum class ServerMessage : std::uint8_t {

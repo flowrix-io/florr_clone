@@ -44,7 +44,39 @@ struct Session {
     bool admin = false;
 
     /// The player's body, while Playing.
+    ///
+    /// While a splitter has this connection split in two, this is the ACTIVE
+    /// half -- the one the client steers, the one its camera sits on and the
+    /// one its snapshot stream is built around. The other half is `splitOther`
+    /// and is parked exactly where it was left. Everything that means "act on
+    /// my flower" reads this and therefore follows the switch for free; the
+    /// few rules that mean "any body this person owns" walk both (see
+    /// GameServer::forEachBody).
     Entity entity = NULL_ENTITY;
+
+    /// The splitter's other body, or NULL_ENTITY when this connection is not
+    /// split.
+    ///
+    /// Two bodies, one account: the inventory, the loadout and the talent tree
+    /// live on the RECORD here rather than on the body, so the halves cannot
+    /// drift into the duplication the browser build's per-body loadout clone
+    /// produced. What is genuinely per-body -- position, health, the ring --
+    /// is exactly what a second body is for.
+    Entity splitOther = NULL_ENTITY;
+
+    /// The earliest the splitter may cut this flower in two again.
+    ///
+    /// Zero -- the ordinary case -- means "the moment it is equipped", which is
+    /// the whole point of the petal: wearing it splits you, with nothing to
+    /// wait for. This is armed only when a half is LOST, so the spare is not
+    /// replaced on the tick after something killed it.
+    ///
+    /// Deliberately not the slot's own `reloadReadyAtMillis`. Every slot
+    /// serves a full reload the moment its contents change, login included
+    /// (PetalSystem::reconcileSlots), so reading that would make equipping a
+    /// splitter mean "split in ten seconds" -- which is the reload the petal is
+    /// explicitly not supposed to charge for being worn.
+    double splitReadyAtMillis = 0;
 
     /// The spawn point this connection asked to start at, from JoinGame.
     ///
@@ -111,6 +143,12 @@ struct Session {
         return stage == SessionStage::Authenticated || stage == SessionStage::Playing;
     }
     bool playing() const { return stage == SessionStage::Playing && entity != NULL_ENTITY; }
+    /// Whether a splitter has given this connection a second body.
+    bool split() const { return splitOther != NULL_ENTITY; }
+    /// Whether `body` is one of this session's own -- either half.
+    bool owns(Entity body) const {
+        return body != NULL_ENTITY && (body == entity || body == splitOther);
+    }
 };
 
 /// Refills the per-session allowances. Called once per tick for every session.

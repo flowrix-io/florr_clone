@@ -298,6 +298,14 @@ public:
     void sendChat(const std::string& text);
     void setLoadoutSlot(int slot, std::uint16_t petalIndex, Rarity rarity);
     void swapLoadoutSlots(int a, int b);
+    /// Clicks the petal in an active loadout slot.
+    ///
+    /// What the browser build reaches with U + the slot's number. Only the
+    /// petals that DO something when they are used answer to it
+    /// (petalIsClickToUse in shared/game/config.h) and the server re-checks
+    /// both that and the slot's reload, so this is a request, not a command --
+    /// the bar sends it and waits to see what the snapshot says.
+    void usePetal(int slot);
     void requestCraft(std::uint16_t petalIndex, Rarity rarity, int count);
     void requestRespawn();
     void sendPing();

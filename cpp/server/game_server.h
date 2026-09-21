@@ -7,6 +7,7 @@
 // components and the command buffer. That is what makes them testable in
 // isolation and what keeps the tick order legible in one function.
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -218,6 +219,60 @@ private:
     void handleDeleteSkin(Session&, net::Connection&, ByteReader&);
     void handleLeaderboard(const Session&, net::Connection&);
     void handleNotifications(net::Connection&, ByteReader&);
+    void handleUsePetal(Session&, ByteReader&);
+
+    // -- the splitter ------------------------------------------------------
+    //
+    // One connection, two flowers. The petal is not used from a chord the way
+    // the browser build uses it (U + the slot number): it is CLICKED on the
+    // loadout bar, and it does two different things depending on the state of
+    // the slot. Equipping it splits the flower at once, for nothing; clicking
+    // the loaded petal afterwards hands control to the other half and spends
+    // the slot, so a switch costs a reload.
+    //
+    // The bookkeeping lives on the Session (`entity` is the active half,
+    // `splitOther` the parked one) rather than in a table keyed by entity,
+    // because every "act on my flower" path already reads session.entity and
+    // therefore follows a switch without knowing one happened.
+
+    /// Splits, merges, switches on a death, and keeps the parked half parked.
+    /// Called once a tick, between the systems and the reaper: a half that
+    /// died this tick has to stop being part of the session BEFORE the reaper
+    /// meets it, or its owner is sent a death card for a body they are not
+    /// steering.
+    void serviceSplitters(double nowMillis);
+    /// Cuts `session`'s flower in two. False when it could not be done at all
+    /// -- no body, no world to build a second one in, or a PVP run, whose
+    /// score and bag are settled through the session and could not survive a
+    /// half dying under it.
+    bool splitSession(Session&);
+    /// Ends the split, destroying the parked half. `armReload` puts the
+    /// splitter slot on its cooldown, which is what stops a half that just
+    /// died from being replaced on the very next tick.
+    void endSplit(Session&, double nowMillis, bool armReload);
+    /// Hands control to the parked half and spends the splitter slot on both.
+    void switchSplitHalf(Session&, double nowMillis);
+    /// Stops a body where it stands: no input, no velocity, no knockback.
+    /// Only the ACTIVE half is written by handleInput, so without this the
+    /// parked one replays the last heading it was given and walks away.
+    void parkBody(Entity);
+    /// Which active slot holds a splitter, or -1. Reloading or not: a slot
+    /// serving its cooldown is still equipped, and the split outlives it.
+    int splitterSlotOf(Entity body) const;
+    /// Puts the splitter slot on its reload on BOTH halves, so the bar reads
+    /// the same whichever body is being steered.
+    void armSplitterReload(const Session&, double nowMillis);
+    /// Copies the account-scoped progress the halves must agree about -- XP,
+    /// level, stars -- from whichever body has the most onto the other.
+    /// Whichever half a kill was credited to, the account keeps it.
+    void syncSplitProgress(const Session&);
+    /// Both bodies this session owns, active half first; the second is
+    /// NULL_ENTITY unless it is split.
+    std::array<Entity, 2> bodiesOf(const Session&) const;
+    /// The line refusing a squad door to a split flower, or empty. `whoLabel`
+    /// is how it names them ("You are", "bob is"), exactly as the biome
+    /// refusal beside it does.
+    std::string splitSquadRefusal(SquadMemberId, const std::string& whoLabel) const;
 
     /// Appends one row to the global notification feed.
     ///
@@ -517,6 +572,11 @@ private:
 
     // -- lifecycle ---------------------------------------------------------
     Entity spawnPlayer(Session&);
+    /// Assembles one player body in `realm` at `position` and writes the
+    /// account onto it. Everything spawnPlayer does EXCEPT choosing where to
+    /// stand, settling the session's realm and starting an arena run -- which
+    /// is exactly the part a splitter's second body must not repeat.
+    Entity createPlayerBody(Session&, Realm, Vec2 position);
     void despawnPlayer(Session&, bool persist);
     /// Which realm this session's next body belongs in, from its spawn choice.
     Realm spawnRealmFor(const Session&) const;
@@ -552,6 +612,16 @@ private:
     /// anything, because it also runs on every loadout edit and talent
     /// purchase, including one sent from the death screen.
     void applyAccountToEntity(const PlayerRecord&, Entity);
+    /// The same, onto EVERY body this session owns.
+    ///
+    /// The four handlers that change what the account is -- a loadout edit, a
+    /// swap, a talent purchase, a reset -- go through here rather than writing
+    /// session.entity, because a splitter gives one account two bodies. An
+    /// edit that reached only the steered half would leave the other one
+    /// wearing the previous ring until it was switched to, which is the shape
+    /// the browser build's per-body loadout clone turned into a duplication
+    /// bug (see src/server/connection/inventory.ts's splitState block).
+    void applyAccountToSession(Session&);
     /// Credits the mob kills from this tick to every player who earned loot
     /// rights on the corpse: the gallery ledger, and the stars a mythic-or-
     /// better kill is worth.

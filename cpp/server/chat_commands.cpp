@@ -778,6 +778,14 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     const auto now = static_cast<std::int64_t>(clockMillis_);
 
     if (sub == "create") {
+        // A split flower already has a squad -- itself -- and may not open one
+        // for anybody else. Refused here as well as at every door in, because
+        // a public squad nobody can join is only a puzzle.
+        const std::string whileSplit = splitSquadRefusal(me, "You are");
+        if (!whileSplit.empty()) {
+            out(whileSplit);
+            return;
+        }
         const bool isPublic = lowerCase(argument) == "public";
         Squad* squad = squads_.create(me, isPublic, rng_);
         if (squad == nullptr) {
@@ -799,6 +807,13 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
         }
         if (target == me) {
             out("You cannot invite yourself.");
+            return;
+        }
+        const std::string splitRefusal =
+            splitSquadRefusal(me, "You are") +
+            splitSquadRefusal(target, squadDisplayName(target) + " is");
+        if (!splitRefusal.empty()) {
+            out(splitRefusal);
             return;
         }
         if (target.bot()) {
@@ -862,6 +877,10 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
         open.erase(std::remove_if(open.begin(), open.end(),
                                   [&](const Squad* squad) { return !squadAcceptsBiome(*squad, me); }),
                    open.end());
+        // Same rule as the biome filter beside it: a listing is a list of
+        // things to type `/squad-join` at, and every one of them is refused
+        // while this flower is two flowers.
+        if (!splitSquadRefusal(me, "You are").empty()) open.clear();
         if (open.empty()) {
             out("No public squads available in your biome. Create one with /squad create "
                 "public.");
@@ -883,6 +902,11 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     }
 
     if (sub == "join" && !argument.empty()) {
+        const std::string whileSplit = splitSquadRefusal(me, "You are");
+        if (!whileSplit.empty()) {
+            out(whileSplit);
+            return;
+        }
         if (const Squad* wanted = squads_.find(argument)) {
             const std::string wrongBiome = squadBiomeRefusal(*wanted, me, "You are");
             if (!wrongBiome.empty()) {
@@ -903,6 +927,14 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     }
 
     if (sub == "public" || sub == "private") {
+        // The squad a split flower is in is the one the split made for it.
+        // Opening it would put the one door bots walk through back in the
+        // wall the other refusals just built.
+        const std::string whileSplit = splitSquadRefusal(me, "You are");
+        if (!whileSplit.empty()) {
+            out(whileSplit);
+            return;
+        }
         Squad* squad = nullptr;
         const std::string error = squads_.setVisibility(me, sub == "public", &squad);
         if (!error.empty()) {
@@ -915,6 +947,15 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     }
 
     if (sub == "accept") {
+        // Checked before the biome is, and for the same reason it is checked
+        // again at all: an invitation lives thirty seconds, and a flower can
+        // have equipped a splitter in that time.
+        const std::string whileSplit = splitSquadRefusal(me, "You are");
+        if (!whileSplit.empty()) {
+            squads_.decline(me);
+            out(whileSplit);
+            return;
+        }
         // Re-checked here, not only at the invitation: an invite lives for
         // thirty seconds, and either end of it can have respawned into
         // another biome in that time.

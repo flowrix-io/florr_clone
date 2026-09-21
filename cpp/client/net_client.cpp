@@ -47,6 +47,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::Input:               return "input";
         case net::ClientMessage::SetLoadout:          return "setLoadout";
         case net::ClientMessage::SwapLoadout:         return "swapLoadout";
+        case net::ClientMessage::UsePetal:            return "useItem";
         case net::ClientMessage::Craft:               return "craft";
         case net::ClientMessage::Chat:                return "chat";
         case net::ClientMessage::Respawn:             return "respawn";
@@ -343,6 +344,14 @@ void NetClient::swapLoadoutSlots(int a, int b) {
     beginMessage(w, net::ClientMessage::SwapLoadout);
     w.u8(static_cast<std::uint8_t>(a));
     w.u8(static_cast<std::uint8_t>(b));
+    send(w);
+}
+
+void NetClient::usePetal(int slot) {
+    if (slot < 0 || slot >= kLoadoutActiveSlots) return;
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::UsePetal);
+    w.u8(static_cast<std::uint8_t>(slot));
     send(w);
 }
 

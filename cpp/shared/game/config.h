@@ -664,6 +664,27 @@ struct PetalStats {
     PetalModifiers modifiers;           ///< already scaled for this tier
 };
 
+/// The petal that splits its wearer in two, by id.
+///
+/// Named once here because three layers have to agree about it: the server's
+/// splitter service, the client's loadout bar (which turns a click on the
+/// slot into a UsePetal), and the tooltip that says so. The reference
+/// identifies its special petals by id too -- see behaviourOf() in
+/// server/systems/petals.cpp -- rather than by a flag in the JSON, because the
+/// mechanic lives in code and a flag would only be a second place to forget.
+inline constexpr const char* kSplitterPetalId = "splitter";
+
+/// Whether this petal DOES something when its slot is clicked on the bar.
+///
+/// The browser build reaches the same action with a U+slot chord; this client
+/// puts it on the tile itself, so the question "is this slot clickable" has to
+/// be answerable on both ends of the wire -- the bar to know whether a click
+/// is a use or the start of a drag, and the server to refuse a UsePetal that
+/// names a slot holding an ordinary petal.
+inline bool petalIsClickToUse(const PetalConfig& config) {
+    return config.id == kSplitterPetalId;
+}
+
 // ---------------------------------------------------------------------------
 // ContentRegistry
 // ---------------------------------------------------------------------------

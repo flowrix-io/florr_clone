@@ -1520,6 +1520,22 @@ void MenuSystem::clearLoadoutSlot(NetClient& net, double timeSeconds, int slot) 
     setLoadoutSlot(net, timeSeconds, slot, kNoPetal, Rarity::Common);
 }
 
+void MenuSystem::useLoadoutSlot(NetClient& net, int slot) {
+    // Only in game. On the title screen the bar is a dressing room: the
+    // flower the petal would act on does not exist yet.
+    if (!inGame_ || slot < 0 || slot >= kLoadoutActiveSlots) return;
+    const std::vector<Profile::Slot>& shown =
+        expectedLoadout_.empty() ? net.profile().loadout : expectedLoadout_;
+    const auto at = static_cast<std::size_t>(slot);
+    if (at >= shown.size() || shown[at].empty()) return;
+    if (!petalIsClickToUse(content().petal(shown[at].petalIndex))) return;
+    // A petal still reloading is not there to be clicked. The server refuses
+    // one anyway -- it owns the cooldown -- but a click that flew off and did
+    // nothing is a click the player would try again harder.
+    if (slotReloadProgress(net, slot) < 1.0) return;
+    net.usePetal(slot);
+}
+
 void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeSeconds) {
     // The bar's own view of the loadout, not the profile's: a petal picked up
     // one frame after a swap was sent must be the one the player can SEE in
@@ -1550,6 +1566,14 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeS
                 setLoadoutSlot(net, timeSeconds, hovered, drag_.petalIndex, drag_.rarity);
             } else if (drag_.slot != hovered) {
                 swapLoadoutSlots(net, timeSeconds, drag_.slot, hovered);
+            } else {
+                // Picked up and put straight back down: a CLICK, not a drag.
+                // The petals that do something when they are used are used
+                // here -- the splitter swaps which of its two flowers you are
+                // steering -- which is this client's answer to the browser
+                // build's U + slot-number chord. Everything else is the same
+                // no-op it always was.
+                useLoadoutSlot(net, hovered);
             }
         }
         drag_.clear();

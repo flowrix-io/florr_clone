@@ -790,6 +790,14 @@ private:
     void setLoadoutSlot(NetClient&, double timeSeconds, int slot, std::uint16_t petalIndex,
                         Rarity rarity);
     void clearLoadoutSlot(NetClient&, double timeSeconds, int slot);
+    /// A CLICK on a loadout slot -- picked up and put straight back down.
+    ///
+    /// The petals that do something when they are used do it here: a splitter
+    /// swaps which of its two flowers the player is steering. This client has
+    /// no U + slot-number chord, and a tile that answers to a click is the
+    /// discoverable version of one. Silent for every other petal, which is
+    /// nearly all of them, and silent for a slot still reloading.
+    void useLoadoutSlot(NetClient&, int slot);
     void drawDragged(Canvas&, Window&, const SpriteCache&, double timeSeconds, double dt);
     void activateStripSlot(int slot);
 

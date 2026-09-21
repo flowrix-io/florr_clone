@@ -96,6 +96,13 @@ constexpr double kColumnGap = 16.0;
 constexpr double kRowPitch = 28.0;
 constexpr double kRowCard = kRowPitch - 4.0;
 constexpr double kScrollbarWidth = 10.0;
+/// The Text tab's input cap, in bytes. Derived from the format rather than
+/// picked: a paste over the cap is trimmed to fit, and trimmed mid-line it
+/// stops parsing. The longest line the vocabulary can produce is a 16-point
+/// polygon carrying both colours and a stroke width -- a shade over 200 bytes
+/// -- so 256 apiece leaves a full-size skin room to arrive whole. What is left
+/// is still a bound on pasting a file in here, which is all it was ever for.
+constexpr std::size_t kMaxSkinTextBytes = static_cast<std::size_t>(kMaxSkinShapes) * 256;
 /// One wheel notch is ~100 CSS px of deltaY in a browser; the window reports
 /// notches, so the step is spelled out as every other list panel spells it.
 constexpr double kWheelStep = 100.0;
@@ -1543,9 +1550,7 @@ bool Studio::handleInput(MenuContext& ctx) {
         }
     } else if (editing) {
         TextEditOptions typing;
-        // A skin is 24 shapes of a couple of dozen characters each; the cap is
-        // what stops a pasted file rather than what a real skin runs into.
-        typing.maxBytes = 8192;
+        typing.maxBytes = kMaxSkinTextBytes;
         typing.multiline = true;
         if (editText(ctx.window, textBuffer, textField, ctx.timeSeconds, typing)) {
             applyTextBuffer();

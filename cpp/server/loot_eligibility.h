@@ -31,6 +31,7 @@
 #include "shared/core/entity.h"
 #include "shared/core/types.h"
 #include "shared/game/components.h"
+#include "shared/net/protocol.h"
 
 namespace flix {
 
@@ -45,6 +46,27 @@ inline int lootSlotsForRarity(Rarity rarity) {
     if (rarity == Rarity::Super) return 20;
     if (rarity == Rarity::Unique || rarity == Rarity::Apex) return 25;
     return 4;
+}
+
+/// How many PEOPLE a group of bodies holds.
+///
+/// One connection is one person however many flowers it is steering: a
+/// splitter gives its owner two bodies, and counting them as two members would
+/// halve the squad's score for damage one person did and then pay that person
+/// twice out of the cap. A bot owns no connection and each one counts for
+/// itself, which is what it is -- a separate contender the squad is carrying.
+inline int contenderSize(const std::vector<SquadBody>& group) {
+    int people = 0;
+    for (std::size_t i = 0; i < group.size(); ++i) {
+        if (group[i].owner == 0) {
+            ++people;
+            continue;
+        }
+        bool counted = false;
+        for (std::size_t j = 0; j < i && !counted; ++j) counted = group[j].owner == group[i].owner;
+        if (!counted) ++people;
+    }
+    return people;
 }
 
 /// Ranks `contributors` and fills `out` with the players who may be paid.
@@ -101,8 +123,7 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
             // hitters instead would make a four-flower squad with one idle
             // member rank higher than the same squad with that member
             // helping, which is the wrong way round.
-            ranked.push_back({group, NULL_ENTITY, share.damage,
-                              static_cast<int>(squad->size()), true});
+            ranked.push_back({group, NULL_ENTITY, share.damage, contenderSize(*squad), true});
         } else {
             existing->score += share.damage;
         }
@@ -113,13 +134,18 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
     std::stable_sort(ranked.begin(), ranked.end(),
                      [](const Contender& a, const Contender& b) { return a.score > b.score; });
 
-    std::vector<Entity> members;
+    // The bodies a contender would pay, and the CONNECTIONS already paid --
+    // the cap is spent in people, and a splitter's owner is one person with
+    // two of them. Bots hold connection 0 and are never deduplicated against
+    // each other, because each is its own claimant.
+    std::vector<SquadBody> members;
+    std::vector<net::ConnectionId> paid;
     for (const Contender& contender : ranked) {
         if (static_cast<int>(out.size()) >= slots) break;
 
         members.clear();
         if (!contender.squadded) {
-            members.push_back(contender.player);
+            members.push_back(SquadBody{contender.player, 0});
         } else {
             // EVERY member that can hold the share, whether they touched the
             // mob or not: the squad earned this as one contender, on a score
@@ -137,17 +163,26 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
             // cuts, it cuts the passengers first.
             for (const SquadBody& member : squads->groups[contender.group]) {
                 if (!member.banks() && damageOf(member.body) <= 0.0) continue;
-                members.push_back(member.body);
+                members.push_back(member);
             }
-            std::stable_sort(members.begin(), members.end(), [&](Entity a, Entity b) {
-                return damageOf(a) > damageOf(b);
-            });
+            std::stable_sort(members.begin(), members.end(),
+                             [&](const SquadBody& a, const SquadBody& b) {
+                                 return damageOf(a.body) > damageOf(b.body);
+                             });
         }
 
-        for (const Entity member : members) {
+        for (const SquadBody& member : members) {
             if (static_cast<int>(out.size()) >= slots) break;
-            if (std::find(out.begin(), out.end(), member) != out.end()) continue;
-            out.push_back(member);
+            if (std::find(out.begin(), out.end(), member.body) != out.end()) continue;
+            // ONE SHARE PER PERSON. Sorted by damage above, so a split flower
+            // that earned a slot spends it on the half that did the work and
+            // the parked half rides along unpaid -- which is the same item and
+            // the same XP the account would have had unsplit.
+            if (member.owner != 0) {
+                if (std::find(paid.begin(), paid.end(), member.owner) != paid.end()) continue;
+                paid.push_back(member.owner);
+            }
+            out.push_back(member.body);
         }
     }
 }
