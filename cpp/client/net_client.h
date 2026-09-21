@@ -389,6 +389,11 @@ public:
     const Profile& profile() const { return profile_; }
     const std::string& sessionToken() const { return sessionToken_; }
     const std::vector<ChatLine>& chat() const { return chat_; }
+    /// How many lines this transcript has ever taken, trimmed ones included.
+    /// chat().size() stops answering that at the cap, and a reader scrolled
+    /// back through the box needs to know a line ARRIVED, not that the vector
+    /// grew.
+    std::uint64_t chatSequence() const { return chatSeq_; }
     /// The same lines, as the world-anchored bubbles over the flowers that
     /// said them. Aged by ageChatBubbles(), drawn by the world renderer.
     const ChatBubbles& chatBubbles() const { return chatBubbles_; }
@@ -596,6 +601,7 @@ private:
     Profile profile_;
     std::string sessionToken_;
     std::vector<ChatLine> chat_;
+    std::uint64_t chatSeq_ = 0;
     ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 

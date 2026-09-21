@@ -209,7 +209,12 @@ public:
     static Rarity finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng);
 
     /// Whether `player` may take this drop right now.
-    static bool mayPickUp(const DropItem& drop, Entity player, double nowMillis);
+    /// Whether this flower may take a copy. `owner` is the connection behind
+    /// the body (0 for a bot): a reservation follows the PLAYER, not the body
+    /// they happened to be wearing when it was made, because a body does not
+    /// survive its owner's death.
+    static bool mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner,
+                          double nowMillis);
 
     const DropTables& tables() const { return tables_; }
 

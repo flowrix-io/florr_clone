@@ -180,6 +180,12 @@ public:
     /// Every staged map's annotation layer, and which realm each one is.
     const WorldMaps& worldMaps() const { return worldMaps_; }
     std::size_t playerCount() const;
+    /// The biomes the bot population is spread over, by name, in the spawn
+    /// picker's order. Public because the claim "evenly, and not into ground
+    /// nothing lives on" is one the tests and tools/bot_probe check, and a
+    /// checker that rebuilt the rule for itself would stop checking it the
+    /// first time the rule changed.
+    std::vector<std::string> botBiomeNames() const;
 
     // net::TransportHandler
     void onConnect(net::Connection& c) override;
@@ -260,6 +266,9 @@ private:
     /// announcements name it by.
     std::string squadDisplayName(SquadMemberId);
     Entity squadEntity(SquadMemberId);
+    /// The body a member owns right now, or NULL_ENTITY -- the read-only half
+    /// of squadEntity(), for the rules below that only look.
+    Entity squadEntityOf(SquadMemberId) const;
     net::Connection* squadConnection(SquadMemberId);
 
     /// The roster as this client should see it. A null squad is the browser's
@@ -292,6 +301,34 @@ private:
     /// however far away they are, which is what makes the party HUD and the
     /// pink minimap dots work across the map.
     void collectSquadBodies(const Session&, std::vector<Entity>& out);
+
+    /// The biome a member counts as being in.
+    ///
+    /// A squad may not span biomes, so every join has to be able to say where
+    /// somebody IS -- including somebody who has no body just now. A member
+    /// with one answers with its realm's biome; one sitting on the title
+    /// screen or on a death card answers with the biome the door they PICKED
+    /// is about to put them in, because that is where they will be standing
+    /// by the time the squad matters. Empty when neither is known -- no body
+    /// and no door of their own -- which is treated as "no objection" rather
+    /// than as a biome of its own. The default door is not an answer: it is
+    /// what the picker opens on, and reading it as one put every lobby in the
+    /// garden.
+    std::string squadMemberBiome(SquadMemberId) const;
+    /// The biome a squad is in: its leader's, falling back to the first member
+    /// that has one. Empty when nobody in it does.
+    std::string squadBiome(const Squad&) const;
+    /// Whether `who` may sit in `squad`: they are in its biome, or one of
+    /// the two cannot be placed at all, which is no reason to refuse.
+    bool squadAcceptsBiome(const Squad&, SquadMemberId who) const;
+    /// The line refusing them, or empty when squadAcceptsBiome() says yes --
+    /// `whoLabel` is how it names them ("You are", "bob is").
+    std::string squadBiomeRefusal(const Squad&, SquadMemberId who,
+                                  const std::string& whoLabel) const;
+    /// Takes a member out of their squad when they have just arrived in a
+    /// biome the rest of it is not in. Called from the two places a flower
+    /// changes realm: a fresh body, and a pad.
+    void enforceSquadBiome(SquadMemberId);
 
     // -- chat commands -----------------------------------------------------
     //
@@ -530,6 +567,25 @@ private:
     Session* sessionFor(net::ConnectionId id);
     Session* sessionForEntity(Entity e);
 
+    /// The biome a realm belongs to.
+    ///
+    /// One realm is one map, and a map states its biome (defaulting to its own
+    /// id), so this is the map's answer -- not the per-door `biome` the title
+    /// screen files its buttons under, which is a property of a BUTTON and
+    /// says nothing about where a body standing on the map is. The two
+    /// generated realms answer with their own picker ids, so the ring and the
+    /// maze are each a biome of their own.
+    ///
+    /// This is the unit a squad may not span and the unit bots are spread
+    /// evenly over. Empty for a realm no map was staged for.
+    std::string biomeOfRealm(Realm) const;
+    /// What the spawn picker calls a biome -- the label on its door, so a
+    /// refusal says "Desert" where the button says "Desert". Falls back to the
+    /// raw id for a biome with no pickable door.
+    std::string biomeLabel(const std::string& biome) const;
+    /// The biome the body of `entity` is standing in, or empty.
+    std::string biomeOfEntity(Entity) const;
+
     /// Moves a body -- and its whole kit -- into another realm, and tells its
     /// client which map it is now standing on.
     ///
@@ -558,6 +614,15 @@ private:
         /// number at creation and keeps it across every death -- two bots that
         /// happen to share a NAME still play differently.
         std::uint32_t id = 0;
+        /// The realm this bot lives in, mirrored off its body.
+        ///
+        /// Bots are spread evenly over the biomes, so "the overworld" is no
+        /// longer an answer the controller may assume: every terrain
+        /// question, every broadphase query and every index below is asked
+        /// about THIS realm. A bot never changes realm -- it is rebuilt in
+        /// the one it was assigned, life after life -- so this is settled at
+        /// birth and only re-read to keep it honest.
+        Realm realm = Realm::Overworld;
         /// Where the bot is working right now: its hunting ground, or the
         /// rally point of whatever it has been pulled onto. Mirrored out of
         /// the AI state each tick for anything outside the controller that
@@ -581,18 +646,53 @@ private:
     /// Builds one bot body: every component a flower needs, plus the level and
     /// loadout the NAME seeds -- so a bot called "m28" is the same build every
     /// time it appears, exactly as it is in the reference.
-    Entity createBotBody(const std::string& name, Vec2 spawn);
+    Entity createBotBody(const std::string& name, Realm realm, Vec2 spawn);
     void destroyBot(Bot& bot);
     /// How removable a bot is; higher goes first. Squared distance to the
     /// nearest human, so an unwatched bot on the far side of the map is
-    /// retired before one a player is standing next to.
+    /// retired before one a player is standing next to. Only ever compared
+    /// BETWEEN BOTS OF ONE BIOME: every biome is empty of humans most of the
+    /// time, so ranking across them would retire whole biomes first and undo
+    /// the spread the spawn balance just built.
     double cullScore(const Bot& bot) const;
-    /// Where a bot appears. Collects the mob bodies a candidate must be clear
-    /// of, which is a walk over every mob in the world -- so a caller placing
-    /// SEVERAL bots must collect once and use the overload below, or a large
-    /// `set_bot_count` pays that walk per bot and lands as a tick spike.
-    Vec2 pickBotSpawn();
-    Vec2 pickBotSpawn(const std::vector<MobDisc>& blockers);
+    /// Where a bot appears, in `realm`. Collects the mob bodies a candidate
+    /// must be clear of, which is a walk over every mob in the world -- so a
+    /// caller placing SEVERAL bots must collect once and use the overload
+    /// below, or a large `set_bot_count` pays that walk per bot and lands as
+    /// a tick spike.
+    Vec2 pickBotSpawn(Realm realm);
+    Vec2 pickBotSpawn(Realm realm, const std::vector<MobDisc>& blockers);
+
+    /// The biomes bots are spread over, each as the realms it owns.
+    ///
+    /// Every biome a PLAYER can join from the title screen AND could live in,
+    /// and only those. A bot standing somewhere no door leads is a bot in a
+    /// place the game does not offer; a bot posted to ground nothing can
+    /// survive on is a corpse on a three-second timer. See realmHoldsBots().
+    /// Cached -- the maps do not change while the server runs.
+    struct BotBiome {
+        std::string name;
+        std::vector<Realm> realms;
+    };
+    const std::vector<BotBiome>& botBiomes() const;
+    /// Whether a realm has ground a standing population could live on: one
+    /// spawn band that is neither dangerous nor a single creature's range.
+    /// What keeps the bots out of Hel, by what its map SAYS rather than by
+    /// its name.
+    bool realmHoldsBots(Realm) const;
+    /// Which realm the next bot is born in: a realm of whichever biome holds
+    /// the fewest bots right now, so the population stays level across the
+    /// map however bots die, respawn and are culled. Overworld when no biome
+    /// has a door at all, which is every in-memory test world.
+    Realm pickBotRealm();
+    /// Which entry of botBiomes() a realm belongs to, or botBiomes().size()
+    /// for a realm no listed biome owns -- the arena, the maze, and every
+    /// map with no door into it.
+    std::size_t botBiomeBucket(Realm) const;
+    /// How many bots belong to each entry of botBiomes(), plus a last bucket
+    /// for the ones that belong to no listed biome. Counted by the realm the
+    /// bot was ASSIGNED, so a bot waiting on a respawn still holds its seat.
+    void countBotsPerBiome(std::vector<int>& out) const;
     /// The roster entry owning this body, or null. How the reaper tells a bot
     /// apart from a flower whose connection went away: neither has a session.
     Bot* botForEntity(Entity);
@@ -665,7 +765,7 @@ private:
 
     /// Per-tick indexes, built once for the whole pass rather than per bot.
     void rebuildBotBossIndex(double nowMillis);
-    /// A coarse count of where the overworld's mobs are standing.
+    /// A coarse count of where the mobs are standing, one grid per realm.
     ///
     /// A bot sees kBotSenseRadius and no further, so left to itself it picks
     /// somewhere to work by geometry and finds out whether anything lives
@@ -673,8 +773,12 @@ private:
     /// wandering most of the time. This is the part a player has that a bot
     /// does not -- a sense of where the action is -- and it is one pass over
     /// the mobs per tick rather than a query per bot.
+    ///
+    /// One grid per realm that has a bot in it, and none for the rest: a
+    /// single grid would have every biome's mobs voting on where a bot in one
+    /// of them should work.
     void rebuildBotMobHeat();
-    int botMobHeatAt(Vec2) const;
+    int botMobHeatAt(Realm, Vec2) const;
     void computeBotRaidSlots(double nowMillis);
     void updateBotSquads(double nowMillis);
     /// Tells the bot controller that a boss has just appeared.
@@ -697,8 +801,9 @@ private:
     /// then most recently seen, then closest to a human). Returns whether one
     /// was found; the chat handler answers the player either way.
     bool triggerBotRaid(double nowMillis);
-    /// The rally point every bot is currently pulled toward, if any.
-    bool activeForcedRaidAnchor(double nowMillis, Vec2& out);
+    /// The rally point bots IN `realm` are currently pulled toward, if any. A
+    /// rally is one boss in one biome; the bots working the others carry on.
+    bool activeForcedRaidAnchor(double nowMillis, Realm realm, Vec2& out);
     /// The nearest boss within rally range of this bot, preferring uniques.
     bool botNearestBoss(const Bot&, Vec2& out, double& distOut);
 
@@ -720,12 +825,13 @@ private:
     /// The reference's sampled raycast. Deliberately not the terrain's exact
     /// swept test: this one steers through the diagonal seams and narrow gaps
     /// the exact one refuses, which is where bots are willing to walk.
-    bool botRayHitsWall(Vec2 from, Vec2 to) const;
+    bool botRayHitsWall(Realm, Vec2 from, Vec2 to) const;
     /// Rotates a heading to the first probe offset with no wall in it.
-    Vec2 botSteerAroundWalls(Vec2 from, Vec2 direction,
+    Vec2 botSteerAroundWalls(Realm, Vec2 from, Vec2 direction,
                              double probeDistance = kTileSize * 1.2) const;
     /// A steering bias away from every nearby mob except the one being fought.
-    Vec2 botAvoidMobs(Vec2 at, Entity except, Vec2 heading, double sidePreference = 1.0);
+    Vec2 botAvoidMobs(Realm, Vec2 at, Entity except, Vec2 heading,
+                      double sidePreference = 1.0);
     /// Watches for the one unambiguous fault: a bot asking to move and not
     /// moving. Returns true while an escape manoeuvre is running.
     bool botHandleStuck(Bot&, double nowMillis);
@@ -735,7 +841,7 @@ private:
     /// path, which is the caller's cue to steer directly.
     bool botFollowPath(Bot&, double nowMillis, Vec2 goal, double speedMultiplier,
                        double avoidStrength, Entity engaging = NULL_ENTITY);
-    bool botFindPath(Vec2 start, Vec2 goal, std::vector<Vec2>& out);
+    bool botFindPath(Realm, Vec2 start, Vec2 goal, std::vector<Vec2>& out);
     void botClearPath(BotAiState&);
     int botStrafeDirection(Bot&, double nowMillis);
 
@@ -867,16 +973,26 @@ private:
     std::vector<RealmPoint> humanPlayers_;
 
     std::vector<Bot> bots_;
+    /// The biomes bots are spread over, resolved from the staged maps once.
+    mutable std::vector<BotBiome> botBiomes_;
+    mutable bool botBiomesReady_ = false;
+    /// Scratch for the population balance, so picking a birthplace allocates
+    /// nothing on a maintenance pass.
+    mutable std::vector<int> botBiomeCounts_;
     /// Where the humans are standing, collected once per bot pass. Bots leave
     /// the mobs around a real player alone (kBotPlayerClaimRadius), and asking
     /// the session table per candidate mob per bot per tick would be a walk
-    /// over it a few thousand times a second.
-    std::vector<Vec2> botHumanSpots_;
-    /// The heat grid rebuildBotMobHeat() fills, in kBotHeatCellSize cells over
-    /// the overworld.
-    std::vector<std::uint16_t> botMobHeat_;
-    int botHeatCols_ = 0;
-    int botHeatRows_ = 0;
+    /// over it a few thousand times a second. With realms: a human in the
+    /// desert claims nothing from a bot in the garden.
+    std::vector<RealmPoint> botHumanSpots_;
+    /// The heat grid rebuildBotMobHeat() fills, in kBotHeatCellSize cells --
+    /// one per realm that has a bot in it, empty for the rest.
+    struct BotHeatGrid {
+        std::vector<std::uint16_t> cells;
+        int cols = 0;
+        int rows = 0;
+    };
+    std::vector<BotHeatGrid> botMobHeat_;
     /// Broadphase scratch for the bot controller, reused so a per-tick scan
     /// over two dozen bots does not allocate two dozen times.
     std::vector<Entity> botCandidates_;
@@ -913,6 +1029,11 @@ private:
     struct BotForcedRaid {
         bool active = false;
         Vec2 at;
+        /// Which biome's bots are being called. A rally is one boss standing
+        /// in one map, and the bots in the others cannot walk to it: without
+        /// this they march to the same COORDINATES in their own realm, which
+        /// is a crowd of flowers standing on an empty field.
+        Realm realm = Realm::Overworld;
         Rarity tier = Rarity::Super;
         double untilMillis = 0;
     };
@@ -931,11 +1052,12 @@ private:
         double crowdRadius = kBotRaidRingMin;
     };
     std::unordered_map<Entity, BotRaidSlot> botRaidSlots_;
-    /// Scratch for the above and for the cull ordering, so the per-tick
-    /// rebuild allocates nothing.
-    std::vector<std::size_t> botOrderScratch_;
 
-    BotPathScratch botPath_;
+    /// A* scratch per realm. The tables are indexed by tile, so they are
+    /// sized to one map's grid; sharing one across realms of different
+    /// dimensions would reallocate and clear it on every search that crossed
+    /// a biome boundary.
+    std::vector<BotPathScratch> botPath_;
     /// How many A* recomputes are left this tick. A whole raid replanning
     /// together would otherwise spike the frame.
     int botPathBudget_ = 0;

@@ -161,7 +161,9 @@ void ModeSpawner::runArena(World& world, const Terrain& terrain, const ContentRe
         bool placed = false;
         for (int attempt = 0; attempt < 20 && !placed; ++attempt) {
             const Vec2 at = kArenaCentre + rng.insideCircle(maxR);
-            if (nearPlayer(Realm::Arena, at, kArenaSpawnPlayerGap)) continue;
+            // The gap is clear ground between the bodies, so an ultra's wide
+            // hitbox keeps its edge as far off a flower as an ant's does.
+            if (nearPlayer(Realm::Arena, at, kArenaSpawnPlayerGap + radius)) continue;
             if (nearMob(world, grid, Realm::Arena, at, radius, kArenaSpawnMobGap)) continue;
             if (spawner.spawnMob(world, terrain, content, mobIndex, tier, at, Realm::Arena,
                                  nowMillis, rng) != NULL_ENTITY) {
@@ -195,7 +197,7 @@ void ModeSpawner::runMaze(World& world, const Terrain& terrain, const ContentReg
             const Vec2 at{kMazeOriginX + (gx + 0.2 + rng.unit() * 0.6) * kMazeCellSize,
                           kMazeOriginY + (gy + 0.2 + rng.unit() * 0.6) * kMazeCellSize};
             if (!mazeBodyFits(maze, at, commonRadius)) continue;
-            if (nearPlayer(Realm::Maze, at, kMazeSpawnPlayerGap)) continue;
+            if (nearPlayer(Realm::Maze, at, kMazeSpawnPlayerGap + commonRadius)) continue;
             if (nearMob(world, grid, Realm::Maze, at, commonRadius, kMazeSpawnMobGap)) continue;
 
             // Depth zone -> tier, with a little jitter either way. Never above

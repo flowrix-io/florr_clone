@@ -162,17 +162,17 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
 
     // --- gather what is in view ------------------------------------------
     candidates_.clear();
+    // The connection behind the viewer's body, which is what a drop's
+    // reservation is keyed by -- a body dies, a claim does not. Read once
+    // rather than per candidate entity.
+    const PlayerAccount* viewerAccount = world.tryGet<PlayerAccount>(viewer);
+    const net::ConnectionId viewerOwner =
+        viewerAccount != nullptr ? viewerAccount->connection : 0;
     Query<NetId, Replicated, Transform> replicated{world};
     replicated.each([&](Entity e, NetId& id, Replicated&, Transform& transform) {
         if (const DropItem* drop = world.tryGet<DropItem>(e)) {
-            if (!drop->eligible.empty() &&
-                std::find(drop->eligible.begin(), drop->eligible.end(), viewer) == drop->eligible.end()) {
-                return;
-            }
-            if (std::find(drop->pickedUpBy.begin(), drop->pickedUpBy.end(), viewer) !=
-                drop->pickedUpBy.end()) {
-                return;
-            }
+            if (!drop->eligible.empty() && !claimed(drop->eligible, viewer, viewerOwner)) return;
+            if (claimed(drop->pickedUpBy, viewer, viewerOwner)) return;
         }
         // The viewer's own body is always replicated, however the camera sits:
         // losing it would leave the client with nothing to anchor prediction to.

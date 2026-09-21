@@ -868,13 +868,51 @@ struct Lifetime {
 // Drops and ground effects
 // ---------------------------------------------------------------------------
 
+/// One claim on a drop: a body, and the CONNECTION that owned it.
+///
+/// Keyed by the owner and not only by the body because a flower is DESTROYED
+/// AND REBUILT on every death. A reservation held against the corpse is one
+/// its owner can never collect: they respawn as a new entity, walk back to
+/// the item their squad just earned, and stand on it. The reference keys its
+/// recipients by account for the same reason.
+///
+/// The connection rather than the account id: it is four bytes instead of a
+/// string on every drop in the world, it is stable across a death, and the
+/// one thing it does not survive -- a reconnect -- is a new session, which
+/// already forfeits everything else the old body was owed. Zero means nobody
+/// owns it (a bot, a harness), and then the body is the whole of the claim.
+struct LootClaim {
+    Entity body = NULL_ENTITY;
+    net::ConnectionId owner = 0;
+
+    LootClaim() = default;
+    // Implicit on purpose: every caller that reserved a drop for a list of
+    // bodies still reads as one.
+    LootClaim(Entity claimant) : body(claimant) {}   // NOLINT(google-explicit-constructor)
+    LootClaim(Entity claimant, net::ConnectionId connection)
+        : body(claimant), owner(connection) {}
+
+    bool matches(Entity claimant, net::ConnectionId connection) const {
+        if (owner != 0 && connection != 0) return owner == connection;
+        return body == claimant;
+    }
+};
+
+inline bool claimed(const std::vector<LootClaim>& claims, Entity body,
+                    net::ConnectionId owner) {
+    for (const LootClaim& claim : claims) {
+        if (claim.matches(body, owner)) return true;
+    }
+    return false;
+}
+
 struct DropItem {
     std::uint16_t configIndex = 0;
     Rarity rarity = Rarity::Common;
     /// Only these players may pick it up. Each eligible player receives one
     /// copy; the world entity remains for the others until all have collected.
-    std::vector<Entity> eligible;
-    std::vector<Entity> pickedUpBy;
+    std::vector<LootClaim> eligible;
+    std::vector<LootClaim> pickedUpBy;
 };
 
 enum class GroundEffectKind : std::uint8_t { Poison = 0, Web = 1, Radiation = 2 };

@@ -90,7 +90,10 @@ TEST(bots_populate_and_move) {
 }
 
 TEST(bots_spread_out_and_stay_in_the_world) {
-    Harness h("bots-spread");
+    // A thicker population than the shipped target: this measures a CROWD
+    // inside one biome, and the default fourteen spread over six of them is
+    // two or three per map -- three points are not a clump to disprove.
+    Harness h("bots-spread", {}, dataDir(), 60);
     CHECK(h.ready);
     if (!h.ready) return;
 
@@ -105,30 +108,105 @@ TEST(bots_spread_out_and_stay_in_the_world) {
     CHECK(bots.size() > 4);
     if (bots.size() < 2) return;
 
-    const Vec2 extent = h.server.terrain().realmExtent(Realm::Overworld);
-    Vec2 centre{0, 0};
+    // Each bot against ITS OWN map's extent: the population is spread over
+    // every biome, the shipped maps are four different sizes, and a bot judged
+    // against another map's rectangle is judged against the wrong world.
+    std::unordered_map<int, std::vector<Vec2>> byRealm;
     for (const Entity bot : bots) {
-        const Vec2 at = world.get<Transform>(bot).position;
+        const Transform& at = world.get<Transform>(bot);
+        const Vec2 extent = h.server.terrain().realmExtent(at.realm);
         // Inside the map, with room for the boundary margin the wander picker
         // clamps to. A bot outside this is one whose steering escaped.
-        // Measured against the OVERWORLD'S OWN extent: every map states its
-        // size now, and the shipped one is nothing like the historical square.
-        CHECK(at.x > 0.0 && at.x < extent.x);
-        CHECK(at.y > 0.0 && at.y < extent.y);
-        centre += at;
+        CHECK(at.position.x > 0.0 && at.position.x < extent.x);
+        CHECK(at.position.y > 0.0 && at.position.y < extent.y);
+        byRealm[static_cast<int>(at.realm)].push_back(at.position);
     }
-    centre = centre / static_cast<double>(bots.size());
 
     // Separation and a hunting ground chosen per bot mean the population must
     // not be a single knot. A crowd collapsed onto one point is the classic
     // failure of a controller whose anchor is the same for everyone -- which
     // is exactly what the per-band "farm the zone matching your gear" rule
     // this replaced produced, once every bot's gear pointed at the same band.
-    double spread = 0;
-    for (const Entity bot : bots) {
-        spread = std::max(spread, (world.get<Transform>(bot).position - centre).length());
+    //
+    // Asked per realm, and of the realms with enough bots in one to be a knot:
+    // two bots in a biome are not a crowd, and pooling every biome's
+    // coordinates would measure a centre that is in none of them.
+    int measured = 0;
+    for (const auto& entry : byRealm) {
+        const std::vector<Vec2>& here = entry.second;
+        if (here.size() < 3) continue;
+        ++measured;
+        Vec2 centre{0, 0};
+        for (const Vec2 at : here) centre += at;
+        centre = centre / static_cast<double>(here.size());
+        double spread = 0;
+        for (const Vec2 at : here) spread = std::max(spread, (at - centre).length());
+        CHECK(spread > kBotSeparationRadius * 2.0);
     }
-    CHECK(spread > kBotSeparationRadius * 2.0);
+    CHECK(measured > 0);
+}
+
+TEST(bots_are_spread_evenly_over_the_biomes) {
+    // The population exists so a player does not meet an empty world -- and
+    // the world is seven maps. A population that all stood in the first one
+    // left six biomes a player could walk into and find nothing alive, nobody
+    // playing, and (because a band is only stocked while somebody is looking
+    // at it) not even mobs.
+    Harness h("bots-biomes");
+    CHECK(h.ready);
+    if (!h.ready) return;
+
+    NetClient client;
+    CHECK(loginNew(h, client, "biomewatch", "hunter22"));
+    client.joinGame(1280, 720, {}, "biomewatch");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    // Long enough for the burst cap to have filled the whole target.
+    h.step(400, {&client});
+
+    World& world = h.server.world();
+    // The server's own list, not one rebuilt here: the claim is that the
+    // population covers the biomes the server says it spreads over, and a
+    // test that derived that set for itself would agree with a broken rule.
+    const std::vector<std::string> names = h.server.botBiomeNames();
+    std::unordered_map<std::string, int> expected;
+    for (const std::string& name : names) expected[name] = 0;
+    CHECK(expected.size() > 1);
+    if (expected.size() < 2) return;
+
+    // Hel is deliberately NOT one of them. Its only band is random
+    // difficulty, which reaches mythic anywhere on the map: a bot posted
+    // there is a corpse on a three-second timer, not an inhabitant. The
+    // shipped maps have a door into it, so this is the one biome the "every
+    // door is a home" rule has to be able to say no to.
+    CHECK(expected.count("hel") == 0);
+    CHECK(h.server.worldMaps().choice("hel") != nullptr);   // and it IS joinable
+
+    int total = 0;
+    for (const Entity bot : botBodies(world)) {
+        const MapData* map = h.server.worldMaps().forRealm(world.get<Transform>(bot).realm);
+        CHECK(map != nullptr);
+        if (map == nullptr) continue;
+        // Loudly, rather than quietly counting it somewhere else: a bot in a
+        // biome the spread does not list is a bot nothing is balancing.
+        CHECK(expected.count(map->biome()) == 1);
+        ++expected[map->biome()];
+        ++total;
+    }
+    CHECK(total > 4);
+
+    int fewest = total;
+    int most = 0;
+    for (const auto& entry : expected) {
+        fewest = std::min(fewest, entry.second);
+        most = std::max(most, entry.second);
+    }
+    // Every biome inhabited, and none of them more than one bot fatter than
+    // the thinnest: the placement always fills the emptiest biome, so with a
+    // population that divides unevenly the remainder is the only slack there
+    // can be. A bot lying dead at this instant is still counted -- its body is
+    // in its own biome until the replacement is built.
+    CHECK(fewest >= 1);
+    CHECK(most - fewest <= 1);
 }
 
 TEST(bot_corpses_are_replaced) {
@@ -171,12 +249,16 @@ TEST(bot_corpses_are_replaced) {
     // bot_traversal_petals_are_handed_back; what it is not is a test of the
     // REPLACEMENT path, which only runs on a corpse nobody saved. Nineteen
     // thousand units away, with three seconds on the clock, is out of reach.
+    // In the corpse's OWN realm: bots live in every biome, the maps are four
+    // different sizes, and the far corner of the overworld is off the edge of
+    // most of them.
     const Terrain& terrain = h.server.terrain();
-    const Vec2 extent = terrain.realmExtent(Realm::Overworld);
+    const Realm realm = world.get<Transform>(corpse).realm;
+    const Vec2 extent = terrain.realmExtent(realm);
     int farTx = 0;
     int farTy = 0;
     CHECK(terrain.nearestOpenTile({extent.x - kTileSize, extent.y - kTileSize}, farTx, farTy,
-                                  Realm::Overworld));
+                                  realm));
     world.get<Transform>(corpse).position = Terrain::tileCenter(farTx, farTy);
 
     // The population pass takes it away and builds a replacement.
@@ -403,7 +485,10 @@ void adminSpawn(NetClient& client, const char* mob, const char* rarity, Vec2 at,
 } // namespace
 
 TEST(a_bot_fights_what_is_put_in_front_of_it) {
-    Harness h("bots-fight", seedAdmin);
+    // Enough bots that the player's own biome holds a working handful: the
+    // population is spread evenly over every biome with a door, so the default
+    // two dozen is three or four per map and this test stages five mobs.
+    Harness h("bots-fight", seedAdmin, dataDir(), 70);
     CHECK(h.ready);
     if (!h.ready) return;
 
@@ -433,6 +518,17 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
     CHECK(me != NULL_ENTITY);
     if (me == NULL_ENTITY) return;
     const Vec2 human = world.get<Transform>(me).position;
+    const Realm realm = world.get<Transform>(me).realm;
+    // Only the bots in the admin's OWN realm: the console spawns into the
+    // realm the admin is standing in, and a bot two biomes away is being
+    // asked to fight a mob that is not in its world.
+    bots.erase(std::remove_if(bots.begin(), bots.end(),
+                              [&](Entity bot) {
+                                  return world.get<Transform>(bot).realm != realm;
+                              }),
+               bots.end());
+    CHECK(bots.size() >= 5);
+    if (bots.size() < 5) return;
     std::sort(bots.begin(), bots.end(), [&](Entity a, Entity b) {
         return distanceSq(world.get<Transform>(a).position, human) >
                distanceSq(world.get<Transform>(b).position, human);
@@ -443,18 +539,25 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
     // -- running from something, standing on a drop -- and the claim is about
     // the controller, not about any single tick of any single bot.
     //
-    // LEGENDARY, not rare. A rare beetle dropped on a bot is dead on the tick
-    // it lands -- which is the claim, emphatically, but it leaves nothing to
-    // measure: the mob is killed and reaped inside the same tick the console
-    // created it, so no observer between ticks ever sees it at all. A
-    // legendary one takes a few seconds to chew through, and its health
-    // dropping is the same statement made where it can be read.
+    // MYTHIC, not rare and no longer legendary. A mob dropped on a bot that
+    // dies on the tick it lands is the claim, emphatically -- but it leaves
+    // nothing to measure: it is created, killed, marked Dead and reaped
+    // inside the one tick the console spawned it in, so no observer between
+    // ticks ever sees it and the staging below silently collects nothing.
+    // That is what a rare always did, and what a legendary started doing once
+    // this test ran against a thick population of name-seeded builds: with 70
+    // bots, three of twelve legendaries survived long enough to be seen.
+    // Mythic has the health to last a few seconds beside an apex flower, and
+    // its health dropping is the same statement made where it can be read.
+    // Deliberately not super or unique: those are boss tiers to the
+    // controller (isBotBossTier) and would rally the whole map.
     //
     // They are also picked out by WHAT and WHERE rather than by being new to
     // the world, because the world stocks itself now: mobs appear beside a bot
     // on their own the whole time this runs, and "everything that was not here
     // a moment ago" would be measuring the spawner.
     const std::uint16_t beetle = content().mobIndex("beetle");
+    constexpr Rarity kStagedTier = Rarity::Mythic;
     std::unordered_set<Entity> known;
     {
         Query<MobTag, MobType> mobs{world};
@@ -474,16 +577,20 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
         if (!world.isAlive(bot) || world.has<Dead>(bot)) continue;
         const Vec2 at = world.get<Transform>(bot).position;
         const Vec2 spot = at + Vec2{90, 0};
-        adminSpawn(client, "beetle", "legendary", spot, 1);
-        // A third of a second between lines. The console is rate limited like
-        // any other chat (session.h: commandAllowance), and five commands on
-        // consecutive ticks is four commands the server never reads.
-        for (int step = 0; step < 10; ++step) {
+        adminSpawn(client, "beetle", "mythic", spot, 1);
+        // SLOWER THAN THE CONSOLE REFILLS, which is 2 commands a second
+        // (server/session.cpp: kCommandRefillPerSecond) off a 12-deep bucket.
+        // Five commands on consecutive ticks is four the server never reads,
+        // and three a second drains the bucket and then drops one line in
+        // three -- silently, because a dropped command answers nothing.
+        // Verified by counting the console's own echoes: at this rate all
+        // twelve attempts land.
+        for (int step = 0; step < 18; ++step) {
             h.step(1, {&client});
             Query<MobTag, MobType, Transform, Health> mobs{world};
             mobs.each([&](Entity e, MobTag&, MobType& type, Transform& where, Health& health) {
-                if (type.configIndex != beetle || type.rarity != Rarity::Legendary) return;
-                if (where.realm != Realm::Overworld) return;
+                if (type.configIndex != beetle || type.rarity != kStagedTier) return;
+                if (where.realm != realm) return;
                 if (distance(where.position, spot) > 250.0) return;
                 if (!known.insert(e).second) return;
                 staged.push_back(e);
@@ -514,7 +621,9 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
 }
 
 TEST(bots_rally_onto_a_boss) {
-    Harness h("bots-boss", seedAdmin);
+    // Same reason as the fight test: a rally is measured in one biome, and
+    // the default population spread over seven of them is too thin to crowd.
+    Harness h("bots-boss", seedAdmin, dataDir(), 70);
     CHECK(h.ready);
     if (!h.ready) return;
 

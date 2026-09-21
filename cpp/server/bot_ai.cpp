@@ -220,11 +220,19 @@ void GameServer::maintainBots(double nowMillis) {
     // Retire the bodies the world has already taken away -- a bot killed by a
     // mob is reaped like any other flower -- and hand the survivors a new one
     // once their respawn delay is up.
-    // Collected ONCE for the whole pass: the placement test needs every mob
-    // body, and asking for them per bot is a walk over the world per bot --
-    // which is what turned a large `set_bot_count` into a visible stall.
-    std::vector<MobDisc> blockers;
-    collectSpawnBlockers(Realm::Overworld, blockers);   // bots are born on the overworld
+    // Collected ONCE for the whole pass, per realm: the placement test needs
+    // every mob body in the realm being placed into, and asking for them per
+    // bot is a walk over the world per bot -- which is what turned a large
+    // `set_bot_count` into a visible stall. One walk fills every realm's list,
+    // and the realms with no bot being placed in them cost an empty vector.
+    std::vector<std::vector<MobDisc>> blockersByRealm(kMaxRealms);
+    {
+        Query<MobTag, Transform, Body> mobs{world_};
+        mobs.each([&](Entity, MobTag&, Transform& transform, Body& body) {
+            blockersByRealm[realmIndex(transform.realm)].push_back({transform.position,
+                                                                    body.radius});
+        });
+    }
 
     for (Bot& bot : bots_) {
         // Two ways a bot is down: its body was taken away outright (a mob's
@@ -237,12 +245,14 @@ void GameServer::maintainBots(double nowMillis) {
             bot.respawnAtMillis = nowMillis + kBotRespawnDelayMillis;
         }
         if ((gone || down) && bot.respawnAtMillis > 0 && nowMillis >= bot.respawnAtMillis) {
-            // Somewhere else entirely: the ground it died on is exactly the
-            // ground that killed it.
-            const Vec2 spawn = pickBotSpawn(blockers);
+            // Somewhere else entirely, but in the SAME biome: a bot belongs to
+            // the biome it was assigned, and one that respawned wherever the
+            // balance happened to be thinnest would drift the whole population
+            // toward whichever biome kills fastest.
+            const Vec2 spawn = pickBotSpawn(bot.realm, blockersByRealm[realmIndex(bot.realm)]);
             // Takes the corpse and its ring away, if one is still lying there.
             destroyBot(bot);
-            bot.entity = createBotBody(bot.name, spawn);
+            bot.entity = createBotBody(bot.name, bot.realm, spawn);
             bot.deathAnnounced = false;
             bot.anchor = spawn;
             bot.hasAnchor = false;
@@ -315,25 +325,45 @@ void GameServer::maintainBots(double nowMillis) {
             // the same name share a BUILD, but not a persona, a strafe
             // direction or a patch of ground.
             bot.id = static_cast<std::uint32_t>(botRng_.next());
-            const Vec2 spawn = pickBotSpawn(blockers);
+            // Into whichever biome is currently thinnest, counted after every
+            // bot placed so far this pass -- a burst of four must not all land
+            // in the same one.
+            bot.realm = pickBotRealm();
+            const Vec2 spawn = pickBotSpawn(bot.realm, blockersByRealm[realmIndex(bot.realm)]);
             bot.anchor = spawn;
-            bot.entity = createBotBody(bot.name, spawn);
+            bot.entity = createBotBody(bot.name, bot.realm, spawn);
             bots_.push_back(std::move(bot));
         }
     } else if (current > desired) {
-        // Cull the bots FARTHEST from any human first. Taking whichever came
-        // first out of the list routinely takes one standing next to a player,
-        // which simply vanishes in front of them.
-        botOrderScratch_.resize(bots_.size());
-        for (std::size_t i = 0; i < botOrderScratch_.size(); ++i) botOrderScratch_[i] = i;
-        std::stable_sort(botOrderScratch_.begin(), botOrderScratch_.end(),
-                         [&](std::size_t a, std::size_t b) {
-                             return cullScore(bots_[a]) > cullScore(bots_[b]);
-                         });
+        // Cull out of the FULLEST biome, and within it the bot farthest from
+        // any human. Both halves matter: taking whichever came first out of
+        // the list routinely takes one standing next to a player, which simply
+        // vanishes in front of them -- and taking the globally farthest empties
+        // every biome nobody is standing in, which is exactly the spread this
+        // population is here to keep.
         const std::size_t excess = static_cast<std::size_t>(current - desired);
         std::vector<bool> doomed(bots_.size(), false);
-        for (std::size_t i = 0; i < excess && i < botOrderScratch_.size(); ++i) {
-            doomed[botOrderScratch_[i]] = true;
+        countBotsPerBiome(botBiomeCounts_);
+        for (std::size_t taken = 0; taken < excess; ++taken) {
+            std::size_t victim = bots_.size();
+            std::size_t victimBucket = 0;
+            int bestCount = -1;
+            double bestScore = 0;
+            for (std::size_t i = 0; i < bots_.size(); ++i) {
+                if (doomed[i]) continue;
+                const std::size_t bucket = botBiomeBucket(bots_[i].realm);
+                const int count = botBiomeCounts_[bucket];
+                const double score = cullScore(bots_[i]);
+                if (count > bestCount || (count == bestCount && score > bestScore)) {
+                    victim = i;
+                    victimBucket = bucket;
+                    bestCount = count;
+                    bestScore = score;
+                }
+            }
+            if (victim >= bots_.size()) break;
+            doomed[victim] = true;
+            --botBiomeCounts_[victimBucket];
         }
         std::vector<Bot> kept;
         kept.reserve(bots_.size() - excess);
@@ -366,27 +396,137 @@ double GameServer::cullScore(const Bot& bot) const {
         const Session& session = entry.second;
         if (!session.playing()) continue;
         const Transform* other = world_.tryGet<Transform>(session.entity);
-        if (other == nullptr) continue;
+        if (other == nullptr || other->realm != transform->realm) continue;
         nearest = std::min(nearest, distanceSq(other->position, transform->position));
     }
     // Nobody watching anyone: the order does not matter.
     return nearest == std::numeric_limits<double>::max() ? 0.0 : nearest;
 }
 
-Vec2 GameServer::pickBotSpawn() {
-    std::vector<MobDisc> blockers;
-    collectSpawnBlockers(Realm::Overworld, blockers);   // bots are born on the overworld
-    return pickBotSpawn(blockers);
+// ---------------------------------------------------------------------------
+// Which biome a bot belongs to
+// ---------------------------------------------------------------------------
+//
+// Bots exist to make the world look inhabited, and the world is seven maps.
+// A population that all stood in the first one left six biomes that a player
+// could walk into and find nothing alive and nobody playing -- and, because a
+// band is only stocked while somebody is looking at it, not even mobs.
+
+/// Whether a realm has ground a standing population could actually live on:
+/// at least one spawn band that is not dangerous (difficulty.h's own test,
+/// the same one a bot's birthplace is chosen against).
+///
+/// This is what keeps the bots out of Hel. Hel's single band is RANDOM
+/// difficulty, which reaches mythic anywhere on the map, and the door into it
+/// is authored and pickable like any other -- so without this the balance
+/// would keep a sixth of the population there, and what it would be keeping
+/// is a rota of corpses: born at the door, killed by whatever wandered past,
+/// replaced three seconds later. A biome a player VISITS deliberately, with a
+/// build, is not a biome anybody LIVES in.
+///
+/// A band-less map fails this too, and should: nothing grows there, so a bot
+/// posted to it would stand in an empty field for the life of the server.
+bool GameServer::realmHoldsBots(Realm realm) const {
+    const MapData* map = worldMaps_.forRealm(realm);
+    if (map == nullptr) return false;
+    for (const MapElement& element : map->elements()) {
+        if (!element.isSpawnBand()) continue;
+        if (element.isSingularBand()) continue;   // one creature's range, not ground
+        if (isDangerousGround(element.difficulty)) continue;
+        return true;
+    }
+    return false;
 }
 
-Vec2 GameServer::pickBotSpawn(const std::vector<MobDisc>& blockers) {
-    // EVERY area a real player can actually appear in, and nothing else: one
-    // of the overworld's player spawn rectangles, or a BEGINNER band -- one
+const std::vector<GameServer::BotBiome>& GameServer::botBiomes() const {
+    if (botBiomesReady_) return botBiomes_;
+    botBiomesReady_ = true;
+    // Every biome a PLAYER can join from the title screen, in the picker's own
+    // order, and only those. A realm with no pickable door is somewhere the
+    // game does not offer to put anyone, so it is not somewhere to put a bot.
+    for (const SpawnChoice& choice : worldMaps_.spawnChoices()) {
+        const std::string biome = biomeOfRealm(choice.realm);
+        if (biome.empty()) continue;
+        // ...and that somebody could live in. See realmHoldsBots().
+        if (!realmHoldsBots(choice.realm)) continue;
+        auto found = std::find_if(botBiomes_.begin(), botBiomes_.end(),
+                                  [&](const BotBiome& entry) { return entry.name == biome; });
+        if (found == botBiomes_.end()) {
+            botBiomes_.push_back(BotBiome{biome, {choice.realm}});
+            continue;
+        }
+        if (std::find(found->realms.begin(), found->realms.end(), choice.realm) ==
+            found->realms.end()) {
+            found->realms.push_back(choice.realm);
+        }
+    }
+    return botBiomes_;
+}
+
+std::vector<std::string> GameServer::botBiomeNames() const {
+    std::vector<std::string> out;
+    for (const BotBiome& biome : botBiomes()) out.push_back(biome.name);
+    return out;
+}
+
+std::size_t GameServer::botBiomeBucket(Realm realm) const {
+    const std::vector<BotBiome>& biomes = botBiomes();
+    for (std::size_t i = 0; i < biomes.size(); ++i) {
+        if (std::find(biomes[i].realms.begin(), biomes[i].realms.end(), realm) !=
+            biomes[i].realms.end()) {
+            return i;
+        }
+    }
+    return biomes.size();
+}
+
+void GameServer::countBotsPerBiome(std::vector<int>& out) const {
+    out.assign(botBiomes().size() + 1, 0);
+    for (const Bot& bot : bots_) ++out[botBiomeBucket(bot.realm)];
+}
+
+Realm GameServer::pickBotRealm() {
+    const std::vector<BotBiome>& biomes = botBiomes();
+    if (biomes.empty()) return Realm::Overworld;   // an in-memory world with no doors
+    countBotsPerBiome(botBiomeCounts_);
+
+    // The thinnest biome, with the tie broken at random rather than by order:
+    // a fixed order would fill the list front to back every restart and make
+    // the last biome the one that is always a bot short.
+    int fewest = std::numeric_limits<int>::max();
+    int contenders = 0;
+    std::size_t chosen = 0;
+    for (std::size_t i = 0; i < biomes.size(); ++i) {
+        const int count = botBiomeCounts_[i];
+        if (count < fewest) {
+            fewest = count;
+            contenders = 1;
+            chosen = i;
+        } else if (count == fewest) {
+            ++contenders;
+            // Reservoir sampling over the ties, so every equally thin biome is
+            // equally likely without collecting them into a list first.
+            if (botRng_.below(static_cast<std::uint32_t>(contenders)) == 0) chosen = i;
+        }
+    }
+    const std::vector<Realm>& realms = biomes[chosen].realms;
+    return realms[botRng_.below(static_cast<std::uint32_t>(realms.size()))];
+}
+
+Vec2 GameServer::pickBotSpawn(Realm realm) {
+    std::vector<MobDisc> blockers;
+    collectSpawnBlockers(realm, blockers);
+    return pickBotSpawn(realm, blockers);
+}
+
+Vec2 GameServer::pickBotSpawn(Realm realm, const std::vector<MobDisc>& blockers) {
+    // EVERY area a real player can actually appear in on this map, and nothing
+    // else: one of its player spawn rectangles, or a BEGINNER band -- one
     // whose difficulty stays below the first tier a fresh flower cannot fight.
     // That is exactly what the join handler allows, and it is why a bot never
     // turns up deep in high-difficulty ground where it is under attack from the
     // moment it appears.
-    const MapData* map = worldMaps_.forRealm(Realm::Overworld);
+    const MapData* map = worldMaps_.forRealm(realm);
     std::vector<const MapElement*> anchors;
     if (map != nullptr) {
         for (const MapElement* point : map->playerSpawns()) anchors.push_back(point);
@@ -420,14 +560,13 @@ Vec2 GameServer::pickBotSpawn(const std::vector<MobDisc>& blockers) {
         const MapElement& area =
             *anchors[botRng_.below(static_cast<std::uint32_t>(anchors.size()))];
         const double reach = std::max(area.bounds.w, area.bounds.h) * 0.5;
-        return terrain_->findOpenSpawn(botRng_, area.centre(), reach, Realm::Overworld);
+        return terrain_->findOpenSpawn(botRng_, area.centre(), reach, realm);
     }
-    const MapData* overworld = worldMaps_.forRealm(Realm::Overworld);
-    if (overworld == nullptr) return terrain_->spawnPoint(Realm::Overworld);
-    return overworld->defaultSpawn(botRng_, *terrain_, &blockers);
+    if (map == nullptr) return terrain_->spawnPoint(realm);
+    return map->defaultSpawn(botRng_, *terrain_, &blockers);
 }
 
-Entity GameServer::createBotBody(const std::string& name, Vec2 spawn) {
+Entity GameServer::createBotBody(const std::string& name, Realm realm, Vec2 spawn) {
     // Level and loadout are derived from the NAME, not from the spawn, so a
     // bot called "m28" is the same flower every time it appears. The rolls
     // come from server/bot_identity.h, which is also what the admin console's
@@ -438,7 +577,7 @@ Entity GameServer::createBotBody(const std::string& name, Vec2 spawn) {
 
     const Entity entity = world_.create();
     world_.add<PlayerTag>(entity);
-    world_.add<Transform>(entity, Transform{spawn, 0.0});
+    world_.add<Transform>(entity, Transform{spawn, 0.0, realm});
     world_.add<Motion>(entity);
     world_.add<Knockback>(entity);
     world_.add<Faction>(entity, Faction{Team::Players, false});
@@ -585,7 +724,7 @@ double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
 // Steering primitives
 // ---------------------------------------------------------------------------
 
-bool GameServer::botRayHitsWall(Vec2 from, Vec2 to) const {
+bool GameServer::botRayHitsWall(Realm realm, Vec2 from, Vec2 to) const {
     // A sampled raycast, every half tile along the segment. Deliberately NOT
     // Terrain::segmentBlocked -- that one is an exact swept walk, and it
     // refuses the diagonal seams and narrow gaps this sampled test steers
@@ -599,22 +738,24 @@ bool GameServer::botRayHitsWall(Vec2 from, Vec2 to) const {
     const int steps = std::min(1024, static_cast<int>(std::ceil(dist / step)));
     for (int i = 1; i <= steps; ++i) {
         const double t = static_cast<double>(i) / steps;
-        if (terrain_->blocked(from + delta * t, Realm::Overworld)) return true;
+        if (terrain_->blocked(from + delta * t, realm)) return true;
     }
     return false;
 }
 
-Vec2 GameServer::botSteerAroundWalls(Vec2 from, Vec2 direction, double probeDistance) const {
+Vec2 GameServer::botSteerAroundWalls(Realm realm, Vec2 from, Vec2 direction,
+                                     double probeDistance) const {
     for (const double offset : kSteerOffsets) {
         const double c = std::cos(offset);
         const double s = std::sin(offset);
         const Vec2 rotated{direction.x * c - direction.y * s, direction.x * s + direction.y * c};
-        if (!botRayHitsWall(from, from + rotated * probeDistance)) return rotated;
+        if (!botRayHitsWall(realm, from, from + rotated * probeDistance)) return rotated;
     }
     return direction;
 }
 
-Vec2 GameServer::botAvoidMobs(Vec2 at, Entity except, Vec2 heading, double sidePreference) {
+Vec2 GameServer::botAvoidMobs(Realm realm, Vec2 at, Entity except, Vec2 heading,
+                              double sidePreference) {
     // A steering BIAS, not a hard constraint: summed with the requested
     // heading the same way bot-vs-bot separation is, and capped below one so
     // it can bend a heading around a mob but can never reverse the bot's
@@ -628,7 +769,7 @@ Vec2 GameServer::botAvoidMobs(Vec2 at, Entity except, Vec2 heading, double sideP
     const Vec2 forward = steering ? heading / headingLength : Vec2{0, 0};
     const Vec2 left{-forward.y, forward.x};
     botAvoidCandidates_.clear();
-    grid_.query(Realm::Overworld, at, kBotMobAvoidQueryRadius, botAvoidCandidates_);
+    grid_.query(realm, at, kBotMobAvoidQueryRadius, botAvoidCandidates_);
     for (const Entity candidate : botAvoidCandidates_) {
         if (candidate == except) continue;
         if (!world_.isAlive(candidate) || world_.has<Dead>(candidate)) continue;
@@ -728,6 +869,7 @@ void GameServer::botDrive(Bot& bot, Vec2 direction, double speedMultiplier, doub
     Vec2 separation{0, 0};
     for (const Bot& other : bots_) {
         if (other.entity == bot.entity || other.entity == NULL_ENTITY) continue;
+        if (other.realm != bot.realm) continue;
         if (!world_.isAlive(other.entity) || world_.has<Dead>(other.entity)) continue;
         const Transform* otherTransform = world_.tryGet<Transform>(other.entity);
         if (otherTransform == nullptr) continue;
@@ -740,7 +882,7 @@ void GameServer::botDrive(Bot& bot, Vec2 direction, double speedMultiplier, doub
 
     Vec2 out = direction + separation * kBotSeparationStrength;
     if (avoidStrength > 0.0) {
-        out += botAvoidMobs(at, engaging, direction, persona.passSide) * avoidStrength;
+        out += botAvoidMobs(bot.realm, at, engaging, direction, persona.passSide) * avoidStrength;
     }
 
     // A slow lateral weave, perpendicular to where the bot is going. Small,
@@ -826,7 +968,7 @@ bool GameServer::botHandleStuck(Bot& bot, double nowMillis) {
                                kBotStuckProbeDist / 4.0}) {
         for (const double offset : offsets) {
             const Vec2 direction = Vec2::fromAngle(base + offset);
-            if (botRayHitsWall(at, at + direction * probe)) continue;
+            if (botRayHitsWall(bot.realm, at, at + direction * probe)) continue;
             escape = direction;
             found = true;
             break;
@@ -859,21 +1001,21 @@ void GameServer::botClearPath(BotAiState& ai) {
     ai.pathCreatedMillis = 0;
 }
 
-bool GameServer::botFindPath(Vec2 start, Vec2 goal, std::vector<Vec2>& out) {
+bool GameServer::botFindPath(Realm realm, Vec2 start, Vec2 goal, std::vector<Vec2>& out) {
     // 8-connected, octile heuristic, no corner cutting, and a blocked goal
     // snapped to the nearest walkable tile. Bounded by kBotPathMaxNodes per
     // call and by a per-tick budget above that, so a whole raid replanning
     // together cannot dominate a frame.
     out.clear();
-    // The OVERWORLD's own grid dimensions, asked of the terrain rather than
-    // assumed: a map states its own size, and sizing the search to the
-    // historical 200-square on a 128-square map walks it off the end of the
-    // world the map actually has.
-    const int cols = terrain_->tileCols(Realm::Overworld);
-    const int rows = terrain_->tileRows(Realm::Overworld);
+    // THIS REALM's own grid dimensions, asked of the terrain rather than
+    // assumed: a map states its own size, the staged maps are four different
+    // sizes, and sizing the search to another one's walks it off the end of
+    // the world the bot is actually standing in.
+    const int cols = terrain_->tileCols(realm);
+    const int rows = terrain_->tileRows(realm);
     if (cols <= 0 || rows <= 0) return false;
     const auto blockedTile = [&](int tx, int ty) {
-        return tileBlocks(terrain_->atTile(tx, ty));
+        return tileBlocks(terrain_->atTile(tx, ty, realm));
     };
 
     const int sx = Terrain::toTileCoord(start.x);
@@ -901,7 +1043,11 @@ bool GameServer::botFindPath(Vec2 start, Vec2 goal, std::vector<Vec2>& out) {
     if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) return false;
     if (sx == gx && sy == gy) return false;
 
-    BotPathScratch& scratch = botPath_;
+    // One scratch per realm: the tables are indexed by tile, so a shared one
+    // would resize and clear itself on every search that followed a search in
+    // a differently sized map.
+    if (botPath_.size() <= realmIndex(realm)) botPath_.resize(realmIndex(realm) + 1);
+    BotPathScratch& scratch = botPath_[realmIndex(realm)];
     const std::size_t cells = static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows);
     if (scratch.cols != cols || scratch.rows != rows || scratch.stamp.size() != cells) {
         scratch.cols = cols;
@@ -1048,7 +1194,7 @@ bool GameServer::botFollowPath(Bot& bot, double nowMillis, Vec2 goal, double spe
     // Nothing between here and there: walk. A* is for getting around walls,
     // and running it for a goal in plain sight produces tile-centre waypoints
     // that are strictly worse than a straight line.
-    if (!botRayHitsWall(at, goal)) {
+    if (!botRayHitsWall(bot.realm, at, goal)) {
         botClearPath(ai);
         const Vec2 toward = goal - at;
         const double dist = std::max(1e-6, toward.length());
@@ -1092,7 +1238,7 @@ bool GameServer::botFollowPath(Bot& bot, double nowMillis, Vec2 goal, double spe
         // A failed search caches an EMPTY path rather than nothing, so a
         // blocked bot does not burn the budget every tick; it retries once the
         // cache goes stale.
-        if (!botFindPath(at, goal, ai.pathNodes)) {
+        if (!botFindPath(bot.realm, at, goal, ai.pathNodes)) {
             ai.pathNodes.clear();
             return false;
         }
@@ -1114,12 +1260,12 @@ bool GameServer::botFollowPath(Bot& bot, double nowMillis, Vec2 goal, double spe
     // has slid behind a corner, the full pass runs immediately.
     const bool needFullSmooth = !ai.hasSmoothed ||
                                 nowMillis - ai.lastSmoothMillis >= kBotPathSmoothIntervalMillis ||
-                                botRayHitsWall(at, ai.pathNodes[ai.pathIndex]);
+                                botRayHitsWall(bot.realm, at, ai.pathNodes[ai.pathIndex]);
     if (needFullSmooth) {
         ai.hasSmoothed = true;
         ai.lastSmoothMillis = nowMillis;
         while (ai.pathIndex + 1 < ai.pathNodes.size() &&
-               !botRayHitsWall(at, ai.pathNodes[ai.pathIndex + 1])) {
+               !botRayHitsWall(bot.realm, at, ai.pathNodes[ai.pathIndex + 1])) {
             ++ai.pathIndex;
         }
     }
@@ -1197,45 +1343,66 @@ void GameServer::rebuildBotBossIndex(double nowMillis) {
 }
 
 void GameServer::rebuildBotMobHeat() {
-    const Vec2 extent = terrain_->realmExtent(Realm::Overworld);
-    const int cols = std::max(1, static_cast<int>(std::ceil(extent.x / kBotHeatCellSize)));
-    const int rows = std::max(1, static_cast<int>(std::ceil(extent.y / kBotHeatCellSize)));
-    if (cols != botHeatCols_ || rows != botHeatRows_) {
-        botHeatCols_ = cols;
-        botHeatRows_ = rows;
-        botMobHeat_.assign(static_cast<std::size_t>(cols) * rows, 0);
-    } else {
-        std::fill(botMobHeat_.begin(), botMobHeat_.end(), std::uint16_t{0});
+    // One grid per realm THAT HAS A BOT IN IT. A single world-wide grid was
+    // fine while every bot stood on one map; with the population spread over
+    // the biomes it would have a desert mob's cell voting on where a garden
+    // bot should work, because the two maps' coordinates overlap exactly.
+    botMobHeat_.resize(kMaxRealms);
+    std::vector<bool> wanted(kMaxRealms, false);
+    for (const Bot& bot : bots_) wanted[realmIndex(bot.realm)] = true;
+    for (std::size_t i = 0; i < botMobHeat_.size(); ++i) {
+        BotHeatGrid& grid = botMobHeat_[i];
+        if (!wanted[i]) {
+            // A biome the population has left. Emptied rather than zeroed, so
+            // the sweep below can skip its mobs on the cheap test.
+            grid.cells.clear();
+            grid.cols = 0;
+            grid.rows = 0;
+            continue;
+        }
+        const Vec2 extent = terrain_->realmExtent(static_cast<Realm>(i));
+        const int cols = std::max(1, static_cast<int>(std::ceil(extent.x / kBotHeatCellSize)));
+        const int rows = std::max(1, static_cast<int>(std::ceil(extent.y / kBotHeatCellSize)));
+        if (grid.cols != cols || grid.rows != rows) {
+            grid.cols = cols;
+            grid.rows = rows;
+            grid.cells.assign(static_cast<std::size_t>(cols) * rows, 0);
+        } else {
+            std::fill(grid.cells.begin(), grid.cells.end(), std::uint16_t{0});
+        }
     }
 
     Query<MobTag, MobType, Transform> mobs{world_};
     mobs.each([&](Entity e, MobTag&, MobType& type, Transform& transform) {
-        if (transform.realm != Realm::Overworld) return;
+        BotHeatGrid& grid = botMobHeat_[realmIndex(transform.realm)];
+        if (grid.cells.empty()) return;   // no bot works this realm
         if (world_.has<Dead>(e) || world_.has<Pet>(e)) return;
         if (excludedMobType(type.configIndex)) return;
         // A mob a person is standing next to is not one a bot may take
         // (kBotPlayerClaimRadius), so counting it here would send bots to work
         // ground whose mobs they are not allowed to touch.
-        for (const Vec2 spot : botHumanSpots_) {
-            if (distanceSq(spot, transform.position) <
+        for (const RealmPoint& spot : botHumanSpots_) {
+            if (spot.realm != transform.realm) continue;
+            if (distanceSq(spot.position, transform.position) <
                 kBotPlayerClaimRadius * kBotPlayerClaimRadius) {
                 return;
             }
         }
         const int cx = static_cast<int>(transform.position.x / kBotHeatCellSize);
         const int cy = static_cast<int>(transform.position.y / kBotHeatCellSize);
-        if (cx < 0 || cy < 0 || cx >= botHeatCols_ || cy >= botHeatRows_) return;
-        std::uint16_t& cell =
-            botMobHeat_[static_cast<std::size_t>(cy) * botHeatCols_ + cx];
+        if (cx < 0 || cy < 0 || cx >= grid.cols || cy >= grid.rows) return;
+        std::uint16_t& cell = grid.cells[static_cast<std::size_t>(cy) * grid.cols + cx];
         if (cell < 0xFFFFu) ++cell;
     });
 }
 
-int GameServer::botMobHeatAt(Vec2 at) const {
-    if (botMobHeat_.empty()) return 0;
+int GameServer::botMobHeatAt(Realm realm, Vec2 at) const {
+    if (botMobHeat_.size() <= realmIndex(realm)) return 0;
+    const BotHeatGrid& grid = botMobHeat_[realmIndex(realm)];
+    if (grid.cells.empty()) return 0;
     const int cx = static_cast<int>(at.x / kBotHeatCellSize);
     const int cy = static_cast<int>(at.y / kBotHeatCellSize);
-    if (cx < 0 || cy < 0 || cx >= botHeatCols_ || cy >= botHeatRows_) return 0;
+    if (cx < 0 || cy < 0 || cx >= grid.cols || cy >= grid.rows) return 0;
     // The cell and its eight neighbours: a bot works a patch about this wide,
     // so what matters is what is around the point rather than what is in the
     // one cell it happens to land in.
@@ -1244,8 +1411,8 @@ int GameServer::botMobHeatAt(Vec2 at) const {
         for (int dx = -1; dx <= 1; ++dx) {
             const int nx = cx + dx;
             const int ny = cy + dy;
-            if (nx < 0 || ny < 0 || nx >= botHeatCols_ || ny >= botHeatRows_) continue;
-            total += botMobHeat_[static_cast<std::size_t>(ny) * botHeatCols_ + nx];
+            if (nx < 0 || ny < 0 || nx >= grid.cols || ny >= grid.rows) continue;
+            total += grid.cells[static_cast<std::size_t>(ny) * grid.cols + nx];
         }
     }
     return total;
@@ -1256,8 +1423,6 @@ void GameServer::computeBotRaidSlots(double nowMillis) {
     // raid spreads evenly around the boss rather than stacking on one side,
     // and the crowd is sized off how many of them there are.
     botRaidSlots_.clear();
-    Vec2 forced;
-    const bool hasForced = activeForcedRaidAnchor(nowMillis, forced);
 
     std::unordered_map<std::uint64_t, std::vector<std::size_t>> buckets;
     for (std::size_t i = 0; i < bots_.size(); ++i) {
@@ -1266,13 +1431,15 @@ void GameServer::computeBotRaidSlots(double nowMillis) {
         if (world_.has<Dead>(bot.entity)) continue;
 
         Vec2 anchor;
-        if (hasForced) {
-            anchor = forced;
-        } else {
+        if (!activeForcedRaidAnchor(nowMillis, bot.realm, anchor)) {
             double distance = 0;
             if (!botNearestBoss(bot, anchor, distance)) continue;
         }
-        buckets[raidBucketKey(anchor)].push_back(i);
+        // Keyed by realm as well as by point: two maps' coordinates overlap
+        // exactly, so a garden crowd and a desert crowd standing on the same
+        // numbers would be handed slots out of one ring.
+        buckets[raidBucketKey(anchor) ^ (static_cast<std::uint64_t>(realmIndex(bot.realm)) << 1)]
+            .push_back(i);
     }
 
     for (auto& entry : buckets) {
@@ -1300,15 +1467,15 @@ namespace {
 /// connected -- in which case recency alone decides the raid target.
 double distSqToNearestHuman(const World& world,
                             const std::unordered_map<net::ConnectionId, Session>& sessions,
-                            Vec2 at) {
+                            RealmPoint at) {
     double best = std::numeric_limits<double>::max();
     for (const auto& entry : sessions) {
         const Session& session = entry.second;
         if (!session.playing()) continue;
         if (world.has<Dead>(session.entity)) continue;
         const Transform* transform = world.tryGet<Transform>(session.entity);
-        if (transform == nullptr) continue;
-        best = std::min(best, distanceSq(transform->position, at));
+        if (transform == nullptr || transform->realm != at.realm) continue;
+        best = std::min(best, distanceSq(transform->position, at.position));
     }
     return best;
 }
@@ -1334,6 +1501,10 @@ bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
         const MobType* type = world_.tryGet<MobType>(boss);
         const Transform* bossTransform = world_.tryGet<Transform>(boss);
         if (type == nullptr || bossTransform == nullptr) continue;
+        // Another biome's boss is not a boss this bot can walk to: the two
+        // maps are separate coordinate spaces, and a rally onto one would send
+        // the bot to an empty field with the same numbers on it.
+        if (bossTransform->realm != transform->realm) continue;
         if (distanceSq(bossTransform->position, at) > kBotBossRallyRange * kBotBossRallyRange) {
             continue;
         }
@@ -1353,7 +1524,8 @@ bool GameServer::botNearestBoss(const Bot& bot, Vec2& out, double& distOut) {
         const auto seenIt = botBossFirstSeen_.find(boss);
         const double seen = seenIt == botBossFirstSeen_.end() ? 0.0 : seenIt->second;
         const double humanDistSq =
-            distSqToNearestHuman(world_, sessions_, bossTransform->position);
+            distSqToNearestHuman(world_, sessions_, {bossTransform->position,
+                                                     bossTransform->realm});
         if (best == NULL_ENTITY || seen > bestSeen ||
             (seen == bestSeen && humanDistSq < bestHumanDistSq)) {
             best = boss;
@@ -1392,7 +1564,8 @@ bool GameServer::triggerBotRaid(double nowMillis) {
 
         const auto seenIt = botBossFirstSeen_.find(boss);
         const double seen = seenIt == botBossFirstSeen_.end() ? 0.0 : seenIt->second;
-        const double humanDistSq = distSqToNearestHuman(world_, sessions_, transform->position);
+        const double humanDistSq =
+            distSqToNearestHuman(world_, sessions_, {transform->position, transform->realm});
         if (best == NULL_ENTITY || seen > bestSeen ||
             (seen == bestSeen && humanDistSq < bestHumanDistSq)) {
             best = boss;
@@ -1407,22 +1580,30 @@ bool GameServer::triggerBotRaid(double nowMillis) {
     }
     botForcedRaid_.active = true;
     botForcedRaid_.at = world_.get<Transform>(best).position;
+    botForcedRaid_.realm = world_.get<Transform>(best).realm;
     botForcedRaid_.tier = world_.get<MobType>(best).rarity;
     botForcedRaid_.untilMillis = nowMillis + kBotForcedRaidMillis;
-    // Every cached path now aims at the wrong place.
+    // Every cached path IN THAT BIOME now aims at the wrong place. The bots
+    // working the other biomes were not called and carry on as they were.
     for (Bot& bot : bots_) {
+        if (bot.realm != botForcedRaid_.realm) continue;
         botClearPath(bot.ai);
         bot.ai.homeReached = false;
     }
     return true;
 }
 
-bool GameServer::activeForcedRaidAnchor(double nowMillis, Vec2& out) {
+bool GameServer::activeForcedRaidAnchor(double nowMillis, Realm realm, Vec2& out) {
     if (!botForcedRaid_.active) return false;
     if (nowMillis > botForcedRaid_.untilMillis) {
         botForcedRaid_.active = false;
         return false;
     }
+    // A rally is one boss standing in one biome. The bots in the others were
+    // never called: they cannot reach it, and marching them to the same
+    // coordinates in their own map is how a raid becomes a crowd of flowers
+    // standing on nothing.
+    if (realm != botForcedRaid_.realm) return false;
     // Refresh the rally point to a live boss of the preferred tier, so bots
     // home in on something that is still there rather than on a stale point.
     Entity best = NULL_ENTITY;
@@ -1431,7 +1612,8 @@ bool GameServer::activeForcedRaidAnchor(double nowMillis, Vec2& out) {
     for (const Entity boss : botBosses_) {
         if (!world_.isAlive(boss) || world_.has<Dead>(boss)) continue;
         const MobType* type = world_.tryGet<MobType>(boss);
-        if (type == nullptr) continue;
+        const Transform* bossAt = world_.tryGet<Transform>(boss);
+        if (type == nullptr || bossAt == nullptr || bossAt->realm != realm) continue;
         const bool unique = type->rarity == Rarity::Unique;
         if (!unique && preferUnique) continue;
         if (unique && !preferUnique) {
@@ -1495,21 +1677,24 @@ void GameServer::announceNewBosses(double nowMillis) {
         const Transform* transform = world_.tryGet<Transform>(boss);
         if (type == nullptr || transform == nullptr) continue;
 
-        // The nearest live bot does the shouting.
+        // The nearest live bot IN THAT BIOME does the shouting: the callout
+        // is what rallies the bots onto the boss, and only the ones standing
+        // in its map can go. A boss in a biome with no bots in it is left for
+        // a later pass rather than shouted about by someone who cannot see it.
         const Bot* announcer = nullptr;
         double bestDistSq = std::numeric_limits<double>::max();
         for (const Bot& bot : bots_) {
             if (bot.entity == NULL_ENTITY || !world_.isAlive(bot.entity)) continue;
             if (world_.has<Dead>(bot.entity)) continue;
             const Transform* botTransform = world_.tryGet<Transform>(bot.entity);
-            if (botTransform == nullptr) continue;
+            if (botTransform == nullptr || botTransform->realm != transform->realm) continue;
             const double distSq = distanceSq(botTransform->position, transform->position);
             if (distSq < bestDistSq) {
                 bestDistSq = distSq;
                 announcer = &bot;
             }
         }
-        if (announcer == nullptr) return;
+        if (announcer == nullptr) continue;
 
         const bool unique = type->rarity == Rarity::Unique;
         const std::string tierWord = unique ? "unique" : "super";
@@ -1561,8 +1746,16 @@ void GameServer::updateBotSquads(double nowMillis) {
         if (squads_.forMember(member) != nullptr) continue;
 
         // Joining an existing public squad comes first: a bot that hosts is
-        // only useful once somebody can find it.
-        const std::vector<const Squad*> open = squads_.publicSquads();
+        // only useful once somebody can find it. Only the squads in this
+        // bot's own biome: a squad is one party working one map, and the
+        // party HUD of a squad whose bot is three biomes away shows a dot
+        // nobody can walk to.
+        std::vector<const Squad*> open = squads_.publicSquads();
+        open.erase(std::remove_if(open.begin(), open.end(),
+                                  [&](const Squad* squad) {
+                                      return !squadAcceptsBiome(*squad, member);
+                                  }),
+                   open.end());
         if (!open.empty() && botRng_.chance(kBotSquadJoinChance)) {
             const std::string id = open[botRng_.below(static_cast<std::uint32_t>(open.size()))]->id;
             if (squads_.addBot(id, member).empty()) {
@@ -1664,6 +1857,7 @@ bool GameServer::botHasNearbyBuddy(const Bot& bot, double range) const {
     for (const Bot& other : bots_) {
         if (other.entity == bot.entity || other.entity == NULL_ENTITY) continue;
         if (!world_.isAlive(other.entity) || world_.has<Dead>(other.entity)) continue;
+        if (other.realm != bot.realm) continue;
         const Transform* otherTransform = world_.tryGet<Transform>(other.entity);
         if (otherTransform == nullptr) continue;
         if (distanceSq(otherTransform->position, transform->position) <= rangeSq) return true;
@@ -1695,6 +1889,7 @@ Entity GameServer::botFindReviveTarget(const Bot& bot) const {
     for (const Bot& other : bots_) {
         if (other.entity == bot.entity || other.entity == NULL_ENTITY) continue;
         if (!world_.isAlive(other.entity) || !world_.has<Dead>(other.entity)) continue;
+        if (other.realm != bot.realm) continue;
         const Transform* otherTransform = world_.tryGet<Transform>(other.entity);
         if (otherTransform == nullptr) continue;
         const double distSq = distanceSq(otherTransform->position, transform->position);
@@ -1757,14 +1952,17 @@ void GameServer::botSense(Bot& bot, double nowMillis, BotSenses& out) {
     double nearestBlocker = std::numeric_limits<double>::max();
     double nearestThreat = std::numeric_limits<double>::max();
     const auto claimedByAHuman = [&](Vec2 at) {
-        for (const Vec2 spot : botHumanSpots_) {
-            if (distanceSq(spot, at) < kBotPlayerClaimRadius * kBotPlayerClaimRadius) return true;
+        for (const RealmPoint& spot : botHumanSpots_) {
+            if (spot.realm != bot.realm) continue;
+            if (distanceSq(spot.position, at) < kBotPlayerClaimRadius * kBotPlayerClaimRadius) {
+                return true;
+            }
         }
         return false;
     };
 
     botCandidates_.clear();
-    grid_.query(Realm::Overworld, out.at, kBotSenseRadius, botCandidates_);
+    grid_.query(bot.realm, out.at, kBotSenseRadius, botCandidates_);
     for (const Entity candidate : botCandidates_) {
         if (candidate == bot.entity) continue;
         if (!world_.isAlive(candidate)) continue;
@@ -1774,17 +1972,13 @@ void GameServer::botSense(Bot& bot, double nowMillis, BotSenses& out) {
 
         // -- ground loot ---------------------------------------------------
         if (const DropItem* drop = world_.tryGet<DropItem>(candidate)) {
-            if (std::find(drop->pickedUpBy.begin(), drop->pickedUpBy.end(), bot.entity) !=
-                drop->pickedUpBy.end()) {
-                continue;
-            }
+            // A bot owns no connection, so its claims are keyed by its body
+            // alone -- which is right: a bot's body is not rebuilt for the
+            // same player, it is replaced by a different flower entirely.
+            if (claimed(drop->pickedUpBy, bot.entity, 0)) continue;
             // Only chase what this bot actually earned: a drop with a
             // reservation list is reserved.
-            if (!drop->eligible.empty() &&
-                std::find(drop->eligible.begin(), drop->eligible.end(), bot.entity) ==
-                    drop->eligible.end()) {
-                continue;
-            }
+            if (!drop->eligible.empty() && !claimed(drop->eligible, bot.entity, 0)) continue;
             const double scored =
                 (candidate == ai.pickup ? dist - kBotPickupStickiness : dist) /
                 std::max(0.35, ai.persona.greed);
@@ -1869,7 +2063,10 @@ void GameServer::botSense(Bot& bot, double nowMillis, BotSenses& out) {
 bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
     const Transform* self = world_.tryGet<Transform>(bot.entity);
     const Vec2 at = self != nullptr ? self->position : Vec2{};
-    const MapData* map = worldMaps_.forRealm(Realm::Overworld);
+    // This bot's OWN map: the bands it may work are the ones under its feet,
+    // and a band read off another biome's map is a rectangle of coordinates
+    // that happens to exist here too.
+    const MapData* map = worldMaps_.forRealm(bot.realm);
     if (map == nullptr) return false;
 
     // Where the humans are. Not because a bot wants to stand next to one, but
@@ -1884,7 +2081,7 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
         const Session& session = entry.second;
         if (!session.playing() || world_.has<Dead>(session.entity)) continue;
         const Transform* transform = world_.tryGet<Transform>(session.entity);
-        if (transform == nullptr || transform->realm != Realm::Overworld) continue;
+        if (transform == nullptr || transform->realm != bot.realm) continue;
         humans.push_back(session.entity);
     }
 
@@ -2001,7 +2198,7 @@ bool GameServer::botPickHuntingGround(const Bot& bot, Vec2& out) {
         // walking there; one that picks by heat alone spends its life walking
         // to wherever was busiest a minute ago.
         const double commute = (candidate - at).length();
-        const double score = static_cast<double>(botMobHeatAt(candidate)) * kBotHeatWorth -
+        const double score = static_cast<double>(botMobHeatAt(bot.realm, candidate)) * kBotHeatWorth -
                              commute - miss * 0.5;
         if (!haveBest || score > bestScore) {
             best = candidate;
@@ -2025,7 +2222,7 @@ void GameServer::botUpdateHome(Bot& bot, double nowMillis, const BotSenses& sens
     // table, which sized it off how many raiders there are.
     Vec2 rally;
     double bossDist = 0;
-    bool rallied = activeForcedRaidAnchor(nowMillis, rally);
+    bool rallied = activeForcedRaidAnchor(nowMillis, bot.realm, rally);
     if (!rallied) rallied = botNearestBoss(bot, rally, bossDist);
     if (rallied) {
         const auto slot = botRaidSlots_.find(bot.entity);
@@ -2242,7 +2439,7 @@ void GameServer::botHunt(Bot& bot, const BotSenses& senses, double nowMillis) {
         botFollowPath(bot, nowMillis, targetAt, 0.95, avoid, senses.target)) {
         return;
     }
-    botDrive(bot, botSteerAroundWalls(senses.at, toward / dist), 0.95, avoid, 1.0, senses.target);
+    botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, toward / dist), 0.95, avoid, 1.0, senses.target);
 }
 
 void GameServer::botLoot(Bot& bot, const BotSenses& senses, double nowMillis) {
@@ -2258,7 +2455,7 @@ void GameServer::botLoot(Bot& bot, const BotSenses& senses, double nowMillis) {
     botSetPetals(bot, false, nowMillis);
     // Only steer around walls when the drop is far enough that one could
     // genuinely be in the way; close-range pickup does not need it.
-    botDrive(bot, dist > kTileSize ? botSteerAroundWalls(senses.at, direction) : direction, 0.9,
+    botDrive(bot, dist > kTileSize ? botSteerAroundWalls(bot.realm, senses.at, direction) : direction, 0.9,
              kBotAvoidStrengthTravel);
 }
 
@@ -2293,7 +2490,7 @@ void GameServer::botRetreat(Bot& bot, const BotSenses& senses, double nowMillis)
     botSetPetals(bot, false, nowMillis, true);
     input->current.aimAngle = std::atan2(escape.y, escape.x);
     input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
-    botDrive(bot, botSteerAroundWalls(senses.at, escape.normalized()), 1.0,
+    botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, escape.normalized()), 1.0,
              kBotAvoidStrengthTravel, 1.6);
 }
 
@@ -2312,7 +2509,7 @@ void GameServer::botTravel(Bot& bot, const BotSenses& senses, double nowMillis, 
     input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
 
     if (botFollowPath(bot, nowMillis, goal, 1.0, kBotAvoidStrengthTravel)) return;
-    botDrive(bot, botSteerAroundWalls(senses.at, toward / dist), 1.0, kBotAvoidStrengthTravel);
+    botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, toward / dist), 1.0, kBotAvoidStrengthTravel);
 }
 
 void GameServer::botRoam(Bot& bot, const BotSenses& senses, double nowMillis) {
@@ -2377,7 +2574,7 @@ void GameServer::botRoam(Bot& bot, const BotSenses& senses, double nowMillis) {
     // A wall ahead turns the walk rather than stopping it, and the turn is
     // adopted, so the bot carries on the new way instead of grinding back into
     // the wall next tick.
-    const Vec2 steered = botSteerAroundWalls(senses.at, Vec2::fromAngle(ai.roamAngle));
+    const Vec2 steered = botSteerAroundWalls(bot.realm, senses.at, Vec2::fromAngle(ai.roamAngle));
     ai.roamAngle = std::atan2(steered.y, steered.x);
 
     // Per-bot cruise speed with a slow drift, so a field of wandering bots
@@ -2399,7 +2596,7 @@ void GameServer::botRevive(Bot& bot, const BotSenses& senses, double nowMillis, 
     input->current.aimAngle = std::atan2(toward.y, toward.x);
     input->aimDirection = Vec2::fromAngle(input->current.aimAngle);
     botSetPetals(bot, true, nowMillis);
-    botDrive(bot, botSteerAroundWalls(senses.at, toward / dist), 0.95, kBotAvoidStrengthFight);
+    botDrive(bot, botSteerAroundWalls(bot.realm, senses.at, toward / dist), 0.95, kBotAvoidStrengthFight);
 }
 
 // ---------------------------------------------------------------------------
@@ -2416,8 +2613,8 @@ void GameServer::stepBots(double nowMillis) {
         const Session& session = entry.second;
         if (!session.playing() || world_.has<Dead>(session.entity)) continue;
         const Transform* transform = world_.tryGet<Transform>(session.entity);
-        if (transform == nullptr || transform->realm != Realm::Overworld) continue;
-        botHumanSpots_.push_back(transform->position);
+        if (transform == nullptr) continue;
+        botHumanSpots_.push_back({transform->position, transform->realm});
     }
 
     rebuildBotBossIndex(nowMillis);
@@ -2440,6 +2637,12 @@ void GameServer::stepOneBot(Bot& bot, double nowMillis) {
     PlayerInput* input = world_.tryGet<PlayerInput>(bot.entity);
     if (transform == nullptr || input == nullptr) return;
     BotAiState& ai = bot.ai;
+    // The body is the authority on where the bot is. Nothing moves a bot
+    // between realms -- pads refuse them -- so this is agreement, not a
+    // transition: every terrain and broadphase question below is asked about
+    // bot.realm, and a roster that disagreed with the body would ask them all
+    // about the wrong map.
+    bot.realm = transform->realm;
 
     // The persona: how this bot plays, rolled once and held, seeded off its id
     // so it survives a death and is reproducible when debugging one.

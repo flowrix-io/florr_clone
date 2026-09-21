@@ -2915,13 +2915,15 @@ std::string GameServer::squadDisplayName(SquadMemberId member) {
     return squadAccountName(member);
 }
 
-Entity GameServer::squadEntity(SquadMemberId member) {
+Entity GameServer::squadEntity(SquadMemberId member) { return squadEntityOf(member); }
+
+Entity GameServer::squadEntityOf(SquadMemberId member) const {
     if (member.bot()) {
         return world_.isAlive(member.entity) ? member.entity : NULL_ENTITY;
     }
-    const Session* session = sessionFor(member.connection);
-    if (session == nullptr || !session->playing()) return NULL_ENTITY;
-    return session->entity;
+    const auto it = sessions_.find(member.connection);
+    if (it == sessions_.end() || !it->second.playing()) return NULL_ENTITY;
+    return it->second.entity;
 }
 
 net::Connection* GameServer::squadConnection(SquadMemberId member) {
@@ -3028,21 +3030,148 @@ void GameServer::removeBotFromSquad(Entity body) {
     broadcastSquadUpdate(*remaining);
 }
 
+// A squad is one party working ONE biome.
+//
+// The rules in server/squads.h know nothing about where anybody is standing,
+// and should not: they are the membership rules, they are pure, and they are
+// tested without a world. Where a member IS, though, is the one thing a squad
+// must agree about -- the party HUD, the pink minimap dots and the shared loot
+// ranking all describe people you are playing WITH, and a squadmate three
+// biomes away is none of those things. So the biome test lives here, beside
+// the bodies, and it is applied at every door into a squad and again whenever
+// somebody arrives in a new biome.
+
+std::string GameServer::squadMemberBiome(SquadMemberId member) const {
+    if (member.bot()) return biomeOfEntity(member.entity);
+    const auto it = sessions_.find(member.connection);
+    if (it == sessions_.end()) return {};
+    const Session& session = it->second;
+    // A live body first, corpse included: a player on a death card is still
+    // standing where they fell, and their squad is still the one there.
+    if (session.entity != NULL_ENTITY && world_.isAlive(session.entity)) {
+        const std::string biome = biomeOfEntity(session.entity);
+        if (!biome.empty()) return biome;
+    }
+    // Nobody home: where their spawn choice is about to put them, which is
+    // what the squad will have to live with the moment they press play.
+    //
+    // Only a choice they actually MADE, though. spawnRealmFor() answers the
+    // overworld for a session that has picked nothing -- that is the door the
+    // picker opens on, not a place the player has said they are going -- and
+    // taking it at its word made every lobby a garden lobby: a flower in the
+    // desert could invite nobody who was not already standing in the world,
+    // while one in the garden could invite everybody, because everybody with
+    // no body was "in the garden". Unknown is unknown, and unknown is no
+    // objection; the arrival is caught by enforceSquadBiome when they press
+    // play.
+    if (session.spawnChoice.empty()) return {};
+    return biomeOfRealm(spawnRealmFor(session));
+}
+
+std::string GameServer::squadBiome(const Squad& squad) const {
+    // A member with a BODY first, the leader's if they have one: where the
+    // squad actually is beats where somebody sitting on the title screen has
+    // said they intend to go. Without that order a leader who backed out to
+    // the picker and clicked a different door would redefine the squad's
+    // biome from the menu and lock out the members still playing in it.
+    const std::string leaders = biomeOfEntity(squadEntityOf(squad.leader));
+    if (!leaders.empty()) return leaders;
+    for (const SquadMemberId& member : squad.members) {
+        const std::string biome = biomeOfEntity(squadEntityOf(member));
+        if (!biome.empty()) return biome;
+    }
+    // Nobody is in the world: fall back to what they have chosen, so a party
+    // formed on the title screen still cannot form across two doors.
+    for (const SquadMemberId& member : squad.members) {
+        const std::string biome = squadMemberBiome(member);
+        if (!biome.empty()) return biome;
+    }
+    return {};
+}
+
+bool GameServer::squadAcceptsBiome(const Squad& squad, SquadMemberId who) const {
+    const std::string theirs = squadMemberBiome(who);
+    const std::string ours = squadBiome(squad);
+    // An unknown biome is not a biome of its own: a member the world cannot
+    // place yet is no reason to refuse a party that is otherwise legal.
+    return theirs.empty() || ours.empty() || theirs == ours;
+}
+
+std::string GameServer::squadBiomeRefusal(const Squad& squad, SquadMemberId who,
+                                          const std::string& whoLabel) const {
+    if (squadAcceptsBiome(squad, who)) return {};
+    return whoLabel + " in " + biomeLabel(squadMemberBiome(who)) + ", and the squad is in " +
+           biomeLabel(squadBiome(squad)) + ". A squad cannot span biomes.";
+}
+
+void GameServer::enforceSquadBiome(SquadMemberId member) {
+    Squad* squad = squads_.forMember(member);
+    if (squad == nullptr) return;
+    // Against the REST of the squad, not against squadBiome(): a leader who
+    // walked out would otherwise redefine the squad's biome and throw
+    // everybody else out of their own party instead of leaving it themselves.
+    // BODIES only, on both sides. A member with no body has not gone
+    // anywhere: they are on the title screen or on a death card, their door
+    // is an intention rather than a place, and throwing somebody out of a
+    // squad because a squadmate is browsing the picker is a bug the join-time
+    // checks would never make.
+    const std::string theirs = biomeOfEntity(squadEntityOf(member));
+    if (theirs.empty()) return;
+    std::string elsewhere;
+    for (const SquadMemberId& other : squad->members) {
+        if (other == member) continue;
+        const std::string biome = biomeOfEntity(squadEntityOf(other));
+        if (biome.empty()) continue;
+        if (biome == theirs) return;   // somebody is still here: this is not the one who left
+        if (elsewhere.empty()) elsewhere = biome;
+    }
+    // Read before the departure: leaving can disband the squad outright, and
+    // the line telling somebody what they just left cannot be read off it
+    // afterwards.
+    if (elsewhere.empty()) return;
+
+    const std::string name = squadDisplayName(member);
+    if (member.bot()) {
+        removeBotFromSquad(member.entity);
+        return;
+    }
+    Session* session = sessionFor(member.connection);
+    if (session == nullptr) return;
+    net::Connection* connection = listener_.find(member.connection);
+    departSquad(*session, connection, name);
+    if (connection != nullptr) {
+        sendNotice(*connection, net::NoticeSeverity::Warning,
+                   "You left your squad by leaving " + biomeLabel(elsewhere) +
+                       ". A squad cannot span biomes.");
+    }
+}
+
 void GameServer::rebuildSquadIndex() {
     squadIndex_.clear();
     if (squads_.empty()) return;
     for (const auto& entry : squads_.all()) {
-        std::vector<Entity> bodies;
+        std::vector<SquadBody> bodies;
         for (const SquadMemberId& member : entry.second.members) {
             const Entity body = squadEntity(member);
-            if (body != NULL_ENTITY) bodies.push_back(body);
+            if (body == NULL_ENTITY) continue;
+            // BOTS INCLUDED. A bot is a member like any other here: its
+            // damage pools into the squad's score and it counts in the
+            // average, so a player squadded with bots is paid for what the
+            // squad killed. What a bot does NOT get is a free share -- it
+            // owns no account, so SquadBody::banks() is false and
+            // loot_eligibility.h hands it nothing it did not earn. Leaving
+            // bots out of the index entirely was worse in both directions:
+            // it made a human-plus-bots squad rank as a solo player, which
+            // on a quiet server is every squad there is.
+            const PlayerAccount* account = world_.tryGet<PlayerAccount>(body);
+            bodies.push_back(SquadBody{body, account != nullptr ? account->connection : 0});
         }
         // One body in the world is not a pool: leaving it out keeps the
         // ordinary case -- a squad whose other members are on the title screen
         // -- ranking exactly as a solo player does.
         if (bodies.size() < 2) continue;
         const std::size_t group = squadIndex_.groups.size();
-        for (const Entity body : bodies) squadIndex_.group[body] = group;
+        for (const SquadBody& member : bodies) squadIndex_.group[member.body] = group;
         squadIndex_.groups.push_back(std::move(bodies));
     }
 }
@@ -3094,6 +3223,10 @@ void GameServer::handleGuildSquadAll(Session& session, net::Connection& connecti
         if (squad->members.size() + 1 >= kMaxSquadSize) break;
         Session* target = sessionForUser(member);
         if (target == nullptr) continue;
+        // A guildmate farming another biome is not someone this squad can
+        // take, so they are passed over rather than sent an invitation they
+        // would be refused on.
+        if (!squadAcceptsBiome(*squad, squadIdOf(*target))) continue;
         if (!squads_.invite(squadIdOf(session), squadIdOf(*target), session.username, now).empty()) {
             continue;
         }
@@ -3139,6 +3272,12 @@ void GameServer::guildInviteToSquad(Session& session, net::Connection& connectio
     Squad* squad = squadOrCreate(session, connection);
     if (squad == nullptr) {
         sendNotice(connection, net::NoticeSeverity::Warning, "Failed to create a squad.");
+        return;
+    }
+    const std::string wrongBiome =
+        squadBiomeRefusal(*squad, squadIdOf(*peerSession), target + " is");
+    if (!wrongBiome.empty()) {
+        sendNotice(connection, net::NoticeSeverity::Warning, wrongBiome);
         return;
     }
     const std::string error =
@@ -3367,6 +3506,11 @@ Entity GameServer::spawnPlayer(Session& session) {
     session.stage = SessionStage::Playing;
     // A fresh body has a death of its own still to announce.
     session.deathReported = false;
+    // A player picks their door on the title screen, and a squad they joined
+    // before going back to it is a squad they may now be standing three
+    // biomes away from. This is the hole the join-time checks cannot close,
+    // because nothing about the join goes through them.
+    enforceSquadBiome(squadIdOf(session));
     // The roster carries WIRE IDS, and this player just acquired a new one.
     // Without this a squadmate's dot and party bar stay pinned to the body
     // they had before they died.
@@ -3540,9 +3684,15 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
     // it draws the map it arrived from underneath a body standing somewhere
     // else entirely.
     Session* session = sessionForEntity(entity);
-    if (session == nullptr) return;   // a bot: nothing to tell
+    if (session == nullptr) {
+        // A bot: nothing to tell, but a bot in a squad has still just walked
+        // out of the biome the rest of it is working.
+        if (botForEntity(entity) != nullptr) enforceSquadBiome(SquadMemberId::ofBot(entity));
+        return;
+    }
     session->realm = realm;
     sendRealmChange(*session, position);
+    enforceSquadBiome(squadIdOf(*session));
 }
 
 void GameServer::sendRealmChange(Session& session, Vec2 position) {
@@ -3554,6 +3704,32 @@ void GameServer::sendRealmChange(Session& session, Vec2 position) {
     w.position(position);
     writeMapGrid(w, *terrain_, session.realm);
     connection->send(w);
+}
+
+std::string GameServer::biomeOfRealm(Realm realm) const {
+    // The two generated realms answer with the picker ids they are asked for
+    // by name, so a ring party and a maze party are each one biome rather
+    // than sharing the nameless bucket every unstaged realm would fall into.
+    if (realm == Realm::Arena) return kArenaSpawnChoice;
+    if (realm == Realm::Maze) return kMazeSpawnChoice;
+    const MapData* map = worldMaps_.forRealm(realm);
+    return map != nullptr ? map->biome() : std::string();
+}
+
+std::string GameServer::biomeLabel(const std::string& biome) const {
+    if (biome.empty()) return biome;
+    for (const SpawnChoice& choice : worldMaps_.spawnChoices()) {
+        if (biomeOfRealm(choice.realm) == biome) return choice.label;
+    }
+    if (biome == kArenaSpawnChoice) return "PVP Arena";
+    if (biome == kMazeSpawnChoice) return "Maze";
+    return biome;
+}
+
+std::string GameServer::biomeOfEntity(Entity entity) const {
+    if (entity == NULL_ENTITY || !world_.isAlive(entity)) return {};
+    const Transform* transform = world_.tryGet<Transform>(entity);
+    return transform != nullptr ? biomeOfRealm(transform->realm) : std::string();
 }
 
 const SpawnChoice* GameServer::chosenDoor(const Session& session) const {

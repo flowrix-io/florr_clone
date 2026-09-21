@@ -290,6 +290,11 @@ private:
     /// keyboard to press Enter on.
     bool pressedChatBox() const;
 
+    /// Takes this frame's wheel for the transcript, and says whether it did.
+    /// The wheel is the camera's zoom everywhere else, and reading back
+    /// through the chat must not also pull the view in and out.
+    bool scrollChat();
+
     /// The caret and selection of the three places one can be. Exclusive by
     /// construction -- only one of the auth form, the chat line and the lobby
     /// name box holds the keyboard at a time -- so the auth form's four inputs
@@ -305,6 +310,9 @@ private:
     /// The transcript and its input line as one box, for the press that
     /// closes the chat by landing anywhere else.
     Rect chatRegion_{};
+    /// Just the transcript column, for the wheel that scrolls it back through
+    /// older lines instead of zooming the camera behind it.
+    Rect chatColumn_{};
     ui::ContextMenu contextMenu_;
 
     /// Text entry shared by the login fields and the chat box.
@@ -510,6 +518,13 @@ private:
     /// Which row of the slash-command list is highlighted, or -1 when the list
     /// is not up. Reset to 0 every time the list opens, as the reference's is.
     int chatSuggestion_ = -1;
+    /// How far the transcript is scrolled back, in pixels off its bottom. Zero
+    /// is the resting state: newest line just above the input slot.
+    double chatScroll_ = 0;
+    /// The last line count drawChat saw, so a line that ARRIVES can put the
+    /// box back at the bottom -- which is what the reference's
+    /// `scrollTop = scrollHeight` on every message does.
+    std::uint64_t chatSeenSeq_ = 0;
 
     // -- death ---------------------------------------------------------------
     /// Whether the card is up. Raised when the server says the body is gone,

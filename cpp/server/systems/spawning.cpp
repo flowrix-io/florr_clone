@@ -120,12 +120,19 @@ bool inBorderBand(Vec2 position, Vec2 extent) {
 }
 
 /// No spawn lands in anyone's lap, whoever asked for it.
+///
+/// `gap` is the clear ground between the two BODIES: the flower's hitbox and
+/// the one the spawn will have are both added to it, so the rule means the
+/// same thing for a soldier ant as for the ultra beetle that is five times its
+/// size. A caller that does not know yet what it is placing passes the nominal
+/// radius a placement is spaced by (kPreliminarySpawnRadius) and re-asks with
+/// the real one once the type is rolled.
 bool nearAnyPlayer(const std::vector<SpawnSystem::Viewer>& viewers, Realm realm, Vec2 position,
-                   double radius) {
-    const double radiusSq = radius * radius;
+                   double gap, double bodyRadius) {
     for (const SpawnSystem::Viewer& viewer : viewers) {
         if (viewer.realm != realm) continue;
-        if (distanceSq(viewer.position, position) < radiusSq) return true;
+        const double reach = gap + bodyRadius + viewer.radius;
+        if (distanceSq(viewer.position, position) < reach * reach) return true;
     }
     return false;
 }
@@ -673,6 +680,10 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
         if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e)) {
             viewer.luck = modifiers->luck;
         }
+        // The hitbox the spawn clearance is measured from. Size modifiers put
+        // it several times over the base, and a spawn gap measured from the
+        // centre of a flower that big lands inside it.
+        if (const Body* body = world.tryGet<Body>(e)) viewer.radius = body->radius;
         worldViewers_.push_back(viewer);
     });
 
@@ -702,6 +713,7 @@ void SpawnSystem::gatherViewers(World& world, const std::vector<RealmPoint>& pla
             nearestDistSq = distSq;
             viewer.half = candidate.half;
             viewer.luck = candidate.luck;
+            viewer.radius = candidate.radius;
         }
         viewers_.push_back(viewer);
     }
@@ -1181,7 +1193,13 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         if (!zoneContains(zone.bounds, zone.polygon, candidate)) continue;
         if (inBorderBand(candidate, extent)) continue;
         if (terrain.blocked(candidate, zone.realm)) continue;
-        if (nearAnyPlayer(viewers, zone.realm, candidate, kMinSpawnDistance)) continue;
+        // The nominal body, because the type is not rolled until a point has
+        // been chosen. Whatever this places is measured again against its real
+        // size below (an entity) or when it wakes (a record).
+        if (nearAnyPlayer(viewers, zone.realm, candidate, kMinSpawnDistance,
+                          kPreliminarySpawnRadius)) {
+            continue;
+        }
         if (crowdedAt(zone.realm, candidate, kPreliminarySpawnRadius, kMinMobSpawnSpacing, zone)) {
             continue;
         }
@@ -1236,6 +1254,17 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // A boss, or a permanent fixture. Neither is ever a record: a boss is an
     // event the whole server is told about the moment it happens and has to be
     // standing where it was announced, and a dummy is the DPS row.
+    //
+    // Now that the body is known, the lap test again with the real one: this
+    // branch puts an ENTITY on the ground this instant, and a boss is the one
+    // spawn whose radius is nothing like the nominal figure the point was
+    // chosen with. Refusing returns the slot to the band, which tries again
+    // somewhere else on its next pass.
+    if (nearAnyPlayer(viewers, zone.realm, at, kMinSpawnDistance,
+                      content.mobStats(type, rarity).radius)) {
+        return false;
+    }
+
     const int section = sectionAt(at);
     if (content.mob(type).neverAmbient &&
         permanentFixtureExists(world, type, rarity, zone.realm, section)) {
@@ -1318,6 +1347,29 @@ void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
             const LatentMob& record = zone.latent[i];
             if (nowMillis < record.readyMillis ||
                 !seenBy(viewers, zone.realm, record.position, kLatentWakeMargin)) {
+                ++i;
+                continue;
+            }
+            // Nobody's lap, at the moment the body actually appears.
+            //
+            // The record's own placement test was made against where the
+            // players were when it was WRITTEN, which for a replacement is up
+            // to twelve seconds and three thousand units ago, and for a record
+            // stocked cold is before anybody had arrived at all. Waking one on
+            // the spot a flower is standing on materialises a mob already
+            // touching it, and body damage is dealt on the tick after that --
+            // which is the "a mob spawned on me and killed me" report.
+            //
+            // LEFT LATENT rather than dropped or moved: the band's population
+            // is correct where it stands, and the record wakes on a later pass
+            // the moment the player has taken a step away. Its own radius,
+            // because a mob whose body is a hundred units across has to keep
+            // its edge as far off as a small one does.
+            const double bodyRadius = record.mobIndex < content.mobCount()
+                                          ? content.mobStats(record.mobIndex, record.rarity).radius
+                                          : kPreliminarySpawnRadius;
+            if (nearAnyPlayer(viewers, zone.realm, record.position, kMinSpawnDistance,
+                              bodyRadius)) {
                 ++i;
                 continue;
             }

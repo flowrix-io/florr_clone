@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/squads.h"
 #include "server/systems/combat.h"
 #include "server/systems/loot.h"
 #include "server/systems/spawning.h"
@@ -799,6 +800,54 @@ TEST(ground_a_player_has_just_cleared_does_not_refill_in_front_of_them) {
     CHECK(sim.mobsIn(screen) <= cleared / 2);
 }
 
+TEST(nothing_ever_wakes_in_a_flowers_lap) {
+    // The report this pins: "a mob spawned on top of me and killed me".
+    //
+    // The placement test a record was written under was made against where the
+    // players were AT THE TIME. A replacement then waits out its in-view delay
+    // -- up to twelve seconds -- and a flower moves 300 units a second, so by
+    // the time the record may wake, the player who cleared that ground can be
+    // standing exactly on it. Waking it there materialises a body already
+    // touching the flower, and body damage is dealt on the very next tick.
+    //
+    // So the clearance is re-tested at the moment the ENTITY appears, and a
+    // record that fails it is left asleep rather than woken or thrown away.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+
+    // Stock it cold, from the far side of the map: every one of these records
+    // is ready the instant it exists, so nothing below is waiting on a delay.
+    const std::vector<Vec2> away{Vec2{kCentre.x + 40000.0, kCentre.y + 40000.0}};
+    for (int i = 0; i < 400; ++i) sim.tick(away);
+    const std::vector<SpawnSystem::LatentSite> stocked = sim.latent();
+    CHECK(stocked.size() > 10);
+
+    // Now stand a flower ON one of them -- the worst case the moving player
+    // above arrives at -- and leave it there.
+    const Vec2 underfoot = stocked.front().position;
+    const std::vector<Vec2> standing{underfoot};
+    for (int i = 0; i < 200; ++i) sim.tick(standing);
+
+    // The band woke: this is not a test that passes because nothing happened.
+    CHECK(sim.mobsWithin(underfoot, kSpawnViewportHalfWidth) > 0);
+    // And not one of them is in the flower's lap.
+    CHECK_EQ(sim.mobsWithin(underfoot, kMinSpawnDistance), 0);
+
+    // Held asleep, not dropped: the record is still the band's, and it comes
+    // to life as soon as the flower takes a step away from it.
+    bool held = false;
+    for (const SpawnSystem::LatentSite& site : sim.latent()) {
+        if (distance(site.position, underfoot) < kMinSpawnDistance) held = true;
+    }
+    CHECK(held);
+    const std::vector<Vec2> stepped{underfoot + Vec2{kMinSpawnDistance + 400.0, 0.0}};
+    for (int i = 0; i < 200; ++i) sim.tick(stepped);
+    CHECK(sim.mobsWithin(underfoot, kMinSpawnDistance) > 0);
+}
+
 TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
     // The difference between a band that is evenly full and one that is full
     // on paper. These bands are millions of square units and a viewport is a
@@ -919,9 +968,12 @@ TEST(a_singular_bands_one_mob_comes_back_anywhere_in_it) {
 
     double furthest = 0;
     for (int round = 0; round < 8; ++round) {
-        // Walk to it. One mob in a band this size is latent almost everywhere,
-        // and a record nobody is near is never an entity to kill.
-        const std::vector<Vec2> visiting{where()};
+        // Walk to it -- to a step away from it, not onto it. One mob in a
+        // band this size is latent almost everywhere, and a record nobody is
+        // near is never an entity to kill; a record somebody is STANDING ON is
+        // deliberately held asleep rather than woken into their lap, which is
+        // what kMinSpawnDistance means at wake time.
+        const std::vector<Vec2> visiting{where() + Vec2{kMinSpawnDistance + 400.0, 0.0}};
         Entity target = NULL_ENTITY;
         for (int i = 0; i < 600 && target == NULL_ENTITY; ++i) {
             sim.tick(visiting);
@@ -1622,6 +1674,44 @@ TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
 // Loot: drops, eligibility, pickup, expiry
 // ---------------------------------------------------------------------------
 
+TEST(a_squads_drops_are_reserved_for_every_member) {
+    // What a party is FOR. One member kills a starfish; the drop it leaves is
+    // reserved for the whole squad, including the member who never touched
+    // it, and every one of them may pick a copy up.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(4242);
+
+    const std::uint16_t starfish = shipped().mobIndex("starfish");
+    const Entity fighter = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity passenger = makePlayer(world, kCentre + Vec2{5000, 0});
+    const Entity stranger = makePlayer(world, kCentre + Vec2{5000, 0});
+
+    SquadEntityIndex squads;
+    squads.group[fighter] = 0;
+    squads.group[passenger] = 0;
+    squads.groups.push_back({SquadBody{fighter, 1}, SquadBody{passenger, 2}});
+    loot.squads = &squads;
+
+    // Only the fighter is in the tally; the stranger hit it too, so the
+    // corpse has somebody outside the squad to rank against.
+    makeCorpse(world, starfish, Rarity::Uncommon, kCentre, fighter, {fighter, stranger});
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+
+    const std::vector<Entity> drops = liveDrops(world);
+    CHECK(!drops.empty());
+    if (drops.empty()) return;
+    const DropItem& item = world.get<DropItem>(drops.front());
+    const auto reserved = [&](Entity who) { return claimed(item.eligible, who, 0); };
+    CHECK(reserved(fighter));
+    CHECK(reserved(passenger));   // the whole point: a squad shares
+    CHECK(reserved(stranger));    // and it does not take anyone else's slot
+}
+
 TEST(a_killed_mob_drops_from_its_own_table) {
     World world;
     CommandBuffer commands{world};
@@ -1652,7 +1742,7 @@ TEST(a_killed_mob_drops_from_its_own_table) {
         if (item.configIndex == starfishPetal) ++petals;
         if (item.configIndex == starfishEgg) ++eggs;
         CHECK_EQ(item.eligible.size(), std::size_t(1));
-        CHECK_EQ(item.eligible.front(), player);
+        CHECK_EQ(item.eligible.front().body, player);
         CHECK(item.pickedUpBy.empty());
         const Vec2 offset = world.get<Transform>(drop).position - kCentre;
         CHECK(std::abs(offset.x) <= 50.0);
@@ -1790,6 +1880,34 @@ TEST(a_contributor_may_take_a_reserved_drop_at_once) {
         CHECK_EQ(events.events().front().netId, dropNetId);
         CHECK_EQ(events.events().front().otherNetId, 7u);
     }
+}
+
+TEST(a_reservation_survives_the_owners_death) {
+    // A flower's body is destroyed and rebuilt on every death, so a
+    // reservation held against the CORPSE is one its owner can never collect:
+    // they walk back to the item their squad earned and stand on it.
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(4711);
+
+    const Entity died = makePlayer(world, kCentre);
+    world.add<PlayerAccount>(died, PlayerAccount{"acct-1", "player", 42, false});
+    loot.spawnDrop(world, shipped().petalIndex("rose"), Rarity::Common, kCentre,
+                   Realm::Overworld, {died}, 0.0);
+
+    // Death and respawn: the same account, the same connection, a new body.
+    world.destroy(died);
+    const Entity reborn = makePlayer(world, kCentre);
+    world.add<PlayerAccount>(reborn, PlayerAccount{"acct-1", "player", 42, false});
+
+    rebuildGrid(world, grid);
+    loot.run(world, grid, shipped(), rng, 10.0, 0.0, commands, events);
+    commands.flush();
+    CHECK_EQ(loot.pickups().size(), std::size_t(1));
+    if (!loot.pickups().empty()) CHECK_EQ(loot.pickups().front().player, reborn);
 }
 
 TEST(an_unreserved_drop_is_free_for_anyone) {
@@ -2040,7 +2158,7 @@ TEST(a_dead_contributor_is_still_credited_but_a_non_player_is_not) {
     CHECK_EQ(drops.size(), std::size_t(2));
     for (const Entity drop : drops) {
         CHECK_EQ(world.get<DropItem>(drop).eligible.size(), std::size_t(1));
-        CHECK_EQ(world.get<DropItem>(drop).eligible.front(), player);
+        CHECK_EQ(world.get<DropItem>(drop).eligible.front().body, player);
     }
 }
 

@@ -194,7 +194,25 @@ inline constexpr double kWaveEscortGap = 10.0;
 /// No spawn lands closer than this to ANY player, not just the one whose view
 /// of the band made it fill. Two players standing together would otherwise
 /// spawn into each other's laps.
-inline constexpr double kMinSpawnDistance = 100.0;
+///
+/// Measured EDGE TO EDGE -- between the flower's hitbox and the body the mob
+/// will grow -- rather than centre to centre. A centre gap that reads as
+/// comfortable for an ant is nothing at all for an ultra whose body is a
+/// hundred units across, and a mob that materialises already touching a flower
+/// deals it body damage on the tick it appears, which is the whole complaint
+/// this number answers.
+///
+/// Sized off the SCREEN rather than off the hitboxes: half a viewport is 540
+/// units tall, so this is a little under half of that -- far enough that a mob
+/// waking beside a flower is something the player sees coming and near enough
+/// that the neighbourhood they are standing in still fills.
+///
+/// It is enforced at the moment an ENTITY appears, not only when the record
+/// that will become one is written down: a replacement record waits seconds
+/// before it may wake (kInViewRespawnMinMillis) and a flower covers 300 units
+/// a second, so the distance the record was placed at says nothing about the
+/// distance it wakes at.
+inline constexpr double kMinSpawnDistance = 250.0;
 inline constexpr double kMinMobSpawnSpacing = 80.0;
 inline constexpr double kPreliminarySpawnRadius = 20.0;
 
@@ -338,6 +356,11 @@ public:
         /// a mob has to be inside to count as seen.
         Vec2 half{kSpawnViewportHalfWidth, kSpawnViewportHalfHeight};
         double luck = kNeutralSpawnLuck;
+        /// The flower's own hitbox, which equipped size modifiers grow by up
+        /// to several times. The spawn clearance is measured from its EDGE, so
+        /// a giant flower keeps every spawn the same visible distance away as
+        /// a small one rather than having them appear inside it.
+        double radius = kPlayerBaseRadius;
     };
 
     /// The live-mob ceiling this pass will not spawn past.

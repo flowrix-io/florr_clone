@@ -194,11 +194,19 @@ int main(int argc, char** argv) {
     long censusSamples = 0;
 
     const int ticks = static_cast<int>(seconds * 1000.0 / net::kTickMillis);
+    // THE REALM OF EVERY BODY, beside its position, and every pairing below
+    // gated on it. The bots are spread over the biomes now, and two maps'
+    // coordinates overlap exactly: a desert bot measured against the garden's
+    // mobs reads as a flower standing alone in an empty field, which is a
+    // statement about this rig rather than about the controller.
     std::vector<Entity> botList;
     std::vector<Vec2> botAt;
+    std::vector<Realm> botRealm;
     std::vector<Vec2> humanAt;
+    std::vector<Realm> humanRealm;
     std::vector<Entity> mobList;
     std::vector<Vec2> mobAt;
+    std::vector<Realm> mobRealm;
     std::vector<double> mobRadius;
     std::vector<char> mobIsBoss;
     /// Who each mob is chasing. A mob that is hunting the bot put ITSELF in
@@ -218,14 +226,32 @@ int main(int argc, char** argv) {
         // Dense mode: keep mobs arriving on top of the population, so what is
         // being measured is how the bots FIGHT rather than how long they spend
         // looking for something to fight.
+        // Around a bot IN THE ADMIN'S OWN REALM: the console spawns into the
+        // realm the operator is standing in, so a point taken off a bot in
+        // another biome puts the mob at those coordinates in the wrong map --
+        // nowhere near the bot it was meant for, and beside somebody else.
+        const auto stagingBot = [&](bool& ok) {
+            ok = false;
+            if (botAt.empty() || humanAt.empty()) return Vec2{};
+            std::vector<std::size_t> here;
+            for (std::size_t i = 0; i < botAt.size(); ++i) {
+                if (botRealm[i] == humanRealm[0]) here.push_back(i);
+            }
+            if (here.empty()) return Vec2{};
+            ok = true;
+            return botAt[here[probe.below(static_cast<std::uint32_t>(here.size()))]];
+        };
         if (dense && tick % 12 == 0 && !botList.empty()) {
-            const Vec2 at = botAt[probe.below(static_cast<std::uint32_t>(botAt.size()))] +
-                            probe.insideCircle(700.0);
-            client.sendChat(std::string("/admin spawn ") +
-                            kDenseMobs[probe.below(std::size(kDenseMobs))] + " " +
-                            kDenseRarities[probe.below(std::size(kDenseRarities))] + " " +
-                            std::to_string(static_cast<int>(at.x)) + " " +
-                            std::to_string(static_cast<int>(at.y)) + " 6");
+            bool staged = false;
+            const Vec2 from = stagingBot(staged);
+            if (staged) {
+                const Vec2 at = from + probe.insideCircle(700.0);
+                client.sendChat(std::string("/admin spawn ") +
+                                kDenseMobs[probe.below(std::size(kDenseMobs))] + " " +
+                                kDenseRarities[probe.below(std::size(kDenseRarities))] + " " +
+                                std::to_string(static_cast<int>(at.x)) + " " +
+                                std::to_string(static_cast<int>(at.y)) + " 6");
+            }
         }
 
         // Boss mode: one super, a long walk from a bot, topped up on its own
@@ -234,25 +260,36 @@ int main(int argc, char** argv) {
         // Off the dense spawner's own beat: two console lines on one tick
         // is one console line, and the boss is always the one that loses.
         if (boss && tick % kBossSpawnInterval == 7 && !botList.empty()) {
-            const Vec2 from = botAt[probe.below(static_cast<std::uint32_t>(botAt.size()))];
-            const Vec2 at = from + Vec2::fromAngle(probe.angle()) * kBossSpawnDistance;
-            client.sendChat(std::string("/admin spawn beetle super ") +
-                            std::to_string(static_cast<int>(at.x)) + " " +
-                            std::to_string(static_cast<int>(at.y)) + " 1");
+            bool ok = false;
+            const Vec2 from = stagingBot(ok);
+            if (ok) {
+                const Vec2 at = from + Vec2::fromAngle(probe.angle()) * kBossSpawnDistance;
+                client.sendChat(std::string("/admin spawn beetle super ") +
+                                std::to_string(static_cast<int>(at.x)) + " " +
+                                std::to_string(static_cast<int>(at.y)) + " 1");
+            }
         }
 
         botList.clear();
         botAt.clear();
+        botRealm.clear();
         humanAt.clear();
+        humanRealm.clear();
         Query<PlayerTag, PlayerAccount, Transform> players{world};
         players.each([&](Entity e, PlayerTag&, PlayerAccount& account, Transform& transform) {
-            if (!account.userId.empty()) { humanAt.push_back(transform.position); return; }
+            if (!account.userId.empty()) {
+                humanAt.push_back(transform.position);
+                humanRealm.push_back(transform.realm);
+                return;
+            }
             botList.push_back(e);
             botAt.push_back(transform.position);
+            botRealm.push_back(transform.realm);
         });
 
         mobList.clear();
         mobAt.clear();
+        mobRealm.clear();
         mobRadius.clear();
         mobIsBoss.clear();
         mobHunting.clear();
@@ -260,10 +297,12 @@ int main(int argc, char** argv) {
         Query<MobTag, Transform, Body> mobs{world};
         mobs.each([&](Entity e, MobTag&, Transform& transform, Body& body) {
             if (world.has<Pet>(e)) return;
-            // The overworld only. The arena's crowd and the maze's corridors
-            // are populated whole by ModeSpawner, in their own coordinate
-            // spaces, and counting them makes an empty overworld look busy.
-            if (transform.realm != Realm::Overworld) return;
+            // The AUTHORED maps, all of them: bots live in every biome now, so
+            // restricting this to the overworld would hide most of the world
+            // they are working. The arena and the maze stay out -- those are
+            // populated whole by ModeSpawner while a human is in them, and
+            // counting a ring full of mobs makes an empty map look busy.
+            if (!isWorldRealm(transform.realm)) return;
             liveMobs.insert(e);
             // Damage, tracked by watching health rather than by catching a
             // death: a mob that dies is marked Dead and reaped inside the same
@@ -280,6 +319,7 @@ int main(int argc, char** argv) {
             if (world.has<Dead>(e)) return;
             mobList.push_back(e);
             mobAt.push_back(transform.position);
+            mobRealm.push_back(transform.realm);
             mobRadius.push_back(body.radius);
             const MobType* type = world.tryGet<MobType>(e);
             mobIsBoss.push_back(type != nullptr && isBotBossTier(type->rarity));
@@ -289,8 +329,9 @@ int main(int argc, char** argv) {
         // Mark every mob a bot could currently be hitting, so that when one
         // vanishes the reason is known.
         for (std::size_t m = 0; m < mobList.size(); ++m) {
-            for (const Vec2 a : botAt) {
-                if ((mobAt[m] - a).lengthSq() < 300.0 * 300.0) {
+            for (std::size_t b = 0; b < botAt.size(); ++b) {
+                if (botRealm[b] != mobRealm[m]) continue;
+                if ((mobAt[m] - botAt[b]).lengthSq() < 300.0 * 300.0) {
                     mobNearBot[mobList[m]] = true;
                     break;
                 }
@@ -339,6 +380,7 @@ int main(int argc, char** argv) {
             bool engagedUnclaimed = false;
             double nearestMob = 1e18;
             for (std::size_t m = 0; m < mobList.size(); ++m) {
+                if (mobRealm[m] != botRealm[i]) continue;
                 const double dist = (mobAt[m] - at).length();
                 nearestMob = std::min(nearestMob, dist - bodyRadius - mobRadius[m]);
                 if (dist < bodyRadius + mobRadius[m] + kReach) {
@@ -347,8 +389,12 @@ int main(int argc, char** argv) {
                     // alone (kBotPlayerClaimRadius), so a bot walking past one
                     // is the rule working rather than the rule failing.
                     bool claimed = false;
-                    for (const Vec2 hp : humanAt) {
-                        if ((mobAt[m] - hp).lengthSq() < 1500.0 * 1500.0) { claimed = true; break; }
+                    for (std::size_t p = 0; p < humanAt.size(); ++p) {
+                        if (humanRealm[p] != mobRealm[m]) continue;
+                        if ((mobAt[m] - humanAt[p]).lengthSq() < 1500.0 * 1500.0) {
+                            claimed = true;
+                            break;
+                        }
                     }
                     if (!claimed) engagedUnclaimed = true;
                 }
@@ -441,43 +487,64 @@ int main(int argc, char** argv) {
         // and is not the controller's fault.
         if (tick % 30 == 0 && !botList.empty()) {
             Vec2 watcher{0, 0};
+            Realm watcherRealm = Realm::Overworld;
             bool haveWatcher = false;
             Query<PlayerTag, PlayerAccount, Transform> humans{world};
             humans.each([&](Entity, PlayerTag&, PlayerAccount& account, Transform& transform) {
                 if (account.userId.empty()) return;
                 watcher = transform.position;
+                watcherRealm = transform.realm;
                 haveWatcher = true;
             });
             double near = 0;
             for (std::size_t m = 0; m < mobList.size(); ++m) {
-                for (const Vec2 a : botAt) {
-                    if ((mobAt[m] - a).lengthSq() < 2000.0 * 2000.0) { ++near; break; }
+                for (std::size_t b = 0; b < botAt.size(); ++b) {
+                    if (botRealm[b] != mobRealm[m]) continue;
+                    if ((mobAt[m] - botAt[b]).lengthSq() < 2000.0 * 2000.0) { ++near; break; }
                 }
             }
+            // The three "how far from the one human" numbers are about the
+            // human's OWN biome: a bot two maps away is not far from them, it
+            // is somewhere else, and averaging the two together produces a
+            // distance in no map at all.
             double watcherDist = 0;
-            if (haveWatcher && !botAt.empty()) {
-                for (const Vec2 a : botAt) watcherDist += (a - watcher).length();
-                watcherDist /= static_cast<double>(botAt.size());
+            long watcherPeers = 0;
+            if (haveWatcher) {
+                for (std::size_t b = 0; b < botAt.size(); ++b) {
+                    if (botRealm[b] != watcherRealm) continue;
+                    watcherDist += (botAt[b] - watcher).length();
+                    ++watcherPeers;
+                }
+                if (watcherPeers > 0) watcherDist /= static_cast<double>(watcherPeers);
             }
-            if (haveWatcher && !mobAt.empty()) {
+            if (haveWatcher) {
                 double toHuman = 0;
-                for (const Vec2 m : mobAt) toHuman += (m - watcher).length();
-                mobToHumanSum += toHuman / static_cast<double>(mobAt.size());
-                ++mobToHumanSamples;
+                long counted = 0;
+                for (std::size_t m = 0; m < mobAt.size(); ++m) {
+                    if (mobRealm[m] != watcherRealm) continue;
+                    toHuman += (mobAt[m] - watcher).length();
+                    ++counted;
+                }
+                if (counted > 0) {
+                    mobToHumanSum += toHuman / static_cast<double>(counted);
+                    ++mobToHumanSamples;
+                }
             }
             if (haveWatcher) {
                 int mobsOnScreen = 0;
-                for (const Vec2 m : mobAt) {
-                    if (std::fabs(m.x - watcher.x) < 960.0 &&
-                        std::fabs(m.y - watcher.y) < 540.0) {
+                for (std::size_t m = 0; m < mobAt.size(); ++m) {
+                    if (mobRealm[m] != watcherRealm) continue;
+                    if (std::fabs(mobAt[m].x - watcher.x) < 960.0 &&
+                        std::fabs(mobAt[m].y - watcher.y) < 540.0) {
                         ++mobsOnScreen;
                     }
                 }
                 mobsOnScreenSum += mobsOnScreen;
                 int onScreen = 0;
-                for (const Vec2 a : botAt) {
-                    if (std::fabs(a.x - watcher.x) < 960.0 &&
-                        std::fabs(a.y - watcher.y) < 540.0) {
+                for (std::size_t b = 0; b < botAt.size(); ++b) {
+                    if (botRealm[b] != watcherRealm) continue;
+                    if (std::fabs(botAt[b].x - watcher.x) < 960.0 &&
+                        std::fabs(botAt[b].y - watcher.y) < 540.0) {
                         ++onScreen;
                     }
                 }
@@ -490,24 +557,40 @@ int main(int argc, char** argv) {
         }
 
         // Crowding, once a second.
+        // Crowding, once a second -- WITHIN A BIOME. Both numbers are about
+        // a crowd, and bots in two maps are not a crowd however close their
+        // coordinates happen to be. Each biome that holds more than one bot
+        // contributes its own figures, averaged over the bots in it, so a
+        // population spread over seven maps reads as the seven crowds it is.
         if (tick % 30 == 0 && botList.size() > 1) {
             double nearestSum = 0;
-            Vec2 mean{0, 0};
-            for (const Vec2 a : botAt) mean += a;
-            mean = mean / static_cast<double>(botAt.size());
-            double variance = 0;
-            for (std::size_t i = 0; i < botAt.size(); ++i) {
-                double nearest = 1e18;
-                for (std::size_t j = 0; j < botAt.size(); ++j) {
-                    if (i == j) continue;
-                    nearest = std::min(nearest, (botAt[j] - botAt[i]).length());
+            double varianceSum = 0;
+            long counted = 0;
+            for (std::size_t realm = 0; realm < static_cast<std::size_t>(kMaxRealms); ++realm) {
+                std::vector<Vec2> here;
+                for (std::size_t i = 0; i < botAt.size(); ++i) {
+                    if (realmIndex(botRealm[i]) == realm) here.push_back(botAt[i]);
                 }
-                nearestSum += nearest;
-                variance += (botAt[i] - mean).lengthSq();
+                if (here.size() < 2) continue;
+                Vec2 mean{0, 0};
+                for (const Vec2 a : here) mean += a;
+                mean = mean / static_cast<double>(here.size());
+                for (std::size_t i = 0; i < here.size(); ++i) {
+                    double nearest = 1e18;
+                    for (std::size_t j = 0; j < here.size(); ++j) {
+                        if (i == j) continue;
+                        nearest = std::min(nearest, (here[j] - here[i]).length());
+                    }
+                    nearestSum += nearest;
+                    varianceSum += (here[i] - mean).lengthSq();
+                    ++counted;
+                }
             }
-            spacingSum += nearestSum / static_cast<double>(botAt.size());
-            spreadSum += std::sqrt(variance / static_cast<double>(botAt.size()));
-            ++clumpSamples;
+            if (counted > 0) {
+                spacingSum += nearestSum / static_cast<double>(counted);
+                spreadSum += std::sqrt(varianceSum / static_cast<double>(counted));
+                ++clumpSamples;
+            }
         }
     }
 
@@ -585,10 +668,28 @@ int main(int argc, char** argv) {
                 straightCount > 0 ? straight / straightCount : 0.0,
                 kWindowTicks / 30);
     if (clumpSamples > 0) {
-        std::printf("  spacing   %5.0f     mean nearest-other-bot distance\n",
+        std::printf("  spacing   %5.0f     mean nearest-other-bot distance, within a biome\n",
                     spacingSum / clumpSamples);
-        std::printf("  spread    %5.0f     stdev of the population's position\n",
+        std::printf("  spread    %5.0f     stdev of a biome's bot positions\n",
                     spreadSum / clumpSamples);
+    }
+    // Where the population ended up, by biome. The point of the spread is
+    // that no biome is empty, and a line of counts says that at a glance --
+    // a run with one number in it is the bug this rig exists to catch.
+    {
+        std::unordered_map<std::string, int> perBiome;
+        Query<PlayerTag, PlayerAccount, Transform> census{world};
+        census.each([&](Entity, PlayerTag&, PlayerAccount& account, Transform& transform) {
+            if (!account.userId.empty()) return;
+            const MapData* map = h.server.worldMaps().forRealm(transform.realm);
+            ++perBiome[map != nullptr ? map->biome() : std::string("?")];
+        });
+        std::string line;
+        for (const auto& entry : perBiome) {
+            if (!line.empty()) line += ", ";
+            line += entry.first + " " + std::to_string(entry.second);
+        }
+        std::printf("  biomes    %5zu     holding bots: %s\n", perBiome.size(), line.c_str());
     }
     if (censusSamples > 0) {
         std::printf("  mobs      %5.0f     alive in the world (%0.0f within 2000 of a bot)\n",

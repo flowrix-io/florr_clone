@@ -238,13 +238,14 @@ Rarity LootSystem::rollDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& 
     return finishDropRarity(scaleDropRarity(authoredRarity, mobRarity, rng), mobRarity, rng);
 }
 
-bool LootSystem::mayPickUp(const DropItem& drop, Entity player, double nowMillis) {
+bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner,
+                           double nowMillis) {
     (void)nowMillis;
-    if (std::find(drop.pickedUpBy.begin(), drop.pickedUpBy.end(), player) != drop.pickedUpBy.end()) {
-        return false;
-    }
-    return drop.eligible.empty() ||
-           std::find(drop.eligible.begin(), drop.eligible.end(), player) != drop.eligible.end();
+    // By the OWNER where there is one, so a player who died between the kill
+    // and the walk back still collects what was reserved for them -- and
+    // still cannot collect it twice by dying again. See LootClaim.
+    if (claimed(drop.pickedUpBy, player, owner)) return false;
+    return drop.eligible.empty() || claimed(drop.eligible, player, owner);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +266,16 @@ Entity LootSystem::spawnDrop(World& world, std::uint16_t petalIndex, Rarity rari
     DropItem item;
     item.configIndex = petalIndex;
     item.rarity = rarity;
-    item.eligible = eligible;
+    // Resolved to CLAIMS here, where the world is in hand: the ranking that
+    // produced this list deals in bodies, and a body is not who a drop
+    // belongs to.
+    item.eligible.clear();
+    item.eligible.reserve(eligible.size());
+    for (const Entity claimant : eligible) {
+        const PlayerAccount* account = world.tryGet<PlayerAccount>(claimant);
+        item.eligible.push_back(
+            LootClaim{claimant, account != nullptr ? account->connection : 0});
+    }
     world.add<DropItem>(e, std::move(item));
 
     world.add<Lifetime>(e, Lifetime{kDropLifetimeByRarity[static_cast<std::size_t>(rarityIndex(rarity))]});
@@ -387,7 +397,9 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, do
     const Transform* at = world.tryGet<Transform>(candidate);
     if (at == nullptr) return;
     if (distanceSq(at->position, playerPosition) > reachSq) return;
-    if (!mayPickUp(*drop, player, nowMillis)) return;
+    const PlayerAccount* taker = world.tryGet<PlayerAccount>(player);
+    const net::ConnectionId owner = taker != nullptr ? taker->connection : 0;
+    if (!mayPickUp(*drop, player, owner, nowMillis)) return;
 
     const Pickup pickup{player, drop->configIndex, drop->rarity};
     pickups_.push_back(pickup);
@@ -399,13 +411,13 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, do
         events.pickedUp(dropId->value, playerId->value, at->position, at->realm,
                         drop->configIndex, drop->rarity);
     }
-    drop->pickedUpBy.push_back(player);
+    drop->pickedUpBy.push_back(LootClaim{player, owner});
     bool finished = false;
     if (!drop->eligible.empty()) {
-        finished = std::all_of(drop->eligible.begin(), drop->eligible.end(), [&](Entity e) {
-            return std::find(drop->pickedUpBy.begin(), drop->pickedUpBy.end(), e) !=
-                   drop->pickedUpBy.end();
-        });
+        finished = std::all_of(drop->eligible.begin(), drop->eligible.end(),
+                               [&](const LootClaim& claim) {
+                                   return claimed(drop->pickedUpBy, claim.body, claim.owner);
+                               });
     }
     if (finished) commands.destroy(candidate);
 }

@@ -100,6 +100,15 @@ public:
     std::string invite(SquadMemberId from, SquadMemberId to, const std::string& fromUsername,
                        std::int64_t nowMillis);
 
+    /// The squad whose invitation is waiting on this member's answer, or
+    /// null when there is none or it has lapsed.
+    ///
+    /// Exists so a caller can apply a rule the roster deliberately knows
+    /// nothing about -- where the two of them are standing -- BEFORE
+    /// accept() commits the join. An invitation lives thirty seconds, which
+    /// is long enough for either end to have respawned somewhere else.
+    const Squad* pendingInviteSquad(SquadMemberId target, std::int64_t nowMillis) const;
+
     /// Answers the one pending invitation. On success `squadIdOut` names the
     /// squad joined.
     std::string accept(SquadMemberId target, std::int64_t nowMillis, std::string& squadIdOut);
@@ -145,9 +154,27 @@ private:
 /// systems read this by pointer once per corpse, so it is a flat table rebuilt
 /// from the roster rather than the roster itself, which is keyed by connection
 /// and knows nothing about bodies.
+/// One body in a squad, as the reward rules see it.
+///
+/// The OWNER matters as much as the body. A squad is paid as one -- every
+/// member shares, fought or not -- and a bot cannot hold anything: it owns no
+/// account, so an item handed to one is an item nobody receives and a slot no
+/// player gets. A bot is still a full member for everything else here, which
+/// is the point: it pools its damage into the squad's score, and the humans
+/// squadded with it are paid for what it killed. That is what a party of bots
+/// is FOR on a server with nobody else on it.
+struct SquadBody {
+    Entity body = NULL_ENTITY;
+    /// The connection behind it, or 0 for a bot.
+    net::ConnectionId owner = 0;
+
+    /// Whether a free share given to this member goes anywhere.
+    bool banks() const { return owner != 0; }
+};
+
 struct SquadEntityIndex {
     std::unordered_map<Entity, std::size_t> group;
-    std::vector<std::vector<Entity>> groups;
+    std::vector<std::vector<SquadBody>> groups;
 
     void clear() {
         group.clear();
@@ -156,7 +183,7 @@ struct SquadEntityIndex {
     bool empty() const { return groups.empty(); }
 
     /// The bodies sharing `player`'s squad, or null when they squad alone.
-    const std::vector<Entity>* membersOf(Entity player) const {
+    const std::vector<SquadBody>* membersOf(Entity player) const {
         const auto it = group.find(player);
         return it == group.end() ? nullptr : &groups[it->second];
     }

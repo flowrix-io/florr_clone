@@ -118,6 +118,14 @@ std::string SquadRoster::invite(SquadMemberId from, SquadMemberId to,
     return {};
 }
 
+const Squad* SquadRoster::pendingInviteSquad(SquadMemberId target,
+                                            std::int64_t nowMillis) const {
+    const auto it = invites_.find(target.connection);
+    if (it == invites_.end() || nowMillis > it->second.expiresAtMillis) return nullptr;
+    const auto squad = squads_.find(it->second.squadId);
+    return squad == squads_.end() ? nullptr : &squad->second;
+}
+
 std::string SquadRoster::accept(SquadMemberId target, std::int64_t nowMillis,
                                 std::string& squadIdOut) {
     const auto it = invites_.find(target.connection);

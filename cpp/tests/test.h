@@ -6,6 +6,7 @@
 #include <cmath>
 #include <type_traits>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -43,7 +44,12 @@ struct Registrar {
 
 inline int runAll() {
     int failed = 0;
+    // `FLIX_TEST_FILTER=<substring>` runs only the cases whose name contains
+    // it. The suite is a few minutes end to end, and diagnosing one failure
+    // by re-running all nine hundred is how a diagnosis turns into a guess.
+    const char* only = std::getenv("FLIX_TEST_FILTER");
     for (auto& c : cases()) {
+        if (only != nullptr && std::string(c.name).find(only) == std::string::npos) continue;
         currentCase() = c.name;
         const int before = failures();
         c.fn();

@@ -22,6 +22,13 @@ using namespace flix::testsupport;
 
 namespace {
 
+/// `/admin spawn <mob> <rarity> <x> <y> 1`, the console an operator uses.
+void adminSpawnAt(NetClient& client, const char* mob, const char* rarity, Vec2 at) {
+    client.sendChat("/admin spawn " + std::string(mob) + " " + rarity + " " +
+                    std::to_string(static_cast<int>(at.x)) + " " +
+                    std::to_string(static_cast<int>(at.y)) + " 1");
+}
+
 void seedUser(const std::string& path, const std::string& username, const std::string& password,
               bool admin = false) {
     Database db;
@@ -700,6 +707,306 @@ TEST(a_squad_invite_is_refused_when_it_should_be) {
     CHECK(sawText(one, "That player is already in a squad."));
 }
 
+TEST(a_squad_cannot_span_biomes) {
+    // A squad is a party you are PLAYING with: the party bar, the pink
+    // minimap dots and the shared loot ranking all say "these people are
+    // here". Two flowers on two maps are none of that, and a squad across
+    // them was a way to rank for loot on ground you were not standing on.
+    Harness h("cmd-squad-biome",
+              [](const std::string& path) {
+                  seedUser(path, "here", "password7");
+                  seedUser(path, "away", "password7");
+              },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient here;
+    NetClient away;
+    CHECK(loginAs(h, here, "here", "password7"));
+    CHECK(loginAs(h, away, "away", "password7"));
+    here.joinGame(1280, 720, "garden", "here");
+    away.joinGame(1280, 720, "desert", "away");
+    CHECK(h.stepUntil({&here, &away}, [&] {
+        return here.status() == NetClient::Status::Playing &&
+               away.status() == NetClient::Status::Playing;
+    }));
+
+    CHECK(say(h, here, "/squad-create public"));
+    CHECK(say(h, here, "/squad-invite away"));
+    CHECK(sawText(here, "A squad cannot span biomes."));
+    CHECK(sawText(here, "Desert"));
+    h.step(3, {&here, &away});
+    CHECK(!sawText(away, "has invited you to their squad"));
+
+    // And the public listing does not offer what it would refuse.
+    CHECK(say(h, away, "/squad-find-public"));
+    CHECK(sawText(away, "No public squads available in your biome."));
+    const std::string squadId = here.squad().id;
+    CHECK(!squadId.empty());
+    CHECK(say(h, away, "/squad-join " + squadId));
+    CHECK(sawText(away, "A squad cannot span biomes."));
+    CHECK(!away.squad().inSquad);
+
+    // Same biome: the ordinary rules, unchanged.
+    away.leaveGame();
+    h.step(3, {&here, &away});
+    away.joinGame(1280, 720, "garden", "away");
+    CHECK(h.stepUntil({&here, &away},
+                      [&] { return away.status() == NetClient::Status::Playing; }));
+    CHECK(say(h, away, "/squad-join " + squadId));
+    h.step(3, {&here, &away});
+    CHECK(away.squad().inSquad);
+    CHECK(away.squad().members.size() == 2);
+
+    // Leaving the biome leaves the squad. This is the half the join-time
+    // checks cannot cover: a player can squad up in the garden, walk back to
+    // the title screen and press play on another door.
+    away.leaveGame();
+    h.step(3, {&here, &away});
+    away.joinGame(1280, 720, "desert", "away");
+    CHECK(h.stepUntil({&here, &away},
+                      [&] { return away.status() == NetClient::Status::Playing; }));
+    h.step(5, {&here, &away});
+    CHECK(!away.squad().inSquad);
+    CHECK(sawText(away, "A squad cannot span biomes."));
+    CHECK(sawText(here, "away has left the squad."));
+    CHECK(here.squad().members.size() == 1);
+}
+
+TEST(a_squadmate_is_sent_the_drop_their_squad_earned) {
+    // END TO END, over the socket, because the unit rules passing says
+    // nothing about whether a player SEES the drop: the eligibility list is
+    // server state, and a drop only reaches a client that the replicator
+    // decided to stream it to. This walks the whole chain -- squad roster,
+    // the per-tick ranking index, the kill, the reservation, the wire -- and
+    // asserts at both ends, so a failure says which end is wrong.
+    Harness h("cmd-squad-loot",
+              [](const std::string& path) {
+                  seedUser(path, "fighter", "password7", true);
+                  seedUser(path, "mate", "password7");
+              },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient fighter;
+    NetClient mate;
+    CHECK(loginAs(h, fighter, "fighter", "password7"));
+    CHECK(loginAs(h, mate, "mate", "password7"));
+    fighter.joinGame(1280, 720, "garden", "fighter");
+    mate.joinGame(1280, 720, "garden", "mate");
+    CHECK(h.stepUntil({&fighter, &mate}, [&] {
+        return fighter.status() == NetClient::Status::Playing &&
+               mate.status() == NetClient::Status::Playing;
+    }));
+
+    CHECK(say(h, fighter, "/squad-create public"));
+    CHECK(say(h, fighter, "/squad-invite mate"));
+    h.step(3, {&fighter, &mate});
+    CHECK(say(h, mate, "/squad-accept"));
+    h.step(3, {&fighter, &mate});
+    CHECK(fighter.squad().members.size() == 2);
+    if (fighter.squad().members.size() != 2) return;
+
+    World& world = h.server.world();
+    const auto bodyOf = [&](const char* name) {
+        Entity found = NULL_ENTITY;
+        Query<PlayerTag, PlayerAccount> people{world};
+        people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+            if (account.username == name) found = e;
+        });
+        return found;
+    };
+    const Entity fighterBody = bodyOf("fighter");
+    const Entity mateBody = bodyOf("mate");
+    CHECK(fighterBody != NULL_ENTITY && mateBody != NULL_ENTITY);
+    if (fighterBody == NULL_ENTITY || mateBody == NULL_ENTITY) return;
+
+    // Side by side, so the drop lands in both viewports: a squadmate across
+    // the map is eligible for a drop the replicator never sends them, which
+    // is correct and would make this test ask the wrong question.
+    const Vec2 at = world.get<Transform>(fighterBody).position;
+    world.get<Transform>(mateBody).position = at + Vec2{60, 0};
+
+    // A common mob dropped ON the fighter, killed by the flower's own body
+    // damage. Only the fighter ever touches it.
+    const std::uint32_t before = static_cast<std::uint32_t>(
+        world.get<PlayerProgress>(mateBody).totalXp);
+    adminSpawnAt(fighter, "starfish", "uncommon", at + Vec2{5, 0});
+    Entity mob = NULL_ENTITY;
+    CHECK(h.stepUntil({&fighter, &mate}, [&] {
+        Query<MobTag, MobType, Transform> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type, Transform& where) {
+            if (mob != NULL_ENTITY) return;
+            if (type.configIndex != content().mobIndex("starfish")) return;
+            if (distance(where.position, at) > 400.0) return;
+            mob = e;
+        });
+        return mob != NULL_ENTITY;
+    }, 120));
+    if (mob == NULL_ENTITY) { CHECK(false); return; }
+
+    // Killed by the fighter's own body, which is the ordinary kill path --
+    // contact damage, a real Bounty, a real death. Stacked the odds so it
+    // takes one touch rather than a minute of shoving: what is under test is
+    // who gets paid, not how long a starfish lasts.
+    world.get<Health>(mob).current = 1.0;
+    world.get<ContactDamage>(fighterBody).amount = 500.0;
+    world.get<Transform>(mob).position = at;
+    CHECK(h.stepUntil({&fighter, &mate}, [&] {
+        Query<DropTag, DropItem> drops{world};
+        return !drops.collect().empty();
+    }, 240));
+
+    Query<DropTag, DropItem> drops{world};
+    const std::vector<Entity> dropped = drops.collect();
+    CHECK(!dropped.empty());
+    if (dropped.empty()) return;
+
+    // SERVER SIDE: the squadmate is on the reservation.
+    const DropItem& item = world.get<DropItem>(dropped.front());
+    CHECK(claimed(item.eligible, mateBody, 0));
+    // ...and was paid the kill's XP without landing a hit.
+    CHECK(world.get<PlayerProgress>(mateBody).totalXp > before);
+
+    // CLIENT SIDE: the drop actually reached the squadmate's screen.
+    const NetId* dropId = world.tryGet<NetId>(dropped.front());
+    CHECK(dropId != nullptr);
+    if (dropId == nullptr) return;
+    CHECK(h.stepUntil({&fighter, &mate}, [&] {
+        return mate.view().entities().count(dropId->value) != 0;
+    }, 120));
+    CHECK(mate.view().entities().count(dropId->value) != 0);
+
+    // And the console can say all of that out loud, which is what an operator
+    // has to go on when a player reports that sharing is not working.
+    CHECK(say(h, fighter, "/admin squads"));
+    CHECK(sawText(fighter, ", shares)"));
+    // The console escapes its own output, so the arrow arrives as `-&gt;`.
+    CHECK(sawText(fighter, "pooled: loot and XP are shared"));
+    CHECK(!sawText(fighter, ", ALONE)"));
+}
+
+TEST(a_player_squadded_with_a_bot_is_paid_for_what_the_bot_kills) {
+    // THE PARTY A QUIET SERVER ACTUALLY HAS. A player invites a bot, the bot
+    // does the killing, and the player is paid for it -- loot reserved and
+    // XP banked -- without landing a hit. Reported as "squad loot sharing is
+    // not working... squadmates are bots", which it could not do while bots
+    // were left out of the reward index entirely.
+    Harness h("cmd-squad-bot",
+              [](const std::string& path) { seedUser(path, "owner", "password7", true); },
+              dataDir(), 4);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient owner;
+    CHECK(loginAs(h, owner, "owner", "password7"));
+    owner.joinGame(1280, 720, "garden", "owner");
+    CHECK(h.stepUntil({&owner}, [&] { return owner.status() == NetClient::Status::Playing; }));
+    h.step(120, {&owner});
+
+    World& world = h.server.world();
+    // A bot in the player's own realm, by the nameplate `/squad-invite`
+    // matches on.
+    Entity ownerBody = NULL_ENTITY;
+    std::vector<std::pair<Entity, std::string>> bots;
+    Query<PlayerTag, PlayerAccount, Transform> flowers{world};
+    flowers.each([&](Entity e, PlayerTag&, PlayerAccount& account, Transform& where) {
+        if (!account.userId.empty()) { ownerBody = e; return; }
+        if (where.realm != Realm::Overworld) return;
+        bots.push_back({e, account.username});
+    });
+    CHECK(ownerBody != NULL_ENTITY);
+    CHECK(!bots.empty());
+    if (ownerBody == NULL_ENTITY || bots.empty()) return;
+
+    // The player joins the BOTS' squad, which is the reliable direction:
+    // bots host public squads of their own and advertise the code in their
+    // boss callouts, and a bot that already has one refuses an invite
+    // ("Player already has a squad"), so inviting by name only works on
+    // whichever bot happens to be free that run.
+    std::string squadId;
+    // Asked on a slow clock: the console refills two commands a second, and
+    // a polling loop that drains the bucket leaves nothing for the spawn
+    // below -- which lands as "the mob never appeared" twenty lines later.
+    for (int attempt = 0; attempt < 20 && squadId.empty(); ++attempt) {
+        owner.sendChat("/admin squads");
+        h.step(30, {&owner});
+        const std::string log = transcript(owner);
+        const std::size_t at = log.rfind("squad_");
+        if (at == std::string::npos || at + 15 > log.size()) continue;
+        squadId = log.substr(at, 15);
+    }
+    CHECK(!squadId.empty());
+    if (squadId.empty()) return;
+
+    CHECK(say(h, owner, "/squad-join " + squadId));
+    h.step(3, {&owner});
+    CHECK(owner.squad().members.size() >= 2);
+    if (owner.squad().members.size() < 2) return;
+
+    // Which bot shares the squad.
+    Entity botBody = NULL_ENTITY;
+    for (const auto& candidate : bots) {
+        for (const auto& member : owner.squad().members) {
+            if (member.bot && member.name == candidate.second) botBody = candidate.first;
+        }
+    }
+    CHECK(botBody != NULL_ENTITY);
+    if (botBody == NULL_ENTITY) return;
+
+    // The console agrees that the two of them are pooled, which is the line
+    // an operator reads when this is reported again.
+    // (The listing above was also read while the player was still alone, so
+    // the transcript carries an ALONE from then; only the verdict now is
+    // worth asserting.)
+    CHECK(say(h, owner, "/admin squads"));
+    CHECK(sawText(owner, "pooled: loot and XP are shared"));
+
+    // Near enough that the drop is inside the player's viewport -- a
+    // squadmate across the zone is eligible for an item the replicator never
+    // sends them -- but far enough that the player's own body cannot touch
+    // the mob. Everything the corpse is paid for has to be the BOT's doing.
+    const Vec2 at = world.get<Transform>(botBody).position;
+    world.get<Transform>(ownerBody).position = at + Vec2{700, 0};
+
+    // Dropped on the bot, which kills it on the spot -- bots fight what is
+    // put in front of them, which is the whole reason this is the test.
+    const double before = world.get<PlayerProgress>(ownerBody).totalXp;
+    adminSpawnAt(owner, "starfish", "uncommon", at);
+    CHECK(h.stepUntil({&owner}, [&] {
+        Query<DropTag, DropItem> drops{world};
+        return !drops.collect().empty();
+    }, 240));
+    Query<DropTag, DropItem> drops{world};
+    const std::vector<Entity> dropped = drops.collect();
+    CHECK(!dropped.empty());
+    if (dropped.empty()) return;
+
+    // The player never touched it, and is on the reservation and paid the XP.
+    const PlayerAccount& account = world.get<PlayerAccount>(ownerBody);
+    CHECK(claimed(world.get<DropItem>(dropped.front()).eligible, ownerBody, account.connection));
+    CHECK(world.get<PlayerProgress>(ownerBody).totalXp > before);
+}
+
+TEST(a_squad_that_is_not_pooled_says_why) {
+    // The other half of the diagnostic: a squad the loot rule does NOT pool
+    // has to say what is wrong with it, because "ALONE" on its own sends the
+    // reader back to whoever wrote the command.
+    Harness h("cmd-squads-why",
+              [](const std::string& path) { seedUser(path, "solo", "password7", true); },
+              dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient solo;
+    CHECK(loginAs(h, solo, "solo", "password7"));
+    solo.joinGame(1280, 720, "garden", "solo");
+    CHECK(h.stepUntil({&solo}, [&] { return solo.status() == NetClient::Status::Playing; }));
+
+    CHECK(say(h, solo, "/squad-create public"));
+    CHECK(say(h, solo, "/admin squads"));
+    CHECK(sawText(solo, ", ALONE)"));
+    CHECK(sawText(solo, "not pooled: a squad needs two members in the world"));
+}
+
 TEST(a_public_squad_is_listed_and_joinable) {
     Harness h("cmd-squad-public", [](const std::string& path) {
         seedUser(path, "host", "password7");
@@ -993,4 +1300,48 @@ TEST(delete_guests_keeps_a_guest_that_actually_played) {
     CHECK(loginAs(fresh, client, "boss", "password7"));
     CHECK(say(fresh, client, "/admin delete_guests"));
     CHECK(sawText(client, "Deleted 1 guest account(s) and their player data."));
+}
+
+// A squad outside the garden is still a squad.
+//
+// The bug: a member with no body was read as standing wherever the picker
+// OPENS -- the garden -- rather than nowhere. So a flower in the desert could
+// invite nobody who was not already in the world, while one in the garden
+// could invite anybody, and squads looked broken in every biome but the first.
+TEST(a_squad_outside_the_garden_can_invite_someone_with_no_body_yet) {
+    Harness h("cmd-squad-biome", [](const std::string& path) {
+        seedUser(path, "digger", "password7");
+        seedUser(path, "lobbyist", "password7");
+        seedUser(path, "gardener", "password7");
+    }, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient digger;     // playing, in the desert
+    NetClient lobbyist;   // logged in, no body, no door of their own
+    NetClient gardener;   // playing, in the garden
+    CHECK(loginAs(h, digger, "digger", "password7"));
+    CHECK(loginAs(h, lobbyist, "lobbyist", "password7"));
+    CHECK(loginAs(h, gardener, "gardener", "password7"));
+
+    digger.joinGame(1280, 720, "desert", "digger");
+    CHECK(h.stepUntil({&digger}, [&] { return digger.status() == NetClient::Status::Playing; }));
+    gardener.joinGame(1280, 720, "garden", "gardener");
+    CHECK(h.stepUntil({&gardener}, [&] { return gardener.status() == NetClient::Status::Playing; }));
+    h.step(5, {&digger, &lobbyist, &gardener});
+
+    CHECK(say(h, digger, "/squad-create"));
+    CHECK(say(h, digger, "/squad-invite lobbyist"));
+    CHECK(sawText(digger, "Invite sent to lobbyist."));
+    CHECK(!sawText(digger, "cannot span biomes"));
+
+    h.step(5, {&digger, &lobbyist});
+    CHECK(say(h, lobbyist, "/squad-accept"));
+    CHECK(h.stepUntil({&digger, &lobbyist},
+                      [&] { return lobbyist.squad().members.size() == 2; }));
+
+    // The rule itself still holds: somebody STANDING in another biome is
+    // refused, which is the whole reason the test above is not just "anyone
+    // may join".
+    CHECK(say(h, digger, "/squad-invite gardener"));
+    CHECK(sawText(digger, "gardener is in Garden, and the squad is in Desert."));
 }

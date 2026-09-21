@@ -160,14 +160,35 @@ TEST(a_public_squad_is_joinable_until_it_is_full) {
 
 namespace {
 
-/// A squad of `members`, as the loot rules read one.
+/// A squad of `members`, as the loot rules read one. Every member is a signed
+/// in player: the connection is derived from the body so each one is distinct
+/// and non-zero, which is what tells a person from a bot in SquadBody.
 SquadEntityIndex indexOf(const std::vector<std::vector<Entity>>& squads) {
     SquadEntityIndex index;
     for (const std::vector<Entity>& members : squads) {
         const std::size_t group = index.groups.size();
-        for (const Entity member : members) index.group[member] = group;
-        index.groups.push_back(members);
+        std::vector<SquadBody> bodies;
+        for (const Entity member : members) {
+            index.group[member] = group;
+            bodies.push_back(SquadBody{member, static_cast<net::ConnectionId>(member)});
+        }
+        index.groups.push_back(std::move(bodies));
     }
+    return index;
+}
+
+/// The same, with the LAST member a bot: a body in the squad with no account
+/// behind it.
+SquadEntityIndex indexWithBot(const std::vector<Entity>& members) {
+    SquadEntityIndex index;
+    std::vector<SquadBody> bodies;
+    for (std::size_t i = 0; i < members.size(); ++i) {
+        index.group[members[i]] = 0;
+        const bool bot = i + 1 == members.size();
+        bodies.push_back(SquadBody{members[i],
+                                   bot ? 0 : static_cast<net::ConnectionId>(members[i])});
+    }
+    index.groups.push_back(std::move(bodies));
     return index;
 }
 
@@ -211,6 +232,43 @@ TEST(a_squad_ranks_as_one_contender_and_cannot_fill_every_slot) {
     CHECK(paid(paidOut, body(4)) || paid(paidOut, body(3)));
 }
 
+TEST(a_squad_is_paid_as_one_and_a_passenger_dilutes_it) {
+    // The whole point of a party: body(3) never touched the mob and is paid
+    // anyway, because its squad earned the slot as one contender.
+    const std::vector<Bounty::Share> tally = {{body(1), 60}, {body(2), 30}, {body(9), 25}};
+    const SquadEntityIndex squads = indexOf({{body(1), body(2), body(3)}});
+
+    std::vector<Entity> paidOut;
+    selectLootRecipients(tally, lootSlotsForRarity(Rarity::Common), &squads, paidOut);
+    CHECK(paid(paidOut, body(3)));
+    CHECK(paid(paidOut, body(1)));
+    CHECK(paid(paidOut, body(2)));
+    CHECK(paid(paidOut, body(9)));
+    // Within the squad the biggest contributor is placed first, so that when
+    // the cap cuts into a squad it cuts the passengers.
+    CHECK(paidOut[0] == body(1));
+
+    // And what the passenger costs: 90 damage over THREE members is 30, which
+    // the solo player's 25 does not beat -- but drop the passenger from the
+    // squad and the same 90 over two members is 45, ranking the squad higher.
+    // Divide by the hitters instead of by the membership and the passenger
+    // would have cost nothing at all, which is a free slot for standing still.
+    const SquadEntityIndex pair = indexOf({{body(1), body(2)}});
+    std::vector<Entity> pairPaid;
+    selectLootRecipients(tally, lootSlotsForRarity(Rarity::Common), &pair, pairPaid);
+    CHECK(paidOut.front() == body(1));
+    CHECK(pairPaid.front() == body(1));
+    // The squad of three ranks BELOW the solo player it would have beaten as
+    // a squad of two: same damage, one more passenger.
+    const std::vector<Bounty::Share> closer = {{body(1), 60}, {body(2), 30}, {body(9), 35}};
+    std::vector<Entity> trio;
+    selectLootRecipients(closer, lootSlotsForRarity(Rarity::Common), &squads, trio);
+    CHECK(trio.front() == body(9));   // 35 beats 90/3
+    std::vector<Entity> duo;
+    selectLootRecipients(closer, lootSlotsForRarity(Rarity::Common), &pair, duo);
+    CHECK(duo.front() == body(1));    // 90/2 beats 35
+}
+
 TEST(the_cap_is_spent_in_players_not_in_squads) {
     // Two full squads on an ordinary mob. Capping CONTENDERS and expanding
     // afterwards -- the bug this rule exists to have fixed -- pays all eight.
@@ -224,18 +282,53 @@ TEST(the_cap_is_spent_in_players_not_in_squads) {
     CHECK(paidOut.size() == 4);
 }
 
-TEST(a_squadmate_who_did_nothing_is_not_paid) {
-    // body(3) never touched the mob. Standing next to somebody who did is not
-    // a contribution, so its slot goes to the next player who earned one.
-    const std::vector<Bounty::Share> tally = {{body(1), 40}, {body(2), 10}, {body(9), 5}};
-    const SquadEntityIndex squads = indexOf({{body(1), body(2), body(3)}});
+TEST(a_bot_squadmate_pools_its_damage_but_is_paid_no_free_share) {
+    // The party a quiet server actually has: one player and the bots they
+    // invited. The bots do the killing, and the PLAYER is paid for it --
+    // that is the whole reason to squad with them.
+    const std::vector<Bounty::Share> tally = {{body(2), 50}, {body(3), 40}};
+    const SquadEntityIndex squads = indexWithBot({body(1), body(2), body(3)});
 
     std::vector<Entity> paidOut;
     selectLootRecipients(tally, lootSlotsForRarity(Rarity::Common), &squads, paidOut);
-    CHECK(paidOut.size() == 3);
+    CHECK(paid(paidOut, body(1)));   // the player, who never touched it
+    CHECK(paid(paidOut, body(2)));   // a squadmate that fought
+    // body(3) is the bot. It fought, so it keeps the slot it earned -- that
+    // is what leaves bot kills something to collect off the ground.
+    CHECK(paid(paidOut, body(3)));
+
+    // A bot that did NOTHING is handed nothing: an item given to one is an
+    // item nobody receives, and the slot would be taken from a player.
+    const std::vector<Bounty::Share> soloTally = {{body(1), 50}, {body(9), 10}};
+    std::vector<Entity> idle;
+    selectLootRecipients(soloTally, lootSlotsForRarity(Rarity::Common), &squads, idle);
+    CHECK(paid(idle, body(1)));
+    CHECK(paid(idle, body(2)));   // a human passenger still shares
+    CHECK(!paid(idle, body(3)));  // the idle bot does not
+    CHECK(paid(idle, body(9)));
+}
+
+TEST(a_squads_passengers_are_cut_first_when_the_cap_falls_inside_it) {
+    // The cap is spent in PLAYERS, so it can land in the middle of a squad.
+    // Three solo players ahead of a squad of four leaves one slot for it, and
+    // the member holding it is the one who did the work.
+    const std::vector<Bounty::Share> tally = {
+        {body(7), 90}, {body(8), 80}, {body(9), 70}, {body(1), 40}, {body(2), 10},
+    };
+    const SquadEntityIndex squads =
+        indexOf({{body(1), body(2), body(3), body(4)}});
+
+    std::vector<Entity> paidOut;
+    selectLootRecipients(tally, lootSlotsForRarity(Rarity::Common), &squads, paidOut);
+    CHECK(paidOut.size() == 4);
+    CHECK(paidOut[3] == body(1));   // 40 damage: the squad's best
     CHECK(!paid(paidOut, body(3)));
-    CHECK(paid(paidOut, body(9)));
-    // Within the squad, the member who earned more is placed first.
-    CHECK(paidOut[0] == body(1));
-    CHECK(paidOut[1] == body(2));
+    CHECK(!paid(paidOut, body(4)));
+
+    // With room for the whole squad, every one of them is paid -- the two who
+    // never touched it included.
+    selectLootRecipients(tally, lootSlotsForRarity(Rarity::Ultra), &squads, paidOut);
+    CHECK(paidOut.size() == 7);
+    CHECK(paid(paidOut, body(3)));
+    CHECK(paid(paidOut, body(4)));
 }

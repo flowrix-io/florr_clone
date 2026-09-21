@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/squads.h"
 #include "server/systems/combat.h"
 #include "shared/core/world.h"
 #include "shared/game/components.h"
@@ -833,6 +834,37 @@ TEST(each_ranked_contributor_receives_the_mobs_full_xp) {
 
     CHECK_NEAR(a.world.get<PlayerProgress>(first).totalXp, 120.0, 1e-9);
     CHECK_NEAR(a.world.get<PlayerProgress>(second).totalXp, 120.0, 1e-9);
+}
+
+TEST(a_squad_is_paid_the_mobs_xp_including_the_members_who_missed_it) {
+    // The XP half of the same rule the drops use, through the real kill path:
+    // one squadmate lands every hit, and the mob's full XP reaches the other
+    // two as well. A squad shares.
+    Arena a;
+    const Entity fighter = a.player({1000, 1000});
+    const Entity passenger = a.player({1000, 1000});
+    const Entity absentee = a.player({1000, 1000});
+    const Entity mob = a.mob({1000, 1000}, 100.0, 120.0);
+
+    SquadEntityIndex squads;
+    std::vector<SquadBody> members;
+    for (const Entity member : {fighter, passenger, absentee}) {
+        squads.group[member] = 0;
+        // A signed-in player: a non-zero connection is what tells one from a
+        // bot, and a bot is paid no free share.
+        members.push_back(SquadBody{member, static_cast<net::ConnectionId>(member)});
+    }
+    squads.groups.push_back(std::move(members));
+    a.combat.squads = &squads;
+
+    a.combat.applyDamage(a.world, mob, fighter, 500.0, 0.0);
+    CHECK(a.world.has<Dead>(mob));
+
+    // Each is paid the mob's FULL xp, as every ranked recipient always is --
+    // the corpse is not split between them.
+    CHECK_NEAR(a.world.get<PlayerProgress>(fighter).totalXp, 120.0, 1e-9);
+    CHECK_NEAR(a.world.get<PlayerProgress>(passenger).totalXp, 120.0, 1e-9);
+    CHECK_NEAR(a.world.get<PlayerProgress>(absentee).totalXp, 120.0, 1e-9);
 }
 
 TEST(a_mob_killed_by_another_mob_pays_nobody) {

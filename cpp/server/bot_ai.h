@@ -32,6 +32,12 @@
 //     where it walks through a mob without engaging it. Travelling, roaming,
 //     regrouping -- all of them yield to something close enough to hit, which
 //     is what stops bots shouldering through a field of mobs untouched.
+//   * A BOT BELONGS TO A BIOME. The population is spread evenly over every
+//     biome the title screen offers, and a bot never leaves the one it was
+//     born in -- pads refuse them. So every terrain question, every
+//     broadphase query and every per-tick index below is asked about THAT
+//     bot's realm: two maps' coordinates overlap exactly, and a question
+//     asked of the wrong one answers about a place the bot is not standing.
 //   * A BOT STAYS WHERE THE GAME IS. Ambient mobs are stocked around HUMANS
 //     (game_server.h: humanPlayers_), so ground with nobody on it has nothing
 //     living on it. A bot that walks to the far side of the map to farm is a
@@ -55,7 +61,32 @@ namespace flix {
 // ---------------------------------------------------------------------------
 
 /// Total flowers the world aims to hold, bots plus humans.
-inline constexpr int kBotTargetTotalPlayers = 23;
+///
+/// Spread EVENLY over the biomes a player can join AND live in
+/// (GameServer::botBiomes()), which is what this number has to be read
+/// against: at the six shipped ones, fourteen is two or three per map rather
+/// than two dozen in whichever one a player happens to open on. That is the
+/// deliberate trade -- five biomes that used to hold nobody at all now hold
+/// somebody, and the one at the front holds fewer.
+///
+/// THE COST IS IN THE BANDS, NOT IN THE BOTS. A bot is a fraction of a
+/// millisecond of tick, but it is also an OBSERVER, and an observer inside a
+/// spawn band wakes that band and stocks the whole of it. So the curve is a
+/// step, not a slope. Measured with tools/bot_probe over sixty simulated
+/// seconds on the shipped maps, against the old one-biome population as 1.0x:
+///
+///     10 bots, 6 biomes   ~540 mobs   0.87x
+///     14 bots, 6 biomes   ~620 mobs   1.03x     <- here
+///     18 bots, 6 biomes   ~730 mobs   1.12x
+///     23 bots, 6 biomes   ~790 mobs   1.23x
+///
+/// Fourteen is where the server does the same work it did when every bot
+/// stood in the garden. Raising it to eighteen buys three per biome for
+/// about a tenth more, which the curve above says is affordable; the number
+/// that was NOT affordable was keeping a sixth of the population in Hel,
+/// whose all-random band stocks mythics across the whole map and cost more
+/// than every other biome put together (2.3x with it in).
+inline constexpr int kBotTargetTotalPlayers = 14;
 /// How often the population is reconsidered.
 inline constexpr double kBotMaintainMillis = 1500.0;
 /// Bots created per maintenance pass. A deficit is filled over several passes

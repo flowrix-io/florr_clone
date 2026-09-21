@@ -978,6 +978,7 @@ void NetClient::pushChat(net::ChatChannel channel, std::string author, std::stri
     }
 
     chat_.push_back(std::move(line));
+    ++chatSeq_;
     if (chat_.size() > kMaxChatLines) {
         chat_.erase(chat_.begin(),
                     chat_.begin() + static_cast<std::ptrdiff_t>(chat_.size() - kMaxChatLines));

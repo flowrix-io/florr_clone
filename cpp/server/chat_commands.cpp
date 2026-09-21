@@ -739,7 +739,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             help += "/cmd &lt;command&gt; - Execute server command (alternative)<br/>";
             help += "Available server commands: save, list-players, list-sockets, "
                     "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
-                    "|default&gt;, bots (what the bot population is doing), spawn &lt;mobType&gt; &lt;rarity&gt; "
+                    "|default&gt;, bots (what the bot population is doing), squads (who the "
+                    "loot rule pools), spawn &lt;mobType&gt; &lt;rarity&gt; "
                     "[x] [y] [amount] [stack|unstack], killall (kill all wild mobs), teleport "
                     "&lt;playerId/username&gt; &lt;x&gt; &lt;y&gt;, teleport_all &lt;x&gt; "
                     "&lt;y&gt; (move every player and bot), teleport_bots &lt;x&gt; &lt;y&gt; "
@@ -813,6 +814,12 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
                 out("Only the squad leader can invite players.");
                 return;
             }
+            const std::string wrongBiome =
+                squadBiomeRefusal(*squad, target, squadDisplayName(target) + " is");
+            if (!wrongBiome.empty()) {
+                out(wrongBiome);
+                return;
+            }
             const std::string error = squads_.addBot(squad->id, target);
             if (!error.empty()) {
                 out(error);
@@ -821,6 +828,17 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
             sendSquadSystem(*squad, squadDisplayName(target) + " has joined the squad.");
             broadcastSquadUpdate(*squad);
             return;
+        }
+        // Checked against the squad the inviter is ALREADY in, and again when
+        // the invitation is accepted: thirty seconds is long enough for either
+        // of them to have respawned into another biome.
+        if (const Squad* mine = squads_.forMember(me)) {
+            const std::string wrongBiome =
+                squadBiomeRefusal(*mine, target, squadAccountName(target) + " is");
+            if (!wrongBiome.empty()) {
+                out(wrongBiome);
+                return;
+            }
         }
         const std::string error = squads_.invite(me, target, session.username, now);
         if (!error.empty()) {
@@ -837,9 +855,16 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     }
 
     if (sub == "find-public") {
-        const std::vector<const Squad*> open = squads_.publicSquads();
+        std::vector<const Squad*> open = squads_.publicSquads();
+        // Only the ones in this player's own biome. A listing is a list of
+        // things to type `/squad-join` at, and a squad they would be refused
+        // is not one of them.
+        open.erase(std::remove_if(open.begin(), open.end(),
+                                  [&](const Squad* squad) { return !squadAcceptsBiome(*squad, me); }),
+                   open.end());
         if (open.empty()) {
-            out("No public squads available. Create one with /squad create public.");
+            out("No public squads available in your biome. Create one with /squad create "
+                "public.");
             return;
         }
         std::string lines;
@@ -858,6 +883,13 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     }
 
     if (sub == "join" && !argument.empty()) {
+        if (const Squad* wanted = squads_.find(argument)) {
+            const std::string wrongBiome = squadBiomeRefusal(*wanted, me, "You are");
+            if (!wrongBiome.empty()) {
+                out(wrongBiome);
+                return;
+            }
+        }
         const std::string error = squads_.joinPublic(argument, me);
         if (!error.empty()) {
             out(error);
@@ -883,6 +915,17 @@ void GameServer::runSquadCommand(Session& session, net::Connection& connection,
     }
 
     if (sub == "accept") {
+        // Re-checked here, not only at the invitation: an invite lives for
+        // thirty seconds, and either end of it can have respawned into
+        // another biome in that time.
+        if (const Squad* pending = squads_.pendingInviteSquad(me, now)) {
+            const std::string wrongBiome = squadBiomeRefusal(*pending, me, "You are");
+            if (!wrongBiome.empty()) {
+                squads_.decline(me);
+                out(wrongBiome);
+                return;
+            }
+        }
         std::string squadId;
         const std::string error = squads_.accept(me, now, squadId);
         if (!error.empty()) {
@@ -1130,6 +1173,67 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         return;
     }
 
+    if (verb == "squads") {
+        // What the REWARD RULE sees, which is the question a report of
+        // "squad loot is not working" is actually asking. The party bar is
+        // drawn from the roster; loot and XP are ranked off the per-tick
+        // index, and the two can legitimately disagree -- a member with no
+        // body, a bot, a squad of one. Printing both side by side is what
+        // tells an operator which of those it is.
+        if (squads_.empty()) {
+            out("No squads.");
+            return;
+        }
+        for (const auto& entry : squads_.all()) {
+            const Squad& squad = entry.second;
+            std::string line = squad.id + (squad.isPublic ? " [public]" : " [private]") + ":";
+            int inWorld = 0;       // members with a body, bots included
+            int bodiless = 0;
+            bool pooled = false;
+            for (const SquadMemberId& member : squad.members) {
+                const Entity body = squadEntityOf(member);
+                line += " " + squadDisplayName(member) + "(";
+                if (body == NULL_ENTITY) {
+                    ++bodiless;
+                    line += "no body";
+                } else {
+                    ++inWorld;
+                    if (member.bot()) line += "bot, ";
+                    const std::string biome = biomeOfEntity(body);
+                    line += biome.empty() ? "?" : biomeLabel(biome);
+                    if (squadIndex_.membersOf(body) != nullptr) {
+                        pooled = true;
+                        // A bot pools its damage in but is never handed a
+                        // free share, so it is not "shares" either way.
+                        line += member.bot() ? ", pools" : ", shares";
+                    } else {
+                        line += ", ALONE";
+                    }
+                }
+                line += ")";
+            }
+            out(line);
+            // The VERDICT, and when it is no, the reason -- which is the
+            // whole point of the command. "It says ALONE" is not something
+            // anybody should have to bring back here to have interpreted.
+            if (pooled) {
+                out("  -> pooled: loot and XP are shared across this squad "
+                    "(bots pool their damage in but are paid nothing they did not earn)");
+            } else if (inWorld >= 2) {
+                out("  -> NOT pooled, and it should be. This is a bug; say so.");
+            } else {
+                std::string why = "  -> not pooled: a squad needs two members in the world "
+                                  "at once";
+                if (bodiless > 0) {
+                    why += "; " + plural(bodiless, "member has", "members have") +
+                           " no body right now (title screen)";
+                }
+                out(why + ".");
+            }
+        }
+        return;
+    }
+
     if (verb == "bots") {
         // What the population is DOING, not how big it is. A field of bots
         // that all report "roam" is a field of bots with nothing to fight,
@@ -1155,6 +1259,21 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
         if (alive == 0) line = "No bots.";
         out(line);
+        // And WHERE they are. The population is spread evenly over the
+        // biomes, and "evenly" is a claim an operator should be able to hold
+        // to the light rather than take on trust.
+        std::vector<int> perBiome;
+        countBotsPerBiome(perBiome);
+        std::string spread;
+        for (std::size_t i = 0; i < botBiomes().size(); ++i) {
+            if (!spread.empty()) spread += ", ";
+            spread += biomeLabel(botBiomes()[i].name) + " " + std::to_string(perBiome[i]);
+        }
+        if (!perBiome.empty() && perBiome.back() > 0) {
+            spread += (spread.empty() ? "" : ", ") + std::string("elsewhere ") +
+                      std::to_string(perBiome.back());
+        }
+        if (!spread.empty()) out("By biome: " + spread);
         return;
     }
 
@@ -1285,7 +1404,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             }
         }
         if (!placed) {
-            const Vec2 point = pickBotSpawn();
+            // In the realm the mob is being spawned into, which for a session
+            // with no body is the overworld, exactly as `spawnRealm` above is.
+            const Vec2 point = pickBotSpawn(spawnRealm);
             x = point.x;
             y = point.y;
             where = " at a random location";

@@ -258,8 +258,9 @@ void App::updatePlaying(double dt) {
     if (inputAccumulator_ > step * 4) inputAccumulator_ = 0;
 
     // The wheel zooms the camera unless a panel -- or the tutorial box, which
-    // is a DOM element and eats the event before the canvas -- is over it.
-    if (!menus_.capturesMouse({window_.mouseX(), window_.mouseY()}) &&
+    // is a DOM element and eats the event before the canvas -- is over it, and
+    // unless the transcript took it to read back through itself.
+    if (!scrollChat() && !menus_.capturesMouse({window_.mouseX(), window_.mouseY()}) &&
         !tutorial_.capturesMouse({window_.mouseX(), window_.mouseY()})) {
         menus_.settings().zoom =
             clamp(menus_.settings().zoom + window_.wheelDelta() * 0.05, kMinZoom, kMaxZoom);
@@ -268,6 +269,10 @@ void App::updatePlaying(double dt) {
 
 void App::updateDead(double dt) {
     (void)dt;
+    // The transcript keeps drawing over the dimmed world, so it keeps
+    // scrolling. There is no camera zoom to lose the wheel to here, so nothing
+    // hangs on the answer.
+    scrollChat();
     // ENTER is the Continue button by another name, and is gated on being
     // dead rather than on where the card has slid to. The reference takes the
     // key on the same condition, though it spends it on an immediate respawn:

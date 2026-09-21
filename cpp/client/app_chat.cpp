@@ -55,6 +55,10 @@ constexpr double kChatFieldTextSize = 13.333;
 /// The suggestion list replaces the message column; these are its own metrics.
 constexpr double kChatSuggestionRowHeight = 23.0;   // 4px padding, a 15px line, 4px
 constexpr double kChatSuggestionSize = 13.0;
+/// One notch of the wheel, in pixels of transcript. The panels' Scroller moves
+/// by the same step, so the box scrolls at the speed the rest of the client
+/// does.
+constexpr double kChatWheelStep = 42.0;
 
 /// The slash commands the reference offers, in its order.
 ///
@@ -432,6 +436,36 @@ bool App::pressedChatBox() const {
     return window_.mousePressed(MouseButton::Left) && chatBox_.contains(pointer);
 }
 
+bool App::scrollChat() {
+    // Hovering the chat is not scrolling it: a frame with no wheel in it is
+    // nobody's, and claiming those would stop the zoom working for a pointer
+    // that happens to be resting in the corner.
+    if (window_.wheelDelta() == 0) return false;
+    // A box that is not on screen answers for nothing over it: chatColumn_ is
+    // where the chat LAST painted, and switching it off in settings leaves
+    // that rectangle behind.
+    if (!menus_.settings().showChat) return false;
+    // Against the box the LAST frame painted, like everything else that
+    // hit-tests the chat.
+    if (chatColumn_.w <= 0) return false;
+    const Vec2 pointer{window_.mouseX(), window_.mouseY()};
+    if (!chatColumn_.contains(pointer)) return false;
+    // A panel over the column owns the wheel; the tall lists really do overlap
+    // the chat's corner.
+    if (menus_.capturesMouse(pointer)) return false;
+    // The command list is a picker the arrow keys move through, not a
+    // transcript -- but it is drawn in this column, and a wheel over it must
+    // still not reach the zoom behind it.
+    const bool suggesting = chatOpen_ && !chatDraft_.empty() && chatDraft_[0] == '/';
+    if (!suggesting) {
+        // Positive is a scroll up, which shows OLDER lines -- and older is
+        // further off the bottom, which is what the offset counts. The ceiling
+        // needs the transcript's height, so the draw applies it.
+        chatScroll_ = std::max(0.0, chatScroll_ + window_.wheelDelta() * kChatWheelStep);
+    }
+    return true;
+}
+
 void App::editChatLine() {
     const std::string before = chatDraft_;
     editText(chatDraft_, 180, chatField_);
@@ -607,6 +641,8 @@ void App::drawChat(Canvas& canvas, double time) {
     // done with the box open.
     const double regionBottom = bottom - kChatFieldUp + kChatFieldHeight;
     chatRegion_ = {column.x, column.y, column.w, regionBottom - column.y};
+    // For the wheel, which runs before this draw and needs last frame's box.
+    chatColumn_ = column;
 
     // A leading slash swaps the transcript for the command list -- the
     // reference hides one element and shows the other in the same slot.
@@ -680,55 +716,101 @@ void App::drawChat(Canvas& canvas, double time) {
             (kChatLineHeight - (ascent(14.0, true) - descent(14.0, true))) * 0.5;
         const double baselineOffset = halfLead + ascent(14.0, true);
 
-        // Newest first, and only as far back as the column can show. Wrapping
-        // a hundred-line transcript every frame to then clip all but six rows
-        // of it is work nobody sees.
+        // How many lines landed since the last frame. A transcript resting at
+        // the bottom simply shows them; one the reader has scrolled back
+        // through has to be held still against them, below.
+        const std::uint64_t arrived = net_.chatSequence() - chatSeenSeq_;
+        chatSeenSeq_ = net_.chatSequence();
+
+        // Newest first, and only as far back as the column can show -- plus
+        // whatever the wheel has scrolled past the bottom of it. Wrapping a
+        // hundred-line transcript every frame to then clip all but six rows of
+        // it is work nobody sees.
+        //
+        // Walked in two goes, the second only when a new line moves the
+        // offset, so the walk back is resumed rather than started again.
         std::vector<std::vector<ChatRow>> newestFirst;
         double content = kChatMessageGap;   // the last message's bottom margin
-        for (auto it = net_.chat().rbegin(); it != net_.chat().rend(); ++it) {
-            std::vector<ChatToken> tokens;
-            tokens.push_back({"[" + clockTime(it->wallClockMillis) + "]", 12.0, kPaper, 0.6});
-            if (!it->author.empty()) {
-                // Every sender is the same green, whatever channel carried the
-                // line: the reference has no per-channel colouring at all.
-                tokens.push_back({it->author + ":", 14.0, 0x00FF00u, 1.0});
-            }
-            // The wire carries markup, not plain text: every boss announcement
-            // is a <b style="color: ..."> and every multi-line command answer
-            // is joined with <br/>. Splitting the raw string on spaces printed
-            // the tags as words; parseMarkup turns them back into styling.
-            bool afterWhitespace = true;
-            for (const ui::MarkupSpan& span : ui::parseMarkup(it->text)) {
-                if (span.lineBreak) {
-                    tokens.push_back({{}, 14.0, kPaper, 1.0, false, false, false, true, false});
-                    afterWhitespace = true;
-                    continue;
+        auto it = net_.chat().rbegin();
+        const auto oldest = net_.chat().rend();
+        const auto layoutBack = [&](double needed, std::size_t atLeast) {
+            for (; it != oldest && (content < needed || newestFirst.size() < atLeast); ++it) {
+                std::vector<ChatToken> tokens;
+                tokens.push_back({"[" + clockTime(it->wallClockMillis) + "]", 12.0, kPaper, 0.6});
+                if (!it->author.empty()) {
+                    // Every sender is the same green, whatever channel carried the
+                    // line: the reference has no per-channel colouring at all.
+                    tokens.push_back({it->author + ":", 14.0, 0x00FF00u, 1.0});
                 }
-                const std::uint32_t fill = span.hasColor ? span.color : kPaper;
-                std::size_t at = 0;
-                while (at < span.text.size()) {
-                    const std::size_t space = span.text.find_first_of(" \t\r\n", at);
-                    const std::string word = span.text.substr(
-                        at, space == std::string::npos ? std::string::npos : space - at);
-                    if (!word.empty()) {
-                        tokens.push_back({word, 14.0, fill, 1.0, span.italic, span.underline,
-                                          span.blink, false, !afterWhitespace});
-                        afterWhitespace = false;
+                // The wire carries markup, not plain text: every boss announcement
+                // is a <b style="color: ..."> and every multi-line command answer
+                // is joined with <br/>. Splitting the raw string on spaces printed
+                // the tags as words; parseMarkup turns them back into styling.
+                bool afterWhitespace = true;
+                for (const ui::MarkupSpan& span : ui::parseMarkup(it->text)) {
+                    if (span.lineBreak) {
+                        tokens.push_back({{}, 14.0, kPaper, 1.0, false, false, false, true, false});
+                        afterWhitespace = true;
+                        continue;
                     }
-                    if (space == std::string::npos) break;
-                    afterWhitespace = true;
-                    at = space + 1;
+                    const std::uint32_t fill = span.hasColor ? span.color : kPaper;
+                    std::size_t at = 0;
+                    while (at < span.text.size()) {
+                        const std::size_t space = span.text.find_first_of(" \t\r\n", at);
+                        const std::string word = span.text.substr(
+                            at, space == std::string::npos ? std::string::npos : space - at);
+                        if (!word.empty()) {
+                            tokens.push_back({word, 14.0, fill, 1.0, span.italic, span.underline,
+                                              span.blink, false, !afterWhitespace});
+                            afterWhitespace = false;
+                        }
+                        if (space == std::string::npos) break;
+                        afterWhitespace = true;
+                        at = space + 1;
+                    }
+                    // A span ending mid-word ("<b>Hel</b>lo") must not gain a space
+                    // at the style change; one ending on a space must keep it.
+                    if (!span.text.empty()) {
+                        const char last = span.text.back();
+                        afterWhitespace = last == ' ' || last == '\t' || last == '\r' || last == '\n';
+                    }
                 }
-                // A span ending mid-word ("<b>Hel</b>lo") must not gain a space
-                // at the style change; one ending on a space must keep it.
-                if (!span.text.empty()) {
-                    const char last = span.text.back();
-                    afterWhitespace = last == ' ' || last == '\t' || last == '\r' || last == '\n';
-                }
+                newestFirst.push_back(layoutChatMessage(tokens, column.w));
+                content += newestFirst.back().size() * kChatLineHeight + kChatMessageGap;
             }
-            newestFirst.push_back(layoutChatMessage(tokens, column.w));
-            content += newestFirst.back().size() * kChatLineHeight + kChatMessageGap;
-            if (content >= column.h) break;
+        };
+        // The lines that arrived are laid out whether or not they are in view:
+        // their height is what the offset has to move by.
+        layoutBack(column.h + chatScroll_,
+                   chatScroll_ > 0 ? static_cast<std::size_t>(arrived) : 0);
+
+        // A line landing while the reader is parked up the transcript must not
+        // drag what they are reading out from under them. It lands at the
+        // BOTTOM, so everything above it moves up by its height -- and the
+        // offset is counted off that bottom, so growing it by the same amount
+        // leaves the view exactly where it was.
+        //
+        // The reference cannot do this: its box is a DOM element it forces to
+        // `scrollHeight` on every message, which is why reading back through a
+        // busy chat there does not work at all.
+        if (chatScroll_ > 0 && arrived > 0) {
+            const std::size_t landed =
+                std::min<std::size_t>(static_cast<std::size_t>(arrived), newestFirst.size());
+            double grew = 0;
+            for (std::size_t m = 0; m < landed; ++m) {
+                grew += newestFirst[m].size() * kChatLineHeight + kChatMessageGap;
+            }
+            chatScroll_ += grew;
+            layoutBack(column.h + chatScroll_, 0);
+        }
+
+        // The oldest line is as far back as the wheel goes. Only a walk that
+        // reached it knows the whole height, so the ceiling is applied here
+        // rather than where the wheel is read; a clamp can only ever LOWER the
+        // offset, so there is nothing left to lay out afterwards.
+        if (it == oldest) {
+            const double slack = content - column.h;
+            chatScroll_ = clamp(chatScroll_, 0.0, slack > 0 ? slack : 0.0);
         }
 
         if (!newestFirst.empty()) {
@@ -737,8 +819,13 @@ void App::drawChat(Canvas& canvas, double time) {
             // bottom. That is what an overflow:auto block scrolled to its end
             // does, and it is why a first message appears near the top of the
             // screen rather than just above the input.
+            //
+            // Scrolling back moves the whole column DOWN by the offset: the
+            // newest lines slide out under the input slot and the clip keeps
+            // them there.
             const double newestHeight = newestFirst.front().size() * kChatLineHeight;
-            double top = (content >= column.h ? column.bottom() : column.y + content) -
+            const bool overflowing = content >= column.h + chatScroll_;
+            double top = (overflowing ? column.bottom() + chatScroll_ : column.y + content) -
                          kChatMessageGap - newestHeight;
 
             canvas.save();
