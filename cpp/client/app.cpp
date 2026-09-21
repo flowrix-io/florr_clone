@@ -122,6 +122,11 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // heads. Owned by NetClient for the same reason the catalog is: the lines
     // arrive on the socket, and the renderer reads the live list per frame.
     renderer_.setChatBubbles(&net_.chatBubbles());
+    // The mana bar under the local flower is drawn from the snapshot's self
+    // block, not from a replicated body: mana is the viewer's own and is on
+    // the wire for nobody else. Bound once -- the view owns the state and
+    // outlives every frame that reads it.
+    renderer_.setSelfState(&net_.view().self());
     // NetClient keeps this object alive for the entire connection and replaces
     // its grid with the server's authoritative one when a game is joined.
     renderer_.setTerrain(&net_.terrain());

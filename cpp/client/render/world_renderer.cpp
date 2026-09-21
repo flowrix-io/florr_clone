@@ -1526,17 +1526,99 @@ std::uint32_t WorldRenderer::healthBarColor(const RemoteEntity& entity, double t
     return lerpColor(kInvulnHealth, ui::kHealth, t);
 }
 
+/// Where a flower's bar goes: the one slot under the body, in screen pixels.
+///
+/// Shared by the plate every other flower wears and by the viewer's own mana
+/// bar, which stands in that exact slot now that the local plate is gone. Two
+/// copies of these numbers is how the two would end up a pixel apart at one
+/// zoom level and nowhere near each other at another.
+struct PlateBar {
+    double zoom = 1;
+    double centreX = 0;
+    double left = 0;
+    double right = 0;
+    double top = 0;
+    double width = 0;
+    double height = 0;
+};
+
+/// `size` is the flower's drawn size multiplier, passed in because the slot
+/// hangs off the BODY: a grown flower's bar sits lower.
+PlateBar plateBar(double size, const Camera& camera, Vec2 at) {
+    PlateBar bar;
+    bar.zoom = camera.zoom();
+    const Vec2 screen = camera.worldToScreen(at);
+    // Every number here is a world unit, laid out exactly as the browser build
+    // lays it out inside the camera transform. The whole plate sits BELOW the
+    // flower centre.
+    bar.centreX = screen.x;
+    bar.top = screen.y + (kPlayerBaseRadius * size + 24.0) * bar.zoom;
+    bar.left = screen.x - 30.0 * bar.zoom;
+    bar.right = screen.x + 30.0 * bar.zoom;
+    bar.width = 60.0 * bar.zoom;
+    bar.height = 8.0 * bar.zoom;
+    return bar;
+}
+
+/// The dark backing every bar in this slot is punched out of: one unit proud
+/// of the fill on every side, which is what leaves the rim the pill rides in.
+void plateBarBack(Path2D& path, const PlateBar& bar) {
+    path.roundRect(static_cast<float>(bar.centreX - 31.0 * bar.zoom),
+                   static_cast<float>(bar.top - bar.zoom), static_cast<float>(62.0 * bar.zoom),
+                   static_cast<float>(10.0 * bar.zoom), static_cast<float>(5.0 * bar.zoom));
+}
+
+void WorldRenderer::drawSelfManaBar(Canvas& canvas, const RemoteEntity& entity,
+                                    const Camera& camera, Vec2 at) const {
+    // No pool, no bar. Most flowers wear nothing that grants one, and an empty
+    // strip under the body on every one of them is furniture that says only
+    // "this game has mana in it".
+    if (selfState_ == nullptr || !(selfState_->maxMana > 0.0)) return;
+
+    // NOT gated on options.healthBars. That option is about reading OTHER
+    // bodies -- a stranger's flower, a mob's -- and this is the viewer's own
+    // resource readout, the one thing in this slot they cannot get anywhere
+    // else now that it is off the HUD.
+    const PlateBar bar = plateBar(playerSizeMultiplier(entity), camera, at);
+    const double fraction = clamp(selfState_->mana / selfState_->maxMana, 0.0, 1.0);
+    const double fillWidth = bar.width * fraction;
+
+    // Punched rather than stacked, under one alpha, exactly as the health bar
+    // in this slot is: laying a fill over a plate blends both twice.
+    canvas.save();
+    canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
+
+    const auto fillRect = [&](Path2D& path) {
+        path.roundRect(static_cast<float>(bar.left), static_cast<float>(bar.top),
+                       static_cast<float>(fillWidth), static_cast<float>(bar.height),
+                       static_cast<float>(bar.height * 0.5));
+    };
+
+    Path2D plate;
+    plateBarBack(plate, bar);
+    if (fillWidth > 0) fillRect(plate);
+    ui::setFill(canvas, ui::kHealthBack);
+    canvas.fill(plate, fillWidth > 0 ? "evenodd" : "nonzero");
+
+    if (fillWidth > 0) {
+        Path2D fill;
+        fillRect(fill);
+        // The cyan petals.json paints every magic petal in, so the bar and the
+        // petals that feed it read as one thing.
+        ui::setFill(canvas, ui::kMana);
+        canvas.fill(fill);
+    }
+
+    canvas.restore();
+}
+
 void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
                                     const Camera& camera, Vec2 at, double timeSeconds) const {
-    const double zoom = camera.zoom();
-    const Vec2 screen = camera.worldToScreen(at);
-    const double size = playerSizeMultiplier(entity);
-    // Every number below is a world unit, laid out exactly as the browser
-    // build lays it out inside the camera transform. The whole plate sits
-    // BELOW the flower centre.
-    const double barY = screen.y + (kPlayerBaseRadius * size + 24.0) * zoom;
-    const double left = screen.x - 30.0 * zoom;
-    const double right = screen.x + 30.0 * zoom;
+    const PlateBar bar = plateBar(playerSizeMultiplier(entity), camera, at);
+    const double zoom = bar.zoom;
+    const double barY = bar.top;
+    const double left = bar.left;
+    const double right = bar.right;
 
     if (options.names) {
         ui::TextStyle style;
@@ -1559,8 +1641,8 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // pill riding inside it is the SHIELD, and the dark plate past the
         // fill is health that is gone. A MOB's bar is the plain two-zone one;
         // only flowers wear a pill, and only while a shield is up.
-        const double width = 60.0 * zoom;
-        const double height = 8.0 * zoom;
+        const double width = bar.width;
+        const double height = bar.height;
         // One eighth of the bar, which is the rim the HUD's own pill sits in.
         const double inset = zoom;
         const double innerHeight = height - inset * 2.0;
@@ -1591,9 +1673,7 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         canvas.setGlobalAlpha(static_cast<float>(ui::kHudLayerAlpha));
 
         Path2D plate;
-        plate.roundRect(static_cast<float>(screen.x - 31.0 * zoom),
-                        static_cast<float>(barY - zoom), static_cast<float>(62.0 * zoom),
-                        static_cast<float>(10.0 * zoom), static_cast<float>(5.0 * zoom));
+        plateBarBack(plate, bar);
         if (hasHealth) healthRect(plate);
         ui::setFill(canvas, ui::kHealthBack);
         canvas.fill(plate, hasHealth ? "evenodd" : "nonzero");
@@ -2654,7 +2734,8 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             //
             // The plate goes down first so a grown flower paints over the top
             // of its own name rather than the other way round.
-            if (!entity.isSelf()) drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
+            if (entity.isSelf()) drawSelfManaBar(canvas, entity, camera, at);
+            else drawPlayerPlate(canvas, entity, camera, at, timeSeconds);
             drawFlower(canvas, entity, camera, at, timeSeconds);
             break;
 

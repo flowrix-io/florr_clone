@@ -29,6 +29,9 @@ inline constexpr std::uint32_t kWarning    = 0xFFE65Du;
 inline constexpr std::uint32_t kHealth     = 0x67D42Cu;
 inline constexpr std::uint32_t kHealthBack = 0x000000u;
 inline constexpr std::uint32_t kXpBar      = 0xECF857u;
+/// The mana bar, in the cyan petals.json paints every magic petal: the
+/// resource and the petals that feed it have to read as one thing.
+inline constexpr std::uint32_t kMana       = 0x42E3F5u;
 /// The boss bar's track is the one dark plate that is NOT ink: a charcoal
 /// pill, which the same decode puts at 28 on all three channels.
 inline constexpr std::uint32_t kBossTrack  = 0x1C1C1Cu;

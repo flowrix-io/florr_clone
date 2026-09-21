@@ -45,17 +45,9 @@ constexpr double kHudXpHeight = 12.0;
 /// Centred under the health bar rather than sharing its left edge.
 constexpr double kHudXpX = kHudBarX + (kHudBarWidth - kHudXpWidth) * 0.5;
 constexpr double kHudXpY = kHudHealthY + kHudBarHeight + 12.0;   // 134
-/// The mana bar: the same strip as the XP bar, tucked under it, and drawn only
-/// while something on the loadout grants a pool. It is NOT given a permanent
-/// slot in the layout -- a bar that is there and empty on every flower that
-/// has never worn a magic petal is a bar the player learns to ignore.
-constexpr double kHudManaWidth = kHudXpWidth;
-constexpr double kHudManaHeight = kHudXpHeight;
-constexpr double kHudManaX = kHudXpX;
-constexpr double kHudManaY = kHudXpY + kHudXpHeight + 10.0;   // 156
-/// petals.json paints every magic petal in this cyan; the bar is the same one,
-/// so the resource and the petals that feed it read as one thing.
-constexpr std::uint32_t kHudMana = 0x42E3F5u;
+/// The mana bar is NOT here. It stands in the slot the viewer's own health
+/// bar used to occupy, under the flower itself -- WorldRenderer::drawSelfManaBar
+/// -- which is why this block goes straight from the XP bar to the avatar.
 /// How far the black plate of a bar stands out past its fill, and how far the
 /// white health pill is inset inside the track it rides in.
 constexpr double kHudPlatePad = 6.0;
@@ -363,23 +355,6 @@ void App::drawHud(Canvas& canvas, double time) {
                        formatNumber(progress.xpForNext, true)
                  : "Lvl " + std::to_string(progress.level),
          kHudXpX + kHudXpWidth * 0.5, kHudXpY + kHudXpHeight * 0.5, levelLabel);
-
-    if (self.maxMana > 0.0) {
-        const double mana = clamp(self.mana, 0.0, self.maxMana);
-        hudBar(canvas, kHudManaX, kHudManaY, kHudManaWidth, kHudManaHeight,
-               mana / self.maxMana * kHudManaWidth, kHudMana, kHudXpPad);
-        TextStyle manaLabel = label;
-        manaLabel.size = kHudLevelSize;
-        manaLabel.strokeWidth = 3.0;
-        // The word, not the numbers, for the same reason the health bar shows
-        // a name: a resource bar is read as a level, and ALT is where every
-        // other exact figure on this surface already lives.
-        text(canvas,
-             altHeld ? formatNumber(std::floor(mana), true) + "/" +
-                           formatNumber(self.maxMana, true)
-                     : "Mana",
-             kHudManaX + kHudManaWidth * 0.5, kHudManaY + kHudManaHeight * 0.5, manaLabel);
-    }
 
     // The flower goes down LAST, so it covers the rounded left cap of the
     // health bar. Drawing it first would leave a black stub poking out of it.

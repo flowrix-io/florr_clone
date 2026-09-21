@@ -177,6 +177,12 @@ public:
     /// speaks and no bubble is drawn.
     void setChatBubbles(const ChatBubbles* bubbles) { chatBubbles_ = bubbles; }
 
+    /// The viewer's own authoritative state, for the one piece of furniture
+    /// under a flower that is drawn from the snapshot's self block rather than
+    /// from a replicated body: the mana bar. Optional -- a tool, a replay or a
+    /// preview has no self and draws no bar.
+    void setSelfState(const SelfState* self) { selfState_ = self; }
+
     /// The published skin catalog a wearer's id is resolved against, borrowed
     /// from NetClient. Optional: without it -- a tool, a test, a replay -- a
     /// flower wearing a custom skin falls back to the default body, which is
@@ -357,6 +363,12 @@ private:
     /// so a grown flower paints over its own plate rather than under it.
     void drawPlayerPlate(Canvas&, const RemoteEntity&, const Camera&, Vec2 at,
                          double timeSeconds) const;
+    /// The mana bar, in the slot the viewer's own health bar used to occupy.
+    ///
+    /// Only the viewer's own flower has one, because mana is not replicated
+    /// for anybody else, and only that flower has the slot free: every other
+    /// flower still wears its plate there.
+    void drawSelfManaBar(Canvas&, const RemoteEntity&, const Camera&, Vec2 at) const;
     void drawCorpse(Canvas&, const RemoteEntity&, const Camera&, Vec2 at, double timeSeconds) const;
     /// Every live bubble, over the flower that said it. Drawn last of all, on
     /// top of the whole world: a line somebody is saying must not end up
@@ -393,6 +405,7 @@ private:
     const SpriteCache* sprites_ = nullptr;
     const std::vector<CustomSkin>* skinCatalog_ = nullptr;
     const ChatBubbles* chatBubbles_ = nullptr;
+    const SelfState* selfState_ = nullptr;
     const Terrain* terrain_ = nullptr;
     const WorldMaps* worldMaps_ = nullptr;
     const MapData* map_ = nullptr;
