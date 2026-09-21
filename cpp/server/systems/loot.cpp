@@ -66,7 +66,8 @@ bool DropTables::load(const ContentRegistry& content, const std::string& path, s
             source.petalId = itemId;
             // Anything not explicitly a consumable is a petal, which is how the
             // reference reads the field. Every row is kept whatever its kind:
-            // the row list is the weighted denominator above uncommon.
+            // the row list is what the mob HAS, and above common a mob leaves
+            // one of everything it has.
             source.kind = type == "consumable" ? Kind::Consumable
                           : itemId == "random" ? Kind::RandomPetal
                                                : Kind::Petal;
@@ -132,9 +133,9 @@ void DropTables::resolve(const ContentRegistry& content) {
         Entry resolved;
         // A row whose item this build cannot hand out -- a consumable, the
         // Random sentinel, an id the petal registry does not know -- still
-        // belongs in the table. Above uncommon it is a weight and below it an
-        // independent roll; only the payout is missing, and kNoPetal is
-        // already what spawnDrop treats as "nothing".
+        // belongs in the table: on a common mob it is an independent roll and
+        // above one it is a guaranteed drop. Only the payout is missing, and
+        // kNoPetal is already what spawnDrop treats as "nothing".
         resolved.kind = source.kind;
         resolved.petalIndex =
             source.kind == Kind::Petal ? content.petalIndex(source.petalId) : kNoPetal;
@@ -170,6 +171,40 @@ void DropTables::resolve(const ContentRegistry& content) {
         }
     }
 
+    // Above common every row pays out, so the authored habit of giving one
+    // petal two lines -- a common rose beside an uncommon one -- would leave
+    // two roses on the ground per kill. They are one drop TYPE, so they fold
+    // into one row here, once, rather than per corpse. Built after the egg
+    // pass above so a hand-authored egg row cannot come back as a second egg.
+    mergedByMob_.assign(byMob_.size(), std::vector<Entry>{});
+    for (std::size_t i = 0; i < byMob_.size(); ++i) {
+        std::vector<Entry>& merged = mergedByMob_[i];
+        for (const Entry& row : byMob_[i]) {
+            // Only a NAMED petal can collide. A consumable and the `random`
+            // sentinel both resolve to kNoPetal, and folding those together
+            // would merge two unrelated rows -- sun drops two consumables.
+            Entry* into = nullptr;
+            if (row.kind == Kind::Petal && row.petalIndex != kNoPetal) {
+                for (Entry& candidate : merged) {
+                    if (candidate.kind == row.kind && candidate.petalIndex == row.petalIndex) {
+                        into = &candidate;
+                        break;
+                    }
+                }
+            }
+            if (into == nullptr) {
+                merged.push_back(row);
+                continue;
+            }
+            // The chance either authored line would have fired, which is what
+            // those two lines meant together before the merge.
+            into->probability = 1.0 - (1.0 - into->probability) * (1.0 - row.probability);
+            into->rarityOffset = std::max(into->rarityOffset, row.rarityOffset);
+            into->minCount = std::max(into->minCount, row.minCount);
+            into->maxCount = std::max(into->maxCount, row.maxCount);
+        }
+    }
+
     // What a `random` row may turn into. A property of the content rather than
     // of a kill, so it is derived here once: admin petals, the two cutters and
     // the eggs of mobs that never lay one are excluded however they are
@@ -198,6 +233,12 @@ const std::vector<DropTables::Entry>& DropTables::forMob(std::uint16_t mobIndex)
     return byMob_[mobIndex];
 }
 
+const std::vector<DropTables::Entry>& DropTables::guaranteedForMob(std::uint16_t mobIndex) const {
+    static const std::vector<Entry> kNothing;
+    if (mobIndex >= mergedByMob_.size()) return kNothing;
+    return mergedByMob_[mobIndex];
+}
+
 std::uint16_t DropTables::randomPetal(Rng& rng) const {
     if (droppable_.empty()) return basicPetal_;
     return droppable_[rng.below(static_cast<std::uint32_t>(droppable_.size()))];
@@ -207,39 +248,57 @@ std::uint16_t DropTables::randomPetal(Rng& rng) const {
 // Rolls
 // ---------------------------------------------------------------------------
 
-Rarity LootSystem::scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng) {
-    // Above uncommon, 90% of selected rows first become one tier below the
-    // mob; common and uncommon rows keep their authored table rarity.
-    if (rarityIndex(mobRarity) > rarityIndex(Rarity::Uncommon) && rng.chance(0.9)) {
-        return clampRarity(rarityIndex(mobRarity) - 1);
-    }
-    return authoredRarity;
+Rarity LootSystem::scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
+                                   Rng& rng) {
+    // A common mob has no tiers beneath it to slide down, so its rows keep the
+    // rarity the table authored them at and `probability` stays what it has
+    // always been there: the chance the row drops at all.
+    if (mobRarity == Rarity::Common) return authoredRarity;
+
+    // Above common the row is GUARANTEED, and its probability buys quality
+    // instead. Two independent holds, each kept with chance p: the drop lands
+    // at the mob's own tier with p^2, one below with 2p(1-p), two below with
+    // (1-p)^2. So a bee's pollen (0.8) is worth the bee's own tier two kills
+    // in three, while its stinger (0.3) comes out two tiers down about half
+    // the time and at full tier one kill in eleven -- you always get the
+    // stinger, just rarely a good one. The authored rarity is not consulted
+    // at all: above common a drop is graded against the mob that left it.
+    const double keep = clamp(probability, 0.0, 1.0);
+    int tier = rarityIndex(mobRarity);
+    if (!rng.chance(keep)) --tier;
+    if (!rng.chance(keep)) --tier;
+    return clampRarity(tier);
 }
 
 Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng) {
     Rarity base = baseRarity;
-    double upgrade = dropUpgradeChance(base);
-    if (mobRarity == Rarity::Ultra) upgrade *= 20.0;
-    upgrade = clamp(upgrade, 0.0, 1.0);
-    if (rng.chance(upgrade)) {
-        base = upgradeRarity(base);
-    } else if (rng.chance(dropDowngradeChance(base))) {
-        base = downgradeRarity(base);
+    if (mobRarity == Rarity::Common) {
+        // The one tier the band above cannot express. A common mob's row has
+        // nowhere to slide, so its only shot at something better is still the
+        // old mutually exclusive upgrade/downgrade roll.
+        if (rng.chance(dropUpgradeChance(base))) {
+            base = upgradeRarity(base);
+        } else if (rng.chance(dropDowngradeChance(base))) {
+            base = downgradeRarity(base);
+        }
+    } else if (mobRarity == Rarity::Ultra) {
+        // Ultra keeps its 20x lucky roll and is the only tier above common
+        // that rolls at all: everywhere else scaleDropRarity's band is the
+        // whole answer and the mob's own rarity is the ceiling.
+        if (rng.chance(clamp(dropUpgradeChance(base) * 20.0, 0.0, 1.0))) {
+            base = upgradeRarity(base);
+        }
     }
 
-    // Rare mobs floor at tier-1; epic and above floor at tier-2.
-    const int mobTier = rarityIndex(mobRarity);
-    if (mobTier >= rarityIndex(Rarity::Rare)) {
-        const int floor = mobTier >= rarityIndex(Rarity::Epic) ? mobTier - 2 : mobTier - 1;
-        if (rarityIndex(base) < floor) base = clampRarity(floor);
-    }
     // Apex mobs explicitly cap item rarity at unique.
     if (mobRarity == Rarity::Apex && base == Rarity::Apex) base = Rarity::Unique;
     return base;
 }
 
-Rarity LootSystem::rollDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng) {
-    return finishDropRarity(scaleDropRarity(authoredRarity, mobRarity, rng), mobRarity, rng);
+Rarity LootSystem::rollDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
+                                  Rng& rng) {
+    return finishDropRarity(scaleDropRarity(authoredRarity, mobRarity, probability, rng), mobRarity,
+                            rng);
 }
 
 bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner,
@@ -501,7 +560,11 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
             selectLootRecipients(ranked_, lootSlotsForRarity(mobRarity), squads, eligible_);
         }
 
-        const std::vector<DropTables::Entry>& table = tables_.forMob(mobIndex);
+        // A common mob rolls its authored rows one by one; everything above
+        // it leaves one of every drop it has, from the merged table.
+        const std::vector<DropTables::Entry>& table = mobRarity == Rarity::Common
+                                                          ? tables_.forMob(mobIndex)
+                                                          : tables_.guaranteedForMob(mobIndex);
 
         // Marked before a single drop is rolled: a corpse with an empty table
         // must be just as finished as one that paid out.
@@ -535,16 +598,17 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
 
         const int copies = mobRarity == Rarity::Apex ? 10 : 1;
         for (const DropTables::Entry* entry : selected_) {
-            // A consumable was rolled like any other row -- it is part of the
-            // weighted denominator, which is the only reason it is in the table
-            // at all -- but this inventory holds petals, so winning one means
-            // the mob left nothing.
+            // A consumable came through like any other row -- it is a drop
+            // this mob has, which is the only reason it is in the table at
+            // all -- but this inventory holds petals, so winning one means the
+            // mob left nothing.
             if (entry->kind == DropTables::Kind::Consumable) continue;
 
             // The mob's tier scale is rolled ONCE per winning row, upstream of
             // the copies: an apex batch shares one base rarity and its ten
             // items differ only by their own upgrade rolls.
-            const Rarity base = scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity, rng);
+            const Rarity base = scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity,
+                                                entry->probability, rng);
             for (int i = 0; i < copies; ++i) {
                 Rarity rarity = finishDropRarity(base, mobRarity, rng);
                 // The Random sentinel resolves per COPY, not per row.
@@ -578,30 +642,21 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
 void LootSystem::rollTable(const std::vector<DropTables::Entry>& table, Rarity mobRarity,
                            Rng& rng) {
     // Common mobs roll every row independently, so they can never beat the
-    // full set an unusual mob hands out.
+    // full set a rarer mob hands out -- and a common kill can still leave
+    // nothing at all.
     if (mobRarity == Rarity::Common) {
         for (const DropTables::Entry& entry : table) {
             if (rng.chance(entry.probability)) selected_.push_back(&entry);
         }
         return;
     }
-    if (mobRarity == Rarity::Uncommon) {
-        for (const DropTables::Entry& entry : table) selected_.push_back(&entry);
-        return;
-    }
 
-    // Above unusual the probabilities are WEIGHTS and exactly one row wins.
-    if (table.empty()) return;
-    double total = 0.0;
-    for (const auto& entry : table) total += entry.probability;
-    if (total <= 0.0) return;
-    double roll = rng.unit() * total;
-    const DropTables::Entry* chosen = &table.back();
-    for (const auto& entry : table) {
-        roll -= entry.probability;
-        if (roll <= 0.0) { chosen = &entry; break; }
-    }
-    selected_.push_back(chosen);
+    // Every mob above common leaves one of every drop it has. Nothing is
+    // rolled here: `probability` is spent in scaleDropRarity on the tier each
+    // one lands at, so a low-probability row is not a rare drop any more, it
+    // is a reliably WEAK one. The table handed in is the merged one, so two
+    // authored lines naming one petal are one drop rather than two.
+    for (const DropTables::Entry& entry : table) selected_.push_back(&entry);
 }
 
 } // namespace flix

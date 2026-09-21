@@ -1638,35 +1638,122 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     // authored table. Only an index off the end has no table at all.
     CHECK_EQ(tables.forMob(shipped().mobIndex("dust")).size(), std::size_t(1));
     CHECK(tables.forMob(kInvalidIndex).empty());
+    CHECK(tables.guaranteedForMob(kInvalidIndex).empty());
+
+    // The merged view is the same table with one row per drop TYPE. The
+    // ladybug authors its rose twice -- common 0.5 and uncommon 0.1 -- and a
+    // rare ladybug leaves one rose, not two.
+    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    CHECK_EQ(tables.forMob(ladybug).size(), std::size_t(4));
+    CHECK_EQ(tables.guaranteedForMob(ladybug).size(), std::size_t(3));
+    const std::uint16_t rose = shipped().petalIndex("rose");
+    int roseRows = 0;
+    double roseProbability = 0.0;
+    for (const DropTables::Entry& row : tables.guaranteedForMob(ladybug)) {
+        if (row.petalIndex != rose) continue;
+        ++roseRows;
+        roseProbability = row.probability;
+    }
+    CHECK_EQ(roseRows, 1);
+    // Either authored line firing: 1 - 0.5*0.9.
+    CHECK(std::abs(roseProbability - 0.55) < 1e-9);
+    // A mob whose rows name different items is untouched by the merge.
+    CHECK_EQ(tables.guaranteedForMob(shipped().mobIndex("bee")).size(), std::size_t(4));
 
     CHECK(tables.linkedTo(shipped()));
     tables.link(shipped());   // idempotent
     CHECK(tables.unresolved().empty());
 }
 
-TEST(drop_rarity_uses_authored_rows_for_common_and_uncommon_mobs) {
+TEST(drop_rarity_uses_authored_rows_for_common_mobs) {
+    // A common mob is the only one left that reads the authored rarity: there
+    // is no band beneath it to slide down, so the row drops where the table
+    // says, give or take the old upgrade/downgrade roll.
     Rng rng(31337);
     for (int i = 0; i < 40000; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, Rarity::Common, rng);
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, Rarity::Common, 0.5, rng);
         const int delta = rarityIndex(r) - rarityIndex(Rarity::Rare);
         CHECK(delta >= -1 && delta <= 1);
-        const Rarity uncommon =
-            LootSystem::rollDropRarity(Rarity::Common, Rarity::Uncommon, rng);
-        CHECK(rarityIndex(uncommon) >= rarityIndex(Rarity::Common));
-        CHECK(rarityIndex(uncommon) <= rarityIndex(Rarity::Uncommon));
     }
 }
 
-TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
+TEST(a_drop_lands_inside_its_mobs_own_band) {
+    // Above common the authored rarity is not consulted at all: the drop is
+    // graded against the mob, at its tier or one or two below.
     Rng rng(5);
-    for (int i = 0; i < 2000; ++i) {
-        const Rarity rare = LootSystem::rollDropRarity(Rarity::Common, Rarity::Rare, rng);
-        CHECK(rarityIndex(rare) >= rarityIndex(Rarity::Uncommon));
-        CHECK(rarityIndex(rare) <= rarityIndex(Rarity::Rare));
+    for (int tier = rarityIndex(Rarity::Uncommon); tier < kRarityCount; ++tier) {
+        const Rarity mob = clampRarity(tier);
+        if (mob == Rarity::Ultra) continue;   // the one tier allowed to exceed itself
+        for (int i = 0; i < 4000; ++i) {
+            const double probability = (i % 11) / 10.0;
+            const Rarity r = LootSystem::rollDropRarity(Rarity::Apex, mob, probability, rng);
+            CHECK(rarityIndex(r) >= std::max(0, tier - 2));
+            // Apex mobs cap their items at unique; everything else ceilings at
+            // the mob's own rarity.
+            CHECK(rarityIndex(r) <= (mob == Rarity::Apex ? rarityIndex(Rarity::Unique) : tier));
+        }
+    }
+}
 
-        const Rarity apex = LootSystem::rollDropRarity(Rarity::Apex, Rarity::Apex, rng);
-        CHECK(rarityIndex(apex) >= rarityIndex(Rarity::Super));
-        CHECK(rarityIndex(apex) <= rarityIndex(Rarity::Unique));
+TEST(probability_weights_the_band_and_nothing_else) {
+    Rng rng(777);
+    const auto band = [&](Rarity mob, double probability) {
+        std::array<int, 3> counts{};   // [same, -1, -2]
+        constexpr int kRuns = 200000;
+        for (int i = 0; i < kRuns; ++i) {
+            const int delta = rarityIndex(mob) -
+                              rarityIndex(LootSystem::rollDropRarity(Rarity::Common, mob,
+                                                                     probability, rng));
+            CHECK(delta >= 0 && delta <= 2);
+            if (delta >= 0 && delta <= 2) ++counts[static_cast<std::size_t>(delta)];
+        }
+        return std::array<double, 3>{counts[0] / double(kRuns), counts[1] / double(kRuns),
+                                     counts[2] / double(kRuns)};
+    };
+    const auto near = [](double got, double want) { return std::abs(got - want) < 0.01; };
+
+    // p^2 / 2p(1-p) / (1-p)^2, on a mob far enough up the ladder that nothing
+    // clamps at the bottom.
+    const std::array<double, 3> cheap = band(Rarity::Epic, 0.8);
+    CHECK(near(cheap[0], 0.64));
+    CHECK(near(cheap[1], 0.32));
+    CHECK(near(cheap[2], 0.04));
+
+    const std::array<double, 3> prized = band(Rarity::Epic, 0.3);
+    CHECK(near(prized[0], 0.09));
+    CHECK(near(prized[1], 0.42));
+    CHECK(near(prized[2], 0.49));
+
+    // A 1.0 row -- every egg, and a leafbug's leaf -- is always worth the
+    // mob's full tier, and a 0.0 row always the floor.
+    const std::array<double, 3> certain = band(Rarity::Legendary, 1.0);
+    CHECK(near(certain[0], 1.0));
+    const std::array<double, 3> dregs = band(Rarity::Legendary, 0.0);
+    CHECK(near(dregs[2], 1.0));
+
+    // An uncommon mob has one tier beneath it, so both demotions land on
+    // common: 1 - p^2 of the time.
+    const std::array<double, 3> shallow = band(Rarity::Uncommon, 0.5);
+    CHECK(near(shallow[0], 0.25));
+    CHECK(near(shallow[1], 0.75));
+    CHECK_EQ(int(shallow[2] * 1000), 0);
+}
+
+TEST(only_ultra_mobs_beat_their_own_rarity) {
+    Rng rng(99);
+    int above = 0;
+    for (int i = 0; i < 20000; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 1.0, rng);
+        CHECK(rarityIndex(r) >= rarityIndex(Rarity::Mythic));
+        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Super));
+        if (rarityIndex(r) > rarityIndex(Rarity::Ultra)) ++above;
+    }
+    // The 20x lucky roll survives; it is the only one that does.
+    CHECK(above > 0);
+
+    for (int i = 0; i < 20000; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Mythic, 1.0, rng);
+        CHECK_EQ(rarityIndex(r), rarityIndex(Rarity::Mythic));
     }
 }
 
@@ -1820,6 +1907,46 @@ TEST(common_mobs_roll_each_drop_row_at_most_once) {
         for (const Entity drop : liveDrops(world)) world.destroy(drop);
     }
     CHECK_EQ(mostSeen, rowCount);
+}
+
+TEST(every_mob_above_common_leaves_one_of_each_of_its_drops) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(15);
+
+    DropTables tables;
+    tables.link(shipped());
+    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+
+    // Rose, light and the generated egg. The ladybug authors its rose twice,
+    // so a mob that simply dropped every authored row would leave four items
+    // and two roses -- the merge is what makes "one of each" mean one.
+    std::vector<std::uint16_t> expected;
+    for (const DropTables::Entry& row : tables.guaranteedForMob(ladybug)) {
+        expected.push_back(row.petalIndex);
+    }
+    std::sort(expected.begin(), expected.end());
+    CHECK_EQ(expected.size(), std::size_t(3));
+
+    for (int tier = rarityIndex(Rarity::Uncommon); tier <= rarityIndex(Rarity::Mythic); ++tier) {
+        for (int i = 0; i < 20; ++i) {
+            makeCorpse(world, ladybug, clampRarity(tier), kCentre, player, {player});
+            loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+            commands.flush();
+
+            std::vector<std::uint16_t> got;
+            for (const Entity drop : liveDrops(world)) {
+                got.push_back(world.get<DropItem>(drop).configIndex);
+                world.destroy(drop);
+            }
+            std::sort(got.begin(), got.end());
+            CHECK(got == expected);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

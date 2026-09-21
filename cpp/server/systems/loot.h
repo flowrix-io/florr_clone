@@ -73,9 +73,9 @@ public:
     /// What one authored row hands out.
     ///
     /// A consumable has no native inventory slot and the `random` sentinel
-    /// names no petal at all, yet both stay in the table: above uncommon the
-    /// authored probabilities are WEIGHTS over the whole row list, so a row
-    /// removed at load time inflates the odds of every row that survives.
+    /// names no petal at all, yet both stay in the table: a row is a drop this
+    /// mob HAS, and above common every drop it has comes out. Dropping such a
+    /// row at load time would quietly shorten the mob's advertised table.
     enum class Kind : std::uint8_t {
         Petal = 0,     ///< `petalIndex` names the item outright
         RandomPetal,   ///< resolved per copy against droppablePetals()
@@ -85,7 +85,12 @@ public:
     struct Entry {
         std::uint16_t petalIndex = kNoPetal;
         Kind kind = Kind::Petal;
-        int rarityOffset = 0;  ///< authored rarity index (legacy field name)
+        /// Authored rarity index (legacy field name). Read only on a common
+        /// mob: above it a drop is graded against the mob that left it.
+        int rarityOffset = 0;
+        /// On a common mob, the chance the row drops at all. On every mob
+        /// above one the row always drops and this is its QUALITY instead --
+        /// see LootSystem::scaleDropRarity.
         double probability = 0.0;
         int minCount = 1;
         int maxCount = 1;
@@ -101,9 +106,19 @@ public:
 
     bool linkedTo(const ContentRegistry& content) const;
 
-    /// The table for a mob. Empty for a mob that drops nothing, and for an
-    /// index the content does not define.
+    /// The authored rows for a mob, one per line of JSON. Empty for a mob
+    /// that drops nothing, and for an index the content does not define.
+    /// This is the common-mob table: each row is an independent chance.
     const std::vector<Entry>& forMob(std::uint16_t mobIndex) const;
+
+    /// The same table with one row per drop TYPE, for every mob above common.
+    ///
+    /// Those mobs hand out every row they have, so the authored habit of
+    /// giving one petal two lines -- "rose common 0.5" beside "rose uncommon
+    /// 0.1", which used to be two independent chances at one item -- would
+    /// otherwise pay out two roses per kill. The lines merge into one drop
+    /// whose probability is the chance that either of them would have fired.
+    const std::vector<Entry>& guaranteedForMob(std::uint16_t mobIndex) const;
 
     /// Mob ids in the source table the loaded content does not define.
     const std::vector<std::string>& unresolved() const { return unresolved_; }
@@ -135,6 +150,7 @@ private:
 
     std::vector<SourceEntry> source_;
     std::vector<std::vector<Entry>> byMob_;
+    std::vector<std::vector<Entry>> mergedByMob_;
     std::vector<std::string> unresolved_;
     std::vector<std::uint16_t> droppable_;
     std::uint16_t basicPetal_ = kNoPetal;   ///< the fallback when nothing is droppable
@@ -195,17 +211,23 @@ public:
     Entity spawnDrop(World& world, std::uint16_t petalIndex, Rarity rarity, Vec2 position,
                      Realm realm, const std::vector<Entity>& eligible, double nowMillis);
 
-    /// Apply the TypeScript drop rarity pipeline to one authored table row.
-    static Rarity rollDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng);
+    /// Apply the whole drop rarity pipeline to one table row.
+    static Rarity rollDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
+                                 Rng& rng);
 
-    /// The first half of that pipeline: above uncommon, a 90% chance the row
-    /// drops at one tier below the MOB instead of its authored rarity. Rolled
-    /// once per winning row, upstream of the apex quantity loop, which is why
-    /// it is separable at all -- ten apex copies share one base rarity.
-    static Rarity scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng);
+    /// The first half of that pipeline: where in the mob's band the drop
+    /// lands. Above common the row's `probability` is spent here rather than
+    /// on whether it drops -- two independent holds at p each, so the item
+    /// comes out at the mob's own tier with p^2, one tier below with 2p(1-p)
+    /// and two below with (1-p)^2. Rolled once per winning row, upstream of
+    /// the apex quantity loop, which is why it is separable at all -- ten apex
+    /// copies share one base rarity.
+    static Rarity scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
+                                  Rng& rng);
 
-    /// The second half: the mutually exclusive upgrade/downgrade roll, the
-    /// mob's rarity floor and the apex item cap. Rolled per copy.
+    /// The second half, rolled per copy: a common mob's mutually exclusive
+    /// upgrade/downgrade roll, ultra's 20x lucky upgrade, and the apex item
+    /// cap. Every other tier's ceiling is the mob's own rarity.
     static Rarity finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng);
 
     /// Whether `player` may take this drop right now.
@@ -237,7 +259,9 @@ private:
     /// expiry. The push is not a nicety -- nothing resolves the spawn scatter.
     void maintainDrops(double dt, CommandBuffer& commands);
     void awardDeaths(World& world, const ContentRegistry& content, Rng& rng, double nowMillis);
-    /// One full pass of a mob's table into `selected_`.
+    /// One full pass of a mob's table into `selected_`. The caller picks
+    /// which table: the authored rows for a common mob, the merged one for
+    /// every mob above it, since those drop one of everything they have.
     void rollTable(const std::vector<DropTables::Entry>& table, Rarity mobRarity, Rng& rng);
 
     World* boundWorld_ = nullptr;

@@ -665,7 +665,7 @@
         "itemType": "wing",
         "rarity": "common",
         "probability": 0.5,
-        "minQuantity": 0,
+        "minQuantity": 1,
         "maxQuantity": 1
       },
       {
@@ -673,7 +673,7 @@
         "itemType": "bulb",
         "rarity": "common",
         "probability": 0.5,
-        "minQuantity": 0,
+        "minQuantity": 1,
         "maxQuantity": 1
       },
       {
@@ -681,7 +681,7 @@
         "itemType": "battery",
         "rarity": "common",
         "probability": 0.1,
-        "minQuantity": 0,
+        "minQuantity": 1,
         "maxQuantity": 1
       }
     ]
@@ -694,7 +694,15 @@
         "itemType": "battery",
         "rarity": "common",
         "probability": 0.8,
-        "minQuantity": 0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "magic_orb",
+        "rarity": "common",
+        "probability": 0.2,
+        "minQuantity": 1,
         "maxQuantity": 1
       }
     ]
@@ -926,7 +934,7 @@
         "rarity": "common",
         "probability": 0.5,
         "minQuantity": 1,
-        "maxQuantity": 0
+        "maxQuantity": 1
       }
     ]
   },
@@ -939,7 +947,7 @@
         "rarity": "common",
         "probability": 0.5,
         "minQuantity": 1,
-        "maxQuantity": 0
+        "maxQuantity": 1
       }
     ]
   },
@@ -952,7 +960,7 @@
         "rarity": "common",
         "probability": 0.5,
         "minQuantity": 1,
-        "maxQuantity": 0
+        "maxQuantity": 1
       }
     ]
   },
@@ -965,7 +973,7 @@
         "rarity": "common",
         "probability": 0.5,
         "minQuantity": 1,
-        "maxQuantity": 0
+        "maxQuantity": 1
       }
     ]
   },

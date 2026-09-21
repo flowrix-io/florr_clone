@@ -539,25 +539,28 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
     // -- running from something, standing on a drop -- and the claim is about
     // the controller, not about any single tick of any single bot.
     //
-    // MYTHIC, not rare and no longer legendary. A mob dropped on a bot that
-    // dies on the tick it lands is the claim, emphatically -- but it leaves
-    // nothing to measure: it is created, killed, marked Dead and reaped
+    // ULTRA, not rare and no longer legendary or mythic. A mob dropped on a
+    // bot that dies on the tick it lands is the claim, emphatically -- but it
+    // leaves nothing to measure: it is created, killed, marked Dead and reaped
     // inside the one tick the console spawned it in, so no observer between
     // ticks ever sees it and the staging below silently collects nothing.
     // That is what a rare always did, and what a legendary started doing once
     // this test ran against a thick population of name-seeded builds: with 70
-    // bots, three of twelve legendaries survived long enough to be seen.
-    // Mythic has the health to last a few seconds beside an apex flower, and
-    // its health dropping is the same statement made where it can be read.
-    // Deliberately not super or unique: those are boss tiers to the
-    // controller (isBotBossTier) and would rally the whole map.
+    // bots, three of twelve legendaries survived long enough to be seen. A
+    // mythic went the same way once every mob above common began leaving one
+    // of everything in its table (server/systems/loot.cpp): the bots farm the
+    // ground clear and gear up, and two of five mythics were gone before
+    // their own staging window closed. Ultra has the health to last a few
+    // seconds beside them, and its health dropping is the same statement made
+    // where it can be read. Deliberately not super or unique: those are boss
+    // tiers to the controller (isBotBossTier) and would rally the whole map.
     //
     // They are also picked out by WHAT and WHERE rather than by being new to
     // the world, because the world stocks itself now: mobs appear beside a bot
     // on their own the whole time this runs, and "everything that was not here
     // a moment ago" would be measuring the spawner.
     const std::uint16_t beetle = content().mobIndex("beetle");
-    constexpr Rarity kStagedTier = Rarity::Mythic;
+    constexpr Rarity kStagedTier = Rarity::Ultra;
     std::unordered_set<Entity> known;
     {
         Query<MobTag, MobType> mobs{world};
@@ -577,7 +580,7 @@ TEST(a_bot_fights_what_is_put_in_front_of_it) {
         if (!world.isAlive(bot) || world.has<Dead>(bot)) continue;
         const Vec2 at = world.get<Transform>(bot).position;
         const Vec2 spot = at + Vec2{90, 0};
-        adminSpawn(client, "beetle", "mythic", spot, 1);
+        adminSpawn(client, "beetle", rarityName(kStagedTier), spot, 1);
         // SLOWER THAN THE CONSOLE REFILLS, which is 2 commands a second
         // (server/session.cpp: kCommandRefillPerSecond) off a 12-deep bucket.
         // Five commands on consecutive ticks is four the server never reads,

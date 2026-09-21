@@ -972,18 +972,32 @@ TEST(a_player_squadded_with_a_bot_is_paid_for_what_the_bot_kills) {
     // put in front of them, which is the whole reason this is the test.
     const double before = world.get<PlayerProgress>(ownerBody).totalXp;
     adminSpawnAt(owner, "starfish", "uncommon", at);
-    CHECK(h.stepUntil({&owner}, [&] {
-        Query<DropTag, DropItem> drops{world};
-        return !drops.collect().empty();
-    }, 240));
-    Query<DropTag, DropItem> drops{world};
-    const std::vector<Entity> dropped = drops.collect();
-    CHECK(!dropped.empty());
-    if (dropped.empty()) return;
+
+    // Waited for and picked out BY NAME. Every mob above common leaves one of
+    // everything in its table now, so the zone's other bots keep the ground
+    // covered in their own kills and the first drop the query hands back is
+    // rarely this one.
+    const std::uint16_t starfishPetal = content().petalIndex("starfish");
+    const auto fromTheKill = [&] {
+        Entity found = NULL_ENTITY;
+        Query<DropTag, DropItem, Transform> drops{world};
+        drops.each([&](Entity e, DropTag&, DropItem& item, Transform& where) {
+            if (item.configIndex != starfishPetal) return;
+            // On this spot too: the +-50 spawn scatter is the whole distance a
+            // drop travels from the mob that left it.
+            if (distance(where.position, at) > 100.0) return;
+            found = e;
+        });
+        return found;
+    };
+    CHECK(h.stepUntil({&owner}, [&] { return fromTheKill() != NULL_ENTITY; }, 240));
+    const Entity dropped = fromTheKill();
+    CHECK(dropped != NULL_ENTITY);
+    if (dropped == NULL_ENTITY) return;
 
     // The player never touched it, and is on the reservation and paid the XP.
     const PlayerAccount& account = world.get<PlayerAccount>(ownerBody);
-    CHECK(claimed(world.get<DropItem>(dropped.front()).eligible, ownerBody, account.connection));
+    CHECK(claimed(world.get<DropItem>(dropped).eligible, ownerBody, account.connection));
     CHECK(world.get<PlayerProgress>(ownerBody).totalXp > before);
 }
 
