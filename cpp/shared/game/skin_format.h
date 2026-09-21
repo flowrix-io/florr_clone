@@ -24,12 +24,12 @@
 
 namespace flix {
 
-inline constexpr int kMaxSkinShapes = 24;
+inline constexpr int kMaxSkinShapes = 128;
 inline constexpr std::size_t kMaxSkinNameLen = 24;
 inline constexpr int kMaxPolyPoints = 16;
 /// Per author, not per server: the catalog is shared, so one player cannot
 /// fill it.
-inline constexpr int kMaxSkinsPerUser = 24;
+inline constexpr int kMaxSkinsPerUser = 64;
 
 /// Local-space bound. The flower body radius is ~25, so 64 leaves room for a
 /// skin that overhangs it without letting one cover the screen.
