@@ -482,6 +482,28 @@ struct PetalConfig {
     double passiveHeal = 0;     ///< per second, before rarity
     double burstShield = 0;
 
+    // --- mana ---------------------------------------------------------------
+    //
+    // The magic petals' own resource. A flower has no mana at all until
+    // something it is wearing grants a pool, which is why every figure here
+    // defaults to zero rather than to a base the game would have to subtract
+    // back out: a bar with no orb and no magic flower on it is not a flower
+    // with an empty pool, it is a flower with no pool.
+
+    /// Mana this petal adds to the wearer's POOL while it is equipped, before
+    /// rarity. Summed over the bar: two magic flowers are two pools' worth.
+    double baseMaxMana = 0;
+    /// Mana returned in one delivery, on the same charge-and-home path a rose
+    /// heals on. Before rarity.
+    double burstMana = 0;
+    double burstManaChargeMillis = 0;
+    /// Mana per second while equipped, before rarity. Summed over the bar.
+    double passiveMana = 0;
+    /// What one act of this petal COSTS. A shot that cannot be paid for is not
+    /// fired and the petal keeps its cooldown, so an unfuelled magic missile
+    /// sits in the ring rather than reloading forever.
+    double requiredMana = 0;
+
     /// Held at a fixed angle instead of orbiting. `has` distinguishes the
     /// petals pinned to 0 radians from the ones that simply orbit.
     bool hasFixedDirection = false;
@@ -613,6 +635,13 @@ struct PetalStats {
     double heal = 0;                    ///< burst heal per charge
     double healChargeMillis = 0;
     double passiveHealPerSecond = 0;
+    /// Mana added to the wearer's pool while this petal is worn, this tier.
+    double maxMana = 0;
+    double mana = 0;                    ///< burst mana per charge
+    double manaChargeMillis = 0;
+    double passiveManaPerSecond = 0;
+    /// What one act of this petal costs, this tier. See PetalConfig.
+    double requiredMana = 0;
     double knockback = 0;
     double shield = 0;
     double slowFactor = 1.0;
@@ -706,6 +735,34 @@ public:
     const std::vector<MobGroup>& mobGroups() const { return mobGroups_; }
     std::size_t mobGroupCount() const { return mobGroups_.size(); }
 
+    /// What this petal becomes in the hands of a flower wearing a magic orb,
+    /// or kInvalidIndex for a petal with no magic form.
+    ///
+    /// Derived from the ids at load rather than authored anywhere: a petal
+    /// called `magic_X` is the magic form of `X`. The one pairing the ids
+    /// cannot state is the orb itself, which is what a ROSE becomes -- the two
+    /// are the same petal on two different resources, a burst that charges in
+    /// orbit and flies home, healing in one case and refilling the pool in the
+    /// other. Adding a `magic_X` to petals.json is therefore all it takes to
+    /// make X convert.
+    std::uint16_t magicFormOf(std::uint16_t index) const {
+        return index < magicForm_.size() ? magicForm_[index] : kInvalidIndex;
+    }
+
+    /// Whether this petal is some other petal's magic form -- a petal that is
+    /// only ever OBTAINED by converting one, never dropped on its own.
+    bool isMagicForm(std::uint16_t index) const {
+        return index < magicSource_.size() && magicSource_[index] != kInvalidIndex;
+    }
+
+    /// The ordinary petal this one is the magic form OF, or kInvalidIndex.
+    /// The inverse of magicFormOf(), and what lets a surface that has measured
+    /// the ordinary petal reuse the measurement: a magic petal is the same
+    /// picture in another colour, down to the viewBox.
+    std::uint16_t magicSourceOf(std::uint16_t index) const {
+        return index < magicSource_.size() ? magicSource_[index] : kInvalidIndex;
+    }
+
     /// The group `id` names, or kInvalidIndex.
     std::uint16_t mobGroupIndex(const std::string& id) const;
 
@@ -721,6 +778,10 @@ private:
     std::unordered_map<std::string, std::uint16_t> mobIds_;
     std::unordered_map<std::string, std::uint16_t> petalIds_;
     std::vector<std::uint16_t> petalOrder_;
+    /// Petal index -> its magic form, or kInvalidIndex. See magicFormOf().
+    std::vector<std::uint16_t> magicForm_;
+    /// The reverse: a magic petal -> the ordinary one it is the form of.
+    std::vector<std::uint16_t> magicSource_;
     std::vector<std::string> warnings_;
     std::uint32_t hash_ = 0;
 

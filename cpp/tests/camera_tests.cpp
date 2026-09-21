@@ -97,11 +97,14 @@ Profile emptyBar(std::size_t count = static_cast<std::size_t>(kLoadoutActiveSlot
 double zoomOf(const Profile& p) { return loadoutCameraZoom(p, fixture().registry); }
 
 /// The multiplier a tier applies to the authored figure's distance from 1:
-/// the passive-modifier curve, 1x at common to 4x at unique, the same one
-/// the browser's getPetalStats used for cameraZoom.
+/// 4/3 per tier, geometric, so each upgrade widens the view by as much as the
+/// last one did. See petalZoomScale.
 double scaled(double authored, Rarity rarity) {
-    return 1.0 + (authored - 1.0) * petalModifierScale(rarity);
+    return 1.0 + (authored - 1.0) * petalZoomScale(rarity);
 }
+
+/// The floor loadoutCameraZoom applies after the scaling.
+constexpr double kZoomFloor = 0.3;
 
 } // namespace
 
@@ -133,22 +136,39 @@ TEST(two_of_them_show_the_better_one_and_never_stack) {
     // Two observers are one observer, not 0.85 squared.
     p.loadout[0] = slot("observer");
     CHECK_NEAR(zoomOf(p), 0.85, 1e-12);
-    // And the stronger tier wins whichever slot it sits in.
+    // And the stronger tier wins whichever slot it sits in. A unique antennae
+    // asks for more than the floor allows, so the floor is what it gets --
+    // still the better of the two, which is the rule under test.
     p.loadout[5] = slot("antennae", Rarity::Unique);
-    CHECK_NEAR(zoomOf(p), std::min(0.85, scaled(0.92, Rarity::Unique)), 1e-12);
+    CHECK(scaled(0.92, Rarity::Unique) < kZoomFloor);
+    CHECK_NEAR(zoomOf(p), kZoomFloor, 1e-12);
 }
 
-TEST(rarity_widens_the_view_on_the_passive_modifier_curve) {
+TEST(rarity_widens_the_view_by_four_thirds_a_tier) {
     if (!contentLoaded()) return;
     Profile p = emptyBar();
-    p.loadout[0] = slot("observer", Rarity::Unique);
-    // 1 + (0.85 - 1) * 4 = 0.40 at unique: a unique observer shows two and a
-    // half times the width a bare flower does.
-    CHECK_NEAR(zoomOf(p), 0.40, 1e-12);
-    CHECK_NEAR(zoomOf(p), scaled(0.85, Rarity::Unique), 1e-12);
-    p.loadout[0] = slot("antennae", Rarity::Apex);
-    CHECK_NEAR(zoomOf(p), scaled(0.92, Rarity::Apex), 1e-12);
-    CHECK(zoomOf(p) < 0.92);
+    // 1 + (0.85 - 1) * 4/3 = 0.80 at uncommon, and the step is the same
+    // PROPORTION of the gap every tier after it rather than the same slice of
+    // a linear ramp.
+    p.loadout[0] = slot("observer", Rarity::Uncommon);
+    CHECK_NEAR(zoomOf(p), 0.80, 1e-12);
+    p.loadout[0] = slot("observer", Rarity::Rare);
+    CHECK_NEAR(zoomOf(p), scaled(0.85, Rarity::Rare), 1e-12);
+    CHECK_NEAR(1.0 - zoomOf(p), (1.0 - 0.80) * 4.0 / 3.0, 1e-12);
+
+    // Every tier widens the view over the one below it, until the floor stops
+    // it -- and once there it stays, rather than turning back round through
+    // zero into a camera zoomed all the way in.
+    double previous = 1.0;
+    for (int i = 0; i < kRarityCount; ++i) {
+        p.loadout[0] = slot("antennae", static_cast<Rarity>(i));
+        const double zoom = zoomOf(p);
+        const double asked = scaled(0.92, static_cast<Rarity>(i));
+        CHECK_NEAR(zoom, std::max(kZoomFloor, asked), 1e-12);
+        if (asked > kZoomFloor) CHECK(zoom < previous);
+        else CHECK_NEAR(zoom, kZoomFloor, 1e-12);
+        previous = zoom;
+    }
 }
 
 TEST(the_view_is_floored_where_the_browser_floored_it) {
@@ -159,9 +179,16 @@ TEST(the_view_is_floored_where_the_browser_floored_it) {
     p.loadout[0] = slot("scope", Rarity::Apex);
     CHECK(scaled(0.1, Rarity::Apex) < 0.0);
     CHECK_NEAR(zoomOf(p), 0.3, 1e-12);
-    // The shipped observer never reaches the floor at any tier.
-    p.loadout[0] = slot("observer", Rarity::Apex);
+    // On the geometric ladder the observer reaches the floor too, and that is
+    // what the floor is FOR: a petal authored 0.15 off 1 runs through zero
+    // partway up a curve that multiplies its distance from 1 nine times over.
+    // Mythic is the last tier it asks for anything the floor allows.
+    p.loadout[0] = slot("observer", Rarity::Mythic);
     CHECK(zoomOf(p) > 0.3);
+    p.loadout[0] = slot("observer", Rarity::Ultra);
+    CHECK_NEAR(zoomOf(p), 0.3, 1e-12);
+    p.loadout[0] = slot("observer", Rarity::Apex);
+    CHECK_NEAR(zoomOf(p), 0.3, 1e-12);
 }
 
 TEST(storage_grants_no_zoom) {

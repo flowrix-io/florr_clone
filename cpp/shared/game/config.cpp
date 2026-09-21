@@ -770,6 +770,12 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.passiveHeal = ctx.range(src, "passiveHeal", 0.0, 0.0, kMaxBaseStat);
     p.burstShield = ctx.range(src, "burstShield", 0.0, 0.0, kMaxBaseStat);
 
+    p.baseMaxMana = ctx.range(src, "baseMaxMana", 0.0, 0.0, kMaxBaseStat);
+    p.burstMana = ctx.range(src, "burstMana", 0.0, 0.0, kMaxBaseStat);
+    p.burstManaChargeMillis = ctx.range(src, "burstManaChargeMs", 0.0, 0.0, kMaxDurationMillis);
+    p.passiveMana = ctx.range(src, "passiveMana", 0.0, 0.0, kMaxBaseStat);
+    p.requiredMana = ctx.range(src, "requiredMana", 0.0, 0.0, kMaxBaseStat);
+
     if (src.contains("fixedDirection")) {
         p.hasFixedDirection = true;
         p.fixedDirection = wrapAngle(ctx.range(src, "fixedDirection", 0.0, -1e4, 1e4));
@@ -1160,6 +1166,25 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     mobIds_ = std::move(mobIds);
     petalIds_ = std::move(petalIds);
     petalOrder_ = std::move(petalOrder);
+
+    // The magic conversion table, built once here rather than looked up per
+    // drop: a mob dying is a hot path and this is a straight index.
+    magicForm_.assign(petals_.size(), kInvalidIndex);
+    magicSource_.assign(petals_.size(), kInvalidIndex);
+    {
+        const std::string prefix = "magic_";
+        for (std::size_t i = 0; i < petals_.size(); ++i) {
+            const std::string& id = petals_[i].id;
+            if (id.compare(0, prefix.size(), prefix) != 0) continue;
+            // See ContentRegistry::magicFormOf for why the orb is the one
+            // pairing that is spelled out instead of derived.
+            const std::string base = id == "magic_orb" ? "rose" : id.substr(prefix.size());
+            const auto found = petalIds_.find(base);
+            if (found == petalIds_.end()) continue;
+            magicForm_[found->second] = static_cast<std::uint16_t>(i);
+            magicSource_[i] = found->second;
+        }
+    }
     warnings_ = std::move(warnings);
     hash_ = hash;
     errorOut.clear();
@@ -1294,6 +1319,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     const double stat = petalStatScale(tier);
     const double heal = petalHealScale(tier);
     const double modifier = petalModifierScale(tier);
+    const double mana = petalManaScale(tier);
 
     PetalStats s;
     s.damage = c.damage * stat;
@@ -1315,7 +1341,10 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
         s.reloadMillis = 512000.0 / std::pow(2.0, rarityIndex(tier));
     } else if (c.id == "lightning") {
         s.health = 10.0;
-    } else if (c.id == "bubble") {
+    } else if (c.id == "bubble" || c.id == "magic_bubble") {
+        // The magic bubble is a bubble with a mana price, and it pays the same
+        // shortening reload: two petals that pop the same way must not read as
+        // two different rules to the player wearing both.
         s.reloadMillis *= std::pow(0.85, rarityIndex(tier));
         s.reloadMillis = std::max(50.0, s.reloadMillis);
     }
@@ -1333,6 +1362,15 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.heal = c.burstHeal * heal;
     s.healChargeMillis = c.burstHealChargeMillis;
     s.passiveHealPerSecond = c.passiveHeal * heal;
+    // One ladder for the whole resource, doubling per tier -- see
+    // petalManaScale. The cost of a cast is on it too, a few lines down, which
+    // is what keeps an all-one-tier magic kit casting at the rate it cast at
+    // the tier below.
+    s.maxMana = c.baseMaxMana * mana;
+    s.mana = c.burstMana * mana;
+    s.manaChargeMillis = c.burstManaChargeMillis;
+    s.passiveManaPerSecond = c.passiveMana * mana;
+    s.requiredMana = c.requiredMana * mana;
     // TypeScript keeps ordinary petal knockback flat across rarities. Jelly is
     // the one intentional exception: its per-rarity values are literal
     // overrides in petals.ts, not another copy of the damage multiplier.
@@ -1378,7 +1416,9 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
         s.count = c.id == "light" ? kLightCount[t] : kPollenCount[t];
     }
     s.breakable = c.breakable;
-    s.cameraZoom = scaledMultiplier(c.cameraZoom, modifier);
+    // Geometric, not the passive-modifier curve the rest of this block takes:
+    // see petalZoomScale.
+    s.cameraZoom = scaledMultiplier(c.cameraZoom, petalZoomScale(tier));
 
     s.modifiers = c.modifiers;
     s.modifiers.maxHealth = scaledMultiplier(c.modifiers.maxHealth, modifier);

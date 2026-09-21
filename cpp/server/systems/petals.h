@@ -239,6 +239,12 @@ private:
     void tickArmorStacks(World& world, Entity player, const Aggregate& aggregate, double dt);
     void applyPassiveHeal(World& world, Entity player, const Aggregate& aggregate,
                           double nowMillis, double dt);
+    /// Resize the flower's mana pool to what the bar now grants and run this
+    /// tick's regeneration. Called every tick, including on a bar with no
+    /// magic petal on it at all: that is how a pool DISAPPEARS when the orb
+    /// comes off, which is the half a version that only ever grew the pool
+    /// would get wrong.
+    void updateManaPool(World& world, Entity player, const Aggregate& aggregate, double dt);
     void updateRing(World& world, Entity player, const Aggregate& aggregate, double dt);
     /// Step every one of the player's petals: where its orbit point is, which
     /// mob (if any) has captured it, and the spring or glide that carries it

@@ -70,6 +70,12 @@ constexpr std::size_t kMaxDyingMobs = 64;
 constexpr std::size_t kMaxDyingDrops = 64;
 constexpr std::size_t kMaxMobShadows = 1024;
 
+/// How far an upright mob's body must travel in a frame before its eyes read
+/// the step as a heading, squared. A mob walks on the order of a world unit
+/// per frame, so a hundredth of one is comfortably below travel and above the
+/// wobble a played-back position carries while a mob stands still.
+constexpr double kMobEyeStepEpsilonSq = 1e-4;
+
 /// The window the browser build's server averages a dummy's DPS over.
 constexpr double kDpsWindowSeconds = 10.0;
 
@@ -2177,22 +2183,44 @@ void WorldRenderer::drawHitbox(Canvas& canvas, const RemoteEntity& entity, const
                         static_cast<float>(radius));
 }
 
-Vec2 WorldRenderer::mobEye(std::uint32_t netId, double angle) const {
+Vec2 WorldRenderer::mobEye(const MobDraw& mob) const {
+    const MobConfig* config = content_ ? &content_->mob(mob.typeIndex) : nullptr;
+    const bool upright = config != nullptr && config->hideRotation;
+    const auto entry = mobEyes_.emplace(mob.netId, MobEye{});
+    MobEye& state = entry.first->second;
+    const bool first = entry.second;
+
+    double look = mob.angle;
+    if (upright) {
+        // The body is drawn facing nowhere, so the heading comes out of its
+        // motion. Smoothed before it is read as a direction: a mob's drawn
+        // position is played back from snapshot samples, so any single frame's
+        // step is as likely to be playback jitter as it is to be travel. Below
+        // the threshold the last heading is held rather than replaced -- a mob
+        // that stops has not turned to face east, and one that walked off
+        // screen and back has not either.
+        if (!first) {
+            state.step += ((mob.position - state.lastPosition) - state.step) * 0.2;
+            if (state.step.lengthSq() > kMobEyeStepEpsilonSq) state.heading = state.step.angle();
+        }
+        look = state.heading;
+    }
+    state.lastPosition = mob.position;
+
     // A fixed fraction per FRAME, exactly as the browser build eases it -- the
     // eye of a flower-shaped mob is the only thing showing where it is headed,
     // and easing it per second instead changes how it tracks at any other
     // refresh rate.
-    const Vec2 target{std::cos(angle) * 2.0, std::sin(angle) * 4.4};
-    const auto it = mobEyes_.find(netId);
-    if (it == mobEyes_.end()) {
+    const Vec2 target{std::cos(look) * 2.0, std::sin(look) * 4.4};
+    if (first) {
         // First sight starts ON target: a mob popping in should not roll its
         // eyes into place from the origin.
-        mobEyes_[netId] = target;
+        state.offset = target;
         return target;
     }
-    it->second.x += (target.x - it->second.x) * 0.15;
-    it->second.y += (target.y - it->second.y) * 0.15;
-    return it->second;
+    state.offset.x += (target.x - state.offset.x) * 0.15;
+    state.offset.y += (target.y - state.offset.y) * 0.15;
+    return state.offset;
 }
 
 const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
@@ -2249,7 +2277,7 @@ void WorldRenderer::drawDiggerMob(Canvas& canvas, const MobDraw& mob, double rad
 
     canvas.save();
     canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-    const Vec2 eye = mobEye(mob.netId, mob.angle);
+    const Vec2 eye = mobEye(mob);
     // EquipCutter, so the blade is drawn by the one painter a player's flower
     // uses: the digger carries the same object and must not drift from it.
     drawFace(canvas, FaceSquareEyes, EquipCutter, eye.x, eye.y, 14.5, timeSeconds,
@@ -2269,7 +2297,7 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         const double scale = radius / kFlowerArtRadius;
         canvas.save();
         canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-        const Vec2 eye = mobEye(mob.netId, mob.angle);
+        const Vec2 eye = mobEye(mob);
         drawFace(canvas, FaceSquareEyes, EquipNone, eye.x, eye.y, 14.5, timeSeconds,
                  kPetalRingBodyColor);
         canvas.restore();

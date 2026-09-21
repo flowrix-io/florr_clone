@@ -54,6 +54,8 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     const Vec2 selfVelocity = reader.position();
     const double health = reader.f32();
     const double maxHealth = reader.f32();
+    const double mana = reader.f32();
+    const double maxMana = reader.f32();
     const double totalXp = reader.f64();
     const int level = reader.u16();
     const double stars = reader.f64();
@@ -230,6 +232,8 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     self_.velocity = selfVelocity;
     self_.health = health;
     self_.maxHealth = maxHealth;
+    self_.mana = mana;
+    self_.maxMana = maxMana;
     self_.totalXp = totalXp;
     self_.level = level;
     self_.stars = stars;

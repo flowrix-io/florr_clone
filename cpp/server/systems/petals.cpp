@@ -281,6 +281,41 @@ double slotHealthFraction(World& world, const PetalSlotState::Slot& state,
     return clamp(standing / (stats.health * count), 0.0, 1.0);
 }
 
+/// Pays `cost` out of the flower's pool, all of it or none of it.
+///
+/// All-or-none because a cast is: a missile that took what mana there was and
+/// flew anyway is a petal with no cost, and one that took the mana and did not
+/// fly is a petal that eats the pool. The caller acts only on true.
+bool spendMana(World& world, Entity player, double cost) {
+    if (!(cost > 0.0)) return true;
+    ManaPool* pool = world.tryGet<ManaPool>(player);
+    if (pool == nullptr || pool->current < cost) return false;
+    pool->current -= cost;
+    return true;
+}
+
+/// Whether the flower could pay `cost` right now, without taking it.
+///
+/// Separate from spendMana because a volley is charged only once it has really
+/// left: the test decides whether to TRY, the payment is made after the shot
+/// exists. Collapsing the two would bill a magic missile for a volley that
+/// degenerate content refused to fire.
+bool canAffordMana(World& world, Entity player, double cost) {
+    if (!(cost > 0.0)) return true;
+    const ManaPool* pool = world.tryGet<ManaPool>(player);
+    return pool != nullptr && pool->canAfford(cost);
+}
+
+/// Puts `amount` back, up to the pool's ceiling. Silently does nothing on a
+/// flower with no pool -- an orb worn without anything granting one restores
+/// mana into a bar that cannot hold it.
+void restoreMana(World& world, Entity player, double amount) {
+    if (!(amount > 0.0)) return;
+    ManaPool* pool = world.tryGet<ManaPool>(player);
+    if (pool == nullptr || pool->max <= 0.0) return;
+    pool->current = std::min(pool->max, pool->current + amount);
+}
+
 void healPlayer(World& world, Entity player, double amount, double nowMillis) {
     if (amount <= 0.0) return;
     // A dandelion's lockout. Asked here rather than at each caller -- the
@@ -387,6 +422,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
         tickArmorStacks(world, player, aggregate, dt);
         applyPassiveHeal(world, player, aggregate, nowMillis, dt);
+        updateManaPool(world, player, aggregate, dt);
         applyRaindropAura(world, registry, player, world.get<PetalSlotState>(player), aggregate,
                           nowMillis);
         strikeWornLightning(world, registry, player, nowMillis);
@@ -976,6 +1012,14 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.aggroRadiusBonus += mods.aggroRadius;
             aggregate.modifiers.petalAttractionRadius += mods.petalAttractionRadius;
             aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
+            // Summed, not maximised: an orb and a magic flower are two
+            // grants of pool, and two orbs are two of them. Mana is the one
+            // thing a magic build spends, so stacking the supply is the
+            // decision the bar is there to make -- unlike lotus's poison
+            // armour just below, which is a threshold a second copy cannot
+            // raise.
+            aggregate.modifiers.maxMana += stats.maxMana;
+            aggregate.modifiers.passiveManaPerSecond += stats.passiveManaPerSecond;
             aggregate.modifiers.poisonArmor =
                 std::max(aggregate.modifiers.poisonArmor, mods.poisonArmor);
             // Root, maximised for the reason lotus is: the stacks are the
@@ -1101,6 +1145,37 @@ void PetalSystem::applyPassiveHeal(World& world, Entity player, const Aggregate&
     // already summed every slot's contribution, and healing again per instance
     // would pay a clump its bonus `count` times.
     healPlayer(world, player, aggregate.modifiers.passiveHealPerSecond * dt, nowMillis);
+}
+
+void PetalSystem::updateManaPool(World& world, Entity player, const Aggregate& aggregate,
+                                 double dt) {
+    const double max = std::max(0.0, aggregate.modifiers.maxMana);
+    ManaPool* pool = world.tryGet<ManaPool>(player);
+    // Nothing on the bar grants a pool and the flower has never carried one:
+    // the overwhelmingly common case, and it must not put a component on every
+    // flower in the world just to write a zero into it.
+    if (pool == nullptr && max <= 0.0) return;
+    if (pool == nullptr) {
+        // A flower's FIRST pool arrives full. The petal granting it has to be
+        // worn to grant it, so a bar that has just had an orb put on it is one
+        // the player means to cast from; an empty pool would make the first
+        // thing a magic kit does be a twenty-second wait.
+        //
+        // The component's existence is what makes this once-ever rather than
+        // once-per-equip: taking the orb off drops `max` to zero and spills
+        // what was in the pool, and putting it back on refills nothing. A
+        // version keyed on `max` rising from zero would make the refill a
+        // two-keystroke loop.
+        pool = &world.ensure<ManaPool>(player);
+        pool->current = max;
+    }
+
+    pool->max = max;
+    pool->current += aggregate.modifiers.passiveManaPerSecond * dt;
+    // Clamped DOWN as well as up: taking a magic flower off shrinks the pool,
+    // and mana it can no longer hold is spilled rather than banked against the
+    // next time one goes on.
+    pool->current = clamp(pool->current, 0.0, pool->max);
 }
 
 void PetalSystem::updateRing(World& world, Entity player, const Aggregate& aggregate, double dt) {
@@ -1491,7 +1566,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
 
         // Rose and shell charge in orbit, fly home only when useful, deliver
         // on body contact, and are consumed into the normal reload path.
-        if (stats.heal > 0.0 || stats.shield > 0.0) {
+        if (stats.heal > 0.0 || stats.shield > 0.0 || stats.mana > 0.0) {
             // Re-read per petal rather than held across the loop: raising a
             // corpse moves that flower into the living archetype, and every
             // column the player owns can move with it.
@@ -1506,9 +1581,18 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                                    ownerHealth->current < ownerHealth->max &&
                                    !CombatSystem::healingBlocked(world, player, nowMillis);
             const bool wantsShield = stats.shield > 0.0 && !shield.active(nowMillis);
-            const double charge = std::max(0.0, stats.healChargeMillis);
+            // Mana is delivered on the same path for the same reason healing
+            // is: an orb that flew home on a full pool would spend itself and
+            // reload for nothing. A flower with no pool at all never wants it,
+            // which is what keeps an orb worn without a magic flower orbiting
+            // rather than cycling.
+            const ManaPool* pool = world.tryGet<ManaPool>(player);
+            const bool wantsMana =
+                stats.mana > 0.0 && pool != nullptr && pool->max > 0.0 && pool->current < pool->max;
+            const double charge = std::max(
+                0.0, stats.mana > 0.0 ? stats.manaChargeMillis : stats.healChargeMillis);
             instance->homing = nowMillis - instance->spawnedAtMillis >= charge &&
-                               (wantsHeal || wantsShield);
+                               (wantsHeal || wantsShield || wantsMana);
             if (instance->homing) {
                 const Transform* owner = world.tryGet<Transform>(player);
                 const Body* ownerBody = world.tryGet<Body>(player);
@@ -1521,6 +1605,8 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                     } else if (wantsShield) {
                         shield.amount = stats.shield;
                         shield.untilMillis = nowMillis + kBurstShieldLifetimeMillis;
+                    } else if (wantsMana) {
+                        restoreMana(world, player, stats.mana);
                     }
                     world.add<Dead>(petal, Dead{player});
                 }
@@ -1528,18 +1614,49 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             }
         }
 
-        // Bubble pops as soon as the ring is pulled in and propels the flower
-        // directly away from the bubble, then pays its rarity-scaled reload.
-        if (config.id == "bubble" && defending) {
+        // Bubble pops as soon as the ring is pulled in and propels the flower,
+        // then pays its rarity-scaled reload.
+        if ((config.id == "bubble" || config.id == "magic_bubble") && defending) {
             Transform* owner = world.tryGet<Transform>(player);
             const Body* ownerBody = world.tryGet<Body>(player);
-            if (owner) {
-                const Vec2 away = owner->position - transform->position;
-                if (away.lengthSq() > 0.0) {
-                    const double radius = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
-                    const double boost = 60.0 * (1.0 + rarityIndex(instance->rarity) * 0.6);
-                    dashPlayer(*owner, away.normalized() * boost, boost, radius, terrain);
-                }
+
+            // Where the burst throws the flower, and the one thing that is not
+            // shared between the two petals.
+            //
+            // A plain bubble is a thing that went off: it shoves the flower
+            // clear of ITSELF, so the bearing is read off the ring and a player
+            // steers it by choosing which side of the ring to pop from.
+            //
+            // The magic one is STEERED. It throws the flower the way the
+            // player is already asking to go, which makes it a dash rather
+            // than a shove -- and with no direction asked for there is nothing
+            // to steer, so the burst is held rather than spent on a bearing
+            // the player did not choose. Held, not wasted: the petal stays in
+            // the ring at full charge with its mana unspent, and goes the
+            // instant a key is pressed.
+            Vec2 push;
+            if (config.id == "magic_bubble") {
+                const double strength = input != nullptr ? input->current.moveStrength : 0.0;
+                if (!(strength > 0.0)) continue;
+                // The bearing alone, never the strength: a dash is a fixed
+                // distance, and scaling it by how far an analogue stick
+                // happens to be pushed would make the same petal a different
+                // petal on a controller.
+                push = Vec2::fromAngle(input->current.moveAngle, 1.0);
+            } else if (owner != nullptr) {
+                push = owner->position - transform->position;
+            }
+
+            // The magic bubble costs mana, and an unpayable pop is not a pop:
+            // the petal stays in the ring, unpopped and off cooldown, and goes
+            // the moment the pool can cover it. Asked AFTER the direction, so
+            // a burst that was going to be held anyway is not charged for.
+            if (!spendMana(world, player, stats.requiredMana)) continue;
+
+            if (owner != nullptr && push.lengthSq() > 0.0) {
+                const double radius = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
+                const double boost = 60.0 * (1.0 + rarityIndex(instance->rarity) * 0.6);
+                dashPlayer(*owner, push.normalized() * boost, boost, radius, terrain);
             }
             world.add<Dead>(petal, Dead{player});
             continue;
@@ -1553,6 +1670,11 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
 
         if (config.projectile.present && attacking &&
             nowMillis >= instance->nextProjectileMillis) {
+            // Affordability is checked BEFORE the cooldown is armed. A magic
+            // missile over an empty pool is a petal still waiting to fire, not
+            // one that has fired and is reloading -- arming the timer first
+            // would make a dry cast cost the player the shot it never got.
+            if (!canAffordMana(world, player, stats.requiredMana)) continue;
             // The same cooldown the break path pays, on the same talent: a
             // missile petal's reload IS its rate of fire, so a tree that halves
             // one and leaves the other would cap the ring at the slower of two
@@ -1565,6 +1687,8 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             const std::uint8_t firedSub = instance->subIndex;
             if (fireProjectiles(world, player, petal, config, stats, instance->configIndex,
                                 instance->rarity)) {
+                // Charged once the volley really exists, never before it.
+                spendMana(world, player, stats.requiredMana);
                 // The shot IS the petal leaving the ring: firing spends it, the
                 // same way being thrown spends web and pollen, and the
                 // reference launches the petal ITSELF as the missile.

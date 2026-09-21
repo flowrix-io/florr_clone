@@ -46,7 +46,12 @@ const char* const kPetalsJson = R"JSON({
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
-  "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"}
+  "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
+  "vessel":   {"name":"Vessel","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"baseMaxMana":100,"color":"#42E3F5"},
+  "orb":      {"name":"Orb","damage":1,"health":5,"size":1,"cooldown":3500,"count":1,"burstMana":10,"burstManaChargeMs":1000,"color":"#42E3F5"},
+  "magicleaf":{"name":"Magic Leaf","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveMana":5,"color":"#42E3F5"},
+  "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
+  "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"}
 })JSON";
 
 const char* const kMobsJson = R"JSON({
@@ -147,6 +152,14 @@ struct Rig {
     }
 
     void setFlags(std::uint8_t flags) { world.get<PlayerInput>(player).current.flags = flags; }
+
+    /// The direction the player is asking to travel in, as an input frame
+    /// carries it. Strength 0 is a player asking for nothing.
+    void setMove(double angle, double strength = 1.0) {
+        net::InputFrame& frame = world.get<PlayerInput>(player).current;
+        frame.moveAngle = angle;
+        frame.moveStrength = strength;
+    }
 
     /// Stops the ring turning, by equipping a petal whose rotationSpeed
     /// modifier is zero -- the reference sums those as `+= modifier - 1`, so
@@ -1557,6 +1570,240 @@ TEST(a_shell_homes_grants_one_temporary_shield_and_is_consumed) {
     CHECK(shield.active(rig.now));
     CHECK(rig.slot(0).broken);
     CHECK_EQ(rig.petals(0).size(), std::size_t(0));
+}
+
+// ---------------------------------------------------------------------------
+// Mana
+// ---------------------------------------------------------------------------
+
+TEST(a_bar_with_no_magic_petal_has_no_mana_pool_at_all) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic");
+    rig.settleEquips();
+    rig.tick(20);
+    // Not a pool reading zero -- no pool. Every flower in the world would
+    // otherwise carry a component that only magic builds ever look at.
+    CHECK(rig.world.tryGet<ManaPool>(rig.player) == nullptr);
+}
+
+TEST(a_worn_vessel_grants_a_pool_that_arrives_full_and_doubles_per_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.settleEquips();
+    rig.tick();
+    const ManaPool& pool = rig.world.get<ManaPool>(rig.player);
+    CHECK_NEAR(pool.max, 100.0, 1e-9);
+    CHECK_NEAR(pool.current, 100.0, 1e-9);
+
+    // Two vessels are two grants: the pool is summed over the bar, unlike the
+    // lotus threshold beside it.
+    rig.equip(1, "vessel");
+    rig.settleEquips();
+    rig.tick();
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).max, 200.0, 1e-9);
+
+    // Doubling per tier, all the way up: rare is four times common.
+    Rig rare;
+    rare.equip(0, "vessel", Rarity::Rare);
+    rare.settleEquips();
+    rare.tick();
+    CHECK_NEAR(rare.world.get<ManaPool>(rare.player).max, 400.0, 1e-9);
+    Rig apex;
+    apex.equip(0, "vessel", Rarity::Apex);
+    apex.settleEquips();
+    apex.tick();
+    CHECK_NEAR(apex.world.get<ManaPool>(apex.player).max, 100.0 * 512.0, 1e-9);
+}
+
+TEST(taking_the_pool_off_spills_the_mana_rather_than_banking_it) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.settleEquips();
+    rig.tick();
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 100.0, 1e-9);
+
+    rig.world.get<Loadout>(rig.player).slots[0] = LoadoutSlot{};
+    rig.settleEquips();
+    rig.tick();
+    const ManaPool& empty = rig.world.get<ManaPool>(rig.player);
+    CHECK_NEAR(empty.max, 0.0, 1e-9);
+    CHECK_NEAR(empty.current, 0.0, 1e-9);
+
+    // And putting it back on is not a refill: the once-ever seeding is what
+    // keeps unequip/re-equip from being a free potion.
+    rig.equip(0, "vessel");
+    rig.settleEquips();
+    rig.tick();
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).max, 100.0, 1e-9);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 0.0, 1e-9);
+}
+
+TEST(a_magic_leaf_refills_the_pool_per_second_and_stops_at_the_ceiling) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "magicleaf");
+    rig.settleEquips();
+    rig.tick();
+    ManaPool& pool = rig.world.get<ManaPool>(rig.player);
+    pool.current = 0.0;
+
+    // Five a second at common, and no faster: the regen is summed per SLOT.
+    rig.tick(static_cast<int>(1000.0 / net::kTickMillis));
+    CHECK_NEAR(pool.current, 5.0, 0.2);
+
+    // Doubled one tier up, like every other mana figure.
+    rig.equip(1, "magicleaf", Rarity::Uncommon);
+    rig.settleEquips();
+    rig.world.get<ManaPool>(rig.player).current = 0.0;
+    rig.tick(static_cast<int>(1000.0 / net::kTickMillis));
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 10.0, 0.4);
+
+    // And it stops at the ceiling rather than banking past it.
+    rig.tick(600);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 100.0, 1e-9);
+}
+
+TEST(an_orb_charges_homes_and_restores_mana_only_while_the_pool_is_short) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "orb");
+    rig.settleEquips();
+    rig.tick();
+    ManaPool& pool = rig.world.get<ManaPool>(rig.player);
+    pool.current = 50.0;
+
+    // Past the orb's 1000ms charge: it flies home on its own, delivers one
+    // burst, and enters the normal break cooldown -- the rose's path exactly.
+    rig.tick(60);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 60.0, 1e-9);
+    CHECK(rig.slot(1).broken);
+
+    // A full pool never calls it home: an orb that spent itself for nothing
+    // would be a petal missing from the ring for no gain.
+    CHECK(rig.tickUntil([&] { return !rig.slot(1).broken; }));
+    rig.world.get<ManaPool>(rig.player).current = 100.0;
+    rig.tick(80);
+    CHECK(!rig.slot(1).broken);
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+}
+
+TEST(a_magic_missile_is_paid_for_in_mana_and_stops_firing_when_the_pool_is_dry) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "magicmissile");
+    rig.settleEquips();
+    rig.tick();
+    ManaPool& pool = rig.world.get<ManaPool>(rig.player);
+    CHECK_NEAR(pool.current, 100.0, 1e-9);
+
+    rig.setFlags(net::InputAttack);
+    CHECK(rig.tickUntil([&] { return rig.countOf(net::EntityKind::Projectile) >= 1; }));
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 70.0, 1e-9);
+
+    // Three shots is all 100 mana buys. The fourth is refused, and refused
+    // WITHOUT taking what is left: a partial payment would drain the pool for
+    // a shot that never flew.
+    CHECK(rig.tickUntil([&] { return rig.world.get<ManaPool>(rig.player).current <= 10.0; }, 4000));
+    const std::size_t flown = rig.countOf(net::EntityKind::Projectile);
+    rig.tick(400);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 10.0, 1e-9);
+    CHECK(rig.countOf(net::EntityKind::Projectile) <= flown);
+    // And the petal is still in the ring waiting, not spent.
+    CHECK(!rig.slot(1).broken);
+}
+
+TEST(a_magic_bubble_that_cannot_be_paid_for_does_not_pop) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "magic_bubble");
+    rig.settleEquips();
+    rig.tick();
+    rig.world.get<ManaPool>(rig.player).current = 10.0;
+
+    const Vec2 before = rig.position(rig.player);
+    rig.setFlags(net::InputDefend);
+    rig.setMove(0.0);
+    rig.tick(4);
+    CHECK_NEAR(distance(before, rig.position(rig.player)), 0.0, 1e-9);
+    CHECK(!rig.slot(1).broken);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 10.0, 1e-9);
+
+    // Funded, it pops and the mana is gone.
+    rig.world.get<ManaPool>(rig.player).current = 100.0;
+    rig.tick();
+    CHECK(distance(before, rig.position(rig.player)) > 1.0);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 60.0, 1e-9);
+}
+
+TEST(a_magic_bubble_throws_the_flower_the_way_it_is_asking_to_go) {
+    if (!contentLoaded()) return;
+    // North, whichever side of the ring the petal happens to be orbiting on.
+    // A plain bubble's bearing is the ring's; this one's is the player's.
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "magic_bubble");
+    rig.settleEquips();
+    rig.tick();
+    const Vec2 before = rig.position(rig.player);
+    const double heading = -kPi * 0.5;
+    rig.setFlags(net::InputDefend);
+    rig.setMove(heading);
+    rig.tick();
+
+    const Vec2 moved = rig.position(rig.player) - before;
+    CHECK(moved.lengthSq() > 0.0);
+    CHECK_NEAR(angularGap(moved.angle(), heading), 0.0, 1e-9);
+    CHECK_NEAR(moved.length(), 60.0, 1e-9);
+
+    // An analogue stick barely pushed dashes just as far, and in the same
+    // direction: the bearing is read, the strength is not. On a rig of its own
+    // so the measurement is not taken off a flower still gliding from the
+    // first dash.
+    Rig nudged;
+    nudged.equip(0, "vessel");
+    nudged.equip(1, "magic_bubble");
+    nudged.settleEquips();
+    nudged.tick();
+    const Vec2 from = nudged.position(nudged.player);
+    nudged.setFlags(net::InputDefend);
+    nudged.setMove(heading, 0.05);
+    nudged.tick();
+    const Vec2 nudge = nudged.position(nudged.player) - from;
+    CHECK_NEAR(nudge.length(), 60.0, 1e-9);
+    CHECK_NEAR(angularGap(nudge.angle(), heading), 0.0, 1e-9);
+}
+
+TEST(a_magic_bubble_with_no_direction_asked_for_is_held_not_spent) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "magic_bubble");
+    rig.settleEquips();
+    rig.tick();
+    const Vec2 before = rig.position(rig.player);
+
+    // Defend held, nothing asked for: the petal stays in the ring at full
+    // charge and its mana is untouched.
+    rig.setFlags(net::InputDefend);
+    rig.setMove(0.0, 0.0);
+    rig.tick(20);
+    CHECK_NEAR(distance(before, rig.position(rig.player)), 0.0, 1e-9);
+    CHECK(!rig.slot(1).broken);
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 100.0, 1e-9);
+
+    // And it goes the instant a key is pressed.
+    rig.setMove(kPi);
+    rig.tick();
+    CHECK(distance(before, rig.position(rig.player)) > 1.0);
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 60.0, 1e-9);
 }
 
 TEST(defending_pops_a_bubble_and_pushes_the_flower) {

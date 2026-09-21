@@ -302,6 +302,34 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(strip);
     }
 
+    // The magic petals. Every one of these figures moves with rarity and none
+    // of them can be read off the ring in play -- a player comparing two orbs
+    // has nothing else to go on -- so they belong on the card.
+    if (stats.requiredMana > 0.0) {
+        TooltipLine cost{"Mana Cost: " + abbreviate(stats.requiredMana), 12.0};
+        cost.alpha = 0.56;
+        cost.altText = "Mana Cost: " + exactNumber(stats.requiredMana);
+        lines.push_back(cost);
+    }
+    if (stats.maxMana > 0.0) {
+        TooltipLine pool{"Max Mana: +" + abbreviate(stats.maxMana), 12.0};
+        pool.alpha = 0.56;
+        pool.altText = "Max Mana: +" + exactNumber(stats.maxMana);
+        lines.push_back(pool);
+    }
+    if (stats.mana > 0.0) {
+        TooltipLine burst{"Mana Restored: " + abbreviate(stats.mana), 12.0};
+        burst.alpha = 0.56;
+        burst.altText = "Mana Restored: " + exactNumber(stats.mana);
+        lines.push_back(burst);
+    }
+    if (stats.passiveManaPerSecond > 0.0) {
+        TooltipLine regen{"Mana/s: " + abbreviate(stats.passiveManaPerSecond), 12.0};
+        regen.alpha = 0.56;
+        regen.altText = "Mana/s: " + exactNumber(stats.passiveManaPerSecond);
+        lines.push_back(regen);
+    }
+
     // Only the cutters have one, and theirs moves with rarity, so the number
     // has to be on the card -- the description alone cannot say how much.
     if (stats.bodyDamage > 0.0) {

@@ -325,7 +325,13 @@ private:
     void drawGarbagePile(Canvas&, Vec2 at, double baseSize, double timeSeconds) const;
     /// The eased eye offset a flower-shaped mob looks along. Keyed by netId so
     /// each mob eases on its own.
-    Vec2 mobEye(std::uint32_t netId, double angle) const;
+    ///
+    /// A mob that turns is read straight off its facing. One drawn upright has
+    /// none to read: the server pins `hideRotation` mobs at angle zero (see
+    /// steerFacing), so its eyes would sit staring east forever. For those the
+    /// look direction is recovered from how the BODY is travelling, which is
+    /// the same heading the facing would have carried.
+    Vec2 mobEye(const MobDraw& mob) const;
     /// The petal types a garbage pile may be built from: the same rule the
     /// server's drop roll uses, so both clients pick the same artwork.
     const std::vector<std::uint16_t>& droppablePetals() const;
@@ -435,8 +441,20 @@ private:
     /// animation has nowhere else to read the mob's size and artwork from.
     mutable std::unordered_map<std::uint32_t, MobDraw> mobShadows_;
 
-    /// Eased eye offsets for the two flower-shaped mobs, keyed by netId.
-    mutable std::unordered_map<std::uint32_t, Vec2> mobEyes_;
+    /// What each flower-shaped mob's eyes are doing, keyed by netId.
+    struct MobEye {
+        /// The eased pupil offset itself, in the flower's radius=25 space.
+        Vec2 offset;
+        /// Where the body was DRAWN last frame, and the smoothed step between
+        /// frames. Only an upright mob needs them -- it has no facing to look
+        /// along, so its travel is where the direction comes from.
+        Vec2 lastPosition;
+        Vec2 step;
+        /// The last direction worth looking along. Held while the mob stands
+        /// still, so stopping does not roll the eyes back east.
+        double heading = 0;
+    };
+    mutable std::unordered_map<std::uint32_t, MobEye> mobEyes_;
 
     /// Damage landed on each target dummy over the last ten seconds, which is
     /// the window the browser build's server reports DPS over.

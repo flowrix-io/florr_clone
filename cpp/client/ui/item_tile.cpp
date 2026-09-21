@@ -219,6 +219,21 @@ ClusterShape clusterShape(std::uint16_t petalIndex, double sizeStat, int count) 
                 }
             }
         }
+        // A magic petal takes the measurement of the petal it is the magic
+        // form of. Not a hand-tune and not a second table: the two share one
+        // picture down to the viewBox -- magic_leaf IS leaf's document in
+        // cyan -- so a measurement of one is a measurement of both, tilt
+        // included. Without this they fell through to the generic fallback and
+        // came out at 20 units flat: a magic leaf drawn at half a leaf's size
+        // and lying flat where a leaf lies back.
+        //
+        // A second pass, because the row a magic petal wants may belong to a
+        // petal the first pass had not reached yet.
+        for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
+            if (out[i] != nullptr) continue;
+            const std::uint16_t base = content().magicSourceOf(i);
+            if (base != kInvalidIndex && base < out.size()) out[i] = out[base];
+        }
         return out;
     }();
 
@@ -250,6 +265,11 @@ double smootherStep(double t) {
 }
 
 } // namespace
+
+PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat) {
+    const ClusterShape shape = clusterShape(petalIndex, sizeStat, 1);
+    return PetalIconMetric{shape.diameter * shape.shrink, shape.tilt};
+}
 
 void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t petalIndex,
                       double sizeStat, int count, double cx, double cy, double maxDiameter,

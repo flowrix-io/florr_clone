@@ -186,6 +186,11 @@ int main(int argc, char** argv) {
                 emit(prefix + "/burst-heal", stats.heal);
                 emit(prefix + "/burst-heal-charge-ms", stats.healChargeMillis);
                 emit(prefix + "/passive-heal-per-second", stats.passiveHealPerSecond);
+                emit(prefix + "/max-mana", stats.maxMana);
+                emit(prefix + "/burst-mana", stats.mana);
+                emit(prefix + "/burst-mana-charge-ms", stats.manaChargeMillis);
+                emit(prefix + "/passive-mana-per-second", stats.passiveManaPerSecond);
+                emit(prefix + "/required-mana", stats.requiredMana);
                 emit(prefix + "/knockback", stats.knockback);
                 emit(prefix + "/shield", stats.shield);
                 emit(prefix + "/slow-factor", stats.slowFactor);

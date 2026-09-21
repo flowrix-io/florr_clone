@@ -179,6 +179,10 @@ void DropTables::resolve(const ContentRegistry& content) {
         const PetalConfig& petal = content.petal(index);
         if (petal.isAdminPetal) continue;
         if (petal.id == "cutter" || petal.id == "lightning_cutter") continue;
+        // A magic petal is CONVERTED into, never dropped. Leaving it in the
+        // pool would put an apex magic leaf in front of a flower wearing a
+        // common orb, straight past the gate the orb exists to be.
+        if (content.isMagicForm(index)) continue;
         if (petal.id.size() > 4 && petal.id.compare(petal.id.size() - 4, 4, "_egg") == 0) {
             const std::uint16_t layer = content.mobIndex(petal.id.substr(0, petal.id.size() - 4));
             if (layer != kInvalidIndex && content.mob(layer).noEggDrop) continue;
@@ -247,6 +251,33 @@ bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionI
     if (claimed(drop.pickedUpBy, player, owner)) return false;
     return drop.eligible.empty() || claimed(drop.eligible, player, owner);
 }
+
+// ---------------------------------------------------------------------------
+// The magic orb's conversion
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The best magic orb on a flower's ACTIVE bar, or kRarityCount for none.
+///
+/// Active slots only, for the reason every other worn bonus reads only those:
+/// a stashed orb is not a worn one. The BEST of several rather than the first,
+/// because two orbs are one conversion, at the better tier.
+int wornOrbTier(const World& world, Entity player, std::uint16_t orbIndex) {
+    if (orbIndex == kInvalidIndex) return kRarityCount;
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    if (loadout == nullptr) return kRarityCount;
+    int best = kRarityCount;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+        if (slot.empty() || slot.configIndex != orbIndex) continue;
+        const int tier = rarityIndex(slot.rarity);
+        if (best == kRarityCount || tier > best) best = tier;
+    }
+    return best;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Drops
@@ -323,7 +354,7 @@ void LootSystem::run(World& world, const SpatialGrid& grid, const ContentRegistr
 
     maintainDrops(dt, commands);
     collectPickups(world, grid, commands, events, nowMillis);
-    awardDeaths(world, rng, nowMillis);
+    awardDeaths(world, content, rng, nowMillis);
     // Deaths pay out after the broadphase pass, but their loot is still
     // collectable this tick: the reference rolls a mob's drops inside the very
     // player step that then tests pickups, so a magnet flower standing on its
@@ -422,8 +453,12 @@ void LootSystem::tryCollect(World& world, Entity player, Vec2 playerPosition, do
     if (finished) commands.destroy(candidate);
 }
 
-void LootSystem::awardDeaths(World& world, Rng& rng, double nowMillis) {
+void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& rng,
+                             double nowMillis) {
     fresh_.clear();
+    // Once for the tick, not once per corpse: the conversion below asks for it
+    // on every drop of every kill.
+    const std::uint16_t magicOrb = content.petalIndex("magic_orb");
     corpses_->collect(corpseList_);
     for (const Entity corpse : corpseList_) {
         const MobType* type = world.tryGet<MobType>(corpse);
@@ -481,6 +516,20 @@ void LootSystem::awardDeaths(World& world, Rng& rng, double nowMillis) {
         const Entity credit = world.has<PlayerTag>(killer) ? killer : ranked_.front().player;
         if (!world.has<PlayerTag>(credit)) continue;
 
+        // A worn magic orb rewrites what this mob leaves behind: everything
+        // with a magic form drops as that form instead, and nothing gets past
+        // the ORB'S OWN TIER. A common orb turns every leaf this mob would
+        // have dropped into a common magic leaf and nothing else -- no
+        // ordinary leaf, and no magic leaf above common -- so the way to farm
+        // better magic petals is to carry a better orb.
+        //
+        // Read off the CREDIT player, the one whose kill this is, for the same
+        // reason the roll itself is credited to them: a drop is one item with
+        // one identity, and the eligible list can hold several flowers wearing
+        // several different orbs. kRarityCount is "no orb worn", which is
+        // almost every kill in the game.
+        const int orbTier = wornOrbTier(world, credit, magicOrb);
+
         selected_.clear();
         rollTable(table, mobRarity, rng);
 
@@ -497,11 +546,21 @@ void LootSystem::awardDeaths(World& world, Rng& rng, double nowMillis) {
             // items differ only by their own upgrade rolls.
             const Rarity base = scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity, rng);
             for (int i = 0; i < copies; ++i) {
-                const Rarity rarity = finishDropRarity(base, mobRarity, rng);
+                Rarity rarity = finishDropRarity(base, mobRarity, rng);
                 // The Random sentinel resolves per COPY, not per row.
-                const std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal
-                                                     ? tables_.randomPetal(rng)
-                                                     : entry->petalIndex;
+                std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal
+                                               ? tables_.randomPetal(rng)
+                                               : entry->petalIndex;
+                if (orbTier != kRarityCount) {
+                    const std::uint16_t magic = content.magicFormOf(petalIndex);
+                    if (magic != kInvalidIndex) {
+                        petalIndex = magic;
+                        // The gate. Applied AFTER the ordinary roll rather than
+                        // instead of it, so a low orb does not also flatten the
+                        // odds -- it caps what those odds can produce.
+                        if (rarityIndex(rarity) > orbTier) rarity = clampRarity(orbTier);
+                    }
+                }
                 const Vec2 scatter{rng.range(-50.0, 50.0), rng.range(-50.0, 50.0)};
                 // Unresolved on purpose, on both servers: the per-tick pass is
                 // what pushes a drop out of the geometry it landed in. Noted so

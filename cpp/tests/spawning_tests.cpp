@@ -1822,6 +1822,177 @@ TEST(common_mobs_roll_each_drop_row_at_most_once) {
     CHECK_EQ(mostSeen, rowCount);
 }
 
+// ---------------------------------------------------------------------------
+// The magic orb's conversion
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Puts one petal in the flower's first ACTIVE slot.
+void wear(World& world, Entity player, const char* id, Rarity rarity, int slot = 0) {
+    Loadout& loadout = world.ensure<Loadout>(player);
+    loadout.slots[static_cast<std::size_t>(slot)] =
+        LoadoutSlot{shipped().petalIndex(id), rarity, 0.0, false};
+}
+
+/// Forty uncommon leafbugs, which drop every authored row: a leaf and a root.
+/// Returns what was left on the ground.
+std::vector<Entity> farmLeafbugs(World& world, LootSystem& loot, CommandBuffer& commands,
+                                 SpatialGrid& grid, EventQueue& events, Rng& rng, Entity player) {
+    for (int i = 0; i < 40; ++i) {
+        makeCorpse(world, shipped().mobIndex("leafbug"), Rarity::Uncommon, kCentre, player,
+                   {player});
+    }
+    loot.run(world, grid, shipped(), rng, 1000.0, net::kTickSeconds, commands, events);
+    commands.flush();
+    return liveDrops(world);
+}
+
+} // namespace
+
+TEST(the_magic_form_table_is_derived_from_the_petal_ids) {
+    // magic_X is the magic form of X, and the orb is the rose's.
+    for (const char* id : {"leaf", "stick", "cactus", "missile", "bubble"}) {
+        const std::uint16_t base = shipped().petalIndex(id);
+        CHECK_EQ(shipped().magicFormOf(base), shipped().petalIndex(std::string("magic_") + id));
+    }
+    CHECK_EQ(shipped().magicFormOf(shipped().petalIndex("rose")),
+             shipped().petalIndex("magic_orb"));
+
+    // A petal with no magic counterpart converts into nothing, and a magic
+    // petal is a destination rather than a source.
+    CHECK_EQ(shipped().magicFormOf(shipped().petalIndex("basic")), kInvalidIndex);
+    CHECK_EQ(shipped().magicFormOf(shipped().petalIndex("magic_leaf")), kInvalidIndex);
+}
+
+TEST(a_magic_petal_is_never_in_the_random_drop_pool) {
+    DropTables tables;
+    tables.link(shipped());
+    // The gate would be for nothing if a `random` row could hand out an apex
+    // magic leaf to a flower wearing a common orb.
+    for (const std::uint16_t index : tables.droppablePetals()) {
+        CHECK(!shipped().isMagicForm(index));
+    }
+    CHECK(shipped().isMagicForm(shipped().petalIndex("magic_orb")));
+    CHECK(!shipped().isMagicForm(shipped().petalIndex("rose")));
+}
+
+TEST(without_an_orb_a_mob_drops_exactly_what_its_table_says) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(41);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    const std::uint16_t leaf = shipped().petalIndex("leaf");
+    int leaves = 0;
+    for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
+        if (world.get<DropItem>(drop).configIndex == leaf) ++leaves;
+    }
+    CHECK_EQ(leaves, 40);
+}
+
+TEST(a_worn_orb_converts_every_drop_that_has_a_magic_form) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(42);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    wear(world, player, "magic_orb", Rarity::Ultra);
+
+    const std::uint16_t leaf = shipped().petalIndex("leaf");
+    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
+    const std::uint16_t root = shipped().petalIndex("root");
+    int magic = 0;
+    int roots = 0;
+    for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
+        const DropItem& item = world.get<DropItem>(drop);
+        // Not one ordinary leaf gets through.
+        CHECK(item.configIndex != leaf);
+        if (item.configIndex == magicLeaf) ++magic;
+        // Root has no magic form, so the orb leaves it alone: the conversion
+        // is a table, not a blanket.
+        if (item.configIndex == root) ++roots;
+    }
+    CHECK_EQ(magic, 40);
+    CHECK(roots > 0);
+}
+
+TEST(a_common_orb_gatekeeps_every_conversion_to_common) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(43);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    wear(world, player, "magic_orb", Rarity::Common);
+
+    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
+    const std::uint16_t root = shipped().petalIndex("root");
+    int aboveCommonRoots = 0;
+    for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
+        const DropItem& item = world.get<DropItem>(drop);
+        if (item.configIndex == magicLeaf) {
+            // Common magic leaf and nothing else, however the roll went.
+            CHECK_EQ(rarityIndex(item.rarity), rarityIndex(Rarity::Common));
+        }
+        if (item.configIndex == root && rarityIndex(item.rarity) > 0) ++aboveCommonRoots;
+    }
+    // The cap is the ORB's, not a flattening of the whole table: an unconverted
+    // petal still rolls its upgrades on this very mob.
+    CHECK(aboveCommonRoots > 0);
+}
+
+TEST(a_better_orb_lets_a_better_conversion_through) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(43);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    wear(world, player, "magic_orb", Rarity::Ultra);
+
+    const std::uint16_t magicLeaf = shipped().petalIndex("magic_leaf");
+    int aboveCommon = 0;
+    for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
+        const DropItem& item = world.get<DropItem>(drop);
+        if (item.configIndex == magicLeaf && rarityIndex(item.rarity) > 0) ++aboveCommon;
+    }
+    // Same mob, same seed, same rolls -- the only thing that changed is the
+    // tier of the orb standing in front of them.
+    CHECK(aboveCommon > 0);
+}
+
+TEST(a_stashed_orb_converts_nothing) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(44);
+
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    // The first secondary slot: held, not worn, exactly as it grants no
+    // modifier and draws no petal.
+    wear(world, player, "magic_orb", Rarity::Ultra, kLoadoutActiveSlots);
+
+    const std::uint16_t leaf = shipped().petalIndex("leaf");
+    int leaves = 0;
+    for (const Entity drop : farmLeafbugs(world, loot, commands, grid, events, rng, player)) {
+        if (world.get<DropItem>(drop).configIndex == leaf) ++leaves;
+    }
+    CHECK_EQ(leaves, 40);
+}
+
 TEST(a_non_contributor_can_never_take_an_eligible_players_drop) {
     World world;
     CommandBuffer commands{world};

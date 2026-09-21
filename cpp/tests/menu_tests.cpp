@@ -1,9 +1,11 @@
 #include "test.h"
 
+#include "client/ui/item_tile.h"
 #include "server_harness.h"
 #include "shared/game/shop.h"
 #include "shared/game/skills.h"
 
+#include <cmath>
 #include <fstream>
 
 using namespace flix;
@@ -316,6 +318,37 @@ TEST(an_offer_is_charged_its_discounted_price_and_a_wrong_slot_is_refused) {
     CHECK(awaitShopAnswer(h, client, answer));
     CHECK(!answer.ok);
     CHECK_EQ(client.profile().stars, stars);
+}
+
+TEST(a_magic_petal_is_drawn_at_the_size_of_the_petal_it_is_the_form_of) {
+    // A magic petal's artwork IS its ordinary form's document in cyan, down to
+    // the viewBox, so its tile has to be measured the same way. Without that
+    // the six of them fell through to the generic 20-unit fallback: a magic
+    // leaf half the size of a leaf and lying flat where a leaf lies back, and
+    // a magic cactus at half the width of a cactus.
+    std::string error;
+    CHECK(loadContent(dataDir(), error));
+
+    for (const char* id : {"leaf", "stick", "cactus", "missile", "bubble", "rose"}) {
+        const std::uint16_t base = content().petalIndex(id);
+        const std::uint16_t magic = content().magicFormOf(base);
+        if (base == kInvalidIndex || magic == kInvalidIndex) { CHECK(false); continue; }
+
+        // Measured at the BASE petal's own size stat. `size` is not what the
+        // inherited measurement is made of -- a gardn row is a fixed drawn
+        // width and ignores it -- so the two petals are free to disagree
+        // there, and rose (0.9) and the orb (1.0) do.
+        const double sizeStat = content().petal(base).size;
+
+        const ui::PetalIconMetric want = ui::petalIconMetric(base, sizeStat);
+        const ui::PetalIconMetric got = ui::petalIconMetric(magic, sizeStat);
+        CHECK_NEAR(got.diameter, want.diameter, 1e-9);
+        CHECK_NEAR(got.tilt, want.tilt, 1e-12);
+        // And it is a real measurement rather than the fallback that happened
+        // to agree: every one of these six is drawn at something other than
+        // the flat 20 units a petal gardn does not have would take.
+        CHECK(std::fabs(got.diameter - ui::kPetalIconSize * sizeStat) > 1e-9);
+    }
 }
 
 TEST(a_balance_past_32_bits_reaches_the_client_and_is_debited_exactly) {

@@ -287,6 +287,24 @@ struct ShieldState {
     }
 };
 
+/// The magic petals' resource: what a flower has to spend, and how much of it
+/// it can hold.
+///
+/// The POOL is not the flower's own. It is republished from the loadout every
+/// tick (`max` is the sum of what the worn petals grant) and is zero for the
+/// overwhelming majority of bars, which is what "this flower has no mana"
+/// looks like -- there is no base pool to subtract back out. `current` is the
+/// one number that is genuinely the flower's: it survives a loadout edit,
+/// clamped down to whatever the new bar can hold, so swapping one orb for
+/// another does not hand the player a refill.
+struct ManaPool {
+    double current = 0;
+    double max = 0;
+
+    bool has() const { return max > 0.0; }
+    bool canAfford(double cost) const { return cost <= 0.0 || current >= cost; }
+};
+
 /// Root's armour, which a flower COLLECTS and SPENDS.
 ///
 /// Unlike the flat Armor a mob carries, this is ammunition: a stack arrives
@@ -489,6 +507,12 @@ struct PlayerModifiers {
     double rangeScale = 1.0;    ///< petal reach
     double cameraZoom = 1.0;
     double passiveHealPerSecond = 0.0;
+    /// The mana pool the worn bar grants, summed over its slots, and what
+    /// refills it per second. Published here for the same reason the heal is:
+    /// the petal pass is the only thing that knows what is equipped, and the
+    /// pool itself (ManaPool) is written from these two.
+    double maxMana = 0.0;
+    double passiveManaPerSecond = 0.0;
     /// Flat poison DPS absorbed. Multiple lotus petals use the strongest one,
     /// rather than stacking.
     double poisonArmor = 0.0;
@@ -1002,6 +1026,7 @@ FLIX_COMPONENT(flix::ContactDamage);
 FLIX_COMPONENT(flix::HitCooldowns);
 FLIX_COMPONENT(flix::Afflictions);
 FLIX_COMPONENT(flix::ShieldState);
+FLIX_COMPONENT(flix::ManaPool);
 FLIX_COMPONENT(flix::SpongeDamageState);
 FLIX_COMPONENT(flix::SecondChance);
 FLIX_COMPONENT(flix::Bounty);

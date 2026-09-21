@@ -91,6 +91,19 @@ inline constexpr double kItemTilePlateShade = 0.8;
 void drawPetalCluster(Canvas&, const SpriteCache&, std::uint16_t petalIndex, double sizeStat,
                       int count, double cx, double cy, double maxDiameter, double timeSeconds);
 
+/// What ONE icon of a petal measures inside a tile's 60-unit cell, and the
+/// tilt it is drawn at.
+///
+/// Exposed for the tests that guard the two rules drawPetalCluster sizes by:
+/// gardn's own measurement wherever gardn has the petal, and a magic petal
+/// taking the measurement of the petal it is the magic form of -- the two are
+/// one picture in two colours, so one measurement serves both.
+struct PetalIconMetric {
+    double diameter = 0;
+    double tilt = 0;
+};
+PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat);
+
 /// One item, and the states a surface needs to show it in.
 struct ItemTile {
     std::uint16_t petalIndex = kNoPetal;  ///< an empty slot: the plate alone

@@ -236,7 +236,7 @@ private:
     /// Per-tick item maintenance, in the reference's order: wall push, bounds,
     /// expiry. The push is not a nicety -- nothing resolves the spawn scatter.
     void maintainDrops(double dt, CommandBuffer& commands);
-    void awardDeaths(World& world, Rng& rng, double nowMillis);
+    void awardDeaths(World& world, const ContentRegistry& content, Rng& rng, double nowMillis);
     /// One full pass of a mob's table into `selected_`.
     void rollTable(const std::vector<DropTables::Entry>& table, Rarity mobRarity, Rng& rng);
 

@@ -227,6 +227,17 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         out.f32(0);
         out.f32(0);
     }
+    // The mana pool, in the same shape and for the same reason: it is the
+    // viewer's own bar and the exact figures are what the HUD prints. A zero
+    // max is a flower wearing nothing that grants a pool, which is almost all
+    // of them, and is what tells the client to draw no mana bar at all.
+    if (const ManaPool* mana = world.tryGet<ManaPool>(viewer)) {
+        out.f32(static_cast<float>(mana->current));
+        out.f32(static_cast<float>(mana->max));
+    } else {
+        out.f32(0);
+        out.f32(0);
+    }
     if (const PlayerProgress* progress = world.tryGet<PlayerProgress>(viewer)) {
         out.f64(progress->totalXp);
         out.u16(static_cast<std::uint16_t>(progress->level));

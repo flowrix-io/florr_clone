@@ -166,6 +166,11 @@ struct SelfState {
     Vec2 velocity;
     double health = 0;
     double maxHealth = 0;
+    /// The magic petals' pool. `maxMana` is 0 on a bar wearing nothing that
+    /// grants one -- which is most bars -- and that is what the HUD reads to
+    /// decide whether there is a mana bar to draw at all.
+    double mana = 0;
+    double maxMana = 0;
     double totalXp = 0;
     int level = 1;
     /// See PlayerProgress::stars: a balance the server keeps to 2^53, so the

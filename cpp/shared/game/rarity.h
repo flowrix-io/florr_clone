@@ -143,6 +143,36 @@ inline double petalHealScale(Rarity r) {
     return std::pow(3.0, kMythic) * std::pow(std::sqrt(3.0), i - kMythic);
 }
 
+/// Mana -- the pool, what refills it, and what a cast costs -- doubles per
+/// tier.
+///
+/// ONE ladder for the whole resource, supply and demand together, so a kit
+/// built at a single tier casts at exactly the rate it did at the tier below:
+/// an apex orb fuels an apex missile as often as a common orb fuels a common
+/// one, and what upgrading buys is the damage the cast lands, not more casts.
+/// Splitting the two -- the pool on one curve, the cost on another -- would
+/// quietly take casts away at every tier, which is an upgrade that makes the
+/// build worse. Mixing tiers is where the decision lives, and 2x rather than
+/// the 3x of damage is what keeps that decision from being absurd: a magic
+/// petal one tier down is expensive to feed, not unfeedable.
+inline double petalManaScale(Rarity r) {
+    return std::pow(2.0, rarityIndex(r));
+}
+
+/// Camera zoom: the authored figure's distance from 1 multiplies by 4/3 per
+/// tier.
+///
+/// Geometric where petalModifierScale is linear, and deliberately so. Zoom is
+/// read as a WIDTH -- how much more world a tier shows -- and a linear ramp
+/// spends almost all of its growth in the first few tiers, so the last five
+/// upgrades of an antennae are worth a sliver of screen each. A 4/3 step is
+/// the same visible gain every time. Petals authored far from 1 run through
+/// zero near the top of the ladder; loadoutCameraZoom's floor is what catches
+/// them, exactly as it already caught a linear scope.
+inline double petalZoomScale(Rarity r) {
+    return std::pow(4.0 / 3.0, rarityIndex(r));
+}
+
 /// Passive player modifiers (luck, magnetism, extra max health) scale linearly
 /// from 1x at common to 4x at unique. Geometric scaling here would make a
 /// single high-tier utility petal worth more than a whole loadout.
