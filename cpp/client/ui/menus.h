@@ -544,6 +544,20 @@ private:
     ui::Scroller scroll_;
 };
 
+/// How many of the loaded notifications the player has not read, for the badge
+/// on the strip's notifications button. The browser counts the same thing the
+/// same way -- what it has FETCHED, against localStorage -- so a feed whose
+/// older pages were never asked for contributes nothing to the number.
+///
+/// Lives with the panel because the panel owns the read marks' lookup set, and
+/// two mirrors of one list is one more thing to keep true.
+int notificationsUnread(const NetClient&, const ClientSettings&);
+
+/// How many entries one page of the feed asks for. The browser's page size,
+/// and the number the server compares against to decide whether there is an
+/// older page -- so the panel and the badge's first fetch must both use it.
+inline constexpr int kNotificationPage = 50;
+
 /// The player's guild: its roster, and the join/create form when they have none.
 class GuildPanel {
 public:
@@ -797,6 +811,13 @@ private:
     bool adminGrantOffered_ = false;
     bool adminGrantRequested_ = false;
     int changelogEntries_ = 1;
+    /// What the badge on the notifications button draws. Recomputed by
+    /// render(), which is the only entry point holding a NetClient -- the
+    /// login screen's strip has no account and so never badges anything.
+    int notificationsUnread_ = 0;
+    /// Whether this session has already asked for its first page. See the note
+    /// in render(): the badge cannot count a feed nobody fetched.
+    bool notificationsPrimed_ = false;
 
     /// The icon artwork, compiled on first use. One document per glyph, shared
     /// with nothing -- these are the only SVGs the UI layer draws.

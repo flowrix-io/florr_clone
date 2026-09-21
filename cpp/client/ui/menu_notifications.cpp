@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstddef>
 #include <set>
 #include <string>
 #include <utility>
@@ -54,10 +56,6 @@ constexpr double kWheelStep = 100.0;
 /// shade reused for the header pill, a stripe and the scrollbar thumb.
 constexpr std::uint32_t kBodyBorder = kNotificationsSkin.border;
 
-/// How many entries one page asks for. The browser's page size, and the value
-/// the server compares against to decide whether there is more.
-constexpr int kPageSize = 50;
-
 /// How close to the end a scroll has to come before the next page is asked
 /// for. In pixels of remaining scroll, as the reference measures it.
 constexpr double kPagePrefetch = 100.0;
@@ -74,11 +72,38 @@ struct FeedState {
     /// How many ids the mirror was built from. This panel is the only writer
     /// of that list, so a change in its length is the only way it can differ.
     std::size_t mirrored = 0;
+
+    /// The badge's answer, and the two things it was computed from. The strip
+    /// asks for it every frame and the feed changes a handful of times a
+    /// session, so the count is cached against the pair rather than recounted
+    /// against a std::set once per button per frame.
+    int unread = 0;
+    std::uint32_t countedRevision = 0;
+    std::size_t countedMarks = 0;
+    /// Whether `unread` has ever been computed. Revision 0 is a real value --
+    /// it is what a client that has not yet been sent a page holds -- so the
+    /// cache cannot key on it alone.
+    bool counted = false;
 };
 
 FeedState& feedState() {
     static FeedState state;
     return state;
+}
+
+/// The read-mark lookup set, brought up to date with the settings file's list.
+///
+/// The list is the record and this is only an index over it. Rebuilt on a
+/// change in LENGTH because this panel is the only thing that ever appends to
+/// it, so there is no other way the two can come to disagree.
+const std::set<std::string>& readMarks(const std::vector<std::string>& readIds) {
+    FeedState& state = feedState();
+    if (state.mirrored != readIds.size()) {
+        state.read.clear();
+        state.read.insert(readIds.begin(), readIds.end());
+        state.mirrored = readIds.size();
+    }
+    return state.read;
 }
 
 /// Thumb-drag state for the scrollbar.
@@ -113,6 +138,93 @@ std::uint32_t stripeColor(const NotificationEntry& notice, bool isRead) {
     return color;
 }
 
+/// The star a redeemed star code's notice is written with, U+2B50.
+///
+/// The row stored on the server holds the browser's exact characters, because
+/// the same save file is read by both builds -- but the shipped face has no
+/// glyph for this one, and typing it would draw the empty box every font uses
+/// for what it cannot render. The shop has the same problem with the same
+/// character and solves it the same way: the star is a PATH, measured and
+/// painted in the run of text where it sits.
+const char kStar[] = "\xE2\xAD\x90";
+constexpr std::size_t kStarBytes = sizeof kStar - 1;
+/// The star's advance and its diameter, both in multiples of the type size.
+/// An emoji is about square on its line and carries a little side bearing.
+constexpr double kStarAdvance = 1.15;
+constexpr double kStarDiameter = 1.0;
+/// Gold, as the shop's currency star is: this is the same star, in a sentence.
+constexpr std::uint32_t kStarGold = 0xFFD700u;
+
+/// Calls `run` for each stretch of ordinary text in `s`, and `star` for each
+/// star between them. Measuring and painting differ only in what they do with
+/// the pieces, and a second walk of the same string is a second place for the
+/// two to fall out of step.
+template <typename RunFn, typename StarFn>
+void forEachMessagePiece(const std::string& s, RunFn run, StarFn star) {
+    std::size_t at = 0;
+    for (;;) {
+        const std::size_t hit = s.find(kStar, at);
+        run(s.substr(at, hit == std::string::npos ? std::string::npos : hit - at));
+        if (hit == std::string::npos) return;
+        star();
+        at = hit + kStarBytes;
+    }
+}
+
+/// measure(), with the drawn star's advance standing in for the glyph the face
+/// does not have. Every width this panel lays out against comes from here.
+double measureMessage(const std::string& s, double size) {
+    if (s.find(kStar) == std::string::npos) return measure(s, size);
+    double width = 0;
+    forEachMessagePiece(
+        s, [&](const std::string& run) { width += measure(run, size); },
+        [&] { width += size * kStarAdvance; });
+    return width;
+}
+
+void drawStarGlyph(Canvas& canvas, double cx, double cy, double radius) {
+    setFill(canvas, kStarGold);
+    canvas.beginPath();
+    for (int i = 0; i < 10; ++i) {
+        // Five points and five notches, alternating, starting at the top.
+        const double r = (i % 2 == 0) ? radius : radius * 0.45;
+        const double angle = -kPi * 0.5 + i * kPi / 5.0;
+        const auto x = static_cast<float>(cx + std::cos(angle) * r);
+        const auto y = static_cast<float>(cy + std::sin(angle) * r);
+        if (i == 0) canvas.moveTo(x, y);
+        else canvas.lineTo(x, y);
+    }
+    canvas.closePath();
+    canvas.fill();
+}
+
+/// text(), with the star drawn where the face has nothing to type. Left
+/// aligned only, which is what every card's body is.
+void messageText(Canvas& canvas, const std::string& s, double x, double y,
+                 const TextStyle& style) {
+    if (s.find(kStar) == std::string::npos) {
+        text(canvas, s, x, y, style);
+        return;
+    }
+    // Middle, because that is what TextStyle defaults to and what the browser
+    // leaves ambient here -- its last header button set `textBaseline` to
+    // 'middle' and nothing set it back before the cards were drawn.
+    const double baseline =
+        y + (ascent(style.size, style.bold) + descent(style.size, style.bold)) * 0.5;
+    double pen = x;
+    forEachMessagePiece(
+        s,
+        [&](const std::string& run) {
+            paintRun(canvas, run, pen, baseline, style);
+            pen += measure(run, style.size, style.bold);
+        },
+        [&] {
+            const double advance = style.size * kStarAdvance;
+            drawStarGlyph(canvas, pen + advance * 0.5, y, style.size * kStarDiameter * 0.5);
+            pen += advance;
+        });
+}
+
 /// Splits one wrapped line on any newline it still contains.
 ///
 /// The reference wraps on SPACES only and then joins its lines with '\n', and
@@ -144,7 +256,7 @@ std::vector<std::string> wrapMessage(const std::string& message, double maxWidth
         lines.emplace_back();
         return lines;
     }
-    if (maxWidth <= 0 || measure(message, kMessageSize) <= maxWidth) {
+    if (maxWidth <= 0 || measureMessage(message, kMessageSize) <= maxWidth) {
         appendSplitOnNewlines(lines, message);
         return lines;
     }
@@ -162,7 +274,7 @@ std::vector<std::string> wrapMessage(const std::string& message, double maxWidth
         lines.emplace_back();
         return lines;
     }
-    if (measure(words.front(), kMessageSize) > maxWidth) {
+    if (measureMessage(words.front(), kMessageSize) > maxWidth) {
         appendSplitOnNewlines(lines, words.front());
         return lines;
     }
@@ -170,7 +282,7 @@ std::vector<std::string> wrapMessage(const std::string& message, double maxWidth
     std::string current = words.front();
     for (std::size_t i = 1; i < words.size(); ++i) {
         const std::string candidate = current + " " + words[i];
-        if (measure(candidate, kMessageSize) <= maxWidth) {
+        if (measureMessage(candidate, kMessageSize) <= maxWidth) {
             current = candidate;
         } else {
             appendSplitOnNewlines(lines, current);
@@ -242,21 +354,16 @@ bool NotificationsPanel::render(MenuContext& ctx) {
 
     if (!state.requested) {
         state.requested = true;
-        ctx.net.requestNotifications(kPageSize, 0);
+        ctx.net.requestNotifications(kNotificationPage, 0);
     }
 
     const std::vector<NotificationEntry>& entries = ctx.net.notifications();
     const bool loading = ctx.net.notificationsPending();
     const bool hasMore = ctx.net.notificationsHaveMore();
 
-    // The settings file's list is the record; this set is only a lookup over
-    // it, rebuilt when the list has grown.
+    // The settings file's list is the record; this set is only a lookup over it.
     std::vector<std::string>& readIds = ctx.settings.readNotifications;
-    if (state.mirrored != readIds.size()) {
-        state.read.clear();
-        state.read.insert(readIds.begin(), readIds.end());
-        state.mirrored = readIds.size();
-    }
+    const std::set<std::string>& read = readMarks(readIds);
     const auto markRead = [&](const std::string& id) {
         if (!state.read.insert(id).second) return;
         readIds.push_back(id);
@@ -319,7 +426,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
     // reference: dragging the thumb to the foot of the list loads nothing.
     if (wheeled && hasMore && !loading && !entries.empty() &&
         scroll_.offset >= maxScroll - kPagePrefetch) {
-        ctx.net.requestNotifications(kPageSize, entries.back().timestampMillis);
+        ctx.net.requestNotifications(kNotificationPage, entries.back().timestampMillis);
     }
 
     overlayCard(canvas, panel, kNotificationsSkin);
@@ -363,7 +470,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
     } else {
         const double now = nowMillis();
         for (const NotificationEntry& notice : entries) {
-            const bool isRead = state.read.count(notice.id) != 0;
+            const bool isRead = read.count(notice.id) != 0;
             const std::vector<std::string> lines = wrapMessage(notice.message, maxTextWidth);
             const double height = cardHeight(lines.size());
             const Rect card{view.x, contentY, entryWidth, height};
@@ -388,7 +495,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
                 for (const std::string& line : lines) {
                     // A wrap that produced an empty line still costs its pitch.
                     if (line.find_first_not_of(" \t\r\n") != std::string::npos) {
-                        text(canvas, line, card.x + kTextInset, lineY, body);
+                        messageText(canvas, line, card.x + kTextInset, lineY, body);
                     }
                     lineY += kLinePitch;
                 }
@@ -442,6 +549,25 @@ bool NotificationsPanel::render(MenuContext& ctx) {
         }
     }
     return true;
+}
+
+int notificationsUnread(const NetClient& net, const ClientSettings& settings) {
+    FeedState& state = feedState();
+    const std::set<std::string>& read = readMarks(settings.readNotifications);
+    // Both halves of the answer: a page landing changes the entries, and
+    // reading a card changes the marks. Nothing else can move the count.
+    if (state.counted && state.countedRevision == net.notificationsRevision() &&
+        state.countedMarks == read.size()) {
+        return state.unread;
+    }
+    state.counted = true;
+    state.countedRevision = net.notificationsRevision();
+    state.countedMarks = read.size();
+    state.unread = 0;
+    for (const NotificationEntry& notice : net.notifications()) {
+        if (read.count(notice.id) == 0) ++state.unread;
+    }
+    return state.unread;
 }
 
 } // namespace flix

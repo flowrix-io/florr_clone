@@ -170,6 +170,23 @@ std::string killerLabel(const World& world, Entity killer) {
     return std::string(rarityLabel(type->rarity)) + " " + id;
 }
 
+/// How many rows of the global feed are kept. The browser build trims to the
+/// last thousand on every write, so a feed that has been running for months is
+/// still one screen of scrollback rather than a megabyte of the save file.
+constexpr std::size_t kNotificationHistory = 1000;
+
+/// A double the way JavaScript would print it: no trailing ".0" on a whole
+/// number, which is what a star award always is in practice, and no exponent
+/// for anything a code could plausibly be worth.
+std::string numberText(double value) {
+    if (value == std::floor(value) && std::fabs(value) < 1e15) {
+        return std::to_string(static_cast<long long>(value));
+    }
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%g", value);
+    return buffer;
+}
+
 /// The five type tags the browser stores, as the wire enum. Anything else is
 /// Generic, which is also what an older notification with no type reads as.
 net::NotificationKind notificationKind(const std::string& type) {
@@ -1603,6 +1620,8 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
     if (crafted > 0) giveToInventory(record, petalIndex, upgradeRarity(rarity), crafted);
     database_.markDirty();
 
+    if (crafted > 0) announceRareCraft(session, petalIndex, upgradeRarity(rarity));
+
     w.boolean(crafted > 0);
     w.u16(petalIndex);
     w.u8(static_cast<std::uint8_t>(crafted > 0 ? upgradeRarity(rarity) : rarity));
@@ -1611,6 +1630,45 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
     w.str(crafted > 0 ? "" : "The craft failed.");
     connection.send(w);
     sendProfile(session, connection);
+}
+
+void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIndex,
+                                   Rarity made) {
+    // The top three tiers only, and ONE line however many the batch produced:
+    // the reference announces the craft, not each petal it yielded.
+    if (made != Rarity::Super && made != Rarity::Unique && made != Rarity::Apex) return;
+    if (petalIndex >= content().petalCount()) return;
+
+    // The reference's own table, which is not kRarityColors: unique announces
+    // in plain white here rather than in the near-white the tier is drawn in.
+    const char* tierColor = made == Rarity::Super    ? "#2bffa4"
+                            : made == Rarity::Unique ? "#ffffff"
+                                                     : "#ff00ff";
+    const std::string tier = rarityLabel(made);
+    // "An Apex" -- and "An Unique", because the reference tests the LABEL's
+    // first letter against the five vowels and 'U' is one of them. Reproduced
+    // rather than corrected: the line is the browser's, word for word.
+    const std::string article =
+        std::string("AEIOUaeiou").find(tier[0]) != std::string::npos ? "An" : "A";
+    const std::string petal = content().petal(petalIndex).name;
+    const std::string playerName =
+        session.displayName.empty() ? session.username : session.displayName;
+
+    // Two renderings of one sentence: chat gets the marked-up one, and the
+    // feed stores the flat one, because the panel draws glyph outlines and has
+    // no parser to hand a tag to.
+    const std::string plain = article + " " + tier + " " + petal + " has been crafted by @" +
+                              session.username + " [" + playerName + "]";
+    broadcastChat(net::ChatChannel::System, "",
+                  std::string("<b style=\"color: ") + tierColor + ";\">" + article + " " + tier +
+                      " " + petal + " has been crafted by <b style=\"color: #00ff00;\">@" +
+                      session.username + "</b> [<b style=\"color: yellow;\">" + playerName +
+                      "</b>]</b>");
+
+    addNotification(made == Rarity::Apex     ? "apex_craft"
+                    : made == Rarity::Unique ? "unique_craft"
+                                             : "super_craft",
+                    plain);
 }
 
 void GameServer::bankKills() {
@@ -1923,6 +1981,16 @@ void GameServer::handleRedeemCode(Session& session, net::Connection& connection,
 
     sendProfile(session, connection);
     sendShopResult(connection, net::ShopResultKind::Redeem, true, stars, {});
+
+    // The star is U+2B50, exactly as the browser writes it. The same save file
+    // is read by both builds, so the row stored here has to be the row the
+    // browser would have stored -- the shipped face having no glyph for it is
+    // the panel's problem to solve, not a reason to write a different history.
+    const std::string playerName =
+        session.displayName.empty() ? session.username : session.displayName;
+    addNotification("star_code", "Star code \"" + code + "\" redeemed by @" + session.username +
+                                    " [" + playerName + "]! +" + numberText(stars) +
+                                    " \xE2\xAD\x90 Stars");
 }
 
 void GameServer::handleSetSkin(Session& session, net::Connection& connection, ByteReader& reader) {
@@ -2247,6 +2315,29 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
+
+void GameServer::addNotification(const std::string& type, const std::string& message) {
+    // rawArrayTable, never rawTable: this is the one unmodelled table the
+    // browser stores as an ARRAY, and coercing it would replace the whole feed
+    // with an empty object.
+    Json& feed = database_.rawArrayTable("notifications");
+    const std::int64_t now = database_.nowMillis();
+    Json entry = Json::object();
+    entry["id"] = std::to_string(now) + "-" + std::to_string(++notificationSequence_);
+    entry["type"] = type;
+    entry["message"] = message;
+    entry["timestamp"] = static_cast<double>(now);
+    feed.push(std::move(entry));
+
+    // Trimmed from the FRONT, because the feed is in the order it was written
+    // and the newest row is the one just pushed.
+    std::vector<Json>& rows = feed.items();
+    if (rows.size() > kNotificationHistory) {
+        rows.erase(rows.begin(),
+                   rows.begin() + static_cast<std::ptrdiff_t>(rows.size() - kNotificationHistory));
+    }
+    database_.markDirty();
+}
 
 void GameServer::handleNotifications(net::Connection& connection, ByteReader& reader) {
     const std::uint16_t limit = reader.u16();

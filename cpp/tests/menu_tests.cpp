@@ -93,6 +93,12 @@ bool awaitShopAnswer(Harness& h, NetClient& client, ShopOutcome& out) {
     return true;
 }
 
+/// Waits for the newest page of the global feed to land.
+bool awaitFeed(Harness& h, NetClient& client) {
+    client.requestNotifications(50, 0);
+    return h.stepUntil({&client}, [&] { return !client.notificationsPending(); }, 200);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -528,6 +534,113 @@ TEST(a_craft_request_is_pooled_and_answered_once) {
     // Nothing else follows: one request, one result.
     h.step(20, {&client});
     CHECK(!client.craftOutcome().pending);
+}
+
+TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {
+    Harness h("craft-notice", [](const std::string& path) {
+        seedAccount(path, "smith", "password7", 0, 0);
+        // Ultra -> super is a 1% roll, so the pool has to be deep enough that
+        // failing every attempt is not a thing that happens: 20,000 petals is
+        // four thousand tries, and 0.99^4000 is about 2e-18.
+        seedStack(path, "smith", "petal_rose", Rarity::Ultra, 20000);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    const std::uint16_t rose = content().petalIndex("rose");
+    if (rose == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("smith", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Ultra) == 20000u;
+    }));
+
+    const std::size_t chatBefore = client.chat().size();
+    client.requestCraft(rose, Rarity::Ultra, 20000);
+    CHECK(h.stepUntil({&client}, [&] { return client.craftOutcome().pending; }, 400));
+    CHECK(client.craftOutcome().crafted > 0);
+    client.craftOutcome().pending = false;
+
+    // ONE line however many the pool produced: the craft is announced, not
+    // each petal it yielded.
+    CHECK(h.stepUntil({&client}, [&] { return client.chat().size() > chatBefore; }, 200));
+    CHECK_EQ(client.chat().size(), chatBefore + 1);
+    // Marked up, as the browser's line is: the tier colours the sentence, and
+    // the account and the flower's name are separately coloured inside it --
+    // which is why the handle is not contiguous with the words before it.
+    const std::string line = client.chat().back().text;
+    CHECK(line.find("<b style=\"color: #2bffa4;\">A Super Rose has been crafted by ") == 0);
+    CHECK(line.find("<b style=\"color: #00ff00;\">@smith</b>") != std::string::npos);
+    CHECK(line.find("<b style=\"color: yellow;\">smith</b>") != std::string::npos);
+
+    // And the same sentence, flat, in the feed the panel draws.
+    CHECK(awaitFeed(h, client));
+    CHECK_EQ(client.notifications().size(), static_cast<std::size_t>(1));
+    const NotificationEntry& notice = client.notifications().front();
+    CHECK_EQ(static_cast<int>(notice.kind), static_cast<int>(net::NotificationKind::SuperCraft));
+    CHECK_EQ(notice.message, std::string("A Super Rose has been crafted by @smith [smith]"));
+    CHECK(notice.message.find('<') == std::string::npos);
+}
+
+TEST(a_craft_below_super_is_announced_to_nobody) {
+    Harness h("craft-quiet", [](const std::string& path) {
+        seedAccount(path, "smith", "password7", 0, 0);
+        seedStack(path, "smith", "petal_rose", Rarity::Common, 500);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    const std::uint16_t rose = content().petalIndex("rose");
+    if (rose == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("smith", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Common) == 500u;
+    }));
+
+    const std::size_t chatBefore = client.chat().size();
+    client.requestCraft(rose, Rarity::Common, 500);
+    CHECK(h.stepUntil({&client}, [&] { return client.craftOutcome().pending; }, 400));
+    CHECK(client.craftOutcome().crafted > 0);
+    client.craftOutcome().pending = false;
+
+    // An uncommon is crafted every few seconds by everyone playing. The feed
+    // and the transcript both stay empty.
+    CHECK(awaitFeed(h, client));
+    CHECK(client.notifications().empty());
+    CHECK_EQ(client.chat().size(), chatBefore);
+}
+
+TEST(a_redeemed_star_code_is_written_to_the_feed) {
+    Harness h("code-notice", [](const std::string& path) {
+        seedAccount(path, "coder", "password7", 0, 0);
+        seedCode(path, "FREESTARS", 250, 0);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("coder", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+
+    ShopOutcome answer;
+    client.requestRedeemCode("freestars");
+    CHECK(awaitShopAnswer(h, client, answer));
+    CHECK(answer.ok);
+
+    CHECK(awaitFeed(h, client));
+    CHECK_EQ(client.notifications().size(), static_cast<std::size_t>(1));
+    const NotificationEntry& notice = client.notifications().front();
+    CHECK_EQ(static_cast<int>(notice.kind), static_cast<int>(net::NotificationKind::StarCode));
+    // The code as STORED, not as typed, and the star the browser writes -- the
+    // same save file is read by both builds.
+    CHECK_EQ(notice.message,
+             std::string("Star code \"FREESTARS\" redeemed by @coder [coder]! +250 "
+                         "\xE2\xAD\x90 Stars"));
 }
 
 TEST(a_mythic_kill_is_worth_stars_and_a_common_one_is_not) {

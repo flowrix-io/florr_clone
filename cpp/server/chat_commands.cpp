@@ -1949,18 +1949,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 "star_code");
             return;
         }
-        // rawArrayTable, never rawTable: this is the one unmodelled table the
-        // browser stores as an ARRAY, and coercing it would replace the whole
-        // feed with an empty object.
-        Json& feed = database_.rawArrayTable("notifications");
-        const std::int64_t now = database_.nowMillis();
-        Json entry = Json::object();
-        entry["id"] = std::to_string(now) + "-" + std::to_string(feed.size());
-        entry["type"] = type;
-        entry["message"] = text;
-        entry["timestamp"] = static_cast<double>(now);
-        feed.push(std::move(entry));
-        database_.markDirty();
+        // The same writer a rare craft and a redeemed code go through, so a
+        // hand-written notice cannot end up shaped differently from an earned
+        // one.
+        addNotification(type, text);
         out("Notification created: " + text);
         return;
     }

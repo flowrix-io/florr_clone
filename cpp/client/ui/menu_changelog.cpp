@@ -375,6 +375,10 @@ constexpr ChangelogEntry kChangelog[] = {
       "Added chat bubble",
       "Changed Rock visual"
     }},
+    {"September 21, 2026",
+     {"Added magic petals",
+      "Fixed some bugs",
+    }},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

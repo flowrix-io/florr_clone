@@ -119,6 +119,16 @@ struct IconStyle {
     double glyph;   ///< the artwork's fitted box, centred in the face
 };
 
+/// The unread badge hung off the notifications button: the browser's 20px
+/// circle in a 2px white rim, with its count at 12px.
+constexpr double kBadgeRadius = 10.0;
+constexpr double kBadgeRim = 2.0;
+constexpr double kBadgeTextSize = 12.0;
+/// How far the badge hangs PAST the button's corner, which is what the
+/// browser's `top: -5px; right: -5px` says.
+constexpr double kBadgeOverhang = 5.0;
+constexpr std::uint32_t kBadgeRed = 0xFF4444u;
+
 constexpr IconStyle kTopIcon{48.0, 6.0, 9.0, 3.0, 6.0, 32.0};
 constexpr IconStyle kColumnIcon{64.0, 11.0, 9.0, 4.0, 8.0, 43.0};
 
@@ -1025,6 +1035,39 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
                      r.right() - kIconKeyCapInset, r.bottom() - kIconKeyCapInset, cap);
             }
         }
+
+        // The unread badge, over everything else the button wears. Its edges
+        // hang `kBadgeOverhang` past the button's top-right corner, which puts
+        // its centre inside the button by the rest of its diameter -- and the
+        // strip's own inset from the screen edge is wider than the overhang,
+        // so nothing of it falls off the top.
+        if (slot.menu == MenuId::Notifications && notificationsUnread_ > 0) {
+            const Vec2 at{r.right() + kBadgeOverhang - kBadgeRadius,
+                          r.y - kBadgeOverhang + kBadgeRadius};
+            setFill(canvas, kPaper);
+            canvas.beginPath();
+            canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y),
+                       static_cast<float>(kBadgeRadius + kBadgeRim), 0.0f,
+                       static_cast<float>(kTau), false);
+            canvas.fill();
+            setFill(canvas, kBadgeRed);
+            canvas.beginPath();
+            canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y),
+                       static_cast<float>(kBadgeRadius), 0.0f, static_cast<float>(kTau), false);
+            canvas.fill();
+
+            // "99+" past the hundred, as the browser caps it -- three digits
+            // would not fit the circle and a four-digit count is not a number
+            // anybody reads anyway.
+            TextStyle count;
+            count.size = kBadgeTextSize;
+            count.bold = true;
+            count.fill = kPaper;
+            count.strokeWidth = 0;
+            count.align = Align::Centre;
+            text(canvas, notificationsUnread_ > 99 ? "99+" : std::to_string(notificationsUnread_),
+                 at.x, at.y, count);
+        }
         canvas.restore();
 
         // A release only counts when the press landed on the same button; a
@@ -1904,6 +1947,19 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
         net.guildInvite().justArrived = false;
         if (open_ != MenuId::Guild) toggle(MenuId::Guild);
     }
+
+    // The badge needs a feed to count, and the panel only fetches one when it
+    // is opened -- which would leave the button unbadged until the moment it
+    // stopped being useful. The browser fetches on construction instead, so
+    // the first frame that holds an account does the same here. Cleared with
+    // the account, so a reconnect asks again on the socket it came back on.
+    if (!net.haveSession()) {
+        notificationsPrimed_ = false;
+    } else if (!notificationsPrimed_) {
+        notificationsPrimed_ = true;
+        net.requestNotifications(kNotificationPage, 0);
+    }
+    notificationsUnread_ = notificationsUnread(net, settings_);
 
     // What is painted is `drawn_`, which outlives `open_` for as long as the
     // card takes to slide back down.

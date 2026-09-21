@@ -477,6 +477,11 @@ public:
     /// a panel opening for the first time draws its loading footer on the
     /// strength of it.
     bool notificationsHaveMore() const { return notificationsMore_; }
+    /// Bumped whenever the feed is replaced or grown. What it is for is the
+    /// unread badge on the notifications button: recounting the feed against
+    /// the read marks every frame is work with an answer that only changes
+    /// when a page lands, and this is how a reader knows one did.
+    std::uint32_t notificationsRevision() const { return notificationsRevision_; }
 
     const SquadState& squad() const { return squad_; }
 
@@ -621,6 +626,7 @@ private:
     /// newest end replaces the feed; one from behind the oldest entry appends
     /// to it, and only the request knows which this is.
     bool notificationsPaging_ = false;
+    std::uint32_t notificationsRevision_ = 0;
 
     SquadState squad_;
     GuildState guild_;

@@ -219,6 +219,22 @@ private:
     void handleLeaderboard(const Session&, net::Connection&);
     void handleNotifications(net::Connection&, ByteReader&);
 
+    /// Appends one row to the global notification feed.
+    ///
+    /// The three things that write to it -- a rare craft, a redeemed star code
+    /// and the admin `notification` command -- are the same three the browser
+    /// build has, and they all come through here so that the row shape, the id
+    /// format and the history cap cannot drift apart between them.
+    void addNotification(const std::string& type, const std::string& message);
+    /// The global line and the feed row a super/unique/apex craft produces.
+    /// Silent for every tier below, which is where the reference draws the
+    /// line too -- an ultra is crafted often enough to be noise.
+    void announceRareCraft(const Session&, std::uint16_t petalIndex, Rarity made);
+    /// Distinguishes two notifications written in the same millisecond. The id
+    /// is only ever compared -- a client keys its read marks on it -- so a
+    /// counter does the reference's nine random characters' whole job.
+    std::uint64_t notificationSequence_ = 0;
+
     // -- guilds ------------------------------------------------------------
     //
     // Storage is the database's own `guilds` table, in the browser build's

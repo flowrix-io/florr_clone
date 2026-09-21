@@ -265,6 +265,7 @@ void NetClient::logout() {
     notificationsPending_ = false;
     notificationsMore_ = true;
     notificationsPaging_ = false;
+    ++notificationsRevision_;
     squad_ = SquadState{};
     guild_ = GuildState{};
     guildInvite_ = GuildInvite{};
@@ -776,6 +777,7 @@ void NetClient::handleNotifications(ByteReader& reader) {
     }
     notificationsMore_ = more;
     notificationsPending_ = false;
+    ++notificationsRevision_;
 }
 
 void NetClient::handleSquadUpdate(ByteReader& reader) {
