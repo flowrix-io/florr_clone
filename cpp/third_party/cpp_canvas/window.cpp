@@ -139,6 +139,16 @@ EM_JS(int, web_clipboard_paste_seq, (), {
 // Into a caller-owned buffer rather than a malloc'd string: _malloc is not
 // exported to JavaScript by default, and needing it would make this file
 // impose a link setting on every program that draws a window.
+//
+// So a paste comes back in two calls, the same way a stored value does: size()
+// measures the UTF-8 the value will occupy, the caller sizes a buffer to match
+// and get() fills it. A fixed buffer here cut a long paste mid-line instead --
+// silently, because stringToUTF8 truncates rather than reporting a short write.
+EM_JS(int, web_clipboard_size, (), {
+  // TextEncoder rather than the runtime's lengthBytesUTF8: that helper is only
+  // linked into a program when something else in it asked for one.
+  return new TextEncoder().encode(Module.cppCanvasClipboard || '').length + 1;
+});
 EM_JS(void, web_clipboard_get, (char* out, int capacity), {
   stringToUTF8(Module.cppCanvasClipboard || '', out, capacity);
 });
@@ -1265,11 +1275,21 @@ std::string Window::clipboardText() const {
   // not read the system clipboard unprompted, so this is as much as there is
   // -- which is why a field asks `pastedText()` instead: that reports it only
   // on the frame a paste event actually delivered it.
-  // Bounded: a clipboard is whatever the user last copied anywhere, and a
-  // chat field has no use for a megabyte of it.
-  char buffer[4096] = {0};
-  web_clipboard_get(buffer, static_cast<int>(sizeof buffer));
-  return std::string(buffer);
+  //
+  // Sized from the value, not from a fixed buffer. Bounding it here looks like
+  // the same thing as bounding it at the field and is not: a field trims a
+  // paste it cannot take whole, but it has to be handed the whole paste to trim
+  // it. A 4KB buffer cut anything longer mid-line, which a multiline field --
+  // the skin studio's, whose own cap is twice that -- then failed to parse.
+  // The cap that is left is only there so a clipboard holding a document does
+  // not become an allocation of that size; no field takes anywhere near it.
+  constexpr int kMaxClipboardBytes = 1 << 20;
+  const int size = std::min(web_clipboard_size(), kMaxClipboardBytes);
+  if (size <= 1) return {};
+  std::string out(static_cast<std::size_t>(size), '\0');
+  web_clipboard_get(&out[0], size);
+  out.resize(std::strlen(out.c_str()));
+  return out;
 #else
   if (!SDL_HasClipboardText()) return {};
   // SDL hands over a buffer it allocated; it is the caller's to free, and
