@@ -403,8 +403,8 @@ struct MobConfig {
     Rgba lightColorRgba = kOpaqueWhite;
     double lightRadius = 0;
 
-    /// XP awarded per tier, filled from mob_xp.json with the derivations
-    /// described in loadFiles().
+    /// XP awarded per tier, from the mob's mandatory `xp` table in mobs.json.
+    /// Common through unique are written there; apex is derived as 3x unique.
     std::array<double, kRarityCount> xp{};
 };
 
@@ -430,6 +430,11 @@ struct PetalConfig {
     double visualScale = 1.0;
     double cooldownMillis = kDefaultPetalReloadMillis;   ///< reload after breaking
     int count = 1;              ///< petals spawned per equipped slot
+
+    /// Stars for one at the COMMON tier -- shopPrice() in shop.h runs the
+    /// rarity ladder up from here. Mandatory in petals.json; a generated
+    /// `<mob>_egg`, which no file names, derives it from the mob's XP.
+    double price = 0;
 
     bool isAdminPetal = false;
 
@@ -701,9 +706,9 @@ struct MobGroup {
 
 class ContentRegistry {
 public:
-    /// Loads `mobs.json`, `petals.json` and (optionally) `mob_xp.json` from
-    /// one directory, and folds the directory's maps -- `maps.json` and every
-    /// map it names -- into contentHash(), so a client whose staged maps
+    /// Loads `mobs.json` and `petals.json` from one directory, and folds the
+    /// directory's maps -- `maps.json` and every map it names -- into
+    /// contentHash(), so a client whose staged maps
     /// differ from the server's (a moved pad, a renamed door) is refused at
     /// the handshake rather than drawing annotations the server does not
     /// have. A directory with no manifest folds nothing.
@@ -713,10 +718,16 @@ public:
     /// server with no content.
     bool load(const std::string& dataDir, std::string& errorOut);
 
-    /// The same, with the three paths given explicitly. `xpPath` may be empty
-    /// or absent: XP then falls back to 1 and a warning is recorded.
+    /// The same, with both paths given explicitly and no maps folded in.
+    ///
+    /// Fails, rather than filling in a default, when an entry omits something
+    /// mandatory: a mob's `xp` table or a petal's `price`. Both used to live
+    /// outside these files -- XP in cpp/data/mob_xp.json, prices in a table in
+    /// shop.h -- where an entry could simply be missing, and the fallback that
+    /// covered for it (1 XP a tier, 10 stars) was indistinguishable from a
+    /// number somebody chose.
     bool loadFiles(const std::string& mobsPath, const std::string& petalsPath,
-                   const std::string& xpPath, std::string& errorOut);
+                   std::string& errorOut);
 
     /// An out-of-range index yields a shared placeholder rather than undefined
     /// behaviour: these indices arrive from the wire, and a corrupt one must

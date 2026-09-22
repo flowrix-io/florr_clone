@@ -43,7 +43,7 @@ cpp/
     web/          the emscripten build's shell page
   third_party/
     cpp_canvas/   the vendored Canvas2D-alike renderer
-  data/           runtime copies of mobs.json / petals.json / mob_xp.json
+  data/           runtime copies of mobs.json / petals.json
   tests/          one binary, all tests
 ```
 

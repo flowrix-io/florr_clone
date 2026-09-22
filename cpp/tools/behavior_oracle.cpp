@@ -123,14 +123,14 @@ void emitMobHealthScenario() {
 int main(int argc, char** argv) {
     using namespace flix;
     try {
-        if (argc != 4) {
-            std::cerr << "usage: behavior_oracle <mobs.json> <petals.json> <mob_xp.json>\n";
+        if (argc != 3) {
+            std::cerr << "usage: behavior_oracle <mobs.json> <petals.json>\n";
             return 2;
         }
 
         ContentRegistry registry;
         std::string error;
-        if (!registry.loadFiles(argv[1], argv[2], argv[3], error)) {
+        if (!registry.loadFiles(argv[1], argv[2], error)) {
             std::cerr << error << '\n';
             return 2;
         }

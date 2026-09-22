@@ -14,6 +14,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include "fixture_content.h"
 
 using namespace flix;
 
@@ -176,11 +177,11 @@ const Fixture& fixture() {
         const std::string petals = tempDir() + "/petals.json";
         // `poison` is per MILLISECOND in the JSON, so 0.01 is 10/second.
         const bool wrote =
-            writeText(mobs, R"({
+            writeText(mobs, test::fixtureMobs(R"({
               "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":1,"section":[0]},
               "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":2.5,"section":[7]}
-            })") &&
-            writeText(petals, R"({
+            })")) &&
+            writeText(petals, test::fixturePetals(R"({
               "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},
               "sting":{"name":"Sting","damage":10,"health":5,"size":1,"knockback":2,"damageCooldown":500},
               "plain":{"name":"Plain","damage":10,"health":5,"size":1},
@@ -190,12 +191,12 @@ const Fixture& fixture() {
               "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5},
               "taproot":{"name":"Taproot","damage":10,"health":10,"size":1,"armorPerStack":12},
               "dandy":{"name":"Dandy","damage":8,"health":8,"size":1,"noHealDuration":10000}
-            })");
+            })"));
         if (!wrote) {
             f.error = "cannot write the fixture content";
             return f;
         }
-        f.ok = f.registry.loadFiles(mobs, petals, std::string(), f.error);
+        f.ok = f.registry.loadFiles(mobs, petals, f.error);
         f.sting = f.registry.petalIndex("sting");
         f.plain = f.registry.petalIndex("plain");
         f.jelly = f.registry.petalIndex("jelly");
@@ -2020,15 +2021,15 @@ const RingFixture& ringFixture() {
         const std::string mobs = tempDir() + "/ring_mobs.json";
         const std::string petals = tempDir() + "/ring_petals.json";
         const bool wrote =
-            writeText(mobs, kRingMobsJson) &&
-            writeText(petals,
-                      R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1,
-                                   "noHealDuration":10000}})");
+            writeText(mobs, test::fixtureMobs(kRingMobsJson)) &&
+            writeText(petals, test::fixturePetals(
+                          R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1,
+                                       "noHealDuration":10000}})"));
         if (!wrote) {
             f.error = "cannot write the ring fixture content";
             return f;
         }
-        f.ok = f.registry.loadFiles(mobs, petals, std::string(), f.error);
+        f.ok = f.registry.loadFiles(mobs, petals, f.error);
         f.seedhead = f.registry.mobIndex("seedhead");
         f.spinner = f.registry.mobIndex("spinner");
         f.dandy = f.registry.petalIndex("dandy");

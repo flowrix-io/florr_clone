@@ -300,8 +300,7 @@ set(FLIX_DATA_SOURCES
     ${FLIX_MAP_TILESETS}
     ${FLIX_TILE_ART}
     # The title screen's backdrops.
-    ${FLIX_GROUND_ART}
-    ${CMAKE_CURRENT_SOURCE_DIR}/data/mob_xp.json)
+    ${FLIX_GROUND_ART})
 
 set(FLIX_DATA_STAGED)
 foreach(source IN LISTS FLIX_DATA_SOURCES)

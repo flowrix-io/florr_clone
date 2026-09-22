@@ -50,8 +50,6 @@ const ContentRegistry& shipped() {
                     firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
                                    "../src/petals.json", "../../src/petals.json",
                                    "src/petals.json"}),
-                    firstExisting({testsDir() + "/../data/mob_xp.json", "data/mob_xp.json",
-                                   "../data/mob_xp.json", "cpp/data/mob_xp.json"}),
                     error);
         return r;
     }();

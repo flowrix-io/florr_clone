@@ -118,11 +118,43 @@ std::string joinPath(const std::string& dir, const char* file) {
 /// Reading context: which entry is being parsed, and where its complaints go.
 struct Ctx {
     std::vector<std::string>& warnings;
+    std::vector<std::string>& errors;
     std::string subject;
 
     void warn(const std::string& text) {
         if (warnings.size() >= kMaxWarnings) return;
         warnings.push_back(subject + ": " + text);
+    }
+
+    /// A defect the entry cannot be loaded around, as opposed to one it can be
+    /// loaded despite. Nothing here throws or returns early: the parse runs to
+    /// the end so that a file with ten missing prices reports ten of them
+    /// rather than the first, and loadFiles() refuses the whole load
+    /// afterwards.
+    void fail(const std::string& text) {
+        if (errors.size() >= kMaxWarnings) return;
+        errors.push_back(subject + ": " + text);
+    }
+
+    /// A number that MUST be there: absent, wrong-typed or out of range is a
+    /// failed load rather than a default quietly standing in for it.
+    double required(const Json& obj, const char* key, double lo, double hi) {
+        if (!obj.contains(key)) {
+            fail(std::string("has no ") + key);
+            return lo;
+        }
+        const Json& node = obj[key];
+        if (!node.isNumber()) {
+            fail(std::string(key) + " is " + typeName(node) + ", not a number");
+            return lo;
+        }
+        const double v = node.asDouble();
+        if (!std::isfinite(v) || v < lo || v > hi) {
+            fail(std::string(key) + " is " + num(v) + ", outside [" + num(lo) + ", " + num(hi) +
+                 "]");
+            return lo;
+        }
+        return v;
     }
 
     /// A number forced into [lo, hi].
@@ -571,6 +603,60 @@ void parseMobGroups(Ctx& ctx, MobConfig& m, std::uint16_t mobIndex, const Json& 
     ctx.warn(std::string("groups is ") + typeName(node) + ", not a list or an object; the mob will not spawn");
 }
 
+/// The mandatory `xp` table: what killing this mob is worth, per tier.
+///
+/// Every tier from common to unique must be there and must be a finite,
+/// non-negative number. It used to live in its own file (cpp/data/mob_xp.json)
+/// where a mob could simply be missing, and eleven of them were -- silently
+/// worth one XP at every tier including unique, which reads as a balance
+/// decision and never was one. Requiring it here means a new mob cannot be
+/// added without saying what it is worth.
+///
+/// Apex is the ONE derived tier: the tables stop at unique, and apex is a 3x
+/// step above unique everywhere else in the game, so deriving it keeps an apex
+/// kill from paying the same as a common one without asking every entry to
+/// write the multiplication out.
+std::array<double, kRarityCount> parseXp(Ctx& ctx, const Json& src) {
+    constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
+    constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
+    std::array<double, kRarityCount> xp{};
+    xp.fill(1.0);
+    xp[kApex] = 3.0;
+
+    if (!src.contains("xp")) {
+        ctx.fail("has no xp table");
+        return xp;
+    }
+    const Json& row = src["xp"];
+    if (!row.isObject()) {
+        ctx.fail(std::string("xp is ") + typeName(row) + ", not an object");
+        return xp;
+    }
+    for (std::size_t i = 0; i <= kUnique; ++i) {
+        const char* tier = kRarityNames[i];
+        if (!row.contains(tier)) {
+            ctx.fail(std::string("xp has no ") + tier + " tier");
+            continue;
+        }
+        const Json& value = row[tier];
+        if (!value.isNumber()) {
+            ctx.fail(std::string("xp for ") + tier + " is " + typeName(value) + ", not a number");
+            continue;
+        }
+        const double v = value.asDouble();
+        if (!std::isfinite(v) || v < 0.0) {
+            ctx.fail(std::string("xp for ") + tier + " is " + num(v) + "; must be finite and >= 0");
+            continue;
+        }
+        xp[i] = v;
+    }
+    if (row.contains("apex")) {
+        ctx.warn("xp names an apex tier; apex is derived as 3x unique and the value is ignored");
+    }
+    xp[kApex] = xp[kUnique] * 3.0;
+    return xp;
+}
+
 MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
                    const std::unordered_map<std::string, std::uint16_t>& mobIds,
                    const std::unordered_map<std::string, std::uint16_t>& petalIds,
@@ -702,7 +788,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.lightColorRgba = readColor(ctx, src, "light_color", m.lightColor);
     m.lightRadius = ctx.range(src, "light_radius", 0.0, 0.0, kWorldSize);
 
-    m.xp.fill(1.0);
+    m.xp = parseXp(ctx, src);
     return m;
 }
 
@@ -714,6 +800,15 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.description = ctx.text(src, "description");
     p.image = ctx.text(src, "image");
     p.colorRgba = readColor(ctx, src, "color", p.color);
+
+    // What one costs in the shop at the COMMON tier; shopPrice() runs the
+    // rarity ladder up from here. Mandatory, for the reason the mob XP table
+    // is: the price used to live in a hand-kept table in shop.h that named
+    // thirty of the eighty-four petals, and the other fifty-four all cost the
+    // same ten stars -- not because anyone priced them at ten, but because
+    // that was what a missing entry cost. A petal nobody has priced should
+    // stop the load, not quietly become cheap.
+    p.price = ctx.required(src, "price", 0.0, kMaxBaseStat);
 
     p.damage = ctx.range(src, "damage", 0.0, -kMaxBaseStat, kMaxBaseStat);
 
@@ -890,6 +985,15 @@ std::string toLower(std::string text) {
     return text;
 }
 
+/// Stars per point of the mob's common-tier XP, and the floor under that.
+///
+/// Ten and ten, so the ordinary mob -- common XP of 1 -- still hatches from a
+/// ten-star egg, which is what every egg cost when eggs fell through to the
+/// shop's default price. A mob worth more than that costs more; a mob worth
+/// nothing at all still does not hand out free pets.
+inline constexpr double kEggStarsPerXp = 10.0;
+inline constexpr double kMinEggPrice = 10.0;
+
 /// One synthesised `<mob>_egg`, exactly as src/petals.ts:784-820 builds it.
 ///
 /// The eggs are not in petals.json and never have been: the browser generates
@@ -913,6 +1017,13 @@ PetalConfig eggPetal(const std::string& mobId, const MobConfig& mob,
     p.size = 1.0;
     p.cooldownMillis = 5000.0;
     p.count = 1;
+    // The one price nobody can write down, because the petal itself is not
+    // written down -- so it is derived from what the mob is WORTH. The mob's
+    // COMMON tier is the one to read: a base price is a common-tier price and
+    // the shop's ladder scales it from there, so an egg tracks its mob up the
+    // ladder instead of being flat at ten stars the way every egg used to be.
+    const double worth = mob.xp[static_cast<std::size_t>(Rarity::Common)];
+    p.price = std::max(kMinEggPrice, kEggStarsPerXp * worth);
     // A pet variant is preferred where the mob has one -- two of them do --
     // and otherwise the egg hatches the mob itself.
     const std::string petId = mobId + "_pet";
@@ -941,10 +1052,7 @@ double scaledMultiplier(double value, double scale) {
 // ---------------------------------------------------------------------------
 
 bool ContentRegistry::load(const std::string& dataDir, std::string& errorOut) {
-    if (!loadFiles(joinPath(dataDir, "mobs.json"),
-                   joinPath(dataDir, "petals.json"),
-                   joinPath(dataDir, "mob_xp.json"),
-                   errorOut)) {
+    if (!loadFiles(joinPath(dataDir, "mobs.json"), joinPath(dataDir, "petals.json"), errorOut)) {
         return false;
     }
     foldMapsIntoHash(dataDir);
@@ -1000,10 +1108,10 @@ void ContentRegistry::foldMapsIntoHash(const std::string& dataDir) {
 }
 
 bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& petalsPath,
-                                const std::string& xpPath, std::string& errorOut) {
+                                std::string& errorOut) {
     // Everything is built into locals and only committed at the end: a failed
     // reload has to leave a running server with the content it already had.
-    std::string mobsText, petalsText, xpText;
+    std::string mobsText, petalsText;
     if (!readFile(mobsPath, mobsText)) {
         errorOut = "cannot read " + mobsPath;
         return false;
@@ -1012,9 +1120,8 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
         errorOut = "cannot read " + petalsPath;
         return false;
     }
-    const bool haveXp = !xpPath.empty() && readFile(xpPath, xpText);
 
-    Json mobsDoc, petalsDoc, xpDoc;
+    Json mobsDoc, petalsDoc;
     std::string parseError;
     if (!Json::parse(mobsText, mobsDoc, parseError)) {
         errorOut = mobsPath + ": " + parseError;
@@ -1028,22 +1135,13 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     if (!petalsDoc.isObject()) { errorOut = petalsPath + ": top level is not an object"; return false; }
 
     std::vector<std::string> warnings;
-    Ctx ctx{warnings, {}};
-
-    if (haveXp && !Json::parse(xpText, xpDoc, parseError)) {
-        // XP is a balance table, not a structural dependency: losing it costs
-        // every mob the same 1 XP, which is visible and survivable.
-        ctx.subject = xpPath;
-        ctx.warn(parseError + "; every mob will award 1 XP");
-        xpDoc = Json::object();
-        xpText.clear();
-    }
+    std::vector<std::string> errors;
+    Ctx ctx{warnings, errors, {}};
 
     // Read through const references: Json's non-const operator[] INSERTS, and
-    // a missing XP row would otherwise grow the document while it is scanned.
+    // a missing key would otherwise grow the document while it is scanned.
     const Json& mobsRoot = mobsDoc;
     const Json& petalsRoot = petalsDoc;
-    const Json& xpRoot = xpDoc;
 
     const KeySet mobKeys = usableKeys(mobsRoot, "mob", ctx);
     const KeySet petalKeys = usableKeys(petalsRoot, "petal", ctx);
@@ -1121,43 +1219,27 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
     for (const std::string& key : petalKeys.source) petalOrder.push_back(petalIds[key]);
     for (const std::string& mobId : eggMobIds) petalOrder.push_back(petalIds[mobId + "_egg"]);
 
-    // XP. A tier the table omits awards 1, except apex: the tables stop at
-    // unique, and apex stats are a 3x step above unique everywhere else, so
-    // deriving it keeps an apex kill from paying the same as a common one.
-    constexpr int kUnique = static_cast<int>(Rarity::Unique);
-    constexpr int kApex = static_cast<int>(Rarity::Apex);
-    for (MobConfig& m : mobs) {
-        const Json& row = xpRoot[m.id];
-        if (!row.isObject()) {
-            if (haveXp) {
-                ctx.subject = "mob '" + m.id + "'";
-                ctx.warn("has no XP table; every tier awards 1");
-            }
-            continue;
+    // A mandatory field nobody supplied is not something to load around: the
+    // whole load is refused and the registry keeps what it already had. A
+    // handful of the complaints go into the message and the rest are counted,
+    // because a file saved without prices produces one of these per petal and
+    // the point is to name the problem, not to print it eighty-four times.
+    if (!errors.empty()) {
+        constexpr std::size_t kMaxReported = 5;
+        const std::size_t shown = std::min(errors.size(), kMaxReported);
+        errorOut.clear();
+        for (std::size_t i = 0; i < shown; ++i) {
+            if (i != 0) errorOut += "; ";
+            errorOut += errors[i];
         }
-        for (int i = 0; i < kRarityCount; ++i) {
-            const Json& value = row[kRarityNames[static_cast<std::size_t>(i)]];
-            if (!value.isNumber()) continue;
-            const double xp = value.asDouble();
-            if (!std::isfinite(xp) || xp < 0.0) {
-                ctx.subject = "mob '" + m.id + "'";
-                ctx.warn(std::string("XP for ") + kRarityNames[static_cast<std::size_t>(i)] +
-                         " is " + num(xp) + "; using 1");
-                continue;
-            }
-            m.xp[static_cast<std::size_t>(i)] = xp;
+        if (errors.size() > shown) {
+            errorOut += " (and " + std::to_string(errors.size() - shown) + " more)";
         }
-        if (!row.contains("apex") && row.contains("unique")) {
-            m.xp[kApex] = m.xp[kUnique] * 3.0;
-        }
+        return false;
     }
 
     std::uint32_t hash = net::contentHash(mobsText);
     hash = net::contentHash(petalsText, hash);
-    // A missing XP file folds nothing in, so a build that ships one and a
-    // build that does not disagree at the handshake -- which is correct: they
-    // do not have the same content.
-    if (!xpText.empty()) hash = net::contentHash(xpText, hash);
 
     mobs_ = std::move(mobs);
     petals_ = std::move(petals);

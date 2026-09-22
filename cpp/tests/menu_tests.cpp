@@ -238,8 +238,16 @@ TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK_NEAR(common, 10.0, 1e-9);
     CHECK_NEAR(uncommon, 35.0, 1e-9);
     CHECK(shopPrice("basic", Rarity::Legendary) > uncommon);
-    // An unlisted petal still has a price, or it would be free.
-    CHECK(shopPrice("a-petal-that-does-not-exist", Rarity::Common) > 0);
+    // The price is the petal's own `price` field, run up the ladder.
+    CHECK_NEAR(common, content().petal(content().petalIndex("basic")).price, 1e-9);
+    // Every petal has one: the load would have been refused otherwise, so
+    // there is no longer a default for an unpriced petal to fall through to.
+    for (std::uint16_t i = 0; i < content().petalCount(); ++i) {
+        CHECK(std::isfinite(content().petal(i).price));
+        CHECK(shopPrice(i, Rarity::Common) >= 0.0);
+    }
+    // An id no petal answers to is not a petal and has no price at all.
+    CHECK_NEAR(shopPrice("a-petal-that-does-not-exist", Rarity::Common), 0.0, 1e-12);
 
     CHECK(shopSellsRarity(Rarity::Super));
     CHECK(!shopSellsRarity(Rarity::Unique));

@@ -20,6 +20,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "fixture_content.h"
 
 using namespace flix;
 
@@ -409,7 +410,7 @@ const SimContent& simContent() {
         const std::string mobs = simTempDir() + "/mobs.json";
         const std::string petals = simTempDir() + "/petals.json";
         const bool wrote =
-            writeFile(mobs, R"({
+            writeFile(mobs, test::fixtureMobs(R"({
               "shocker":{"name":"Shocker","health":500,"damage":20,"size":1,"speed":1,
                          "cooldown":2000,
                          "lightning":{"radius":300}},
@@ -417,15 +418,15 @@ const SimContent& simContent() {
                          "cooldown":0,
                          "lightning":{"radius":250,"onContact":true}},
               "inert":{"name":"Inert","health":500,"damage":30,"size":1,"speed":1}
-            })") &&
-            writeFile(petals, R"({
+            })")) &&
+            writeFile(petals, test::fixturePetals(R"({
               "pea":{"name":"Pea","damage":10,"health":50,"size":1}
-            })");
+            })"));
         if (!wrote) {
             c.error = "cannot write the fixture content";
             return c;
         }
-        c.ok = c.registry.loadFiles(mobs, petals, std::string(), c.error);
+        c.ok = c.registry.loadFiles(mobs, petals, c.error);
         c.shocker = c.registry.mobIndex("shocker");
         c.toucher = c.registry.mobIndex("toucher");
         c.inert = c.registry.mobIndex("inert");
@@ -772,8 +773,7 @@ TEST(the_shipped_jellyfish_and_fireflies_declare_the_strikes_they_should) {
     ContentRegistry registry;
     std::string error;
     const std::string dir = std::string(FLIX_TEST_DATA_DIR);
-    if (!registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", dir + "/mob_xp.json",
-                            error)) {
+    if (!registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", error)) {
         std::printf("  shipped content did not load: %s\n", error.c_str());
         CHECK(false);
         return;
@@ -882,8 +882,7 @@ TEST(the_shipped_mobs_reach_a_flower_touching_them_at_every_tier) {
     ContentRegistry registry;
     std::string error;
     const std::string dir = std::string(FLIX_TEST_DATA_DIR);
-    if (!registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", dir + "/mob_xp.json",
-                            error)) {
+    if (!registry.loadFiles(dir + "/mobs.json", dir + "/petals.json", error)) {
         std::printf("  shipped content did not load: %s\n", error.c_str());
         CHECK(false);
         return;

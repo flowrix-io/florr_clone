@@ -48,7 +48,6 @@ inline const std::string& dataDir() {
         const std::string tests = slash == std::string::npos ? std::string(".") : here.substr(0, slash);
         const std::string candidates[] = {
             tests + "/../build/data",   // staged beside the binaries
-            tests + "/../data",         // the checked-in mob_xp.json plus copies
             "data",
         };
         for (const std::string& candidate : candidates) {
@@ -398,7 +397,7 @@ inline std::string stageDataDir(const std::string& name,
         "/tmp/florr-fixture-" + name + "-" + std::to_string(::getpid());
     ::mkdir(dir.c_str(), 0755);
     ::mkdir((dir + "/tiles").c_str(), 0755);
-    for (const char* file : {"mobs.json", "petals.json", "mob_xp.json", "mob_drops.json"}) {
+    for (const char* file : {"mobs.json", "petals.json", "mob_drops.json"}) {
         // mob_drops is optional in some staged trees; the rest are not.
         if (!copyFile(dataDir() + "/" + file, dir + "/" + file) &&
             std::string(file) != "mob_drops.json") {

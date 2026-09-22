@@ -1,18 +1,20 @@
 #pragma once
 // The star shop: what a petal costs, and what may be sold at all.
 //
-// Prices live here rather than in petals.json because they are not a property
-// of the petal -- they are an economy the server tunes -- and because both the
-// shop panel and the purchase handler must agree on them to the star. The
-// client shows a price; the server recomputes it and ignores whatever the
-// client claimed.
+// The price itself is DATA -- `price` on the petal's entry in petals.json, the
+// cost of one at the common tier -- and what lives here is the economy around
+// it: the rarity ladder, the discount, what is not for sale at any price. It
+// used to be a hand-kept table in this file that named thirty of the eighty-
+// four petals and left the rest on a default, which meant a new petal was
+// priced by forgetting to price it. The shop panel and the purchase handler
+// both read the same field, so the client shows a price and the server
+// recomputes it and ignores whatever the client claimed.
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "shared/game/config.h"
@@ -20,38 +22,18 @@
 
 namespace flix {
 
-/// Base (common-tier) price per petal id. Anything absent costs the default,
-/// which is what keeps a newly added petal buyable instead of free.
-inline const std::unordered_map<std::string, double>& shopBasePrices() {
-    static const std::unordered_map<std::string, double> kPrices = {
-        {"basic", 10},        {"rose", 15},          {"stinger", 20},
-        {"light", 12},        {"rock", 18},          {"sand", 14},
-        {"yggdrasil", 120},   {"dandelion", 13},     {"clover", 16},
-        {"bone", 17},         {"cactus", 19},        {"poison_cactus", 22},
-        {"iris", 18},         {"lightning", 25},     {"missile", 21},
-        {"jelly", 20},        {"yucca", 15},         {"leaf", 14},
-        {"cutter", 50},       {"lightning_cutter", 60}, {"wing", 23},
-        {"square", 1000},     {"golden_leaf", 18},   {"blood_leaf", 24},
-        {"target_dummy_egg", 100000000.0},           {"splitter", 1000000.0},
-        {"flower", 3000000.0}, {"moon", 2000},       {"shell", 15},
-        {"observer", 75},     {"guided_missile", 30},
-    };
-    return kPrices;
-}
-
-inline constexpr double kDefaultShopPrice = 10.0;
-
 /// Each tier is 3.5x the last, so the ladder outruns star income far faster
 /// than crafting does -- buying your way to legendary is meant to be absurd.
-inline double shopPrice(const std::string& petalId, Rarity rarity) {
-    const auto& table = shopBasePrices();
-    const auto it = table.find(petalId);
-    const double base = it == table.end() ? kDefaultShopPrice : it->second;
-    return std::floor(base * std::pow(3.5, rarityIndex(rarity)));
+inline double shopPrice(std::uint16_t petalIndex, Rarity rarity) {
+    return std::floor(content().petal(petalIndex).price * std::pow(3.5, rarityIndex(rarity)));
 }
 
-inline double shopPrice(std::uint16_t petalIndex, Rarity rarity) {
-    return shopPrice(content().petal(petalIndex).id, rarity);
+/// By id. An id no petal answers to has no price at all and quotes zero --
+/// there is no longer a default for it to fall through to, because the load
+/// that would have needed one is refused (ContentRegistry::loadFiles).
+inline double shopPrice(const std::string& petalId, Rarity rarity) {
+    const std::uint16_t index = content().petalIndex(petalId);
+    return index == kInvalidIndex ? 0.0 : shopPrice(index, rarity);
 }
 
 /// Unique and apex are not for sale at any price: they are the reward for

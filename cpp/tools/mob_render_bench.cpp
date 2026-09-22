@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
 
     ContentRegistry content;
     std::string error;
-    if (!content.loadFiles("data/mobs.json", "data/petals.json", "data/mob_xp.json", error)) {
+    if (!content.loadFiles("data/mobs.json", "data/petals.json", error)) {
         std::printf("content: %s\n", error.c_str());
         return 1;
     }

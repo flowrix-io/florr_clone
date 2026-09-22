@@ -11,6 +11,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include "fixture_content.h"
 
 using namespace flix;
 
@@ -53,14 +54,6 @@ std::string petalsPath() {
     return path;
 }
 
-std::string xpPath() {
-    static const std::string path = firstExisting({
-        testsDir() + "/../data/mob_xp.json",
-        "data/mob_xp.json", "../data/mob_xp.json", "cpp/data/mob_xp.json",
-    });
-    return path;
-}
-
 /// The shipped content, loaded once: parsing 220KB of JSON with inline SVG in
 /// every entry is not something to repeat per test case.
 struct Shipped {
@@ -72,7 +65,7 @@ struct Shipped {
 const Shipped& shipped() {
     static const Shipped state = [] {
         Shipped s;
-        s.ok = s.registry.loadFiles(mobsPath(), petalsPath(), xpPath(), s.error);
+        s.ok = s.registry.loadFiles(mobsPath(), petalsPath(), s.error);
         return s;
     }();
     return state;
@@ -140,19 +133,32 @@ bool finite(const PetalStats& s) {
 struct Synthetic {
     std::string mobs;
     std::string petals;
-    std::string xp;
 };
 
+/// The mandatory `xp` and `price` fields are filled in for any entry that
+/// did not name one -- see fixture_content.h. A case that is ABOUT those
+/// fields writes them, and is passed through untouched.
 bool loadSynthetic(ContentRegistry& out, const Synthetic& files, std::string& error) {
     const std::string mobs = tempPath("synthetic_mobs.json");
     const std::string petals = tempPath("synthetic_petals.json");
-    const std::string xp = tempPath("synthetic_xp.json");
-    if (!writeText(mobs, files.mobs) || !writeText(petals, files.petals) ||
-        !writeText(xp, files.xp)) {
+    if (!writeText(mobs, test::fixtureMobs(files.mobs)) ||
+        !writeText(petals, test::fixturePetals(files.petals))) {
         error = "could not write the synthetic content";
         return false;
     }
-    return out.loadFiles(mobs, petals, xp, error);
+    return out.loadFiles(mobs, petals, error);
+}
+
+/// The same, written EXACTLY as given. For the cases that are about a
+/// mandatory field being missing, which the filler above would supply.
+bool loadSyntheticRaw(ContentRegistry& out, const Synthetic& files, std::string& error) {
+    const std::string mobs = tempPath("raw_mobs.json");
+    const std::string petals = tempPath("raw_petals.json");
+    if (!writeText(mobs, files.mobs) || !writeText(petals, files.petals)) {
+        error = "could not write the synthetic content";
+        return false;
+    }
+    return out.loadFiles(mobs, petals, error);
 }
 
 } // namespace
@@ -281,7 +287,7 @@ TEST(indices_are_sorted_dense_and_stable_across_loads) {
     const ContentRegistry& first = shipped().registry;
     ContentRegistry second;
     std::string error;
-    CHECK(second.loadFiles(mobsPath(), petalsPath(), xpPath(), error));
+    CHECK(second.loadFiles(mobsPath(), petalsPath(), error));
 
     CHECK_EQ(first.mobCount(), second.mobCount());
     CHECK_EQ(first.petalCount(), second.petalCount());
@@ -504,7 +510,7 @@ TEST(min_rarity_makes_a_mob_unspawnable_below_its_tier) {
     CHECK(!r.mobStats(spawner, Rarity::Apex).spawnable());
 }
 
-TEST(mob_xp_derives_apex_and_falls_back_to_one) {
+TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
     const ContentRegistry& r = shipped().registry;
     const MobConfig& bee = r.mob(r.mobIndex("bee"));
     CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Common)], 1.0, 1e-9);
@@ -513,12 +519,19 @@ TEST(mob_xp_derives_apex_and_falls_back_to_one) {
     CHECK_NEAR(bee.xp[static_cast<std::size_t>(Rarity::Apex)], 6800000.0 * 3.0, 1e-6);
     CHECK_NEAR(r.mobStats(r.mobIndex("bee"), Rarity::Apex).xp, 20400000.0, 1e-6);
 
-    // A mob the table never mentions awards 1 at every tier rather than 0.
-    const MobConfig& sun = r.mob(r.mobIndex("sun"));
-    for (int tier = 0; tier < kRarityCount; ++tier) {
-        CHECK_NEAR(sun.xp[static_cast<std::size_t>(tier)], 1.0, 1e-9);
+    // EVERY shipped mob says what it is worth -- that is what mandatory buys,
+    // and it is the thing a separate mob_xp.json could not promise: eleven
+    // mobs used to be missing from it and awarded one XP at unique.
+    constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
+    constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
+    for (std::uint16_t i = 0; i < r.mobCount(); ++i) {
+        const MobConfig& m = r.mob(i);
+        for (int tier = 0; tier < kRarityCount; ++tier) {
+            const double xp = m.xp[static_cast<std::size_t>(tier)];
+            CHECK(std::isfinite(xp) && xp >= 0.0);
+        }
+        CHECK_NEAR(m.xp[kApex], m.xp[kUnique] * 3.0, 1e-6);
     }
-    CHECK(warned(r, "mob 'sun': has no XP table"));
 }
 
 TEST(cross_references_resolve_to_indices) {
@@ -728,6 +741,8 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "range": -100, "visual_scale": 0, "ai_type": "telepathic",
         "groups": {"garden": 1, "": 2, "swamp": -1}, "spawn_weight": -1,
         "poison": -1, "poisonDuration": -5,
+        "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
+               "mythic": 6, "ultra": 7, "super": 8, "unique": 9},
         "initial_spawns": ["ghost", "wreck"],
         "spawn_waves": [["wreck"], "not a wave"],
         "projectile": {"count": 0, "distance": 1e400, "speed": -5, "petalType": "nope"},
@@ -737,6 +752,8 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "name": "Huge", "description": "d", "color": "not a colour", "image": "<svg/>",
         "damage": 1e400, "health": 1e400, "size": 1e400, "speed": 1e400,
         "cooldown": 1e400, "range": 1e400, "ai_type": "hostile", "groups": ["desert"],
+        "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
+               "mythic": 6, "ultra": 7, "super": 8, "unique": 9},
         "random_size": [4, 1]
       },
       "not_an_object": 7
@@ -744,6 +761,7 @@ TEST(synthetic_dirty_values_are_sanitised) {
     files.petals = R"JSON({
       "junk": {
         "name": "Junk", "description": "d", "color": "#000000", "image": "<svg/>",
+        "price": 10,
         "damage": -5, "health": -9, "size": 0, "cooldown": 1e400, "count": -3,
         "visualOffsetY": 1e400, "slowFactor": 4, "cameraZoom": 0, "visual_scale": 1e400,
         "playerModifiers": {"luck": 1e400, "maxHealth": -2, "telekinesis": 3},
@@ -752,15 +770,18 @@ TEST(synthetic_dirty_values_are_sanitised) {
       },
       "sane": {
         "name": "Sane", "description": "d", "color": "#ffffff", "image": "<svg/>",
+        "price": 10,
         "damage": 4, "health": 4, "size": 1, "cooldown": 1000, "count": 1,
         "visual_scale": 2.5
       }
     })JSON";
-    files.xp = R"JSON({"wreck": {"common": -3, "unique": 100}})JSON";
 
     ContentRegistry r;
     std::string error;
-    CHECK(loadSynthetic(r, files, error));
+    // Raw: the defects here include numbers that do not survive a round trip
+    // through the JSON writer, and reaching the loader as written is the
+    // whole point of the case. So it spells out its own xp and price.
+    CHECK(loadSyntheticRaw(r, files, error));
     if (!error.empty()) std::printf("    (error: %s)\n", error.c_str());
 
     // The non-object entry is skipped and does not leave a hole in the indices.
@@ -842,16 +863,12 @@ TEST(synthetic_dirty_values_are_sanitised) {
             CHECK(finite(r.petalStats(i, static_cast<Rarity>(tier))));
         }
     }
-
-    // A negative XP entry is refused; the tier keeps its fallback.
-    CHECK_NEAR(wreck.xp[static_cast<std::size_t>(Rarity::Common)], 1.0, 1e-12);
-    CHECK_NEAR(wreck.xp[static_cast<std::size_t>(Rarity::Apex)], 300.0, 1e-9);
 }
 
 TEST(a_missing_file_fails_without_losing_the_loaded_content) {
     ContentRegistry r;
     std::string error;
-    CHECK(r.loadFiles(mobsPath(), petalsPath(), xpPath(), error));
+    CHECK(r.loadFiles(mobsPath(), petalsPath(), error));
     const std::size_t before = r.mobCount();
     const std::uint32_t hashBefore = r.contentHash();
 
@@ -863,7 +880,7 @@ TEST(a_missing_file_fails_without_losing_the_loaded_content) {
     CHECK(r.mobIndex("bee") != kInvalidIndex);
 
     // A readable mobs file and a missing petals file fails just as cleanly.
-    CHECK(!r.loadFiles(mobsPath(), tempPath("no_such_petals.json"), xpPath(), error));
+    CHECK(!r.loadFiles(mobsPath(), tempPath("no_such_petals.json"), error));
     CHECK(!error.empty());
     CHECK_EQ(r.mobCount(), before);
 }
@@ -875,14 +892,12 @@ TEST(malformed_or_empty_content_fails_cleanly) {
     Synthetic broken;
     broken.mobs = "{ \"bee\": ";           // truncated
     broken.petals = "{}";
-    broken.xp = "{}";
     CHECK(!loadSynthetic(r, broken, error));
     CHECK(!error.empty());
 
     Synthetic wrongShape;
     wrongShape.mobs = "[1, 2, 3]";          // an array, not a table of mobs
     wrongShape.petals = "{}";
-    wrongShape.xp = "{}";
     error.clear();
     CHECK(!loadSynthetic(r, wrongShape, error));
     CHECK(!error.empty());
@@ -890,33 +905,134 @@ TEST(malformed_or_empty_content_fails_cleanly) {
     Synthetic empty;
     empty.mobs = "{}";
     empty.petals = "{}";
-    empty.xp = "{}";
     error.clear();
     CHECK(!loadSynthetic(r, empty, error));
     CHECK(!error.empty());
     CHECK(!r.loaded());
 
-    // A broken XP file is survivable: it costs balance, not structure.
-    Synthetic badXp;
-    badXp.mobs = R"JSON({"a": {"name": "A", "health": 3, "damage": 1, "size": 1,
+    Synthetic minimal;
+    minimal.mobs = R"JSON({"a": {"name": "A", "health": 3, "damage": 1, "size": 1,
         "speed": 1, "cooldown": 1, "range": 1, "description": "", "color": "#fff",
         "image": "<svg/>", "ai_type": "passive", "groups": ["garden"]}})JSON";
-    badXp.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+    minimal.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
         "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>"}})JSON";
-    badXp.xp = "{ not json";
     error.clear();
-    CHECK(loadSynthetic(r, badXp, error));
+    CHECK(loadSynthetic(r, minimal, error));
     CHECK_EQ(r.mobCount(), std::size_t(1));
-    CHECK_NEAR(r.mobStats(0, Rarity::Apex).xp, 1.0, 1e-12);
     CHECK_EQ(r.mob(0).colorRgba, 0xFFFFFFFFu);   // "#fff" is the short form
+}
+
+// ---------------------------------------------------------------------------
+// The two mandatory fields
+// ---------------------------------------------------------------------------
+//
+// XP used to live in cpp/data/mob_xp.json and prices in a table in shop.h, and
+// both files could simply not mention an entry. What covered for that -- one
+// XP a tier, ten stars -- was indistinguishable from a number an author chose,
+// so a mob nobody valued and a petal nobody priced looked exactly like a mob
+// worth nothing much and a cheap petal. Now they stop the load.
+
+namespace {
+
+/// A mob and a petal with every OTHER field a load needs.
+Synthetic mandatoryFixture(const std::string& mobExtra, const std::string& petalExtra) {
+    Synthetic files;
+    files.mobs = R"JSON({"a": {"name": "A", "health": 3, "damage": 1, "size": 1,
+        "speed": 1, "cooldown": 1, "range": 1, "description": "", "color": "#fff",
+        "image": "<svg/>", "ai_type": "passive", "groups": ["garden"])JSON" +
+                 mobExtra + "}}";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>")JSON" +
+                   petalExtra + "}}";
+    return files;
+}
+
+const char* kFullXp = R"JSON(, "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4,
+    "legendary": 5, "mythic": 6, "ultra": 7, "super": 8, "unique": 9})JSON";
+
+} // namespace
+
+TEST(a_mob_with_no_xp_table_is_refused) {
+    ContentRegistry r;
+    std::string error;
+
+    // The control: the same content, with the table, loads.
+    CHECK(loadSyntheticRaw(r, mandatoryFixture(kFullXp, ", \"price\": 10"), error));
+    CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Unique)], 9.0, 1e-12);
+    CHECK_NEAR(r.mob(0).xp[static_cast<std::size_t>(Rarity::Apex)], 27.0, 1e-12);
+    const std::size_t loaded = r.mobCount();
+
+    // No table at all.
+    error.clear();
+    CHECK(!loadSyntheticRaw(r, mandatoryFixture("", ", \"price\": 10"), error));
+    CHECK(error.find("xp") != std::string::npos);
+    CHECK_EQ(r.mobCount(), loaded);   // and the registry kept what it had
+
+    // One tier short of a table.
+    error.clear();
+    CHECK(!loadSyntheticRaw(
+        r, mandatoryFixture(R"JSON(, "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4,
+            "legendary": 5, "mythic": 6, "ultra": 7, "super": 8})JSON", ", \"price\": 10"),
+        error));
+    CHECK(error.find("unique") != std::string::npos);
+
+    // A tier that is not a number, and one that is negative.
+    error.clear();
+    CHECK(!loadSyntheticRaw(r, mandatoryFixture(R"JSON(, "xp": {"common": "lots",
+        "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "mythic": 6, "ultra": 7,
+        "super": 8, "unique": 9})JSON", ", \"price\": 10"), error));
+    CHECK(!error.empty());
+    error.clear();
+    CHECK(!loadSyntheticRaw(r, mandatoryFixture(R"JSON(, "xp": {"common": -3,
+        "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5, "mythic": 6, "ultra": 7,
+        "super": 8, "unique": 9})JSON", ", \"price\": 10"), error));
+    CHECK(!error.empty());
+}
+
+TEST(a_petal_with_no_price_is_refused) {
+    ContentRegistry r;
+    std::string error;
+    CHECK(!loadSyntheticRaw(r, mandatoryFixture(kFullXp, ""), error));
+    CHECK(error.find("price") != std::string::npos);
+    CHECK(!r.loaded());
+
+    error.clear();
+    CHECK(!loadSyntheticRaw(r, mandatoryFixture(kFullXp, ", \"price\": \"free\""), error));
+    CHECK(error.find("price") != std::string::npos);
+
+    error.clear();
+    CHECK(!loadSyntheticRaw(r, mandatoryFixture(kFullXp, ", \"price\": -1"), error));
+    CHECK(error.find("price") != std::string::npos);
+
+    error.clear();
+    CHECK(loadSyntheticRaw(r, mandatoryFixture(kFullXp, ", \"price\": 0"), error));
+    CHECK_NEAR(r.petal(r.petalIndex("p")).price, 0.0, 1e-12);   // free is a choice
+}
+
+TEST(an_egg_is_priced_from_the_mob_it_hatches) {
+    const ContentRegistry& r = shipped().registry;
+    // Nobody writes an egg down, so nobody can price one: it is worth what the
+    // mob is worth, read off the mob's COMMON tier because a base price is a
+    // common-tier price.
+    for (std::uint16_t i = 0; i < r.mobCount(); ++i) {
+        const std::uint16_t egg = r.petalIndex(r.mob(i).id + "_egg");
+        if (egg == kInvalidIndex) continue;
+        const double common = r.mob(i).xp[static_cast<std::size_t>(Rarity::Common)];
+        CHECK_NEAR(r.petal(egg).price, std::max(10.0, 10.0 * common), 1e-9);
+    }
+    // The ordinary mob is worth one at common, so its egg still costs the ten
+    // stars every egg cost when eggs fell through to the shop's default.
+    CHECK_NEAR(r.petal(r.petalIndex("bee_egg")).price, 10.0, 1e-9);
+    // A queen ant is worth fifteen, and her egg is priced to match.
+    CHECK_NEAR(r.petal(r.petalIndex("queen_ant_egg")).price, 150.0, 1e-9);
 }
 
 TEST(content_hash_follows_the_bytes) {
     ContentRegistry a;
     ContentRegistry b;
     std::string error;
-    CHECK(a.loadFiles(mobsPath(), petalsPath(), xpPath(), error));
-    CHECK(b.loadFiles(mobsPath(), petalsPath(), xpPath(), error));
+    CHECK(a.loadFiles(mobsPath(), petalsPath(), error));
+    CHECK(b.loadFiles(mobsPath(), petalsPath(), error));
     CHECK_EQ(a.contentHash(), b.contentHash());
 
     // One byte of difference in either file has to be visible at the
@@ -926,28 +1042,26 @@ TEST(content_hash_follows_the_bytes) {
     const std::string edited = tempPath("edited_petals.json");
     CHECK(writeText(edited, petals + "\n"));
     ContentRegistry c;
-    CHECK(c.loadFiles(mobsPath(), edited, xpPath(), error));
+    CHECK(c.loadFiles(mobsPath(), edited, error));
     CHECK(c.contentHash() != a.contentHash());
     CHECK_EQ(c.petalCount(), a.petalCount());   // same content, different bytes
 }
 
 TEST(global_content_registry_loads_from_one_directory) {
-    // load() takes a directory; the build stages all three files into one.
+    // load() takes a directory; the build stages both files into one.
     const std::string dir = tempDir();
-    std::string mobs, petals, xp;
+    std::string mobs, petals;
     CHECK(readText(mobsPath(), mobs));
     CHECK(readText(petalsPath(), petals));
-    CHECK(readText(xpPath(), xp));
     CHECK(writeText(dir + "/mobs.json", mobs));
     CHECK(writeText(dir + "/petals.json", petals));
-    CHECK(writeText(dir + "/mob_xp.json", xp));
 
     std::string error;
     CHECK(loadContent(dir, error));
     CHECK(error.empty());
     CHECK_EQ(content().mobCount(), std::size_t(55));
     CHECK_EQ(content().petalCount(), std::size_t(127));
-    // Same three files in the same order as the shipped registry, so the two
+    // The same two files in the same order as the shipped registry, so the two
     // must agree on every index and on the hash.
     CHECK_EQ(content().contentHash(), shipped().registry.contentHash());
     CHECK_EQ(content().mobIndex("bee"), shipped().registry.mobIndex("bee"));
@@ -968,13 +1082,11 @@ TEST(the_content_hash_covers_the_staged_maps) {
     // the server's has to be refused there, so the maps are part of the hash.
     const std::string dir = tempDir() + "/maps_hash";
     mkdir(dir.c_str(), 0755);
-    std::string mobs, petals, xp;
+    std::string mobs, petals;
     CHECK(readText(mobsPath(), mobs));
     CHECK(readText(petalsPath(), petals));
-    CHECK(readText(xpPath(), xp));
     CHECK(writeText(dir + "/mobs.json", mobs));
     CHECK(writeText(dir + "/petals.json", petals));
-    CHECK(writeText(dir + "/mob_xp.json", xp));
     std::remove((dir + "/maps.json").c_str());
 
     std::string error;
@@ -1028,9 +1140,9 @@ TEST(the_content_hash_covers_the_staged_maps) {
     CHECK(withShapes.load(dir, error));
     CHECK(withShapes.contentHash() != withTileset.contentHash());
 
-    // Three explicit files, no directory: nothing to fold, as before.
+    // Both files named explicitly, no directory: nothing to fold, as before.
     ContentRegistry files;
-    CHECK(files.loadFiles(dir + "/mobs.json", dir + "/petals.json", dir + "/mob_xp.json", error));
+    CHECK(files.loadFiles(dir + "/mobs.json", dir + "/petals.json", error));
     CHECK_EQ(files.contentHash(), plain.contentHash());
     std::remove((dir + "/maps.json").c_str());
     std::remove((dir + "/tiny.tmj").c_str());

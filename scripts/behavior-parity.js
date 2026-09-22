@@ -37,7 +37,6 @@ fs.rmSync(tsOutDir, { recursive: true, force: true });
 const cppOutput = run(path.join(build, 'behavior_oracle'), [
     path.join(root, 'src', 'mobs.json'),
     path.join(root, 'src', 'petals.json'),
-    path.join(root, 'cpp', 'data', 'mob_xp.json'),
 ]);
 
 // The movement scenario is TypeScript-only now.

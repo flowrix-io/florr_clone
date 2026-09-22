@@ -16,6 +16,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "fixture_content.h"
 
 using namespace flix;
 
@@ -46,8 +47,6 @@ const ContentRegistry& shipped() {
                                    "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}),
                     firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
                                    "../src/petals.json", "../../src/petals.json", "src/petals.json"}),
-                    firstExisting({testsDir() + "/../data/mob_xp.json", "data/mob_xp.json",
-                                   "../data/mob_xp.json", "cpp/data/mob_xp.json"}),
                     error);
         return r;
     }();
@@ -77,7 +76,7 @@ const ContentRegistry& synthetic() {
         ContentRegistry r;
         const std::string mobs = tempPath("mobs.json");
         const std::string petals = tempPath("petals.json");
-        writeText(mobs, R"({
+        writeText(mobs, test::fixtureMobs(R"({
             "alpha": {"name":"Alpha","health":10,"damage":1,"size":1,"speed":1,
                       "groups":{"meadow":1}},
             "beta":  {"name":"Beta","health":10,"damage":1,"size":1,"speed":1,
@@ -88,12 +87,12 @@ const ContentRegistry& synthetic() {
                       "groups":{"dunes":100}},
             "ghost": {"name":"Ghost","health":10,"damage":1,"size":1,"speed":1,
                       "groups":{"meadow":0}}
-        })");
-        writeText(petals, R"({
+        })"));
+        writeText(petals, test::fixturePetals(R"({
             "basic": {"name":"Basic","damage":5,"health":5,"size":1,"cooldown":1000,"count":1}
-        })");
+        })"));
         std::string error;
-        r.loadFiles(mobs, petals, "", error);
+        r.loadFiles(mobs, petals, error);
         return r;
     }();
     return registry;

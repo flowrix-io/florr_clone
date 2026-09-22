@@ -56,19 +56,17 @@ bool writeText(const std::string& path, const std::string& text) {
     return out.good();
 }
 
-/// loadContent() takes one directory and the three files do not live in one,
+/// loadContent() takes one directory and the two files do not live in one,
 /// so they are staged into a scratch directory here. The staged copy is the
 /// shipped bytes verbatim, so a test file that loads content before or after
 /// this one ends up with exactly the same registry.
 bool contentReady() {
     static const bool ok = [] {
-        std::string mobs, petals, xp;
+        std::string mobs, petals;
         if (!readText(firstExisting({testsDir() + "/../../src/mobs.json", "data/mobs.json",
                                      "../src/mobs.json", "../../src/mobs.json", "src/mobs.json"}), mobs)) return false;
         if (!readText(firstExisting({testsDir() + "/../../src/petals.json", "data/petals.json",
                                      "../src/petals.json", "../../src/petals.json", "src/petals.json"}), petals)) return false;
-        if (!readText(firstExisting({testsDir() + "/../data/mob_xp.json", "data/mob_xp.json",
-                                     "../data/mob_xp.json", "cpp/data/mob_xp.json"}), xp)) return false;
 
         const char* env = std::getenv("TMPDIR");
         std::string dir = (env != nullptr && *env != '\0') ? env : "/tmp";
@@ -77,7 +75,6 @@ bool contentReady() {
         mkdir(dir.c_str(), 0755);
         if (!writeText(dir + "/mobs.json", mobs)) return false;
         if (!writeText(dir + "/petals.json", petals)) return false;
-        if (!writeText(dir + "/mob_xp.json", xp)) return false;
 
         std::string error;
         return loadContent(dir, error);

@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include "fixture_content.h"
 
 using namespace flix;
 
@@ -44,7 +45,7 @@ std::string tempDir() {
     return base;
 }
 
-bool writeText(const std::string& path, const char* text) {
+bool writeText(const std::string& path, const std::string& text) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << text;
     return out.good();
@@ -62,11 +63,12 @@ const Fixture& fixture() {
         const std::string dir = tempDir();
         const std::string mobs = dir + "/mobs.json";
         const std::string petals = dir + "/petals.json";
-        if (!writeText(mobs, kMobsJson) || !writeText(petals, kPetalsJson)) {
+        if (!writeText(mobs, test::fixtureMobs(kMobsJson)) ||
+            !writeText(petals, test::fixturePetals(kPetalsJson))) {
             f.error = "could not write the fixture content into " + dir;
             return f;
         }
-        f.ok = f.registry.loadFiles(mobs, petals, "", f.error);
+        f.ok = f.registry.loadFiles(mobs, petals, f.error);
         return f;
     }();
     return state;
