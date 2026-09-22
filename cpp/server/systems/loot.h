@@ -85,12 +85,14 @@ public:
     struct Entry {
         std::uint16_t petalIndex = kNoPetal;
         Kind kind = Kind::Petal;
-        /// Authored rarity index (legacy field name). Read only on a common
-        /// mob: above it a drop is graded against the mob that left it.
+        /// Authored rarity index (legacy field name). Read on a common or
+        /// unusual mob, and on the one graded row of a rarer one; above
+        /// unusual that row is graded against the mob that left it instead.
         int rarityOffset = 0;
         /// On a common mob, the chance the row drops at all. On every mob
-        /// above one the row always drops and this is its QUALITY instead --
-        /// see LootSystem::scaleDropRarity.
+        /// above one the row always drops, and above an unusual one this is
+        /// its WEIGHT in the draw for which row is the graded drop -- see
+        /// LootSystem::pickFeatured.
         double probability = 0.0;
         int minCount = 1;
         int maxCount = 1;
@@ -211,26 +213,25 @@ public:
     Entity spawnDrop(World& world, std::uint16_t petalIndex, Rarity rarity, Vec2 position,
                      Realm realm, const std::vector<Entity>& eligible, double nowMillis);
 
-    /// Apply the whole drop rarity pipeline to one table row.
-    static Rarity rollDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
-                                 Rng& rng);
+    /// Apply the whole drop rarity pipeline to one GRADED table row -- the
+    /// one drop a kill is measured by. See pickFeatured for which row that is.
+    static Rarity rollDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng);
 
-    /// The first half of that pipeline: where in the mob's band the drop
-    /// lands. Above common the row's `probability` is spent here rather than
-    /// on whether it drops -- two independent holds at p each, so the item
-    /// comes out at the mob's own tier with p^2, one tier below with 2p(1-p)
-    /// and two below with (1-p)^2. Rolled once per winning row, upstream of
-    /// the apex quantity loop, which is why it is separable at all -- ten apex
-    /// copies share one base rarity.
-    static Rarity scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
-                                  Rng& rng);
+    /// The first half of that pipeline: above uncommon, a 90% chance the row
+    /// drops at one tier below the MOB instead of its authored rarity. Rolled
+    /// once per graded row, upstream of the apex quantity loop, which is why
+    /// it is separable at all -- ten apex copies share one base rarity.
+    static Rarity scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng);
 
-    /// The second half, rolled per copy: a common mob's downgrade roll, an
-    /// ultra mob's one-in-five throttle on its own tier, and the apex cap. Nothing is promoted at any tier -- a mob never
-    /// leaves an item above its own rarity -- so the only rarity this can
-    /// hand back above the mob's own is a common mob's authored uncommon row,
-    /// which the table asked for on purpose.
+    /// The second half: the mutually exclusive upgrade/downgrade roll, the
+    /// mob's rarity floor and the apex item cap. Rolled per copy.
     static Rarity finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng);
+
+    /// What every row that is NOT the graded drop lands at: two tiers below
+    /// the mob, flat. These are the rows guaranteed drops added on top of the
+    /// one item a kill used to hand out, so they sit at the bottom of the
+    /// mob's band where they cannot change how fast anyone progresses.
+    static Rarity chaffDropRarity(Rarity mobRarity);
 
     /// Whether `player` may take this drop right now.
     /// Whether this flower may take a copy. `owner` is the connection behind
@@ -265,6 +266,11 @@ private:
     /// which table: the authored rows for a common mob, the merged one for
     /// every mob above it, since those drop one of everything they have.
     void rollTable(const std::vector<DropTables::Entry>& table, Rarity mobRarity, Rng& rng);
+    /// Which row of `selected_` is the kill's graded drop, drawn weighted by
+    /// `probability` exactly as the single pre-guaranteed-drops item was.
+    /// Only meaningful above uncommon, where one item per kill is graded and
+    /// the rest are chaff; below that every row is graded.
+    std::size_t pickFeatured(Rng& rng) const;
 
     World* boundWorld_ = nullptr;
     std::optional<Query<PlayerTag, Transform, PlayerModifiers>> collectors_;

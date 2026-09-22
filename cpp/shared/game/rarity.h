@@ -194,23 +194,13 @@ inline double craftSuccessChance(Rarity from) {
 
 /// Chance a drop rolls one tier above the mob that dropped it.
 ///
-/// No longer consulted by the drop pipeline: a mob may not leave an item above
-/// its own rarity at any tier, so nothing promotes a drop any more. Kept
-/// because behaviour_oracle still emits it for comparison against the
-/// TypeScript server, which does still promote. See LootSystem::finishDropRarity.
+/// Read only for the one GRADED drop of a kill -- see
+/// LootSystem::finishDropRarity. The extra rows a mob hands out on top of it
+/// are never promoted; they are flat chaff two tiers down.
 inline double dropUpgradeChance(Rarity mobRarity) {
     if (rarityIndex(mobRarity) >= kRarityCount - 1) return 0.0;
     return craftSuccessChance(mobRarity) / 3.0;
 }
-
-/// How often an ULTRA mob's drop is allowed to keep the mob's own tier.
-///
-/// The band in LootSystem::scaleDropRarity would hand an ultra mob's row its
-/// full tier at p^2 -- 100% for a guaranteed row -- which made ultra petals
-/// ordinary. One time in five: a 5x nerf to ultra-rarity loot, with the four
-/// parts it gives up landing on mythic. No other tier is throttled this way,
-/// so this is the gap between an ultra mob and the super mob above it.
-inline constexpr double kUltraOwnTierKeepChance = 1.0 / 5.0;
 
 /// Chance a drop rolls one tier below the mob that dropped it.
 inline double dropDowngradeChance(Rarity mobRarity) {

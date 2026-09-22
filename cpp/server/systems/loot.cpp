@@ -248,64 +248,48 @@ std::uint16_t DropTables::randomPetal(Rng& rng) const {
 // Rolls
 // ---------------------------------------------------------------------------
 
-Rarity LootSystem::scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
-                                   Rng& rng) {
-    // A common mob has no tiers beneath it to slide down, so its rows keep the
-    // rarity the table authored them at and `probability` stays what it has
-    // always been there: the chance the row drops at all.
-    if (mobRarity == Rarity::Common) return authoredRarity;
+Rarity LootSystem::scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng) {
+    // Above uncommon, 90% of graded rows first become one tier below the
+    // mob; common and uncommon rows keep their authored table rarity.
+    if (rarityIndex(mobRarity) > rarityIndex(Rarity::Uncommon) && rng.chance(0.9)) {
+        return clampRarity(rarityIndex(mobRarity) - 1);
+    }
+    return authoredRarity;
+}
 
-    // Above common the row is GUARANTEED, and its probability buys quality
-    // instead. Two independent holds, each kept with chance p: the drop lands
-    // at the mob's own tier with p^2, one below with 2p(1-p), two below with
-    // (1-p)^2. So a bee's pollen (0.8) is worth the bee's own tier two kills
-    // in three, while its stinger (0.3) comes out two tiers down about half
-    // the time and at full tier one kill in eleven -- you always get the
-    // stinger, just rarely a good one. The authored rarity is not consulted
-    // at all: above common a drop is graded against the mob that left it.
-    const double keep = clamp(probability, 0.0, 1.0);
-    int tier = rarityIndex(mobRarity);
-    if (!rng.chance(keep)) --tier;
-    if (!rng.chance(keep)) --tier;
-    return clampRarity(tier);
+Rarity LootSystem::chaffDropRarity(Rarity mobRarity) {
+    // Flat, and deliberately not run through finishDropRarity: the rarity
+    // floor there exists to hold the mob's ONE graded drop up near its tier,
+    // and applying it to the extra rows would undo the whole point of them
+    // being chaff -- a rare mob's floor would lift every one of them back to
+    // uncommon.
+    return clampRarity(rarityIndex(mobRarity) - 2);
 }
 
 Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng) {
     Rarity base = baseRarity;
-
-    // NOTHING is promoted here, at any tier. A mob never leaves an item above
-    // its own rarity, so the lucky upgrade roll is gone from both arms it used
-    // to live in: the common mob's mutually exclusive pair, and ultra's
-    // multiplied roll, which was the one exception the ladder allowed.
-    //
-    // What survives is the DOWNGRADE, and only on a common mob. Above common
-    // scaleDropRarity's band already spent the row's probability on how far
-    // DOWN the item lands, and rolling again here would demote it twice; a
-    // common mob has no band -- its row keeps the rarity the table authored,
-    // and a deliberate uncommon row (ladybug's rose, bubble's air) still pays
-    // out as authored -- so this is the only place it can slip.
-    if (mobRarity == Rarity::Common && rng.chance(dropDowngradeChance(base))) {
+    double upgrade = dropUpgradeChance(base);
+    if (mobRarity == Rarity::Ultra) upgrade *= 20.0;
+    upgrade = clamp(upgrade, 0.0, 1.0);
+    if (rng.chance(upgrade)) {
+        base = upgradeRarity(base);
+    } else if (rng.chance(dropDowngradeChance(base))) {
         base = downgradeRarity(base);
     }
 
-    // An ultra mob's own tier is throttled on top of the band: four drops in
-    // five that graded ultra slip to mythic, so an ultra petal off an ultra
-    // mob is five times rarer than the row's probability alone would say. A
-    // demotion, so nothing here can breach the ceiling above.
-    if (mobRarity == Rarity::Ultra && base == Rarity::Ultra &&
-        !rng.chance(kUltraOwnTierKeepChance)) {
-        base = downgradeRarity(base);
+    // Rare mobs floor at tier-1; epic and above floor at tier-2.
+    const int mobTier = rarityIndex(mobRarity);
+    if (mobTier >= rarityIndex(Rarity::Rare)) {
+        const int floor = mobTier >= rarityIndex(Rarity::Epic) ? mobTier - 2 : mobTier - 1;
+        if (rarityIndex(base) < floor) base = clampRarity(floor);
     }
-
     // Apex mobs explicitly cap item rarity at unique.
     if (mobRarity == Rarity::Apex && base == Rarity::Apex) base = Rarity::Unique;
     return base;
 }
 
-Rarity LootSystem::rollDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
-                                  Rng& rng) {
-    return finishDropRarity(scaleDropRarity(authoredRarity, mobRarity, probability, rng), mobRarity,
-                            rng);
+Rarity LootSystem::rollDropRarity(Rarity authoredRarity, Rarity mobRarity, Rng& rng) {
+    return finishDropRarity(scaleDropRarity(authoredRarity, mobRarity, rng), mobRarity, rng);
 }
 
 bool LootSystem::mayPickUp(const DropItem& drop, Entity player, net::ConnectionId owner,
@@ -603,21 +587,44 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         selected_.clear();
         rollTable(table, mobRarity, rng);
 
+        // Which of the rows is the mob's REAL drop.
+        //
+        // Above unusual a kill used to hand out exactly one item, picked out
+        // of the table by a probability-weighted draw. It still is, and that
+        // item is still graded by the same pipeline it always was -- the rate
+        // at which a mob of a given rarity leaves an item of that rarity is
+        // what it was before the table started paying out in full. What
+        // changed is everything ELSE the mob has: those rows drop too now,
+        // flat at two tiers below the mob. More loot per kill, at the bottom
+        // of the mob's band, where it cannot move progression.
+        //
+        // A common or unusual mob grades every row it hands out, which is
+        // what both have always done -- neither has a weighted draw to
+        // reproduce.
+        const bool gradeEveryRow = rarityIndex(mobRarity) <= rarityIndex(Rarity::Uncommon);
+        const std::size_t featured = gradeEveryRow ? 0 : pickFeatured(rng);
+
         const int copies = mobRarity == Rarity::Apex ? 10 : 1;
-        for (const DropTables::Entry* entry : selected_) {
+        for (std::size_t row = 0; row < selected_.size(); ++row) {
+            const DropTables::Entry* entry = selected_[row];
             // A consumable came through like any other row -- it is a drop
             // this mob has, which is the only reason it is in the table at
             // all -- but this inventory holds petals, so winning one means the
-            // mob left nothing.
+            // mob left nothing. Including when it is the FEATURED row: the
+            // weighted draw could always land on one, and did, before every
+            // row started dropping.
             if (entry->kind == DropTables::Kind::Consumable) continue;
 
-            // The mob's tier scale is rolled ONCE per winning row, upstream of
+            const bool graded = gradeEveryRow || row == featured;
+            // The mob's tier scale is rolled ONCE per graded row, upstream of
             // the copies: an apex batch shares one base rarity and its ten
             // items differ only by their own upgrade rolls.
-            const Rarity base = scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity,
-                                                entry->probability, rng);
+            const Rarity base = graded
+                                    ? scaleDropRarity(clampRarity(entry->rarityOffset), mobRarity,
+                                                      rng)
+                                    : chaffDropRarity(mobRarity);
             for (int i = 0; i < copies; ++i) {
-                Rarity rarity = finishDropRarity(base, mobRarity, rng);
+                Rarity rarity = graded ? finishDropRarity(base, mobRarity, rng) : base;
                 // The Random sentinel resolves per COPY, not per row.
                 std::uint16_t petalIndex = entry->kind == DropTables::Kind::RandomPetal
                                                ? tables_.randomPetal(rng)
@@ -659,11 +666,28 @@ void LootSystem::rollTable(const std::vector<DropTables::Entry>& table, Rarity m
     }
 
     // Every mob above common leaves one of every drop it has. Nothing is
-    // rolled here: `probability` is spent in scaleDropRarity on the tier each
-    // one lands at, so a low-probability row is not a rare drop any more, it
-    // is a reliably WEAK one. The table handed in is the merged one, so two
-    // authored lines naming one petal are one drop rather than two.
+    // rolled here: above unusual `probability` is spent in pickFeatured on
+    // WHICH row is the graded drop, so a low-probability row is not a rare
+    // drop any more, it is a reliably WEAK one. The table handed in is the
+    // merged one, so two authored lines naming one petal are one drop rather
+    // than two.
     for (const DropTables::Entry& entry : table) selected_.push_back(&entry);
+}
+
+std::size_t LootSystem::pickFeatured(Rng& rng) const {
+    // The pre-guaranteed-drops weighted draw, unchanged down to the fallback:
+    // a table whose probabilities are all zero picks its last row rather than
+    // nothing, so a mob with such a table still leaves one graded item.
+    if (selected_.empty()) return 0;
+    double total = 0.0;
+    for (const DropTables::Entry* entry : selected_) total += entry->probability;
+    if (total <= 0.0) return selected_.size() - 1;
+    double roll = rng.unit() * total;
+    for (std::size_t i = 0; i < selected_.size(); ++i) {
+        roll -= selected_[i]->probability;
+        if (roll <= 0.0) return i;
+    }
+    return selected_.size() - 1;
 }
 
 } // namespace flix

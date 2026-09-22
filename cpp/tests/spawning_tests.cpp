@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -1665,154 +1666,144 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
     CHECK(tables.unresolved().empty());
 }
 
-TEST(drop_rarity_uses_authored_rows_for_common_mobs) {
-    // A common mob is the only one left that reads the authored rarity: there
-    // is no band beneath it to slide down, so the row drops where the table
-    // says, or one tier under it. Never over: the upgrade arm of that old
-    // mutually exclusive pair is gone.
+TEST(drop_rarity_uses_authored_rows_for_common_and_uncommon_mobs) {
+    // Neither tier has a weighted draw to reproduce, so every row they hand
+    // out is graded, and graded means the authored rarity plus the mutually
+    // exclusive upgrade/downgrade roll around it.
     Rng rng(31337);
-    bool fell = false;
     for (int i = 0; i < 40000; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, Rarity::Common, 0.5, rng);
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, Rarity::Common, rng);
         const int delta = rarityIndex(r) - rarityIndex(Rarity::Rare);
-        CHECK(delta >= -1 && delta <= 0);
-        if (delta < 0) fell = true;
+        CHECK(delta >= -1 && delta <= 1);
+        const Rarity uncommon = LootSystem::rollDropRarity(Rarity::Common, Rarity::Uncommon, rng);
+        CHECK(rarityIndex(uncommon) >= rarityIndex(Rarity::Common));
+        CHECK(rarityIndex(uncommon) <= rarityIndex(Rarity::Uncommon));
     }
-    // The downgrade survived the cull -- a range test passes just as well on
-    // a roll that never fires, so say out loud that this one still does.
-    CHECK(fell);
 }
 
-TEST(a_drop_lands_inside_its_mobs_own_band) {
-    // Above common the authored rarity is not consulted at all: the drop is
-    // graded against the mob, at its tier or one or two below.
+TEST(drop_rarity_applies_mob_floors_and_the_apex_item_cap) {
     Rng rng(5);
-    for (int tier = rarityIndex(Rarity::Uncommon); tier < kRarityCount; ++tier) {
-        const Rarity mob = clampRarity(tier);
-        for (int i = 0; i < 4000; ++i) {
-            const double probability = (i % 11) / 10.0;
-            const Rarity r = LootSystem::rollDropRarity(Rarity::Apex, mob, probability, rng);
-            CHECK(rarityIndex(r) >= std::max(0, tier - 2));
-            // Apex mobs cap their items at unique; everything else ceilings at
-            // the mob's own rarity.
-            CHECK(rarityIndex(r) <= (mob == Rarity::Apex ? rarityIndex(Rarity::Unique) : tier));
-        }
+    for (int i = 0; i < 2000; ++i) {
+        const Rarity rare = LootSystem::rollDropRarity(Rarity::Common, Rarity::Rare, rng);
+        CHECK(rarityIndex(rare) >= rarityIndex(Rarity::Uncommon));
+        CHECK(rarityIndex(rare) <= rarityIndex(Rarity::Rare));
+
+        const Rarity apex = LootSystem::rollDropRarity(Rarity::Apex, Rarity::Apex, rng);
+        CHECK(rarityIndex(apex) >= rarityIndex(Rarity::Super));
+        CHECK(rarityIndex(apex) <= rarityIndex(Rarity::Unique));
     }
 }
 
-TEST(probability_weights_the_band_and_nothing_else) {
-    Rng rng(777);
-    const auto band = [&](Rarity mob, double probability) {
-        std::array<int, 3> counts{};   // [same, -1, -2]
-        constexpr int kRuns = 200000;
-        for (int i = 0; i < kRuns; ++i) {
-            const int delta = rarityIndex(mob) -
-                              rarityIndex(LootSystem::rollDropRarity(Rarity::Common, mob,
-                                                                     probability, rng));
-            CHECK(delta >= 0 && delta <= 2);
-            if (delta >= 0 && delta <= 2) ++counts[static_cast<std::size_t>(delta)];
-        }
-        return std::array<double, 3>{counts[0] / double(kRuns), counts[1] / double(kRuns),
-                                     counts[2] / double(kRuns)};
+TEST(a_mob_leaves_its_own_rarity_at_the_pre_guaranteed_drop_rate) {
+    // The whole point of the split. Guaranteed drops multiplied what a kill
+    // pays out; grading exactly one row keeps the rate that decides how fast
+    // anyone climbs the ladder at what it was before they existed. The
+    // figures are 90% * the upgrade chance one tier under the mob -- written
+    // out rather than recomputed, so a change to either half of the pipeline
+    // has to come and edit this list on purpose.
+    struct Case { Rarity mob; double ownTier; };
+    const Case cases[] = {
+        {Rarity::Rare, 0.096},        {Rarity::Epic, 0.048},
+        {Rarity::Legendary, 0.024},   {Rarity::Mythic, 0.012},
+        {Rarity::Ultra, 0.120},       // the 20x lucky roll, which only ultra has
+        {Rarity::Super, 0.003},       {Rarity::Unique, 0.0015},
     };
-    const auto near = [](double got, double want) { return std::abs(got - want) < 0.01; };
 
-    // p^2 / 2p(1-p) / (1-p)^2, on a mob far enough up the ladder that nothing
-    // clamps at the bottom.
-    const std::array<double, 3> cheap = band(Rarity::Epic, 0.8);
-    CHECK(near(cheap[0], 0.64));
-    CHECK(near(cheap[1], 0.32));
-    CHECK(near(cheap[2], 0.04));
+    Rng rng(4242);
+    constexpr int kRuns = 400000;
+    for (const Case& c : cases) {
+        int own = 0;
+        for (int i = 0; i < kRuns; ++i) {
+            if (LootSystem::rollDropRarity(Rarity::Common, c.mob, rng) == c.mob) ++own;
+        }
+        CHECK_NEAR(own / double(kRuns), c.ownTier, std::max(0.0005, c.ownTier * 0.05));
+    }
 
-    const std::array<double, 3> prized = band(Rarity::Epic, 0.3);
-    CHECK(near(prized[0], 0.09));
-    CHECK(near(prized[1], 0.42));
-    CHECK(near(prized[2], 0.49));
-
-    // A 1.0 row -- every egg, and a leafbug's leaf -- is always worth the
-    // mob's full tier, and a 0.0 row always the floor.
-    const std::array<double, 3> certain = band(Rarity::Legendary, 1.0);
-    CHECK(near(certain[0], 1.0));
-    const std::array<double, 3> dregs = band(Rarity::Legendary, 0.0);
-    CHECK(near(dregs[2], 1.0));
-
-    // An uncommon mob has one tier beneath it, so both demotions land on
-    // common: 1 - p^2 of the time.
-    const std::array<double, 3> shallow = band(Rarity::Uncommon, 0.5);
-    CHECK(near(shallow[0], 0.25));
-    CHECK(near(shallow[1], 0.75));
-    CHECK_EQ(int(shallow[2] * 1000), 0);
+    // Apex is the one tier that cannot leave its own rarity at all.
+    int apex = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Apex, rng) == Rarity::Apex) ++apex;
+    }
+    CHECK_EQ(apex, 0);
 }
 
-TEST(no_mob_drops_above_its_own_rarity) {
-    // The rule, swept over every tier. Above common the mob's rarity is the
-    // hard ceiling; a common mob's ceiling is the rarity its row was authored
-    // at, because a deliberate uncommon row -- ladybug's rose, bubble's air --
-    // is content, not a lucky roll, and still pays out as written.
-    Rng rng(99);
+TEST(chaff_is_flat_two_tiers_below_the_mob) {
+    // Not rolled and not floored: the rows a mob hands out on top of its one
+    // graded drop are the bottom of its band, every time. Running them
+    // through finishDropRarity instead would let a rare mob's floor lift
+    // them all back to uncommon, which is exactly the inflation the graded
+    // row exists to hold back.
     for (int tier = 0; tier < kRarityCount; ++tier) {
         const Rarity mob = clampRarity(tier);
-        for (int i = 0; i < 20000; ++i) {
-            const double probability = (i % 11) / 10.0;
-            const Rarity authored = (i % 2 == 0) ? Rarity::Common : Rarity::Uncommon;
-            const Rarity r = LootSystem::rollDropRarity(authored, mob, probability, rng);
-            if (mob == Rarity::Common) {
-                CHECK(rarityIndex(r) <= rarityIndex(authored));
-            } else {
-                // Apex is the one tier that ceilings BELOW itself.
-                CHECK(rarityIndex(r) <= (mob == Rarity::Apex ? rarityIndex(Rarity::Unique)
-                                                             : tier));
-            }
-        }
+        CHECK_EQ(rarityIndex(LootSystem::chaffDropRarity(mob)), std::max(0, tier - 2));
     }
 }
 
-TEST(an_ultra_mob_no_longer_beats_its_own_rarity) {
-    // Ultra was the exception the ladder allowed: a lucky roll worth 20x the
-    // base upgrade chance, briefly 5x, and then nothing. Guarded on its own
-    // because it is the one tier where a promotion had somewhere to go.
-    Rng rng(20260921);
-    int above = 0;
-    for (int i = 0; i < 300000; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 1.0, rng);
-        if (rarityIndex(r) > rarityIndex(Rarity::Ultra)) ++above;
+TEST(a_kill_above_unusual_grades_exactly_one_of_its_rows) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(808);
+
+    // A RARE ladybug separates the two cleanly: its graded drop floors at
+    // uncommon and its chaff is common, so counting the non-common items
+    // counts the graded ones. Three rows drop every time -- rose, light and
+    // the generated egg -- and exactly one of them is the real drop.
+    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+
+    for (int i = 0; i < 400; ++i) {
+        makeCorpse(world, ladybug, Rarity::Rare, kCentre, player, {player});
+        loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+        commands.flush();
+
+        int graded = 0;
+        int total = 0;
+        for (const Entity drop : liveDrops(world)) {
+            ++total;
+            if (world.get<DropItem>(drop).rarity != Rarity::Common) ++graded;
+            world.destroy(drop);
+        }
+        CHECK_EQ(total, 3);
+        CHECK_EQ(graded, 1);
     }
-    CHECK_EQ(above, 0);
 }
 
-TEST(an_ultra_mobs_own_tier_is_throttled_to_a_fifth) {
-    // Pin the NUMBER as well as the constant: this is the gap between an
-    // ultra mob and the super mob above it, and a test that only read
-    // kUltraOwnTierKeepChance back would pass at any value.
-    CHECK_NEAR(kUltraOwnTierKeepChance, 0.2, 1e-12);
+TEST(which_row_is_graded_is_drawn_by_probability) {
+    World world;
+    CommandBuffer commands{world};
+    SpatialGrid grid;
+    LootSystem loot;
+    EventQueue events;
+    Rng rng(909);
 
-    // p = 1.0 grades every drop at the mob's own tier, so the band
-    // contributes nothing and what comes out is the throttle, measured.
-    // Before it, this row was 100% ultra; now it is one in five, and the four
-    // parts it gave up are all on mythic.
-    Rng rng(555);
-    constexpr int kRuns = 200000;
-    int ultra = 0;
-    int mythic = 0;
-    for (int i = 0; i < kRuns; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 1.0, rng);
-        if (r == Rarity::Ultra) ++ultra;
-        if (r == Rarity::Mythic) ++mythic;
-    }
-    CHECK_EQ(ultra + mythic, kRuns);
-    CHECK_NEAR(ultra / double(kRuns), 0.2, 0.01);
-    CHECK_NEAR(mythic / double(kRuns), 0.8, 0.01);
+    // The pre-guaranteed-drops weighted draw, still deciding which item a
+    // kill is worth something for. The merged ladybug table is egg 1.0, rose
+    // 0.55 and light 0.5, so the shares are those over 2.05.
+    const std::uint16_t ladybug = shipped().mobIndex("ladybug");
+    const Entity player = makePlayer(world, kCentre + Vec2{5000, 0});
+    const std::uint16_t egg = shipped().petalIndex("ladybug_egg");
+    const std::uint16_t rose = shipped().petalIndex("rose");
+    const std::uint16_t light = shipped().petalIndex("light");
 
-    // And the throttle rides ON TOP of the band rather than replacing it: a
-    // p = 0.5 row grades ultra a quarter of the time, so it lands ultra a
-    // fifth of that -- 5%, where it used to be 25%.
-    int graded = 0;
-    for (int i = 0; i < kRuns; ++i) {
-        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 0.5, rng) == Rarity::Ultra) {
-            ++graded;
+    constexpr int kKills = 8000;
+    std::map<std::uint16_t, int> graded;
+    for (int i = 0; i < kKills; ++i) {
+        makeCorpse(world, ladybug, Rarity::Rare, kCentre, player, {player});
+        loot.run(world, grid, shipped(), rng, 0.0, net::kTickSeconds, commands, events);
+        commands.flush();
+        for (const Entity drop : liveDrops(world)) {
+            const DropItem& item = world.get<DropItem>(drop);
+            if (item.rarity != Rarity::Common) ++graded[item.configIndex];
+            world.destroy(drop);
         }
     }
-    CHECK_NEAR(graded / double(kRuns), 0.05, 0.005);
+
+    CHECK_NEAR(graded[egg] / double(kKills), 1.00 / 2.05, 0.02);
+    CHECK_NEAR(graded[rose] / double(kKills), 0.55 / 2.05, 0.02);
+    CHECK_NEAR(graded[light] / double(kKills), 0.50 / 2.05, 0.02);
 }
 
 // ---------------------------------------------------------------------------

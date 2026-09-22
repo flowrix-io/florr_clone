@@ -273,6 +273,36 @@ std::vector<std::vector<DropDef>> loadDropTables() {
             byMob[index].push_back(std::move(def));
         }
     }
+
+    // The guaranteed common egg is runtime content, generated per mob rather
+    // than authored, so mob_drops.json does not hold it -- see
+    // DropTables::resolve, which builds the same row on the server. It has to
+    // be here too: above unusual a row's probability is its WEIGHT in the
+    // draw for which item the kill is graded on, and leaving out the heaviest
+    // row of all would overstate every other row on the card.
+    for (std::size_t i = 0; i < byMob.size(); ++i) {
+        const MobConfig& mob = content().mob(static_cast<std::uint16_t>(i));
+        if (mob.noEggDrop ||
+            (mob.id.size() >= 4 && mob.id.compare(mob.id.size() - 4, 4, "_pet") == 0)) continue;
+        const std::string eggId = mob.id + "_egg";
+        const std::uint16_t egg = content().petalIndex(eggId);
+        if (egg == kInvalidIndex) continue;
+        std::vector<DropDef>& rows = byMob[i];
+        auto existing = std::find_if(rows.begin(), rows.end(), [&](const DropDef& row) {
+            return row.petalIndex == egg && row.rarity == Rarity::Common;
+        });
+        if (existing != rows.end()) {
+            existing->probability = 1.0;
+            continue;
+        }
+        DropDef def;
+        def.type = "petal";
+        def.itemType = eggId;
+        def.rarity = Rarity::Common;
+        def.probability = 1.0;
+        def.petalIndex = egg;
+        rows.insert(rows.begin(), std::move(def));
+    }
     return byMob;
 }
 
@@ -295,9 +325,19 @@ int dropTier(Rarity r) {
     return i < kDropTiers ? i : -1;
 }
 
+double upgradePercent(Rarity r) {
+    const int i = dropTier(r);
+    return (i < 0 || i >= kDropTiers - 1) ? 0.0 : craftPercent(i) / 3.0;
+}
+
 double downgradePercent(Rarity r) {
     const int i = dropTier(r);
     return i <= 0 ? 0.0 : 100.0 / (1.0 + craftPercent(i - 1));
+}
+
+Rarity tierAbove(Rarity r) {
+    const int i = dropTier(r);
+    return (i >= 0 && i < kDropTiers - 1) ? static_cast<Rarity>(i + 1) : r;
 }
 
 Rarity tierBelow(Rarity r) {
@@ -321,14 +361,15 @@ struct DropRow {
 
 /// Mirrors the server drop pipeline so the tooltip shows real rates.
 ///
-/// A common mob rolls each authored row on its own at the listed probability,
-/// keeps the row's authored rarity and then branches into the mutually
-/// exclusive upgrade/downgrade split. Every mob above one drops one of EVERY
-/// item it has -- two authored lines naming the same item merge first, as the
-/// server merges them -- and spends that probability on WHERE IN THE BAND the
-/// item lands instead: the mob's own tier at p^2, one below at 2p(1-p), two
-/// below at (1-p)^2. No tier rolls above itself: what a mob drops is capped by
-/// what the mob is, and on a common mob by what the table authored.
+/// A common mob rolls each authored row on its own at the listed probability;
+/// an unusual one hands out its whole table. Both keep the row's authored
+/// rarity and branch into the upgrade/downgrade split. Every mob above that
+/// also drops one of EVERY item it has -- two authored lines naming the same
+/// item merge first, as the server merges them -- but only ONE of those rows
+/// is the kill's graded drop, drawn weighted by probability and landing a
+/// tier below the mob 90% of the time. The rest are chaff, flat at two tiers
+/// down. Every graded outcome is then clamped up to the mob's rarity floor;
+/// chaff is not, which is what keeps it chaff.
 std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
                                      std::array<bool, kDropTiers>& usedTiers) {
     std::vector<DropRow> rows;
@@ -336,11 +377,18 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
     if (table.empty()) return rows;
 
     const int tier = rarityIndex(mobRarity);
+    const double ultraMultiplier = mobRarity == Rarity::Ultra ? 20.0 : 1.0;
+    // Server-side floor on the graded drop: a rare mob never grades below one
+    // tier under it, an epic or better below two. Chaff passes floorTier 0 --
+    // it is the one thing the floor must not lift.
+    const int minTier = tier >= 3 ? tier - 2 : (tier == 2 ? 1 : 0);
 
-    const auto push = [&](const DropDef& drop, Rarity rarity, double probability) {
+    const auto push = [&](const DropDef& drop, Rarity rarity, double probability,
+                          int floorTier = 0) {
         if (probability <= 0) return;
-        const int column = dropTier(rarity);
+        int column = dropTier(rarity);
         if (column < 0) return;
+        if (column < floorTier) column = floorTier;
 
         DropRow* row = nullptr;
         for (DropRow& candidate : rows) {
@@ -360,40 +408,21 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         usedTiers[static_cast<std::size_t>(column)] = true;
     };
 
-    // A common mob's row: the authored rarity, or one below it. Nothing is
-    // promoted -- the server stopped rolling drops up at every tier -- so the
-    // old three-way split is now just the downgrade and what is left.
+    // One graded drop: the mutually exclusive upgrade/downgrade split around
+    // its base, every branch held up to the mob's floor.
     const auto outcomes = [&](Rarity base, double baseProb, const DropDef& drop) {
+        const double up = std::min(100.0, upgradePercent(base) * ultraMultiplier);
         const double down = downgradePercent(base);
-        const double same = std::max(0.0, 100.0 - down);
-        push(drop, tierBelow(base), baseProb * down);
-        push(drop, base, baseProb * same);
+        const double same = std::max(0.0, 100.0 - up - down);
+        push(drop, tierBelow(base), baseProb * down, minTier);
+        push(drop, base, baseProb * same, minTier);
+        push(drop, tierAbove(base), baseProb * up, minTier);
     };
 
     if (tier == rarityIndex(Rarity::Common)) {
         for (const DropDef& drop : table) outcomes(drop.rarity, drop.probability, drop);
         return rows;
     }
-
-    // One square of the band, after the server's per-copy finish: the band is
-    // the whole answer up here. Nothing rolls down any more, and since ultra
-    // lost its lucky roll nothing rolls up either.
-    const auto band = [&](const DropDef& drop, int stepsDown, double weight) {
-        // Apex mobs cap their items at unique. Stepped by INDEX rather than
-        // through tierBelow(), which cannot walk down from a tier the drop
-        // grid has no column for.
-        const Rarity base = clampRarity(std::min(std::max(0, tier - stepsDown),
-                                                 rarityIndex(Rarity::Unique)));
-        // The one throttle on top of the band: an ultra mob keeps its own
-        // tier on a fifth of the drops that graded there, and the rest show
-        // up a tier down. Mirrors finishDropRarity.
-        if (mobRarity == Rarity::Ultra && base == Rarity::Ultra) {
-            push(drop, base, weight * 100.0 * kUltraOwnTierKeepChance);
-            push(drop, tierBelow(base), weight * 100.0 * (1.0 - kUltraOwnTierKeepChance));
-            return;
-        }
-        push(drop, base, weight * 100.0);
-    };
 
     // Rows naming one item are one drop, weighted by the chance that either
     // authored line would have fired.
@@ -410,10 +439,28 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         }
     }
 
+    // An unusual mob grades every row it hands out, so there is no draw and
+    // no chaff -- the whole table pays out at its authored rarity.
+    if (tier == rarityIndex(Rarity::Uncommon)) {
+        for (const auto& [drop, probability] : merged) outcomes(drop->rarity, 1.0, *drop);
+        return rows;
+    }
+
+    double totalWeight = 0;
+    for (const auto& [drop, probability] : merged) totalWeight += probability;
+
+    // Stepped by INDEX rather than through tierBelow() twice, which cannot
+    // walk down from a tier the drop grid has no column for -- apex.
+    const Rarity chaff = clampRarity(std::max(0, tier - 2));
     for (const auto& [drop, probability] : merged) {
-        band(*drop, 0, probability * probability);
-        band(*drop, 1, 2.0 * probability * (1.0 - probability));
-        band(*drop, 2, (1.0 - probability) * (1.0 - probability));
+        // The chance this is the row the kill is graded on.
+        const double share = totalWeight > 0 ? probability / totalWeight : 0.0;
+        const Rarity lower = clampRarity(std::min(tier - 1, kDropTiers - 1));
+        outcomes(lower, share * 0.9, *drop);
+        outcomes(drop->rarity, share * 0.1, *drop);
+        // Every kill this row is NOT the graded drop, it still drops -- as
+        // chaff, which the floor above deliberately does not reach.
+        push(*drop, chaff, (1.0 - share) * 100.0);
     }
     return rows;
 }
