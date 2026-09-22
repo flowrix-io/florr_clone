@@ -133,10 +133,31 @@ inline constexpr double kPassiveCoastMillis = 500.0;
 inline constexpr double kPassiveRampMillis = 2000.0;
 inline constexpr double kPassiveMoveMillis = kPassiveCoastMillis + kPassiveRampMillis;
 
-/// Ceiling on the drift, so radius-proportional acceleration cannot drift an
-/// apex mob at seven times a player's top speed. The reference states it as
-/// 300/30 units per tick, which is this in units per second.
-inline constexpr double kMaxWanderSpeed = kPlayerMaxSpeed;
+/// Ceiling on the drift, PER kWanderRefRadius OF BODY, in units a second.
+///
+/// Per body, and emphatically so -- the currency is the whole point of this
+/// number. It was once a flat 300 (the reference's own 300/30 units per tick,
+/// and a player's top speed), which is a ceiling in ABSOLUTE units sitting on
+/// top of an acceleration stated in BODIES. The two cross just above mythic,
+/// and past that the ceiling quietly cancelled the size scaling: every tier
+/// from common to mythic hopped 1.13 of its own body-lengths, ultra hopped
+/// 1.03, and an apex hopped 0.32 -- a mob that fills the screen inching a
+/// third of its own width while the mobs around it cross theirs. Which is the
+/// exact failure sizeFactor() exists to prevent, reintroduced one line below
+/// it by a clamp.
+///
+/// It bound on the bee cruise the same way, and worse: kBeeCruiseSpeed is
+/// already stated per body and is documented as the TIGHTER ceiling of the
+/// two, and above mythic a flat 300 was quietly overriding it.
+///
+/// A flat guard is not wanted here at all. The drift's distance is meant to
+/// scale with the body and the pulse duration is fixed, so a big mob's hop is
+/// a big mob's hop; anything that bounds the speed in absolute terms bounds
+/// the DISTANCE too, which is the design. What stops a corrupt config putting
+/// a mob through a wall is the movement system -- sanitizeMovementVelocity()'s
+/// absolute clamp and stepCollide()'s substep budget -- rather than a number
+/// here that has to be re-derived every time the size ladder moves.
+inline constexpr double kMaxWanderSpeedPerBody = kPlayerMaxSpeed;
 
 // -- the bee cruise ----------------------------------------------------------
 //

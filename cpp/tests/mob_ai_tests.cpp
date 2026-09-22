@@ -359,6 +359,44 @@ TEST(reversed_mobs_face_away_from_where_they_are_going) {
 // Hostile
 // ---------------------------------------------------------------------------
 
+TEST(an_idle_hop_is_the_same_fraction_of_the_body_at_every_tier) {
+    CHECK(contentReady());
+
+    // THE LAW this drift is built on: a hop carries a mob a fixed fraction of
+    // its own body, whatever tier it is. The acceleration is stated per body
+    // (sizeFactor) and the pulse durations are fixed, so the distance follows
+    // -- and a mob you can see is a mob moving relative to its own width, not
+    // one moving some absolute number of units.
+    //
+    // It used to break above mythic. The CEILING on the drift was a flat 300
+    // sitting over an acceleration measured in bodies, the two crossed just
+    // past mythic, and from there up the clamp cancelled the scaling: ultra
+    // hopped 1.03 bodies, super 0.73, unique 0.49 and an apex 0.32 -- a mob
+    // wider than the viewport inching a third of its own width while a common
+    // one crossed a full body and a sixth. See kMaxWanderSpeedPerBody.
+    //
+    // Measured as PATH LENGTH rather than displacement, so the answer does not
+    // depend on which way the two hops in the window happened to be aimed.
+    const auto bodiesTravelled = [](Rarity rarity) {
+        Sim sim;
+        sim.autoActive = false;          // nobody watching: the LOD's permissive case
+        const Entity spider = sim.spawnMob("spider", kOrigin, rarity);
+        const double radius = sim.world.get<Body>(spider).radius;
+        double path = 0.0;
+        for (int i = 0; i < 240; ++i) {  // 8s at 30 TPS: two full hop cycles
+            sim.tickIntent();
+            path += sim.velocityOf(spider).length() * sim.dt;
+        }
+        return path / (2.0 * radius);
+    };
+
+    const double common = bodiesTravelled(Rarity::Common);
+    CHECK(common > 0.5);                 // it really did hop
+    for (int t = 0; t < kRarityCount; ++t) {
+        CHECK_NEAR(bodiesTravelled(clampRarity(t)), common, 1e-3);
+    }
+}
+
 TEST(hostile_mob_charges_a_player_inside_its_range) {
     CHECK(contentReady());
     Sim sim;

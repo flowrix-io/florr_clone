@@ -809,9 +809,11 @@ void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Moti
     // mob's hop proportional to its body instead of merely slower.
     const double accel = speed * kPassiveAccelScale * sizeFactor(body.radius);
     Vec2 push{0, 0};
-    // What the drift may reach. A cruise has a tighter one of its own; see
-    // kBeeCruiseSpeed.
-    double limit = kMaxWanderSpeed;
+    // What the drift may reach -- scaled by the same body the acceleration is,
+    // because a ceiling in absolute units over an acceleration in bodies caps
+    // the hop's DISTANCE and not just its speed. See kMaxWanderSpeedPerBody.
+    // A cruise has a tighter one of its own; see kBeeCruiseSpeed.
+    double limit = kMaxWanderSpeedPerBody * sizeFactor(body.radius);
 
     if (const Wobble* wobble = world.tryGet<Wobble>(self)) {
         // Bees do not hop. They cruise, and the heading sways at 1.5 rad/s
@@ -878,7 +880,11 @@ Vec2 MobAiSystem::wanderToPoint(WanderTarget& wander, Vec2 from, const Body& bod
     const double gap = offset.length();
     // Arrived: stop rather than jitter across the last unit of it.
     if (!(gap > kWanderArriveDistance)) return Vec2{0, 0};
-    return offset * (std::min(speed * kMobWanderSpeedScale * factor, kMaxWanderSpeed) / gap);
+    // Both terms per body, for the reason kMaxWanderSpeedPerBody gives: a flat
+    // ceiling here shortened a big walker's stroll into a shuffle exactly the
+    // way it flattened the hop.
+    return offset *
+           (std::min(speed * kMobWanderSpeedScale, kMaxWanderSpeedPerBody) * factor / gap);
 }
 
 Vec2 MobAiSystem::steerIdle(World& world, Entity self, const Transform& transform, Motion& motion,
