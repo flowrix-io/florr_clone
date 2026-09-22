@@ -301,6 +301,23 @@ inline constexpr double kPetalGlideRate = 14.0;
 /// fresh petal does not get slingshotted onto the ring.
 inline constexpr double kPetalSpawnSmoothMillis = 300.0;
 
+/// How long a homing petal -- rose, shell, orb -- gets to reach the flower
+/// before its burst is delivered without the touch.
+///
+/// The dive is what spends the petal, and a dive that never lands is a petal
+/// that never heals and a slot that never reloads. It often does not land: the
+/// glide home settles at a standing lag against a flower that is running away
+/// (roughly its speed over kPetalGlideRate, which at top speed is wider than
+/// the flower's own body), so a sprinting player is never actually touched,
+/// and a wall the petal is pushed back out of can hold it off indefinitely.
+/// The burst is delivered anyway once the dive has had this long.
+///
+/// Against a standing flower the journey takes about 360 ms, so this is
+/// roughly three times what it is worth: long enough that a dive which would
+/// have arrived is never paid out early, short enough that the heal still
+/// arrives while it matters.
+inline constexpr double kPetalHomingTimeoutMillis = 1000.0;
+
 // -- attraction --------------------------------------------------------------
 //
 // Every player attracts petals, not just the ones carrying lentil: the base

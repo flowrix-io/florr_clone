@@ -1534,6 +1534,73 @@ TEST(a_burst_heal_charges_homes_consumes_and_reloads) {
     CHECK(rig.tickUntil([&] { return rig.world.get<Health>(rig.player).current > 70.0; }, 50));
 }
 
+/// The same burst, on a flower running flat out.
+///
+/// A homing petal closes on the flower with a first-order glide, and a glide
+/// toward a MOVING target settles at a standing lag rather than arriving: at
+/// top speed that gap is some 28 units, wider than the flower's own 20-unit
+/// body, so the rose trails it and is never touched. It is the dive's landing
+/// window that delivers the burst here, not contact -- without one the petal
+/// chases a sprinting player forever, healing nothing and never reloading.
+TEST(a_burst_heal_lands_on_a_flower_running_at_top_speed) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "healer");
+    rig.settleEquips();
+    rig.world.get<Health>(rig.player).current = 50.0;
+
+    // MovementSystem is not in this rig, so the sprint is applied by hand:
+    // one tick of top speed, written where movement would have written it.
+    const Vec2 stride{kPlayerMaxSpeed * net::kTickSeconds, 0.0};
+    bool delivered = false;
+    for (int i = 0; i < 200 && !delivered; ++i) {
+        rig.world.get<Transform>(rig.player).position += stride;
+        rig.tick();
+        delivered = rig.slot(0).broken;
+    }
+
+    CHECK(delivered);
+    CHECK(rig.world.get<Health>(rig.player).current >= 60.0);
+    CHECK_EQ(rig.petals(0).size(), std::size_t(0));
+}
+
+/// And the dive that never lands pays out regardless.
+///
+/// Contact is how a burst is normally spent, but it is not guaranteed -- a
+/// wall the petal is pushed back out of can hold it off the flower for as long
+/// as the flower stands behind it. Stranded mid-dive the petal heals nothing
+/// and never dies, so the slot never reloads and the rose simply stops being a
+/// petal. Here the gap is held open by hand, which is that case in the small.
+TEST(a_burst_heal_that_cannot_reach_the_flower_is_absorbed_anyway) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "healer");
+    rig.settleEquips();
+    rig.world.get<Health>(rig.player).current = 50.0;
+
+    bool delivered = false;
+    int ticks = 0;
+    for (; ticks < 200 && !delivered; ++ticks) {
+        // Whatever the dive managed last tick, drag the petal back out of
+        // reach: the gap never closes, however long it chases.
+        const std::vector<Entity> out = rig.petals(0);
+        if (!out.empty()) {
+            rig.world.get<Transform>(out.front()).position =
+                rig.position(rig.player) + Vec2{400.0, 0.0};
+        }
+        rig.tick();
+        delivered = rig.slot(0).broken;
+    }
+
+    CHECK(delivered);
+    CHECK(rig.world.get<Health>(rig.player).current >= 60.0);
+    CHECK_EQ(rig.petals(0).size(), std::size_t(0));
+    // Waited out rather than paid early: the burst is only given up on once
+    // the dive has had its window, which is well past the third of a second a
+    // landing dive takes.
+    CHECK(ticks * net::kTickMillis >= kPetalHomingTimeoutMillis);
+}
+
 TEST(a_dandelions_lockout_stops_the_ring_healing_at_all) {
     if (!contentLoaded()) return;
     Rig rig;

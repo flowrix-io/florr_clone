@@ -808,6 +808,16 @@ struct PetalInstance {
     double nextProjectileMillis = 0;
     double spawnedAtMillis = 0;
     bool homing = false;
+    /// When the dive home began, so a burst that cannot reach the flower is
+    /// still delivered. Zero whenever `homing` is false.
+    ///
+    /// The petal is spent on contact, and contact is not guaranteed: the glide
+    /// home trails a sprinting flower rather than catching it, and a wall the
+    /// petal is pushed back out of can hold it off for as long as the flower
+    /// stands behind it. Either way the burst would be left undelivered and
+    /// the slot would never reload -- the rose simply stops working. The dive
+    /// is given a window to land in and pays out regardless once it lapses.
+    double homingSinceMillis = 0;
     /// Next time this petal may heal, emit a field, or maintain summons.
     double nextActionMillis = 0;
 

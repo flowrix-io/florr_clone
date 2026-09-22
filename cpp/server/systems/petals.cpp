@@ -1441,9 +1441,17 @@ void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry
     }
 
     if (instance.homing) {
-        // Rose and shell fly home to deliver their burst. Re-arming the glide
-        // every tick keeps the overshoot-free approach in play instead of the
-        // spring, so the petal tracks a moving flower and lands cleanly.
+        // Rose, shell and orb fly home to deliver their burst. Re-arming the
+        // glide every tick keeps the overshoot-free approach in play instead of
+        // the spring, so the petal tracks a moving flower and lands cleanly.
+        //
+        // The dive does NOT outrun a sprinting flower, and is not meant to: a
+        // first-order approach toward a target that is running away settles at
+        // a standing lag rather than arriving, so at speed the petal trails the
+        // flower it is diving into instead of touching it. That is the look the
+        // ring has always had. What stops it costing the burst is the landing
+        // window in runActions, which delivers the effect once the dive has
+        // been going long enough whether or not it ever made contact.
         target = centre;
         instance.glideUntilMillis = nowMillis + kPetalReleaseGlideMillis;
     }
@@ -1624,13 +1632,35 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 stats.mana > 0.0 && pool != nullptr && pool->max > 0.0 && pool->current < pool->max;
             const double charge = std::max(
                 0.0, stats.mana > 0.0 ? stats.manaChargeMillis : stats.healChargeMillis);
+            const bool wasHoming = instance->homing;
             instance->homing = nowMillis - instance->spawnedAtMillis >= charge &&
                                (wantsHeal || wantsShield || wantsMana);
+            // The dive's own clock, started on the tick it begins. A petal
+            // that gives up homing -- the flower was healed by something else,
+            // the pool filled -- goes back to the ring and starts a fresh
+            // window next time it is called in.
+            if (!instance->homing) {
+                instance->homingSinceMillis = 0.0;
+            } else if (!wasHoming) {
+                instance->homingSinceMillis = nowMillis;
+            }
             if (instance->homing) {
                 const Transform* owner = world.tryGet<Transform>(player);
                 const Body* ownerBody = world.tryGet<Body>(player);
                 const double contact = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
-                if (owner && distanceSq(transform->position, owner->position) <= contact * contact) {
+                const bool touched =
+                    owner && distanceSq(transform->position, owner->position) <= contact * contact;
+                // Absorbed anyway. Contact is the normal way a burst is
+                // spent, but only a standing flower reliably gets one: the
+                // glide home settles into a lag against a running one and
+                // never closes it, and a wall can hold the petal off for as
+                // long as the flower stands behind it. Either way the petal
+                // would be stranded mid-dive forever -- no heal, and a slot
+                // that never reloads because the petal never died. Waiting
+                // out the window is the same delivery without the touch.
+                const bool overdue =
+                    nowMillis - instance->homingSinceMillis >= kPetalHomingTimeoutMillis;
+                if (touched || overdue) {
                     if (wantsHeal) {
                         const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
                         const double scale = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
