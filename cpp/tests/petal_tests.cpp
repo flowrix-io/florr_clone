@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "server/replication.h"
+#include "server/systems/movement.h"
 #include "server/systems/petals.h"
 
 #include <sys/stat.h>
@@ -122,6 +123,12 @@ struct Rig {
     // clock starting there would make that bug look like a working one.
     double now = 1000.0;
 
+    /// Optional, and empty: a map with no walls, so a flower under movement
+    /// travels exactly as far as its velocity says.
+    Terrain terrain;
+    MovementSystem movement;
+    bool stepMovement = false;
+
     Rig() {
         player = world.create();
         world.add<PlayerTag>(player);
@@ -185,11 +192,20 @@ struct Rig {
     void tick(int count = 1) {
         for (int i = 0; i < count; ++i) {
             now += net::kTickMillis;
+            // The server's order, for the tests that ask for it: the flower is
+            // moved, then its ring is stepped. A petal that hands the flower
+            // momentum -- the bubble -- is only observable through the
+            // movement that spends it.
+            if (stepMovement) movement.runPlayerPhase(world, terrain, now, net::kTickSeconds);
             system.run(world, fixture().registry, now, net::kTickSeconds, commands, nullptr,
                        &events);
             commands.flush();
         }
     }
+
+    /// Runs player movement alongside the ring. Off by default: a test about
+    /// where the ring puts a petal wants a flower that holds still.
+    void withMovement() { stepMovement = true; }
 
     /// Steps until `done` holds, so a test can wait on a reload without
     /// hard-coding how many ticks that is.
@@ -289,6 +305,7 @@ struct Rig {
     }
 
     Vec2 position(Entity e) { return world.get<Transform>(e).position; }
+    Vec2 velocity(Entity e) { return world.get<Motion>(e).velocity; }
     double radiusOf(Entity petal) { return (position(petal) - position(player)).length(); }
     double angleOf(Entity petal) { return (position(petal) - position(player)).angle(); }
     double healthOf(Entity e) { return world.get<Health>(e).current; }
@@ -1795,18 +1812,19 @@ TEST(a_magic_bubble_that_cannot_be_paid_for_does_not_pop) {
     rig.tick();
     rig.world.get<ManaPool>(rig.player).current = 10.0;
 
-    const Vec2 before = rig.position(rig.player);
+    // The pop is momentum handed to the flower, and this rig steps no
+    // movement, so the velocity it is left holding IS the burst.
     rig.setFlags(net::InputDefend);
     rig.setMove(0.0);
     rig.tick(4);
-    CHECK_NEAR(distance(before, rig.position(rig.player)), 0.0, 1e-9);
+    CHECK_NEAR(rig.velocity(rig.player).length(), 0.0, 1e-9);
     CHECK(!rig.slot(1).broken);
     CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 10.0, 1e-9);
 
     // Funded, it pops and the mana is gone.
     rig.world.get<ManaPool>(rig.player).current = 100.0;
     rig.tick();
-    CHECK(distance(before, rig.position(rig.player)) > 1.0);
+    CHECK(rig.velocity(rig.player).length() > 1.0);
     CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 60.0, 1e-9);
 }
 
@@ -1819,16 +1837,17 @@ TEST(a_magic_bubble_throws_the_flower_the_way_it_is_asking_to_go) {
     rig.equip(1, "magic_bubble");
     rig.settleEquips();
     rig.tick();
-    const Vec2 before = rig.position(rig.player);
     const double heading = -kPi * 0.5;
     rig.setFlags(net::InputDefend);
     rig.setMove(heading);
     rig.tick();
 
-    const Vec2 moved = rig.position(rig.player) - before;
-    CHECK(moved.lengthSq() > 0.0);
-    CHECK_NEAR(angularGap(moved.angle(), heading), 0.0, 1e-9);
-    CHECK_NEAR(moved.length(), 60.0, 1e-9);
+    // Measured as the impulse the burst handed the flower, not as ground
+    // covered: the pop is spent over the following half second by the movement
+    // this rig deliberately does not run.
+    const Vec2 thrown = rig.velocity(rig.player);
+    CHECK(thrown.lengthSq() > 0.0);
+    CHECK_NEAR(angularGap(thrown.angle(), heading), 0.0, 1e-9);
 
     // An analogue stick barely pushed dashes just as far, and in the same
     // direction: the bearing is read, the strength is not. On a rig of its own
@@ -1839,12 +1858,11 @@ TEST(a_magic_bubble_throws_the_flower_the_way_it_is_asking_to_go) {
     nudged.equip(1, "magic_bubble");
     nudged.settleEquips();
     nudged.tick();
-    const Vec2 from = nudged.position(nudged.player);
     nudged.setFlags(net::InputDefend);
     nudged.setMove(heading, 0.05);
     nudged.tick();
-    const Vec2 nudge = nudged.position(nudged.player) - from;
-    CHECK_NEAR(nudge.length(), 60.0, 1e-9);
+    const Vec2 nudge = nudged.velocity(nudged.player);
+    CHECK_NEAR(nudge.length(), thrown.length(), 1e-9);
     CHECK_NEAR(angularGap(nudge.angle(), heading), 0.0, 1e-9);
 }
 
@@ -1855,14 +1873,13 @@ TEST(a_magic_bubble_with_no_direction_asked_for_is_held_not_spent) {
     rig.equip(1, "magic_bubble");
     rig.settleEquips();
     rig.tick();
-    const Vec2 before = rig.position(rig.player);
 
     // Defend held, nothing asked for: the petal stays in the ring at full
     // charge and its mana is untouched.
     rig.setFlags(net::InputDefend);
     rig.setMove(0.0, 0.0);
     rig.tick(20);
-    CHECK_NEAR(distance(before, rig.position(rig.player)), 0.0, 1e-9);
+    CHECK_NEAR(rig.velocity(rig.player).length(), 0.0, 1e-9);
     CHECK(!rig.slot(1).broken);
     CHECK_EQ(rig.petals(1).size(), std::size_t(1));
     CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 100.0, 1e-9);
@@ -1870,22 +1887,125 @@ TEST(a_magic_bubble_with_no_direction_asked_for_is_held_not_spent) {
     // And it goes the instant a key is pressed.
     rig.setMove(kPi);
     rig.tick();
-    CHECK(distance(before, rig.position(rig.player)) > 1.0);
+    CHECK(rig.velocity(rig.player).length() > 1.0);
     CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 60.0, 1e-9);
+}
+
+
+TEST(a_ring_of_bubbles_stacks_into_one_pop_instead_of_cancelling) {
+    if (!contentLoaded()) return;
+    // Every bubble shoves the flower clear of ITSELF, so bearings read off one
+    // standing centre cancel on a symmetric ring and a ring of bubbles would
+    // do nothing at all. They chain instead: each pop is aimed from where the
+    // ones before it have already thrown the flower.
+    const auto reachOf = [](int bubbles) {
+        Rig rig;
+        rig.withMovement();
+        for (int i = 0; i < bubbles; ++i) rig.equip(i, "bubble");
+        rig.settleEquips();
+        const Vec2 before = rig.position(rig.player);
+        rig.setFlags(net::InputDefend);
+        rig.tick();
+        rig.setFlags(0);
+        rig.tick(90);
+        return distance(before, rig.position(rig.player));
+    };
+    const double one = reachOf(1);
+    CHECK_NEAR(one, 60.0, 1.0);
+    CHECK_NEAR(reachOf(2), one * 2.0, 2.0);
+    CHECK_NEAR(reachOf(4), one * 4.0, 4.0);
+}
+
+TEST(a_stacked_bubble_pop_never_outruns_what_a_tick_can_carry) {
+    if (!contentLoaded()) return;
+    // A whole ring of the best bubbles asks for more ground in a tick than
+    // stepCollide will carry -- it truncates the rest, and the client snaps
+    // rather than eases a flower that jumped that far. The cap is what keeps
+    // the stack a launch instead of a jump cut.
+    Rig rig;
+    rig.withMovement();
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) rig.equip(i, "bubble", Rarity::Apex);
+    rig.settleEquips();
+    rig.setFlags(net::InputDefend);
+    rig.tick();
+    // The petal's cap, written from the same movement constants it is written
+    // from: the floor of the per-tick substep budget.
+    const double budget = kMinSubstepLength * kMaxSubstepCount;
+    CHECK(rig.velocity(rig.player).length() <= budget / net::kTickSeconds + 1e-6);
+
+    rig.setFlags(0);
+    Vec2 at = rig.position(rig.player);
+    double moved = 0.0;
+    for (int t = 0; t < 90; ++t) {
+        rig.tick();
+        const Vec2 now = rig.position(rig.player);
+        const double step = distance(at, now);
+        CHECK(step <= budget + 1e-6);
+        moved += step;
+        at = now;
+    }
+    // And it is a real launch, not a cap that swallowed the pop.
+    CHECK(moved > 500.0);
 }
 
 TEST(defending_pops_a_bubble_and_pushes_the_flower) {
     if (!contentLoaded()) return;
     Rig rig;
+    rig.withMovement();
     rig.equip(0, "bubble");
     rig.settleEquips();
     const Vec2 before = rig.position(rig.player);
     rig.setFlags(net::InputDefend);
+    // The pop is MOMENTUM, not a jump. The ring is stepped after movement, so
+    // the tick it goes off hands the flower a velocity and moves it nowhere;
+    // the reach is spent over the half second friction takes to eat that.
     rig.tick();
-    CHECK_NEAR(distance(before, rig.position(rig.player)), 60.0, 1e-9);
+    CHECK(rig.velocity(rig.player).length() > 0.0);
+
+    rig.setFlags(0);
     rig.tick();
+    const double firstStep = distance(before, rig.position(rig.player));
+    CHECK(firstStep > 0.0);
+    CHECK(firstStep < 60.0 * 0.4);
+    // Spent, and off the ring, the same tick the reference spends it.
     CHECK(rig.slot(0).broken);
     CHECK_EQ(rig.petals(0).size(), std::size_t(0));
+
+    // The whole pop arrives, and the flower comes to rest rather than coasting.
+    rig.tick(60);
+    CHECK_NEAR(distance(before, rig.position(rig.player)), 60.0, 1.0);
+    CHECK_NEAR(rig.velocity(rig.player).length(), 0.0, 0.01);
+}
+
+TEST(a_bubble_pop_never_covers_its_reach_in_one_tick) {
+    if (!contentLoaded()) return;
+    // The glide is the point, so it is asserted as a shape and not just as a
+    // total: every tick moves the flower less than the one before it, and no
+    // single tick is the whole pop.
+    Rig rig;
+    rig.withMovement();
+    rig.equip(0, "bubble");
+    rig.settleEquips();
+    rig.setFlags(net::InputDefend);
+    rig.tick();
+    rig.setFlags(0);
+
+    double previous = std::numeric_limits<double>::infinity();
+    int moving = 0;
+    Vec2 at = rig.position(rig.player);
+    for (int i = 0; i < 20; ++i) {
+        rig.tick();
+        const Vec2 now = rig.position(rig.player);
+        const double step = distance(at, now);
+        at = now;
+        if (step < 0.05) break;
+        CHECK(step < previous);
+        previous = step;
+        ++moving;
+    }
+    // Half a second of travel at 30 Hz, give or take: a handful of ticks is a
+    // teleport with a tail, not a launch.
+    CHECK(moving >= 8);
 }
 
 TEST(attacking_throws_one_web_and_consumes_its_petal) {

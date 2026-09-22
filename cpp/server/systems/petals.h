@@ -282,7 +282,7 @@ private:
                           Transform& transform, Vec2 centre, Vec2 orbit, double orbitAngle,
                           double attractionRadius, double spinScale, double nowMillis, double dt);
     void runActions(World& world, const ContentRegistry& registry, Entity player,
-                    double nowMillis, const Terrain* terrain);
+                    double nowMillis, double dt);
 
     /// The flower's own damage field, which no petal emits.
     ///

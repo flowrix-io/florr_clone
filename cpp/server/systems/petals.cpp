@@ -6,6 +6,7 @@
 
 #include "server/replication.h"
 #include "server/systems/combat.h"
+#include "server/systems/movement.h"
 #include "shared/game/terrain.h"
 
 namespace flix {
@@ -36,13 +37,24 @@ constexpr double kWebLifetimeSeconds = 10.0;
 constexpr double kPollenLifetimeSeconds = 5.0;
 constexpr double kPollenHitIntervalMillis = 500.0;
 
-/// Bubble dash. The pop is a displacement, not a velocity, so it is walked out
-/// in steps no longer than the flower's own radius: one jump of up to 384 units
-/// resolved only at its destination lands on whichever side of a wall the
-/// minimum-translation push happens to prefer, which is how a high-rarity
-/// bubble tunnelled out of sealed rooms.
-constexpr double kBubbleBounceDamping = 0.7;
-constexpr int kBubbleDashMaxSteps = 32;
+/// How far a bubble pop carries the flower, before rarity: the reach the
+/// browser reference gave a common one, and the number every rarity is a
+/// multiple of.
+constexpr double kBubblePopDistance = 60.0;
+constexpr double kBubblePopDistancePerRarity = 0.6;
+
+/// The most ground one tick of a pop may cover, however many bubbles went off
+/// at once.
+///
+/// Two ceilings, and this is the lower: stepCollide carries a body at most
+/// `substepLength * kMaxSubstepCount` in a tick and TRUNCATES the rest, so a
+/// stacked pop past that is reach the flower is charged for and never travels;
+/// and the client stops easing a flower that moved more than 600 units between
+/// snapshots and snaps it instead, which is the teleport this petal was
+/// rewritten to stop being. Written from the substep FLOOR rather than the
+/// flower's own radius so a grown flower -- whose budget is larger -- is held
+/// to the same smoothness the client can still draw.
+constexpr double kMaxPopTickTravel = kMinSubstepLength * kMaxSubstepCount;
 
 /// An apex egg does not hatch an apex pet. The reference substitutes three
 /// unique ones, which is the top of the ladder a pet can actually reach.
@@ -329,46 +341,33 @@ void healPlayer(World& world, Entity player, double amount, double nowMillis) {
     health->current = std::min(health->max, health->current + amount);
 }
 
-/// Walks a bubble pop out over the ground instead of teleporting the flower to
-/// its far end.
+/// The velocity a bubble drops into the flower to carry it `distance`.
 ///
-/// `resolveCircle` is a minimum-translation push, so it ejects a centre out of
-/// whichever face of a blocking tile is nearest -- resolve only the endpoint of
-/// a 384-unit jump and anything past the tile's midline comes out on the FAR
-/// side, which is how a legendary-or-better bubble walked through the wall
-/// bands. Stepping at most one body radius at a time keeps every intermediate
-/// position on the near side, and a step the terrain clipped reflects the
-/// remaining impulse across the blocked axis so the flower bounces off the wall
-/// rather than stopping dead against it.
-void dashPlayer(Transform& owner, Vec2 velocity, double distance, double radius,
-                const Terrain* terrain) {
-    double remaining = distance;
-    for (int step = 0; step < kBubbleDashMaxSteps && remaining > 0.5; ++step) {
-        const double stepLength = std::min(radius, remaining);
-        // A zero-length velocity divides by one, as in the reference: the step
-        // is then empty and the loop simply spends its budget.
-        const double speed = velocity.length();
-        const Vec2 attempted = velocity * (stepLength / (speed > 0.0 ? speed : 1.0));
-
-        const Vec2 trial = owner.position + attempted;
-        const Vec2 resolved = terrain ? terrain->resolveCircle(trial, radius, owner.realm) : trial;
-        const Vec2 applied = resolved - owner.position;
-        owner.position = resolved;
-        remaining -= stepLength;
-
-        // Which axis the wall took is inferred from which component of the step
-        // the resolver ate; half of it is the threshold, so a grazing slide
-        // along a surface is not read as a head-on hit.
-        const Vec2 clipped = attempted - applied;
-        const bool blockedX = std::abs(clipped.x) > std::abs(attempted.x) * 0.5;
-        const bool blockedY = std::abs(clipped.y) > std::abs(attempted.y) * 0.5;
-        if (!blockedX && !blockedY) continue;
-        if (blockedX) velocity.x = -velocity.x * kBubbleBounceDamping;
-        if (blockedY) velocity.y = -velocity.y * kBubbleBounceDamping;
-        // Wedged in a corner: reflecting both axes would only bounce the flower
-        // between the two faces for the rest of its budget.
-        if (blockedX && blockedY) break;
-    }
+/// gardn's bubble is an IMPULSE, not a displacement: it adds to the flower's
+/// velocity (`player.velocity += v`) and lets the same friction that governs
+/// walking spend it over the next half second. That is the whole difference
+/// between a pop that reads as a launch and one that reads as a jump cut --
+/// this used to walk the flower to the far end of the pop inside a single
+/// tick, which arrives on the client as a teleport however smoothly the ease
+/// then chases it.
+///
+/// Delivering the same reach as momentum means inverting the decay. An impulse
+/// `v` left alone travels `v * dt * (d + d^2 + ...)` = `v * dt * d / (1 - d)`
+/// before it dies, where `d` is `integrateVelocity`'s per-tick decay -- the
+/// first power rather than the zeroth because the ring is stepped AFTER
+/// movement, so the tick that spends the impulse has already decayed it once.
+/// Walls need no special care any more: the impulse is spent through
+/// stepCollide like every other velocity, which substeps and refuses a wall
+/// crossing, and it was tunnelling out of sealed rooms that made the old
+/// teleport walk itself out by hand in the first place.
+double popImpulse(double distance, double dt) {
+    if (!(dt > 0.0) || !(distance > 0.0)) return 0.0;
+    const double decay = std::pow(1.0 - kMoveFriction, dt * kFrictionReferenceRate);
+    const double travelPerUnitSpeed = dt * decay / (1.0 - decay);
+    // A decay of exactly 1 (dt of zero) or of zero (a step long enough to kill
+    // the impulse outright) leaves nothing to invert.
+    if (!(travelPerUnitSpeed > 1e-9)) return 0.0;
+    return distance / travelPerUnitSpeed;
 }
 
 bool playerIsDown(World& world, Entity player) {
@@ -428,7 +427,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         strikeWornLightning(world, registry, player, nowMillis);
         updateRing(world, player, aggregate, dt);
         placePetals(world, registry, player, aggregate, nowMillis, dt, terrain);
-        runActions(world, registry, player, nowMillis, terrain);
+        runActions(world, registry, player, nowMillis, dt);
         // Last, so a battery that goes flat is taken off the ring AFTER this
         // tick's placement rather than being flown to an orbit point it is
         // about to be reaped from.
@@ -1504,7 +1503,7 @@ void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry
 // ---------------------------------------------------------------------------
 
 void PetalSystem::runActions(World& world, const ContentRegistry& registry, Entity player,
-                             double nowMillis, const Terrain* terrain) {
+                             double nowMillis, double dt) {
     {
         ShieldState& shield = world.ensure<ShieldState>(player);
         if (!shield.active(nowMillis)) {
@@ -1526,6 +1525,20 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
     // Snapshotted because an action creates entities, and a petal's slot state
     // is reached through the player's columns while that happens.
     actionList_ = loadout->spawned;
+
+    // Where this tick's bubble pops have already thrown the flower.
+    //
+    // A ring of bubbles all pop on the same tick, and each one shoves the
+    // flower clear of ITSELF -- so read every bearing off the same standing
+    // centre and a symmetric ring cancels to nothing. It did not cancel while
+    // the pop was a teleport: each dash moved the flower before the next petal
+    // was looked at, so the second bubble found itself behind a flower already
+    // on its way out and pushed it further along. That chain is the stacking
+    // players have, and it survives the move to momentum by carrying the
+    // displacement the pops have BOUGHT rather than the ground they have
+    // covered -- the flower itself does not move until movement spends the
+    // impulse next tick.
+    Vec2 popDisplacement{0, 0};
 
     for (const Entity petal : actionList_) {
         PetalInstance* instance = world.tryGet<PetalInstance>(petal);
@@ -1681,7 +1694,6 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
         // then pays its rarity-scaled reload.
         if ((config.id == "bubble" || config.id == "magic_bubble") && defending) {
             Transform* owner = world.tryGet<Transform>(player);
-            const Body* ownerBody = world.tryGet<Body>(player);
 
             // Where the burst throws the flower, and the one thing that is not
             // shared between the two petals.
@@ -1707,7 +1719,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 // petal on a controller.
                 push = Vec2::fromAngle(input->current.moveAngle, 1.0);
             } else if (owner != nullptr) {
-                push = owner->position - transform->position;
+                push = owner->position + popDisplacement - transform->position;
             }
 
             // The magic bubble costs mana, and an unpayable pop is not a pop:
@@ -1716,10 +1728,26 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             // a burst that was going to be held anyway is not charged for.
             if (!spendMana(world, player, stats.requiredMana)) continue;
 
-            if (owner != nullptr && push.lengthSq() > 0.0) {
-                const double radius = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
-                const double boost = 60.0 * (1.0 + rarityIndex(instance->rarity) * 0.6);
-                dashPlayer(*owner, push.normalized() * boost, boost, radius, terrain);
+            Motion* motion = world.tryGet<Motion>(player);
+            if (owner != nullptr && motion != nullptr && push.lengthSq() > 0.0) {
+                const double reach =
+                    kBubblePopDistance
+                    * (1.0 + rarityIndex(instance->rarity) * kBubblePopDistancePerRarity);
+                const Vec2 bearing = push.normalized();
+                // Added to the velocity the flower already has, as the
+                // reference adds it: a pop taken while running carries the run
+                // with it, and one taken into the run's own heading is the
+                // faster for it.
+                motion->velocity += bearing * popImpulse(reach, dt);
+                // Capped as it accumulates rather than once at the end: the
+                // ring's bubbles pop one after another in this loop, and the
+                // chain above reads the flower's heading off what the previous
+                // ones bought.
+                if (dt > 0.0) {
+                    motion->velocity =
+                        motion->velocity.clampedLength(kMaxPopTickTravel / dt);
+                }
+                popDisplacement += bearing * reach;
             }
             world.add<Dead>(petal, Dead{player});
             continue;
