@@ -225,9 +225,11 @@ public:
     static Rarity scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, double probability,
                                   Rng& rng);
 
-    /// The second half, rolled per copy: a common mob's mutually exclusive
-    /// upgrade/downgrade roll, ultra's 20x lucky upgrade, and the apex item
-    /// cap. Every other tier's ceiling is the mob's own rarity.
+    /// The second half, rolled per copy: a common mob's downgrade roll, an
+    /// ultra mob's one-in-five throttle on its own tier, and the apex cap. Nothing is promoted at any tier -- a mob never
+    /// leaves an item above its own rarity -- so the only rarity this can
+    /// hand back above the mob's own is a common mob's authored uncommon row,
+    /// which the table asked for on purpose.
     static Rarity finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng);
 
     /// Whether `player` may take this drop right now.

@@ -272,22 +272,29 @@ Rarity LootSystem::scaleDropRarity(Rarity authoredRarity, Rarity mobRarity, doub
 
 Rarity LootSystem::finishDropRarity(Rarity baseRarity, Rarity mobRarity, Rng& rng) {
     Rarity base = baseRarity;
-    if (mobRarity == Rarity::Common) {
-        // The one tier the band above cannot express. A common mob's row has
-        // nowhere to slide, so its only shot at something better is still the
-        // old mutually exclusive upgrade/downgrade roll.
-        if (rng.chance(dropUpgradeChance(base))) {
-            base = upgradeRarity(base);
-        } else if (rng.chance(dropDowngradeChance(base))) {
-            base = downgradeRarity(base);
-        }
-    } else if (mobRarity == Rarity::Ultra) {
-        // Ultra keeps its 20x lucky roll and is the only tier above common
-        // that rolls at all: everywhere else scaleDropRarity's band is the
-        // whole answer and the mob's own rarity is the ceiling.
-        if (rng.chance(clamp(dropUpgradeChance(base) * 20.0, 0.0, 1.0))) {
-            base = upgradeRarity(base);
-        }
+
+    // NOTHING is promoted here, at any tier. A mob never leaves an item above
+    // its own rarity, so the lucky upgrade roll is gone from both arms it used
+    // to live in: the common mob's mutually exclusive pair, and ultra's
+    // multiplied roll, which was the one exception the ladder allowed.
+    //
+    // What survives is the DOWNGRADE, and only on a common mob. Above common
+    // scaleDropRarity's band already spent the row's probability on how far
+    // DOWN the item lands, and rolling again here would demote it twice; a
+    // common mob has no band -- its row keeps the rarity the table authored,
+    // and a deliberate uncommon row (ladybug's rose, bubble's air) still pays
+    // out as authored -- so this is the only place it can slip.
+    if (mobRarity == Rarity::Common && rng.chance(dropDowngradeChance(base))) {
+        base = downgradeRarity(base);
+    }
+
+    // An ultra mob's own tier is throttled on top of the band: four drops in
+    // five that graded ultra slip to mythic, so an ultra petal off an ultra
+    // mob is five times rarer than the row's probability alone would say. A
+    // demotion, so nothing here can breach the ceiling above.
+    if (mobRarity == Rarity::Ultra && base == Rarity::Ultra &&
+        !rng.chance(kUltraOwnTierKeepChance)) {
+        base = downgradeRarity(base);
     }
 
     // Apex mobs explicitly cap item rarity at unique.

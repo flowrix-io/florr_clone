@@ -295,19 +295,9 @@ int dropTier(Rarity r) {
     return i < kDropTiers ? i : -1;
 }
 
-double upgradePercent(Rarity r) {
-    const int i = dropTier(r);
-    return (i < 0 || i >= kDropTiers - 1) ? 0.0 : craftPercent(i) / 3.0;
-}
-
 double downgradePercent(Rarity r) {
     const int i = dropTier(r);
     return i <= 0 ? 0.0 : 100.0 / (1.0 + craftPercent(i - 1));
-}
-
-Rarity tierAbove(Rarity r) {
-    const int i = dropTier(r);
-    return (i >= 0 && i < kDropTiers - 1) ? static_cast<Rarity>(i + 1) : r;
 }
 
 Rarity tierBelow(Rarity r) {
@@ -337,7 +327,8 @@ struct DropRow {
 /// item it has -- two authored lines naming the same item merge first, as the
 /// server merges them -- and spends that probability on WHERE IN THE BAND the
 /// item lands instead: the mob's own tier at p^2, one below at 2p(1-p), two
-/// below at (1-p)^2. Ultra is the only tier that still rolls above itself.
+/// below at (1-p)^2. No tier rolls above itself: what a mob drops is capped by
+/// what the mob is, and on a common mob by what the table authored.
 std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
                                      std::array<bool, kDropTiers>& usedTiers) {
     std::vector<DropRow> rows;
@@ -369,14 +360,14 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         usedTiers[static_cast<std::size_t>(column)] = true;
     };
 
-    // A common mob's row, with the old upgrade/downgrade branch around it.
+    // A common mob's row: the authored rarity, or one below it. Nothing is
+    // promoted -- the server stopped rolling drops up at every tier -- so the
+    // old three-way split is now just the downgrade and what is left.
     const auto outcomes = [&](Rarity base, double baseProb, const DropDef& drop) {
-        const double up = upgradePercent(base);
         const double down = downgradePercent(base);
-        const double same = std::max(0.0, 100.0 - up - down);
+        const double same = std::max(0.0, 100.0 - down);
         push(drop, tierBelow(base), baseProb * down);
         push(drop, base, baseProb * same);
-        push(drop, tierAbove(base), baseProb * up);
     };
 
     if (tier == rarityIndex(Rarity::Common)) {
@@ -384,21 +375,24 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         return rows;
     }
 
-    // One square of the band, after the server's per-copy finish: nothing
-    // rolls down any more, and only an ultra mob rolls up.
+    // One square of the band, after the server's per-copy finish: the band is
+    // the whole answer up here. Nothing rolls down any more, and since ultra
+    // lost its lucky roll nothing rolls up either.
     const auto band = [&](const DropDef& drop, int stepsDown, double weight) {
         // Apex mobs cap their items at unique. Stepped by INDEX rather than
         // through tierBelow(), which cannot walk down from a tier the drop
         // grid has no column for.
         const Rarity base = clampRarity(std::min(std::max(0, tier - stepsDown),
                                                  rarityIndex(Rarity::Unique)));
-        if (mobRarity != Rarity::Ultra) {
-            push(drop, base, weight * 100.0);
+        // The one throttle on top of the band: an ultra mob keeps its own
+        // tier on a fifth of the drops that graded there, and the rest show
+        // up a tier down. Mirrors finishDropRarity.
+        if (mobRarity == Rarity::Ultra && base == Rarity::Ultra) {
+            push(drop, base, weight * 100.0 * kUltraOwnTierKeepChance);
+            push(drop, tierBelow(base), weight * 100.0 * (1.0 - kUltraOwnTierKeepChance));
             return;
         }
-        const double up = std::min(100.0, upgradePercent(base) * 20.0);
-        push(drop, tierAbove(base), weight * up);
-        push(drop, base, weight * (100.0 - up));
+        push(drop, base, weight * 100.0);
     };
 
     // Rows naming one item are one drop, weighted by the chance that either

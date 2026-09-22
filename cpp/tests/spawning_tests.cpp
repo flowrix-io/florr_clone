@@ -1668,13 +1668,19 @@ TEST(the_drop_table_links_cleanly_against_the_shipped_content) {
 TEST(drop_rarity_uses_authored_rows_for_common_mobs) {
     // A common mob is the only one left that reads the authored rarity: there
     // is no band beneath it to slide down, so the row drops where the table
-    // says, give or take the old upgrade/downgrade roll.
+    // says, or one tier under it. Never over: the upgrade arm of that old
+    // mutually exclusive pair is gone.
     Rng rng(31337);
+    bool fell = false;
     for (int i = 0; i < 40000; ++i) {
         const Rarity r = LootSystem::rollDropRarity(Rarity::Rare, Rarity::Common, 0.5, rng);
         const int delta = rarityIndex(r) - rarityIndex(Rarity::Rare);
-        CHECK(delta >= -1 && delta <= 1);
+        CHECK(delta >= -1 && delta <= 0);
+        if (delta < 0) fell = true;
     }
+    // The downgrade survived the cull -- a range test passes just as well on
+    // a roll that never fires, so say out loud that this one still does.
+    CHECK(fell);
 }
 
 TEST(a_drop_lands_inside_its_mobs_own_band) {
@@ -1683,7 +1689,6 @@ TEST(a_drop_lands_inside_its_mobs_own_band) {
     Rng rng(5);
     for (int tier = rarityIndex(Rarity::Uncommon); tier < kRarityCount; ++tier) {
         const Rarity mob = clampRarity(tier);
-        if (mob == Rarity::Ultra) continue;   // the one tier allowed to exceed itself
         for (int i = 0; i < 4000; ++i) {
             const double probability = (i % 11) / 10.0;
             const Rarity r = LootSystem::rollDropRarity(Rarity::Apex, mob, probability, rng);
@@ -1739,22 +1744,75 @@ TEST(probability_weights_the_band_and_nothing_else) {
     CHECK_EQ(int(shallow[2] * 1000), 0);
 }
 
-TEST(only_ultra_mobs_beat_their_own_rarity) {
+TEST(no_mob_drops_above_its_own_rarity) {
+    // The rule, swept over every tier. Above common the mob's rarity is the
+    // hard ceiling; a common mob's ceiling is the rarity its row was authored
+    // at, because a deliberate uncommon row -- ladybug's rose, bubble's air --
+    // is content, not a lucky roll, and still pays out as written.
     Rng rng(99);
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const Rarity mob = clampRarity(tier);
+        for (int i = 0; i < 20000; ++i) {
+            const double probability = (i % 11) / 10.0;
+            const Rarity authored = (i % 2 == 0) ? Rarity::Common : Rarity::Uncommon;
+            const Rarity r = LootSystem::rollDropRarity(authored, mob, probability, rng);
+            if (mob == Rarity::Common) {
+                CHECK(rarityIndex(r) <= rarityIndex(authored));
+            } else {
+                // Apex is the one tier that ceilings BELOW itself.
+                CHECK(rarityIndex(r) <= (mob == Rarity::Apex ? rarityIndex(Rarity::Unique)
+                                                             : tier));
+            }
+        }
+    }
+}
+
+TEST(an_ultra_mob_no_longer_beats_its_own_rarity) {
+    // Ultra was the exception the ladder allowed: a lucky roll worth 20x the
+    // base upgrade chance, briefly 5x, and then nothing. Guarded on its own
+    // because it is the one tier where a promotion had somewhere to go.
+    Rng rng(20260921);
     int above = 0;
-    for (int i = 0; i < 20000; ++i) {
+    for (int i = 0; i < 300000; ++i) {
         const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 1.0, rng);
-        CHECK(rarityIndex(r) >= rarityIndex(Rarity::Mythic));
-        CHECK(rarityIndex(r) <= rarityIndex(Rarity::Super));
         if (rarityIndex(r) > rarityIndex(Rarity::Ultra)) ++above;
     }
-    // The 20x lucky roll survives; it is the only one that does.
-    CHECK(above > 0);
+    CHECK_EQ(above, 0);
+}
 
-    for (int i = 0; i < 20000; ++i) {
-        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Mythic, 1.0, rng);
-        CHECK_EQ(rarityIndex(r), rarityIndex(Rarity::Mythic));
+TEST(an_ultra_mobs_own_tier_is_throttled_to_a_fifth) {
+    // Pin the NUMBER as well as the constant: this is the gap between an
+    // ultra mob and the super mob above it, and a test that only read
+    // kUltraOwnTierKeepChance back would pass at any value.
+    CHECK_NEAR(kUltraOwnTierKeepChance, 0.2, 1e-12);
+
+    // p = 1.0 grades every drop at the mob's own tier, so the band
+    // contributes nothing and what comes out is the throttle, measured.
+    // Before it, this row was 100% ultra; now it is one in five, and the four
+    // parts it gave up are all on mythic.
+    Rng rng(555);
+    constexpr int kRuns = 200000;
+    int ultra = 0;
+    int mythic = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        const Rarity r = LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 1.0, rng);
+        if (r == Rarity::Ultra) ++ultra;
+        if (r == Rarity::Mythic) ++mythic;
     }
+    CHECK_EQ(ultra + mythic, kRuns);
+    CHECK_NEAR(ultra / double(kRuns), 0.2, 0.01);
+    CHECK_NEAR(mythic / double(kRuns), 0.8, 0.01);
+
+    // And the throttle rides ON TOP of the band rather than replacing it: a
+    // p = 0.5 row grades ultra a quarter of the time, so it lands ultra a
+    // fifth of that -- 5%, where it used to be 25%.
+    int graded = 0;
+    for (int i = 0; i < kRuns; ++i) {
+        if (LootSystem::rollDropRarity(Rarity::Common, Rarity::Ultra, 0.5, rng) == Rarity::Ultra) {
+            ++graded;
+        }
+    }
+    CHECK_NEAR(graded / double(kRuns), 0.05, 0.005);
 }
 
 // ---------------------------------------------------------------------------
