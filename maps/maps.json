@@ -17,6 +17,7 @@
     { "file": "ocean.tmj" },
     { "file": "jungle.tmj" },
     { "file": "hel.tmj" },
-    { "file": "ant_hell.tmj" }
+    { "file": "ant_hell.tmj" },
+    { "file": "sewers.tmj" }
   ]
 }
