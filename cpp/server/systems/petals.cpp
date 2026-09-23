@@ -2640,8 +2640,13 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
 
     const Faction* ownerFaction = world.tryGet<Faction>(player);
     const Faction faction = ownerFaction ? *ownerFaction : Faction{Team::Players, false};
+    const MobConfig& config = registry.mob(mobIndex);
     MobStats mob = registry.mobStats(mobIndex, rarity);
-    const double petScale = petStatMultiplier(registry.mob(mobIndex).id);
+    const double petScale = petStatMultiplier(config.id);
+    // Smaller than the wild animal, on the reference's pet ramp: the same size
+    // at common, two thirds of it by unique. Mass stays the tier's, exactly as a
+    // wild mob's does whatever body it rolled.
+    const double petSizeScale = mobSizeRamp(rarity, kPetSizeScaleAtUnique);
     mob.health *= petScale;
     mob.damage *= petScale;
     // Zero means "unstated", and an unstated range reads as the default chase
@@ -2658,20 +2663,22 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         // Checked per summon, as the reference checks it: a squad that runs
         // into the ceiling lands the members it had room for.
         if (owned >= kMaxPetEntitiesPerPlayer) return;
-        const Vec2 spawnAt = at + rng_.insideCircle(mob.radius * 2.0 + kPlayerBaseRadius);
+        const double sizeJitter = config.rollRandomSize(rng_) * petSizeScale;
+        const double radius = mob.radius * sizeJitter;
+        const Vec2 spawnAt = at + rng_.insideCircle(radius * 2.0 + kPlayerBaseRadius);
         const Entity pet = world.create();
         world.add<MobTag>(pet);
         world.add<Transform>(pet, Transform{spawnAt, rng_.angle(), realm});
         world.add<Motion>(pet);
         world.add<Knockback>(pet);
-        world.add<Body>(pet, Body{mob.radius, mob.mass});
+        world.add<Body>(pet, Body{radius, mob.mass});
         world.add<Health>(pet, Health{mob.health, mob.health, 0.0, 0.0});
         // A summon is the same animal at the same tier, so it wears the same
         // armour. Unscaled by petStatMultiplier: that nerf is the digger's
         // health and damage, which is what made it worth summoning.
         world.add<Armor>(pet, Armor{mob.armor});
         world.add<Faction>(pet, faction);
-        world.add<MobType>(pet, MobType{mobIndex, rarity, 1.0});
+        world.add<MobType>(pet, MobType{mobIndex, rarity, sizeJitter});
 
         MobAi ai;
         // Whatever the mob is in the wild, at this tier. The reference is

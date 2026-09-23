@@ -34,31 +34,20 @@ bool alwaysAwake(const ContentRegistry& content, const MobType& type) {
 ///
 /// A common dummy matches a common mob exactly; by unique it is pulled down to
 /// three quarters of a wild unique, so the practice target does not become an
-/// enormous wall at the top rarities. Linear in the rarity index over the
-/// common..unique span, which is the reference's buildSizeRamp
-/// (src/mobs.ts:190, DUMMY_SIZE_SCALE_AT_UNIQUE).
+/// enormous wall at the top rarities (src/mobs.ts DUMMY_SIZE_SCALE_AT_UNIQUE).
 double fixtureSizeScale(const MobConfig& config, Rarity rarity) {
     if (!config.neverAmbient) return 1.0;
     constexpr double kScaleAtUnique = 0.75;
-    constexpr double kUniqueIndex = static_cast<double>(rarityIndex(Rarity::Unique));
-    return 1.0 - (1.0 - kScaleAtUnique) * (static_cast<double>(rarityIndex(rarity)) / kUniqueIndex);
+    return mobSizeRamp(rarity, kScaleAtUnique);
 }
 
 /// The per-spawn size multiplier on the mob's nominal size: the `random_size`
-/// roll, times the fixture ramp above.
-///
-/// The JSON range is an ABSOLUTE size rather than a factor, so the reference
-/// divides it by the config's own `size`: a cactus (size 1.5, random_size
-/// [1, 2]) comes out between 0.667x and 1.333x, not between 1x and 2x. Both
-/// factors ride in the one number because the reference resolves them in the
-/// one function (getEnemySizeScale), and everything that turns a mob's stat
-/// size into world units multiplies by exactly that.
+/// roll, times the fixture ramp above. Both factors ride in the one number
+/// because the reference resolves them in the one function
+/// (getEnemySizeScale), and everything that turns a mob's stat size into world
+/// units multiplies by exactly that.
 double rollSizeJitter(const MobConfig& config, Rarity rarity, Rng& rng) {
-    const double fixture = fixtureSizeScale(config, rarity);
-    if (!(config.randomSizeMax > config.randomSizeMin) || !(config.size > 0.0)) {
-        return config.randomSizeMin * fixture;
-    }
-    return rng.range(config.randomSizeMin, config.randomSizeMax) / config.size * fixture;
+    return config.rollRandomSize(rng) * fixtureSizeScale(config, rarity);
 }
 
 /// A mob whose body cannot hurt a player.

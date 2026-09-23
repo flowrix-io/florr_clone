@@ -390,6 +390,17 @@ struct MobConfig {
     double randomSizeMin = 1.0;
     double randomSizeMax = 1.0;
 
+    /// One spawn's `random_size` roll, as a multiplier on the nominal size.
+    ///
+    /// The JSON range is an ABSOLUTE size rather than a factor, so the
+    /// reference divides it by the config's own `size`: a cactus (size 1.5,
+    /// random_size [1, 2]) comes out between 0.667x and 1.333x, not between 1x
+    /// and 2x. Wild mobs and pets both roll it (src/mobs.ts getEnemySizeScale).
+    double rollRandomSize(Rng& rng) const {
+        if (!(randomSizeMax > randomSizeMin) || !(size > 0.0)) return randomSizeMin;
+        return rng.range(randomSizeMin, randomSizeMax) / size;
+    }
+
     /// Escorts placed the moment the nest spawns, and the waves it sends
     /// afterwards. Both are already resolved to mob indices.
     std::vector<std::uint16_t> initialSpawns;

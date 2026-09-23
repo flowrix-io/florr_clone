@@ -125,6 +125,18 @@ inline constexpr std::array<double, kRarityCount> kMobSizeScale = {
     1.5, 1.65, 1.95, 2.58, 4.5, 7.5, 10.5, 16.777216, 26.8435456, 42.949673,
 };
 
+/// A pull-down on kMobSizeScale for a mob that must not grow like a wild one:
+/// 1x at common, `scaleAtUnique` at unique, linear in the rarity index, and
+/// apex continues the slope. The reference's buildSizeRamp (src/mobs.ts).
+///
+/// Linear rather than geometric on purpose: kMobSizeScale only grows 1.1x from
+/// common to uncommon, so a geometric pull-down would make an uncommon smaller
+/// than a common. Linear keeps the effective size growing at every step.
+inline double mobSizeRamp(Rarity r, double scaleAtUnique) {
+    constexpr double kUniqueIndex = static_cast<double>(static_cast<int>(Rarity::Unique));
+    return 1.0 - (1.0 - scaleAtUnique) * (rarityIndex(r) / kUniqueIndex);
+}
+
 /// Petal damage and health per tier: a flat 3x ladder matching mob damage, so
 /// upgrading a petal one tier keeps pace with the mobs one tier up.
 inline double petalStatScale(Rarity r) {

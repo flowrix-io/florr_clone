@@ -2285,6 +2285,24 @@ TEST(unequipping_a_summoner_recalls_its_pets) {
     CHECK_EQ(rig.petCount(), std::size_t(0));
 }
 
+TEST(a_pet_is_smaller_than_the_wild_mob_of_its_tier) {
+    if (!contentLoaded()) return;
+    const ContentRegistry& content = fixture().registry;
+    const std::uint16_t critter = content.mobIndex("critter");
+    // The pet ramp: the wild size at common, two thirds of it by unique.
+    for (const Rarity rarity : {Rarity::Common, Rarity::Unique}) {
+        Rig rig;
+        rig.equip(0, "summoner", rarity);
+        CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+        const double wild = content.mobStats(critter, rarity).radius;
+        const double expected = rarity == Rarity::Common ? wild : wild * 2.0 / 3.0;
+        Query<Pet> pets{rig.world};
+        for (const Entity pet : pets.collect()) {
+            CHECK_NEAR(rig.world.get<Body>(pet).radius, expected, 1e-9);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
