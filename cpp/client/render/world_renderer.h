@@ -244,6 +244,25 @@ public:
     };
     const SectionTiming& sectionTiming() const { return timing_; }
 
+    /// Drawing calls the world made, split the same way the timings are.
+    ///
+    /// The timings above only see the client's own arithmetic; what the frame
+    /// actually costs is very nearly the op count times what the browser
+    /// charges per op, so this is the half that says WHERE a heavy frame is
+    /// heavy. Taken and zeroed by the caller once a frame.
+    struct SectionOps {
+        int terrain = 0;
+        int flowers = 0;
+        int mobs = 0;
+        int petals = 0;
+        int items = 0;
+        int projectiles = 0;
+        int labels = 0;
+        int effects = 0;
+        int bubbles = 0;
+    };
+    const SectionOps& sectionOps() const { return ops_; }
+
 private:
     /// A world realm, painted from its map's tile LAYERS: the bottom layer
     /// across every visible cell, then the one above it, and so on, each
@@ -503,6 +522,11 @@ private:
     mutable Realm realm_ = Realm::Overworld;
 
     mutable SectionTiming timing_;
+    mutable SectionOps ops_;
+    /// The op count at the last boundary, so each phase gets the difference.
+    mutable int opMark_ = 0;
+    static int canvasOps();
+    void chargeOps(int& bucket) const;
 
     /// Mob damage numbers accumulate for 100 ms before one number is emitted,
     /// so a ring of petals landing in the same tick reads as one hit and not

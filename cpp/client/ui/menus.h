@@ -287,6 +287,33 @@ struct DragState {
 };
 
 /// One frame of everything a panel is allowed to touch.
+/// What the debug panel's Profiling tab shows.
+///
+/// The frame cost of this client is very nearly the number of drawing calls it
+/// makes times what the browser charges for each, so the question a slow frame
+/// raises is always "which code is making them". The app fills this in once a
+/// second -- the same rolling window the rest of the counters use, because a
+/// per-frame readout jitters too much to read.
+struct ProfilingStats {
+    /// Whether the app filled this in at all. The native build does not.
+    bool available = false;
+    int opsPerFrame = 0;
+    int batches = 0;
+    /// What the browser spent consuming the op stream, against what the whole
+    /// frame cost. The difference is the client's own arithmetic.
+    double browserAvgMillis = 0;
+    double browserPeakMillis = 0;
+    double frameMillis = 0;
+    /// Ops by the part of the frame that made them.
+    int world = 0, hud = 0, panels = 0, other = 0;
+    int menuBar = 0, menuStrip = 0, menuPanel = 0;
+    /// Bitmaps the art cache holds, and what they occupy.
+    std::size_t bakedEntries = 0;
+    std::size_t bakedBytes = 0;
+    /// Ops by kind of call, indexed by canvas op code. See canvasOpName().
+    std::array<int, kCanvasOpCodes> byType{};
+};
+
 struct MenuContext {
     Canvas& canvas;
     Window& window;
@@ -317,6 +344,9 @@ struct MenuContext {
     /// Set by that row, and read the way the logout request is: the grant
     /// itself belongs to whoever owns the server, which is never a panel.
     bool adminGrantRequested = false;
+    /// The debug panel's Profiling tab reads this. Null on a build that does
+    /// not gather it.
+    const ProfilingStats* profiling = nullptr;
 
     Vec2 mouse() const { return {window.mouseX(), window.mouseY()}; }
     bool over(Rect r) const { return r.contains(mouse()); }
@@ -346,6 +376,7 @@ public:
     static Rect bounds(int viewWidth, int viewHeight);
 
 private:
+
     ui::Scroller scroll_;
     /// One slot per item TYPE at its best tier, instead of one per tier.
     bool stacked_ = false;
@@ -574,6 +605,10 @@ private:
 /// settings switch that puts the bug button in the strip is on.
 class DebugPanel {
 public:
+    /// Which half of the panel is showing. Graphs are the history of a few
+    /// whole-system numbers; Profiling is this frame's drawing broken down.
+    enum class Tab { Graphs, Profiling };
+
     bool render(MenuContext&);
     void reset();
     static double preferredWidth();
@@ -602,9 +637,17 @@ private:
     /// flat zero, which would read as a server that costs nothing.
     bool haveServerStats_ = false;
 
+    Tab tab_ = Tab::Graphs;
+    /// Which column the op-type table is ordered by. Count is the useful one
+    /// by default; by name is for finding a particular call.
+    bool sortByName_ = false;
+
     double sampleAge_ = 0;
     double sampleTotal_ = 0;
     int sampleCount_ = 0;
+
+    bool drawGraphsTab(MenuContext&, Rect body);
+    void drawProfilingTab(MenuContext&, Rect body);
 
     /// One series on one graph.
     struct Series {
@@ -738,7 +781,29 @@ public:
     bool wantsText() const { return wantsText_; }
     void setWantsText(bool wants) { wantsText_ = wants; }
 
+    /// Drawing calls the menu layer made since this was last called, split by
+    /// which of its three unrelated jobs made them. One figure for the lot
+    /// cannot say which to make quieter, and the bar is redrawn every frame
+    /// from artwork that changes only when the loadout does.
+    struct OpCounts {
+        int strip = 0;
+        int bar = 0;
+        int panel = 0;
+    };
+    OpCounts takeOpCounts();
+
+    /// Where the debug panel's Profiling tab reads its figures from. The app
+    /// owns them -- they span the whole frame, not just the menus -- so it
+    /// lends the panel a pointer rather than the menus gathering a copy.
+    void setProfiling(const ProfilingStats* stats) { profiling_ = stats; }
+
 private:
+    const ProfilingStats* profiling_ = nullptr;
+    static int canvasOpsMark();
+    int opsStrip_ = 0;
+    int opsBar_ = 0;
+    int opsPanel_ = 0;
+
     /// One slot of the icon strip. The strip is not a projection of MenuId:
     /// two of its buttons open no panel at all, and the order on screen is the
     /// browser's, not the enum's.

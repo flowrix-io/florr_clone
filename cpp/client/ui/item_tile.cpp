@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
+#include "client/render/art_cache.h"
 #include "client/ui/draw.h"
 #include "client/ui/menu_widgets.h"
 #include "client/ui/text.h"
@@ -271,6 +273,10 @@ PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat) {
     return PetalIconMetric{shape.diameter * shape.shrink, shape.tilt};
 }
 
+/// How much wider than the cluster its baked bitmap is, so artwork that paints
+/// outside the box it was fitted into is not cropped by the bake.
+constexpr double kClusterBakeMargin = 1.35;
+
 void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t petalIndex,
                       double sizeStat, int count, double cx, double cy, double maxDiameter,
                       double timeSeconds) {
@@ -291,20 +297,54 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
     const double diameter = shape.diameter * fit;
     const double ring = shape.ring * fit;
 
-    if (drawCount == 1) {
-        sprites.drawPetal(canvas, petalIndex, cx, cy, diameter, shape.tilt, timeSeconds);
-        return;
+    const auto paintCluster = [&](Canvas& into, double ox, double oy) {
+        if (drawCount == 1) {
+            sprites.drawPetal(into, petalIndex, ox, oy, diameter, shape.tilt, timeSeconds);
+            return;
+        }
+        for (int i = 0; i < drawCount; ++i) {
+            const double angle = (static_cast<double>(i) / drawCount) * kTau;
+            // Turned to face outward AND tilted by the petal's own icon angle,
+            // which is the order gardn applies them in: it rotates to the ring
+            // place, steps out along it, then rotates again by `icon_angle`.
+            sprites.drawPetal(into, petalIndex, ox + std::cos(angle) * ring,
+                              oy + std::sin(angle) * ring, diameter, angle + shape.tilt,
+                              timeSeconds);
+        }
+    };
+
+    // The cluster on a tile is the same picture every frame -- the petals do
+    // not turn and the artwork does not animate -- so it is baked once and
+    // blitted. A full loadout bar was over a thousand drawing calls a frame,
+    // rebuilt sixty times a second from artwork that had not changed since it
+    // was equipped, and it is the single biggest line in the counters.
+    //
+    // The per-instance rotations live INSIDE the bake, so the blit itself is
+    // axis-aligned. drawCachedPicture refuses a rotated ambient transform for
+    // itself, which is what keeps a drop -- an item tile laid on the ground at
+    // its own tilt -- on the direct path.
+    if (!sprites.petalAnimated(petalIndex)) {
+        // A margin on the box: a petal's artwork may paint outside the circle
+        // it is fitted into, and a bake that cropped it would be a visible
+        // change rather than a free one.
+        const double side = (ring * 2.0 + diameter) * kClusterBakeMargin;
+        // Quantised, because the size is part of the key and one that wobbled
+        // in its last decimal would bake a new bitmap every frame.
+        const auto q = [](double v) { return static_cast<std::uint64_t>(std::lround(v * 16.0)); };
+        std::uint64_t variant = petalIndex;
+        variant = variant * 1000003u + static_cast<std::uint64_t>(drawCount);
+        variant = variant * 1000003u + q(diameter);
+        variant = variant * 1000003u + q(ring);
+        variant = variant * 1000003u + q(shape.tilt);
+        if (drawCachedPicture(canvas, &sprites, variant, cx - side * 0.5, cy - side * 0.5, side,
+                              side, [&](Canvas& bitmap) {
+                                  paintCluster(bitmap, side * 0.5, side * 0.5);
+                              })) {
+            return;
+        }
     }
 
-    for (int i = 0; i < drawCount; ++i) {
-        const double angle = (static_cast<double>(i) / drawCount) * kTau;
-        // Turned to face outward AND tilted by the petal's own icon angle,
-        // which is the order gardn applies them in: it rotates to the ring
-        // place, steps out along it, then rotates again by `icon_angle`.
-        sprites.drawPetal(canvas, petalIndex, cx + std::cos(angle) * ring,
-                          cy + std::sin(angle) * ring, diameter, angle + shape.tilt,
-                          timeSeconds);
-    }
+    paintCluster(canvas, cx, cy);
 }
 
 void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const ItemTile& tile) {

@@ -69,6 +69,10 @@ public:
     bool mobDrawable(std::uint16_t index) const;
     bool petalDrawable(std::uint16_t index) const;
 
+    /// True when this petal's artwork moves on its own clock, in which case a
+    /// caller must not bake it into a bitmap -- the bake would freeze it.
+    bool petalAnimated(std::uint16_t index) const;
+
     /// The artwork of one map tile, by the BARE file name its tileset names
     /// (`grass_c_0.svg`). Read out of the data directory the first time it is
     /// asked for and kept thereafter, so a frame never touches the disk twice

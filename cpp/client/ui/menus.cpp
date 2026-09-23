@@ -810,7 +810,9 @@ Rect SettingsPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), 500.0, kMenuCornerY - 2.0, w, h);
 }
 Rect DebugPanel::bounds(int w, int h) {
-    return cornerPanel(preferredWidth(), 500.0, kMenuCornerY - 2.0, w, h);
+    // Taller than the other corner panels by the tab row it grew, so the
+    // graphs keep the room they had.
+    return cornerPanel(preferredWidth(), 646.0, kMenuCornerY - 2.0, w, h);
 }
 Rect ChangelogPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h);
@@ -1833,12 +1835,41 @@ bool DebugPanel::render(MenuContext& ctx) {
     const Rect closeRect = closeButtonRect(panel);
     panelClose(canvas, closeRect, closeRect.contains(mouse));
 
+    // Two tabs, the same shape the skin studio's are: a button row where the
+    // active one is filled and the others are not.
+    constexpr double kTabW = 96.0;
+    constexpr double kTabH = 26.0;
+    const Rect tabRow{panel.x + kPad, panel.y + kHeader + kPad - 4.0, panel.w - kPad * 2, kTabH};
+    static const char* const kTabLabels[] = {"Graphs", "Profiling"};
+    for (int i = 0; i < 2; ++i) {
+        const Rect r{tabRow.x + i * (kTabW + 5.0), tabRow.y, kTabW, kTabH};
+        const bool active = static_cast<int>(tab_) == i;
+        ButtonStyle style;
+        style.fill = active ? 0x5A9FDBu : 0x4D4D4Du;
+        style.textSize = 13.0;
+        button(canvas, r, kTabLabels[i], !active && r.contains(mouse), false, style);
+        if (ctx.clicked(r)) tab_ = static_cast<Tab>(i);
+    }
+
+    const Rect body{panel.x, tabRow.bottom(), panel.w, panel.bottom() - tabRow.bottom()};
+    if (tab_ == Tab::Profiling) {
+        drawProfilingTab(ctx, body);
+        return !ctx.clicked(closeRect);
+    }
+    return drawGraphsTab(ctx, body) && !ctx.clicked(closeRect);
+}
+
+bool DebugPanel::drawGraphsTab(MenuContext& ctx, Rect body) {
+    Canvas& canvas = ctx.canvas;
+    constexpr double kPad = 15.0;
+
     constexpr double kGraphHeight = 74.0;
     constexpr double kLabelHeight = 18.0;
     constexpr double kGap = 12.0;
-    const double left = panel.x + kPad;
-    const double width = panel.w - kPad * 2;
-    double cy = panel.y + kHeader + kPad + 5.0;
+    const double left = body.x + kPad;
+    const double width = body.w - kPad * 2;
+    // Below the tab row, which the body already starts under.
+    double cy = body.y + 4.0;
     const auto block = [&](const std::string& label, const std::string& value,
                            const std::vector<Series>& lines, const char* unit) {
         drawGraph(canvas, Rect{left, cy + kLabelHeight, width, kGraphHeight}, label, value, lines,
@@ -1877,7 +1908,127 @@ bool DebugPanel::render(MenuContext& ctx) {
                            : noServer,
           {{&serverResidentMB_, 0xC9A0E8u}, {&serverHeapMB_, 0xE8A023u}}, "MB");
 
-    return !ctx.clicked(closeRect);
+    return true;
+}
+
+void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
+    Canvas& canvas = ctx.canvas;
+    constexpr double kPad = 15.0;
+    const double left = body.x + kPad;
+    const double width = body.w - kPad * 2;
+    double cy = body.y + 12.0;
+
+    TextStyle label;
+    label.size = 12.0;
+    label.bold = true;
+    label.strokeWidth = 2.0;
+
+    const ProfilingStats* p = ctx.profiling;
+    if (p == nullptr || !p->available) {
+        label.fill = 0xBBBBBBu;
+        text(canvas, "not gathered on this build", left, cy + 10.0, label);
+        return;
+    }
+
+    const auto row = [&](const std::string& what, const std::string& value, std::uint32_t tint) {
+        label.fill = tint;
+        label.align = Align::Left;
+        text(canvas, what, left, cy, label);
+        label.align = Align::Right;
+        text(canvas, value, left + width, cy, label);
+        label.align = Align::Left;
+        cy += 17.0;
+    };
+    const auto ops = [](int n) { return std::to_string(n) + " ops"; };
+
+    // The headline: what the frame cost, and how much of it was the browser
+    // consuming the drawing rather than the client producing it.
+    row("Frame", fixed(p->frameMillis, 2) + " ms", 0x00FF00u);
+    row("Drawing calls", std::to_string(p->opsPerFrame) + " in " + std::to_string(p->batches) +
+                             " batch" + (p->batches == 1 ? "" : "es"),
+        0x60A5FAu);
+    row("  browser", fixed(p->browserAvgMillis, 2) + " / " + fixed(p->browserPeakMillis, 1) + " ms",
+        0x60A5FAu);
+    row("  baked bitmaps",
+        std::to_string(p->bakedEntries) + " / " + std::to_string(p->bakedBytes >> 20) + " MB",
+        0x60A5FAu);
+    cy += 6.0;
+
+    row("World", ops(p->world), 0xFACC15u);
+    const WorldRenderer::SectionOps& w = ctx.renderer.sectionOps();
+    row("  terrain", ops(w.terrain), 0xBBBBBBu);
+    row("  mobs", ops(w.mobs), 0xBBBBBBu);
+    row("  mob labels", ops(w.labels), 0xBBBBBBu);
+    row("  petals", ops(w.petals), 0xBBBBBBu);
+    row("  drops", ops(w.items), 0xBBBBBBu);
+    row("  flowers", ops(w.flowers), 0xBBBBBBu);
+    row("  effects", ops(w.effects), 0xBBBBBBu);
+    cy += 4.0;
+    row("HUD", ops(p->hud), 0xFACC15u);
+    row("Menus", ops(p->panels), 0xFACC15u);
+    row("  loadout bar", ops(p->menuBar), 0xBBBBBBu);
+    row("  icon strip", ops(p->menuStrip), 0xBBBBBBu);
+    row("  open panel", ops(p->menuPanel), 0xBBBBBBu);
+    cy += 10.0;
+
+    // --- by kind of call ----------------------------------------------------
+    // Sorted, because the point of the split is to find the one kind that is
+    // running away with the frame, and that is never the one you expected.
+    label.fill = 0xFACC15u;
+    text(canvas, "By call type", left, cy, label);
+    const Rect sortRect{left + width - 92.0, cy - 11.0, 92.0, 18.0};
+    ButtonStyle sortStyle;
+    sortStyle.fill = 0x4D4D4Du;
+    sortStyle.textSize = 11.0;
+    button(canvas, sortRect, sortByName_ ? "sort: name" : "sort: count",
+           sortRect.contains(ctx.mouse()), false, sortStyle);
+    if (ctx.clicked(sortRect)) sortByName_ = !sortByName_;
+    cy += 18.0;
+
+    struct Kind {
+        const char* name;
+        int count;
+    };
+    std::vector<Kind> kinds;
+    int busiest = 1;
+    for (int code = 0; code < kCanvasOpCodes; ++code) {
+        if (p->byType[static_cast<std::size_t>(code)] <= 0) continue;
+        const char* name = canvasOpName(code);
+        if (name == nullptr) continue;
+        kinds.push_back({name, p->byType[static_cast<std::size_t>(code)]});
+        busiest = std::max(busiest, kinds.back().count);
+    }
+    std::sort(kinds.begin(), kinds.end(), [this](const Kind& a, const Kind& b) {
+        if (sortByName_) return std::strcmp(a.name, b.name) < 0;
+        if (a.count != b.count) return a.count > b.count;
+        return std::strcmp(a.name, b.name) < 0;
+    });
+
+    label.size = 11.0;
+    std::size_t shown = 0;
+    for (const Kind& kind : kinds) {
+        if (cy > body.bottom() - 26.0) break;
+        ++shown;
+        // A bar behind the row, scaled to the busiest kind, so the shape of
+        // the distribution reads without anyone doing arithmetic.
+        const double share = static_cast<double>(kind.count) / busiest;
+        setFill(canvas, 0x60A5FAu, 0.22);
+        canvas.beginPath();
+        canvas.roundRect(static_cast<float>(left), static_cast<float>(cy - 9.0),
+                         static_cast<float>(std::max(2.0, width * share)), 13.0f, 3.0f);
+        canvas.fill();
+        label.fill = 0xFFFFFFu;
+        label.align = Align::Left;
+        text(canvas, kind.name, left + 5.0, cy, label);
+        label.align = Align::Right;
+        text(canvas, std::to_string(kind.count), left + width - 5.0, cy, label);
+        label.align = Align::Left;
+        cy += 15.0;
+    }
+    if (shown < kinds.size()) {
+        label.fill = 0x999999u;
+        text(canvas, "+" + std::to_string(kinds.size() - shown) + " more", left + 5.0, cy, label);
+    }
 }
 
 namespace {
@@ -1915,6 +2066,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     MenuContext ctx{canvas,    window,      net, sprites,    renderer, settings_,
                     drag_,     timeSeconds, dt,  panelRect_, false};
     ctx.adminGrantOffered = adminGrantOffered_;
+    ctx.profiling = profiling_;
     bool keepOpen = true;
     // The setting is the single source of truth for the debug panel: unchecking
     // "Enable Debug Menu" while it is open closes it on the next frame rather
@@ -1955,6 +2107,20 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     if (open_ == MenuId::None) return;
     wantsText_ = ctx.wantsText;
     if (!keepOpen) close();
+}
+
+int MenuSystem::canvasOpsMark() {
+#ifdef __EMSCRIPTEN__
+    return canvasOpsEmitted();
+#else
+    return 0;
+#endif
+}
+
+MenuSystem::OpCounts MenuSystem::takeOpCounts() {
+    const OpCounts taken{opsStrip_, opsBar_, opsPanel_};
+    opsStrip_ = opsBar_ = opsPanel_ = 0;
+    return taken;
 }
 
 void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const SpriteCache& sprites,
@@ -2008,7 +2174,9 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     const PanelLayer layer = panelLayer(drawn_, inGame_);
 
     if (layer == PanelLayer::Under) {
+        const int beforePanel = canvasOpsMark();
         renderOpenPanel(canvas, window, net, sprites, renderer, timeSeconds, dt);
+        opsPanel_ += canvasOpsMark() - beforePanel;
     }
     // The bar and the strip trade places between the screens. The title screen
     // runs drawTitleLoadout and then canvasButtons.draw; in game the strip is
@@ -2017,13 +2185,25 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // one thing that ever falls in between the two. The open card is no longer
     // in that sandwich: in game it is always painted after the bar, so the
     // hotbar sits behind the menus instead of cutting across them.
+    // Counted separately: "the menu layer" covers three unrelated things, and
+    // one number for all three cannot say which of them to make quieter.
+    const auto strip = [&] {
+        const int before = canvasOpsMark();
+        drawIconStrip(canvas, window, timeSeconds);
+        opsStrip_ += canvasOpsMark() - before;
+    };
+    const auto bar = [&] {
+        const int before = canvasOpsMark();
+        drawLoadoutBar(canvas, window, net, sprites, timeSeconds, dt);
+        opsBar_ += canvasOpsMark() - before;
+    };
     if (inGame_) {
-        drawIconStrip(canvas, window, timeSeconds);
+        strip();
         if (overStripUnderBar) overStripUnderBar();
-        drawLoadoutBar(canvas, window, net, sprites, timeSeconds, dt);
+        bar();
     } else {
-        drawLoadoutBar(canvas, window, net, sprites, timeSeconds, dt);
-        drawIconStrip(canvas, window, timeSeconds);
+        bar();
+        strip();
     }
     if (layer == PanelLayer::Over) {
         renderOpenPanel(canvas, window, net, sprites, renderer, timeSeconds, dt);

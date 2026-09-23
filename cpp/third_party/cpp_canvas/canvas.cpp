@@ -75,42 +75,71 @@ EM_JS(void, c2d_present, (int id, const char* target), {
   if (!canvas) { canvas = document.createElement('canvas'); canvas.id = name; document.body.appendChild(canvas); }
   canvas.width = item.surface.width; canvas.height = item.surface.height; canvas.getContext('2d').drawImage(item.surface, 0, 0);
 });
-EM_JS(void, c2d_op, (int id, int op, double a,double b,double c,double d,double e,double f,double g,double h, const char* text), {
-  const x = Module.cppCanvasContexts[id].ctx, s = text ? UTF8ToString(text) : "";
-  switch(op) {
-    case 0:x.save();break; case 1:x.restore();break; case 2: x.reset ? x.reset() : (x.setTransform(1,0,0,1,0,0),x.clearRect(0,0,x.canvas.width,x.canvas.height));break;
-    case 3:x.scale(a,b);break; case 4:x.rotate(a);break; case 5:x.translate(a,b);break; case 6:x.transform(a,b,c,d,e,f);break; case 7:x.setTransform(a,b,c,d,e,f);break; case 8:x.resetTransform();break;
-    case 9:x.fillStyle=s;break; case 10:x.strokeStyle=s;break; case 11:x.globalAlpha=a;break; case 12:x.globalCompositeOperation=s;break; case 13:x.filter=s;break;
-    case 14:x.lineWidth=a;break; case 15:x.lineCap=s;break; case 16:x.lineJoin=s;break; case 17:x.miterLimit=a;break; case 18:x.lineDashOffset=a;break;
-    case 19:x.shadowColor=s;x.shadowBlur=a;x.shadowOffsetX=b;x.shadowOffsetY=c;break; case 20:x.font=s;break; case 21:x.textAlign=s;break; case 22:x.textBaseline=s;break; case 23:x.direction=s;break; case 24:x.imageSmoothingEnabled=!!a;break; case 25:x.imageSmoothingQuality=s;break;
-    case 30:x.clearRect(a,b,c,d);break; case 31:x.fillRect(a,b,c,d);break; case 32:x.strokeRect(a,b,c,d);break;
-    case 33:x.beginPath();break; case 34:x.closePath();break; case 35:x.moveTo(a,b);break; case 36:x.lineTo(a,b);break; case 37:x.quadraticCurveTo(a,b,c,d);break; case 38:x.bezierCurveTo(a,b,c,d,e,f);break; case 39:x.arc(a,b,c,d,e,!!f);break; case 40:x.arcTo(a,b,c,d,e);break; case 41:x.ellipse(a,b,c,d,e,f,g,!!h);break; case 42:x.rect(a,b,c,d);break; case 43:x.roundRect(a,b,c,d,e);break;
-    case 44:x.fill(s || 'nonzero');break; case 45:x.stroke();break; case 46:x.clip(s || 'nonzero');break;
-    case 47:a < 0 ? x.fillText(s,b,c) : x.fillText(s,b,c,a);break; case 48:a < 0 ? x.strokeText(s,b,c) : x.strokeText(s,b,c,a);break;
+// The drawing calls do not cross into the page one at a time. Each one used
+// to be its own c2d_op -- ten arguments widened to doubles and a UTF8ToString
+// of its text, five thousand times a frame -- and a CPU profile put about a
+// third of the client's main-thread time in that crossing and the garbage it
+// made, with none of it in the drawing itself. So a call is written into a
+// buffer in wasm memory and the whole frame's worth is handed over at once.
+//
+// A record is ten 32-bit slots: the opcode, eight arguments, and a string
+// reference. The two integer slots are read through HEAP32 and the arguments
+// through HEAPF32 -- every argument was a float before c2d_op widened it, so
+// carrying them as floats loses nothing.
+//
+// Strings do not cross per call either. A STYLE string -- a colour, a font, a
+// line cap -- is interned: sent once, kept in a JS array, and named by its
+// index from then on, which is what takes UTF8ToString off the hot path
+// entirely. TEXT is the exception, because fillText carries whatever the game
+// has to say and interning that would grow without bound; it is copied into a
+// per-frame arena that is handed over with the buffer and decoded there.
+EM_JS(void, c2d_intern, (int id, const char* text), {
+  (Module.cppCanvasStrings || (Module.cppCanvasStrings = [""]))[id] = UTF8ToString(text);
+});
+EM_JS(void, c2d_intern_reset, (), { Module.cppCanvasStrings = [""]; });
+EM_JS(void, c2d_flush, (int id, const int* ops, int count, const char* text, const float* paths), {
+  const x = Module.cppCanvasContexts[id].ctx, S = Module.cppCanvasStrings || [""];
+  // Read here, not hoisted: ALLOW_MEMORY_GROWTH detaches the views on a grow.
+  const F = HEAPF32, I = HEAP32;
+  for (let n = 0, p = ops >> 2; n < count; n++, p += 10) {
+    const s = S[I[p+9]];
+    switch(I[p]) {
+      case 0:x.save();break; case 1:x.restore();break; case 2: x.reset ? x.reset() : (x.setTransform(1,0,0,1,0,0),x.clearRect(0,0,x.canvas.width,x.canvas.height));break;
+      case 3:x.scale(F[p+1],F[p+2]);break; case 4:x.rotate(F[p+1]);break; case 5:x.translate(F[p+1],F[p+2]);break; case 6:x.transform(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 7:x.setTransform(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 8:x.resetTransform();break;
+      case 9:x.fillStyle=s;break; case 10:x.strokeStyle=s;break; case 11:x.globalAlpha=F[p+1];break; case 12:x.globalCompositeOperation=s;break; case 13:x.filter=s;break;
+      case 14:x.lineWidth=F[p+1];break; case 15:x.lineCap=s;break; case 16:x.lineJoin=s;break; case 17:x.miterLimit=F[p+1];break; case 18:x.lineDashOffset=F[p+1];break;
+      case 19:x.shadowColor=s;x.shadowBlur=F[p+1];x.shadowOffsetX=F[p+2];x.shadowOffsetY=F[p+3];break; case 20:x.font=s;break; case 21:x.textAlign=s;break; case 22:x.textBaseline=s;break; case 23:x.direction=s;break; case 24:x.imageSmoothingEnabled=!!F[p+1];break; case 25:x.imageSmoothingQuality=s;break;
+      case 30:x.clearRect(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 31:x.fillRect(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 32:x.strokeRect(F[p+1],F[p+2],F[p+3],F[p+4]);break;
+      case 33:x.beginPath();break; case 34:x.closePath();break; case 35:x.moveTo(F[p+1],F[p+2]);break; case 36:x.lineTo(F[p+1],F[p+2]);break; case 37:x.quadraticCurveTo(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 38:x.bezierCurveTo(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6]);break; case 39:x.arc(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],!!F[p+6]);break; case 40:x.arcTo(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5]);break; case 41:x.ellipse(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6],F[p+7],!!F[p+8]);break; case 42:x.rect(F[p+1],F[p+2],F[p+3],F[p+4]);break; case 43:x.roundRect(F[p+1],F[p+2],F[p+3],F[p+4],F[p+5]);break;
+      case 44:x.fill(s || 'nonzero');break; case 45:x.stroke();break; case 46:x.clip(s || 'nonzero');break;
+      case 47:{const t=UTF8ToString(text+I[p+9]);F[p+1] < 0 ? x.fillText(t,F[p+2],F[p+3]) : x.fillText(t,F[p+2],F[p+3],F[p+1]);break;}
+      case 48:{const t=UTF8ToString(text+I[p+9]);F[p+1] < 0 ? x.strokeText(t,F[p+2],F[p+3]) : x.strokeText(t,F[p+2],F[p+3],F[p+1]);break;}
+      // A retained path the page already holds, named by its key alone. Only
+      // geometry it has NOT seen goes over immediately (c2d_path), because
+      // only that carries a payload; the redraws are most of them and stay in
+      // the buffer with everything else.
+      case 50:{const P=Module.cppCanvasPaths.get(I[p+9]);if(P){const r=F[p+2]?'evenodd':'nonzero';F[p+1]===0?x.fill(P,r):F[p+1]===1?x.stroke(P):x.clip(P,r);}break;}
+      case 51:{const im=Module.cppCanvasContexts[I[p+9]].surface;F[p+5]?x.drawImage(im,F[p+1],F[p+2],F[p+3],F[p+4]):x.drawImage(im,F[p+1],F[p+2]);break;}
+      case 52:x.drawImage(Module.cppCanvasContexts[I[p+9]].surface,F[p+1],F[p+2],F[p+3],F[p+4],F[p+5],F[p+6],F[p+7],F[p+8]);break;
+      // Geometry the page has not seen. It rides in the path arena rather
+      // than going over on its own, so a path built fresh each frame -- a
+      // health bar, a minimap run -- costs no crossing of its own. A key of
+      // zero means "draw it and forget it": only geometry worth keeping is
+      // put in the map, which is what stops the single-use paths churning it.
+      case 53:{
+        const n=F[p+4],q=(paths>>2)+F[p+3],P=new Path2D();
+        for(let i=0;i<n;i++){const o=q+i*10,cc=!!F[o+1],a=o+2;
+          switch(F[o]){case 0:P.moveTo(F[a],F[a+1]);break;case 1:P.lineTo(F[a],F[a+1]);break;case 2:P.quadraticCurveTo(F[a],F[a+1],F[a+2],F[a+3]);break;case 3:P.bezierCurveTo(F[a],F[a+1],F[a+2],F[a+3],F[a+4],F[a+5]);break;case 4:P.arc(F[a],F[a+1],F[a+2],F[a+3],F[a+4],cc);break;case 5:P.arcTo(F[a],F[a+1],F[a+2],F[a+3],F[a+4]);break;case 6:P.ellipse(F[a],F[a+1],F[a+2],F[a+3],F[a+4],F[a+5],F[a+6],cc);break;case 7:P.rect(F[a],F[a+1],F[a+2],F[a+3]);break;case 8:P.roundRect(F[a],F[a+1],F[a+2],F[a+3],F[a+4]);break;case 9:P.closePath();break;}}
+        if(I[p+9]) (Module.cppCanvasPaths||(Module.cppCanvasPaths=new Map())).set(I[p+9],P);
+        const r=F[p+2]?'evenodd':'nonzero';F[p+1]===0?x.fill(P,r):F[p+1]===1?x.stroke(P):x.clip(P,r);
+        break;}
+    }
   }
 });
 EM_JS(void, c2d_dash, (int id, const float* data, int length), { Module.cppCanvasContexts[id].ctx.setLineDash(Array.from(HEAPF32.subarray(data>>2,(data>>2)+length))); });
-// `data` null means "the cache already holds `key`" -- the C++ side owns the
-// bookkeeping, so a null here is never a guess. `evenOdd` replaces the fill
-// rule string: this runs a few hundred times a frame and a decoded JS string
-// per call is pure waste when there are two possible values.
-EM_JS(void, c2d_path, (int id, int key, const float* data, int count, int action, int evenOdd), {
-  const cache = Module.cppCanvasPaths || (Module.cppCanvasPaths = new Map());
-  let p = data ? null : cache.get(key);
-  if (!p) {
-    p = new Path2D();
-    const v=HEAPF32.subarray(data>>2,(data>>2)+count*10);
-    for(let i=0;i<count;i++){const q=i*10,n=v[q],cc=!!v[q+1],a=v.subarray(q+2,q+10); switch(n){case 0:p.moveTo(a[0],a[1]);break;case 1:p.lineTo(a[0],a[1]);break;case 2:p.quadraticCurveTo(a[0],a[1],a[2],a[3]);break;case 3:p.bezierCurveTo(a[0],a[1],a[2],a[3],a[4],a[5]);break;case 4:p.arc(a[0],a[1],a[2],a[3],a[4],cc);break;case 5:p.arcTo(a[0],a[1],a[2],a[3],a[4]);break;case 6:p.ellipse(a[0],a[1],a[2],a[3],a[4],a[5],a[6],cc);break;case 7:p.rect(a[0],a[1],a[2],a[3]);break;case 8:p.roundRect(a[0],a[1],a[2],a[3],a[4]);break;case 9:p.closePath();break;}}
-    cache.set(key, p);
-  }
-  const x=Module.cppCanvasContexts[id].ctx, r=evenOdd?'evenodd':'nonzero';
-  if(action===0)x.fill(p,r); else if(action===1)x.stroke(p); else x.clip(p,r);
-});
 EM_JS(void, c2d_path_drop, (int key), { if (Module.cppCanvasPaths) Module.cppCanvasPaths.delete(key); });
 EM_JS(int, c2d_hit, (int id,double a,double b,int stroke,const char* rule), { const x=Module.cppCanvasContexts[id].ctx; return stroke ? x.isPointInStroke(a,b) : x.isPointInPath(a,b,UTF8ToString(rule)); });
 EM_JS(double, c2d_measure, (int id,const char* text), { return Module.cppCanvasContexts[id].ctx.measureText(UTF8ToString(text)).width; });
-EM_JS(void, c2d_draw, (int dst,int src,double a,double b,double c,double d,int sized), { const x=Module.cppCanvasContexts[dst].ctx, image=Module.cppCanvasContexts[src].surface; sized ? x.drawImage(image,a,b,c,d) : x.drawImage(image,a,b); });
-EM_JS(void, c2d_draw_sub, (int dst,int src,double sx,double sy,double sw,double sh,double dx,double dy,double dw,double dh), { const x=Module.cppCanvasContexts[dst].ctx; x.drawImage(Module.cppCanvasContexts[src].surface,sx,sy,sw,sh,dx,dy,dw,dh); });
 EM_JS(int, c2d_get_pixels, (int id,int x,int y,int w,int h,std::uint8_t* out), { const d=Module.cppCanvasContexts[id].ctx.getImageData(x,y,w,h).data; HEAPU8.set(d,out); return d.length; });
 EM_JS(void, c2d_put_pixels, (int id,const std::uint8_t* data,int sw,int sh,int dx,int dy), { const d=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+sw*sh*4)),sw,sh); Module.cppCanvasContexts[id].ctx.putImageData(d,dx,dy); });
 EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,double dx,double dy,double dw,double dh,double alpha), {
@@ -141,7 +170,170 @@ EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,do
   const ctx=Module.cppCanvasContexts[id].ctx, was=ctx.globalAlpha;
   ctx.globalAlpha=was*alpha; ctx.drawImage(scratch,dx,dy,dw,dh); ctx.globalAlpha=was;
 });
-#define OP(code,a,b,c,d,e,f,g,h,s) c2d_op(contextId_,code,a,b,c,d,e,f,g,h,s)
+namespace {
+// One record per call: opcode, eight arguments, string reference. A union
+// rather than two buffers, so the writes stay one linear walk.
+union OpSlot { float f; std::int32_t i; };
+constexpr int kOpSlots = 10;
+// A bound on how far a call can lag the page, not on how big a frame may be:
+// filling the buffer flushes it and carries on.
+constexpr int kOpCapacity = 8192;
+OpSlot gOps[kOpCapacity * kOpSlots];
+int gOpCount = 0;
+// Which context the buffered calls belong to. There is ONE buffer, so a canvas
+// switching to another (an offscreen render target) has to flush: that is what
+// keeps the two streams in the order they were issued.
+int gOpContext = -1;
+// fillText/strokeText text for the calls in the buffer, NUL-separated. Each
+// text op records its byte offset into this.
+std::string gOpText;
+// Path geometry for the calls in the buffer, ten floats a segment. A path op
+// records its offset into this and its segment count. Emptied by the flush
+// that hands it over; the capacity is kept, so a steady frame allocates
+// nothing. Its offsets travel as floats, so it is also flushed once it grows
+// past what a float still counts exactly -- see opRecord.
+std::vector<float> gOpPath;
+
+// Style strings and the indices the page knows them by. Bounded, and dropped
+// whole rather than one at a time: a client that interpolates a colour makes
+// new ones for as long as it runs, and the records already in the buffer name
+// their strings by index, so the table can only be reset with the buffer
+// empty. Index 0 is the empty string, on both sides, from the start.
+constexpr std::size_t kMaxInternedStrings = 4096;
+std::unordered_map<std::string, std::int32_t> gInterned{{std::string(), 0}};
+} // namespace
+
+namespace {
+CanvasFrameStats gFrameStats;
+int gOpTypeCounts[kCanvasOpCodes] = {};
+} // namespace
+
+const int* canvasOpTypeCounts() { return gOpTypeCounts; }
+
+
+
+int canvasOpsEmitted() { return gFrameStats.ops + gOpCount; }
+
+CanvasFrameStats canvasTakeFrameStats() {
+  const CanvasFrameStats taken = gFrameStats;
+  gFrameStats = CanvasFrameStats{};
+  for (int& count : gOpTypeCounts) count = 0;
+  return taken;
+}
+
+void canvasFlushOps() {
+  if (gOpCount == 0) return;
+  // Timed because this is the one call that hands the whole frame's drawing to
+  // the browser: what it costs is what the browser charges for the op stream,
+  // as against what the client spent building it.
+  const double started = emscripten_get_now();
+  c2d_flush(gOpContext, reinterpret_cast<const int*>(gOps), gOpCount,
+            gOpText.empty() ? nullptr : gOpText.c_str(),
+            gOpPath.empty() ? nullptr : gOpPath.data());
+  gFrameStats.flushMillis += emscripten_get_now() - started;
+  gFrameStats.ops += gOpCount;
+  ++gFrameStats.batches;
+  gOpCount = 0;
+  gOpText.clear();
+  gOpPath.clear();
+}
+
+namespace {
+/// The slots for one call, with the opcode already written.
+// How much geometry may wait in the arena before it is handed over. Well
+// under 2^24, which is where a float stops counting arena offsets exactly.
+constexpr std::size_t kMaxArenaFloats = 1u << 20;
+
+OpSlot* opRecord(int context, int code) {
+  if (context != gOpContext || gOpCount >= kOpCapacity ||
+      gOpPath.size() >= kMaxArenaFloats) {
+    canvasFlushOps();
+    gOpContext = context;
+  }
+  OpSlot* record = gOps + gOpCount * kOpSlots;
+  ++gOpCount;
+  if (code >= 0 && code < kCanvasOpCodes) ++gOpTypeCounts[code];
+  record[0].i = code;
+  record[9].i = 0;
+  return record;
+}
+
+std::int32_t internStyle(const char* text) {
+  if (!text || !*text) return 0;
+  const std::string key(text);
+  const auto found = gInterned.find(key);
+  if (found != gInterned.end()) return found->second;
+  if (gInterned.size() >= kMaxInternedStrings) {
+    canvasFlushOps();
+    gInterned.clear();
+    gInterned.emplace(std::string(), 0);
+    c2d_intern_reset();
+  }
+  const std::int32_t id = static_cast<std::int32_t>(gInterned.size());
+  gInterned.emplace(key, id);
+  c2d_intern(id, key.c_str());
+  return id;
+}
+
+void pushOp(int context, int code, float a, float b, float c, float d,
+            float e, float f, float g, float h, const char* text) {
+  // Before the record is reserved: interning can flush, and a reserved record
+  // would be left pointing into the buffer that flush emptied.
+  const std::int32_t style = internStyle(text);
+  OpSlot* r = opRecord(context, code);
+  r[1].f=a; r[2].f=b; r[3].f=c; r[4].f=d; r[5].f=e; r[6].f=f; r[7].f=g; r[8].f=h;
+  r[9].i = style;
+}
+
+/// A call that names something the page holds -- a retained path, another
+/// canvas -- rather than carrying a string. The reference goes in the slot the
+/// string index would have used, which is already an integer.
+void pushRef(int context, int code, std::int32_t ref, float a, float b, float c,
+             float d, float e, float f, float g, float h) {
+  OpSlot* r = opRecord(context, code);
+  r[1].f=a; r[2].f=b; r[3].f=c; r[4].f=d; r[5].f=e; r[6].f=f; r[7].f=g; r[8].f=h;
+  r[9].i = ref;
+}
+
+/// A path, with its geometry in the frame's arena.
+///
+/// `key` is what the page will remember the geometry under, or zero for
+/// "draw it and forget it".
+void pushPath(int context, std::int32_t key, const Path2D& path, int action, bool evenOdd) {
+  // The record first, for the same reason pushText takes it first: reserving
+  // it is what may flush, and a flush empties the arena -- so an offset taken
+  // before it would name geometry that is no longer there.
+  OpSlot* r = opRecord(context, 53);
+  const std::size_t at = gOpPath.size();
+  gOpPath.reserve(at + path.segments().size() * 10);
+  for (const auto& q : path.segments()) {
+    gOpPath.push_back(static_cast<float>(q.command));
+    gOpPath.push_back(q.counterClockwise);
+    for (const float v : q.v) gOpPath.push_back(v);
+  }
+  r[1].f = static_cast<float>(action);
+  r[2].f = evenOdd ? 1.f : 0.f;
+  r[3].f = static_cast<float>(at);
+  r[4].f = static_cast<float>(path.segments().size());
+  r[5].f = r[6].f = r[7].f = r[8].f = 0;
+  r[9].i = key;
+}
+
+void pushText(int context, int code, float maxWidth, float x, float y,
+              const std::string& text) {
+  // The record first: reserving it is what may flush, and the flush empties
+  // the arena, so the offset has to be taken after it and not before.
+  OpSlot* r = opRecord(context, code);
+  const std::int32_t offset = static_cast<std::int32_t>(gOpText.size());
+  gOpText.append(text);
+  gOpText.push_back('\0');
+  r[1].f=maxWidth; r[2].f=x; r[3].f=y;
+  r[4].f=r[5].f=r[6].f=r[7].f=r[8].f=0;
+  r[9].i = offset;
+}
+} // namespace
+
+#define OP(code,a,b,c,d,e,f,g,h,s) pushOp(contextId_,code,a,b,c,d,e,f,g,h,s)
 #else
 #define OP(code,a,b,c,d,e,f,g,h,s) ((void)0)
 #endif
@@ -889,7 +1081,9 @@ Canvas::Canvas(Canvas&& other) noexcept
 Canvas& Canvas::operator=(Canvas&& other) noexcept {
   if (this == &other) return *this;
 #ifdef __EMSCRIPTEN__
-  if (contextId_ >= 0) c2d_destroy(contextId_);
+  // Buffered calls name their context by index, so anything still owed to the
+  // one being dropped has to happen before it is.
+  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); }
 #endif
   width_=other.width_; height_=other.height_; contextId_=other.contextId_; virtual_=other.virtual_;
   elementId_=std::move(other.elementId_); fill_=other.fill_; stroke_=other.stroke_; lineWidth_=other.lineWidth_;
@@ -906,11 +1100,12 @@ Canvas& Canvas::operator=(Canvas&& other) noexcept {
 }
 Canvas::~Canvas() {
 #ifdef __EMSCRIPTEN__
-  if (contextId_ >= 0) c2d_destroy(contextId_);
+  if (contextId_ >= 0) { canvasFlushOps(); c2d_destroy(contextId_); }
 #endif
 }
 void Canvas::present(const std::string& id) {
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   c2d_present(contextId_, id.c_str());
 #else
   (void)id;
@@ -943,8 +1138,15 @@ void Canvas::flushSaves() {
 // change unwind any deferred save before the write that needs unwinding.
 #define MIRROR(field, value) \
   do { if (web_.field == (value)) return; flushSaves(); web_.field = (value); } while (0)
+// Which state holds the current transform. The browser owns the real one, but
+// the client has to be able to ASK what it is -- a cache that bakes a picture
+// at device resolution has to know how many device pixels a user unit is, and
+// the frame's base scale is not the answer when the caller is inside a
+// transform of its own. Mirrored on both builds so there is one answer.
+#define MATRIX web_.matrix
 #else
 #define MIRROR(field, value) do { } while (0)
+#define MATRIX state_.matrix
 #endif
 
 void Canvas::save() {
@@ -986,60 +1188,48 @@ void Canvas::scale(float a,float b) {
   flushSaves();
 #endif
   OP(3,a,b,0,0,0,0,0,0,"");
-#ifndef __EMSCRIPTEN__
-  auto& m=state_.matrix; m[0]*=a; m[1]*=a; m[2]*=b; m[3]*=b;
-#endif
+  { auto& m=MATRIX; m[0]*=a; m[1]*=a; m[2]*=b; m[3]*=b; }
 }
 void Canvas::rotate(float a) {
 #ifdef __EMSCRIPTEN__
   flushSaves();
 #endif
   OP(4,a,0,0,0,0,0,0,0,"");
-#ifndef __EMSCRIPTEN__
-  auto& m=state_.matrix; const float c=std::cos(a), s=std::sin(a), m0=m[0],m1=m[1],m2=m[2],m3=m[3];
-  m[0]=m0*c+m2*s; m[1]=m1*c+m3*s; m[2]=m2*c-m0*s; m[3]=m3*c-m1*s;
-#endif
+  { auto& m=MATRIX; const float c=std::cos(a), s=std::sin(a), m0=m[0],m1=m[1],m2=m[2],m3=m[3];
+    m[0]=m0*c+m2*s; m[1]=m1*c+m3*s; m[2]=m2*c-m0*s; m[3]=m3*c-m1*s; }
 }
 void Canvas::translate(float a,float b) {
 #ifdef __EMSCRIPTEN__
   flushSaves();
 #endif
   OP(5,a,b,0,0,0,0,0,0,"");
-#ifndef __EMSCRIPTEN__
-  auto& m=state_.matrix; m[4]+=m[0]*a+m[2]*b; m[5]+=m[1]*a+m[3]*b;
-#endif
+  { auto& m=MATRIX; m[4]+=m[0]*a+m[2]*b; m[5]+=m[1]*a+m[3]*b; }
 }
 void Canvas::transform(float a,float b,float c,float d,float e,float f) {
 #ifdef __EMSCRIPTEN__
   flushSaves();
 #endif
   OP(6,a,b,c,d,e,f,0,0,"");
-#ifndef __EMSCRIPTEN__
-  const auto m=state_.matrix; auto& o=state_.matrix;
-  o[0]=m[0]*a+m[2]*b; o[1]=m[1]*a+m[3]*b; o[2]=m[0]*c+m[2]*d; o[3]=m[1]*c+m[3]*d;
-  o[4]=m[0]*e+m[2]*f+m[4]; o[5]=m[1]*e+m[3]*f+m[5];
-#endif
+  { const auto m=MATRIX; auto& o=MATRIX;
+    o[0]=m[0]*a+m[2]*b; o[1]=m[1]*a+m[3]*b; o[2]=m[0]*c+m[2]*d; o[3]=m[1]*c+m[3]*d;
+    o[4]=m[0]*e+m[2]*f+m[4]; o[5]=m[1]*e+m[3]*f+m[5]; }
 }
 void Canvas::setTransform(float a,float b,float c,float d,float e,float f) {
 #ifdef __EMSCRIPTEN__
   flushSaves();
 #endif
   OP(7,a,b,c,d,e,f,0,0,"");
-#ifndef __EMSCRIPTEN__
-  state_.matrix={a,b,c,d,e,f};
-#endif
+  MATRIX={a,b,c,d,e,f};
 }
 void Canvas::resetTransform() {
 #ifdef __EMSCRIPTEN__
   flushSaves();
 #endif
   OP(8,0,0,0,0,0,0,0,0,"");
-#ifndef __EMSCRIPTEN__
-  state_.matrix={1,0,0,1,0,0};
-#endif
+  MATRIX={1,0,0,1,0,0};
 }
+std::array<float,6> Canvas::currentTransform() const { return MATRIX; }
 #ifndef __EMSCRIPTEN__
-std::array<float,6> Canvas::currentTransform() const { return state_.matrix; }
 void Canvas::blitDevice(const std::uint8_t* rgba,int iw,int ih,int dx,int dy) {
   if (!rgba || iw<=0 || ih<=0 || state_.alpha<=0) return;
   const int x0=std::max(0,dx), x1=std::min(width_,dx+iw);
@@ -1111,6 +1301,7 @@ void Canvas::setMiterLimit(float a){MIRROR(miterLimit,a);OP(17,a,0,0,0,0,0,0,0,"
 void Canvas::setLineDash(const std::vector<float>&v) {
 #ifdef __EMSCRIPTEN__
   MIRROR(dash,v);
+  canvasFlushOps();
   c2d_dash(contextId_, v.data(), static_cast<int>(v.size()));
 #else
   state_.dash=v;
@@ -1225,10 +1416,6 @@ void Canvas::clip(const std::string&s){
 #endif
 }
 #ifdef __EMSCRIPTEN__
-// One scratch buffer: a fresh vector per path was an allocation on every fill
-// of every frame, and the packed copy is consumed before the next call needs
-// the space.
-static const std::vector<float>& pack(const Path2D&p){static std::vector<float>r;r.clear();r.reserve(p.segments().size()*10);for(auto&q:p.segments()){r.push_back((float)q.command);r.push_back(q.counterClockwise);for(float x:q.v)r.push_back(x);}return r;}
 
 namespace {
 // The C++ half of the retained-path cache: what the page is known to hold, and
@@ -1256,6 +1443,10 @@ bool pathAlreadySent(const Path2D& path) {
         const std::uint32_t evicted = gCacheOrder.front();
         gCacheOrder.pop_front();
         gCachedRevision.erase(evicted);
+        // Before the drop, not after: buffered calls name a path by key, and
+        // one of them may name this key. Evictions are rare enough that
+        // flushing for them costs nothing.
+        canvasFlushOps();
         c2d_path_drop(evicted);
     }
     gCachedRevision.emplace(key, path.revision());
@@ -1264,11 +1455,26 @@ bool pathAlreadySent(const Path2D& path) {
 } // namespace
 
 // action: 0 fill, 1 stroke, 2 clip.
+// Small enough that sending the geometry again costs less than a map entry.
+// A health bar, a minimap run and a rounded plate are one or two segments and
+// are rebuilt every frame, so they would otherwise take a cache slot each,
+// evict something that IS reused, and never be looked up again. A sprite's
+// path is orders of magnitude bigger than this and still goes in the cache.
+constexpr std::size_t kMaxInlinePathSegments = 8;
+
+// action: 0 fill, 1 stroke, 2 clip.
 static void emitPath(int contextId, const Path2D& path, int action, bool evenOdd) {
+    if (path.segments().size() <= kMaxInlinePathSegments) {
+        pushPath(contextId, 0, path, action, evenOdd);
+        return;
+    }
     const std::uint32_t key = path.cacheKey();
-    if (pathAlreadySent(path)) { c2d_path(contextId, key, nullptr, 0, action, evenOdd); return; }
-    const std::vector<float>& v = pack(path);
-    c2d_path(contextId, key, v.data(), static_cast<int>(path.segments().size()), action, evenOdd);
+    if (pathAlreadySent(path)) {
+        pushRef(contextId, 50, static_cast<std::int32_t>(key),
+                static_cast<float>(action), evenOdd ? 1.f : 0.f, 0,0,0,0,0,0);
+        return;
+    }
+    pushPath(contextId, static_cast<std::int32_t>(key), path, action, evenOdd);
 }
 #endif
 void Canvas::fill(const Path2D&p,const std::string&s) {
@@ -1322,6 +1528,7 @@ void Canvas::clip(const Path2D&p,const std::string&s) {
 }
 bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   return c2d_hit(contextId_,a,b,0,s.c_str());
 #else
   flatten(currentPath_, state_.matrix, matrixScale(state_.matrix), gFlat);
@@ -1342,23 +1549,29 @@ bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 }
 bool Canvas::isPointInStroke(float a,float b)const {
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   return c2d_hit(contextId_,a,b,1,"");
 #else
   (void)a;(void)b; return false;
 #endif
 }
-void Canvas::fillText(const std::string&s,float a,float b,float c){OP(47,c,a,b,0,0,0,0,0,s.c_str());
-#ifndef __EMSCRIPTEN__
+void Canvas::fillText(const std::string&s,float a,float b,float c){
+#ifdef __EMSCRIPTEN__
+  pushText(contextId_,47,c,a,b,s);
+#else
   glyphs(s,a,b,c,state_.fill);
 #endif
 }
-void Canvas::strokeText(const std::string&s,float a,float b,float c){OP(48,c,a,b,0,0,0,0,0,s.c_str());
-#ifndef __EMSCRIPTEN__
+void Canvas::strokeText(const std::string&s,float a,float b,float c){
+#ifdef __EMSCRIPTEN__
+  pushText(contextId_,48,c,a,b,s);
+#else
   glyphs(s,a,b,c,state_.stroke);
 #endif
 }
 float Canvas::measureText(const std::string&s)const {
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   return c2d_measure(contextId_,s.c_str());
 #else
   if (const Font* font=uiFont(state_.fontFamily)) return font->measure(s,state_.fontSize);
@@ -1367,14 +1580,14 @@ float Canvas::measureText(const std::string&s)const {
 }
 void Canvas::drawCanvas(const Canvas&s,float a,float b) {
 #ifdef __EMSCRIPTEN__
-  c2d_draw(contextId_,s.contextId_,a,b,0,0,0);
+  pushRef(contextId_,51,s.contextId_,a,b,0,0,0,0,0,0);
 #else
   drawCanvas(s, a, b, static_cast<float>(s.width_), static_cast<float>(s.height_));
 #endif
 }
 void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
-  c2d_draw(contextId_,s.contextId_,a,b,c,d,1);
+  pushRef(contextId_,51,s.contextId_,a,b,c,d,1,0,0,0);
 #else
   if (c <= 0 || d <= 0) return;
   const auto topLeft=mapPoint(a,b), bottomRight=mapPoint(a+c,b+d);
@@ -1398,7 +1611,7 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
 }
 void Canvas::drawCanvas(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
-  c2d_draw_sub(contextId_,s.contextId_,sx,sy,sw,sh,a,b,c,d);
+  pushRef(contextId_,52,s.contextId_,sx,sy,sw,sh,a,b,c,d);
 #else
   blitRegion(s,sx,sy,sw,sh,a,b,c,d,nullptr);
 #endif
@@ -1453,6 +1666,7 @@ void Canvas::drawImage(const ImageLevel* levels,int levelCount,float dx,float dy
 }
 void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,float dw,float dh,float alpha,std::uint32_t cacheKey) {
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   c2d_image(contextId_,static_cast<int>(cacheKey),rgba,iw,ih,dx,dy,dw,dh,alpha);
 #else
   (void)cacheKey;   // the software path samples the heap pixels directly
@@ -1530,6 +1744,7 @@ void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,
 std::vector<std::uint8_t> Canvas::getImageData(int a,int b,int c,int d)const {
   std::vector<std::uint8_t>r(std::max(0,c)*std::max(0,d)*4);
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   c2d_get_pixels(contextId_,a,b,c,d,r.data());
 #else
   // Row at a time: Color is exactly the RGBA byte quartet this returns, so
@@ -1548,6 +1763,7 @@ std::vector<std::uint8_t> Canvas::getImageData(int a,int b,int c,int d)const {
 void Canvas::putImageData(const std::vector<std::uint8_t>&r,int a,int b,int c,int d) {
   if(r.size() < size_t(a)*b*4) return;
 #ifdef __EMSCRIPTEN__
+  canvasFlushOps();
   c2d_put_pixels(contextId_,r.data(),a,b,c,d);
 #else
   for(int y=0;y<b;y++)for(int x=0;x<a;x++){auto i=(size_t(y)*a+x)*4;blendPixel(c+x,d+y,Color{r[i],r[i+1],r[i+2],r[i+3]});}
@@ -1765,4 +1981,44 @@ void Canvas::glyphs(const std::string& text, float x, float y, float maxWidth, C
   }
   fillDevice(glyph, false, color);
 }
+#endif
+
+const char* canvasOpName(int code) {
+  switch (code) {
+    case 0: return "save";           case 1: return "restore";
+    case 2: return "reset";          case 3: return "scale";
+    case 4: return "rotate";         case 5: return "translate";
+    case 6: return "transform";      case 7: return "setTransform";
+    case 8: return "resetTransform"; case 9: return "fillStyle";
+    case 10: return "strokeStyle";   case 11: return "globalAlpha";
+    case 12: return "composite";     case 13: return "filter";
+    case 14: return "lineWidth";     case 15: return "lineCap";
+    case 16: return "lineJoin";      case 17: return "miterLimit";
+    case 18: return "lineDashOffset";case 19: return "shadow";
+    case 20: return "font";          case 21: return "textAlign";
+    case 22: return "textBaseline";  case 23: return "direction";
+    case 24: return "smoothing";     case 25: return "smoothingQuality";
+    case 30: return "clearRect";     case 31: return "fillRect";
+    case 32: return "strokeRect";    case 33: return "beginPath";
+    case 34: return "closePath";     case 35: return "moveTo";
+    case 36: return "lineTo";        case 37: return "quadraticCurveTo";
+    case 38: return "bezierCurveTo"; case 39: return "arc";
+    case 40: return "arcTo";         case 41: return "ellipse";
+    case 42: return "rect";          case 43: return "roundRect";
+    case 44: return "fill";          case 45: return "stroke";
+    case 46: return "clip";          case 47: return "fillText";
+    case 48: return "strokeText";    case 50: return "fill(cached path)";
+    case 51: return "drawImage";     case 52: return "drawImage(sub)";
+    case 53: return "fill(new path)";
+    default: return nullptr;
+  }
+}
+
+#ifndef __EMSCRIPTEN__
+// The software path draws straight into its own framebuffer: there is no op
+// stream to count, and nothing that reads these has anything to report.
+namespace { int gNoOpTypeCounts[kCanvasOpCodes] = {}; }
+const int* canvasOpTypeCounts() { return gNoOpTypeCounts; }
+int canvasOpsEmitted() { return 0; }
+CanvasFrameStats canvasTakeFrameStats() { return CanvasFrameStats{}; }
 #endif

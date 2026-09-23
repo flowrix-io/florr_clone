@@ -22,6 +22,9 @@
 // compiles to `return false` off the web, and every caller keeps its direct
 // `renderFitted` fallback.
 
+#include <cstdint>
+#include <functional>
+
 #include "canvas.h"
 #include "svg.h"
 
@@ -36,6 +39,27 @@ namespace flix {
 /// document itself. Always false on a non-web build.
 bool drawCachedArt(Canvas& canvas, const SvgDocument& art, double x, double y, double w,
                    double h);
+
+/// Draws whatever `paint` draws, through a cached rasterisation of it.
+///
+/// The generalisation of drawCachedArt: the picture is not one SVG but
+/// whatever the callback puts in the box. It is for artwork that is expensive
+/// to build and identical frame after frame -- a player's custom skin, which
+/// is a list of authored shapes repainted from scratch on every flower on
+/// screen, every frame.
+///
+/// `owner` and `variant` are the identity of the picture: same pair, same
+/// pixels, forever. A caller whose picture can animate must not use this.
+/// `paint` is handed a canvas whose user space is the box, with (0,0) at its
+/// top-left corner, and is called only on a miss.
+///
+/// Returns false when the picture cannot be served from a bitmap -- including
+/// when the caller's transform is rotated, skewed or mirrored, because a blit
+/// through one of those resamples the bake and softens it. Nothing has been
+/// drawn in that case and the caller must draw it the long way.
+bool drawCachedPicture(Canvas& canvas, const void* owner, std::uint64_t variant, double x,
+                       double y, double w, double h,
+                       const std::function<void(Canvas&)>& paint);
 
 /// Bitmaps held and the bytes they occupy, for the stats readout and the tests.
 void artCacheStats(std::size_t& entries, std::size_t& bytes);

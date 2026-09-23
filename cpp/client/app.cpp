@@ -18,6 +18,7 @@
 // scene change, the text selection over whatever painted last, and the stats
 // readout, which is measured off this loop and nowhere else.
 
+#include "client/render/art_cache.h"
 #include "client/app.h"
 
 #include <algorithm>
@@ -373,6 +374,16 @@ void App::pollNetwork() {
     }
 }
 
+void App::markPhaseOps(OpPhase phase) {
+#ifdef __EMSCRIPTEN__
+    const int now = canvasOpsEmitted();
+    canvasPhaseAccum_[static_cast<std::size_t>(phase)] += now - canvasPhaseMark_;
+    canvasPhaseMark_ = now;
+#else
+    (void)phase;
+#endif
+}
+
 void App::frame(double dt) {
     pollNetwork();
 
@@ -404,7 +415,26 @@ void App::frame(double dt) {
         // The per-layer figures roll on the same boundary and over the same
         // sample count, so "Render avg/peak" always adds up against the frame
         // time printed beside it.
-        for (SectionStats* section : {&sectionMobs_, &sectionItems_, &sectionProjectiles_}) {
+        for (std::size_t i = 0; i < canvasPhaseOps_.size(); ++i) {
+            canvasPhaseOps_[i] =
+                frameTimeSamples_ > 0 ? canvasPhaseAccum_[i] / frameTimeSamples_ : 0;
+            canvasPhaseAccum_[i] = 0;
+        }
+        for (std::size_t i = 0; i < canvasTypeAccum_.size(); ++i) {
+            profiling_.byType[i] =
+                frameTimeSamples_ > 0 ? canvasTypeAccum_[i] / frameTimeSamples_ : 0;
+            canvasTypeAccum_[i] = 0;
+        }
+        menuStripOps_ = frameTimeSamples_ > 0 ? menuStripAccum_ / frameTimeSamples_ : 0;
+        menuBarOps_ = frameTimeSamples_ > 0 ? menuBarAccum_ / frameTimeSamples_ : 0;
+        menuPanelOps_ = frameTimeSamples_ > 0 ? menuPanelAccum_ / frameTimeSamples_ : 0;
+        menuStripAccum_ = menuBarAccum_ = menuPanelAccum_ = 0;
+        canvasOpsPerFrame_ = frameTimeSamples_ > 0 ? canvasOpAccum_ / frameTimeSamples_ : 0;
+        canvasBatchesPerFrame_ = frameTimeSamples_ > 0 ? canvasBatchAccum_ / frameTimeSamples_ : 0;
+        canvasOpAccum_ = 0;
+        canvasBatchAccum_ = 0;
+        for (SectionStats* section :
+             {&sectionMobs_, &sectionItems_, &sectionProjectiles_, &sectionCanvas_}) {
             section->avgMillis =
                 frameTimeSamples_ > 0 ? section->accumMillis / frameTimeSamples_ : 0.0;
             section->peakMillis = section->windowPeakMillis;
@@ -417,6 +447,26 @@ void App::frame(double dt) {
         // figures bytes per SECOND rather than bytes since some other event.
         net_.takeWireStats(incomingBytesPerSecond_, outgoingBytesPerSecond_, topWireEvents_);
     }
+
+#ifdef __EMSCRIPTEN__
+    // Published every frame, from figures that only move once a second, so the
+    // panel reads a steady number whenever it happens to be open.
+    profiling_.available = true;
+    profiling_.opsPerFrame = canvasOpsPerFrame_;
+    profiling_.batches = canvasBatchesPerFrame_;
+    profiling_.browserAvgMillis = sectionCanvas_.avgMillis;
+    profiling_.browserPeakMillis = sectionCanvas_.peakMillis;
+    profiling_.frameMillis = frameTimeAvgMs_;
+    profiling_.world = canvasPhaseOps_[static_cast<std::size_t>(OpPhase::World)];
+    profiling_.hud = canvasPhaseOps_[static_cast<std::size_t>(OpPhase::Hud)];
+    profiling_.panels = canvasPhaseOps_[static_cast<std::size_t>(OpPhase::Panels)];
+    profiling_.other = canvasPhaseOps_[static_cast<std::size_t>(OpPhase::Other)];
+    profiling_.menuBar = menuBarOps_;
+    profiling_.menuStrip = menuStripOps_;
+    profiling_.menuPanel = menuPanelOps_;
+    artCacheStats(profiling_.bakedEntries, profiling_.bakedBytes);
+    menus_.setProfiling(&profiling_);
+#endif
 
     // The render-resolution setting reaches the window here rather than from
     // the settings panel, for the same reason the renderer's switches do
@@ -552,6 +602,9 @@ void App::frame(double dt) {
     // stops painting it -- the settings switch off, a panel covering it, the
     // title screen's own layout -- has to leave nothing behind to press.
     chatBox_ = {};
+#ifdef __EMSCRIPTEN__
+    canvasPhaseMark_ = canvasOpsEmitted();
+#endif
     if (inWorld) {
         renderer_.ingestEvents(net_.view());
         renderer_.update(dt);
@@ -578,7 +631,9 @@ void App::frame(double dt) {
         // depth (see kDeathDimAlpha). Switched, not faded -- in the reference
         // it appears on the frame `alive()` goes false.
         if (screen_ == Screen::Dead) scrim(canvas, kDeathDimAlpha);
+        markPhaseOps(OpPhase::World);
         drawHud(canvas, timeSeconds_);
+        markPhaseOps(OpPhase::Hud);
         // The reference hides the whole chat box while one of the three
         // petal-handling panels is up, rather than letting it poke out beside
         // the card.
@@ -634,6 +689,7 @@ void App::frame(double dt) {
     // After every panel and the chat have painted, so the runs a selection is
     // resolved against are this frame's, and over them, so the highlight is
     // not covered by what drew it.
+    markPhaseOps(OpPhase::Panels);
     updateTextSelection(canvas);
 
     // Last of all, over every other layer: the wipe is what hides the seam
@@ -643,6 +699,29 @@ void App::frame(double dt) {
     // the set is complete.
     publishKeyboardRegions();
     window_.present();
+#ifdef __EMSCRIPTEN__
+    // After present(), because present() is what hands the op stream over.
+    // These are the previous frame's figures by the time the counters draw
+    // them, which is what every other number on that panel already is.
+    markPhaseOps(OpPhase::Other);
+    const MenuSystem::OpCounts menuOps = menus_.takeOpCounts();
+    menuStripAccum_ += menuOps.strip;
+    menuBarAccum_ += menuOps.bar;
+    menuPanelAccum_ += menuOps.panel;
+    {
+        const int* byType = canvasOpTypeCounts();
+        for (std::size_t i = 0; i < canvasTypeAccum_.size(); ++i) {
+            canvasTypeAccum_[i] += byType[i];
+        }
+    }
+    const CanvasFrameStats stream = canvasTakeFrameStats();
+    sectionCanvas_.accumMillis += stream.flushMillis;
+    if (stream.flushMillis > sectionCanvas_.windowPeakMillis) {
+        sectionCanvas_.windowPeakMillis = stream.flushMillis;
+    }
+    canvasOpAccum_ += stream.ops;
+    canvasBatchAccum_ += stream.batches;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -1147,6 +1226,21 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
                              std::to_string(sectionItemCount_) + ") | mobs " +
                              section(sectionMobs_) + " | proj " + section(sectionProjectiles_),
                          0xFACC15u});
+
+#ifdef __EMSCRIPTEN__
+        // The half of the frame the layer timings above cannot see. `ops` is
+        // how many drawing calls the frame produced and `browser` is what the
+        // page charged to consume them; frame time minus that is the client's
+        // own arithmetic. A frame that is slow with a low op count and a small
+        // browser figure is slow in neither -- look at the network or the
+        // simulation instead.
+        // One line, as a pointer to the rest: the full breakdown is the debug
+        // panel's Profiling tab, which has room to sort and to name things.
+        // The counters overlay is meant to be readable while playing.
+        lines.push_back({"Canvas: " + std::to_string(canvasOpsPerFrame_) + " ops | browser " +
+                             section(sectionCanvas_) + "  (J -> Profiling for the breakdown)",
+                         0x60A5FAu});
+#endif
     }
 
     double y = canvas.height() - 8.0;

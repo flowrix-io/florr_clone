@@ -521,6 +521,15 @@ void SpriteCache::drawMob(Canvas& canvas, std::uint16_t index, double x, double 
     draw(canvas, mobs_[index], x, y, diameter, rotation, timeSeconds, mirrored, worldRadius);
 }
 
+bool SpriteCache::petalAnimated(std::uint16_t index) const {
+    if (index >= petals_.size()) return false;
+    const Sprite& sprite = petals_[index];
+    // No document means procedural or blank art, neither of which a caller may
+    // bake blind: reported as animated so they take the long way.
+    if (!sprite.usable || !sprite.document) return true;
+    return sprite.document->animated();
+}
+
 void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, double x, double y,
                             double diameter, double rotation, double timeSeconds) const {
     if (index >= petals_.size()) return;

@@ -1108,6 +1108,11 @@ void Window::setRenderScale(double scale) {
 void Window::present() {
 #ifdef __EMSCRIPTEN__
   if (!open_) return;
+  // The frame's drawing calls have been accumulating in wasm memory; this is
+  // where they become calls on the page's 2D context. Nothing below this line
+  // draws, so it is the last point at which they can be handed over, and
+  // batching them is worth about a third of the client's main-thread time.
+  canvasFlushOps();
   // There is nothing to upload: the frame was drawn INTO the page's canvas
   // element, through its own 2D context, so it is already on screen. The
   // cursor is the only thing this still owes the host, on the same terms as

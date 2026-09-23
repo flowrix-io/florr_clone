@@ -14,6 +14,54 @@ struct Color {
         : r(red), g(green), b(blue), a(alpha) {}
 };
 
+// The frame counters. Declared for both builds -- the shared UI reports
+// them and must compile off the web -- but only the browser build has an
+// op stream to count, so the software path answers zero.
+/// What a frame's op stream cost, for the client's own counters.
+///
+/// Batching the drawing calls (see canvas.cpp) made the two halves of a frame
+/// separable for the first time: `ops` is what the client BUILT, `flushMillis`
+/// is what the browser spent CONSUMING it. A frame that is expensive with a
+/// small op count is expensive somewhere that is not drawing -- which is the
+/// question a frame-time number on its own cannot answer.
+struct CanvasFrameStats {
+    double flushMillis = 0;
+    int ops = 0;
+    int batches = 0;
+};
+
+/// Drawing calls emitted since the frame's stats were last taken, counting
+/// the ones still sitting in the buffer. Sampled at phase boundaries, the
+/// differences say which part of a frame produced the op stream.
+int canvasOpsEmitted();
+
+/// How many op codes the counters below are indexed by.
+inline constexpr int kCanvasOpCodes = 64;
+
+/// The frame's drawing calls counted by the KIND of call, indexed by op code.
+///
+/// Op count alone does not predict what a frame costs, because the browser
+/// charges wildly different amounts per kind -- a `fillText` is worth tens of
+/// `lineTo`s. Split this way, an expensive frame says not just how much it
+/// drew but what of.
+const int* canvasOpTypeCounts();
+
+/// What op code `code` is, for a readout. Null for a code nothing emits.
+const char* canvasOpName(int code);
+
+/// Reads the stats accumulated since the last call, and zeroes them.
+CanvasFrameStats canvasTakeFrameStats();
+
+#ifdef __EMSCRIPTEN__
+/// Hands the frame's batched Canvas2D calls to the page.
+///
+/// Drawing calls are buffered rather than crossing into JavaScript one at a
+/// time (see canvas.cpp). Everything inside the canvas that has to observe
+/// them -- a readback, a canvas-to-canvas blit, a destroy -- flushes for
+/// itself; what is left is the end of the frame, which is Window::present().
+void canvasFlushOps();
+#endif
+
 // Retained path object, equivalent to the browser's Path2D.
 class Path2D {
 public:
@@ -115,13 +163,18 @@ public:
     void setShadow(Color color, float blur, float offsetX = 0, float offsetY = 0);
     void setFont(const std::string& font); void setTextAlign(const std::string& align); void setTextBaseline(const std::string& baseline); void setDirection(const std::string& direction);
     void setImageSmoothingEnabled(bool enabled); void setImageSmoothingQuality(const std::string& quality);
-#ifndef __EMSCRIPTEN__
     // The current transform, [a b c d e f], mapping user space to device
-    // pixels. Native only, and deliberately so: it exists for callers that
-    // cache RASTERIZED output, which have to know what one user unit is worth
-    // in pixels before they can bake anything at the right size. The browser
-    // build keeps its own glyph cache and needs no such thing.
+    // pixels. It exists for callers that cache RASTERIZED output, which have
+    // to know what one user unit is worth in pixels before they can bake
+    // anything at the right size -- and the frame's base scale is not that
+    // answer once a caller is inside a transform of its own.
+    //
+    // Mirrored on the browser build rather than asked of the page: the real
+    // matrix lives in the 2D context, getTransform() returns a DOMMatrix, and
+    // reading one per cached picture per frame is exactly the kind of crossing
+    // the batched op stream exists to avoid.
     std::array<float, 6> currentTransform() const;
+#ifndef __EMSCRIPTEN__
     // Source-over of tightly-packed 8-bit RGBA onto whole DEVICE pixels, one
     // texel to one pixel. It honours the clip and globalAlpha but deliberately
     // not the transform: the caller has already worked out which pixels these
@@ -235,6 +288,11 @@ private:
         float lineWidth = 1, alpha = 1, miterLimit = 10, dashOffset = 0;
         float shadowBlur = 0, shadowOffsetX = 0, shadowOffsetY = 0;
         bool smoothing = true;
+        /// The current transform, mirrored. save()/restore() carry it with the
+        /// rest of the state, which is what makes currentTransform() answerable
+        /// on the browser build -- the page owns the real matrix and will not
+        /// hand it back cheaply. See the MATRIX macro in canvas.cpp.
+        std::array<float, 6> matrix{1, 0, 0, 1, 0, 0};
     };
     WebState web_;
     std::vector<WebState> webStack_;

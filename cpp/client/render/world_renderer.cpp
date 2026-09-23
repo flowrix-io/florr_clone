@@ -251,7 +251,31 @@ void drawSparkleGrain(Canvas& canvas, const Camera& camera, const EffectParticle
     if (left <= 0) return;
     const Vec2 at = camera.worldToScreen(p.position);
     const double r = p.size * left * camera.zoom();
-    ui::setFill(canvas, p.color, left * kSparkleAlpha);
+    // Grains are spawned off every high-rarity petal and drop the server
+    // replicates, and replication reaches a good deal further than the camera
+    // does -- so most of them, in a busy world, are behind the edge of the
+    // screen. Each one was four browser calls painting nothing: 782 circles a
+    // frame measured, against the ~50 that are actually in shot.
+    //
+    // `r` is the circle's radius, but a square grain is r from its centre on
+    // each axis BEFORE rotation, so its corners reach r * sqrt(2). The bound
+    // covers the corner, because the sliver of a grain just past the edge is
+    // still a sliver that shows.
+    const double reach = r * 1.4143;
+    if (at.x + reach < 0 || at.y + reach < 0 || at.x - reach > camera.viewportWidth() ||
+        at.y - reach > camera.viewportHeight()) {
+        return;
+    }
+    // The fade rides on globalAlpha rather than on the colour's own alpha
+    // channel. Both composite to the same pixels -- source-over multiplies the
+    // two, the grain is one convex path so it cannot overlap itself, and the
+    // ambient alpha is 1 here -- but a colour carries its fade in the STRING,
+    // so every grain assigned a new `#rrggbbaa` for the browser to parse. This
+    // way the colour is one interned string per rarity and only a float moves.
+    // Measured at 0.41 -> 0.29 ms for 850 grains. Whoever calls this puts
+    // globalAlpha back; see the two loops that do.
+    ui::setFill(canvas, p.color);
+    canvas.setGlobalAlpha(static_cast<float>(left * kSparkleAlpha));
     if (!square) {
         canvas.fillCircle(static_cast<float>(at.x), static_cast<float>(at.y),
                           static_cast<float>(r));
@@ -1945,6 +1969,35 @@ void WorldRenderer::drawFlowerBody(Canvas& canvas, const RemoteEntity& entity,
         // kFlowerArtRadius, not the flower's grown radius: the caller has
         // already scaled into the artwork's own radius-25 space, which is the
         // space the studio authors in.
+        //
+        // Through the bitmap cache, because a skin is the most expensive thing
+        // on a flower by a wide margin and none of it moves. It is a list of
+        // authored shapes, and every one of them costs a save, a translate, a
+        // path, a fill, usually a stroke with its own join and cap, and a
+        // restore -- eight to fourteen drawing calls each, repainted from
+        // scratch for every skinned flower on screen on every frame. A busy
+        // screen of them ran to thousands of calls a frame on its own. Baked,
+        // a skin is one blit.
+        //
+        // The box is the disc renderSkinShapes clips to (100 authored units,
+        // so four times the art radius), which is the most a skin can paint.
+        // The cache refuses a rotated or mirrored transform for itself, and
+        // falls through to the real painter when it does.
+        const double reach = kFlowerArtRadius * 4.0;
+        // Keyed on the skin's address AND its id, because the catalog can be
+        // replaced wholesale and a fresh allocation is free to land on an
+        // address a retired skin used to have.
+        std::uint64_t variant = 1469598103934665603ull;
+        for (const char c : skin->id) variant = (variant ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+        variant = variant * 1099511628211ull + skin->shapes.size();
+        if (drawCachedPicture(canvas, skin, variant, -reach, -reach, reach * 2.0, reach * 2.0,
+                              [&](Canvas& bitmap) {
+                                  bitmap.translate(static_cast<float>(reach),
+                                                   static_cast<float>(reach));
+                                  renderSkinShapes(bitmap, skin->shapes, kFlowerArtRadius);
+                              })) {
+            return;
+        }
         renderSkinShapes(canvas, skin->shapes, kFlowerArtRadius);
         return;
     }
@@ -2923,6 +2976,17 @@ void WorldRenderer::drawDrop(Canvas& canvas, const Camera& camera, Vec2 at,
 
 void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
     const double zoom = camera.zoom();
+    // Effects are spawned wherever the server says something happened, which
+    // is the whole replicated area -- twenty bots fighting off screen produce
+    // damage numbers and explosions nobody can see, and a damage number is two
+    // of the most expensive calls the browser offers. Same test the entity
+    // layer uses, in world units, with the margin each effect's own extent
+    // asks for.
+    const Rect visible = camera.visibleWorld(0);
+    const auto onScreen = [&visible](Vec2 at, double margin) {
+        return at.x + margin >= visible.left() && at.x - margin <= visible.right() &&
+               at.y + margin >= visible.top() && at.y - margin <= visible.bottom();
+    };
 
     // The bolts first, UNDER the numbers: a strike into a pile draws an arm to
     // every mob in it, and a white mesh over the damage it just dealt would
@@ -2939,6 +3003,10 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 // does and what makes the path a parabola rather than a line.
                 const Vec2 world{e.position.x + e.drift.x * t,
                                  e.position.y + e.drift.y * numberArc(t)};
+                // A damage number is at most a handful of characters centred on
+                // `world`; six text sizes of world margin is well past the
+                // widest one this ever draws.
+                if (!onScreen(world, e.textSize * 6.0)) break;
                 const Vec2 screen = camera.worldToScreen(world);
                 ui::TextStyle style;
                 style.size = e.textSize * zoom;
@@ -2957,6 +3025,9 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 break;
             }
             case Effect::Kind::Explosion: {
+                // The rings reach e.radius and the debris is thrown from
+                // inside them; the particles below are tested individually.
+                if (!onScreen(e.position, e.radius * 2.0)) break;
                 const Vec2 screen = camera.worldToScreen(e.position);
                 canvas.setGlobalAlpha(static_cast<float>(1.0 - t));
                 // Two rings expanding together, the inner one at half the
@@ -2973,6 +3044,7 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 for (const EffectParticle& p : e.particles) {
                     const double left = p.lifeSeconds / p.maxLifeSeconds;
                     if (left <= 0) continue;
+                    if (!onScreen(p.position, p.size)) continue;
                     const Vec2 at = camera.worldToScreen(p.position);
                     canvas.setGlobalAlpha(static_cast<float>(left));
                     ui::setFill(canvas, p.color);
@@ -2987,6 +3059,9 @@ void WorldRenderer::drawEffects(Canvas& canvas, const Camera& camera) const {
                 for (const EffectParticle& p : e.particles) {
                     drawSparkleGrain(canvas, camera, p, e.squareParticles);
                 }
+                // The grains fade through globalAlpha, so the layer has to put
+                // it back before anything else is painted.
+                canvas.setGlobalAlpha(1.0f);
                 break;
             }
         }
@@ -3030,12 +3105,29 @@ void WorldRenderer::draw(Canvas& canvas, const WorldView& view, const Camera& ca
     draw(canvas, view.entities(), camera, selfDrawn, timeSeconds);
 }
 
+int WorldRenderer::canvasOps() {
+#ifdef __EMSCRIPTEN__
+    return canvasOpsEmitted();
+#else
+    return 0;
+#endif
+}
+
+void WorldRenderer::chargeOps(int& bucket) const {
+    const int now = canvasOps();
+    bucket += now - opMark_;
+    opMark_ = now;
+}
+
 void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera& camera,
                          Vec2 selfDrawn, double timeSeconds) const {
     // What lies under the entities is the realm's business. The arena and
     // the maze are generated and draw themselves; every other realm is an
     // authored map with a tile grid and annotations -- teleporters, spawn-zone
     // tints -- of its own.
+    ops_ = SectionOps{};
+    opMark_ = canvasOps();
+
     if (realm_ == Realm::Maze) {
         drawMaze(canvas, camera);
     } else if (realm_ == Realm::Arena) {
@@ -3044,6 +3136,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         drawTerrain(canvas, camera, realm_);
         drawMapElements(canvas, camera, realm_, timeSeconds);
     }
+    chargeOps(ops_.terrain);
 
     const Rect visible = camera.visibleWorld(0);
     // A body is kept until its whole extent is off screen, and the margin grows
@@ -3087,6 +3180,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             for (const EffectParticle& p : dropSparkles_) {
                 drawSparkleGrain(canvas, camera, p, true);
             }
+            canvas.setGlobalAlpha(1.0f);
         }
 
         for (const auto& entry : entities) {
@@ -3106,6 +3200,11 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             drawEntity(canvas, entity, camera, at, timeSeconds);
             if (options.hitboxes) drawHitbox(canvas, entity, camera, at);
         }
+        chargeOps(kind == net::EntityKind::Mob          ? ops_.mobs
+                  : kind == net::EntityKind::Petal      ? ops_.petals
+                  : kind == net::EntityKind::Drop       ? ops_.items
+                  : kind == net::EntityKind::Projectile ? ops_.projectiles
+                                                        : ops_.flowers);
 
         // Loot the snapshot has already removed finishes its flight to the
         // player who took it, or spins out where it lay, in the layer its live
@@ -3174,13 +3273,17 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
             drawMobBody(canvas, camera, mob, timeSeconds);
         }
+        chargeOps(ops_.mobs);
         for (const MobDraw& mob : mobLabels_) drawMobLabel(canvas, camera, mob);
+        chargeOps(ops_.labels);
     }
 
     drawEffects(canvas, camera);
+    chargeOps(ops_.effects);
     // Last of all, over every body and every effect: what somebody is saying
     // is the one thing on screen that must never be hidden behind the fight.
     drawChatBubbles(canvas, entities, camera, selfDrawn);
+    chargeOps(ops_.bubbles);
 }
 
 } // namespace flix

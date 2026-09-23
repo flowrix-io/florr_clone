@@ -9,6 +9,8 @@
 // the frame loop, the socket, the session -- and each screen and each in-game
 // surface has a file of its own beside it. The list is at the top of app.cpp.
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -444,6 +446,34 @@ private:
     };
     SectionStats sectionMobs_, sectionItems_, sectionProjectiles_;
     int sectionItemCount_ = 0;
+    /// What the browser charged for the frame's drawing calls, as against what
+    /// the client spent producing them. Web only: it is measured around the
+    /// one call that hands the batched op stream over, which the native build
+    /// does not have. Without it a slow frame says nothing about WHERE it was
+    /// slow -- the counters showed only the layers, and the layers only cover
+    /// the part of a frame that is our own arithmetic.
+    SectionStats sectionCanvas_;
+    int canvasOpsPerFrame_ = 0;
+    int canvasBatchesPerFrame_ = 0;
+    int canvasOpAccum_ = 0;
+    int canvasBatchAccum_ = 0;
+    /// Drawing calls per frame, split by the part of the frame that made them:
+    /// the world, the HUD, the panels, and everything else. The frame time is
+    /// very nearly a constant times the op count (the browser charges about a
+    /// sixth of a microsecond each), so this is the number to look at when a
+    /// frame is too slow -- it says WHICH code to make quieter.
+    enum class OpPhase { World, Hud, Panels, Other, Count };
+    std::array<int, static_cast<std::size_t>(OpPhase::Count)> canvasPhaseOps_{};
+    std::array<int, static_cast<std::size_t>(OpPhase::Count)> canvasPhaseAccum_{};
+    int canvasPhaseMark_ = 0;
+    int menuStripOps_ = 0, menuBarOps_ = 0, menuPanelOps_ = 0;
+    std::array<int, kCanvasOpCodes> canvasTypeAccum_{};
+    /// What the debug panel's Profiling tab reads. Rebuilt every frame from
+    /// figures that roll over once a second.
+    ProfilingStats profiling_;
+    int menuStripAccum_ = 0, menuBarAccum_ = 0, menuPanelAccum_ = 0;
+    /// Charges everything emitted since the last mark to `phase`.
+    void markPhaseOps(OpPhase phase);
 
     /// When the next heartbeat ping is due. The reference sends one a second
     /// for as long as the socket is up, and the round trip it measures is the
