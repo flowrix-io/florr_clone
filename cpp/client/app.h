@@ -257,9 +257,9 @@ private:
     const Canvas* mazeMinimapStatic();
     /// The static layers of the minimap -- background, ALT spawn bands, the
     /// map's collision geometry, teleporter dots -- baked once per map rather
-    /// than rescanned every frame. `rarityGlow` is part of the key, not just
-    /// the paint: the bands appear and vanish with ALT, so the bake has to be
-    /// redone.
+    /// than rescanned every frame. `rarityGlow` picks between the two bakes,
+    /// with the bands and without; it is NOT part of the key, so ALT never
+    /// rebakes anything.
     const Canvas* minimapStatic(bool rarityGlow);
     void drawDeathCard(Canvas&, double time);
     void drawChat(Canvas&, double time);
@@ -580,10 +580,14 @@ private:
     bool wasInvulnerable_ = false;
 
 
-    /// The minimap's baked static layer and the map it was baked for. Rebuilt
-    /// only when that map changes -- it fills the whole of the map's collision
-    /// geometry, which is thousands of paths and does not belong in a frame.
+    /// The minimap's baked static layer and the map it was baked for, once
+    /// without the ALT spawn bands and once with them. Rebuilt only when that
+    /// map changes -- it fills the whole of the map's collision geometry,
+    /// which is thousands of paths and does not belong in a frame. Both are
+    /// built together so ALT only picks one: rebaking on the key flip was a
+    /// frame-long hitch every time ALT went down or came up.
     std::unique_ptr<Canvas> minimapStatic_;
+    std::unique_ptr<Canvas> minimapStaticGlow_;
     /// Which map the bake is of: the realm, and the dimensions of the grid
     /// that realm is holding. Two maps are never the same realm, and the
     /// dimensions are what notice the wire grid arriving after the join --
@@ -591,8 +595,6 @@ private:
     Realm minimapRealm_ = Realm::Overworld;
     int minimapCols_ = -1;
     int minimapRows_ = -1;
-    /// Whether the cached bake has the ALT spawn bands in it.
-    bool minimapGlow_ = false;
     /// The canvas pixels per design unit the bake was rasterised at. Part of
     /// the key: a bitmap baked for a 1x display and shown on a Retina one is
     /// the single blocky rectangle on an otherwise crisp screen.

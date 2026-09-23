@@ -90,10 +90,12 @@ std::string arenaScoreLabel(double score) {
 } // namespace
 
 const Canvas* App::minimapStatic(bool rarityGlow) {
-    // ALT is part of the key, not just the draw: the reference's bake cache is
-    // keyed on it too (minimap.ts:216), so pressing ALT rebakes the layer
-    // rather than tinting a stale one.
-    // uiScale is the second key. See minimapDensity_: the bake is a bitmap and
+    // ALT is NOT part of the key. The reference keys its bake cache on it
+    // (minimap.ts:216) and so rebakes on every press and every release, and
+    // this bake is the whole map's collision geometry -- tens of thousands of
+    // points -- so doing the same made each ALT flip a visible hitch. Both
+    // variants are baked together below and ALT only chooses between them.
+    // uiScale is the first key. See minimapDensity_: the bake is a bitmap and
     // has to be rasterised at the density it will be shown at. The realm and
     // the grid's dimensions are the rest of it -- together they say WHICH MAP
     // this is, which is what the bake draws now that it draws all of one: a
@@ -104,9 +106,9 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
     const double density = window_.uiScale();
     const int cols = terrain.tileCols(realm);
     const int rows = terrain.tileRows(realm);
-    if (minimapStatic_ && minimapRealm_ == realm && minimapCols_ == cols &&
-        minimapRows_ == rows && minimapGlow_ == rarityGlow && minimapDensity_ == density) {
-        return minimapStatic_.get();
+    if (minimapStatic_ && minimapStaticGlow_ && minimapRealm_ == realm && minimapCols_ == cols &&
+        minimapRows_ == rows && minimapDensity_ == density) {
+        return rarityGlow ? minimapStaticGlow_.get() : minimapStatic_.get();
     }
 
     const Vec2 extent = terrain.realmExtent(realm);
@@ -115,96 +117,106 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
 
     const int bakeSide =
         std::max(1, static_cast<int>(std::lround(kMinimapSize * density)));
-    auto baked = std::make_unique<Canvas>(Canvas::createVirtual(bakeSide, bakeSide));
-    Canvas& map = *baked;
-    // Everything below is written in design units, exactly as it was when the
-    // bake was always kMinimapSize pixels square. This one line is what buys
-    // it the display's real resolution.
-    map.scale(static_cast<float>(density), static_cast<float>(density));
+    const auto newBake = [&]() {
+        auto bake = std::make_unique<Canvas>(Canvas::createVirtual(bakeSide, bakeSide));
+        // Everything below is written in design units, exactly as it was when
+        // the bake was always kMinimapSize pixels square. This one line is
+        // what buys it the display's real resolution.
+        bake->scale(static_cast<float>(density), static_cast<float>(density));
+        return bake;
+    };
 
-    // The map's own rectangle, in the barely-translucent paper the corner has
-    // always been drawn on, and the letterbox bars either side of it in solid
-    // black. Beyond the map's edge is void and reads as void: paper out there
-    // would show an open room the world draws black and the terrain treats as
-    // solid. A square map has no bars; a map that is not square has exactly
-    // one pair of them.
-    const double mapLeft = fit.offsetX;
-    const double mapTop = fit.offsetY;
-    const double mapWidth = extent.x * fit.scale;
-    const double mapHeight = extent.y * fit.scale;
-    setFill(map, kPaper, 0.9);
-    map.fillRect(static_cast<float>(mapLeft), static_cast<float>(mapTop),
-                 static_cast<float>(mapWidth), static_cast<float>(mapHeight));
-    setFill(map, 0x000000u);
-    if (mapLeft > 0.0) {
-        const double right = mapLeft + mapWidth;
-        map.fillRect(0, 0, static_cast<float>(mapLeft), static_cast<float>(kMinimapSize));
-        map.fillRect(static_cast<float>(right), 0,
-                     static_cast<float>(std::max(0.0, kMinimapSize - right)),
-                     static_cast<float>(kMinimapSize));
-    }
-    if (mapTop > 0.0) {
-        const double bottom = mapTop + mapHeight;
-        map.fillRect(0, 0, static_cast<float>(kMinimapSize), static_cast<float>(mapTop));
-        map.fillRect(0, static_cast<float>(bottom), static_cast<float>(kMinimapSize),
-                     static_cast<float>(std::max(0.0, kMinimapSize - bottom)));
-    }
-
-    // Spawn bands, under the walls, only while ALT is held. Their own palette,
-    // not kRarityColors: MINIMAP_SPAWN_COLORS (minimap.ts:11-22) gives unique a
-    // violet and apex a cyan where the item tiers are white and magenta.
     // The annotations of the map the flower is actually standing on. The arena
     // and the maze have none, which is correct: neither is an authored map, so
     // there are no bands and no pads to draw.
     const MapData* annotations = worldMaps_.forRealm(realm);
-    if (rarityGlow && annotations != nullptr) {
-        for (const MapElement& element : annotations->elements()) {
-            // Difficulty BANDS only. A spawn object with no difficulty is a
-            // mob region -- a whole area, or a whole map, saying what lives
-            // there -- and painting it as a difficulty-zero band washes the
-            // entire minimap in the common colour with the real common bands
-            // lost in it. The world renderer's rarity glow makes the same
-            // distinction.
-            if (!element.isSpawnBand()) continue;
-            // A SINGULAR band is not ground either. It is drawn over the whole
-            // range its one mob may turn up in, so painting it would tint a
-            // district in that mob's tier and hide every real band under it --
-            // and it would promise a district's worth of ultras where there is
-            // exactly one. See MapElement::singular.
-            if (element.singular) continue;
-            // The whole map is in the box, so a band is only culled when it
-            // lies off the MAP -- which an authored one never does.
-            const Vec2 topLeft = toBox({element.bounds.x, element.bounds.y});
-            const double w = element.bounds.w * fit.scale;
-            const double h = element.bounds.h * fit.scale;
-            if (topLeft.x + w <= 0 || topLeft.x >= kMinimapSize || topLeft.y + h <= 0 ||
-                topLeft.y >= kMinimapSize) {
-                continue;
-            }
-            // The band's DIFFICULTY decides the colour, through the one curve
-            // the spawner rolls against: a band reads as the tier a player
-            // will actually meet in it, and a band between two tiers takes the
-            // one it mostly produces. See shared/game/difficulty.h.
-            const Rarity tier = dominantTierForDifficulty(element.difficulty);
-            setFill(map, kMinimapSpawnColors[static_cast<std::size_t>(rarityIndex(tier))], 0.4);
-            // The zone's outline, so the minimap shows the band the spawner
-            // actually uses rather than the box around it. The bounding box
-            // above is still what culls: it is a superset of the outline.
-            if (element.polygon.size() >= 3) {
-                map.beginPath();
-                for (std::size_t i = 0; i < element.polygon.size(); ++i) {
-                    const Vec2 point = toBox(element.polygon[i]);
-                    if (i == 0) map.moveTo(static_cast<float>(point.x), static_cast<float>(point.y));
-                    else map.lineTo(static_cast<float>(point.x), static_cast<float>(point.y));
-                }
-                map.closePath();
-                map.fill();
-                continue;
-            }
-            map.fillRect(static_cast<float>(topLeft.x), static_cast<float>(topLeft.y),
-                         static_cast<float>(w), static_cast<float>(h));
+
+    // What lies UNDER the walls: the paper, the letterbox, and -- in the ALT
+    // variant -- the spawn bands. Painted once per variant; the walls are
+    // then laid over each from the one layer below.
+    const auto paintGround = [&](Canvas& map, bool bands) {
+        // The map's own rectangle, in the barely-translucent paper the corner has
+        // always been drawn on, and the letterbox bars either side of it in solid
+        // black. Beyond the map's edge is void and reads as void: paper out there
+        // would show an open room the world draws black and the terrain treats as
+        // solid. A square map has no bars; a map that is not square has exactly
+        // one pair of them.
+        const double mapLeft = fit.offsetX;
+        const double mapTop = fit.offsetY;
+        const double mapWidth = extent.x * fit.scale;
+        const double mapHeight = extent.y * fit.scale;
+        setFill(map, kPaper, 0.9);
+        map.fillRect(static_cast<float>(mapLeft), static_cast<float>(mapTop),
+                     static_cast<float>(mapWidth), static_cast<float>(mapHeight));
+        setFill(map, 0x000000u);
+        if (mapLeft > 0.0) {
+            const double right = mapLeft + mapWidth;
+            map.fillRect(0, 0, static_cast<float>(mapLeft), static_cast<float>(kMinimapSize));
+            map.fillRect(static_cast<float>(right), 0,
+                         static_cast<float>(std::max(0.0, kMinimapSize - right)),
+                         static_cast<float>(kMinimapSize));
         }
-    }
+        if (mapTop > 0.0) {
+            const double bottom = mapTop + mapHeight;
+            map.fillRect(0, 0, static_cast<float>(kMinimapSize), static_cast<float>(mapTop));
+            map.fillRect(0, static_cast<float>(bottom), static_cast<float>(kMinimapSize),
+                         static_cast<float>(std::max(0.0, kMinimapSize - bottom)));
+        }
+
+        // Spawn bands, under the walls, only while ALT is held. Their own palette,
+        // not kRarityColors: MINIMAP_SPAWN_COLORS (minimap.ts:11-22) gives unique a
+        // violet and apex a cyan where the item tiers are white and magenta.
+        if (bands && annotations != nullptr) {
+            for (const MapElement& element : annotations->elements()) {
+                // Difficulty BANDS only. A spawn object with no difficulty is a
+                // mob region -- a whole area, or a whole map, saying what lives
+                // there -- and painting it as a difficulty-zero band washes the
+                // entire minimap in the common colour with the real common bands
+                // lost in it. The world renderer's rarity glow makes the same
+                // distinction.
+                if (!element.isSpawnBand()) continue;
+                // A SINGULAR band is not ground either. It is drawn over the whole
+                // range its one mob may turn up in, so painting it would tint a
+                // district in that mob's tier and hide every real band under it --
+                // and it would promise a district's worth of ultras where there is
+                // exactly one. See MapElement::singular.
+                if (element.singular) continue;
+                // The whole map is in the box, so a band is only culled when it
+                // lies off the MAP -- which an authored one never does.
+                const Vec2 topLeft = toBox({element.bounds.x, element.bounds.y});
+                const double w = element.bounds.w * fit.scale;
+                const double h = element.bounds.h * fit.scale;
+                if (topLeft.x + w <= 0 || topLeft.x >= kMinimapSize || topLeft.y + h <= 0 ||
+                    topLeft.y >= kMinimapSize) {
+                    continue;
+                }
+                // The band's DIFFICULTY decides the colour, through the one curve
+                // the spawner rolls against: a band reads as the tier a player
+                // will actually meet in it, and a band between two tiers takes the
+                // one it mostly produces. See shared/game/difficulty.h.
+                const Rarity tier = dominantTierForDifficulty(element.difficulty);
+                setFill(map, kMinimapSpawnColors[static_cast<std::size_t>(rarityIndex(tier))], 0.4);
+                // The zone's outline, so the minimap shows the band the spawner
+                // actually uses rather than the box around it. The bounding box
+                // above is still what culls: it is a superset of the outline.
+                if (element.polygon.size() >= 3) {
+                    map.beginPath();
+                    for (std::size_t i = 0; i < element.polygon.size(); ++i) {
+                        const Vec2 point = toBox(element.polygon[i]);
+                        const float px = static_cast<float>(point.x);
+                        const float py = static_cast<float>(point.y);
+                        if (i == 0) map.moveTo(px, py);
+                        else map.lineTo(px, py);
+                    }
+                    map.closePath();
+                    map.fill();
+                    continue;
+                }
+                map.fillRect(static_cast<float>(topLeft.x), static_cast<float>(topLeft.y),
+                             static_cast<float>(w), static_cast<float>(h));
+            }
+        }
+    };
 
     // The walls: THE COLLISION GEOMETRY ITSELF, ring by ring.
     //
@@ -244,13 +256,17 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
     // what kind of blocker it is.
     //
     // It is a few thousand short contours, and it happens ONCE per bake: this
-    // whole layer is cached and only the key above rebuilds it.
+    // whole layer is cached and only the key above rebuilds it. It goes on a
+    // transparent layer of its own, with the teleporters over it, so the two
+    // variants can share the one rasterisation instead of filling it twice.
+    auto wallLayer = newBake();
+    Canvas& walls = *wallLayer;
     Path2D run;
     bool runWater = false;
     const auto fillRun = [&]() {
         if (run.empty()) return;
-        setFill(map, runWater ? 0x4169E1u : 0x000000u);
-        map.fill(run);
+        setFill(walls, runWater ? 0x4169E1u : 0x000000u);
+        walls.fill(run);
         run.clear();
     };
     eachMinimapSolid(terrain, realm, [&](const MinimapSolid& solid) {
@@ -285,28 +301,41 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
         if (dot.x <= 0 || dot.x >= kMinimapSize || dot.y <= 0 || dot.y >= kMinimapSize) continue;
         // Green, never gold: gold marks a teleporter that hands the player to
         // another server, and this build has no such thing to mark.
-        setFill(map, 0x00FF00u);
-        map.fillCircle(static_cast<float>(dot.x), static_cast<float>(dot.y), 3.0f);
-        setStroke(map, kInk);
-        map.setLineWidth(1.0f);
-        map.strokeCircle(static_cast<float>(dot.x), static_cast<float>(dot.y), 3.0f);
+        setFill(walls, 0x00FF00u);
+        walls.fillCircle(static_cast<float>(dot.x), static_cast<float>(dot.y), 3.0f);
+        setStroke(walls, kInk);
+        walls.setLineWidth(1.0f);
+        walls.strokeCircle(static_cast<float>(dot.x), static_cast<float>(dot.y), 3.0f);
     }
 
-    minimapStatic_ = std::move(baked);
+    // The two bakes the corner shows: the ground, then the wall layer laid
+    // over it pixel for pixel. The blit is in raw pixels (identity transform,
+    // the source's own size), so the walls land exactly where they were
+    // rasterised rather than being resampled through the design scale.
+    const auto compose = [&](bool bands) {
+        auto bake = newBake();
+        paintGround(*bake, bands);
+        bake->save();
+        bake->resetTransform();
+        bake->drawCanvas(walls, 0, 0);
+        bake->restore();
+        return bake;
+    };
+    minimapStatic_ = compose(false);
+    minimapStaticGlow_ = compose(true);
     minimapRealm_ = realm;
     minimapCols_ = cols;
     minimapRows_ = rows;
-    minimapGlow_ = rarityGlow;
     minimapDensity_ = density;
-    return minimapStatic_.get();
+    return rarityGlow ? minimapStaticGlow_.get() : minimapStatic_.get();
 }
 
 void App::drawMinimap(Canvas& canvas) {
     // The corner belongs to whichever realm the flower is in: the maze draws
     // its own layout there, and the arena -- which has no map worth showing --
     // puts its scoreboard there instead, as the reference does.
-    // ALT does two things here: it reveals the other players' dots, and it is
-    // half the bake key -- the spawn bands under the walls come and go with it.
+    // ALT does two things here: it reveals the other players' dots, and it
+    // picks the bake with the spawn bands under the walls.
     const bool altHeld = window_.keyDown(Key::LeftAlt) || window_.keyDown(Key::RightAlt);
     switch (net_.view().realm()) {
         case Realm::Maze:
