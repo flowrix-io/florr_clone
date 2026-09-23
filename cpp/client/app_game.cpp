@@ -106,13 +106,15 @@ void App::sendInputFrame(double dt) {
     input.viewportHeight = static_cast<std::uint16_t>(
         std::min(65535.0, std::round(window_.height() / zoom)));
 
-    // An open menu owns the pointer. Keep sending zero movement so the flower
-    // stops while an item is being dragged, rather than steering toward the
-    // panel under the mouse.
-    if (menus_.anyOpen()) {
-        net_.sendInput(input);
-        return;
-    }
+    // An open menu owns the POINTER, and only the pointer. Steering toward a
+    // cursor that is over a panel to drag an item around would send the flower
+    // running at whatever slot the hand happened to stop on, so the cursor half
+    // -- and the mouse buttons with it -- goes quiet while a panel is up. The
+    // movement keys are not the menu's to take: they aim at nothing, cost the
+    // open panel nothing, and being frozen in place with the inventory up is
+    // how a player gets eaten. They still stop for the one thing that really is
+    // typing -- a focused field, which keyboardCaptured() answers for below.
+    const bool menuOpen = menus_.anyOpen();
 
     // Movement follows the cursor, which is the control scheme this game is
     // built around: the flower runs toward the pointer, at a speed set by how
@@ -168,7 +170,7 @@ void App::sendInputFrame(double dt) {
         // follows, measured against the base radius instead of a distance.
         input.moveAngle = stick.direction.angle();
         input.moveStrength = stick.magnitude;
-    } else if (settings.useMouseControls && !touchControls) {
+    } else if (settings.useMouseControls && !touchControls && !menuOpen) {
         const double distance = toCursor.length();
         input.moveAngle = distance > 1e-6 ? toCursor.angle() : 0.0;
         input.moveStrength = std::min(1.0, distance / kFullSpeedCursorDistance);
@@ -186,6 +188,10 @@ void App::sendInputFrame(double dt) {
     // so a pushed stick aims as well as moves, and a centred one leaves the
     // aim where it last was rather than snapping it to a stale tap.
     if (stickPushed) input.aimAngle = stick.direction.angle();
+    // A pointer parked on an open panel is not an aim, for the same reason it
+    // is not a heading: hold the last one rather than pointing the petals at
+    // whichever slot the hand stopped over.
+    else if (menuOpen) input.aimAngle = lastAimAngle_;
     else if (!touchControls) {
         input.aimAngle = toCursor.lengthSq() > 1e-12 ? toCursor.angle() : 0.0;
     } else {
@@ -202,7 +208,7 @@ void App::sendInputFrame(double dt) {
     const bool textDrag = selectable.dragging() ||
                           (window_.mousePressed(MouseButton::Left) &&
                            selectable.overTextLastFrame(pointer));
-    if (!chatOpen_ && !textDrag && !menus_.capturesMouse(pointer) &&
+    if (!chatOpen_ && !menuOpen && !textDrag && !menus_.capturesMouse(pointer) &&
         !tutorial_.capturesMouse(pointer)) {
         if (window_.mouseDown(MouseButton::Left) ||
             boundKeyDown(window_, settings.controlKey(ControlAction::ExtendPetals))) {
