@@ -200,6 +200,13 @@ private:
     void handleLogin(Session&, net::Connection&, ByteReader&);
     void handleResume(Session&, net::Connection&, ByteReader&);
     void handleChangePassword(Session&, net::Connection&, ByteReader&);
+    /// Logs the ACCOUNT out, not just this connection: every token it holds is
+    /// revoked, and every other connection signed into it is signed out too.
+    void handleLogout(Session&);
+    /// Takes one connection back to Anonymous: its body saved and removed, its
+    /// temporary admin dropped, and nothing left that names the account.
+    /// Touches no token -- revoking those is the caller's decision.
+    void signOut(Session&);
     void handleJoin(Session&, net::Connection&, ByteReader&);
     void handleLeave(Session&, net::Connection&);
     void handleInput(Session&, ByteReader&);

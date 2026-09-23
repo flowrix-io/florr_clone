@@ -747,6 +747,80 @@ TEST(logging_out_ends_the_session_at_both_ends) {
     CHECK(client.sessionToken() != token);
 }
 
+TEST(logging_out_ends_every_session_the_account_has) {
+    Harness h("logout-all");
+    if (!h.ready) { CHECK(false); return; }
+
+    // Three sessions on one account: the one that logs out, one playing on
+    // another connection, and a token no connection is holding right now --
+    // the copy left behind on some other machine.
+    NetClient here;
+    CHECK(connectClient(h, here));
+    here.requestRegister("heidi", "password8");
+    CHECK(h.stepUntil({&here}, [&] { return here.status() == NetClient::Status::LoggedIn; }));
+
+    NetClient there;
+    CHECK(connectClient(h, there));
+    there.requestLogin("heidi", "password8");
+    CHECK(h.stepUntil({&there}, [&] { return there.status() == NetClient::Status::LoggedIn; }));
+    const std::string thereToken = there.sessionToken();
+    there.joinGame(1280, 720);
+    CHECK(h.stepUntil({&here, &there}, [&] { return there.view().self().netId != 0; }));
+
+    NetClient parked;
+    CHECK(connectClient(h, parked));
+    parked.requestLogin("heidi", "password8");
+    CHECK(h.stepUntil({&parked}, [&] { return parked.status() == NetClient::Status::LoggedIn; }));
+    const std::string parkedToken = parked.sessionToken();
+    parked.disconnect();
+
+    // A different account, which a logout of this one must not touch.
+    NetClient bystander;
+    CHECK(connectClient(h, bystander));
+    bystander.requestRegister("ivan", "password9");
+    CHECK(h.stepUntil({&bystander},
+                      [&] { return bystander.status() == NetClient::Status::LoggedIn; }));
+
+    here.logout();
+    h.step(10, {&here, &there, &bystander});
+
+    // The playing connection is signed out, not merely left holding a dead
+    // token: it forgot the account, its body is gone from the server, and it
+    // was told why.
+    CHECK(there.signedOutElsewhere);
+    CHECK(there.status() == NetClient::Status::Ready);
+    CHECK_EQ(static_cast<int>(there.authStatus), static_cast<int>(net::AuthStatus::SessionExpired));
+    CHECK(!there.authMessage.empty());
+    CHECK(there.sessionToken().empty());
+    CHECK(there.profile().username.empty());
+    CHECK_EQ(playersVisibleTo(there), std::size_t(0));
+    CHECK_EQ(h.server.playerCount(), std::size_t(0));
+
+    // And the server treats it as anonymous, not just the client: a join from
+    // it is refused like any other join from a socket nobody signed into.
+    there.joinGame(1280, 720);
+    h.step(10, {&there});
+    CHECK_EQ(h.server.playerCount(), std::size_t(0));
+
+    // The one that logged out was not "signed out elsewhere" -- it did this.
+    CHECK(!here.signedOutElsewhere);
+
+    // Every token the account had is dead, including the one nobody was using.
+    for (const std::string& token : {thereToken, parkedToken}) {
+        NetClient stale;
+        CHECK(connectClient(h, stale));
+        stale.authAnswered = false;
+        stale.resumeSession(token);
+        CHECK(h.stepUntil({&stale}, [&] { return stale.authAnswered; }));
+        CHECK_EQ(static_cast<int>(stale.authStatus),
+                 static_cast<int>(net::AuthStatus::SessionExpired));
+    }
+
+    CHECK(!bystander.signedOutElsewhere);
+    CHECK(bystander.status() == NetClient::Status::LoggedIn);
+    CHECK_EQ(bystander.profile().username, std::string("ivan"));
+}
+
 TEST(a_hornets_missile_reaches_the_client_at_the_size_it_was_fired_at) {
     // No bots: they join at the same door this flower does now, and a farming
     // bot kills the hornet under test before it ever fires.

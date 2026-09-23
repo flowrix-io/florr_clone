@@ -866,29 +866,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::PublishSkin:   handlePublishSkin(*session, connection, reader); break;
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
-        case net::ClientMessage::Logout:
-            // A body in the world belongs to the account that is going away,
-            // so it comes off first -- and with its progress saved, because a
-            // logout is a deliberate exit, not a drop. Left alone it would be
-            // an orphan: a flower nobody can steer and no account can persist.
-            if (session->playing()) {
-                persistPlayer(*session);
-                despawnPlayer(*session, false);
-            }
-            revokeTempAdmin(session->connection);
-            if (!session->token.empty()) database_.revokeSession(session->token);
-            session->token.clear();
-            session->userId.clear();
-            // Both of these gate later messages -- `admin` unlocks the console
-            // commands, `username` is who the chat and the guild take this
-            // connection for -- so an anonymous session must not keep either.
-            session->username.clear();
-            session->admin = false;
-            session->displayName.clear();
-            // Last: despawnPlayer() puts the stage back to Authenticated, and
-            // this is what the socket actually is now.
-            session->stage = SessionStage::Anonymous;
-            break;
+        case net::ClientMessage::Logout:        handleLogout(*session); break;
         default:
             break;
     }
@@ -1151,6 +1129,60 @@ void GameServer::handleChangePassword(Session& session, net::Connection& connect
     database_.maybeSave(monotonicMillis());
 
     sendChangePasswordResult(connection, true, session.token, "");
+}
+
+void GameServer::handleLogout(Session& session) {
+    // An anonymous socket has no account to log out of.
+    if (!session.authenticated()) return;
+    const std::string userId = session.userId;
+
+    // Every token the account holds, not only this connection's. A logout
+    // that left the others alive would leave a copy on a shared machine, or
+    // one somebody lifted, good for up to thirty more days -- and "log out"
+    // is the button a player reaches for in exactly that situation.
+    database_.revokeSessionsForUser(session.username);
+    signOut(session);
+
+    // The tokens were only half of it: a connection that already resumed one
+    // is authenticated in memory, not by the token, and would play on as the
+    // account until it dropped. Each is signed out here and told so with the
+    // answer a dead token gets, which is the one its client already knows
+    // means "back to the login form".
+    for (auto& [id, other] : sessions_) {
+        if (id == session.connection || !other.authenticated() || other.userId != userId) continue;
+        signOut(other);
+        if (net::Connection* connection = listener_.find(id)) {
+            sendAuthResult(*connection, net::AuthStatus::SessionExpired, "", "",
+                           "This account was logged out elsewhere.");
+        }
+    }
+
+    // Same reason as a password change: a revocation still waiting for the
+    // thirty-second persist is undone by a crash inside that window.
+    database_.maybeSave(monotonicMillis());
+}
+
+void GameServer::signOut(Session& session) {
+    // A body in the world belongs to the account that is going away, so it
+    // comes off first -- and with its progress saved, because a logout is a
+    // deliberate exit, not a drop. Left alone it would be an orphan: a flower
+    // nobody can steer and no account can persist.
+    if (session.playing()) {
+        persistPlayer(session);
+        despawnPlayer(session, false);
+    }
+    revokeTempAdmin(session.connection);
+    session.token.clear();
+    session.userId.clear();
+    // Both of these gate later messages -- `admin` unlocks the console
+    // commands, `username` is who the chat and the guild take this connection
+    // for -- so an anonymous session must not keep either.
+    session.username.clear();
+    session.admin = false;
+    session.displayName.clear();
+    // Last: despawnPlayer() puts the stage back to Authenticated, and this is
+    // what the socket actually is now.
+    session.stage = SessionStage::Anonymous;
 }
 
 void GameServer::sendProfile(Session& session, net::Connection& connection) {

@@ -332,6 +332,13 @@ void App::pollNetwork() {
         screen_ != Screen::Playing && screen_ != Screen::Dead) {
         screen_ = Screen::Disconnected;
     }
+    // The account was logged out from another connection. Before the auth
+    // answer below, which is what puts the server's reason on the form this
+    // opens -- showLoggedOut() would blank it again if it ran second.
+    if (net_.signedOutElsewhere) {
+        net_.signedOutElsewhere = false;
+        showLoggedOut();
+    }
     if (net_.authAnswered) {
         net_.authAnswered = false;
         loginMessage_ = net_.authMessage;
@@ -922,9 +929,13 @@ void App::logout() {
     // logged-out client must not be on. The body itself is NetClient's to take
     // off the server -- it leaves the game before it sends the logout, because
     // the account a flower would be saved into goes away with the session.
+    net_.logout();
+    showLoggedOut();
+}
+
+void App::showLoggedOut() {
     const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
     if (inWorld) tutorial_.endGame();
-    net_.logout();
     menus_.close();
 
     // Forget the token on disk as well as in memory: a logout a restart undoes

@@ -248,7 +248,10 @@ void NetClient::logout() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Logout);
     send(w);
+    forgetAccount();
+}
 
+void NetClient::forgetAccount() {
     // Everything the account owned goes with the account. Whatever logs in
     // next must not inherit the last one's inventory, chat, guild or skins --
     // the panels read these fields directly, and a stale one would be drawn
@@ -625,6 +628,17 @@ void NetClient::handleAuthResult(ByteReader& reader) {
     const std::string username = reader.str();
     const std::string reason = reader.str();
     if (!reader.ok()) return;
+
+    // Asked for nothing: a dead token is only ever the answer to a resume, and
+    // this client is already in a session. The account was logged out from
+    // another connection, which revokes every token it had and signs every
+    // socket out of it -- this one included. Forgotten here exactly as a
+    // logout from this client would forget it, before the answer is recorded
+    // (forgetAccount blanks the last one).
+    if (result == net::AuthStatus::SessionExpired && haveSession()) {
+        forgetAccount();
+        signedOutElsewhere = true;
+    }
 
     authAnswered = true;
     authStatus = result;

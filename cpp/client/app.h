@@ -357,6 +357,10 @@ private:
     /// token, the client forgets the account, and the stored token on disk
     /// goes with it so a restart does not walk straight back in.
     void logout();
+    /// The app's half of a logout, wherever it came from: off whatever screen
+    /// this is and onto a blank login form, with the token file emptied. Sends
+    /// nothing -- NetClient has already dealt with the server and the account.
+    void showLoggedOut();
 
     void loadSession();
     void saveSession() const;

@@ -279,8 +279,9 @@ public:
     void requestRegister(const std::string& username, const std::string& password);
     void requestLogin(const std::string& username, const std::string& password);
     void resumeSession(const std::string& token);
-    /// Ends the session: tells the server to revoke the token, then drops
-    /// every scrap of the account this client was holding. The socket stays
+    /// Ends the session: tells the server to log the account out -- which
+    /// revokes every token it holds and signs out its other connections --
+    /// then drops every scrap of the account this client was holding. The socket stays
     /// up -- the connection is not the session -- so the status falls back to
     /// Ready and the login form can be used again without a reconnect.
     void logout();
@@ -518,6 +519,12 @@ public:
     /// token to disk and be asked to log in again on its next start.
     bool sessionTokenRenewed = false;
 
+    /// Set once each time the server signed this client out because the
+    /// account was logged out from another connection. NetClient has already
+    /// forgotten the account by then; the app still has to leave the screen it
+    /// is on and empty the token file, which are its business, not this one's.
+    bool signedOutElsewhere = false;
+
     /// Set when the server reports the player died; cleared by respawning, or
     /// by a yggdrasil raising this body back up.
     bool dead() const { return dead_; }
@@ -547,6 +554,10 @@ public:
 private:
     void send(ByteWriter&);
     void beginMessage(ByteWriter&, net::ClientMessage);
+    /// The client half of a logout: drops every scrap of the account without
+    /// telling the server anything. logout() sends first; a sign-out the
+    /// server announced has nothing to send.
+    void forgetAccount();
 
     void handleWelcome(ByteReader&);
     void handleAuthResult(ByteReader&);
