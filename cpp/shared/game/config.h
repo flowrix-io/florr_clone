@@ -295,6 +295,13 @@ struct MobConfig {
     double cooldownMillis = 0;  ///< gap between attacks
     double range = 0;           ///< aggro range, world units
     double visualScale = 1.0;   ///< art only; never touches the hitbox
+    /// Slides the artwork off the body centre, art only like visualScale.
+    /// Measured in the art's own frame (+X is the way the drawing faces) and
+    /// in multiples of the DRAWN radius -- unlike a petal's, which is in world
+    /// units -- so the same point of the drawing stays on the hitbox whatever
+    /// the tier, the visual_scale or the death pop makes the sprite's size.
+    double visualOffsetX = 0;
+    double visualOffsetY = 0;
 
     AiKind ai = AiKind::Neutral;
 

@@ -664,6 +664,17 @@ TEST(finite_enormous_damage_keeps_typescript_semantics) {
     CHECK_NEAR(r.petal(r.petalIndex("sparkle")).damage, 9999999999.0, 1e-9);
 }
 
+TEST(mob_visual_offset_is_read) {
+    const ContentRegistry& r = shipped().registry;
+    const MobConfig& fly = r.mob(r.mobIndex("fly"));
+    CHECK_NEAR(fly.visualOffsetX, 0.3, 1e-12);
+    CHECK_NEAR(fly.visualOffsetY, 0.0, 1e-12);
+    // Absent means centred.
+    const MobConfig& ladybug = r.mob(r.mobIndex("ladybug"));
+    CHECK_NEAR(ladybug.visualOffsetX, 0.0, 1e-12);
+    CHECK_NEAR(ladybug.visualOffsetY, 0.0, 1e-12);
+}
+
 TEST(finite_zero_placeholder_mobs_keep_typescript_semantics) {
     const ContentRegistry& r = shipped().registry;
     for (const char* id : {"bush", "leafbug", "mantis"}) {
@@ -739,6 +750,7 @@ TEST(synthetic_dirty_values_are_sanitised) {
         "name": "Wreck", "description": "d", "color": "#112233", "image": "<svg/>",
         "damage": -25, "health": -50, "size": -3, "speed": -7, "cooldown": 99999999,
         "range": -100, "visual_scale": 0, "ai_type": "telepathic",
+        "visualOffsetX": 99, "visualOffsetY": 1e400,
         "groups": {"garden": 1, "": 2, "swamp": -1}, "spawn_weight": -1,
         "poison": -1, "poisonDuration": -5,
         "xp": {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5,
@@ -798,6 +810,11 @@ TEST(synthetic_dirty_values_are_sanitised) {
     CHECK_NEAR(wreck.speed, 7.0, 1e-12);          // magnitude kept, sign dropped
     CHECK(wreck.cooldownMillis <= 600000.0);
     CHECK_NEAR(wreck.range, 0.0, 1e-12);
+    // Drawn radii, not units: clamped far below a petal's 500, and a mob
+    // never borrows the petal's "huge offset means hidden" reading.
+    CHECK_NEAR(wreck.visualOffsetX, 10.0, 1e-12);
+    CHECK_NEAR(wreck.visualOffsetY, 0.0, 1e-12);
+    CHECK(warned(r, "visualOffsetX is 99, above the sane maximum 10"));
     CHECK(wreck.ai == AiKind::Neutral);           // an unknown behaviour
     // The nameless group is dropped and the negative weight repaired, so the
     // mob keeps the two groups it legitimately named.

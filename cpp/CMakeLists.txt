@@ -596,6 +596,17 @@ add_executable(mob_render_bench tools/mob_render_bench.cpp)
 target_link_libraries(mob_render_bench PRIVATE flix_client cpp_canvas)
 add_dependencies(mob_render_bench flix_data)
 
+# The visual_scale and visualOffsetX/Y that put each mob's artwork on its
+# hitbox, measured through the client's own sprite path. Reads mobs.json from
+# the source tree, so an edit is measured without a rebuild. See the file's
+# own header.
+add_executable(hitbox_fit tools/hitbox_fit.cpp)
+target_link_libraries(hitbox_fit PRIVATE flix_client cpp_canvas)
+target_compile_definitions(hitbox_fit PRIVATE
+  FLIX_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../src"
+  FLIX_TEST_DATA_DIR="${FLIX_DATA_DIR}")
+add_dependencies(hitbox_fit flix_data)
+
 # --- tests -------------------------------------------------------------------
 enable_testing()
 # Globbed deliberately: tests are added often and a stale list is a test that

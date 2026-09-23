@@ -37,6 +37,9 @@ constexpr double kMaxSize = 1000.0;
 /// Any farther than this and the value is not a draw offset -- it is someone
 /// pushing a sprite off the world to hide it.
 constexpr double kMaxVisualOffset = 500.0;
+/// A mob's offset is in drawn radii, not units: ten of them puts the art
+/// clean off its own body, which is already past anything that is alignment.
+constexpr double kMaxMobVisualOffset = 10.0;
 
 constexpr double kMaxSpeedUnits = 1e4;
 constexpr double kMaxDurationMillis = 600000.0;
@@ -680,6 +683,10 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.cooldownMillis = ctx.range(src, "cooldown", 0.0, 0.0, kMaxDurationMillis);
     m.range = ctx.range(src, "range", 0.0, 0.0, kWorldSize);
     m.visualScale = ctx.range(src, "visual_scale", 1.0, 0.0, kMaxSize);
+    m.visualOffsetX = ctx.range(src, "visualOffsetX", 0.0, -kMaxMobVisualOffset,
+                                kMaxMobVisualOffset);
+    m.visualOffsetY = ctx.range(src, "visualOffsetY", 0.0, -kMaxMobVisualOffset,
+                                kMaxMobVisualOffset);
 
     m.ai = parseAi(ctx, ctx.text(src, "ai_type", "neutral"));
 

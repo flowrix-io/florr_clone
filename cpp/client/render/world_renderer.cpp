@@ -2420,7 +2420,11 @@ void WorldRenderer::drawDiggerMob(Canvas& canvas, const MobDraw& mob, double rad
 
 void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, const MobDraw& mob,
                                      double radius, double rotation, bool mirrored,
-                                     double timeSeconds) const {
+                                     Vec2 bodyShift, double timeSeconds) const {
+    // Only the BODY takes the art offset. The ring is where the server hits
+    // from, and moving it with the drawing would draw seeds where none are.
+    canvas.save();
+    canvas.translate(static_cast<float>(bodyShift.x), static_cast<float>(bodyShift.y));
     // A flower FACE, or the mob's own artwork. Stated by the config rather
     // than inferred from whether artwork exists: the glitch flower ships an
     // SVG it deliberately does not use, and a rule that preferred the drawing
@@ -2443,6 +2447,7 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         sprites_->drawMob(canvas, mob.typeIndex, 0.0, 0.0, radius * 2.0, rotation, timeSeconds,
                           mirrored, mob.radius * visualScale);
     }
+    canvas.restore();
 
     const std::uint16_t index = config.petalRing.petalIndex;
     if (!sprites_ || !content_ || index == kInvalidIndex) return;
@@ -2520,6 +2525,22 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
     // anything asymmetric, so undo the half turn and reflect it here.
     if (mirrored && !(config && config->hideRotation)) rotation = mob.angle - kPi;
 
+    // `visualOffsetX/Y`, resolved to a screen vector because the sprite is
+    // handed a centre rather than a transform. The offset lives in the art's
+    // own frame, which the sprite cache mirrors AFTER rotating, so the X is
+    // flipped before the turn. Scaled by the drawn radius -- death pop
+    // included -- so the same point of the drawing stays on the body.
+    Vec2 bodyShift;
+    if (config && (config->visualOffsetX != 0 || config->visualOffsetY != 0)) {
+        const double r = diameter * 0.5;
+        const double ox = (mirrored ? -config->visualOffsetX : config->visualOffsetX) * r;
+        const double oy = config->visualOffsetY * r;
+        const double c = std::cos(rotation);
+        const double s = std::sin(rotation);
+        bodyShift = {ox * c - oy * s, ox * s + oy * c};
+    }
+    const Vec2 art = screen + bodyShift;
+
     canvas.save();
     if (alpha < 1.0) canvas.setGlobalAlpha(static_cast<float>(alpha));
 
@@ -2528,7 +2549,7 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         const double lightRadius =
             (config->lightRadius > 0 ? config->lightRadius : mob.radius * 4.0) * zoom;
         canvas.save();
-        canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+        canvas.translate(static_cast<float>(art.x), static_cast<float>(art.y));
         // The sun lights 2000 units, which is the whole screen: sixteen bands
         // of it is sixteen full-screen fills a frame, so a glow that large is
         // painted coarsely. The browser build blits a baked sprite and never
@@ -2545,25 +2566,28 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         // laid out in world units off the mob's COLLISION size -- the browser
         // build sizes the pile from that and never from the death scale.
         canvas.save();
-        canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+        canvas.translate(static_cast<float>(art.x), static_cast<float>(art.y));
         canvas.scale(static_cast<float>(mirrored ? -zoom : zoom), static_cast<float>(zoom));
         drawGarbagePile(canvas, mob.position, mob.radius * 2.0, timeSeconds);
         canvas.restore();
     } else if (id == "digger") {
         // A flower carrying a cutter rather than a bug, the way gardn draws it.
         canvas.save();
-        canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
+        canvas.translate(static_cast<float>(art.x), static_cast<float>(art.y));
         drawDiggerMob(canvas, mob, diameter * 0.5, timeSeconds);
         canvas.restore();
     } else if (config && config->petalRing.present) {
         const double radius = diameter * 0.5;
         const auto paint = [&](Canvas& target) {
-            drawPetalRingMob(target, *config, mob, radius, rotation, mirrored, timeSeconds);
+            drawPetalRingMob(target, *config, mob, radius, rotation, mirrored, bodyShift,
+                             timeSeconds);
         };
         if (id == "glitch_flower") {
             // The wrapper has to cover the RING, not just the body: it sizes
-            // its buffer from the radius it is handed.
-            drawGlitched(canvas, screen, radius * (config->petalRing.orbitScale * 0.5 + 0.3),
+            // its buffer from the radius it is handed. The ring stays on the
+            // hitbox, so a shifted body only needs the shift added on.
+            drawGlitched(canvas, screen,
+                         radius * (config->petalRing.orbitScale * 0.5 + 0.3) + bodyShift.length(),
                          mob.netId, timeSeconds, paint);
         } else {
             canvas.save();
@@ -2576,12 +2600,12 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         // drawn by code cut their detail from how big the mob IS. Not the death
         // scale and not the zoom: a rock does not gain facets while it pops,
         // and it does not lose them when the camera pulls back.
-        sprites_->drawMob(canvas, mob.typeIndex, screen.x, screen.y, diameter, rotation,
+        sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, rotation,
                           timeSeconds, mirrored, mob.radius * visualScale);
     } else {
         // No artwork: the tier colour, which is at least the one fact about a
         // mob worth reading from across the screen.
-        ui::disc(canvas, screen, diameter * 0.5, rarityColor(mob.rarity), ui::kInk, 2.0 * zoom);
+        ui::disc(canvas, art, diameter * 0.5, rarityColor(mob.rarity), ui::kInk, 2.0 * zoom);
     }
     canvas.restore();
 }

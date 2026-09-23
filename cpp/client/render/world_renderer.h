@@ -343,8 +343,10 @@ private:
     /// `rotation` and `mirrored` are the ones drawMobBody resolved for the
     /// ordinary artwork path, passed in rather than re-derived: a mob drawn
     /// here has to face the way the same mob would if it had no ring.
+    /// `bodyShift` is the resolved `visualOffsetX/Y`, and moves the body only.
     void drawPetalRingMob(Canvas&, const MobConfig&, const MobDraw&, double radius,
-                          double rotation, bool mirrored, double timeSeconds) const;
+                          double rotation, bool mirrored, Vec2 bodyShift,
+                          double timeSeconds) const;
     /// The garbage mob, whose artwork in mobs.json is an empty document: a
     /// deterministic pile of petals seeded on where it stands.
     void drawGarbagePile(Canvas&, Vec2 at, double baseSize, double timeSeconds) const;
