@@ -438,15 +438,7 @@
         "type": "petal",
         "itemType": "bone",
         "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "bone",
-        "rarity": "uncommon",
-        "probability": 0.2,
+        "probability": 0.3,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -454,14 +446,6 @@
         "type": "petal",
         "itemType": "blood_leaf",
         "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "blood_leaf",
-        "rarity": "uncommon",
         "probability": 0.2,
         "minQuantity": 1,
         "maxQuantity": 1
@@ -475,15 +459,7 @@
         "type": "petal",
         "itemType": "lightning",
         "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "lightning",
-        "rarity": "uncommon",
-        "probability": 0.2,
+        "probability": 0.43,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -491,15 +467,7 @@
         "type": "petal",
         "itemType": "jelly",
         "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "jelly",
-        "rarity": "uncommon",
-        "probability": 0.2,
+        "probability": 0.41,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -602,6 +570,27 @@
         "itemType": "root",
         "rarity": "common",
         "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "golden_leafbug": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "golden_leaf",
+        "rarity": "common",
+        "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "root",
+        "rarity": "common",
+        "probability": 0.86,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -712,7 +701,7 @@
     "drops": [
       {
         "type": "petal",
-        "itemType": "missile",
+        "itemType": "antennae",
         "rarity": "common",
         "probability": 1,
         "minQuantity": 1,
@@ -735,7 +724,23 @@
         "type": "petal",
         "itemType": "wing",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "poo",
+        "rarity": "common",
+        "probability": 0.7,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "talisman",
+        "rarity": "common",
+        "probability": 0.08,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -748,7 +753,7 @@
         "type": "petal",
         "itemType": "wing",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -782,7 +787,7 @@
         "type": "petal",
         "itemType": "random",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -801,17 +806,17 @@
     "drops": [
       {
         "type": "petal",
-        "itemType": "golden_leaf",
+        "itemType": "antennae",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.16,
         "minQuantity": 1,
         "maxQuantity": 1
       },
       {
         "type": "petal",
-        "itemType": "faster",
+        "itemType": "lotus",
         "rarity": "common",
-        "probability": 0.5,
+        "probability": 0.27,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -829,18 +834,18 @@
         "maxQuantity": 1
       },
       {
-        "type": "consumable",
-        "itemType": "speed_boost",
+        "type": "petal",
+        "itemType": "faster",
         "rarity": "common",
-        "probability": 0.99,
+        "probability": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
       },
       {
         "type": "petal",
-        "itemType": "faster",
+        "itemType": "web",
         "rarity": "common",
-        "probability": 0.5,
+        "probability": 0.37,
         "minQuantity": 1,
         "maxQuantity": 1
       }
