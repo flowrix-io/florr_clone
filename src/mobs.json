@@ -1225,6 +1225,7 @@
         "name": "Fly",
         "health": 5,
         "damage": 10,
+        "evasion": 0.9,
         "size": 1,
         "visual_scale": 1.8104,
         "speed": 2.4,
@@ -1242,7 +1243,7 @@
             "super": 2100000,
             "unique": 6800000
         },
-        "description": "Buzzzzzzzz",
+        "description": "Never gets hit by a fly zapper, but it will hit you",
         "color": "#919191",
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(18.5, 15.8) scale(0.50446)\"><circle cx=\"0\" cy=\"0\" r=\"14\" fill=\"#555555\" /><circle cx=\"0\" cy=\"0\" r=\"14\" fill=\"none\" stroke=\"#454545\" stroke-width=\"7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; -18; 0\" keyTimes=\"0; 0.5; 1\" calcMode=\"spline\" keySplines=\"0.4 0 0.6 1; 0.4 0 0.6 1\" dur=\"1.2s\" repeatCount=\"indefinite\" /><path d=\"M -18.413 -11.708 a 12 9 18 1 0 22.825 7.416 a 12 9 18 1 0 -22.825 -7.416 Z\" fill=\"#EEEEEE\" fill-opacity=\"0.498\" /></g><g><animateTransform attributeName=\"transform\" type=\"rotate\" values=\"0; 18; 0\" keyTimes=\"0; 0.5; 1\" calcMode=\"spline\" keySplines=\"0.4 0 0.6 1; 0.4 0 0.6 1\" dur=\"1.2s\" repeatCount=\"indefinite\" /><path d=\"M -18.413 11.708 a 12 9 -18 1 0 22.825 -7.416 a 12 9 -18 1 0 -22.825 7.416 Z\" fill=\"#EEEEEE\" fill-opacity=\"0.498\" /></g></g></svg>",
         "ai_type": "hostile",

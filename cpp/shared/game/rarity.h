@@ -193,6 +193,21 @@ inline double petalModifierScale(Rarity r) {
     return 1.0 + (rarityIndex(r) / kUniqueIndex) * 3.0;
 }
 
+/// A mob-aggro-range multiplier at a tier: the authored common figure applied
+/// once more per tier, so every upgrade takes the same fraction off whatever
+/// range the tier below left. Poo's 0.75 is
+///
+///   common -25%, uncommon -43.8%, rare -57.8%, epic -68.4%, legendary -76.3%,
+///   mythic -82.2%, ultra -86.7%, super -90%, unique -92.5%, apex -94.4%
+///
+/// -- the table it was balanced to, and apex is the same curve one step on.
+/// Neither of the other passive curves can produce this: petalModifierScale
+/// would take a -25% to -100% by unique -- mobs blind to the flower -- and the
+/// zoom curve grows away from 1 rather than towards 0.
+inline double petalAggroRangeScale(double authored, Rarity r) {
+    return std::pow(authored, rarityIndex(r) + 1);
+}
+
 // ---------------------------------------------------------------------------
 // Crafting and drop rolls
 // ---------------------------------------------------------------------------

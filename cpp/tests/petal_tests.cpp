@@ -42,6 +42,8 @@ const char* const kPetalsJson = R"JSON({
   "reacher":  {"name":"Reacher","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"range":1.5},"color":"#00FFFF"},
   "anchor":   {"name":"Anchor","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"playerModifiers":{"rotationSpeed":0},"color":"#888888"},
   "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
+  "stinky":   {"name":"Stinky","damage":0,"health":1,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":0.75},"color":"#8B4513"},
+  "glowy":    {"name":"Glowy","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRadius":150},"color":"#FFFF00"},
   "summoner": {"name":"Summoner","damage":1,"health":4,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petMobRarity":"common","petCount":2,"color":"#AA00AA"},
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"},
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
@@ -1245,6 +1247,66 @@ TEST(modifiers_are_summed_from_scratch_and_vanish_when_unequipped) {
     CHECK_NEAR(rig.modifiers().luck, 1.0, 1e-12);
     CHECK_NEAR(rig.modifiers().speedScale, 1.0, 1e-12);
     CHECK_NEAR(rig.modifiers().magnetism, kBaseMagnetism, 1e-12);
+}
+
+TEST(the_strongest_worn_aggro_range_cut_wins_and_copies_do_not_multiply) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.0, 1e-12);
+
+    rig.equip(0, "stinky");
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 0.75, 1e-12);
+
+    // A second common is still -25%, not the -43.75% that is an uncommon's;
+    // a better tier beside it takes over.
+    rig.equip(1, "stinky");
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 0.75, 1e-12);
+    rig.equip(2, "stinky", Rarity::Epic);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, std::pow(0.75, 4), 1e-12);
+
+    rig.unequip(0);
+    rig.unequip(1);
+    rig.unequip(2);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.0, 1e-12);
+}
+
+TEST(aggro_modifiers_work_only_while_the_petal_is_on_the_ring) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "stinky");
+    rig.equip(1, "glowy");
+
+    // Equipped but still serving the equip reload: nothing yet.
+    rig.tick();
+    CHECK(rig.slot(0).broken);
+    CHECK(rig.slot(1).broken);
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.0, 1e-12);
+    CHECK_NEAR(rig.modifiers().aggroRadiusBonus, 0.0, 1e-12);
+
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 0.75, 1e-12);
+    CHECK_NEAR(rig.modifiers().aggroRadiusBonus, 150.0, 1e-9);
+
+    // Each one lapses on its own when it breaks, and only for its reload.
+    rig.damage(rig.petals(0).front(), 5.0);
+    rig.tick();
+    CHECK(rig.slot(0).broken);
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.0, 1e-12);
+    CHECK_NEAR(rig.modifiers().aggroRadiusBonus, 150.0, 1e-9);
+
+    rig.damage(rig.petals(1).front(), 10.0);
+    rig.tick();
+    CHECK(rig.slot(1).broken);
+    CHECK_NEAR(rig.modifiers().aggroRadiusBonus, 0.0, 1e-12);
+
+    CHECK(rig.tickUntil([&] { return !rig.slot(0).broken && !rig.slot(1).broken; }));
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 0.75, 1e-12);
+    CHECK_NEAR(rig.modifiers().aggroRadiusBonus, 150.0, 1e-9);
 }
 
 TEST(a_broken_petal_keeps_its_equipment_modifier_while_reloading) {

@@ -188,7 +188,7 @@ struct Sim {
         return count;
     }
 
-    Entity spawnPlayer(Vec2 at, double aggroBonus = 0.0) {
+    Entity spawnPlayer(Vec2 at, double aggroBonus = 0.0, double aggroRangeScale = 1.0) {
         const Entity e = world.create();
         world.add<PlayerTag>(e);
         world.add<Transform>(e, Transform{at, 0.0});
@@ -197,6 +197,7 @@ struct Sim {
         world.add<Health>(e, Health{kPlayerBaseHealth, kPlayerBaseHealth, 0, 0});
         PlayerModifiers mods;
         mods.aggroRadiusBonus = aggroBonus;
+        mods.aggroRangeScale = aggroRangeScale;
         world.add<PlayerModifiers>(e, mods);
         return e;
     }
@@ -429,6 +430,57 @@ TEST(a_raised_aggro_radius_is_noticed_from_further_away) {
 
     sim.tickIntent(5);
     CHECK_EQ(sim.brainOf(mob).target, player);
+}
+
+TEST(worn_poo_shrinks_the_range_a_mob_notices_that_player_from) {
+    CHECK(contentReady());
+    // 270 past the skin: inside a soldier ant's 300, outside the 225 a common
+    // poo leaves it. The bare flower beside it is the control.
+    Sim hidden;
+    const Entity mob = hidden.spawnMob("soldier_ant", kOrigin);
+    const double skin = hidden.world.get<Body>(mob).radius;
+    hidden.spawnPlayer(kOrigin + Vec2{skin + 270.0, 0}, 0.0, 0.75);
+    hidden.tickIntent(5);
+    CHECK_EQ(hidden.brainOf(mob).target, NULL_ENTITY);
+    CHECK(hidden.totalScans > 0);
+
+    Sim seen;
+    const Entity control = seen.spawnMob("soldier_ant", kOrigin);
+    const Entity bare = seen.spawnPlayer(kOrigin + Vec2{skin + 270.0, 0});
+    seen.tickIntent(5);
+    CHECK_EQ(seen.brainOf(control).target, bare);
+
+    // Inside the shrunk range it is noticed as ever.
+    Sim close;
+    const Entity near = close.spawnMob("soldier_ant", kOrigin);
+    const Entity stinky = close.spawnPlayer(kOrigin + Vec2{skin + 200.0, 0}, 0.0, 0.75);
+    close.tickIntent(5);
+    CHECK_EQ(close.brainOf(near).target, stinky);
+}
+
+TEST(poo_shrinks_only_the_range_past_the_skin) {
+    CHECK(contentReady());
+    // Apex poo leaves a 300 range at about 17 units, but a flower standing at
+    // the mob's skin is noticed however little range is left.
+    Sim sim;
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
+    const double skin = sim.world.get<Body>(mob).radius;
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{skin + 10.0, 0}, 0.0, std::pow(0.75, 10));
+    sim.tickIntent(5);
+    CHECK_EQ(sim.brainOf(mob).target, player);
+}
+
+TEST(a_mob_picks_the_bare_flower_over_a_nearer_one_wearing_poo) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
+    const double skin = sim.world.get<Body>(mob).radius;
+    // 180 out is 45 inside the 225 a common poo leaves; 220 out is 80 inside
+    // a bare 300. The poo flower is nearer, but the bare one stands out more.
+    sim.spawnPlayer(kOrigin + Vec2{skin + 180.0, 0}, 0.0, 0.75);
+    const Entity bare = sim.spawnPlayer(kOrigin + Vec2{-(skin + 220.0), 0});
+    sim.tickIntent(5);
+    CHECK_EQ(sim.brainOf(mob).target, bare);
 }
 
 TEST(aggro_holds_far_outside_the_aggro_range_and_drops_at_five_viewports) {

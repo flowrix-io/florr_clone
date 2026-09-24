@@ -542,6 +542,9 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
     mods.rotationSpeed = ctx.range(node, "rotationSpeed", 1.0, -100.0, 100.0);
     mods.playerRadius  = ctx.range(node, "playerRadius", 1.0, -100.0, 100.0);
     mods.damage        = ctx.range(node, "damage", 1.0, -100.0, 100.0);
+    // Not signed like the others: a negative notice range means nothing, and
+    // above 1 it would outgrow the broadphase query mob AI sizes for it.
+    mods.aggroRange    = ctx.range(node, "aggroRange", 1.0, 0.0, 1.0);
 
     mods.luck                  = ctx.range(node, "luck", 0.0, -100.0, 100.0);
     mods.magnetism             = ctx.range(node, "magnetism", 0.0, 0.0, kWorldSize);
@@ -552,7 +555,8 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
     for (const std::string& key : node.keys()) {
         static const char* kKnown[] = {
             "maxHealth", "speed", "range", "rotationSpeed", "playerRadius", "damage",
-            "luck", "magnetism", "aggroRadius", "petalAttractionRadius", "poisonArmor",
+            "aggroRange", "luck", "magnetism", "aggroRadius", "petalAttractionRadius",
+            "poisonArmor",
         };
         bool known = false;
         for (const char* k : kKnown) known = known || key == k;
@@ -1520,6 +1524,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.modifiers.rotationSpeed = scaledMultiplier(c.modifiers.rotationSpeed, modifier);
     s.modifiers.playerRadius = scaledMultiplier(c.modifiers.playerRadius, modifier);
     s.modifiers.damage = scaledMultiplier(c.modifiers.damage, modifier);
+    s.modifiers.aggroRange = petalAggroRangeScale(c.modifiers.aggroRange, tier);
     s.modifiers.luck = c.modifiers.luck * modifier;
     s.modifiers.magnetism = c.modifiers.magnetism * modifier;
     s.modifiers.aggroRadius = c.modifiers.aggroRadius * modifier;

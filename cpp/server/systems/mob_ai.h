@@ -595,7 +595,7 @@ private:
     struct Candidate {
         Entity entity = NULL_ENTITY;
         Vec2 position;
-        double score = 0;   ///< distance less the player's aggro bonus
+        double score = 0;   ///< distance past the player's notice circle; <= 0 is seen
         Realm realm = Realm::Overworld;
     };
 
@@ -678,8 +678,10 @@ private:
                          double nowMillis, double dt, Vec2& desired, Vec2& facing,
                          CommandBuffer& commands);
 
+    /// `range` is measured from the mob's centre and `skin` is the part of it
+    /// that is the mob's own body -- a flower's poo shrinks what lies past it.
     Entity acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
-                         Entity self, Vec2 from, Realm realm, double range);
+                         Entity self, Vec2 from, Realm realm, double skin, double range);
     /// The PET a wild mob settles for when no flower is to be had. Distinct
     /// from acquirePetPrey() below, which is the wild mob a pet goes after.
     ///

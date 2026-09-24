@@ -1017,7 +1017,8 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             }
             // TypeScript derives modifiers from equipped loadout entries, not
             // from their onCooldown flag. A broken body leaves a ring gap but
-            // its equipment modifier and passive heal remain equipped.
+            // its equipment modifier and passive heal remain equipped -- all
+            // but the aggro pair, which is gated below.
             if (slot.empty()) continue;
             const PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
             const PetalModifiers& mods = stats.modifiers;
@@ -1041,7 +1042,18 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
 
             aggregate.modifiers.luck += mods.luck;
             aggregate.modifiers.magnetism += mods.magnetism;
-            aggregate.modifiers.aggroRadiusBonus += mods.aggroRadius;
+            // Aggro is the exception to the rule above: a bulb glows and a poo
+            // smells only while it is out on the ring. A broken one, or one
+            // still serving the reload an equip starts, does nothing -- the
+            // same test the sponge below is held to.
+            if (!slot.broken) {
+                aggregate.modifiers.aggroRadiusBonus += mods.aggroRadius;
+                // The strongest one, not the product: the tier curve already
+                // compounds 0.75 per step, so two common poos multiplied would
+                // be an uncommon one, and a bar of commons would reach apex.
+                aggregate.modifiers.aggroRangeScale =
+                    std::min(aggregate.modifiers.aggroRangeScale, mods.aggroRange);
+            }
             aggregate.modifiers.petalAttractionRadius += mods.petalAttractionRadius;
             aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
             // Summed, not maximised: an orb and a magic flower are two

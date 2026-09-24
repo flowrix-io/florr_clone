@@ -5,6 +5,7 @@
 
 #include <sys/stat.h>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -422,6 +423,23 @@ TEST(player_modifiers_scale_by_kind) {
     CHECK(!basic.modifiers.any);
     CHECK_NEAR(basic.modifiers.maxHealth, 1.0, 1e-12);
     CHECK_NEAR(basic.modifiers.luck, 0.0, 1e-12);
+    CHECK_NEAR(basic.modifiers.aggroRange, 1.0, 1e-12);
+}
+
+TEST(poo_cuts_mob_aggro_range_on_its_balanced_table_and_extrapolates_to_apex) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t poo = r.petalIndex("poo");
+    CHECK(poo != kInvalidIndex);
+    if (poo == kInvalidIndex) return;
+
+    // The cut in percent, as it was balanced, to the 0.1 it was written at.
+    static constexpr std::array<double, kRarityCount> kCutPercent = {
+        25.0, 43.8, 57.8, 68.4, 76.3, 82.2, 86.7, 90.0, 92.5, 94.4,
+    };
+    for (int t = 0; t < kRarityCount; ++t) {
+        const double scale = r.petalStats(poo, static_cast<Rarity>(t)).modifiers.aggroRange;
+        CHECK_NEAR((1.0 - scale) * 100.0, kCutPercent[static_cast<std::size_t>(t)], 0.05);
+    }
 }
 
 TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {

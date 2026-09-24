@@ -470,7 +470,8 @@ void MobAiSystem::layWeb(World& world, Entity self, double nowMillis,
 // ---------------------------------------------------------------------------
 
 Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
-                                  Entity self, Vec2 from, Realm realm, double range) {
+                                  Entity self, Vec2 from, Realm realm, double skin,
+                                  double range) {
     ++stats_.targetScans;
 
     // Never acquire what targetHeld() drops on the very next tick. A range
@@ -487,15 +488,18 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
         const Transform* transform = world.tryGet<Transform>(candidate);
         if (transform == nullptr) continue;
 
-        // A raised aggro radius makes the player read as that many units
-        // closer, so one comparison covers both "is anyone in range" and "who
-        // is the most conspicuous".
+        // Each flower is noticed inside its own circle: poo shrinks the range
+        // past the mob's skin, and a raised aggro radius then adds on top. How
+        // far inside that circle the flower stands is one number for both "is
+        // anyone in range" and "who is the most conspicuous". The skin is left
+        // whole -- a flower pressed against a mob has been noticed.
         const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(candidate);
         const double bonus = mods != nullptr ? mods->aggroRadiusBonus : 0.0;
+        const double scale = mods != nullptr ? mods->aggroRangeScale : 1.0;
         const double gap = distance(from, transform->position);
         if (gap > kMobTargetRetainRadius) continue;
-        const double score = gap - bonus;
-        if (score > range) continue;
+        const double score = gap - (skin + (range - skin) * scale + bonus);
+        if (score > 0.0) continue;
         candidates_.push_back(Candidate{candidate, transform->position, score});
     }
 
@@ -1162,7 +1166,7 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
         // into range rather than waiting for the pet to die or walk off.
         if (ai.target == NULL_ENTITY || world.has<Pet>(ai.target)) {
             const Entity player = acquireTarget(world, terrain, grid, self, transform.position,
-                                                transform.realm, range);
+                                                transform.realm, body.radius, range);
             if (player != NULL_ENTITY) ai.target = player;
         }
         // A pet is what is left when no player is in range, which is what lets

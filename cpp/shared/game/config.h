@@ -271,6 +271,10 @@ struct PetalModifiers {
     double rotationSpeed = 1.0;  ///< ring spin; negative reverses it
     double playerRadius = 1.0;
     double damage = 1.0;
+    /// Shrinks how far outside its skin a mob notices the holder. Only ever
+    /// shrinks (0..1); `aggroRadius` below is the one that draws mobs in.
+    /// Compounds per tier -- see petalAggroRangeScale.
+    double aggroRange = 1.0;
 
     // Additive, neutral at 0.
     double luck = 0.0;
