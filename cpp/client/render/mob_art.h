@@ -15,9 +15,9 @@
 // radius every frame, and this is that code, ported: the vertex counts come out
 // of `radius`, the spine and the outline widths do not.
 //
-// The scorpion and the crab are here for the other reason -- neither has a
-// document at all. Their claws and legs move with a walk phase, which a static
-// document cannot do.
+// The scorpion, the crab and the spider are here for the other reason --
+// their claws and legs move with a walk phase, which a static document cannot
+// do.
 //
 // The leech is here for a third reason. Its body is not a row of beads, it is
 // one smooth tube, and the reference draws it by stroking a single polyline
@@ -44,7 +44,7 @@ namespace flix {
 
 /// Which painter an `image` marker names. `None` is every ordinary mob.
 enum class MobArt : std::uint8_t { None, Rock, Cactus, Sandstorm, Scorpion, Crab, LeechHead,
-                                   LeechBody };
+                                   LeechBody, Spider };
 
 /// How fast a walk cycle runs, in radians of phase per second.
 ///

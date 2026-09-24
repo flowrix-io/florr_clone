@@ -300,6 +300,53 @@ void paintScorpion(Canvas& canvas, const MobArtAttributes& attr) {
     canvas.restore();
 }
 
+/// The spider, ported from gardn's Mob.cc.
+///
+/// Drawn at gardn's own body radius of 15 and scaled to the body it belongs
+/// to, as the scorpion is: the legs are 35 long against that 15, so they stay
+/// the same length against the body at every tier rather than a fixed number
+/// of units that a mythic's body would swallow.
+void paintSpider(Canvas& canvas, const MobArtAttributes& attr) {
+    constexpr double kDesignRadius = 15.0;
+    canvas.save();
+    canvas.scale(static_cast<float>(attr.radius / kDesignRadius),
+                 static_cast<float>(attr.radius / kDesignRadius));
+
+    // --- legs --------------------------------------------------------------
+    // Eight curves out of the centre, all one path under the body. As on the
+    // scorpion, the endpoint takes the sine on X and the cosine on Y, which
+    // splays four down each flank; the pairs swing on alternating sine and
+    // cosine so neighbours never move together.
+    const double s = std::sin(attr.animation) * 0.2;
+    const double c = std::cos(attr.animation) * 0.2;
+    const double legAngles[8] = {
+        -kPi + 0.9 + s, -kPi + 0.3 + c, -kPi - 0.3 + s, -kPi - 0.9 - c,
+        -0.9 - s,       -0.3 + c,       0.3 - s,        0.9 - c,
+    };
+    ui::setStroke(canvas, 0x333333u);
+    roundStrokes(canvas, 5.0);
+    canvas.beginPath();
+    for (const double angle : legAngles) {
+        const double x = std::sin(angle) * 35.0;
+        const double y = std::cos(angle) * 35.0;
+        canvas.moveTo(0.0f, 0.0f);
+        canvas.quadraticCurveTo(static_cast<float>(x * 0.8), static_cast<float>(y * 0.5),
+                                static_cast<float>(x), static_cast<float>(y));
+    }
+    canvas.stroke();
+
+    // --- body --------------------------------------------------------------
+    ui::setFill(canvas, attr.baseColor);
+    ui::setStroke(canvas, outlineOf(attr.baseColor));
+    canvas.beginPath();
+    canvas.arc(0.0f, 0.0f, static_cast<float>(kDesignRadius), 0.0f, static_cast<float>(kTau),
+               false);
+    canvas.fill();
+    canvas.stroke();
+
+    canvas.restore();
+}
+
 /// The crab, ported from flooooio's MobRendererCrab.
 ///
 /// Drawn at that renderer's own design radius of 25 and scaled to the body it
@@ -505,6 +552,7 @@ MobArt mobArtFor(const std::string& image) {
     if (name == "crab") return MobArt::Crab;
     if (name == "leech") return MobArt::LeechHead;
     if (name == "leech_body") return MobArt::LeechBody;
+    if (name == "spider") return MobArt::Spider;
     return MobArt::None;
 }
 
@@ -518,6 +566,7 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         case MobArt::Crab:      paintCrab(canvas, attr); break;
         case MobArt::LeechHead: paintLeechHead(canvas, attr); break;
         case MobArt::LeechBody: paintLeechBody(canvas, attr); break;
+        case MobArt::Spider:    paintSpider(canvas, attr); break;
         case MobArt::None:      break;
     }
 }

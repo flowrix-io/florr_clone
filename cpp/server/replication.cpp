@@ -26,6 +26,21 @@ std::uint32_t skinIdHash(const std::string& id) {
     return h;
 }
 
+/// The radius an entity is described at: its body's, or 10 for one without.
+///
+/// A web is the exception. It has no body -- it is a patch of ground, not a
+/// thing -- and gardn draws it scaled to the reach of its field (RenderWeb.cc
+/// scales the art by `ent.radius / 10`), so that is what it is sent at. The
+/// other fields keep the 10: a pollen puff's disc is the grain lying on the
+/// ground, not the reach of its dust.
+double replicatedRadius(World& world, Entity e) {
+    if (const Body* body = world.tryGet<Body>(e)) return body->radius;
+    if (const GroundEffect* effect = world.tryGet<GroundEffect>(e)) {
+        if (effect->kind == GroundEffectKind::Web && effect->radius > 0.0) return effect->radius;
+    }
+    return 10.0;
+}
+
 } // namespace
 
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
@@ -343,9 +358,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
 
         const Replicated& info = world.get<Replicated>(candidate.entity);
         const Transform& transform = world.get<Transform>(candidate.entity);
-        const double radius = world.tryGet<Body>(candidate.entity)
-                                  ? world.get<Body>(candidate.entity).radius
-                                  : 10.0;
+        const double radius = replicatedRadius(world, candidate.entity);
 
         std::uint8_t flags = info.spawnFlags;
         if (candidate.entity == viewer) flags |= net::SpawnIsSelf;

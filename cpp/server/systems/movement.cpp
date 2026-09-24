@@ -288,10 +288,17 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         if (const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(e)) {
             maxSpeed *= sanitizeSpeedScale(mods->speedScale);
         }
-        // No slow term. Slows are a mob affliction in the reference -- its one
-        // writer refuses any victim without a mob kind -- so a flower standing
-        // in a web keeps full speed even where an orphaned field can still
-        // stamp an Afflictions onto it.
+        // Afflictions::slowFactor is deliberately NOT read. Slows are a mob
+        // affliction in the reference -- its one writer refuses any victim
+        // without a mob kind -- so a flower standing in a Web petal's field
+        // keeps full speed. The one thing that does slow a flower is a MOB's
+        // web, which is gardn's (speed_ratio 0.5 while the two overlap) and has
+        // a field of its own.
+        if (const Afflictions* afflictions = world.tryGet<Afflictions>(e)) {
+            if (afflictions->webbed(nowMillis)) {
+                maxSpeed *= clamp(afflictions->webbedFactor, 0.0, 1.0);
+            }
+        }
         if (terrain.inWater(transform.position, transform.realm)) maxSpeed *= kWaterSpeedScale;
 
         MoveState state{transform.position, motion.velocity};

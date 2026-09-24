@@ -486,6 +486,30 @@ LightningSpec parseLightning(Ctx& ctx, const Json& owner) {
     return spec;
 }
 
+/// A web as large as this many of its layer's own body radii is not a web any
+/// more, it is the whole screen.
+constexpr double kMaxWebRadiusScale = 20.0;
+
+WebSpec parseWeb(Ctx& ctx, const Json& owner) {
+    WebSpec spec;
+    if (!owner.contains("web")) return spec;
+    const Json& node = owner["web"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("web is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    spec.intervalMillis = ctx.range(node, "intervalMs", 1000.0, kMinSpawnIntervalMillis,
+                                    kMaxDurationMillis);
+    spec.lifetimeMillis = ctx.range(node, "lifetimeMs", 10000.0, 0.0, kMaxDurationMillis);
+    spec.radiusScale = ctx.range(node, "radiusScale", 0.0, 0.0, kMaxWebRadiusScale);
+    spec.slowFactor = ctx.range(node, "slowFactor", 0.5, 0.0, 1.0);
+    spec.minRarity = ctx.rarity(node, "minRarity");
+    // A web nobody can stand in, that never lasts, or that slows nothing is
+    // not a web; refused here so the AI never lays one.
+    spec.present = spec.radiusScale > 0.0 && spec.lifetimeMillis > 0.0 && spec.slowFactor < 1.0;
+    return spec;
+}
+
 RadiationSpec parseRadiation(Ctx& ctx, const Json& owner) {
     RadiationSpec spec;
     if (!owner.contains("radiation")) return spec;
@@ -784,6 +808,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.petalRing = parsePetalRing(ctx, src, petalIds);
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
     m.lightning = parseLightning(ctx, src);
+    m.web = parseWeb(ctx, src);
 
     // The JSON states poison as damage per millisecond; the simulation thinks
     // in seconds, and converting once here keeps that unit out of every

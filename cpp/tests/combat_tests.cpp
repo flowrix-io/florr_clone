@@ -1301,6 +1301,75 @@ TEST(a_ground_effect_damages_and_slows_only_what_stands_in_it) {
     CHECK_NEAR(slowFactorOf(a.world, inside), 1.0, 1e-12);
 }
 
+/// A web as a spider lays it: owned by the mob, carrying its side, and
+/// flagged to catch flowers.
+Entity mobWeb(Arena& a, Entity layer, Vec2 at, bool slowsFlowers = true) {
+    const Entity field = a.world.create();
+    a.world.add<GroundEffectTag>(field);
+    GroundEffect web;
+    web.kind = GroundEffectKind::Web;
+    web.owner = layer;
+    web.radius = 100.0;
+    web.slowFactor = 0.5;
+    web.slowsFlowers = slowsFlowers;
+    a.world.add<GroundEffect>(field, web);
+    a.world.add<Faction>(field, Faction{Team::Hostiles, false});
+    a.world.add<Transform>(field, Transform{at, 0.0});
+    return field;
+}
+
+TEST(a_mobs_web_holds_a_flower_and_spares_its_own_side) {
+    Arena a;
+    const Entity spider = a.mob({3000, 3000}, 100.0);
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1050, 1000}, 100.0);
+    mobWeb(a, spider, {1000, 1000});
+
+    a.step(0.0);
+    const Afflictions* flower = a.world.tryGet<Afflictions>(player);
+    CHECK(flower != nullptr);
+    CHECK(flower->webbed(0.0));
+    CHECK_NEAR(flower->webbedFactor, 0.5, 1e-12);
+    // The mob-only slow is left alone: nothing a petal does may reach the
+    // field a flower's movement reads.
+    CHECK(!flower->slowed(0.0));
+    // A mob on the spider's own side walks through its web untouched.
+    CHECK_NEAR(slowFactorOf(a.world, mob), 1.0, 1e-12);
+
+    // Refreshed while inside, released shortly after walking out.
+    a.world.get<Transform>(player).position = Vec2{3000, 1000};
+    a.step(40.0);
+    const double later = 40.0 + kGroundEffectSlowLingerMillis + net::kTickMillis;
+    a.step(later);
+    CHECK(!a.world.get<Afflictions>(player).webbed(later));
+}
+
+TEST(a_web_without_the_flag_still_never_holds_a_flower) {
+    Arena a;
+    const Entity spider = a.mob({3000, 3000}, 100.0);
+    const Entity player = a.player({1000, 1000});
+    mobWeb(a, spider, {1000, 1000}, false);
+
+    a.step(0.0);
+    const Afflictions* flower = a.world.tryGet<Afflictions>(player);
+    CHECK(flower == nullptr || !flower->webbed(0.0));
+}
+
+TEST(a_mobs_web_keeps_its_side_after_the_spider_is_gone) {
+    Arena a;
+    const Entity spider = a.mob({3000, 3000}, 100.0);
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1050, 1000}, 100.0);
+    mobWeb(a, spider, {1000, 1000});
+    // Gone outright, as a despawn takes it: an owner link that no longer
+    // resolves must not turn the web into a hazard to every side.
+    a.world.destroy(spider);
+
+    a.step(0.0);
+    CHECK(a.world.get<Afflictions>(player).webbed(0.0));
+    CHECK_NEAR(slowFactorOf(a.world, mob), 1.0, 1e-12);
+}
+
 TEST(a_timed_ground_effect_expires_and_stops_applying) {
     Arena a;
     const Entity player = a.player({1000, 1000});

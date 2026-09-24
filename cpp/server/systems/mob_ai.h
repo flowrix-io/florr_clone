@@ -552,6 +552,7 @@ public:
         std::uint64_t volleys = 0;       ///< projectile volleys let go
         std::uint64_t spawnRequests = 0; ///< escorts asked of the spawn hook
         std::uint64_t promotions = 0;    ///< segments promoted to chain heads
+        std::uint64_t webs = 0;          ///< webs laid
     };
     const Stats& stats() const { return stats_; }
 
@@ -585,6 +586,9 @@ private:
         /// Shoots over its TAIL: keeps its rear on the target and holds the
         /// volley until it has come round. See MobConfig::stingerShooter.
         bool stingerShooter = false;
+        /// Leaves a web behind it on a clock: the config has a web and this
+        /// tier is at or above its `minRarity`. See WebSpec.
+        bool laysWeb = false;
         bool valid = false;
     };
 
@@ -600,6 +604,12 @@ private:
     /// Adds the behaviour components this mob's TYPE calls for and it was not
     /// born with. Structural, so it runs before any component pointer is taken.
     void equipBehaviour(World& world, Entity self, const Drive& drive, double nowMillis);
+
+    /// Lays a web where the mob stands when its WebClock is due. The web is a
+    /// create(), so it lands as a deferred command like a volley. Called after
+    /// the mob has steered, from both the wild and the pet pass, so it lays
+    /// from where this tick's movement decision was made.
+    void layWeb(World& world, Entity self, double nowMillis, CommandBuffer& commands);
 
     /// Whether this mob runs its brain on this tick.
     ///

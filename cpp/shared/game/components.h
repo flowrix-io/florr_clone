@@ -218,6 +218,14 @@ struct Afflictions {
     double slowFactor = 1.0;      ///< multiplies speed; 1 = unaffected
     double slowUntilMillis = 0;
 
+    /// A MOB's web holding a flower. gardn's web halves the speed of anything
+    /// on the other side that walks into it, flowers included, where the slow
+    /// above is a mob affliction only and nothing ever reads it off a flower.
+    /// Kept apart so the one field a flower's movement reads has exactly one
+    /// writer -- CombatSystem::slowFlower -- and no petal slow can reach it.
+    double webbedFactor = 1.0;
+    double webbedUntilMillis = 0;
+
     /// Armour a bur has stripped, and when it grows back. Subtracted from
     /// Armor::amount while live, which is what takes a mob's effective armour
     /// below zero when the bur out-tiers what it hit.
@@ -239,6 +247,9 @@ struct Afflictions {
 
     bool poisoned(double nowMillis) const { return nowMillis < poisonUntilMillis && poisonPerSecond > 0; }
     bool slowed(double nowMillis) const { return nowMillis < slowUntilMillis && slowFactor < 1.0; }
+    bool webbed(double nowMillis) const {
+        return nowMillis < webbedUntilMillis && webbedFactor < 1.0;
+    }
     bool healBlocked(double nowMillis) const { return nowMillis < noHealUntilMillis; }
 
     /// Armour currently stripped off, or zero once the debuff has lapsed.
@@ -989,6 +1000,18 @@ struct GroundEffect {
     /// instead uses damagePerSecond every simulation step.
     double damagePerHit = 0;
     double damageIntervalMillis = 0;
+    /// The slow lands on flowers too. Set on the web a MOB lays (gardn's
+    /// alloc_web), whose whole job is to catch the flower chasing through it;
+    /// a Web petal's field keeps the reference's rule and slows mobs only.
+    bool slowsFlowers = false;
+};
+
+/// When a web-laying mob lays its next web. See WebSpec.
+///
+/// Its own component for the reason LightningClock is: added the first time
+/// the mob thinks, so a world of mobs that lay nothing carries no column.
+struct WebClock {
+    double nextMillis = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -1070,5 +1093,6 @@ FLIX_COMPONENT(flix::DropItem);
 FLIX_COMPONENT(flix::GroundEffect);
 FLIX_COMPONENT(flix::LightningBurst);
 FLIX_COMPONENT(flix::LightningClock);
+FLIX_COMPONENT(flix::WebClock);
 FLIX_COMPONENT(flix::NetId);
 FLIX_COMPONENT(flix::Replicated);

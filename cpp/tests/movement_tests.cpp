@@ -241,6 +241,23 @@ TEST(a_slow_never_reaches_a_flowers_top_speed) {
     CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 0.5);
 }
 
+TEST(a_mobs_web_holds_a_flower_to_its_slow_and_then_lets_go) {
+    Fixture fx;
+    const Entity player = fx.spawnPlayer({3000, 3000});
+    Afflictions& afflictions = fx.world.get<Afflictions>(player);
+    afflictions.webbedFactor = 0.5;
+    afflictions.webbedUntilMillis = 5000.0;   // fx.nowMillis starts at 0
+    fx.drive(player, 0.0, 1.0);
+
+    // gardn's web halves speed_ratio, which halves the flower's terminal
+    // speed; the friction integrator settles on it well inside two seconds.
+    fx.step(60);
+    CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed * 0.5, 0.5);
+    // Released when the hold lapses, back to full speed.
+    fx.step(200);
+    CHECK_NEAR(fx.velocityOf(player).x, kPlayerMaxSpeed, 0.5);
+}
+
 TEST(the_aim_angle_is_the_aim_and_the_walk_heading_is_the_facing) {
     Fixture fx;
     const Entity player = fx.spawnPlayer({3000, 3000});

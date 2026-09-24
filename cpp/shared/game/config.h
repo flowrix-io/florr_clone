@@ -156,6 +156,29 @@ struct LightningSpec {
     double cooldownMillis = 0;
 };
 
+/// A mob that leaves webs behind it, as gardn's spider does (Ai.cc: an
+/// `alloc_web` every second of the mob's life, whatever it is doing).
+///
+/// Each web is a ground field on the spot the mob was standing on: it holds
+/// still, lasts `lifetimeMillis`, and slows whatever of the OTHER side stands
+/// in it -- flowers included, which is the one way a mob's web differs from a
+/// Web petal's. See GroundEffect::slowsFlowers.
+struct WebSpec {
+    bool present = false;
+    double intervalMillis = 0;
+    double lifetimeMillis = 0;
+    /// The web's radius as a multiple of the mob's OWN body radius, the way a
+    /// petal ring's `orbitScale` is stated. gardn's spider is 15 across and
+    /// lays a 25-unit web; stating that as a ratio keeps the web the same size
+    /// against the spider at every tier, and a mythic spider leaves a mythic
+    /// web (~/gardn's `25 * mob_radius_mult(rarity)`).
+    double radiusScale = 0;
+    /// What the web leaves of a victim's speed. gardn's speed_ratio of 0.5.
+    double slowFactor = 1.0;
+    /// The lowest tier that lays any. A spider below it is an ordinary chaser.
+    Rarity minRarity = Rarity::Common;
+};
+
 /// A ring of petals a mob carries, as a flower does.
 struct PetalRingSpec {
     bool present = false;
@@ -410,6 +433,7 @@ struct MobConfig {
     PetalRingSpec petalRing;
     PeriodicSpawnSpec periodicSpawn;
     LightningSpec lightning;
+    WebSpec web;
 
     /// Poison the mob's touch applies. Stored per second, converted from the
     /// per-millisecond figure the JSON uses.

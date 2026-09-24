@@ -2412,3 +2412,78 @@ TEST(a_rings_seeds_do_not_outlive_the_mob_they_grew_on) {
         for (const Entity seed : seeds) CHECK(!sim.world.isAlive(seed));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Webs
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::vector<Entity> websIn(World& world) {
+    std::vector<Entity> out;
+    Query<GroundEffect, Transform, Lifetime> live{world};
+    live.each([&](Entity e, GroundEffect&, Transform&, Lifetime&) { out.push_back(e); });
+    return out;
+}
+
+} // namespace
+
+TEST(a_spider_lays_a_web_where_it_stands_once_a_second) {
+    CHECK(contentReady());
+    const WebSpec& spec = content().mob(content().mobIndex("spider")).web;
+    CHECK(spec.present);
+
+    Sim sim;
+    const Entity spider = sim.spawnMob("spider", kOrigin, Rarity::Legendary);
+    // gardn lays on `lifetime % TPS == 0`, which is true the tick it is born.
+    sim.tickIntent();
+    std::vector<Entity> webs = websIn(sim.world);
+    CHECK_EQ(webs.size(), std::size_t(1));
+    if (webs.size() != 1) return;
+
+    const Entity web = webs[0];
+    const GroundEffect& field = sim.world.get<GroundEffect>(web);
+    CHECK(field.kind == GroundEffectKind::Web);
+    CHECK(field.slowsFlowers);
+    CHECK_EQ(field.owner, spider);
+    CHECK(field.rarity == Rarity::Legendary);
+    CHECK_NEAR(field.slowFactor, spec.slowFactor, 1e-12);
+    // Off the body that is there, so a legendary spider lays a legendary web.
+    CHECK_NEAR(field.radius, sim.world.get<Body>(spider).radius * spec.radiusScale, 1e-9);
+    CHECK(distance(sim.positionOf(web), kOrigin) < 1e-9);
+    CHECK_NEAR(sim.world.get<Lifetime>(web).remainingSeconds, spec.lifetimeMillis / 1000.0,
+               1e-9);
+    // The side is COPIED onto the web, so it outlives the spider that laid it.
+    CHECK(sim.world.get<Faction>(web).team == Team::Hostiles);
+    CHECK(sim.world.has<Replicated>(web));
+
+    // Two and a half seconds on: one at 1 s and one at 2 s, and no more.
+    sim.tickIntent(75);
+    CHECK_EQ(websIn(sim.world).size(), std::size_t(3));
+}
+
+TEST(only_a_legendary_spider_or_above_lays_webs) {
+    CHECK(contentReady());
+    const WebSpec& spec = content().mob(content().mobIndex("spider")).web;
+    CHECK(spec.minRarity == Rarity::Legendary);
+    for (int t = 0; t < kRarityCount; ++t) {
+        const Rarity rarity = clampRarity(t);
+        Sim sim;
+        sim.spawnMob("spider", kOrigin, rarity);
+        sim.tickIntent(45);   // a second and a half: two webs if it lays at all
+        const std::size_t laid = websIn(sim.world).size();
+        if (rarityIndex(rarity) >= rarityIndex(Rarity::Legendary)) {
+            CHECK_EQ(laid, std::size_t(2));
+        } else {
+            CHECK_EQ(laid, std::size_t(0));
+        }
+    }
+}
+
+TEST(a_mob_without_a_web_block_lays_nothing) {
+    CHECK(contentReady());
+    Sim sim;
+    sim.spawnMob("soldier_ant", kOrigin);
+    sim.tickIntent(60);
+    CHECK_EQ(websIn(sim.world).size(), std::size_t(0));
+}

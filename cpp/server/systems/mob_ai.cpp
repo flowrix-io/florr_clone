@@ -214,6 +214,51 @@ void spawnShot(World& world, const VolleyShot& shot) {
     if (shot.identified) world.add<NetId>(e, NetId{shot.netId});
 }
 
+/// One web, resolved where the mob decided to lay it and built at flush time,
+/// for the reason a volley is.
+struct WebDrop {
+    Vec2 at;
+    /// Only what the web is DRAWN turned by: gardn rolls one per web so a trail
+    /// of them does not read as one stamp repeated.
+    double angle = 0;
+    Realm realm = Realm::Overworld;
+    Entity owner = NULL_ENTITY;
+    /// A copy of the layer's side, so the web keeps it after the spider is
+    /// gone -- an orphaned field with no side hurts everything (see teamOf).
+    Faction faction;
+    double radius = 0;
+    double slowFactor = 1.0;
+    double lifetimeSeconds = 0;
+    Rarity rarity = Rarity::Common;
+    std::uint32_t netId = 0;
+    bool identified = false;
+};
+
+/// The same archetype a Web petal's field is built with (emitGroundEffect),
+/// plus the Faction above and the flag that lets it catch a flower.
+void spawnWeb(World& world, const WebDrop& web) {
+    const Entity e = world.create();
+    world.add<GroundEffectTag>(e);
+    world.add<Transform>(e, Transform{web.at, web.angle, web.realm});
+    GroundEffect effect;
+    effect.kind = GroundEffectKind::Web;
+    effect.owner = web.owner;
+    effect.radius = web.radius;
+    effect.slowFactor = web.slowFactor;
+    effect.rarity = web.rarity;
+    effect.slowsFlowers = true;
+    world.add<GroundEffect>(e, effect);
+    world.add<Faction>(e, web.faction);
+    world.add<Lifetime>(e, Lifetime{web.lifetimeSeconds});
+
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Effect;
+    replicated.typeIndex = static_cast<std::uint16_t>(GroundEffectKind::Web);
+    replicated.rarity = web.rarity;
+    world.add<Replicated>(e, replicated);
+    if (web.identified) world.add<NetId>(e, NetId{web.netId});
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -343,6 +388,8 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         // the aim gate would simply never open and it would never fire.
         drive.stingerShooter =
             drive.shoots && config.stingerShooter && !config.hideRotation;
+        drive.laysWeb = config.web.present &&
+                        rarityIndex(rarity) >= rarityIndex(config.web.minRarity);
         drive.valid = true;
     }
     return drive;
@@ -375,6 +422,47 @@ void MobAiSystem::equipBehaviour(World& world, Entity self, const Drive& drive, 
             world.add<WanderTarget>(self);
         }
     }
+    // Due at once: gardn lays on `lifetime % TPS == 0`, which a mob first
+    // passes on the tick it is born.
+    if (drive.laysWeb && !world.has<WebClock>(self)) {
+        world.add<WebClock>(self, WebClock{nowMillis});
+    }
+}
+
+void MobAiSystem::layWeb(World& world, Entity self, double nowMillis,
+                         CommandBuffer& commands) {
+    WebClock* clock = world.tryGet<WebClock>(self);
+    if (clock == nullptr || nowMillis < clock->nextMillis) return;
+    const MobType* type = world.tryGet<MobType>(self);
+    const Transform* transform = world.tryGet<Transform>(self);
+    const Body* body = world.tryGet<Body>(self);
+    const Faction* faction = world.tryGet<Faction>(self);
+    if (type == nullptr || transform == nullptr || body == nullptr || faction == nullptr) return;
+    const WebSpec& spec = content().mob(type->configIndex).web;
+    if (!spec.present) return;
+
+    // Stepped from the deadline rather than from now, so a mob whose turns
+    // arrive on the far stride still lays one a second on average; resynced
+    // when it falls a whole interval behind rather than laying a burst.
+    clock->nextMillis += spec.intervalMillis;
+    if (clock->nextMillis <= nowMillis) clock->nextMillis = nowMillis + spec.intervalMillis;
+
+    WebDrop web;
+    web.at = transform->position;
+    web.angle = rng_.angle();
+    web.realm = transform->realm;
+    web.owner = self;
+    web.faction = *faction;
+    // Off the body that is actually there, so a big roll or a big tier lays a
+    // web in proportion to the animal that laid it.
+    web.radius = body->radius * spec.radiusScale;
+    web.slowFactor = spec.slowFactor;
+    web.lifetimeSeconds = spec.lifetimeMillis / 1000.0;
+    web.rarity = type->rarity;
+    web.identified = static_cast<bool>(allocateNetId);
+    web.netId = web.identified ? allocateNetId() : 0;
+    ++stats_.webs;
+    commands.defer([web](World& deferred) { spawnWeb(deferred, web); });
 }
 
 // ---------------------------------------------------------------------------
@@ -1579,6 +1667,11 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
         // Structural, so it happens before any component pointer is taken: only
         // an ownerless pet needs somewhere to walk to.
         if (!ownerAlive && !world.has<WanderTarget>(self)) world.add<WanderTarget>(self);
+        // A summoned spider lays webs too, on its owner's side: they catch the
+        // mobs it is fighting rather than the flower it follows.
+        if (drive.laysWeb && !world.has<WebClock>(self)) {
+            world.add<WebClock>(self, WebClock{nowMillis});
+        }
 
         Transform* transform = world.tryGet<Transform>(self);
         Motion* motion = world.tryGet<Motion>(self);
@@ -1592,6 +1685,7 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
 
         steerPet(world, terrain, grid, self, *transform, *motion, *body, *kind, *ai, owner,
                  ownerAlive, drive, nowMillis, dt, commands);
+        if (drive.laysWeb) layWeb(world, self, nowMillis, commands);
     }
 }
 
@@ -2031,6 +2125,7 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
         }
         steerMob(world, terrain, grid, self, *transform, *motion, *body, *kind, *ai, drive,
                  nowMillis, dt, commands);
+        if (drive.laysWeb) layWeb(world, self, nowMillis, commands);
     }
 
     steerPets(world, terrain, grid, nowMillis, dt, commands);

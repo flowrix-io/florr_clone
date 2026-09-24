@@ -215,9 +215,17 @@ public:
     /// Only a MOB can be slowed. applyMobSlow() is the reference's single slow
     /// implementation -- the petal bridge and the web field both resolve to it
     /// -- and it opens by refusing anything that is not a mob, so no web, honey
-    /// petal or pincer has ever taken a flower's speed away.
+    /// petal or pincer has ever taken a flower's speed away. A MOB's web is the
+    /// exception, and reaches a flower through slowFlower() below instead.
     void applySlow(World& world, Entity victim, double factor, double durationMillis,
                    Rarity sourceRarity, double nowMillis);
+
+    /// The one slow a FLOWER takes: a mob's web (GroundEffect::slowsFlowers).
+    /// Same deepest-wins, never-shortened rule as applySlow(), written to
+    /// Afflictions::webbedFactor -- the field player movement reads -- and
+    /// refused for anything that is not a flower, which applySlow() covers.
+    void slowFlower(World& world, Entity victim, double factor, double durationMillis,
+                    double nowMillis);
 
     /// A bur strips `amount` of armour off `victim` for kArmorShredMillis.
     ///
@@ -381,6 +389,7 @@ private:
         double damagePerHit = 0;
         double damageIntervalMillis = 0;
         Realm realm = Realm::Overworld;
+        bool slowsFlowers = false;
     };
 
     struct ShotSource {

@@ -146,6 +146,7 @@ TEST(the_procedural_markers_name_painters_this_build_has) {
     CHECK(mobArtFor("$crab") == MobArt::Crab);
     CHECK(mobArtFor("$leech") == MobArt::LeechHead);
     CHECK(mobArtFor("$leech_body") == MobArt::LeechBody);
+    CHECK(mobArtFor("$spider") == MobArt::Spider);
     CHECK(mobArtFor("$nothing_by_that_name") == MobArt::None);
     CHECK(mobArtFor("<svg/>") == MobArt::None);
     CHECK(mobArtFor("") == MobArt::None);

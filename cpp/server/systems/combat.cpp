@@ -928,6 +928,26 @@ void CombatSystem::applySlow(World& world, Entity victim, double factor, double 
     afflictions.slowUntilMillis = std::max(afflictions.slowUntilMillis, nowMillis + durationMillis);
 }
 
+void CombatSystem::slowFlower(World& world, Entity victim, double factor,
+                              double durationMillis, double nowMillis) {
+    if (!std::isfinite(factor) || factor >= 1.0) return;
+    if (!std::isfinite(durationMillis) || durationMillis <= 0.0) return;
+    if (!world.isAlive(victim) || !world.has<PlayerTag>(victim)) return;
+    // No rarity gate: a flower has no tier of its own and counts as common,
+    // where stallPower() is 1 for every source.
+    const double landed = clamp(factor, 0.0, 1.0);
+
+    Afflictions& afflictions = world.ensure<Afflictions>(victim);
+    if (!afflictions.webbed(nowMillis)) {
+        afflictions.webbedFactor = landed;
+        afflictions.webbedUntilMillis = nowMillis + durationMillis;
+        return;
+    }
+    afflictions.webbedFactor = std::min(afflictions.webbedFactor, landed);
+    afflictions.webbedUntilMillis =
+        std::max(afflictions.webbedUntilMillis, nowMillis + durationMillis);
+}
+
 void CombatSystem::applyArmorShred(World& world, Entity victim, double amount,
                                    double nowMillis) {
     if (!std::isfinite(amount) || amount <= 0.0) return;
@@ -1084,6 +1104,10 @@ void CombatSystem::tickAfflictions(World& world, double nowMillis, double dt) {
             afflictions.slowFactor = 1.0;
             afflictions.slowUntilMillis = 0;
         }
+        if (afflictions.webbedFactor < 1.0 && nowMillis >= afflictions.webbedUntilMillis) {
+            afflictions.webbedFactor = 1.0;
+            afflictions.webbedUntilMillis = 0;
+        }
         // Armour grows back. Afflictions::shred() already reads zero past the
         // expiry, so this is housekeeping rather than the rule -- it keeps a
         // mob that was stripped an hour ago from carrying the number, and keeps
@@ -1180,7 +1204,8 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
                                                                 : DamageKind::Direct;
         fields_.push_back({e, effect.kind, hitKind, transform.position, effect.radius,
                            effect.damagePerSecond, effect.slowFactor, effect.rarity,
-                           effect.damagePerHit, effect.damageIntervalMillis, transform.realm});
+                           effect.damagePerHit, effect.damageIntervalMillis, transform.realm,
+                           effect.slowsFlowers});
     });
 
     for (const FieldSource& field : fields_) {
@@ -1243,8 +1268,13 @@ void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,
             }
             // Refreshed every tick while inside, so the linger is the tail
             // after walking out rather than the length of the debuff.
-            applySlow(world, victim, field.slowFactor, kGroundEffectSlowLingerMillis,
-                      field.rarity, nowMillis);
+            if (field.slowsFlowers && world.has<PlayerTag>(victim)) {
+                slowFlower(world, victim, field.slowFactor, kGroundEffectSlowLingerMillis,
+                           nowMillis);
+            } else {
+                applySlow(world, victim, field.slowFactor, kGroundEffectSlowLingerMillis,
+                          field.rarity, nowMillis);
+            }
         }
     }
 }

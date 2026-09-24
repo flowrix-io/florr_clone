@@ -743,6 +743,56 @@ TEST(poison_without_a_duration_remains_inert_like_typescript) {
 // Failure modes the shipped data does not contain
 // ---------------------------------------------------------------------------
 
+TEST(the_shipped_spider_lays_gardns_web) {
+    const ContentRegistry& r = shipped().registry;
+    const WebSpec& web = r.mob(r.mobIndex("spider")).web;
+    CHECK(web.present);
+    CHECK_NEAR(web.intervalMillis, 1000.0, 1e-9);
+    CHECK_NEAR(web.lifetimeMillis, 10000.0, 1e-9);
+    CHECK_NEAR(web.slowFactor, 0.5, 1e-12);
+    // gardn's 25-unit web on a 15-unit spider.
+    CHECK_NEAR(web.radiusScale, 25.0 / 15.0, 1e-3);
+    CHECK(web.minRarity == Rarity::Legendary);
+    CHECK(!r.mob(r.mobIndex("soldier_ant")).web.present);
+}
+
+TEST(a_web_that_catches_nothing_is_not_laid) {
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "slack": {"name": "Slack", "health": 3, "damage": 1, "size": 1, "speed": 1,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "hostile", "groups": ["garden"],
+        "web": {"radiusScale": 1.5, "slowFactor": 1}},
+      "flat": {"name": "Flat", "health": 3, "damage": 1, "size": 1, "speed": 1,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "hostile", "groups": ["garden"], "web": {}},
+      "odd": {"name": "Odd", "health": 3, "damage": 1, "size": 1, "speed": 1,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "hostile", "groups": ["garden"], "web": 3},
+      "fine": {"name": "Fine", "health": 3, "damage": 1, "size": 1, "speed": 1,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "hostile", "groups": ["garden"], "web": {"radiusScale": 2}}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>"}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+    // A web that slows nothing, or has no size, is refused rather than laid.
+    CHECK(!r.mob(r.mobIndex("slack")).web.present);
+    CHECK(!r.mob(r.mobIndex("flat")).web.present);
+    CHECK(!r.mob(r.mobIndex("odd")).web.present);
+    CHECK(warned(r, "web is"));
+    // Everything but the size defaults to gardn's spider.
+    const WebSpec& fine = r.mob(r.mobIndex("fine")).web;
+    CHECK(fine.present);
+    CHECK_NEAR(fine.intervalMillis, 1000.0, 1e-9);
+    CHECK_NEAR(fine.lifetimeMillis, 10000.0, 1e-9);
+    CHECK_NEAR(fine.slowFactor, 0.5, 1e-12);
+    // With no floor named, every tier lays one.
+    CHECK(fine.minRarity == Rarity::Common);
+}
+
 TEST(synthetic_dirty_values_are_sanitised) {
     Synthetic files;
     files.mobs = R"JSON({
