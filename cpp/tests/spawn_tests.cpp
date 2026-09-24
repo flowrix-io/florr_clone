@@ -1033,6 +1033,21 @@ TEST(every_pickable_door_stands_on_safe_open_ground) {
                                      "door " + choice.id + " on " + map->id() +
                                          " is walled over");
         }
+        // And a join through it really lands in it. An open centre is not
+        // enough on its own: placement can still refuse every candidate and
+        // fall back to ground outside the door, which is what the sewers'
+        // grate walkway did.
+        Rng rng(0xD0025);
+        for (int i = 0; i < 20; ++i) {
+            Vec2 at{};
+            if (!map->spawnAt(door.spawnId, rng, terrain, at) || !door.contains(at)) {
+                ::testing::reportFailure(__FILE__, __LINE__,
+                                         "door " + choice.id + " on " + map->id() +
+                                             " put a player outside it at " +
+                                             std::to_string(at.x) + "," + std::to_string(at.y));
+                break;
+            }
+        }
     }
     CHECK(doors > 0);
     // Every door, pickable or not, is known by the same ids: a pad arrives at
@@ -1217,6 +1232,79 @@ TEST(a_door_drawn_over_solid_ground_still_lands_a_body_on_open_ground) {
             ::testing::reportFailure(__FILE__, __LINE__,
                                      "defaultSpawn put a body in a wall at " +
                                          std::to_string(at.x) + "," + std::to_string(at.y));
+            break;
+        }
+    }
+    flix::testsupport::removeDataDir(dir);
+}
+
+TEST(a_door_on_cells_that_block_only_part_of_themselves_lands_a_body_inside_it) {
+    // The sewers' door sits on a grate walkway, and every cell of that walkway
+    // carries a thin rail along one edge. The coarse grid calls any cell with a
+    // shape in it Wall, and placement used to ask the coarse grid -- so every
+    // candidate in the door was refused and the fallback put the player down
+    // in the sewage beside the walkway, outside the door they picked.
+    //
+    // Reproduced with the fixture's diagonal tile, which blocks the triangle
+    // below its diagonal: a 3x3 block of them, and a door on the open half of
+    // the middle one. Every cell the door's padded interior can reach is
+    // coarse Wall, and every point in that interior is clear of every shape
+    // by more than a flower's radius.
+    const double cell = kTileSize;
+    const double cx = cell * 5;   // cell (5, 5)'s corner
+    const double cy = cell * 5;
+    // Interior (door less kSpawnPadding) spans local x 160..230, y 30..100:
+    // at least 42 units off the diagonal (x - y >= 60), 30 off the cell above
+    // and 26 off the cell to the right -- each more than a flower's radius.
+    const std::string map = flix::testsupport::fixtureMap(
+        12, 12,
+        flix::testsupport::fixtureDoor("rail", "Rail", cx + 110.0, cy - 20.0, 170.0, 170.0),
+        std::string(), std::string(), {}, {},
+        [](int x, int y) { return x >= 4 && x <= 6 && y >= 4 && y <= 6; });
+    const std::string dir = flix::testsupport::stageDataDir("rail-door", {{"rail", map}});
+    CHECK(!dir.empty());
+    if (dir.empty()) return;
+
+    Terrain terrain;
+    WorldMaps maps;
+    std::string error;
+    CHECK(maps.load(dir, &terrain, error));
+    const MapData* world = maps.forRealm(Realm::Overworld);
+    const MapElement* door = world != nullptr ? world->playerSpawn("rail") : nullptr;
+    CHECK(door != nullptr);
+    if (door == nullptr) { flix::testsupport::removeDataDir(dir); return; }
+
+    // The premise: the coarse grid says wall under the whole door, the shapes
+    // say its middle is open.
+    for (int ty = 4; ty <= 6; ++ty) {
+        for (int tx = 4; tx <= 6; ++tx) CHECK(tileBlocks(terrain.atTile(tx, ty, Realm::Overworld)));
+    }
+    CHECK(!terrain.blocked(door->centre(), Realm::Overworld));
+
+    Rng rng(0x5E3E5);
+    for (int i = 0; i < 100; ++i) {
+        Vec2 at{};
+        CHECK(world->spawnAt("rail", rng, terrain, at));
+        if (!door->contains(at) || terrain.resolveWall(at, kPlayerBaseRadius,
+                                                       Realm::Overworld).collided) {
+            ::testing::reportFailure(__FILE__, __LINE__,
+                                     "spawnAt left the door or touched a shape at " +
+                                         std::to_string(at.x) + "," + std::to_string(at.y));
+            break;
+        }
+    }
+
+    // And the fallback search, which the door drops to when it is crowded:
+    // open ground a body fits on is right there, so it must answer with it
+    // rather than walking out to the nearest cell that has no shape at all.
+    const double reach = 85.0;
+    for (int i = 0; i < 50; ++i) {
+        const Vec2 at = terrain.findOpenSpawn(rng, door->centre(), reach, Realm::Overworld);
+        if (terrain.blocked(at, Realm::Overworld) ||
+            distanceSq(at, door->centre()) > reach * reach) {
+            ::testing::reportFailure(__FILE__, __LINE__,
+                                     "findOpenSpawn fled the door to " + std::to_string(at.x) +
+                                         "," + std::to_string(at.y));
             break;
         }
     }

@@ -1968,8 +1968,11 @@ Vec2 Terrain::findOpenSpawn(Rng& rng, Vec2 around, double radius, Realm realm) c
 
     for (int attempt = 0; attempt < 24; ++attempt) {
         const Vec2 p = around + rng.insideCircle(radius);
-        const Tile t = at(p, realm);
-        if (tileBlocks(t) || tileIsWater(t)) continue;
+        // The exact shapes, not the coarse tile: a cell whose tile carries any
+        // shape is Wall in the coarse grid, so asking it would throw away the
+        // open part of every edge and rail cell and send the search to the
+        // nearest shapeless tile instead -- off a walkway built of them.
+        if (blocked(p, realm)) continue;
         // Reject pockets a body would immediately be squeezed out of: landing
         // in a one-tile gap between boulders reads as spawning inside a wall.
         if (distanceSq(resolveCircle(p, kPlayerBaseRadius, realm), p) < 1.0) return p;

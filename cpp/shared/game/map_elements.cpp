@@ -31,27 +31,21 @@ constexpr int kSpawnAttempts = 50;
 constexpr double kSpawnCrowdRadius = 200.0;
 constexpr int kSpawnCrowdMaxMobs = 5;
 
-/// True when any tile the flower's BODY would overlap is solid.
+/// True when the flower's BODY would overlap any authored collision shape.
 ///
 /// A centre-only test passes a candidate twenty units from a wall face and
 /// then hands the first movement substep a body already inside it. Off-grid
 /// tiles read as air here rather than as wall, because that is what the
 /// reference's grid answers and a zone drawn over the map edge should not be
 /// rejected for tiles that do not exist.
-bool bodyInsideWall(const Terrain& terrain, Vec2 centre, double halfSize, Realm realm) {
-    const int minTx = Terrain::toTileCoord(centre.x - halfSize);
-    const int maxTx = Terrain::toTileCoord(centre.x + halfSize);
-    const int minTy = Terrain::toTileCoord(centre.y - halfSize);
-    const int maxTy = Terrain::toTileCoord(centre.y + halfSize);
-    const int cols = terrain.tileCols(realm);
-    const int rows = terrain.tileRows(realm);
-    for (int ty = minTy; ty <= maxTy; ++ty) {
-        for (int tx = minTx; tx <= maxTx; ++tx) {
-            if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) continue;
-            if (tileBlocks(terrain.atTile(tx, ty, realm))) return true;
-        }
-    }
-    return false;
+///
+/// Asked of the SHAPES, never of the coarse grid. The coarse grid calls a cell
+/// Wall when its tile carries any shape at all, so a corridor whose every cell
+/// has a thin rail along one edge -- the sewers' grate walkway -- reads as
+/// solid rock there, every candidate in a door drawn on it is refused, and the
+/// fallback puts the player down outside the walkway entirely.
+bool bodyInsideWall(const Terrain& terrain, Vec2 centre, double radius, Realm realm) {
+    return terrain.resolveWall(centre, radius, realm).collided;
 }
 
 /// Somewhere a body can actually stand, as near `hint` as the map allows.
