@@ -125,6 +125,14 @@
         "probability": 0.4,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "rice",
+        "rarity": "common",
+        "probability": 0.23,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
