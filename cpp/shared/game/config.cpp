@@ -1374,34 +1374,13 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
         c.id == "worker_fire_ant" || c.id == "baby_fire_ant";
     s.chaseSpeed = s.playerSpeedChaser ? kPlayerMaxSpeed : s.speed;
     s.xp = c.xp[t];
-    s.aggroRange = c.range;
-    // Every ramp below runs the whole ladder, APEX INCLUDED. The reference's
-    // RARITY_OVERRIDES table stops at unique -- apex was added to the ladder
-    // after it was written -- and a table that stopped there dropped an apex
-    // mob back to its authored common-tier range: 300 units measured from the
-    // centre of a body 1100 units across, which is a mob that can never see
-    // anything. The last step of each ramp is simply continued.
-    const auto tieredRange = [&](const std::array<double, kRarityCount>& values) {
-        s.aggroRange = values[t];
-    };
-    if (c.id == "soldier_ant" || c.id == "worker_ant" || c.id == "shiny_ladybug" ||
-        c.id == "beetle" || c.id == "hel_beetle" || c.id == "starfish" ||
-        c.id == "hornet" || c.id == "wasp" || c.id == "mantis" || c.id == "glitch") {
-        tieredRange({c.range, 500, 600, 750, 900, 1100, 1300, 1500, 1700, 1900});
-    } else if (c.id == "soldier_fire_ant") {
-        tieredRange({c.range, 700, 900, 1100, 1300, 1500, 1700, 1900, 2100, 2300});
-    } else if (c.id == "jellyfish") {
-        tieredRange({c.range, 700, 800, 950, 1100, 1300, 1500, 1700, 1900, 2100});
-    } else if (c.id == "spider") {
-        tieredRange({c.range, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400});
-    } else if (c.id == "glitch_flower") {
-        tieredRange({c.range, 850, 1000, 1150, 1300, 1500, 1700, 1900, 2100, 2300});
-    } else if (c.id == "ladybug" && tier >= rarityIndex(Rarity::Rare)) {
-        static constexpr std::array<double, 8> kLadybugRange = {
-            350, 500, 700, 900, 1100, 1300, 1500, 1700,
-        };
-        s.aggroRange = kLadybugRange[static_cast<std::size_t>(tier - rarityIndex(Rarity::Rare))];
-    }
+    // `range` is what a COMMON mob notices, and every tier notices further on
+    // the same body-size ladder its body grows on -- the ladder a shooter's
+    // reach already rides (kProjectileReachReferenceScale), so a shooter that
+    // can reach what it aggroes at common can at every tier. It replaces the
+    // reference's RARITY_OVERRIDES table, which ramped a hand-picked list of
+    // ids and left every other mob seeing exactly as far at apex as at common.
+    s.aggroRange = c.range * kMobSizeScale[t] / kMobSizeScale[0];
     s.attackCooldownMillis = c.cooldownMillis;
     // Poison is damage, so it rides the damage ladder; otherwise an apex
     // centipede's bite would tick for exactly what a common one's does.

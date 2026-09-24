@@ -349,10 +349,10 @@ TEST(mob_stats_scale_across_rarities) {
         CHECK_NEAR(s.health, 35.0 * kMobHealthScale[t], std::fabs(s.health) * 1e-9);
         CHECK_NEAR(s.damage, 50.0 * kMobDamageScale[t], std::fabs(s.damage) * 1e-9);
         CHECK_NEAR(s.radius, kMobSizeScale[t] * kMobBaseRadius, 1e-9);
-        // Speed and aggro range are deliberately flat: a rare bee is tougher,
-        // not faster.
+        // Speed is deliberately flat: a rare bee is tougher, not faster.
         CHECK_NEAR(s.speed, common.speed, 1e-9);
-        CHECK_NEAR(s.aggroRange, 100.0, 1e-9);
+        // Aggro range grows with the body, on the same ladder.
+        CHECK_NEAR(s.aggroRange, 100.0 * kMobSizeScale[t] / kMobSizeScale[0], 1e-9);
     }
 }
 

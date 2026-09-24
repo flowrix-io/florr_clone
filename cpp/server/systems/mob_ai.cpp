@@ -473,7 +473,12 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
                                   Entity self, Vec2 from, Realm realm, double range) {
     ++stats_.targetScans;
 
-    grid.query(realm, from, range + maxAggroBonus_, gridScratch_);
+    // Never acquire what targetHeld() drops on the very next tick. A range
+    // that grows with body size passes the retention radius at the top of the
+    // ladder -- a unique queen ant's is over 14,000 units against 9,600 -- and
+    // past it the mob would lock on, let go and scan again every tick.
+    const double reach = std::min(range + maxAggroBonus_, kMobTargetRetainRadius);
+    grid.query(realm, from, reach, gridScratch_);
     candidates_.clear();
     for (const Entity candidate : gridScratch_) {
         if (candidate == self) continue;
@@ -487,7 +492,9 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
         // is the most conspicuous".
         const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(candidate);
         const double bonus = mods != nullptr ? mods->aggroRadiusBonus : 0.0;
-        const double score = distance(from, transform->position) - bonus;
+        const double gap = distance(from, transform->position);
+        if (gap > kMobTargetRetainRadius) continue;
+        const double score = gap - bonus;
         if (score > range) continue;
         candidates_.push_back(Candidate{candidate, transform->position, score});
     }
@@ -1117,10 +1124,9 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     // how far outside itself a mob notices a flower, and a body grows by nearly
     // thirty times across the ladder: a super wasp is 436 units in radius and
     // carries a 300-unit range, so centre-to-centre its entire aggro circle
-    // lies inside its own body and nothing outside it can ever be seen. Adding
-    // the radius is what keeps the authored number meaning the same thing at
-    // every tier, and it is what stops a mob added without a rarity ramp of its
-    // own from going blind at the top of the ladder.
+    // lies inside its own body and nothing outside it can ever be seen. The
+    // range grows on the same size ladder as the body, so skin plus range is
+    // the common mob's whole aggro circle scaled with it.
     const double range =
         (ai.aggroRange > 0.0 ? ai.aggroRange : kEnemyChaseRange) + body.radius;
 

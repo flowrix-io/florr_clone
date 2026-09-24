@@ -456,6 +456,26 @@ TEST(aggro_holds_far_outside_the_aggro_range_and_drops_at_five_viewports) {
     CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
 }
 
+TEST(an_aggro_range_past_the_retain_radius_acquires_only_what_it_can_hold) {
+    CHECK(contentReady());
+    // Top-tier ranges outgrow the retain radius. Past it a mob would lock on
+    // and let go on alternate ticks, so acquisition stops where retention does.
+    Sim sim;
+    const Entity mob = sim.spawnMob("soldier_ant", kOrigin);
+    sim.world.get<MobAi>(mob).aggroRange = kMobTargetRetainRadius * 2.0;
+    const Entity player =
+        sim.spawnPlayer(kOrigin + Vec2{kMobTargetRetainRadius + 200.0, 0}, 500.0);
+    sim.tickIntent(10);
+    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+
+    sim.world.get<Transform>(player).position =
+        kOrigin + Vec2{kMobTargetRetainRadius - 200.0, 0};
+    sim.tickIntent(5);
+    CHECK_EQ(sim.brainOf(mob).target, player);
+    sim.tickIntent(10);
+    CHECK_EQ(sim.brainOf(mob).target, player);
+}
+
 TEST(aggro_drops_when_the_target_dies) {
     CHECK(contentReady());
     Sim sim;
@@ -2124,15 +2144,17 @@ TEST(a_shooter_holds_no_further_out_than_its_missiles_carry) {
 TEST(a_shooter_closes_instead_of_firing_at_what_it_cannot_hit) {
     CHECK(contentReady());
     Sim sim;
-    // A rare hornet notices a flower 600 units off and its missiles die at
-    // 433. Firing anyway is a mob visibly shooting at something it cannot
-    // reach, on a cadence then unavailable for the shot it could.
+    // A target is held for five viewports, so it can stand well past the
+    // missiles' reach: a rare hornet's die at 433, and this flower is 600 off.
+    // Firing anyway is a mob visibly shooting at something it cannot reach,
+    // on a cadence then unavailable for the shot it could.
     const Entity hornet = sim.spawnMob("hornet", kOrigin, Rarity::Rare);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{600, 0});
+    sim.world.get<MobAi>(hornet).target = player;
 
     // Intent only: the mob holds the origin, so the gap stays the one set here.
     sim.tickIntent(200);
-    CHECK(sim.brainOf(hornet).target != NULL_ENTITY);   // it did aggro
+    CHECK_EQ(sim.brainOf(hornet).target, player);       // it kept the target
     CHECK_EQ(shotCount(sim), 0);                        // and it held its fire
 
     // Walk the flower into range and the volley comes.
@@ -2163,19 +2185,17 @@ TEST(a_top_tier_shooter_still_aggros_and_fires_from_outside_its_own_body) {
     }
 }
 
-TEST(the_rarity_range_ramps_run_to_the_end_of_the_ladder) {
+TEST(every_mobs_aggro_range_grows_with_its_body) {
     CHECK(contentReady());
-    // Apex is the tier the reference's override table never reached, so every
-    // mob on a ramp used to drop back to its authored common-tier range there.
-    // Each ramp simply continues instead, and a wasp rides the hornet's.
-    for (const char* id : {"hornet", "wasp", "beetle", "soldier_ant", "spider", "mantis",
-                           "ladybug"}) {
-        const std::uint16_t index = content().mobIndex(id);
-        double previous = 0.0;
-        for (int tier = rarityIndex(Rarity::Rare); tier < kRarityCount; ++tier) {
-            const double range = content().mobStats(index, static_cast<Rarity>(tier)).aggroRange;
-            CHECK(range >= previous);
-            previous = range;
+    // No per-mob rarity table: every mob's range rides the body-size ladder,
+    // apex included, so range over radius is the same at every tier.
+    for (std::size_t i = 0; i < content().mobCount(); ++i) {
+        const auto index = static_cast<std::uint16_t>(i);
+        const MobStats common = content().mobStats(index, Rarity::Common);
+        for (int tier = 0; tier < kRarityCount; ++tier) {
+            const MobStats s = content().mobStats(index, static_cast<Rarity>(tier));
+            CHECK_NEAR(s.aggroRange * common.radius, common.aggroRange * s.radius,
+                       std::fabs(s.aggroRange * common.radius) * 1e-9);
         }
     }
     // A ladybug is neutral from rare up, apex included: there is no tier at

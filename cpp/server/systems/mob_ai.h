@@ -458,10 +458,10 @@ double shooterStandoff(double shotReach, double ownRadius, double targetRadius);
 /// Whether a shot fired now could still reach `gap` away: the shot has only to
 /// cross to the target's SKIN, not to its centre.
 ///
-/// A mob's aggro range routinely outruns its weapon -- an unusual hornet
-/// notices a flower 500 units off and throws missiles that die at 366 -- and
-/// firing anyway is a mob visibly shooting at something it cannot hit, on a
-/// cadence that is then unavailable for the shot it could.
+/// A target is held for five viewports, far past the aggro range it was
+/// acquired inside and so far past the weapon, and firing anyway is a mob
+/// visibly shooting at something it cannot hit, on a cadence that is then
+/// unavailable for the shot it could.
 bool shotCanReach(double gap, double shotReach, double targetRadius);
 
 // ---------------------------------------------------------------------------
