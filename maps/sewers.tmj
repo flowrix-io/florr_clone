@@ -600,7 +600,7 @@
                         {
                          "name":"color",
                          "type":"color",
-                         "value":""
+                         "value":"#ff803f02"
                         }, 
                         {
                          "name":"label",

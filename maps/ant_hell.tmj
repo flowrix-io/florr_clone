@@ -301,6 +301,27 @@
                  "height":1536,
                  "id":2,
                  "name":"",
+                 "properties":[
+                        {
+                         "name":"biome",
+                         "type":"string",
+                         "value":"ant_hell"
+                        }, 
+                        {
+                         "name":"color",
+                         "type":"color",
+                         "value":"#ffc9904f"
+                        }, 
+                        {
+                         "name":"label",
+                         "type":"string",
+                         "value":"Ant Hell"
+                        }, 
+                        {
+                         "name":"order",
+                         "type":"float",
+                         "value":6
+                        }],
                  "rotation":0,
                  "type":"",
                  "visible":true,
