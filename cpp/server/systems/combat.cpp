@@ -469,6 +469,15 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         return result;
     }
 
+    // Evasion: a talisman's wearer or a fly side-steps the hit whole. Ahead of
+    // armour, the shield and root's stacks, because a hit that never landed
+    // has nothing for any of them to blunt -- root would otherwise spend a
+    // stack on a blow that went wide. Direct only: a drip is not an attack.
+    if (isDirectHit(kind) && rollDodge(world, victim, nowMillis)) {
+        result.dodged = true;
+        return result;
+    }
+
     // Armour: the victim's flat reduction on every DIRECT hit, less whatever a
     // bur has stripped. Only mobs carry one.
     //
@@ -1001,6 +1010,32 @@ double CombatSystem::effectiveArmor(const World& world, Entity victim, double no
     // Not clamped at zero: past it the mob takes EXTRA, which is the whole
     // reason a bur strips 1.5x what the tier it matches is wearing.
     return armor->amount - shred;
+}
+
+double CombatSystem::evasionOf(const World& world, Entity victim) {
+    if (const Evasion* evasion = world.tryGet<Evasion>(victim)) return evasion->chance;
+    if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(victim)) {
+        return modifiers->evasion;
+    }
+    return 0.0;
+}
+
+bool CombatSystem::rollDodge(World& world, Entity victim, double nowMillis) {
+    const double evasion = evasionOf(world, victim);
+    // Nothing is drawn for a victim that cannot dodge, so the stream only
+    // moves when evasion is actually in the fight.
+    if (!(evasion > 0.0) || !rng_.chance(evasion)) return false;
+    // A miss still spends the attack. Mob contact on a flower is paced by the
+    // post-hit window and nothing else, so a miss that left it shut would be
+    // retried on the very next tick and a 3% dodge would dodge nothing. The
+    // flower only, for the reason the shield-absorbed branch gives: a mob's
+    // window is shared by every petal and every player attacking it.
+    if (world.has<PlayerTag>(victim)) {
+        Health& health = world.get<Health>(victim);
+        health.invulnerableUntilMillis =
+            std::max(health.invulnerableUntilMillis, nowMillis + kPostHitInvulnerabilityMillis);
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1575,8 +1610,8 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 continue;
             }
 
-            const DamageResult hit = applyDamage(world, victim, source.attacker,
-                                                 source.damage, nowMillis);
+            DamageResult hit = applyDamage(world, victim, source.attacker,
+                                           source.damage, nowMillis);
             // A swing of NOTHING is still a swing. canHit() has already vouched
             // for this victim one line above -- alive, not a corpse, not
             // invulnerable, on the other side -- so the only refusal
@@ -1587,7 +1622,18 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // own health BELOW damageMob(), so a zero-damage petal poisons,
             // shoves and wears out exactly like any other. Read as a refusal,
             // those four petals landed nothing at all and never broke.
-            const bool landed = !hit.refused || (source.isPetal && source.damage == 0.0);
+            //
+            // It can still MISS. applyDamage refuses a zero before it rolls
+            // evasion, so the roll for one is made here -- an iris is an attack
+            // like any other, and a fly that could not side-step the one petal
+            // that needs no damage to kill it would not be evasive at all.
+            const bool zeroSwing = source.isPetal && source.damage == 0.0;
+            if (zeroSwing && hit.refused && rollDodge(world, victim, nowMillis)) {
+                hit.dodged = true;
+            }
+            // A miss lands nothing, costs the petal nothing -- it touched
+            // nothing -- and still spends the pacing below, as a swing does.
+            const bool landed = !hit.dodged && (!hit.refused || zeroSwing);
             // Petal knockback is set after the hit using its own stat and the
             // victim's mass, exactly like playerState.ts. Mob contact already
             // performed its fixed player displacement above.
@@ -1824,7 +1870,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     // the far side of the victim half the time. A refused swing -- dead,
     // invulnerable, same side -- shoves nobody, because the reference returns
     // above its knockback.
-    if (!hit.refused && world.isAlive(owner)) {
+    if (!hit.refused && !hit.dodged && world.isAlive(owner)) {
         if (const Transform* attacker = world.tryGet<Transform>(owner)) {
             applyMobContactKnockback(world, victim, victimPosition - attacker->position);
         }
@@ -1832,8 +1878,8 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     // The duel is where this petal earns its place: a flower that cannot heal
     // for ten seconds has lost its rose, its passive regeneration and its
     // yggdrasil at once. Gated on the same refusal the shove is -- a swing at
-    // an invulnerable flower locks nothing.
-    if (!hit.refused) {
+    // an invulnerable flower locks nothing, and neither does one it dodged.
+    if (!hit.refused && !hit.dodged) {
         applyNoHeal(world, victim, source.noHealDurationMillis, nowMillis);
     }
 
@@ -1969,8 +2015,14 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             const double cost = bodyDamageOf(world, content, impact.victim);
             const bool victimIsShot = world.has<Projectile>(impact.victim);
 
-            const DamageResult hit =
+            DamageResult hit =
                 applyDamage(world, impact.victim, shot.entity, damage, nowMillis);
+            // A shot of zero is refused before applyDamage rolls evasion, and
+            // its riders below land regardless -- so it is rolled here, as a
+            // zero-damage petal's swing is in resolveMelee.
+            if (hit.refused && damage == 0.0 && rollDodge(world, impact.victim, nowMillis)) {
+                hit.dodged = true;
+            }
 
             // RE-FETCHED, never carried across applyDamage(). Marking the
             // victim Dead moves it between archetypes, and an archetype
@@ -1978,9 +2030,16 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             // slides into its slot may be this one's. A ledger pointer taken
             // before the call is exactly the dangling write the bullet-vs-
             // bullet rule made reachable.
+            //
+            // Armed on a dodge too: a shot passing through a fly gets one
+            // roll per damage interval, not one per tick of overlap.
             if (HitCooldowns* ledger = world.tryGet<HitCooldowns>(shot.entity)) {
                 ledger->arm(impact.victim, nowMillis + reloadInterval);
             }
+
+            // A dodged shot flew past: no riders, and none of its pool spent
+            // on a body it never touched.
+            if (hit.dodged) continue;
 
             // Riders belong to flesh. A shot cannot be poisoned, slowed or
             // shoved -- it has no Afflictions and its flight is a straight

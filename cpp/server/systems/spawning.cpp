@@ -400,6 +400,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // zero, the archetype is the same one a stripped mob sits in and a bur
     // costs no row move to land on.
     world.add<Armor>(e, Armor{stats.armor});
+    if (stats.evasion > 0.0) world.add<Evasion>(e, Evasion{stats.evasion});
     // The config's cooldown is the gap between deliberate ATTACKS, which the AI
     // owns; touching a mob is throttled by the same rule for every mob.
     //

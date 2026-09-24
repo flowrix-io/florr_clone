@@ -442,6 +442,29 @@ TEST(poo_cuts_mob_aggro_range_on_its_balanced_table_and_extrapolates_to_apex) {
     }
 }
 
+TEST(talisman_evasion_steps_three_percent_a_tier_and_the_fly_dodges_nine_in_ten) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t talisman = r.petalIndex("talisman");
+    const std::uint16_t fly = r.mobIndex("fly");
+    CHECK(talisman != kInvalidIndex);
+    CHECK(fly != kInvalidIndex);
+    if (talisman == kInvalidIndex || fly == kInvalidIndex) return;
+
+    // 3% at common, and another 3% for every tier above it: 30% at apex.
+    for (int t = 0; t < kRarityCount; ++t) {
+        CHECK_NEAR(r.petalStats(talisman, static_cast<Rarity>(t)).modifiers.evasion,
+                   0.03 * (t + 1), 1e-12);
+    }
+    // Read as a modifier, not dropped as an unknown key.
+    CHECK(!warned(r, "unknown key 'evasion'"));
+    CHECK_NEAR(r.petalStats(r.petalIndex("basic"), Rarity::Apex).modifiers.evasion, 0.0, 1e-12);
+
+    // A mob's chance is flat across the tiers.
+    CHECK_NEAR(r.mobStats(fly, Rarity::Common).evasion, 0.9, 1e-12);
+    CHECK_NEAR(r.mobStats(fly, Rarity::Apex).evasion, 0.9, 1e-12);
+    CHECK_NEAR(r.mobStats(r.mobIndex("bee"), Rarity::Common).evasion, 0.0, 1e-12);
+}
+
 TEST(special_petal_geometry_and_timers_follow_rarity_overrides) {
     const ContentRegistry& r = shipped().registry;
     const std::uint16_t web = r.petalIndex("web");

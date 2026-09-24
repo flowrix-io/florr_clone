@@ -762,6 +762,9 @@ bool GalleryPanel::render(MenuContext& ctx) {
         // Skipped when it is nothing, because a zero here reads as a mob with
         // a weakness rather than one whose author simply wrote no armour.
         if (stats.armor != 0.0) stat("Armor: " + abbreviateNumber(stats.armor), 0.0);
+        // Only the evasive few carry one, and it is the reason the fly takes
+        // ten swings to kill -- the card is the one place that can say so.
+        if (stats.evasion > 0.0) stat("Evasion: " + formatFixed(stats.evasion * 100.0, 0) + "%", 0.0);
         // The raw config figure, not the units-per-second the simulation runs
         // on, and the AUTHORED sign with it: the browser tooltip reads straight
         // off mobs.json, where the moth's -2.4 is what a player sees.

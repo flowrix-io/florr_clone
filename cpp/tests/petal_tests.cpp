@@ -44,6 +44,7 @@ const char* const kPetalsJson = R"JSON({
   "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
   "stinky":   {"name":"Stinky","damage":0,"health":1,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":0.75},"color":"#8B4513"},
   "glowy":    {"name":"Glowy","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRadius":150},"color":"#FFFF00"},
+  "charm":    {"name":"Charm","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"evasion":0.1},"color":"#FFF824"},
   "summoner": {"name":"Summoner","damage":1,"health":4,"size":1,"cooldown":1000,"count":1,"petMobType":"critter","petMobRarity":"common","petCount":2,"color":"#AA00AA"},
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"},
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
@@ -1247,6 +1248,32 @@ TEST(modifiers_are_summed_from_scratch_and_vanish_when_unequipped) {
     CHECK_NEAR(rig.modifiers().luck, 1.0, 1e-12);
     CHECK_NEAR(rig.modifiers().speedScale, 1.0, 1e-12);
     CHECK_NEAR(rig.modifiers().magnetism, kBaseMagnetism, 1e-12);
+}
+
+TEST(worn_evasion_grows_a_step_a_tier_and_copies_are_independent_rolls) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().evasion, 0.0, 1e-12);
+
+    rig.equip(0, "charm");
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().evasion, 0.1, 1e-12);
+
+    // Rare is the third tier: three steps of the authored 0.1.
+    rig.equip(0, "charm", Rarity::Rare);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().evasion, 0.3, 1e-12);
+
+    // Two of them do not make 60%: a hit has to get past both rolls.
+    rig.equip(1, "charm", Rarity::Rare);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().evasion, 1.0 - 0.7 * 0.7, 1e-12);
+
+    rig.unequip(0);
+    rig.unequip(1);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().evasion, 0.0, 1e-12);
 }
 
 TEST(the_strongest_worn_aggro_range_cut_wins_and_copies_do_not_multiply) {

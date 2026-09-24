@@ -551,12 +551,13 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
     mods.aggroRadius           = ctx.range(node, "aggroRadius", 0.0, -kWorldSize, kWorldSize);
     mods.petalAttractionRadius = ctx.range(node, "petalAttractionRadius", 0.0, 0.0, kWorldSize);
     mods.poisonArmor           = ctx.range(node, "poisonArmor", 0.0, 0.0, kMaxBaseStat);
+    mods.evasion               = ctx.range(node, "evasion", 0.0, 0.0, 1.0);
 
     for (const std::string& key : node.keys()) {
         static const char* kKnown[] = {
             "maxHealth", "speed", "range", "rotationSpeed", "playerRadius", "damage",
             "aggroRange", "luck", "magnetism", "aggroRadius", "petalAttractionRadius",
-            "poisonArmor",
+            "poisonArmor", "evasion",
         };
         bool known = false;
         for (const char* k : kKnown) known = known || key == k;
@@ -706,6 +707,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     // the same axis armour already runs on once a bur has stripped it, so
     // there is no reason content cannot author a mob that starts there.
     m.armor = ctx.range(src, "armor", 1.0, -kMaxBaseStat, kMaxBaseStat);
+    m.evasion = ctx.range(src, "evasion", 0.0, 0.0, 1.0);
     m.size = ctx.range(src, "size", 1.0, 0.0, kMaxSize);
     m.speed = ctx.speed(src, "speed");
     m.cooldownMillis = ctx.range(src, "cooldown", 0.0, 0.0, kMaxDurationMillis);
@@ -1363,6 +1365,7 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     s.health = c.health * kMobHealthScale[t];
     s.damage = c.damage * kMobDamageScale[t];
     s.armor = c.armor * kMobArmorScale[t];
+    s.evasion = c.evasion;
     s.radius = scaledSize * kMobBaseRadius;
     s.mass = scaledSize * scaledSize;
     s.speed = c.speed * kMobSpeedUnitsPerSecond;
@@ -1530,6 +1533,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.modifiers.aggroRadius = c.modifiers.aggroRadius * modifier;
     s.modifiers.petalAttractionRadius = c.modifiers.petalAttractionRadius * modifier;
     s.modifiers.poisonArmor = c.modifiers.poisonArmor * modifier;
+    s.modifiers.evasion = petalEvasionScale(c.modifiers.evasion, tier);
 
     const std::size_t ti = static_cast<std::size_t>(rarityIndex(tier));
     if (c.id == "clover") {

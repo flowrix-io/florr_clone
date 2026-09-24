@@ -127,6 +127,16 @@ struct Armor {
     double amount = 0;
 };
 
+/// Chance, 0..1, that a DIRECT hit on this mob misses outright -- the fly's
+/// 0.9. Derived from the config at spawn like Armor, and added only to a mob
+/// that has some, so every other mob keeps the archetype it had.
+///
+/// A flower's chance is not here: it moves with the loadout, and lives on
+/// PlayerModifiers::evasion with the rest of what the petal pass folds.
+struct Evasion {
+    double chance = 0;
+};
+
 /// Damage dealt by touching this entity.
 struct ContactDamage {
     double amount = 0;
@@ -530,6 +540,10 @@ struct PlayerModifiers {
     /// Flat poison DPS absorbed. Multiple lotus petals use the strongest one,
     /// rather than stacking.
     double poisonArmor = 0.0;
+    /// Chance, 0..1, that a direct hit on this flower misses. Several
+    /// talismans are independent rolls -- 1 - (1-a)(1-b) -- so a stack of them
+    /// closes on a sure dodge without ever reaching one.
+    double evasion = 0.0;
     /// What one of root's armour stacks absorbs. Multiple roots use the
     /// strongest one rather than summing, as lotus does one line up: two
     /// roots are one bank of stacks, at the better petal's strength.
@@ -1057,6 +1071,7 @@ FLIX_COMPONENT(flix::Knockback);
 FLIX_COMPONENT(flix::Faction);
 FLIX_COMPONENT(flix::Health);
 FLIX_COMPONENT(flix::Armor);
+FLIX_COMPONENT(flix::Evasion);
 FLIX_COMPONENT(flix::ArmorStackState);
 FLIX_COMPONENT(flix::ContactDamage);
 FLIX_COMPONENT(flix::HitCooldowns);

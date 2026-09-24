@@ -302,6 +302,14 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(strip);
     }
 
+    // Talisman. The chance grows a step every tier and nothing in play shows
+    // it -- a dodge is a hit that simply did not happen -- so it is printed.
+    if (stats.modifiers.evasion > 0.0) {
+        TooltipLine dodge{"Evasion: " + exactNumber(stats.modifiers.evasion * 100.0) + "%", 12.0};
+        dodge.alpha = 0.56;
+        lines.push_back(dodge);
+    }
+
     // The magic petals. Every one of these figures moves with rarity and none
     // of them can be read off the ring in play -- a player comparing two orbs
     // has nothing else to go on -- so they belong on the card.

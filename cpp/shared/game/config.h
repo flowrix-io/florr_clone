@@ -282,6 +282,9 @@ struct PetalModifiers {
     double aggroRadius = 0.0;            ///< extra mob notice range, units
     double petalAttractionRadius = 0.0;  ///< pulls loose petals in, units
     double poisonArmor = 0.0;            ///< poison damage absorbed per second
+    /// Chance, 0..1, that a direct hit on the holder misses. Grows by the
+    /// authored figure every tier -- see petalEvasionScale.
+    double evasion = 0.0;
 
     bool any = false;   ///< set when the JSON carried a playerModifiers block
 };
@@ -317,6 +320,9 @@ struct MobConfig {
     /// than zero -- every mob in the game is armoured, and mobs.json states
     /// only the exceptions (leafbug's 10).
     double armor = 1.0;
+    /// Chance, 0..1, that a direct hit on this mob misses. Flat across the
+    /// tiers: the fly's 0.9 dodges nine hits in ten at common and at apex.
+    double evasion = 0.0;
     double size = 1;            ///< body diameter in "size units"; see mobStats()
     double speed = 0;           ///< config units; mobStats() converts to units/s
     double cooldownMillis = 0;  ///< gap between attacks
@@ -636,6 +642,7 @@ struct MobStats {
     /// Flat reduction applied to every direct hit this mob takes. Negative is
     /// legal and means the opposite -- see Armor in components.h.
     double armor = 0;
+    double evasion = 0;         ///< dodge chance, 0..1; see Evasion in components.h
     double radius = 0;          ///< world units
     double mass = 1;            ///< proportional to area
     double speed = 0;           ///< world units per second

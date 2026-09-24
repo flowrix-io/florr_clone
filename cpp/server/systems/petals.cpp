@@ -1066,6 +1066,11 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             aggregate.modifiers.passiveManaPerSecond += stats.passiveManaPerSecond;
             aggregate.modifiers.poisonArmor =
                 std::max(aggregate.modifiers.poisonArmor, mods.poisonArmor);
+            // Neither summed nor maximised: each talisman is its own roll, and
+            // a hit has to get past all of them. Summed, a bar of apex
+            // talismans would be a flower no attack can land on.
+            aggregate.modifiers.evasion =
+                1.0 - (1.0 - aggregate.modifiers.evasion) * (1.0 - mods.evasion);
             // Root, maximised for the reason lotus is: the stacks are the
             // FLOWER's one bank, so a second root makes the bank stronger
             // rather than giving the flower a second one to spend.
@@ -2689,6 +2694,7 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         // armour. Unscaled by petStatMultiplier: that nerf is the digger's
         // health and damage, which is what made it worth summoning.
         world.add<Armor>(pet, Armor{mob.armor});
+        if (mob.evasion > 0.0) world.add<Evasion>(pet, Evasion{mob.evasion});
         world.add<Faction>(pet, faction);
         world.add<MobType>(pet, MobType{mobIndex, rarity, sizeJitter});
 

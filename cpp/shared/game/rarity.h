@@ -208,6 +208,18 @@ inline double petalAggroRangeScale(double authored, Rarity r) {
     return std::pow(authored, rarityIndex(r) + 1);
 }
 
+/// A dodge chance at a tier: the authored common figure added once more per
+/// tier, so talisman's 0.03 is
+///
+///   common 3%, uncommon 6%, rare 9%, ... unique 27%, apex 30%.
+///
+/// Not petalModifierScale: that curve stops at 4x by unique, and a dodge
+/// chance is the one modifier stated as a flat step per tier. Clamped because
+/// a chance past 1 is not a stronger dodge, it is a flower nothing can touch.
+inline double petalEvasionScale(double authored, Rarity r) {
+    return clamp(authored * (rarityIndex(r) + 1), 0.0, 1.0);
+}
+
 // ---------------------------------------------------------------------------
 // Crafting and drop rolls
 // ---------------------------------------------------------------------------

@@ -123,6 +123,10 @@ struct DamageResult {
     double applied = 0;      ///< health actually removed, after clamping to what was left
     bool killed = false;     ///< this application is the one that marked Dead
     bool refused = false;    ///< nothing happened: invulnerable, same side, already dead
+    /// The victim's evasion roll made this hit miss. Not a refusal: the swing
+    /// was legitimate and spends whatever pacing a landed one would, but it
+    /// touched nothing, so a caller lands none of its riders on the victim.
+    bool dodged = false;
 };
 
 class CombatSystem {
@@ -262,6 +266,10 @@ public:
     /// less whatever a bur has stripped. Negative means the strip out-ran the
     /// armour and the victim takes EXTRA, which is bur's whole purpose.
     static double effectiveArmor(const World& world, Entity victim, double nowMillis);
+
+    /// The chance, 0..1, that a direct hit on `victim` misses: a mob's Evasion,
+    /// or what a flower's worn talismans add up to.
+    static double evasionOf(const World& world, Entity victim);
 
     /// The PLAYER answerable for what `source` does: through Projectile::
     /// creditTo, Pet::owner, PetalInstance::owner and GroundEffect::owner,
@@ -493,6 +501,12 @@ private:
     /// have to remember.
     bool trySecondChance(World& world, Entity victim, double nowMillis);
 
+    /// Rolls `victim`'s evasion against one direct hit. True means it missed;
+    /// a flower that dodges is given the post-hit window a landed hit buys.
+    /// Behind applyDamage, and asked directly only for a swing of zero, which
+    /// applyDamage refuses before it would roll.
+    bool rollDodge(World& world, Entity victim, double nowMillis);
+
     std::unique_ptr<Queries> queries_;
     World* boundWorld_ = nullptr;
     EventQueue* events_ = nullptr;
@@ -524,6 +538,13 @@ private:
     /// The segments behind a shared chain's pool owner, gathered before any of
     /// them is touched. A member so a hit on a leech allocates nothing.
     std::vector<Entity> chainScratch_;
+
+    /// Evasion's rolls, and nothing else. Combat's own stream for the reason
+    /// the bots have theirs: drawing from the world's would move every spawn
+    /// and drop roll the moment a talisman was worn. It is only drawn from
+    /// when the victim has a chance to dodge, so a fight with no evasion in
+    /// it rolls nothing.
+    Rng rng_;
 
     std::uint64_t tick_ = 0;
 };

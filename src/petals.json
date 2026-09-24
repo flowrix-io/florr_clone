@@ -1287,7 +1287,7 @@
         "damage": 0,
         "health": 1,
         "size": 1,
-        "cooldown": 2000,
+        "cooldown": 2500,
         "price": 25,
         "visual_scale": 2.0,
         "description": "Mobs don't notice you until you're much closer, allowing you to sneak past",
@@ -1298,5 +1298,21 @@
         },
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16, 16) scale(0.64738) translate(-1.305, -0.48)\"><g transform=\"scale(3)\"><path d=\"M.59-.21c.84 1.49 2.59 1.6 1.8-.84.09.72-.24-1.85-.15-1.11.63-3.02-1.91-1.81-2.63.1.62-.65-1.27 1.27-.62.64C-2.33-.87-1.47 1.15-.19.45l0 0C.09.25.35.03.59-.21\" fill=\"#634002\" stroke=\"#503402\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><path d=\"M1.02-.82c.55-.01 1.18-.22 1.72-.05.16.07.32.13.48.2.46.24.76.71.92 1.2.16.48.05 1.11-.2 1.54-.23.4-.73.83-1.2.92-.47.09-.94.16-1.42.17-.46.01-.91-.05-1.36-.12-.77-.11-1.48-.38-2.18-.72-.46-.23-.76-.72-.92-1.2C-3.31.6-3.18.04-2.94-.43c.23-.43.73-.79 1.2-.92C-.86-1.61.16-.95 1.02-.82z\" fill=\"#634002\" stroke=\"#503402\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><path d=\"M2.12 1.43c.49-.56 1.32-.81 2.07-.64 1.07.24 1.65 1.45 1.4 2.46-.56 2.24-3.14 2.25-4.98 2.16-1.49-.07-3.23-.11-4.49-1.02l0 0c-.44-.32-.75-.67-.92-1.2-.17-.51-.04-1.08.2-1.54.23-.43.73-.79 1.2-.92.45-.12 1.14-.09 1.54.2.59.37.79.39 2.53.48C1.15 1.43 1.64 1.45 2.12 1.43L2.12 1.43z\" fill=\"#634002\" stroke=\"#503402\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /></g></g></svg>",
         "isAdminPetal": false
+    },
+    "talisman": {
+        "name": "Talisman",
+        "damage": 10,
+        "health": 10,
+        "size": 1,
+        "cooldown": 2500,
+        "price": 25,
+        "visual_scale": 1.0,
+        "description": "A mystical talisman that provides unique benefits",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16, 16) scale(1.2) translate(-1.15, 0)\"><path d=\"M 5.4 0 C 10.374 2.103 6.049 8.409 -6.3 10.912 L -2.7 4.677 C -7.008 7.932 -10.307 1.034 -6.3 -10.912 L -2.7 -4.677 C -3.366 -10.035 4.258 -9.443 12.6 0 L 5.4 0 Z\"   fill=\"#FFF824\" stroke=\"#CFC91D\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><circle cx=\"0\" cy=\"0\" r=\"3.5\" fill=\"#37CF37\" /></g></svg>",
+        "color": "#8B4513",
+        "count": 1,
+        "playerModifiers": {
+            "evasion": 0.03
+        }
     }
 }

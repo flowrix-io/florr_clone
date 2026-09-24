@@ -1586,6 +1586,133 @@ TEST(a_zero_damage_petal_still_lands_its_riders_and_still_pays_for_them) {
     CHECK(a.world.has<Dead>(petal));
 }
 
+// ---------------------------------------------------------------------------
+// Evasion
+// ---------------------------------------------------------------------------
+
+TEST(a_flower_that_dodges_takes_nothing_but_still_spends_the_attack) {
+    Arena a;
+    const Entity player = a.player({0, 0});
+    const Entity mob = a.mob({100, 0}, 100);
+    PlayerModifiers modifiers;
+    modifiers.evasion = 1.0;
+    a.world.add<PlayerModifiers>(player, modifiers);
+    ArmorStackState stacks;
+    stacks.stacks = 3;
+    stacks.perStack = 5.0;
+    a.world.add<ArmorStackState>(player, stacks);
+
+    const DamageResult hit = a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK(hit.dodged);
+    CHECK(!hit.refused);
+    CHECK_NEAR(hit.applied, 0.0, 1e-12);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    // The window a landed hit buys, or mob contact would simply try again on
+    // the next tick and the dodge would have cost the mob nothing.
+    CHECK_NEAR(a.world.get<Health>(player).invulnerableUntilMillis, 1050.0, 1e-9);
+    // Root banks for blows that land; one that went wide spends no stack.
+    CHECK_EQ(a.world.get<ArmorStackState>(player).stacks, 3);
+
+    // A drip is not an attack and cannot be side-stepped.
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1100.0, DamageKind::Poison);
+    CHECK_NEAR(a.health(player), 90.0, 1e-9);
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1200.0, DamageKind::Periodic);
+    CHECK_NEAR(a.health(player), 80.0, 1e-9);
+}
+
+TEST(a_dodged_petal_lands_no_rider_and_costs_the_petal_nothing) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // Venom deals damage, spore deals none -- the second is refused before
+    // applyDamage would roll, so resolveMelee rolls for it. Both must miss.
+    for (const std::uint16_t petalIndex : {f.venom, f.spore}) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        // Out of the flower's own reach, inside the petal's.
+        const Entity mob = a.mob({1050, 1000}, 500.0);
+        a.world.add<ContactDamage>(mob, ContactDamage{4.0, 0.0});
+        a.world.add<Evasion>(mob, Evasion{1.0});
+        const Entity petal = equipPetal(a, player, petalIndex, Rarity::Common, {1025, 1000});
+        a.world.add<Health>(petal, Health{6.0, 6.0, 0.0, 0.0});
+
+        for (int tick = 0; tick < 10; ++tick) a.step(tick * net::kTickMillis, f.registry);
+
+        CHECK_NEAR(a.health(mob), 500.0, 1e-9);
+        CHECK_NEAR(a.health(petal), 6.0, 1e-9);   // touched nothing, paid nothing
+        CHECK(!a.world.has<Afflictions>(mob) ||
+              a.world.get<Afflictions>(mob).poisonPerSecond == 0.0);
+        CHECK(!a.world.has<Knockback>(mob) || a.world.get<Knockback>(mob).impulse.x == 0.0);
+
+        // The same petal lands the moment the mob stops dodging.
+        a.world.get<Evasion>(mob).chance = 0.0;
+        a.step(10 * net::kTickMillis, f.registry);
+        CHECK_NEAR(a.world.get<Afflictions>(mob).poisonPerSecond, 10.0, 1e-9);
+        CHECK(a.health(petal) < 6.0);
+    }
+}
+
+TEST(a_dodged_swing_still_spends_a_damage_cooldown) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1050, 1000}, 200.0);
+    a.world.add<Evasion>(mob, Evasion{1.0});
+    equipPetal(a, player, f.sting, Rarity::Common, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 200.0, 1e-9);
+
+    // Sting's 500 ms was spent on the miss: the next swing waits for it.
+    a.world.get<Evasion>(mob).chance = 0.0;
+    a.step(net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(mob), 200.0, 1e-9);
+    a.step(500.0, f.registry);
+    CHECK_NEAR(a.health(mob), 190.0, 1e-9);
+}
+
+TEST(a_fly_dodges_about_nine_hits_in_ten) {
+    Arena a;
+    const Entity player = a.player({0, 0});
+    const Entity fly = a.mob({100, 0}, 1e9);
+    a.world.add<Evasion>(fly, Evasion{0.9});
+
+    // A mob has no post-hit window, so every one of these is a fresh attack.
+    constexpr int kHits = 4000;
+    int dodged = 0;
+    for (int i = 0; i < kHits; ++i) {
+        if (a.combat.applyDamage(a.world, fly, player, 1.0, 1000.0 + i).dodged) ++dodged;
+    }
+    CHECK_NEAR(static_cast<double>(dodged) / kHits, 0.9, 0.02);
+    CHECK_NEAR(a.health(fly), 1e9 - (kHits - dodged), 1e-6);
+}
+
+TEST(a_dodged_shot_flies_past_without_spending_its_pool) {
+    Arena a;
+    const Entity player = a.player({0, 0});
+    // No ContactDamage: the mob's body would chip the shot on its own. A hit
+    // costs the shot kProjectileDefaultBodyDamage, one point, instead.
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    a.world.add<Evasion>(mob, Evasion{1.0});
+    const Entity shot = spawnShot(a, {1000, 1000}, {0, 0}, 25.0, 500.0, player, player);
+    a.world.add<Health>(shot, Health{3.0, 3.0, 0.0, 0.0});
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(mob), 100.0, 1e-9);
+    CHECK(a.world.isAlive(shot) && !a.world.has<Dead>(shot));
+    CHECK_NEAR(a.world.get<Health>(shot).current, 3.0, 1e-9);
+
+    // The contrast: once it lands, it pays.
+    a.world.get<Evasion>(mob).chance = 0.0;
+    a.step(1000.0);
+    CHECK_NEAR(a.health(mob), 75.0, 1e-9);
+    CHECK_NEAR(a.world.get<Health>(shot).current, 2.0, 1e-9);
+}
+
 TEST(a_petal_never_hits_its_own_flower) {
     const Fixture& f = fixture();
     CHECK(f.ok);
