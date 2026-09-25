@@ -169,14 +169,20 @@ inline constexpr double kBeeHeadingMillis = 5000.0;
 inline constexpr double kBeeCruiseAccelScale = 3.0;
 /// Peak angular sway rate, radians per second.
 inline constexpr double kBeeWobbleRate = 1.5;
-/// Peak sideways speed, units a second, of a `bee_ai: "always"` mob's weave
-/// while it chases -- d/dt of a 50-unit sin(2t) sway, the TypeScript server's.
+/// How far, radians, a `bee_ai: "always"` mob's heading swings off its bearing
+/// while it chases: the integral of the cruise's kBeeWobbleRate * sin(2t)
+/// sway, so the chase weaves exactly as wide as the cruise at any speed.
 ///
-/// ADDED across the full-speed pursuit rather than rotating it: a rotation
-/// cuts the closing rate by cos(sway), and a flower fleeing straight at the
-/// bee's own speed would slowly escape something that is meant to be
-/// impossible to outrun.
-inline constexpr double kBeeChaseSwaySpeed = 100.0;
+/// An ANGLE and not a sideways speed. The TypeScript server added a flat 100
+/// u/s across the pursuit, which is a +-35 degree swing on a fly at 144 u/s
+/// and a +-18 degree one on a bee at 300 -- the faster the mob, the straighter
+/// it flew, until the wobble was gone.
+///
+/// And the sideways part is ADDED across the full-speed pursuit rather than
+/// rotating it, for the reason the TypeScript server did: a rotation cuts the
+/// closing rate by cos(sway), and a flower fleeing straight at the bee's own
+/// speed would slowly escape something meant to be impossible to outrun.
+inline constexpr double kBeeChaseWeave = kBeeWobbleRate / 2.0;
 inline constexpr double kBeePulsePeriodMillis = 1500.0;
 inline constexpr double kBeePulseMillis = 500.0;
 inline constexpr double kBeePulseScale = 0.5;

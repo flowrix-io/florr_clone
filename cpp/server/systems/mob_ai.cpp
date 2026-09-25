@@ -1191,15 +1191,17 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
     // A `bee_ai: "always"` mob weaves across its bearing rather than flying a
     // straight line at the flower, off the same per-mob phase so a swarm on
-    // one flower weaves out of step with itself. See kBeeChaseSwaySpeed for
-    // why the sway is added sideways and never takes from the closing rate. A
-    // web slows the sway with the pursuit, so a stuck bee is not left shaking.
-    if (drive.beeChaseWeave && gap > 0.0 && drive.chaseSpeed > 0.0) {
+    // one flower weaves out of step with itself. The sideways part is sized
+    // off the pursuit so the heading swings the cruise's full angle however
+    // fast the mob is going, and never takes from the closing rate; see
+    // kBeeChaseWeave. Off the SLOWED chase speed, so a web slows both at once
+    // and a stuck bee is not left shaking on the spot.
+    if (drive.beeChaseWeave && gap > 0.0) {
         if (const Wobble* wobble = world.tryGet<Wobble>(self)) {
             const double t = nowMillis / 1000.0 + wobble->phase;
+            const double sway = -kBeeChaseWeave * std::cos(2.0 * t);
             const Vec2 side{-toTarget.y / gap, toTarget.x / gap};
-            desired += side * (kBeeChaseSwaySpeed * (chaseSpeed / drive.chaseSpeed) *
-                               std::cos(2.0 * t));
+            desired += side * (chaseSpeed * std::tan(sway));
         }
     }
     // Look where you are going, unless the weapon is at the other end.

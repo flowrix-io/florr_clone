@@ -2114,13 +2114,16 @@ namespace {
 struct ChaseSplit {
     double slowestClosing = 1e30;
     double fastestClosing = 0.0;
-    double widestSway = 0.0;
+    double widestSwing = 0.0;   ///< radians the heading strayed off the bearing
 };
 
-ChaseSplit chaseSplit(const char* id, double playerGap, int ticks = 80) {
+/// `provoke` hurts the mob first, for one that only chases what hit it.
+ChaseSplit chaseSplit(const char* id, double playerGap, Rarity rarity = Rarity::Common,
+                      bool provoke = false, int ticks = 80) {
     Sim sim;
-    const Entity mob = sim.spawnMob(id, kOrigin);
+    const Entity mob = sim.spawnMob(id, kOrigin, rarity);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{playerGap, 0});
+    if (provoke) sim.hurt(mob, player);
     ChaseSplit out;
     int moving = 0;
     for (int i = 0; i < ticks; ++i) {
@@ -2130,33 +2133,49 @@ ChaseSplit chaseSplit(const char* id, double playerGap, int ticks = 80) {
         ++moving;
         const Vec2 toward = sim.positionOf(player) - sim.positionOf(mob);
         const Vec2 along = toward * (1.0 / toward.length());
-        const Vec2 across{-along.y, along.x};
         const double closing = velocity.x * along.x + velocity.y * along.y;
         out.slowestClosing = std::min(out.slowestClosing, closing);
         out.fastestClosing = std::max(out.fastestClosing, closing);
-        out.widestSway = std::max(out.widestSway,
-                                  std::abs(velocity.x * across.x + velocity.y * across.y));
+        out.widestSwing = std::max(out.widestSwing,
+                                   std::abs(angleDelta(toward.angle(), velocity.angle())));
     }
     CHECK(sim.brainOf(mob).target == player);
     CHECK(moving > ticks / 2);
     return out;
 }
 
+double chaseSpeedOf(const char* id, Rarity rarity = Rarity::Common) {
+    return content().mobStats(content().mobIndex(id), rarity).chaseSpeed;
+}
+
 } // namespace
 
 TEST(a_bee_ai_always_mob_weaves_on_the_chase_without_losing_ground) {
     CHECK(contentReady());
-    // Four seconds covers more than a whole period of the sway, so it reaches
-    // its full width whatever phase the mob was spawned with.
+    // Four seconds covers more than a whole period of the sway, so the swing
+    // reaches its full width whatever phase the mob was spawned with.
     const ChaseSplit fly = chaseSplit("fly", 200.0);
-    CHECK(fly.widestSway > 0.95 * kBeeChaseSwaySpeed);
-    CHECK(fly.widestSway <= kBeeChaseSwaySpeed + 1e-9);
+    CHECK(fly.widestSwing > 0.95 * kBeeChaseWeave);
+    CHECK(fly.widestSwing <= kBeeChaseWeave + 1e-9);
     // And the weave is ADDED across the pursuit: the closing rate is the full
     // chase speed on every tick, so a flower running straight away gains
     // nothing from it.
-    const double chase = content().mobStats(content().mobIndex("fly"), Rarity::Common).chaseSpeed;
-    CHECK_NEAR(fly.slowestClosing, chase, 1e-6);
-    CHECK_NEAR(fly.fastestClosing, chase, 1e-6);
+    CHECK_NEAR(fly.slowestClosing, chaseSpeedOf("fly"), 1e-6);
+    CHECK_NEAR(fly.fastestClosing, chaseSpeedOf("fly"), 1e-6);
+}
+
+TEST(a_fast_chaser_weaves_as_wide_as_a_slow_one) {
+    CHECK(contentReady());
+    // The weave is an angle, not a sideways speed. A flat sideways speed is a
+    // swing that narrows as the pursuit gets faster: the bee chases at a
+    // flower's full 300 u/s, and under a flat 100 u/s sway it flew all but
+    // straight. A rare bee is neutral, so it has to be hit before it chases.
+    const ChaseSplit bee = chaseSplit("bee", 200.0, Rarity::Rare, true);
+    CHECK_NEAR(chaseSpeedOf("bee", Rarity::Rare), kPlayerMaxSpeed, 1e-9);
+    CHECK(bee.widestSwing > 0.95 * kBeeChaseWeave);
+    CHECK(bee.widestSwing <= kBeeChaseWeave + 1e-9);
+    CHECK_NEAR(bee.slowestClosing, chaseSpeedOf("bee", Rarity::Rare), 1e-6);
+    CHECK_NEAR(bee.fastestClosing, chaseSpeedOf("bee", Rarity::Rare), 1e-6);
 }
 
 TEST(a_bee_ai_idle_stinger_closes_on_a_flower_straight) {
@@ -2164,7 +2183,7 @@ TEST(a_bee_ai_idle_stinger_closes_on_a_flower_straight) {
     // Same cruise off a target as the fly, but the approach is the line its
     // shot is aimed along. 330 is outside the hornet's standoff, so it keeps
     // closing and there is a velocity to measure.
-    CHECK(chaseSplit("hornet", 330.0).widestSway < 1e-6);
+    CHECK(chaseSplit("hornet", 330.0).widestSwing < 1e-6);
 }
 
 // ---------------------------------------------------------------------------
