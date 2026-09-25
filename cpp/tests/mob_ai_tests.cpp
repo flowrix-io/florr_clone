@@ -2106,6 +2106,67 @@ TEST(a_cruising_stinger_still_drops_everything_for_a_flower) {
     CHECK(sim.brainOf(hornet).target != NULL_ENTITY);
 }
 
+namespace {
+
+/// A chasing mob's velocity split along and across its bearing on the flower,
+/// over `ticks` of the intent phase alone -- so neither side moves and the
+/// bearing holds still while the weave, if any, sweeps across it.
+struct ChaseSplit {
+    double slowestClosing = 1e30;
+    double fastestClosing = 0.0;
+    double widestSway = 0.0;
+};
+
+ChaseSplit chaseSplit(const char* id, double playerGap, int ticks = 80) {
+    Sim sim;
+    const Entity mob = sim.spawnMob(id, kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{playerGap, 0});
+    ChaseSplit out;
+    int moving = 0;
+    for (int i = 0; i < ticks; ++i) {
+        sim.tickIntent();
+        const Vec2 velocity = sim.velocityOf(mob);
+        if (velocity.lengthSq() < 1e-9) continue;
+        ++moving;
+        const Vec2 toward = sim.positionOf(player) - sim.positionOf(mob);
+        const Vec2 along = toward * (1.0 / toward.length());
+        const Vec2 across{-along.y, along.x};
+        const double closing = velocity.x * along.x + velocity.y * along.y;
+        out.slowestClosing = std::min(out.slowestClosing, closing);
+        out.fastestClosing = std::max(out.fastestClosing, closing);
+        out.widestSway = std::max(out.widestSway,
+                                  std::abs(velocity.x * across.x + velocity.y * across.y));
+    }
+    CHECK(sim.brainOf(mob).target == player);
+    CHECK(moving > ticks / 2);
+    return out;
+}
+
+} // namespace
+
+TEST(a_bee_ai_always_mob_weaves_on_the_chase_without_losing_ground) {
+    CHECK(contentReady());
+    // Four seconds covers more than a whole period of the sway, so it reaches
+    // its full width whatever phase the mob was spawned with.
+    const ChaseSplit fly = chaseSplit("fly", 200.0);
+    CHECK(fly.widestSway > 0.95 * kBeeChaseSwaySpeed);
+    CHECK(fly.widestSway <= kBeeChaseSwaySpeed + 1e-9);
+    // And the weave is ADDED across the pursuit: the closing rate is the full
+    // chase speed on every tick, so a flower running straight away gains
+    // nothing from it.
+    const double chase = content().mobStats(content().mobIndex("fly"), Rarity::Common).chaseSpeed;
+    CHECK_NEAR(fly.slowestClosing, chase, 1e-6);
+    CHECK_NEAR(fly.fastestClosing, chase, 1e-6);
+}
+
+TEST(a_bee_ai_idle_stinger_closes_on_a_flower_straight) {
+    CHECK(contentReady());
+    // Same cruise off a target as the fly, but the approach is the line its
+    // shot is aimed along. 330 is outside the hornet's standoff, so it keeps
+    // closing and there is a velocity to measure.
+    CHECK(chaseSplit("hornet", 330.0).widestSway < 1e-6);
+}
+
 // ---------------------------------------------------------------------------
 // Standoff
 // ---------------------------------------------------------------------------

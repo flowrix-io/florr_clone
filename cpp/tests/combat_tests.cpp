@@ -178,8 +178,8 @@ const Fixture& fixture() {
         // `poison` is per MILLISECOND in the JSON, so 0.01 is 10/second.
         const bool wrote =
             writeText(mobs, test::fixtureMobs(R"({
-              "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":1,"section":[0]},
-              "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":2.5,"section":[7]}
+              "grunt":{"name":"Grunt","health":10,"damage":5,"size":1,"speed":0.2,"section":[0]},
+              "glitch":{"name":"Glitch","health":250,"damage":25,"size":1,"speed":0.5,"section":[7]}
             })")) &&
             writeText(petals, test::fixturePetals(R"({
               "frost":{"name":"Frost","damage":1,"health":5,"size":1,"slowFactor":0.5,"slowDuration":1000},

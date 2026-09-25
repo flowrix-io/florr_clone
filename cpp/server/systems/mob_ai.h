@@ -169,6 +169,14 @@ inline constexpr double kBeeHeadingMillis = 5000.0;
 inline constexpr double kBeeCruiseAccelScale = 3.0;
 /// Peak angular sway rate, radians per second.
 inline constexpr double kBeeWobbleRate = 1.5;
+/// Peak sideways speed, units a second, of a `bee_ai: "always"` mob's weave
+/// while it chases -- d/dt of a 50-unit sin(2t) sway, the TypeScript server's.
+///
+/// ADDED across the full-speed pursuit rather than rotating it: a rotation
+/// cuts the closing rate by cos(sway), and a flower fleeing straight at the
+/// bee's own speed would slowly escape something that is meant to be
+/// impossible to outrun.
+inline constexpr double kBeeChaseSwaySpeed = 100.0;
 inline constexpr double kBeePulsePeriodMillis = 1500.0;
 inline constexpr double kBeePulseMillis = 500.0;
 inline constexpr double kBeePulseScale = 0.5;
@@ -577,6 +585,8 @@ private:
         bool reversed = false;
         /// Cruises with a sinusoidal sway instead of hopping.
         bool beeFlight = false;
+        /// Flies that sway about its bearing while chasing, too.
+        bool beeChaseWeave = false;
         /// Has a projectile block, so the volley path is worth entering.
         bool shoots = false;
         /// How far one of this mob's shots travels at this tier, world units.

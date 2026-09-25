@@ -359,11 +359,14 @@ TEST(mob_stats_scale_across_rarities) {
 
 TEST(mob_speed_is_converted_to_units_per_second) {
     const ContentRegistry& r = shipped().registry;
-    // TypeScript advances a mob by `speed * ENEMY_SPEED_MULTIPLIER` on each of
-    // its 30 ticks a second, and that multiplier is 2 -- so one config point is
-    // 60 world units a second, and a bee's authored 0.5 is 30.
+    // One config point is a flower's top speed, so a bee's authored 0.1 is a
+    // tenth of it: the 30 u/s it flew at when the unit was TypeScript's 60.
     const MobStats bee = r.mobStats(r.mobIndex("bee"), Rarity::Common);
+    CHECK_NEAR(bee.speed, 0.1 * kPlayerMaxSpeed, 1e-9);
     CHECK_NEAR(bee.speed, 30.0, 1e-9);
+    // Speed 1 IS the player's: a fly at 0.48 flies at 48% of a flower.
+    CHECK_NEAR(r.mobStats(r.mobIndex("fly"), Rarity::Common).speed, 0.48 * kPlayerMaxSpeed,
+               1e-9);
     // Bees are one of the reference's player-speed chasers, but that override
     // replaces the PURSUIT step only: an unprovoked bee still drifts at its
     // own 30, which is why the flower's speed lives on a separate field.
@@ -608,6 +611,25 @@ TEST(cross_references_resolve_to_indices) {
     CHECK_EQ(rarityIndex(egg.petMobRarity), rarityIndex(Rarity::Common));
 }
 
+TEST(bee_ai_is_read_from_the_config_not_the_mob_name) {
+    const ContentRegistry& r = shipped().registry;
+    // "always": the cruise off a target, and the same weave on the chase.
+    for (const char* id : {"bee", "fly", "moth", "firefly", "magic_firefly"}) {
+        const MobConfig& mob = r.mob(r.mobIndex(id));
+        CHECK(mob.beeFlight);
+        CHECK(mob.beeChaseWeave);
+    }
+    // "idle": the stingers cruise like bees and close on a flower straight.
+    for (const char* id : {"hornet", "wasp"}) {
+        const MobConfig& mob = r.mob(r.mobIndex(id));
+        CHECK(mob.beeFlight);
+        CHECK(!mob.beeChaseWeave);
+    }
+    // No `bee_ai` at all: a walker that hops.
+    CHECK(!r.mob(r.mobIndex("ladybug")).beeFlight);
+    CHECK(!r.mob(r.mobIndex("ladybug")).beeChaseWeave);
+}
+
 TEST(enums_and_colours_are_parsed_not_stored_as_text) {
     const ContentRegistry& r = shipped().registry;
     CHECK(r.mob(r.mobIndex("bee")).ai == AiKind::Passive);
@@ -695,9 +717,9 @@ TEST(dirty_negative_speed_is_caught) {
     const ContentRegistry& r = shipped().registry;
     const std::uint16_t moth = r.mobIndex("moth");
     CHECK(r.mob(moth).speed > 0.0);
-    CHECK_NEAR(r.mob(moth).speed, 2.4, 1e-12);
+    CHECK_NEAR(r.mob(moth).speed, 0.48, 1e-12);
     CHECK(r.mobStats(moth, Rarity::Common).speed > 0.0);
-    CHECK(warned(r, "mob 'moth': speed is -2.4"));
+    CHECK(warned(r, "mob 'moth': speed is -0.48"));
 }
 
 TEST(finite_enormous_damage_keeps_typescript_semantics) {
@@ -802,17 +824,17 @@ TEST(a_web_that_catches_nothing_is_not_laid) {
     std::string error;
     Synthetic files;
     files.mobs = R"JSON({
-      "slack": {"name": "Slack", "health": 3, "damage": 1, "size": 1, "speed": 1,
+      "slack": {"name": "Slack", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
         "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
         "ai_type": "hostile", "groups": ["garden"],
         "web": {"radiusScale": 1.5, "slowFactor": 1}},
-      "flat": {"name": "Flat", "health": 3, "damage": 1, "size": 1, "speed": 1,
+      "flat": {"name": "Flat", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
         "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
         "ai_type": "hostile", "groups": ["garden"], "web": {}},
-      "odd": {"name": "Odd", "health": 3, "damage": 1, "size": 1, "speed": 1,
+      "odd": {"name": "Odd", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
         "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
         "ai_type": "hostile", "groups": ["garden"], "web": 3},
-      "fine": {"name": "Fine", "health": 3, "damage": 1, "size": 1, "speed": 1,
+      "fine": {"name": "Fine", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
         "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
         "ai_type": "hostile", "groups": ["garden"], "web": {"radiusScale": 2}}
     })JSON";
@@ -1020,7 +1042,7 @@ TEST(malformed_or_empty_content_fails_cleanly) {
 
     Synthetic minimal;
     minimal.mobs = R"JSON({"a": {"name": "A", "health": 3, "damage": 1, "size": 1,
-        "speed": 1, "cooldown": 1, "range": 1, "description": "", "color": "#fff",
+        "speed": 0.2, "cooldown": 1, "range": 1, "description": "", "color": "#fff",
         "image": "<svg/>", "ai_type": "passive", "groups": ["garden"]}})JSON";
     minimal.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
         "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>"}})JSON";
@@ -1046,7 +1068,7 @@ namespace {
 Synthetic mandatoryFixture(const std::string& mobExtra, const std::string& petalExtra) {
     Synthetic files;
     files.mobs = R"JSON({"a": {"name": "A", "health": 3, "damage": 1, "size": 1,
-        "speed": 1, "cooldown": 1, "range": 1, "description": "", "color": "#fff",
+        "speed": 0.2, "cooldown": 1, "range": 1, "description": "", "color": "#fff",
         "image": "<svg/>", "ai_type": "passive", "groups": ["garden"])JSON" +
                  mobExtra + "}}";
     files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,

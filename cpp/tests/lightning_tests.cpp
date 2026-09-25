@@ -411,13 +411,13 @@ const SimContent& simContent() {
         const std::string petals = simTempDir() + "/petals.json";
         const bool wrote =
             writeFile(mobs, test::fixtureMobs(R"({
-              "shocker":{"name":"Shocker","health":500,"damage":20,"size":1,"speed":1,
+              "shocker":{"name":"Shocker","health":500,"damage":20,"size":1,"speed":0.2,
                          "cooldown":2000,
                          "lightning":{"radius":300}},
-              "toucher":{"name":"Toucher","health":500,"damage":30,"size":1,"speed":1,
+              "toucher":{"name":"Toucher","health":500,"damage":30,"size":1,"speed":0.2,
                          "cooldown":0,
                          "lightning":{"radius":250,"onContact":true}},
-              "inert":{"name":"Inert","health":500,"damage":30,"size":1,"speed":1}
+              "inert":{"name":"Inert","health":500,"damage":30,"size":1,"speed":0.2}
             })")) &&
             writeFile(petals, test::fixturePetals(R"({
               "pea":{"name":"Pea","damage":10,"health":50,"size":1}

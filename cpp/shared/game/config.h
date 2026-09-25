@@ -375,6 +375,15 @@ struct MobConfig {
     /// the wrong end of the animal.
     bool stingerShooter = false;
 
+    /// Off a target the mob cruises on the bee's weaving line rather than
+    /// hopping like something that walks. From `bee_ai`, either value.
+    bool beeFlight = false;
+
+    /// ...and keeps weaving while it chases, swaying across its bearing at
+    /// full closing speed instead of a straight line. `bee_ai: "always"`;
+    /// `"idle"` is the stingers, which cruise like bees but close straight.
+    bool beeChaseWeave = false;
+
     /// The mob never appears in a GROUP roll -- a band or a region naming a
     /// group never produces it. `target_dummy` declares no
     /// spawn_weight and would otherwise inherit the default 1.0 and take its

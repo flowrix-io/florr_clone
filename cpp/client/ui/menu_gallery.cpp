@@ -209,7 +209,7 @@ std::string dataDirectory() {
 ///
 /// `speed` is the authored figure, sign included. The loader keeps only the
 /// magnitude because a negative speed is a direction the flee behaviour
-/// already owns (moth ships -2.4), but the tooltip prints mobs.json verbatim.
+/// already owns (moth ships -0.48), but the tooltip prints mobs.json verbatim.
 struct MobRows {
     std::vector<std::uint16_t> order;
     std::vector<double> speed;
@@ -766,9 +766,10 @@ bool GalleryPanel::render(MenuContext& ctx) {
         // ten swings to kill -- the card is the one place that can say so.
         if (stats.evasion > 0.0) stat("Evasion: " + formatFixed(stats.evasion * 100.0, 0) + "%", 0.0);
         // The raw config figure, not the units-per-second the simulation runs
-        // on, and the AUTHORED sign with it: the browser tooltip reads straight
-        // off mobs.json, where the moth's -2.4 is what a player sees.
-        stat("Speed: " + formatFixed(mobRows().speed[cell.mobIndex], 1), 0.0);
+        // on, and the AUTHORED sign with it: the tooltip reads straight off
+        // mobs.json, where the moth's -0.48 is what a player sees. The unit is
+        // a flower's top speed, so two places: a bee is 0.1, a fly 0.48.
+        stat("Speed: " + formatFixed(mobRows().speed[cell.mobIndex], 2), 0.0);
         stat("XP: " + abbreviateNumber(stats.xp), 0.0);
 
         std::array<bool, kDropTiers> usedTiers{};

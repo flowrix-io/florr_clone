@@ -64,8 +64,10 @@ constexpr double kMaxWaveAmplitude = 100.0;
 /// report for a human, and a human stops reading long before this.
 constexpr std::size_t kMaxWarnings = 512;
 
-/// TypeScript applies `speed * 2` once per 30 Hz mob step.
-constexpr double kMobSpeedUnitsPerSecond = 60.0;
+/// A mob's `speed` is in flower top speeds: 1 moves as fast as a player can,
+/// 0.5 at half that. (The TypeScript unit was 60 u/s, a fifth of this, and
+/// mobs.json was rescaled by 1/5 when it changed.)
+constexpr double kMobSpeedUnitsPerSecond = kPlayerMaxSpeed;
 
 /// Config `size` to a petal's own hit radius, in world units.
 ///
@@ -217,7 +219,7 @@ struct Ctx {
     }
 
     /// A speed field. A negative speed is a direction, and direction is the
-    /// AI's business -- `moth` ships -2.4 to mean "runs away", which the flee
+    /// AI's business -- `moth` ships -0.48 to mean "runs away", which the flee
     /// behaviour already expresses. Keep the magnitude.
     double speed(const Json& obj, const char* key) {
         double v = range(obj, key, 0.0, -kMaxSpeedUnits, kMaxSpeedUnits);
@@ -739,6 +741,15 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.reversed = ctx.boolean(src, "reversed");
     m.noMobCollision = ctx.boolean(src, "no_mob_collision");
     m.stingerShooter = ctx.boolean(src, "stinger");
+    {
+        const std::string bee = ctx.text(src, "bee_ai");
+        if (bee == "idle" || bee == "always") {
+            m.beeFlight = true;
+            m.beeChaseWeave = bee == "always";
+        } else if (!bee.empty()) {
+            ctx.warn("bee_ai '" + bee + "' is neither \"idle\" nor \"always\"; the mob hops");
+        }
+    }
 
     // Three rules the reference states by NAME rather than in the JSON. They
     // are resolved once here so no spawner, no combat path and no despawn

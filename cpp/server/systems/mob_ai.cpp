@@ -359,16 +359,12 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.playerSpeedChaser = stats.playerSpeedChaser;
         drive.hideRotation = config.hideRotation;
         drive.reversed = config.reversed;
-        // The one type that cruises instead of hopping. A name test, because
-        // the reference selects the machine by mob type and nothing in the
-        // numbers distinguishes a bee from anything else that flies.
-        // firefly also has bee AI
-        // gardn runs hornets and wasps on tick_bee_passive: the stingers are
-        // bees that shoot, and off a target they cruise and weave rather than
-        // hopping like something that walks.
-        drive.beeFlight = (config.id == "bee") || (config.id == "firefly") ||
-                          (config.id == "magic_firefly") || (config.id == "hornet") ||
-                          (config.id == "wasp");
+        // mobs.json's `bee_ai`. gardn runs hornets and wasps on
+        // tick_bee_passive as well as the bee: the stingers are bees that
+        // shoot, and off a target they cruise and weave rather than hopping
+        // like something that walks -- but they close on a flower straight.
+        drive.beeFlight = config.beeFlight;
+        drive.beeChaseWeave = config.beeChaseWeave;
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
         // Stated in COMMON-TIER units: `distance` IS the reach a common shooter
@@ -1193,6 +1189,19 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
     if (gap <= reach) stampAttack(world, self, ai, nowMillis, drive);
 
     desired = gap > 0.0 ? toTarget * (chaseSpeed / gap) : Vec2{0, 0};
+    // A `bee_ai: "always"` mob weaves across its bearing rather than flying a
+    // straight line at the flower, off the same per-mob phase so a swarm on
+    // one flower weaves out of step with itself. See kBeeChaseSwaySpeed for
+    // why the sway is added sideways and never takes from the closing rate. A
+    // web slows the sway with the pursuit, so a stuck bee is not left shaking.
+    if (drive.beeChaseWeave && gap > 0.0 && drive.chaseSpeed > 0.0) {
+        if (const Wobble* wobble = world.tryGet<Wobble>(self)) {
+            const double t = nowMillis / 1000.0 + wobble->phase;
+            const Vec2 side{-toTarget.y / gap, toTarget.x / gap};
+            desired += side * (kBeeChaseSwaySpeed * (chaseSpeed / drive.chaseSpeed) *
+                               std::cos(2.0 * t));
+        }
+    }
     // Look where you are going, unless the weapon is at the other end.
     facing = desired;
     if (drive.shoots) {

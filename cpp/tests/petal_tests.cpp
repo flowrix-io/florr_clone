@@ -60,8 +60,8 @@ const char* const kPetalsJson = R"JSON({
 })JSON";
 
 const char* const kMobsJson = R"JSON({
-  "critter": {"name":"Critter","health":10,"damage":1,"size":1,"speed":1,"range":300,"cooldown":500,"color":"#FF0000","section":[0],"ai_type":"hostile"},
-  "brute":   {"name":"Brute","health":500,"damage":5,"size":6,"speed":1,"range":300,"cooldown":500,"color":"#AA3300","section":[0],"ai_type":"hostile"}
+  "critter": {"name":"Critter","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#FF0000","section":[0],"ai_type":"hostile"},
+  "brute":   {"name":"Brute","health":500,"damage":5,"size":6,"speed":0.2,"range":300,"cooldown":500,"color":"#AA3300","section":[0],"ai_type":"hostile"}
 })JSON";
 
 std::string tempDir() {

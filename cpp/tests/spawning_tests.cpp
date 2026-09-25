@@ -77,15 +77,15 @@ const ContentRegistry& synthetic() {
         const std::string mobs = tempPath("mobs.json");
         const std::string petals = tempPath("petals.json");
         writeText(mobs, test::fixtureMobs(R"({
-            "alpha": {"name":"Alpha","health":10,"damage":1,"size":1,"speed":1,
+            "alpha": {"name":"Alpha","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"meadow":1}},
-            "beta":  {"name":"Beta","health":10,"damage":1,"size":1,"speed":1,
+            "beta":  {"name":"Beta","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"meadow":3}},
-            "gamma": {"name":"Gamma","health":10,"damage":1,"size":1,"speed":1,
+            "gamma": {"name":"Gamma","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"meadow":6}},
-            "delta": {"name":"Delta","health":10,"damage":1,"size":1,"speed":1,
+            "delta": {"name":"Delta","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"dunes":100}},
-            "ghost": {"name":"Ghost","health":10,"damage":1,"size":1,"speed":1,
+            "ghost": {"name":"Ghost","health":10,"damage":1,"size":1,"speed":0.2,
                       "groups":{"meadow":0}}
         })"));
         writeText(petals, test::fixturePetals(R"({
