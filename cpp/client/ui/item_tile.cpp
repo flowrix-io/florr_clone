@@ -170,7 +170,7 @@ constexpr GardnIcon kGardnIcon[] = {
     {"soil",               24,   10,  0,       0, 0.488},   // art fills 49% of its box
     {"sponge",           34.5,   12,  0,       0,     1},
     {"square",           23.5,   15,  0,  1.7854, 0.969},   // art fills 97% of its box
-    {"starfish",           26,    8,  0,       0, 0.797},   // art fills 80% of its box
+    {"starfish",           26,    8,  0,       -1, 0.797},   // art fills 80% of its box
     {"stick",              27,   15,  0,       1,     1},
     {"stinger",          15.5,    7,  0,       0,     1},
     // gardn's drawing of this one hard-codes `ctx.scale(0.5)` and ignores the
@@ -184,6 +184,8 @@ constexpr GardnIcon kGardnIcon[] = {
     {"yggdrasil",        26.5,   12,  0,     kPi, 0.932},   // art fills 93% of its box
     {"yin_yang",           23,   10,  0,       0, 0.926},   // art fills 93% of its box
     {"yucca",              31,   10,  0,      -1, 0.969},   // art fills 97% of its box
+    {"fang",              31,   10,  0,      1, 0.969},   // art fills 97% of its box
+    {"coral",              31,   10,  0,      1, 0.969},   // art fills 97% of its box
 };
 
 /// How one petal is laid out inside a tile, in design units.

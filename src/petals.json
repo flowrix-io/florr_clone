@@ -235,7 +235,7 @@
         "size": 1,
         "cooldown": 1000,
         "price": 15,
-        "description": "It heals",
+        "description": "It heals, but only while the player is defending",
         "color": "#000000",
         "count": 1,
         "passiveHeal": 1,
@@ -363,7 +363,8 @@
             "aggroRadius": 150
         },
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n  <rect x=\"12\" y=\"12\" width=\"8\" height=\"16\" fill=\"#aaaaaa\" stroke-width=\"2\" stroke=\"#999999\"/>\n  <rect x=\"12\" y=\"19\" width=\"8\" height=\"2\" fill=\"#999999\" stroke-width=\"0\" stroke=\"#999999\"/>\n  <rect x=\"12\" y=\"23\" width=\"8\" height=\"2\" fill=\"#999999\" stroke-width=\"0\" stroke=\"#999999\"/>\n  <circle r=\"8\" cx=\"16\" cy=\"10\" fill=\"#ffff00\" stroke-width=\"2\" stroke=\"#aaaa00\"/>\n</svg>",
-        "isAdminPetal": false
+        "isAdminPetal": false,
+        "defendOnly": true
     },
     "gas": {
         "name": "Gas",
@@ -395,7 +396,7 @@
         "description": "Heals if below 75% health",
         "color": "#000000",
         "count": 1,
-        "image": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32px\" height=\"32px\">\n  <path d=\"M 0.0 11.0 C 32.0 16.0 32.0 16.00 0.0 21\" stroke=\"#ed5c79\" stroke-width=\"3\" fill=\"#fc6f8b\"/>\n  <circle cx=\"5\" cy=\"16\" r=\"2.495\" fill=\"#ed5c79\" stroke=\"rgba(0, 0, 0, 0)\"/>\n  <circle cx=\"10\" cy=\"16\" r=\"1.5\" fill=\"#ed5c79\" stroke=\"rgba(0, 0, 0, 0)\" style=\"stroke-width: 1;\"/>\n</svg>",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"matrix(.8 0 0 .8 4 16)\"><path d=\"M0-5Q60 0 0 5Z\" fill=\"#a9403e\" stroke=\"#a9403e\" stroke-width=\"10\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M0-5Q60 0 0 5Z\" fill=\"#d14f4d\" stroke=\"#d14f4d\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"25\" r=\"2\" fill=\"#d4766c\"/><circle cx=\"18\" r=\"3\" fill=\"#d4766c\"/><circle cx=\"9\" r=\"4\" fill=\"#d4766c\"/></g></svg>",
         "isAdminPetal": false
     },
     "sponge": {
@@ -409,6 +410,7 @@
         "color": "#000000",
         "count": 1,
         "spongeDamageDuration": 1000,
+        "defendOnly": true,
         "image": "$sponge:#ff96e0,#b2699c",
         "isAdminPetal": false
     },
@@ -435,6 +437,7 @@
         "description": "Glitch",
         "color": "#000000",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 10 32 10\" fill=\"none\">\n<image href=\"data:image/png;base64,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\" height=\"32\" width=\"32\"/>\n</svg>",
         "isAdminPetal": false
     },
@@ -542,6 +545,7 @@
         "description": "Falls on the ground",
         "color": "#000000",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ffe763\" stroke-width=\"4\" stroke=\"#cfbb50\"/>\n</svg>",
         "isAdminPetal": false
     },
@@ -555,6 +559,7 @@
         "description": "Makes you faster",
         "color": "#000000",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\">\n  <path fill=\"#ffffff\" stroke=\"#ffffff\" stroke-width=\"0\" d=\"M 20.004 17.908 C 19.95 18.261 19.831 18.549 19.652 18.847 C 19.459 19.168 19.191 19.512 18.859 19.757 C 18.733 19.85 18.587 19.939 18.431 20.02 C 18.666 19.925 18.911 19.85 19.139 19.816 C 19.668 19.738 20.303 19.804 20.783 19.993 C 21.247 20.175 21.686 20.543 21.987 20.903 C 22.272 21.243 22.464 21.638 22.574 22.077 C 22.693 22.55 22.764 23.134 22.633 23.662 C 22.49 24.24 22.081 24.984 21.664 25.395 C 21.29 25.764 20.741 25.978 20.314 26.099 C 19.944 26.204 19.626 26.214 19.257 26.158 C 18.847 26.095 18.315 25.898 17.965 25.688 C 17.658 25.504 17.443 25.297 17.231 25.013 C 16.995 24.695 16.762 24.267 16.644 23.839 C 16.52 23.39 16.467 22.816 16.527 22.371 C 16.581 21.962 16.749 21.579 16.938 21.255 C 17.116 20.948 17.298 20.688 17.613 20.462 C 17.744 20.368 17.904 20.271 18.079 20.182 C 17.904 20.252 17.728 20.309 17.567 20.344 C 17.186 20.429 16.855 20.415 16.452 20.344 C 16.06 20.276 15.551 20.123 15.145 19.93 C 14.87 19.855 14.598 19.747 14.369 19.62 C 14.013 19.421 13.705 19.159 13.459 18.827 C 13.197 18.473 12.965 17.955 12.872 17.535 C 12.831 17.35 12.804 17.178 12.8 17.003 C 12.638 16.946 12.477 16.879 12.327 16.808 C 12.259 16.873 12.189 16.934 12.12 16.989 C 11.776 17.262 11.411 17.456 10.946 17.577 C 10.613 17.663 10.19 17.74 9.773 17.755 C 9.831 17.771 9.888 17.79 9.944 17.81 C 10.431 17.99 10.943 18.401 11.265 18.779 C 11.559 19.124 11.746 19.552 11.852 19.953 C 11.953 20.336 11.962 20.752 11.911 21.127 C 11.861 21.495 11.753 21.85 11.558 22.184 C 11.346 22.548 10.995 22.95 10.648 23.212 C 10.316 23.462 9.918 23.643 9.533 23.74 C 9.154 23.836 8.745 23.855 8.358 23.799 C 7.962 23.741 7.525 23.593 7.184 23.388 C 6.852 23.188 6.555 22.891 6.332 22.595 C 6.119 22.311 5.961 21.998 5.863 21.656 C 5.76 21.297 5.696 20.885 5.745 20.481 C 5.799 20.046 5.991 19.507 6.215 19.131 C 6.422 18.784 6.674 18.513 7.008 18.28 C 7.374 18.023 7.877 17.773 8.358 17.692 C 8.508 17.667 8.669 17.651 8.833 17.647 C 8.262 17.472 7.64 17.084 7.276 16.725 C 6.932 16.387 6.756 15.953 6.63 15.551 C 6.51 15.169 6.468 14.77 6.512 14.376 C 6.559 13.968 6.736 13.483 6.924 13.143 C 7.089 12.843 7.266 12.646 7.54 12.409 C 7.871 12.124 8.447 11.75 8.832 11.587 C 8.841 11.583 8.85 11.58 8.858 11.576 C 8.74 11.46 8.634 11.334 8.533 11.199 C 8.308 10.897 8.104 10.531 8.005 10.142 C 7.9 9.732 7.877 9.224 7.946 8.792 C 8.015 8.364 8.209 7.897 8.416 7.559 C 8.601 7.256 8.792 7.034 9.091 6.825 C 9.441 6.581 9.961 6.318 10.442 6.238 C 10.938 6.155 11.539 6.172 12.027 6.355 C 12.34 6.473 12.674 6.696 12.958 6.939 C 13.091 6.763 13.244 6.601 13.421 6.462 C 13.885 6.099 14.673 5.771 15.241 5.699 C 15.741 5.636 16.208 5.738 16.65 5.934 C 17.122 6.143 17.649 6.572 17.971 6.961 C 18.264 7.314 18.44 7.702 18.559 8.136 C 18.58 8.213 18.599 8.294 18.616 8.378 C 18.997 8.162 19.472 7.975 19.903 7.92 C 20.464 7.848 21.146 7.938 21.664 8.155 C 22.17 8.366 22.673 8.798 22.985 9.182 C 23.262 9.522 23.416 9.906 23.514 10.298 C 23.611 10.689 23.644 11.12 23.572 11.531 C 23.497 11.962 23.266 12.483 23.044 12.823 C 22.862 13.102 22.671 13.275 22.407 13.47 C 22.516 13.873 22.559 14.342 22.521 14.735 C 22.478 15.172 22.315 15.607 22.11 15.968 C 21.91 16.318 21.627 16.638 21.317 16.878 C 21.01 17.116 20.658 17.297 20.26 17.406 C 20.191 17.425 20.119 17.442 20.045 17.457 C 20.04 17.616 20.026 17.768 20.004 17.908 Z M 25.492 3.572 C 25.938 3.5 26.355 3.534 26.784 3.69 C 27.266 3.865 27.899 4.331 28.223 4.659 C 28.471 4.91 28.577 5.114 28.692 5.422 C 28.827 5.78 28.943 6.273 28.927 6.714 C 28.911 7.172 28.792 7.699 28.575 8.123 C 28.355 8.552 27.988 8.978 27.606 9.268 C 27.232 9.551 26.734 9.762 26.314 9.855 C 25.933 9.94 25.606 9.964 25.199 9.855 C 24.695 9.719 23.936 9.352 23.525 8.945 C 23.142 8.565 22.892 7.984 22.762 7.536 C 22.649 7.148 22.644 6.804 22.703 6.42 C 22.767 6.003 22.954 5.502 23.173 5.128 C 23.381 4.774 23.615 4.468 23.966 4.218 C 24.363 3.934 25.001 3.652 25.492 3.572 Z\"></path>\n</svg>",
         "playerModifiers": {
             "speed": 1.1
@@ -572,6 +577,7 @@
         "color": "#000000",
         "count": 4,
         "clumped": true,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#8ac255\" stroke-width=\"4\" stroke=\"#709d45\"/>\n</svg>",
         "isAdminPetal": false,
         "projectile": {
@@ -625,6 +631,7 @@
         "description": "Has two poles, which attract mob drops",
         "color": "#000000",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<rect x=\"12.5\" y=\"0\" width=\"7\" height=\"16\" fill=\"#346bd1\" stroke=\"#2653a6\" stroke-width=\"1\"/>\n<rect x=\"12.5\" y=\"16\" width=\"7\" height=\"16\" fill=\"#b83a2c\" stroke=\"#942f24\" stroke-width=\"1\"/>\n</svg>",
         "playerModifiers": {
             "magnetism": 500
@@ -676,6 +683,7 @@
         "description": "Pops when you defend, propelling you away. Higher rarity = stronger boost and shorter cooldown",
         "color": "rgba(255, 255, 255, 0)",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n  <circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"rgba(255, 255, 255, 0.2)\"/>\n  <circle cx=\"16\" cy=\"16\" r=\"14.5\" fill=\"none\" stroke=\"rgba(255, 255, 255, 0.3)\" stroke-width=\"3\"/>\n  <circle cx=\"10\" cy=\"10\" r=\"1\" fill=\"none\" stroke=\"rgba(255, 255, 255, 0.3)\" stroke-width=\"3\"/>\n</svg>",
         "isAdminPetal": false
     },
@@ -740,6 +748,7 @@
         "description": "The grass grows and damages mobs around you",
         "color": "#00ffff",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-70.5 -72 144 144\">\n  <path fill=\"#308eb0\" d=\"\n    M -63.56 6.62 \n    C -63.56 -29.24 -34.46 -58.32 1.44 -58.32 \n    C 18.67 -58.32 35.21 -51.47 47.39 -39.30 \n    C 59.58 -27.12 66.43 -10.60 66.43 6.62 \n    C 66.43 42.49 37.33 71.56 1.44 71.56 \n    C -34.46 71.56 -63.56 42.49 -63.56 6.62 Z\" />\n\n  <path fill=\"#308eb0\" d=\"\n    M -21.97 -48.36 \n    C -21.97 -61.28 -11.49 -71.74 1.44 -71.74 \n    C 7.64 -71.74 13.59 -69.28 17.98 -64.90 \n    C 22.37 -60.51 24.84 -54.56 24.84 -48.36 \n    C 24.84 -35.45 14.36 -24.98 1.44 -24.98 \n    C -11.49 -24.98 -21.97 -35.45 -21.97 -48.36 Z\" />\n\n  <path fill=\"#308eb0\" d=\"\n    M -39.79 -43.45 \n    L -12.95 -66.93 \n    L -14.86 -50.15 Z\" />\n\n  <path fill=\"#308eb0\" d=\"\n    M 42.66 -43.45 \n    L 15.82 -66.93 \n    L 17.73 -50.15 Z\" />\n\n  <path fill=\"#43a6c9\" d=\"\n    M -31.06 39.12 \n    C -49.01 21.17 -49.01 -7.93 -31.06 -25.88 \n    Q -16.50 -40.43 1.44 -51.61 \n    Q 19.38 -40.43 33.93 -25.88 \n    C 51.88 -7.93 51.88 21.17 33.93 39.12 \n    C 15.99 57.07 -13.11 57.07 -31.06 39.12 Z\" />\n\n  <path fill=\"#97d7ed\" d=\"\n    M -48.69 27.06 \n    C -57.95 5.00 -51.21 -20.54 -32.27 -35.16 \n    L -22.35 -22.32 \n    C -35.48 -12.19 -40.14 5.50 -33.73 20.79 Z\" />\n\n  <path fill=\"#97d7ed\" d=\"\n    M -34.85 -31.57 \n    C -33.18 -35.66 -28.52 -37.62 -24.43 -35.95 \n    C -22.47 -35.15 -20.91 -33.60 -20.09 -31.64 \n    C -19.27 -29.69 -19.26 -27.49 -20.06 -25.53 \n    C -21.73 -21.44 -26.39 -19.49 -30.48 -21.16 \n    C -34.56 -22.83 -36.52 -27.49 -34.85 -31.57 Z\" />\n\n  <path fill=\"#97d7ed\" d=\"\n    M -48.63 20.85 \n    C -46.96 16.77 -42.30 14.81 -38.21 16.48 \n    C -36.25 17.28 -34.69 18.83 -33.87 20.78 \n    C -33.05 22.74 -33.04 24.94 -33.84 26.90 \n    C -35.51 30.98 -40.17 32.94 -44.26 31.27 \n    C -48.34 29.60 -50.30 24.94 -48.63 20.85 Z\" />\n</svg>\n",
         "isAdminPetal": false
     },
@@ -756,6 +765,7 @@
         "burstHeal": 1.25,
         "burstHealChargeMs": 1000,
         "clumped": true,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ff94f4\" stroke=\"#d17bc9\" stroke-width=\"4\"/>\n</svg>"
     },
     "azalea": {
@@ -770,6 +780,7 @@
         "count": 1,
         "burstHeal": 9,
         "burstHealChargeMs": 1000,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\"\n     width=\"32\"\n     height=\"32\"\n     viewBox=\"0 0 32 32\">\n  <path\n    d=\"\n      M 24 16\n      Q 24 2.1436 12 9.0718\n      Q 0 16 12 22.9282\n      Q 24 29.8564 24 16\n      Z\"\n    fill=\"#ff94c9\"\n    stroke=\"#cf78a3\"\n    stroke-width=\"3\"\n    stroke-linejoin=\"round\"/>\n</svg>"
     },
     "sparkle": {
@@ -848,6 +859,7 @@
         "description": "Splits you in two while equipped. Click it to swap to your other half.",
         "color": "#9B59B6",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-30 -30 60 60\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <clipPath id=\"eye-clip\">\n      <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n      <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n    </clipPath>\n    <clipPath id=\"split-clip\">\n      <path d=\"M 0 -30 L -10 -10 L 4 10 L 0 30 L -30 30L -30 -30\"/>\n    </clipPath>\n  </defs>\n\n  <g clip-path=\"url(#split-clip)\">\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#CFBB50\" />\n\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#FFE763\" />\n\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#000\" stroke-width=\"1.7\" stroke-linecap=\"round\" />\n\n  <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"#000\" />\n  <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"#000\" />\n\n  <g clip-path=\"url(#eye-clip)\">\n    <circle cx=\"-5.2\" cy=\"-4.8\" r=\"3\" fill=\"#fff\" />\n    <circle cx=\"8.8\" cy=\"-4.8\" r=\"3\" fill=\"#fff\" />\n  </g>\n\n  <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"1\" />\n  <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"1\" />\n  </g>\n</svg>",
         "isAdminPetal": false
     },
@@ -1015,6 +1027,7 @@
         "petMobType": "sandstorm",
         "petMobRarity": "common",
         "petCount": 2,
+        "defendOnly": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-9.5 -13.5 17 27\" xmlns=\"http://www.w3.org/2000/svg\">\n  <g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n    <path d=\"M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10\" stroke=\"#654a19\" stroke-width=\"7\" />\n    <path d=\"M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10\" stroke=\"#7d5b1f\" stroke-width=\"3\" />\n  </g>\n</svg>",
         "isAdminPetal": false
     },
@@ -1152,6 +1165,7 @@
         "description": "Holds three charges. Ram a mob and it discharges one as lightning",
         "color": "#fcdd86",
         "count": 1,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\"><rect width=\"10\" height=\"6\" fill=\"#888888\" x=\"11\" y=\"2\" rx=\"1\"/><rect width=\"18\" height=\"24\" fill=\"#333333\" x=\"7\" y=\"8\" stroke-width=\"3\" stroke=\"#222222\" rx=\"1\"/><rect width=\"18\" height=\"8\" fill=\"#f0b467\" x=\"7\" y=\"8\" stroke-width=\"3\" stroke=\"#bf9052\" rx=\"1\"/></svg>",
         "isAdminPetal": false
     },
@@ -1199,6 +1213,7 @@
         "burstMana": 8.25,
         "burstManaChargeMs": 1500,
         "baseMaxMana": 57.75,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\"><circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#42E3F5\" stroke-width=\"4\" stroke=\"#35B8C6\"/></svg>"
     },
     "magic_leaf": {
@@ -1245,6 +1260,7 @@
         "petMobType": "sandstorm",
         "petMobRarity": "common",
         "petCount": 2,
+        "defendOnly": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-9.5 -13.5 17 27\" xmlns=\"http://www.w3.org/2000/svg\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10\" stroke=\"#35B8C6\" stroke-width=\"7\" /><path d=\"M 0 10 L 0 0 L 4 -7 M 0 0 L -6 -10\" stroke=\"#42E3F5\" stroke-width=\"3\" /></g></svg>",
         "isAdminPetal": false
     },
@@ -1281,6 +1297,7 @@
         "color": "rgba(255, 255, 255, 0)",
         "count": 1,
         "requiredMana": 5,
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\"><circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"rgba(66, 227, 245, 0.349)\"/><circle cx=\"16\" cy=\"16\" r=\"14.5\" stroke=\"rgba(66, 227, 245, 0.698)\" stroke-width=\"3\"/><circle cx=\"10\" cy=\"10\" r=\"1\" stroke=\"rgba(66, 227, 245, 0.349)\" stroke-width=\"3\"/></svg>",
         "isAdminPetal": false
     },
@@ -1298,6 +1315,7 @@
         "playerModifiers": {
             "aggroRange": 0.75
         },
+        "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16, 16) scale(0.64738) translate(-1.305, -0.48)\"><g transform=\"scale(3)\"><path d=\"M.59-.21c.84 1.49 2.59 1.6 1.8-.84.09.72-.24-1.85-.15-1.11.63-3.02-1.91-1.81-2.63.1.62-.65-1.27 1.27-.62.64C-2.33-.87-1.47 1.15-.19.45l0 0C.09.25.35.03.59-.21\" fill=\"#634002\" stroke=\"#503402\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><path d=\"M1.02-.82c.55-.01 1.18-.22 1.72-.05.16.07.32.13.48.2.46.24.76.71.92 1.2.16.48.05 1.11-.2 1.54-.23.4-.73.83-1.2.92-.47.09-.94.16-1.42.17-.46.01-.91-.05-1.36-.12-.77-.11-1.48-.38-2.18-.72-.46-.23-.76-.72-.92-1.2C-3.31.6-3.18.04-2.94-.43c.23-.43.73-.79 1.2-.92C-.86-1.61.16-.95 1.02-.82z\" fill=\"#634002\" stroke=\"#503402\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /><path d=\"M2.12 1.43c.49-.56 1.32-.81 2.07-.64 1.07.24 1.65 1.45 1.4 2.46-.56 2.24-3.14 2.25-4.98 2.16-1.49-.07-3.23-.11-4.49-1.02l0 0c-.44-.32-.75-.67-.92-1.2-.17-.51-.04-1.08.2-1.54.23-.43.73-.79 1.2-.92.45-.12 1.14-.09 1.54.2.59.37.79.39 2.53.48C1.15 1.43 1.64 1.45 2.12 1.43L2.12 1.43z\" fill=\"#634002\" stroke=\"#503402\" stroke-width=\"1\" stroke-linecap=\"round\" stroke-linejoin=\"round\" /></g></g></svg>",
         "isAdminPetal": false
     },
@@ -1316,5 +1334,73 @@
         "playerModifiers": {
             "evasion": 0.03
         }
+    },
+    "claw": {
+        "name": "Claw",
+        "damage": 5,
+        "health": 10,
+        "clawCritDamage": 100,
+        "size": 1,
+        "cooldown": 3500,
+        "price": 18,
+        "visual_scale": 1.5,
+        "description": "Does extra damage if the victim is above 80% health",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16, 16) scale(0.8888) translate(-2, 3)\"><path d=\"M-14-4Q8-16 18 6L8 0 12 10Q-2-2-14 4-12 0-14-4Z\"   fill=\"#4D2621\"   stroke=\"#3E1F1B\"   stroke-width=\"4\"   stroke-linecap=\"round\"   stroke-linejoin=\"round\" /></g></svg>",
+        "color": "#000000",
+        "count": 1
+    },
+    "fang": {
+        "name": "Fang",
+        "damage": 15,
+        "health": 1,
+        "lifesteal": 0.35,
+        "size": 1,
+        "cooldown": 3500,
+        "price": 18,
+        "visual_scale": 1.5,
+        "description": "Heals based on damage dealt by this petal",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16, 16) scale(1.1034)\"><path d=\"M 13 0 L 4.95 4.95 A 7 7 0 0 1 -4.95 4.95 L -13 0 L -4.95 -4.95 A 7 7 0 0 1 4.95 -4.95 Z\"   fill=\"#9C1010\"   stroke=\"#7E0D0D\"   stroke-width=\"3\"   stroke-linecap=\"round\"   stroke-linejoin=\"round\" /></g></svg>",
+        "color": "#000000",
+        "count": 1
+    },
+    "cotton": {
+        "name": "Cotton",
+        "damage": 0,
+        "health": 2,
+        "size": 1,
+        "cooldown": 1500,
+        "price": 10,
+        "visual_scale": 1.5,
+        "description": "Absorbs damage from the player",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><path d=\"M18.04 3.08Q26.2-1 26.2 7.84q5.44 2.72 2.72 8.16 2.72 7.48-4.76 7.48 1.36 6.12-6.8 4.08-6.8 5.44-9.52-2.04-7.48-1.36-4.08-8.16-4.76-3.4 0-7.48-.68-7.48 6.12-6.12 2.72-5.44 8.16-.68\" fill=\"#eee\" stroke=\"#c1c1c1\" stroke-width=\"2.04\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+        "color": "#000000",
+        "defendOnly": true,
+        "count": 1
+    },
+    "pearl": {
+        "name": "Pearl",
+        "damage": 20,
+        "health": 50,
+        "size": 1.25,
+        "cooldown": 4000,
+        "price": 34,
+        "visual_scale": 1.5,
+        "description": "Shoots out from orbit and uses gravity to pull itself to you",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16 16)scale(.91428)\"><circle r=\"17.5\" fill=\"#cfcca9\"/><circle r=\"14.5\" fill=\"#fffcd1\"/><circle cx=\"5\" cy=\"-5\" r=\"4\" fill=\"#fff\"/></g></svg>",
+        "color": "#000000",
+        "count": 1
+    },
+    "coral": {
+        "name": "Coral",
+        "damage": 35,
+        "health": 10,
+        "size": 1.25,
+        "cooldown": 2499,
+        "price": 30,
+        "visual_scale": 1.5,
+        "description": "It hits hard, but can break",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15.61 26.927q-1.56-7.805-.78-14.049M7.806 5.073c1.56 8.586 10.146 11.707 16.39 2.342\" stroke=\"#8b75b1\" stroke-width=\"10.146\"/><path d=\"M15.61 26.927q-1.56-7.805-.78-14.049M7.806 5.073c1.56 8.586 10.146 11.707 16.39 2.342\" stroke=\"#ab91da\" stroke-width=\"5.463\"/></g></svg>",
+        "color": "#000000",
+        "count": 1
     }
 }
