@@ -301,11 +301,13 @@ void GameServer::endSplit(Session& session, double nowMillis, bool armReload) {
     // is) and wrong for the pop. Say the pop here, once, while the body is
     // still ours to name: a flower that came apart in front of you and then
     // simply stopped existing reads as a dropped frame.
+    //
+    // Taken out WITH ITS PETS. Each half hatches its own from its own egg
+    // slots, and a body that went without them left them wandering the map
+    // with no owner -- a free squad per split, kept for good once the petal
+    // came off, and another one on every re-equip.
     if (world_.isAlive(parked) && !world_.has<Dead>(parked)) {
-        if (const Loadout* loadout = world_.tryGet<Loadout>(parked)) {
-            for (const Entity petal : loadout->spawned) commands_.destroy(petal);
-        }
-        commands_.destroy(parked);
+        destroyBody(parked);
     } else if (world_.isAlive(parked) && world_.has<NetId>(parked)) {
         const Transform* at = world_.tryGet<Transform>(parked);
         events_.killed(world_.get<NetId>(parked).value, at != nullptr ? at->position : Vec2{},

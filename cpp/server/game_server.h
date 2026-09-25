@@ -585,6 +585,11 @@ private:
     /// is exactly the part a splitter's second body must not repeat.
     Entity createPlayerBody(Session&, Realm, Vec2 position);
     void despawnPlayer(Session&, bool persist);
+    /// Queues a player body's destruction together with everything it put
+    /// into the world: its petals AND the pets its eggs hatched. Every path
+    /// that takes a body away goes through here -- a pet left behind keeps a
+    /// dangling owner and wanders for good.
+    void destroyBody(Entity body);
     /// Which realm this session's next body belongs in, from its spawn choice.
     Realm spawnRealmFor(const Session&) const;
     /// The door the session's spawn choice names, or null for the default and

@@ -691,11 +691,10 @@ void GameServer::reapDead(double nowMillis) {
                 // Nobody is watching through this body and nothing owns it. It
                 // leaves no corpse and no death notice, and its ring goes with
                 // it: a petal outliving its owner orbits a point in space
-                // forever.
-                if (const Loadout* loadout = world_.tryGet<Loadout>(e)) {
-                    for (const Entity petal : loadout->spawned) commands_.destroy(petal);
-                }
-                commands_.destroy(e);
+                // forever. So do its pets: a splitter half killed in combat is
+                // reaped on the tick it died, AFTER the ring pass, so the pass
+                // that recalls a downed flower's summons never sees it down.
+                destroyBody(e);
                 continue;
             }
             if (session != nullptr ? session->deathReported : bot->deathAnnounced) continue;
@@ -3829,11 +3828,9 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     if (session.arena) endArenaRun(session);
     session.realm = Realm::Overworld;
 
-    // The petals belong to the body, not the account, so they go with it.
-    if (const Loadout* loadout = world_.tryGet<Loadout>(session.entity)) {
-        for (const Entity petal : loadout->spawned) commands_.destroy(petal);
-    }
-    commands_.destroy(session.entity);
+    // The petals and pets belong to the body, not the account, so they go
+    // with it.
+    destroyBody(session.entity);
 
     session.entity = NULL_ENTITY;
     session.stage = SessionStage::Authenticated;
@@ -3841,6 +3838,28 @@ void GameServer::despawnPlayer(Session& session, bool persist) {
     // Same reason as the spawn: the id this member was known by is gone, and a
     // roster still naming it points every squadmate's HUD at nothing.
     if (const Squad* squad = squads_.forMember(squadIdOf(session))) broadcastSquadUpdate(*squad);
+}
+
+void GameServer::destroyBody(Entity body) {
+    if (body == NULL_ENTITY || !world_.isAlive(body)) return;
+    // The ring is on the Loadout; the pets are on the SLOT STATE, and the only
+    // other thing that ever walks those is the ring pass recalling a downed
+    // flower's summons (PetalSystem::clearRing). A body destroyed while it was
+    // standing is never down, so without this its pets outlived it with a
+    // dangling owner -- and an ownerless pet wanders for good.
+    //
+    // Destroyed, not killed, exactly as a recall does it: nothing dies here,
+    // so nothing raises a death event or drops anything. A handle the world
+    // already reaped is harmless: handles are generational.
+    if (const Loadout* loadout = world_.tryGet<Loadout>(body)) {
+        for (const Entity petal : loadout->spawned) commands_.destroy(petal);
+    }
+    if (const PetalSlotState* state = world_.tryGet<PetalSlotState>(body)) {
+        for (const PetalSlotState::Slot& slot : state->slots) {
+            for (const Entity pet : slot.pets) commands_.destroy(pet);
+        }
+    }
+    commands_.destroy(body);
 }
 
 // ---------------------------------------------------------------------------

@@ -75,6 +75,66 @@ bool equipSplitter(Harness& h, NetClient& client, const char* account, std::uint
     });
 }
 
+/// Every live pet whose owner is `body`.
+std::vector<Entity> petsOf(World& world, Entity body) {
+    std::vector<Entity> found;
+    Query<Pet> pets{world};
+    pets.each([&](Entity e, Pet& pet) {
+        if (pet.owner == body && !world.has<Dead>(e)) found.push_back(e);
+    });
+    return found;
+}
+
+/// Pets whose owner is no longer in the world. An ownerless pet wanders for
+/// good, so any of these is a leaked summon.
+std::size_t orphanedPets(World& world) {
+    std::size_t orphans = 0;
+    Query<Pet> pets{world};
+    pets.each([&](Entity, Pet& pet) {
+        if (!world.isAlive(pet.owner)) ++orphans;
+    });
+    return orphans;
+}
+
+/// Splits `account`'s flower, puts an egg in slot 1 -- which, through the one
+/// shared account, both halves wear -- and waits for BOTH halves to hatch.
+/// Returns the parked half, or NULL_ENTITY if any step failed.
+Entity splitWithPetsOnBothHalves(Harness& h, NetClient& client, const char* account) {
+    World& world = h.server.world();
+    const std::uint16_t splitter = content().petalIndex(kSplitterPetalId);
+    const std::uint16_t egg = content().petalIndex("soldier_ant_egg");
+    if (splitter == kInvalidIndex || egg == kInvalidIndex) return NULL_ENTITY;
+
+    if (!equipSplitter(h, client, account, splitter)) return NULL_ENTITY;
+    if (!h.stepUntil({&client}, [&] { return bodiesNamed(world, account).size() == 2; })) {
+        return NULL_ENTITY;
+    }
+    client.sendChat(std::string("/admin give ") + account + " soldier_ant_egg common 1");
+    if (!h.stepUntil({&client}, [&] {
+            return client.profile().stackCount(egg, Rarity::Common) > 0;
+        })) {
+        return NULL_ENTITY;
+    }
+    client.setLoadoutSlot(1, egg, Rarity::Common);
+    // Past the egg's equip cooldown, on both halves.
+    if (!h.stepUntil({&client}, [&] {
+            const std::vector<Entity> halves = bodiesNamed(world, account);
+            if (halves.size() != 2) return false;
+            for (const Entity half : halves) {
+                if (petsOf(world, half).empty()) return false;
+            }
+            return true;
+        }, 600)) {
+        return NULL_ENTITY;
+    }
+
+    const std::uint32_t steered = client.view().self().netId;
+    for (const Entity half : bodiesNamed(world, account)) {
+        if (world.get<NetId>(half).value != steered) return half;
+    }
+    return NULL_ENTITY;
+}
+
 } // namespace
 
 TEST(equipping_a_splitter_cuts_the_flower_along_the_petals_line) {
@@ -396,4 +456,83 @@ TEST(losing_a_half_ends_the_split_and_the_splitter_reloads) {
     const Entity survivor = bodiesNamed(world, "alice").front();
     CHECK(world.get<Loadout>(survivor).slots[0].broken);
     CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 2; }, 600));
+}
+
+TEST(taking_the_splitter_off_takes_the_parked_halfs_pets_with_it) {
+    // The dupe: let the parked half hatch its own squad, take the splitter
+    // off, and the half went but its pets stayed -- ownerless, wandering, and
+    // one more squad on every re-equip.
+    Harness h("splitter-merge-pets", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const Entity parked = splitWithPetsOnBothHalves(h, alice, "alice");
+    CHECK(parked != NULL_ENTITY);
+    if (parked == NULL_ENTITY) return;
+    const std::vector<Entity> parkedPets = petsOf(world, parked);
+    CHECK(!parkedPets.empty());
+
+    alice.setLoadoutSlot(0, kNoPetal, Rarity::Common);
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 1; }));
+    h.step(5, {&alice});
+
+    for (const Entity pet : parkedPets) CHECK(!world.isAlive(pet));
+    CHECK_EQ(orphanedPets(world), std::size_t{0});
+    // The half still standing keeps its own: the merge takes the OTHER body's
+    // kit, not the player's.
+    const std::vector<Entity> survivor = bodiesNamed(world, "alice");
+    CHECK_EQ(survivor.size(), std::size_t{1});
+    if (!survivor.empty()) CHECK(!petsOf(world, survivor.front()).empty());
+}
+
+TEST(losing_the_parked_half_takes_its_pets_with_it) {
+    // The other road out of a split: the parked half is KILLED, and the
+    // reaper meets a corpse nobody owns on the same tick. Killed by a mob,
+    // not by zeroing its health between ticks: combat runs after the ring
+    // pass, so a combat death is never seen down by the pass that recalls a
+    // downed flower's summons. A health bar emptied from outside the tick is,
+    // and would pass this test with the leak still in.
+    Harness h("splitter-death-pets", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    CHECK(loginNew(h, alice, "alice", "hunter2!"));
+    alice.joinGame(1280, 720, {}, "alice");
+    CHECK(h.stepUntil({&alice}, [&] { return alice.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    const Entity parked = splitWithPetsOnBothHalves(h, alice, "alice");
+    CHECK(parked != NULL_ENTITY);
+    if (parked == NULL_ENTITY) return;
+    const std::vector<Entity> parkedPets = petsOf(world, parked);
+    CHECK(!parkedPets.empty());
+
+    // The mob is left nothing else to kill. A pet it killed would be reaped
+    // as a death, and the steered half going down too would recall its own
+    // squad through the ordinary death path -- either one empties the count
+    // below without ever touching the leak.
+    for (const Entity half : bodiesNamed(world, "alice")) {
+        if (half == parked) continue;
+        world.get<Health>(half).invulnerableUntilMillis = 1e18;
+        for (const Entity pet : petsOf(world, half)) {
+            world.get<Health>(pet).invulnerableUntilMillis = 1e18;
+        }
+    }
+    for (const Entity pet : parkedPets) world.get<Health>(pet).invulnerableUntilMillis = 1e18;
+    Health& health = world.get<Health>(parked);
+    health.current = health.max * 1e-4;
+    health.invulnerableUntilMillis = 0.0;
+    const Vec2 at = world.get<Transform>(parked).position;
+    alice.sendChat("/admin spawn soldier_ant mythic " + std::to_string(static_cast<int>(at.x)) +
+                   " " + std::to_string(static_cast<int>(at.y)) + " 1");
+    CHECK(h.stepUntil({&alice}, [&] { return bodiesNamed(world, "alice").size() == 1; }));
+    h.step(5, {&alice});
+
+    for (const Entity pet : parkedPets) CHECK(!world.isAlive(pet));
+    CHECK_EQ(orphanedPets(world), std::size_t{0});
 }

@@ -637,13 +637,9 @@ void GameServer::destroyBot(Bot& bot) {
     removeBotFromSquad(bot.entity);
     botBossFirstSeen_.erase(bot.entity);
     botRaidSlots_.erase(bot.entity);
-    if (world_.isAlive(bot.entity)) {
-        // The ring belongs to the body, not to the name, so it goes with it.
-        if (const Loadout* loadout = world_.tryGet<Loadout>(bot.entity)) {
-            for (const Entity petal : loadout->spawned) commands_.destroy(petal);
-        }
-        commands_.destroy(bot.entity);
-    }
+    // The ring and the pets belong to the body, not to the name, so they go
+    // with it.
+    destroyBody(bot.entity);
     bot.entity = NULL_ENTITY;
 }
 
