@@ -239,6 +239,7 @@
         "color": "#000000",
         "count": 1,
         "passiveHeal": 1,
+        "passiveHealDefendOnly": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M30 16 Q16 4 2 16 Q16 28 30 16 Z\" \n        fill=\"#74b53f\" \n        stroke=\"#5e9333\" \n        stroke-width=\"3\" \n        stroke-linecap=\"round\" \n        stroke-linejoin=\"round\" />\n        \n  <path d=\"M30 16 Q16 13 2 16\" \n        fill=\"none\" \n        stroke=\"#5e9333\" \n        stroke-width=\"2\" \n        stroke-linecap=\"round\" \n        stroke-linejoin=\"round\" />\n</svg>",
         "isAdminPetal": false
     },

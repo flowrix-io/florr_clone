@@ -1102,6 +1102,12 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // loadout. Petal healing is added below and talent-scaled separately.
     aggregate.modifiers.passiveHealPerSecond = 1.0;
     std::uint8_t equipFlags = EquipNone;
+    // Whether the ring is physically pulled in, by updateRing's rule rather
+    // than runActions': with both keys held the ring LUNGES, so a flower doing
+    // that is not blocking. This is rysteria's `kDefending && !kAttacking`.
+    const PlayerInput* input = world.tryGet<PlayerInput>(player);
+    const bool blocking =
+        input != nullptr && input->current.defending() && !input->current.attacking();
 
     if (const Loadout* loadout = world.tryGet<Loadout>(player)) {
         // Storage grants nothing: the browser breaks out of this same sum at
@@ -1153,7 +1159,12 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
                     std::min(aggregate.modifiers.aggroRangeScale, mods.aggroRange);
             }
             aggregate.modifiers.petalAttractionRadius += mods.petalAttractionRadius;
-            aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
+            // A yucca pays only while the flower blocks. Gated on the stance
+            // alone, not on the body: a broken one heals like a broken leaf
+            // does, per the rule at the top of this loop.
+            if (!registry.petal(slot.configIndex).passiveHealDefendOnly || blocking) {
+                aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
+            }
             // Summed, not maximised: an orb and a magic flower are two
             // grants of pool, and two orbs are two of them. Mana is the one
             // thing a magic build spends, so stacking the supply is the

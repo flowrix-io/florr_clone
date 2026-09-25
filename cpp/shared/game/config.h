@@ -563,6 +563,10 @@ struct PetalConfig {
     double burstHeal = 0;
     double burstHealChargeMillis = 0;
     double passiveHeal = 0;     ///< per second, before rarity
+    /// The passive heal counts only while the flower is actually blocking:
+    /// defend held and attack not. Yucca's rule. Unlike `defendOnly` it moves
+    /// nothing on the ring -- the petal still lunges with the rest of it.
+    bool passiveHealDefendOnly = false;
     double burstShield = 0;
 
     // --- mana ---------------------------------------------------------------

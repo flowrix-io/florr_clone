@@ -58,6 +58,8 @@ const char* const kPetalsJson = R"JSON({
   "vessel":   {"name":"Vessel","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"baseMaxMana":100,"color":"#42E3F5"},
   "orb":      {"name":"Orb","damage":1,"health":5,"size":1,"cooldown":3500,"count":1,"burstMana":10,"burstManaChargeMs":1000,"color":"#42E3F5"},
   "magicleaf":{"name":"Magic Leaf","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveMana":5,"color":"#42E3F5"},
+  "leafy":    {"name":"Leafy","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"color":"#39B54A"},
+  "yuccaish": {"name":"Yuccaish","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"passiveHealDefendOnly":true,"color":"#74B53F"},
   "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
   "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"}
 })JSON";
@@ -1367,6 +1369,63 @@ TEST(a_sponge_defers_damage_only_while_its_body_is_alive) {
     rig.tick();
     CHECK(rig.slot(0).broken);
     CHECK_NEAR(rig.modifiers().spongeDamageDurationMillis, 0.0, 1e-12);
+}
+
+TEST(a_yucca_heals_only_while_the_flower_is_blocking) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "yuccaish");
+    rig.settleEquips();
+    const double yucca =
+        fixture().registry.petalStats(petalId("yuccaish"), Rarity::Common).passiveHealPerSecond;
+    CHECK(yucca > 0.0);
+
+    // Worn but not blocking: the base regeneration and nothing more.
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().passiveHealPerSecond, 1.0, 1e-12);
+
+    rig.setFlags(net::InputDefend);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().passiveHealPerSecond, 1.0 + yucca, 1e-12);
+
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().passiveHealPerSecond, 1.0, 1e-12);
+
+    // Both keys is a lunge, not a block (see the ring test above), so the
+    // ring is out and the yucca pays nothing.
+    rig.setFlags(net::InputAttack | net::InputDefend);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().passiveHealPerSecond, 1.0, 1e-12);
+
+    // The health itself follows the stance, not just the published rate.
+    Health& health = rig.world.get<Health>(rig.player);
+    health.current = health.max * 0.5;
+    const double before = health.current;
+    rig.setFlags(0);
+    rig.tick(30);
+    const double idleGain = health.current - before;
+    const double mid = health.current;
+    rig.setFlags(net::InputDefend);
+    rig.tick(30);
+    const double blockGain = health.current - mid;
+    CHECK(blockGain > idleGain);
+}
+
+TEST(a_leaf_heals_whatever_the_stance) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "leafy");
+    rig.settleEquips();
+    const double leaf =
+        fixture().registry.petalStats(petalId("leafy"), Rarity::Common).passiveHealPerSecond;
+    for (const std::uint8_t flags :
+         {std::uint8_t{0}, std::uint8_t{net::InputDefend}, std::uint8_t{net::InputAttack},
+          std::uint8_t{net::InputAttack | net::InputDefend}}) {
+        rig.setFlags(flags);
+        rig.tick();
+        CHECK_NEAR(rig.modifiers().passiveHealPerSecond, 1.0 + leaf, 1e-12);
+    }
 }
 
 TEST(a_sponge_publishes_the_damage_it_is_holding_for_the_bar) {
