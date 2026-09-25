@@ -256,6 +256,36 @@ inline constexpr double kWingOrbitLungeReach = 120.0;
 /// starts its cycle at home rather than mid-lunge.
 inline constexpr double kWingOrbitLungeRate = 2.5;
 
+/// The pearl's throw. When the ring extends past its rest radius, a pearl is
+/// shot straight out off it and left on the ground: it slides to a stop and
+/// stays where it came to rest in the WORLD, not on the flower, for as long as
+/// the ring stays extended. It rejoins the ring the moment the ring's
+/// extension comes back down to rest -- whatever buttons did that.
+///
+/// Launched at `kPearlLaunchSpeed` along its bearing from the flower, and
+/// slowed by ground friction that takes `kPearlGroundFriction` of its speed
+/// off per second, exponentially -- so it slides `speed / friction` = 180
+/// units and a stock flower's pearl settles about 240 out from the flower.
+///
+/// `kPearlMaxDistance` is the leash, measured from the flower's centre at a
+/// stock body and grown by whatever the body has grown, as the ring's rest
+/// radius is. A pearl the flower walks away from is dragged along at that
+/// distance rather than left behind; one inside it is not touched.
+///
+/// None of these is on the rarity ladder or scaled by the Range talent, for
+/// the reason the wing's lunge is not: the throw is the petal's identity.
+inline constexpr double kPearlLaunchSpeed = 900.0;
+inline constexpr double kPearlGroundFriction = 5.0;
+inline constexpr double kPearlMaxDistance = 1000.0;
+/// How long a recalled pearl takes the glide home instead of the spring. It is
+/// coming back from as far as the crest, and the spring across a gap that wide
+/// reads as the petal teleporting.
+inline constexpr double kPearlRecallGlideMillis = 300.0;
+
+/// A claw's bonus lands while its victim is still ABOVE this fraction of its
+/// health: an opening strike, not a finisher.
+inline constexpr double kClawCritHealthFraction = 0.8;
+
 /// Petal art radius and hit radius, as multiples of the flower's radius. The
 /// hitbox is deliberately more generous than the art: petals are small and
 /// fast, and matching the hitbox to the sprite makes them feel like they miss.

@@ -889,6 +889,12 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.bodyDamage = ctx.range(src, "bodyDamage", 0.0, 0.0, kMaxBaseStat);
     p.armorReduction = ctx.range(src, "armorReduction", 0.0, 0.0, kMaxBaseStat);
     p.armorPerStack = ctx.range(src, "armorPerStack", 0.0, 0.0, kMaxBaseStat);
+    p.petalArmor = ctx.range(src, "petalArmor", 0.0, 0.0, kMaxBaseStat);
+    p.clawCritDamage = ctx.range(src, "clawCritDamage", 0.0, 0.0, kMaxBaseStat);
+    // A FRACTION, not a percentage: 0.35 heals a third of the hit. Above one
+    // is legal -- gardn's mythic fang heals three times what it deals -- and
+    // the bound only keeps a typo from reading as a full heal on every graze.
+    p.lifesteal = ctx.range(src, "lifesteal", 0.0, 0.0, 100.0);
     p.equipFlags = parseEquipFlags(ctx.text(src, "equipFlags"));
     // The lightning cutter carries a second bit so the client can tell the two
     // blades apart and paint the cyan one. It is derived from the id rather
@@ -1444,6 +1450,15 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // reason: what a stack absorbs has to keep pace with what a mob of the
     // same tier hits for, and mob damage is the 3x ladder all the way up.
     s.armorPerStack = c.armorPerStack * stat;
+    // Bone's own armour climbs the ladder a MOB's armour climbs, flattening
+    // above ultra with it: it is the same kind of number doing the same job
+    // -- a flat amount off each hit the wearer takes -- so a bone and a mob
+    // of one tier are as hard to scratch as each other.
+    s.petalArmor = c.petalArmor * kMobArmorScale[static_cast<std::size_t>(rarityIndex(tier))];
+    // A claw's bonus is damage, so it is on the damage ladder beside `damage`.
+    s.critDamage = c.clawCritDamage * stat;
+    // A fraction of the damage dealt, and that damage already climbs.
+    s.lifesteal = c.lifesteal;
     s.reloadMillis = c.cooldownMillis;
     if (c.id == "yggdrasil") {
         // TypeScript overrides every row: it is always a 1/1 petal and its

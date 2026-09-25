@@ -168,6 +168,9 @@ struct Fixture {
     std::uint16_t burr = kInvalidIndex;
     std::uint16_t taproot = kInvalidIndex;
     std::uint16_t dandy = kInvalidIndex;
+    std::uint16_t boney = kInvalidIndex;
+    std::uint16_t clawy = kInvalidIndex;
+    std::uint16_t fangy = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -190,7 +193,10 @@ const Fixture& fixture() {
               "spore":{"name":"Spore","damage":0,"health":6,"size":1,"knockback":3,"poison":0.01,"poisonDuration":2000},
               "burr":{"name":"Burr","damage":5,"health":5,"size":1,"armorReduction":1.5},
               "taproot":{"name":"Taproot","damage":10,"health":10,"size":1,"armorPerStack":12},
-              "dandy":{"name":"Dandy","damage":8,"health":8,"size":1,"noHealDuration":10000}
+              "dandy":{"name":"Dandy","damage":8,"health":8,"size":1,"noHealDuration":10000},
+              "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
+              "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
+              "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35}
             })"));
         if (!wrote) {
             f.error = "cannot write the fixture content";
@@ -208,6 +214,9 @@ const Fixture& fixture() {
         f.burr = f.registry.petalIndex("burr");
         f.taproot = f.registry.petalIndex("taproot");
         f.dandy = f.registry.petalIndex("dandy");
+        f.boney = f.registry.petalIndex("boney");
+        f.clawy = f.registry.petalIndex("clawy");
+        f.fangy = f.registry.petalIndex("fangy");
         return f;
     }();
     return state;
@@ -2426,4 +2435,391 @@ TEST(a_hit_books_a_seed_against_a_mobs_ammunition_ring) {
     a.world.get<MobPetalRing>(mob).pending = 0;
     CHECK(a.combat.applyDamage(a.world, mob, player, 500.0, 2000.0).killed);
     CHECK_EQ(a.world.get<MobPetalRing>(mob).pending, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Bone: armour the petal itself wears
+// ---------------------------------------------------------------------------
+
+TEST(a_bones_armor_rides_the_mob_armor_ladder) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.boney == kInvalidIndex) return;
+
+    // "Just like regular entity armour": the same 3x steps a mob's climbs, and
+    // the same flattening above ultra.
+    static const double kExpected[kRarityCount] = {
+        10.0, 30.0, 90.0, 270.0, 810.0, 2430.0, 7290.0, 7290.0, 7290.0, 7290.0,
+    };
+    for (int t = 0; t < kRarityCount; ++t) {
+        const PetalStats s = f.registry.petalStats(f.boney, clampRarity(t));
+        CHECK_NEAR(s.petalArmor, kExpected[t], 1e-9);
+        CHECK_NEAR(s.petalArmor, 10.0 * kMobArmorScale[static_cast<std::size_t>(t)], 1e-9);
+    }
+    CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Mythic).petalArmor, 0.0, 1e-12);
+}
+
+TEST(a_bones_armor_blunts_the_bite_it_pays_for_every_hit) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.boney == kInvalidIndex) return;
+
+    // The same bite on a bone and on a petal with no armour: the bone pays
+    // only what gets past its 10.
+    for (const bool armored : {true, false}) {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1040, 1000}, 500.0);
+        a.world.add<ContactDamage>(mob, ContactDamage{15.0, 0.0});
+        const Entity petal =
+            equipPetal(a, player, armored ? f.boney : f.plain, Rarity::Common, {1025, 1000});
+        a.world.add<Health>(petal, Health{50.0, 50.0, 0.0, 0.0});
+        if (armored) a.world.add<Armor>(petal, Armor{10.0});
+
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(petal), armored ? 45.0 : 35.0, 1e-9);
+        // Still a silent cost: the ring does not flash for paying it.
+        CHECK_NEAR(a.world.get<Health>(petal).flashUntilMillis, 0.0, 1e-12);
+    }
+
+    // A bite the armour covers whole costs the bone nothing at all.
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1040, 1000}, 500.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{4.0, 0.0});
+    const Entity bone = equipPetal(a, player, f.boney, Rarity::Common, {1025, 1000});
+    a.world.add<Health>(bone, Health{10.0, 10.0, 0.0, 0.0});
+    a.world.add<Armor>(bone, Armor{10.0});
+    for (int tick = 0; tick < 30; ++tick) a.step(tick * net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(bone), 10.0, 1e-9);
+    // And it kept swinging the whole time: 14 a tick, thirty ticks.
+    CHECK_NEAR(a.health(mob), 500.0 - 14.0 * 30, 1e-9);
+}
+
+TEST(a_bones_armor_blunts_a_shot_but_not_a_drip) {
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0);
+    const Entity owner = a.player({2000, 2000});
+    const Entity bone = a.world.create();
+    a.world.add<PetalTag>(bone);
+    PetalInstance instance;
+    instance.owner = owner;
+    a.world.add<PetalInstance>(bone, instance);
+    a.world.add<Health>(bone, Health{100.0, 100.0, 0.0, 0.0});
+    a.world.add<Armor>(bone, Armor{10.0});
+
+    a.combat.applyDamage(a.world, bone, mob, 25.0, 1000.0);
+    CHECK_NEAR(a.health(bone), 85.0, 1e-9);
+    a.combat.applyDamage(a.world, bone, mob, 25.0, 1100.0, DamageKind::Recoil);
+    CHECK_NEAR(a.health(bone), 70.0, 1e-9);
+    // A drip is what armour lets through, on a petal exactly as on a mob.
+    a.combat.applyDamage(a.world, bone, mob, 5.0, 1200.0, DamageKind::Periodic);
+    CHECK_NEAR(a.health(bone), 65.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Claw: an opening strike
+// ---------------------------------------------------------------------------
+
+TEST(a_claw_adds_its_bonus_only_while_the_victim_is_above_eighty_percent) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.clawy == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1040, 1000}, 500.0);
+    equipPetal(a, player, f.clawy, Rarity::Common, {1025, 1000});
+
+    // Fresh: the claw's 5 plus its 100.
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 395.0, 1e-9);
+    // That blow took it to 79%, so from here on it is an ordinary 5.
+    a.step(net::kTickMillis, f.registry);
+    CHECK_NEAR(a.health(mob), 390.0, 1e-9);
+
+    // ABOVE, not at: a victim sitting exactly on 80% gets no bonus.
+    Arena b;
+    const Entity flower = b.player({1000, 1000});
+    const Entity worn = b.mob({1040, 1000}, 500.0);
+    b.world.get<Health>(worn).current = 400.0;
+    equipPetal(b, flower, f.clawy, Rarity::Common, {1025, 1000});
+    b.step(0.0, f.registry);
+    CHECK_NEAR(b.health(worn), 395.0, 1e-9);
+}
+
+TEST(a_claws_bonus_climbs_the_damage_ladder_and_takes_the_petal_talent) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.clawy == kInvalidIndex) return;
+
+    CHECK_NEAR(f.registry.petalStats(f.clawy, Rarity::Common).critDamage, 100.0, 1e-9);
+    CHECK_NEAR(f.registry.petalStats(f.clawy, Rarity::Rare).critDamage,
+               100.0 * petalStatScale(Rarity::Rare), 1e-9);
+    CHECK_NEAR(f.registry.petalStats(f.plain, Rarity::Rare).critDamage, 0.0, 1e-12);
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    PlayerModifiers modifiers;
+    modifiers.petalDamageScale = 2.0;
+    a.world.add<PlayerModifiers>(player, modifiers);
+    const Entity mob = a.mob({1040, 1000}, 1000.0);
+    equipPetal(a, player, f.clawy, Rarity::Common, {1025, 1000});
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 1000.0 - (5.0 + 100.0) * 2.0, 1e-9);
+}
+
+TEST(a_claw_opens_on_a_fresh_leech_off_its_shared_pool) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.clawy == kInvalidIndex) return;
+
+    // The bead the claw touches mirrors the pool, but the question is asked of
+    // the pool itself: a leech whose head is worn down is not fresh anywhere.
+    Arena a;
+    const std::vector<Entity> chain = sharedChain(a, 3, 500.0);
+    a.world.get<Health>(chain[0]).current = 300.0;
+    const Entity player = a.player({1120, 1100});
+    equipPetal(a, player, f.clawy, Rarity::Common, {1120, 1025});
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(chain[0]), 295.0, 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Fang: lifesteal
+// ---------------------------------------------------------------------------
+
+TEST(a_fang_heals_its_flower_a_fraction_of_what_the_hit_took_off) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.fangy == kInvalidIndex) return;
+
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.get<Health>(player).current = 50.0;
+    const Entity mob = a.mob({1040, 1000}, 500.0);
+    equipPetal(a, player, f.fangy, Rarity::Common, {1025, 1000});
+
+    a.step(0.0, f.registry);
+    CHECK_NEAR(a.health(mob), 485.0, 1e-9);
+    CHECK_NEAR(a.health(player), 50.0 + 15.0 * 0.35, 1e-9);
+
+    // What the bar LOST, not what was swung: finishing a mob with 4 left
+    // drinks 4's worth.
+    a.world.get<Health>(mob).current = 4.0;
+    a.step(net::kTickMillis, f.registry);
+    CHECK(a.world.has<Dead>(mob));
+    CHECK_NEAR(a.health(player), 50.0 + 15.0 * 0.35 + 4.0 * 0.35, 1e-9);
+}
+
+TEST(a_fang_heals_nothing_through_armor_a_lockout_or_a_full_bar) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.fangy == kInvalidIndex) return;
+
+    // Armour heavier than the swing: nothing came off, nothing comes back.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        a.world.get<Health>(player).current = 50.0;
+        const Entity mob = a.mob({1040, 1000}, 500.0);
+        a.world.add<Armor>(mob, Armor{20.0});
+        equipPetal(a, player, f.fangy, Rarity::Common, {1025, 1000});
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 500.0, 1e-9);
+        CHECK_NEAR(a.health(player), 50.0, 1e-9);
+    }
+    // A dandelion's lockout stops this heal as it stops every other.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        a.world.get<Health>(player).current = 50.0;
+        a.combat.applyNoHeal(a.world, player, 10000.0, 0.0);
+        const Entity mob = a.mob({1040, 1000}, 500.0);
+        equipPetal(a, player, f.fangy, Rarity::Common, {1025, 1000});
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 485.0, 1e-9);
+        CHECK_NEAR(a.health(player), 50.0, 1e-9);
+    }
+    // And a full bar stays exactly full.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1040, 1000}, 500.0);
+        equipPetal(a, player, f.fangy, Rarity::Common, {1025, 1000});
+        a.step(0.0, f.registry);
+        CHECK_NEAR(a.health(mob), 485.0, 1e-9);
+        CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    }
+}
+
+TEST(a_claw_and_a_fang_work_on_a_duellist_too) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (f.clawy == kInvalidIndex || f.fangy == kInvalidIndex) return;
+
+    for (const bool claw : {true, false}) {
+        Arena a;
+        const Entity attacker = a.player({1000, 1000});
+        const Entity victim = a.player({1200, 1000});
+        a.world.get<Faction>(attacker).friendlyFireEnabled = true;
+        a.world.get<Faction>(victim).friendlyFireEnabled = true;
+        a.world.get<Health>(attacker).current = 50.0;
+        a.world.get<Health>(victim).max = 1000.0;
+        a.world.get<Health>(victim).current = 1000.0;
+        equipPetal(a, attacker, claw ? f.clawy : f.fangy, Rarity::Common, {1180, 1000});
+
+        a.step(0.0, f.registry);
+        if (claw) {
+            CHECK_NEAR(a.health(victim), 1000.0 - 105.0, 1e-9);
+            CHECK_NEAR(a.health(attacker), 50.0, 1e-9);
+        } else {
+            CHECK_NEAR(a.health(victim), 1000.0 - 15.0, 1e-9);
+            CHECK_NEAR(a.health(attacker), 50.0 + 15.0 * 0.35, 1e-9);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cotton: a hit on the flower lands on the cotton first
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A cotton on `flower`'s ring, as the petal system spawns one: a petal the
+/// flower's loadout lists, marked to soak. No body, so nothing else in the
+/// arena reaches it except through the flower.
+Entity wearCotton(Arena& a, Entity flower, double health, std::uint8_t slot = 0) {
+    if (!a.world.has<Loadout>(flower)) a.world.add<Loadout>(flower);
+    const Entity e = a.world.create();
+    a.world.add<PetalTag>(e);
+    PetalInstance instance;
+    instance.owner = flower;
+    instance.slot = slot;
+    instance.soaksOwnerDamage = true;
+    a.world.add<PetalInstance>(e, instance);
+    a.world.add<Transform>(e, Transform{a.world.get<Transform>(flower).position, 0.0});
+    a.world.add<Health>(e, Health{health, health, 0.0, 0.0});
+    a.world.add<Faction>(e, Faction{Team::Players, false});
+    a.world.get<Loadout>(flower).spawned.push_back(e);
+    return e;
+}
+
+} // namespace
+
+TEST(a_cotton_takes_a_hit_in_its_flowers_place_and_the_overflow_passes) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity cotton = wearCotton(a, player, 2.0);
+
+    const DamageResult hit = a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK(!hit.refused);
+    CHECK_NEAR(hit.applied, 8.0, 1e-9);
+    CHECK_NEAR(a.health(player), 92.0, 1e-9);
+    // The cotton took its 2 as an ordinary blow, and broke doing it.
+    CHECK_NEAR(a.health(cotton), 0.0, 1e-9);
+    CHECK(a.world.has<Dead>(cotton));
+
+    // Broken, it catches nothing more.
+    a.combat.applyDamage(a.world, player, mob, 10.0, 2000.0);
+    CHECK_NEAR(a.health(player), 82.0, 1e-9);
+}
+
+TEST(a_cotton_that_catches_the_whole_hit_spares_the_flower_but_opens_its_window) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity cotton = wearCotton(a, player, 20.0);
+
+    const DamageResult hit = a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK(!hit.refused);
+    CHECK_NEAR(hit.applied, 0.0, 1e-12);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.health(cotton), 10.0, 1e-9);
+    // The petal visibly took it; the flower did not.
+    CHECK(a.world.get<Health>(cotton).flashUntilMillis > 1000.0);
+    CHECK_NEAR(a.world.get<Health>(player).flashUntilMillis, 0.0, 1e-12);
+    // But the flower was hit, and is owed the window a hit buys -- or a mob
+    // touching it would take the cotton apart on consecutive ticks.
+    CHECK_NEAR(a.world.get<Health>(player).invulnerableUntilMillis, 1050.0, 1e-9);
+    CHECK(a.combat.applyDamage(a.world, player, mob, 10.0, 1049.0).refused);
+    CHECK_NEAR(a.health(cotton), 10.0, 1e-9);
+}
+
+TEST(a_cotton_is_never_worn_down_by_a_drip_or_a_dodged_blow) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity cotton = wearCotton(a, player, 20.0);
+
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0, DamageKind::Poison);
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1100.0, DamageKind::Periodic);
+    CHECK_NEAR(a.health(player), 80.0, 1e-9);
+    CHECK_NEAR(a.health(cotton), 20.0, 1e-9);
+
+    PlayerModifiers modifiers;
+    modifiers.evasion = 1.0;
+    a.world.add<PlayerModifiers>(player, modifiers);
+    CHECK(a.combat.applyDamage(a.world, player, mob, 10.0, 1200.0).dodged);
+    CHECK_NEAR(a.health(cotton), 20.0, 1e-9);
+}
+
+TEST(a_cotton_catches_what_the_shield_let_through_and_the_sponge_defers_the_rest) {
+    // After a shield: only the part of the blow that would have landed.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1100, 1000}, 100.0);
+        a.world.add<ShieldState>(player, ShieldState{6.0, 5000.0});
+        const Entity cotton = wearCotton(a, player, 20.0);
+        a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+        CHECK_NEAR(a.health(cotton), 16.0, 1e-9);
+        CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    }
+    // Ahead of a sponge: the sponge defers only the overflow.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1100, 1000}, 100.0);
+        PlayerModifiers modifiers;
+        modifiers.spongeDamageDurationMillis = 1000.0;
+        a.world.add<PlayerModifiers>(player, modifiers);
+        const Entity cotton = wearCotton(a, player, 3.0);
+        a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+        CHECK_NEAR(a.health(cotton), 0.0, 1e-9);
+        CHECK_NEAR(a.health(player), 100.0, 1e-9);
+        const SpongeDamageState& sponge = a.world.get<SpongeDamageState>(player);
+        CHECK_EQ(sponge.effects.size(), std::size_t(1));
+        CHECK_NEAR(sponge.effects[0].remainingDamage, 7.0, 1e-9);
+    }
+}
+
+TEST(two_cottons_each_take_what_they_can_before_the_flower_does) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity first = wearCotton(a, player, 3.0, 0);
+    const Entity second = wearCotton(a, player, 3.0, 1);
+    // A second instance in the FIRST slot is the same shared pool mirrored,
+    // and must not be spent a second time.
+    const Entity mirror = wearCotton(a, player, 3.0, 0);
+
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK_NEAR(a.health(first), 0.0, 1e-9);
+    CHECK_NEAR(a.health(second), 0.0, 1e-9);
+    CHECK_NEAR(a.health(mirror), 3.0, 1e-9);
+    CHECK_NEAR(a.health(player), 96.0, 1e-9);
+}
+
+TEST(a_mob_biting_a_flower_bites_its_cotton_first) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1030, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 0.0});
+    const Entity cotton = wearCotton(a, player, 25.0);
+
+    a.step(0.0);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.health(cotton), 15.0, 1e-9);
 }

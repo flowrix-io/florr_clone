@@ -302,6 +302,31 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         lines.push_back(strip);
     }
 
+    // Bone. Its armour is the whole of what the petal is for and it climbs the
+    // mob armour ladder, so the figure a player is weighing belongs here.
+    if (stats.petalArmor > 0.0) {
+        TooltipLine armor{"Armor: " + abbreviate(stats.petalArmor), 12.0};
+        armor.alpha = 0.56;
+        armor.altText = "Armor: " + exactNumber(stats.petalArmor);
+        lines.push_back(armor);
+    }
+
+    // Claw. Petal damage like the line above, so it carries the same talent.
+    if (stats.critDamage > 0.0) {
+        const double crit = std::round(stats.critDamage * skills.effectScale(SkillId::Damage));
+        TooltipLine bonus{"Crit Damage: +" + abbreviate(crit), 12.0};
+        bonus.alpha = 0.56;
+        bonus.altText = "Crit Damage: +" + exactNumber(crit);
+        lines.push_back(bonus);
+    }
+
+    // Fang. A fraction of what it deals, so it reads as a percentage.
+    if (stats.lifesteal > 0.0) {
+        TooltipLine steal{"Lifesteal: " + exactNumber(stats.lifesteal * 100.0) + "%", 12.0};
+        steal.alpha = 0.56;
+        lines.push_back(steal);
+    }
+
     // Talisman. The chance grows a step every tier and nothing in play shows
     // it -- a dodge is a hit that simply did not happen -- so it is printed.
     if (stats.modifiers.evasion > 0.0) {

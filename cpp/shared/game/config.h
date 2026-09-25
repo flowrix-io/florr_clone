@@ -518,6 +518,19 @@ struct PetalConfig {
     /// tier, so one figure holds the same proportion at every matched tier
     /// instead of quietly becoming immunity or dead weight at the ends.
     double armorPerStack = 0;
+    /// Armour this petal WEARS, before rarity: a flat amount off every hit the
+    /// petal itself takes, exactly as a mob's `armor` comes off every hit the
+    /// mob takes. Bone's "Sturdy". Stated at the common tier and scaled on
+    /// kMobArmorScale, the ladder a mob's armour climbs.
+    double petalArmor = 0;
+    /// What a claw adds to its swing while the victim is still above
+    /// kClawCritHealthFraction of its health, before rarity. A flat figure
+    /// on the petal damage ladder, added to `damage` rather than replacing it.
+    double clawCritDamage = 0;
+    /// The fraction of the damage this petal actually deals that comes back
+    /// to its flower as health. Fang's. Flat across the ladder: the damage it
+    /// is a fraction OF already climbs it.
+    double lifesteal = 0;
     /// What a worn cutter adds to the flower's BODY damage, before rarity.
     /// Scaled on the damage ladder, so it is stated at the common tier like
     /// every other damage figure. Not `damage` itself: nothing about this
@@ -698,6 +711,13 @@ struct PetalStats {
     /// Zero for every petal but root, and what marks a slot as one that
     /// prints a stack count on the loadout bar.
     double armorPerStack = 0;
+    /// Armour the petal itself wears, scaled for this tier on kMobArmorScale.
+    double petalArmor = 0;
+    /// A claw's bonus against a victim above kClawCritHealthFraction, scaled
+    /// for this tier.
+    double critDamage = 0;
+    /// Fraction of dealt damage healed back to the flower; flat by tier.
+    double lifesteal = 0;
     double reloadMillis = kDefaultPetalReloadMillis;
     double poisonPerSecond = 0;
     double poisonDurationMillis = 0;

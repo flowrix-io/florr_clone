@@ -238,6 +238,99 @@ double lungeReach(const PetalConfig& config, double ageMillis) {
     return kWingOrbitLungeReach * wave * wave;
 }
 
+/// Whether this petal leaves the ring while its flower attacks. The pearl, and
+/// nothing else -- asked by id for the reason lungeReach is.
+bool throwsFromOrbit(const PetalConfig& config) { return config.id == "pearl"; }
+
+/// Whether hits aimed at the flower land on this petal first. Cotton's, by id
+/// for the same reason; combat reads the answer off PetalInstance.
+bool soaksOwnerDamage(const PetalConfig& config) { return config.id == "cotton"; }
+
+/// Below this a sliding pearl has come to rest. Exponential friction never
+/// reaches zero on its own, and a pearl creeping a hundredth of a unit a tick
+/// is one the snapshot keeps re-sending for nothing.
+constexpr double kPearlRestSpeed = 1.0;
+
+/// Fly a pearl for one tick: shoot it off the ring when its place on the ring
+/// extends, let it slide to rest on the ground and keep it inside its leash
+/// while the ring stays extended, and hand it back to the ring the moment the
+/// ring draws back in.
+///
+/// True when the petal has been placed here and the ring's spring must leave
+/// it alone. False when it is on the ring -- including the tick it is
+/// recalled, which arms the glide the spring pass then flies it home on.
+///
+/// `flower` is where the flower is NOW, which is what the throw leaves from and
+/// what the leash is measured to; `bearing` is the pearl's place on the ring,
+/// used when it is too close to the flower to have a bearing of its own.
+bool flyThrownPetal(PetalInstance& instance, Transform& transform, Vec2 flower, double bearing,
+                    double leash, bool extending, double nowMillis, double dt) {
+    if (!extending) {
+        if (!instance.thrown) return false;
+        // Back to the ring. The glide rather than the spring, because the
+        // pearl may be a leash away and the spring across that gap is a jump.
+        instance.thrown = false;
+        instance.flightVelocity = Vec2{};
+        instance.glideUntilMillis = nowMillis + kPearlRecallGlideMillis;
+        return false;
+    }
+
+    if (!instance.thrown) {
+        // Straight out along its bearing from the flower. Nothing sideways:
+        // the ring's sweep is what the pearl is leaving behind.
+        const Vec2 offset = transform.position - flower;
+        const double outward = offset.lengthSq() > 1e-12 ? offset.angle() : bearing;
+        instance.flightVelocity = Vec2::fromAngle(outward, kPearlLaunchSpeed);
+        instance.thrown = true;
+        // Whatever the ring was doing with it is over: it is not whipping
+        // round a mob, and it is not gliding anywhere.
+        instance.attractedTo = NULL_ENTITY;
+        instance.glideUntilMillis = 0.0;
+    }
+
+    // The slide, integrated exactly rather than stepped: the distance a pearl
+    // covers comes out the same at any tick length, so a catch-up frame does
+    // not throw it further than three ordinary ones would.
+    const double step = std::max(0.0, dt);
+    const double decay = std::exp(-kPearlGroundFriction * step);
+    transform.position += instance.flightVelocity * ((1.0 - decay) / kPearlGroundFriction);
+    instance.flightVelocity *= decay;
+    if (instance.flightVelocity.lengthSq() < kPearlRestSpeed * kPearlRestSpeed) {
+        instance.flightVelocity = Vec2{};
+    }
+
+    // The leash. Only ever a pull: a pearl inside it is on the ground and is
+    // not touched, and one the flower has walked away from is dragged back to
+    // it, losing whatever of its slide was carrying it further out.
+    const Vec2 fromFlower = transform.position - flower;
+    const double distance = fromFlower.length();
+    if (distance > leash && distance > 1e-9) {
+        const Vec2 out = fromFlower / distance;
+        transform.position = flower + out * leash;
+        const double away = instance.flightVelocity.x * out.x + instance.flightVelocity.y * out.y;
+        if (away > 0.0) instance.flightVelocity -= out * away;
+    }
+
+    // A pearl stranded at NaN is invisible and unkillable. Hand it back to the
+    // ring rather than leave it there.
+    if (!std::isfinite(transform.position.x) || !std::isfinite(transform.position.y)) {
+        transform.position = flower;
+        instance.thrown = false;
+        instance.flightVelocity = Vec2{};
+        return false;
+    }
+
+    // Facing outward from the flower, as a petal on the ring does.
+    const Vec2 facing = transform.position - flower;
+    if (facing.lengthSq() > 1e-12) {
+        transform.angle = wrapAngle(facing.angle());
+        instance.facingAngle = transform.angle;
+    }
+    // The spring has nothing to pick up from a pearl it did not fly.
+    instance.ringVelocity = Vec2{};
+    return true;
+}
+
 bool hasTimedAction(const PetalConfig& config, const PetalStats& stats) {
     return config.projectile.present || stats.heal > 0.0 || stats.shield > 0.0 ||
            config.radiation.present || config.petMobIndex != kInvalidIndex ||
@@ -881,6 +974,10 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     }
     if (health > 0.0) world.add<Health>(petal, Health{health, stats.health, 0.0, 0.0});
     world.add<Faction>(petal, faction);
+    // Bone's armour is the same component a mob's is, so every hit the damage
+    // path lands on the petal is blunted by the one rule that blunts a mob's.
+    // Only on a petal that has some, so every other petal keeps its archetype.
+    if (stats.petalArmor > 0.0) world.add<Armor>(petal, Armor{stats.petalArmor});
 
     PetalInstance instance;
     instance.owner = player;
@@ -908,6 +1005,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     // petal has just served its whole cooldown to get here, and a slam it is
     // already standing in should discharge.
     instance.charges = chargesFor(config);
+    instance.soaksOwnerDamage = soaksOwnerDamage(config);
     world.add<PetalInstance>(petal, instance);
 
     world.add<PetalEffect>(petal, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
@@ -1304,6 +1402,9 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     // -- keep going for that twelfth of a second after the button came up.
     const PlayerInput* input = world.tryGet<PlayerInput>(player);
     const bool attacking = input != nullptr && input->current.attacking();
+    // Grown with the body the way the ring's rest radius is, so the leash
+    // leaves the same reach past the flower's edge at any size.
+    const double pearlLeash = kPearlMaxDistance + playerRadius - kPlayerBaseRadius;
     const double attractionRadius = std::max(0.0, aggregate.modifiers.petalAttractionRadius);
 
     // The ring is shared out among INSTANCES, not among slots. A clump counts
@@ -1383,9 +1484,22 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // physics -- and every fixed-direction petal is one -- is snapped onto
         // its point and keeps no state: giving it a spring would let it lag
         // behind the flower it is supposed to be painted on.
+        //
+        // A pearl is a fourth while its place on the ring is extended: off the
+        // ring entirely, on the ground where it was shot to, and handed back to
+        // the spring the tick it is recalled. "Extended" is the ring's actual
+        // extension as THIS petal rides it -- the ramped multiplier, clamped
+        // for a defendOnly petal as its radius is above -- rather than which
+        // buttons are down, so the pearl goes out and comes in with the ring:
+        // attack and defend held together is an extended ring, and so an
+        // extended pearl.
+        const double extension =
+            config.defendOnly ? std::min(ring->extension, 1.0) : ring->extension;
         if (config.noPhysics || config.hasFixedDirection) {
             transform->position = orbit;
-        } else {
+        } else if (!(throwsFromOrbit(config) &&
+                     flyThrownPetal(*instance, *transform, committed, angle, pearlLeash,
+                                    extension > 1.0, nowMillis, dt))) {
             stepPetalPhysics(world, registry, *instance, *transform, centre, orbit, angle,
                              attractionRadius, aggregate.spinScale, nowMillis, dt);
         }

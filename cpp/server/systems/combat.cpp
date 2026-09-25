@@ -1,6 +1,7 @@
 #include "server/systems/combat.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -259,6 +260,31 @@ Entity poolOwner(const World& world, Entity e) {
     return owner;
 }
 
+/// What a swing lands on `victim`: `damage`, plus a claw's `critDamage` while
+/// the victim is still above kClawCritHealthFraction of its health.
+///
+/// Asked of the ANIMAL, as every status is: a leech's beads all draw on one
+/// pool, and whether the bonus is due is a question about that pool. Read
+/// before the hit, so the blow that carries a mob below the line is the last
+/// one to get it.
+double swingDamage(const World& world, double damage, double critDamage, Entity victim) {
+    if (!(critDamage > 0.0)) return damage;
+    const Health* health = world.tryGet<Health>(poolOwner(world, victim));
+    if (health == nullptr || !(health->max > 0.0)) return damage;
+    return health->fraction() > kClawCritHealthFraction ? damage + critDamage : damage;
+}
+
+/// Fang's heal: `amount` back onto the flower, never past its max, and through
+/// the gates every heal in the game passes -- a dandelion's lockout, and a
+/// corpse, which only a revive may stand back up.
+void stealLife(World& world, Entity player, double amount, double nowMillis) {
+    if (!(amount > 0.0) || !world.isAlive(player) || world.has<Dead>(player)) return;
+    if (CombatSystem::healingBlocked(world, player, nowMillis)) return;
+    Health* health = world.tryGet<Health>(player);
+    if (health == nullptr || !health->alive()) return;
+    health->current = std::min(health->max, health->current + amount);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -479,7 +505,9 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     }
 
     // Armour: the victim's flat reduction on every DIRECT hit, less whatever a
-    // bur has stripped. Only mobs carry one.
+    // bur has stripped. Mobs carry one, and so does a bone petal -- whose
+    // armour also comes off the Recoil it pays for its own hits, which is the
+    // one blow a petal on the ring routinely takes.
     //
     // DIRECT ONLY, for the reason the shield below is direct-only: poison and a
     // sponge repayment arrive as a per-tick drip -- thirty slivers a second --
@@ -487,7 +515,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // Armour answers hits; poison is what gets through it.
     //
     // Below zero the subtraction ADDS, which is what a stripped mob is for.
-    if (isDirectHit(kind)) {
+    if (armorBlunts(kind)) {
         const double armor = effectiveArmor(world, victim, nowMillis);
         if (armor != 0.0) amount = std::max(0.0, amount - armor);
     }
@@ -544,6 +572,29 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
                                                       nowMillis + kPostHitInvulnerabilityMillis);
         }
         return result;
+    }
+
+    // Cotton takes what is left of the hit in the flower's place, up to what
+    // it has left, and only the overflow goes on. After armour and the shield,
+    // so a cotton is never spent on the part of a blow those two would have
+    // stopped anyway; ahead of the sponge, which would otherwise defer the
+    // whole hit and leave the cotton nothing to catch.
+    //
+    // Direct only, like everything else a flower wears against hits: a poison
+    // drip would wear a cotton down a sliver at a time and leave it broken for
+    // the blow it is there for.
+    if (directPlayerHit) {
+        amount = soakIntoCotton(world, victim, source, amount, nowMillis, kind);
+        if (amount <= 0.0) {
+            // Caught whole. The flower still earns the post-hit window a
+            // shield-absorbed hit does, or mob contact -- paced by that window
+            // and nothing else -- would strip the cotton on the very next tick.
+            // Re-fetched: a cotton breaking relocates rows.
+            Health& health = world.get<Health>(victim);
+            health.invulnerableUntilMillis = std::max(health.invulnerableUntilMillis,
+                                                      nowMillis + kPostHitInvulnerabilityMillis);
+            return result;
+        }
     }
 
     if (directPlayerHit) {
@@ -1038,6 +1089,50 @@ bool CombatSystem::rollDodge(World& world, Entity victim, double nowMillis) {
     return true;
 }
 
+double CombatSystem::soakIntoCotton(World& world, Entity flower, Entity source, double amount,
+                                    double nowMillis, DamageKind kind) {
+    const Loadout* loadout = world.tryGet<Loadout>(flower);
+    if (loadout == nullptr || !(amount > 0.0)) return amount;
+
+    // Gathered before the first is struck: a cotton the hit breaks is marked
+    // Dead, which relocates rows while the ring's list would still be walked.
+    //
+    // One per SLOT. Every instance of a shared-pool slot mirrors the whole
+    // pool, so taking a share from two of them would spend it twice; the
+    // fold at the top of the next tick is what tells them apart again.
+    cottonScratch_.clear();
+    std::array<bool, kLoadoutSlots> seen{};
+    for (const Entity petal : loadout->spawned) {
+        const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        if (instance == nullptr || !instance->soaksOwnerDamage) continue;
+        if (instance->slot >= kLoadoutSlots || seen[instance->slot]) continue;
+        // One this tick has already broken, or one spent by being used, has
+        // nothing left to catch with.
+        if (world.has<Dead>(petal)) continue;
+        const Health* health = world.tryGet<Health>(petal);
+        if (health == nullptr || health->current <= 0.0) continue;
+        seen[instance->slot] = true;
+        cottonScratch_.push_back(petal);
+    }
+
+    // In ring order, each taking what it can and passing the rest on: a second
+    // cotton catches what overflowed the first before any of it reaches the
+    // flower.
+    for (const Entity cotton : cottonScratch_) {
+        if (!(amount > 0.0)) break;
+        const Health* health = world.tryGet<Health>(cotton);
+        if (health == nullptr || health->current <= 0.0) continue;
+        const double caught = std::min(amount, health->current);
+        // An ordinary hit on the petal: it flashes, it breaks, its own armour
+        // applies, and the slot reloads by the one path every petal does.
+        // What the FLOWER is spared is the whole of `caught` either way.
+        const DamageResult hit = applyDamage(world, cotton, source, caught, nowMillis, kind);
+        if (hit.refused || hit.dodged) continue;
+        amount -= caught;
+    }
+    return amount;
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
@@ -1451,9 +1546,10 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         if (config.noPhysics) return;   // a pure modifier has no body to hit with
 
         const PetalStats stats = content.petalStats(petal.configIndex, petal.rarity);
-        const bool inert = stats.damage <= 0.0 && stats.poisonPerSecond <= 0.0 &&
-                           stats.slowFactor >= 1.0 && stats.knockback <= 0.0 &&
-                           stats.armorReduction <= 0.0 && stats.noHealDurationMillis <= 0.0;
+        const bool inert = stats.damage <= 0.0 && stats.critDamage <= 0.0 &&
+                           stats.poisonPerSecond <= 0.0 && stats.slowFactor >= 1.0 &&
+                           stats.knockback <= 0.0 && stats.armorReduction <= 0.0 &&
+                           stats.noHealDurationMillis <= 0.0;
         if (inert) return;
 
         MeleeSource source;
@@ -1470,6 +1566,9 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         source.slowDurationMillis = stats.slowDurationMillis;
         source.noHealDurationMillis = stats.noHealDurationMillis;
         source.armorReduction = stats.armorReduction;
+        source.critDamage = stats.critDamage;
+        source.lifesteal = stats.lifesteal;
+        source.owner = petal.owner;
         source.rarity = petal.rarity;
         source.isPetal = true;
         // The flower's damage bonus is a property of the flower, not of the
@@ -1481,8 +1580,11 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         // on the steep effect table, where a body slam takes the gentle stat
         // table; sharing one factor costs a fully talented ring most of its
         // damage.
+        //
+        // A claw's bonus is petal damage too, and takes the same curve.
         if (const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(petal.owner)) {
             source.damage *= modifiers->petalDamageScale;
+            source.critDamage *= modifiers->petalDamageScale;
         }
         melee_.push_back(source);
     });
@@ -1610,8 +1712,10 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 continue;
             }
 
-            DamageResult hit = applyDamage(world, victim, source.attacker,
-                                           source.damage, nowMillis);
+            // A claw's bonus is decided here, per victim, off the health the
+            // victim has BEFORE this hit.
+            const double swing = swingDamage(world, source.damage, source.critDamage, victim);
+            DamageResult hit = applyDamage(world, victim, source.attacker, swing, nowMillis);
             // A swing of NOTHING is still a swing. canHit() has already vouched
             // for this victim one line above -- alive, not a corpse, not
             // invulnerable, on the other side -- so the only refusal
@@ -1627,7 +1731,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // evasion, so the roll for one is made here -- an iris is an attack
             // like any other, and a fly that could not side-step the one petal
             // that needs no damage to kill it would not be evasive at all.
-            const bool zeroSwing = source.isPetal && source.damage == 0.0;
+            const bool zeroSwing = source.isPetal && swing == 0.0;
             if (zeroSwing && hit.refused && rollDodge(world, victim, nowMillis)) {
                 hit.dodged = true;
             }
@@ -1658,6 +1762,14 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 applyArmorShred(world, victim, source.armorReduction, nowMillis);
             }
 
+            // Fang: the flower drinks a fraction of what the hit actually took
+            // off -- the health bar's loss, not the swing, so armour and
+            // overkill cost it exactly what they cost the hit. A killing blow
+            // still took something, and still feeds.
+            if (source.lifesteal > 0.0 && hit.applied > 0.0) {
+                stealLife(world, source.owner, hit.applied * source.lifesteal, nowMillis);
+            }
+
             // The petal pays for the hit out of its own health, at the mob's
             // full damage stat, in the same block and on the same tick as the
             // damage it dealt. This IS the reload cycle: a ring that hits
@@ -1665,14 +1777,16 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // break/reload rhythm is most of what paces the fight.
             //
             // Exempt for a petal that names a `damageCooldown` -- glass and
-            // infinity never break on contact -- and Periodic, so the ring
-            // does not flash white for a cost the reference pays silently.
-            // The floating number takes care of itself: a petal is on neither
-            // of the reference's two damage-report channels.
+            // infinity never break on contact. Recoil rather than Direct, so
+            // the ring does not flash white for a cost the reference pays
+            // silently -- but it is a blow as far as armour goes, and a bone
+            // shrugs off the part of the bite its armour covers. The floating
+            // number takes care of itself: a petal is on neither of the
+            // reference's two damage-report channels.
             if (landed && source.isPetal && source.hitIntervalMillis <= 0.0 &&
                 world.has<MobTag>(victim)) {
                 applyDamage(world, source.attacker, victim, contactDamageOf(world, victim),
-                            nowMillis, DamageKind::Periodic);
+                            nowMillis, DamageKind::Recoil);
             }
 
             // Re-fetched, never cached across the calls above: adding Dead or
@@ -1864,7 +1978,14 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     // flower still waits its 250 ms, and still pays for the swing below.
     world.ensure<HitCooldowns>(source.attacker).arm(victim, nowMillis + interval);
 
-    const DamageResult hit = applyDamage(world, victim, source.attacker, source.damage, nowMillis);
+    // A claw opens on a fresh duellist exactly as it opens on a fresh mob.
+    const double swing = swingDamage(world, source.damage, source.critDamage, victim);
+    const DamageResult hit = applyDamage(world, victim, source.attacker, swing, nowMillis);
+    // And a fang drinks from one: what the victim's bar lost, never what a
+    // shield, a cotton or a sponge took instead.
+    if (source.lifesteal > 0.0 && hit.applied > 0.0) {
+        stealLife(world, owner, hit.applied * source.lifesteal, nowMillis);
+    }
     // Away from the FLOWER rather than from the petal: applyPvpDamage measures
     // from the attacker's own centre, and a spinning ring puts its petals on
     // the far side of the victim half the time. A refused swing -- dead,

@@ -52,6 +52,9 @@ const char* const kPetalsJson = R"JSON({
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
   "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
+  "pearl":    {"name":"Pearl","damage":20,"health":50,"size":1.25,"cooldown":4000,"count":1,"color":"#FFFFFF"},
+  "cotton":   {"name":"Cotton","damage":0,"health":2,"size":1,"cooldown":1500,"count":1,"defendOnly":true,"color":"#FFFFFF"},
+  "bone":     {"name":"Bone","damage":14,"health":10,"size":1,"cooldown":1500,"count":1,"petalArmor":10,"color":"#FFFFFF"},
   "vessel":   {"name":"Vessel","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"baseMaxMana":100,"color":"#42E3F5"},
   "orb":      {"name":"Orb","damage":1,"health":5,"size":1,"cooldown":3500,"count":1,"burstMana":10,"burstManaChargeMs":1000,"color":"#42E3F5"},
   "magicleaf":{"name":"Magic Leaf","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveMana":5,"color":"#42E3F5"},
@@ -2645,4 +2648,207 @@ TEST(only_the_wing_lunges) {
         CHECK_NEAR(rig.radiusOf(rig.petals(1).front()), ring, 0.5);
     }
     CHECK(wingMoved);
+}
+
+// ---------------------------------------------------------------------------
+// Pearl: shot out onto the ground while attacking
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// How far a pearl may be from its flower: the stock leash, grown by whatever
+/// the body has grown, as the pearl's own placement works it out.
+double pearlLeash(Rig& rig) {
+    return kPearlMaxDistance + rig.world.get<Body>(rig.player).radius - kPlayerBaseRadius;
+}
+
+/// A rig holding attack with its pearl already shot out and at rest.
+Entity restingPearl(Rig& rig) {
+    rig.equip(0, "pearl");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    rig.setFlags(net::InputAttack);
+    rig.tick(90);
+    return rig.petals(0).front();
+}
+
+} // namespace
+
+/// "Shoots out from orbit": on attack the pearl leaves the ring straight out
+/// along its bearing, slides to a stop on the ground well past the extended
+/// ring, and stays there for as long as the button is held.
+TEST(a_pearl_is_shot_out_and_comes_to_rest_on_the_ground_while_attacking) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "pearl");
+    rig.equip(1, "basic");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    const Entity pearl = rig.petals(0).front();
+    const Entity basic = rig.petals(1).front();
+    // At rest it is a petal on the ring like any other.
+    const double start = rig.ring().radius;
+    CHECK_NEAR(rig.radiusOf(pearl), start, 0.5);
+    CHECK(!rig.world.get<PetalInstance>(pearl).thrown);
+    const double bearing = rig.angleOf(pearl);
+
+    rig.setFlags(net::InputAttack);
+    double previous = rig.radiusOf(pearl);
+    for (int i = 0; i < 90; ++i) {
+        rig.tick();
+        CHECK(rig.world.get<PetalInstance>(pearl).thrown);
+        // Straight out and only ever out, and never past the leash.
+        const double reach = rig.radiusOf(pearl);
+        CHECK(reach >= previous - 1e-9);
+        CHECK(reach <= pearlLeash(rig) + 1e-9);
+        CHECK(angularGap(rig.angleOf(pearl), bearing) < 0.02);
+        previous = reach;
+    }
+    // It slid its authored distance, which puts it well past the extended ring.
+    CHECK_NEAR(previous, start + kPearlLaunchSpeed / kPearlGroundFriction, 1.5);
+    CHECK(previous > kPetalOrbitRestRadius * kPetalOrbitAttackExtension + 80.0);
+    CHECK(rig.world.get<PetalInstance>(pearl).flightVelocity.lengthSq() == 0.0);
+
+    // At rest means at rest: not creeping, not drifting back.
+    const Vec2 landed = rig.position(pearl);
+    rig.tick(60);
+    CHECK_NEAR(rig.position(pearl).x, landed.x, 1e-9);
+    CHECK_NEAR(rig.position(pearl).y, landed.y, 1e-9);
+    // The rest of the ring does what it always did.
+    CHECK_NEAR(rig.radiusOf(basic), rig.ring().radius, 0.5);
+
+    // Letting go hands it back to the ring -- once the ring has drawn back in
+    // to rest, a few ticks later -- and leaves it there.
+    rig.setFlags(0);
+    const bool home = rig.tickUntil(
+        [&] { return !rig.world.get<PetalInstance>(pearl).thrown; }, 10);
+    CHECK(home);
+    CHECK_NEAR(rig.ring().extension, 1.0, 1e-9);
+    rig.tick(120);
+    CHECK_NEAR(rig.radiusOf(pearl), rig.ring().radius, 0.5);
+}
+
+/// On the ground, not on the flower: a flower moving about inside the leash
+/// leaves its pearl exactly where it came to rest.
+TEST(a_pearl_stays_where_it_landed_while_its_flower_moves_inside_the_leash) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    const Entity pearl = restingPearl(rig);
+    const Vec2 landed = rig.position(pearl);
+    const Vec2 toward = (landed - rig.position(rig.player)).normalized();
+    const Vec2 across{-toward.y, toward.x};
+
+    for (int i = 0; i < 40; ++i) {
+        // Toward it, then sideways: never far enough to pull on the leash.
+        rig.world.get<Transform>(rig.player).position += (i < 20 ? toward : across) * 5.0;
+        rig.tick();
+        CHECK_NEAR(rig.position(pearl).x, landed.x, 1e-9);
+        CHECK_NEAR(rig.position(pearl).y, landed.y, 1e-9);
+        CHECK(rig.world.get<PetalInstance>(pearl).thrown);
+    }
+}
+
+/// The leash: a flower walking away drags its pearl along at the maximum
+/// distance rather than leaving it behind.
+TEST(a_pearl_is_dragged_along_at_its_leash_by_a_flower_walking_away) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    const Entity pearl = restingPearl(rig);
+    const Vec2 landed = rig.position(pearl);
+    const Vec2 away = (rig.position(rig.player) - landed).normalized();
+
+    // Far enough to go a good way past the leash, whatever it is set to.
+    const int ticks = static_cast<int>(std::ceil((pearlLeash(rig) + 300.0) / 12.0));
+    for (int i = 0; i < ticks; ++i) {
+        rig.world.get<Transform>(rig.player).position += away * 12.0;
+        rig.tick();
+        CHECK(rig.radiusOf(pearl) <= pearlLeash(rig) + 1e-6);
+    }
+    // Taut, trailing straight behind, and carried most of the way.
+    CHECK_NEAR(rig.radiusOf(pearl), pearlLeash(rig), 1e-6);
+    CHECK(angularGap(rig.angleOf(pearl), (-away).angle()) < 1e-6);
+    CHECK((rig.position(pearl) - landed).length() > 500.0);
+
+    // Dragged, it still lies where the leash left it once the flower stops.
+    const Vec2 stopped = rig.position(pearl);
+    rig.tick(30);
+    CHECK_NEAR(rig.position(pearl).x, stopped.x, 1e-9);
+    CHECK_NEAR(rig.position(pearl).y, stopped.y, 1e-9);
+}
+
+/// The pearl goes out and comes in with the ring's EXTENSION, not with the
+/// buttons. Attack and defend held together is an extended ring -- attack wins
+/// -- so the pearl stays out; the ring drawing in brings it home on the tick
+/// the extension is back at rest, not on the tick a button changed.
+TEST(a_pearl_follows_the_rings_extension_not_the_buttons) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "pearl");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Entity pearl = rig.petals(0).front();
+
+    // Out on the first tick the ring reaches past its rest radius.
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    CHECK(rig.ring().extension > 1.0);
+    CHECK(rig.world.get<PetalInstance>(pearl).thrown);
+    rig.tick(9);
+    CHECK(rig.radiusOf(pearl) > kPetalOrbitRestRadius * kPetalOrbitAttackExtension);
+
+    // Defend on top of attack leaves the ring extended, and the pearl with it.
+    rig.setFlags(net::InputAttack | net::InputDefend);
+    rig.tick(30);
+    CHECK_NEAR(rig.ring().extension, kPetalOrbitAttackExtension, 1e-9);
+    CHECK(rig.world.get<PetalInstance>(pearl).thrown);
+
+    // Defend alone draws the ring in over a few ticks; the pearl stays out
+    // for exactly as long as the ring is still extended.
+    rig.setFlags(net::InputDefend);
+    bool extendedAfterRelease = false;
+    for (int i = 0; i < 10; ++i) {
+        rig.tick();
+        const bool extended = rig.ring().extension > 1.0;
+        extendedAfterRelease = extendedAfterRelease || extended;
+        CHECK(rig.world.get<PetalInstance>(pearl).thrown == extended);
+    }
+    CHECK(extendedAfterRelease);
+    rig.tick(120);
+    CHECK(!rig.world.get<PetalInstance>(pearl).thrown);
+    CHECK_NEAR(rig.radiusOf(pearl), rig.ring().radius, 0.5);
+
+    // Extending again throws it again.
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    CHECK(rig.world.get<PetalInstance>(pearl).thrown);
+}
+
+// ---------------------------------------------------------------------------
+// Bone and cotton, as the ring spawns them
+// ---------------------------------------------------------------------------
+
+TEST(a_spawned_bone_wears_its_armor_and_a_spawned_cotton_soaks) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "bone", Rarity::Rare);
+    rig.equip(1, "cotton");
+    rig.equip(2, "basic");
+    rig.settleEquips();
+
+    const Entity bone = rig.petals(0).front();
+    const Entity cotton = rig.petals(1).front();
+    const Entity basic = rig.petals(2).front();
+    // 10 at common, up the mob armour ladder to rare.
+    CHECK(rig.world.has<Armor>(bone));
+    CHECK_NEAR(rig.world.get<Armor>(bone).amount, 10.0 * kMobArmorScale[2], 1e-9);
+    CHECK(!rig.world.has<Armor>(basic));
+    CHECK(!rig.world.has<Armor>(cotton));
+
+    CHECK(rig.world.get<PetalInstance>(cotton).soaksOwnerDamage);
+    CHECK(!rig.world.get<PetalInstance>(bone).soaksOwnerDamage);
+    CHECK(!rig.world.get<PetalInstance>(basic).soaksOwnerDamage);
 }

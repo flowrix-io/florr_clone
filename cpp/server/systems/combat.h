@@ -111,12 +111,25 @@ enum class DamageKind : std::uint8_t {
     /// floating number is cyan. Hence isDirectHit() rather than a widening
     /// `!= Periodic && != Poison` test at each of applyDamage's branches.
     Lightning = 3,
+    /// What a petal pays for a hit it landed: the struck mob's body damage,
+    /// billed back to the petal. Silent like a drip -- the reference charges
+    /// it without flashing the ring -- but a discrete blow as far as ARMOUR is
+    /// concerned, which is the whole of bone: its armour is there to blunt
+    /// exactly this.
+    Recoil = 4,
 };
 
 /// Whether this kind is a landed hit rather than a drip. Everything in
 /// applyDamage that used to ask `kind == Direct` asks this.
 inline constexpr bool isDirectHit(DamageKind kind) {
     return kind == DamageKind::Direct || kind == DamageKind::Lightning;
+}
+
+/// Whether the victim's Armor comes off this kind. Every landed hit, and the
+/// recoil a petal pays for one; never a drip, where a flat subtraction from
+/// each sliver would be immunity rather than a tax.
+inline constexpr bool armorBlunts(DamageKind kind) {
+    return isDirectHit(kind) || kind == DamageKind::Recoil;
 }
 
 struct DamageResult {
@@ -319,6 +332,14 @@ private:
         double noHealDurationMillis = 0;
         /// Armour this body strips on contact. Bur, and nothing else.
         double armorReduction = 0;
+        /// Added to `damage` while the victim is above kClawCritHealthFraction.
+        /// Claw, and nothing else; already on the flower's petal curve.
+        double critDamage = 0;
+        /// Fraction of what a hit actually took off that heals `owner`. Fang.
+        double lifesteal = 0;
+        /// The flower a petal belongs to -- who a fang heals. NULL_ENTITY for
+        /// every body that is not a petal.
+        Entity owner = NULL_ENTITY;
         Rarity rarity = Rarity::Common;
         /// What kind of body this is, decided once in the gather rather than
         /// re-derived per candidate. The throttle, the reciprocal petal bleed,
@@ -507,6 +528,17 @@ private:
     /// applyDamage refuses before it would roll.
     bool rollDodge(World& world, Entity victim, double nowMillis);
 
+    /// Cotton: land `amount` of a hit aimed at `flower` on the flower's live
+    /// cottons first, each taking up to what it has left, and return the
+    /// overflow that still reaches the flower. `amount` itself when the flower
+    /// is wearing none.
+    ///
+    /// Behind applyDamage, and through it: each cotton takes its share as an
+    /// ordinary hit, so it flashes, it breaks, and the slot reloads by the one
+    /// path every other petal does. Not const-safe against iteration.
+    double soakIntoCotton(World& world, Entity flower, Entity source, double amount,
+                          double nowMillis, DamageKind kind);
+
     std::unique_ptr<Queries> queries_;
     World* boundWorld_ = nullptr;
     EventQueue* events_ = nullptr;
@@ -538,6 +570,9 @@ private:
     /// The segments behind a shared chain's pool owner, gathered before any of
     /// them is touched. A member so a hit on a leech allocates nothing.
     std::vector<Entity> chainScratch_;
+    /// The cottons a hit is about to land on, gathered off the flower's ring
+    /// before the first of them is struck.
+    std::vector<Entity> cottonScratch_;
 
     /// Evasion's rolls, and nothing else. Combat's own stream for the reason
     /// the bots have theirs: drawing from the world's would move every spawn

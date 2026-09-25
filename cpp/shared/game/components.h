@@ -109,9 +109,12 @@ struct Health {
 
 /// Flat damage subtracted from every DIRECT hit this entity takes.
 ///
-/// Only mobs carry one. It is a MOB stat in the same sense health and contact
-/// damage are: derived from the config and the tier at spawn and never touched
-/// again, which is what lets applyDamage() read it without the registry.
+/// Mobs carry one, and so does a petal whose config states `petalArmor`
+/// (bone) -- where it also blunts the mob's bite the petal pays for every hit
+/// it lands (DamageKind::Recoil). It is a stat in the same sense health and
+/// contact damage are: derived from the config and the tier at spawn and never
+/// touched again, which is what lets applyDamage() read it without the
+/// registry.
 ///
 /// A flat reduction rather than a percentage on purpose. Both the armour ladder
 /// and the petal damage ladder are 3x per tier, so a flat number holds the same
@@ -863,6 +866,22 @@ struct PetalInstance {
     /// while losing it because the mob walked away simply lets the spring pull
     /// the petal home.
     Entity attractedTo = NULL_ENTITY;
+
+    /// A pearl that has left the ring: shot out onto the ground, where it
+    /// stays -- leashed to its flower -- for as long as the ring is extended,
+    /// and returns to its orbit point when the ring draws back in. Only the
+    /// pearl ever sets it.
+    bool thrown = false;
+    /// How fast a thrown petal is still sliding, in the world frame. Kept apart
+    /// from `ringVelocity`, which the spring owns and would otherwise hand a
+    /// recalled pearl a slide it never had.
+    Vec2 flightVelocity;
+
+    /// Hits aimed at this petal's FLOWER land on this petal first, up to what
+    /// it has left, and only the overflow reaches the flower. Cotton's, and set
+    /// at spawn so the damage path -- which has no registry to ask -- can find
+    /// the flower's cotton by walking its ring.
+    bool soaksOwnerDamage = false;
 
     /// Set once this petal has run a behaviour that waits for its first mob
     /// contact -- lightning's strike, a bomb's detonation, the flower petal
