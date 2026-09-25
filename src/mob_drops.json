@@ -461,7 +461,15 @@
         "type": "petal",
         "itemType": "starfish",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.67,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "sand",
+        "rarity": "common",
+        "probability": 0.7,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -474,7 +482,15 @@
         "type": "petal",
         "itemType": "sponge",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.75,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "coral",
+        "rarity": "common",
+        "probability": 0.05,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -488,6 +504,14 @@
         "itemType": "sponge",
         "rarity": "common",
         "probability": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "coral",
+        "rarity": "common",
+        "probability": 0.05,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -747,7 +771,7 @@
         "type": "petal",
         "itemType": "random",
         "rarity": "common",
-        "probability": 0.4,
+        "probability": 0.002,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -847,7 +871,7 @@
         "type": "petal",
         "itemType": "random",
         "rarity": "common",
-        "probability": 0.5,
+        "probability": 0.0005,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -997,6 +1021,14 @@
         "probability": 0.6,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "pearl",
+        "rarity": "common",
+        "probability": 0.57,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -1087,6 +1119,48 @@
         "itemType": "cutter",
         "rarity": "common",
         "probability": 0.15,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "leech": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "fang",
+        "rarity": "common",
+        "probability": 0.87,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "faster",
+        "rarity": "common",
+        "probability": 0.47,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "crab": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "sand",
+        "rarity": "common",
+        "probability": 0.87,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "claw",
+        "rarity": "common",
+        "probability": 0.47,
         "minQuantity": 1,
         "maxQuantity": 1
       }
