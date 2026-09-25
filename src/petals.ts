@@ -230,6 +230,7 @@ type RarityOverride = Partial<Pick<PetalStats,
     | 'visualOffsetY'
     | 'damageCooldown'
     | 'spongeDamageDuration'
+    | 'cameraZoom'
     | 'clumped'
     | 'emissive'
     | 'lightRadius'
@@ -238,6 +239,18 @@ type RarityOverride = Partial<Pick<PetalStats,
 
 // Rarity-specific overrides for special cases
 const RARITY_OVERRIDES: { [petalType: string]: { [rarity: string]: RarityOverride } } = {
+    antennae: {
+        // Vision width is inverse to camera zoom: 1.25x output => 0.8x zoom.
+        rare: { cameraZoom: 0.80 },
+        epic: { cameraZoom: 0.75 },
+        legendary: { cameraZoom: 0.70 },
+        mythic: { cameraZoom: 0.50 },
+        ultra: { cameraZoom: 0.35 },
+        super: { cameraZoom: 0.20 },
+        unique: { cameraZoom: 0.10 },
+        // Apex is this codebase's Eternal-equivalent tier.
+        apex: { cameraZoom: 0.10 },
+    },
     stinger: {
         mythic: {
             image: `<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
@@ -1089,12 +1102,12 @@ function generatePetalStats(baseConfig: BasePetalConfig, rarity: Rarity, petalTy
         emissive: overrides.emissive ?? baseConfig.emissive,
         lightRadius: overrides.lightRadius ?? baseConfig.lightRadius,
         lightColor: overrides.lightColor ?? baseConfig.lightColor,
-        cameraZoom: baseConfig.cameraZoom !== undefined
+        cameraZoom: overrides.cameraZoom ?? (baseConfig.cameraZoom !== undefined
             // Same shape as multiplicative playerModifiers (range/damage/etc.):
-            // delta from 1 widens 1x at common to 4x at unique. Floor at 0.3 so
-            // higher rarities can't invert the camera or zoom past a sane limit.
+            // delta from 1 widens 1x at common to 4x at unique. Generic values
+            // have a 0.3 floor; antennae's exact tier overrides may go lower.
             ? Math.max(0.3, 1 + (baseConfig.cameraZoom - 1) * (1 + (rarityIndex / 8) * 3))
-            : undefined,
+            : undefined),
     };
 }
 
@@ -1186,4 +1199,3 @@ export function getDroppablePetalTypes(): string[] {
 export function getPetalRarities(petalType: string): string[] {
     return Object.keys(PETAL_CONFIG[petalType] || {});
 }
-

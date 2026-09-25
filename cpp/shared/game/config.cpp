@@ -1602,6 +1602,9 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
         s.modifiers.petalAttractionRadius = radius[ti];
         s.attractionForce = force[ti];
     }
+    if (c.id == "antennae" && rarityIndex(tier) >= rarityIndex(Rarity::Rare)) {
+        s.cameraZoom = 1.0 / antennaeVisionRangeScale(tier);
+    }
     return s;
 }
 

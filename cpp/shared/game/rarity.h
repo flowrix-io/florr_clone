@@ -176,13 +176,22 @@ inline double petalManaScale(Rarity r) {
 ///
 /// Geometric where petalModifierScale is linear, and deliberately so. Zoom is
 /// read as a WIDTH -- how much more world a tier shows -- and a linear ramp
-/// spends almost all of its growth in the first few tiers, so the last five
-/// upgrades of an antennae are worth a sliver of screen each. A 4/3 step is
-/// the same visible gain every time. Petals authored far from 1 run through
-/// zero near the top of the ladder; loadoutCameraZoom's floor is what catches
-/// them, exactly as it already caught a linear scope.
+/// spends almost all of its growth in the first few tiers. A 4/3 step gives
+/// camera petals such as observer the same visible gain every time. Petals
+/// authored far from 1 can run through zero near the top of the ladder;
+/// loadoutCameraZoom's floor catches those generic camera values.
 inline double petalZoomScale(Rarity r) {
     return std::pow(4.0 / 3.0, rarityIndex(r));
+}
+
+/// Antennae's effective vision-range multiplier from the requested output
+/// table. Apex keeps the unique-tier cap.
+inline double antennaeVisionRangeScale(Rarity r) {
+    static constexpr std::array<double, kRarityCount> kVisionScale = {
+        1.0, 1.0, 1.25, 4.0 / 3.0, 10.0 / 7.0,
+        2.0, 20.0 / 7.0, 5.0, 10.0, 10.0,
+    };
+    return kVisionScale[static_cast<std::size_t>(rarityIndex(clampRarity(rarityIndex(r))))];
 }
 
 /// Passive player modifiers (luck, magnetism, extra max health) scale linearly

@@ -484,7 +484,7 @@
         "price": 10,
         "fixedDirection": 0,
         "visualOffsetY": -1e+100,
-        "description": "Allows your flower to sense foes from farther away",
+        "description": "Increases your flower's vision range",
         "color": "#000000",
         "count": 0,
         "equipFlags": "Antennae",

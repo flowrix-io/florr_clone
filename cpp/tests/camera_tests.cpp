@@ -138,12 +138,10 @@ TEST(two_of_them_show_the_better_one_and_never_stack) {
     // Two observers are one observer, not 0.85 squared.
     p.loadout[0] = slot("observer");
     CHECK_NEAR(zoomOf(p), 0.85, 1e-12);
-    // And the stronger tier wins whichever slot it sits in. A unique antennae
-    // asks for more than the floor allows, so the floor is what it gets --
-    // still the better of the two, which is the rule under test.
+    // And the stronger tier wins whichever slot it sits in. Unique antennae
+    // reaches the 10x effective output cap.
     p.loadout[5] = slot("antennae", Rarity::Unique);
-    CHECK(scaled(0.92, Rarity::Unique) < kZoomFloor);
-    CHECK_NEAR(zoomOf(p), kZoomFloor, 1e-12);
+    CHECK_NEAR(zoomOf(p), 0.1, 1e-12);
 }
 
 TEST(rarity_widens_the_view_by_four_thirds_a_tier) {
@@ -158,14 +156,12 @@ TEST(rarity_widens_the_view_by_four_thirds_a_tier) {
     CHECK_NEAR(zoomOf(p), scaled(0.85, Rarity::Rare), 1e-12);
     CHECK_NEAR(1.0 - zoomOf(p), (1.0 - 0.80) * 4.0 / 3.0, 1e-12);
 
-    // Every tier widens the view over the one below it, until the floor stops
-    // it -- and once there it stays, rather than turning back round through
-    // zero into a camera zoomed all the way in.
+    // Observer keeps its existing rarity ramp and generic camera floor.
     double previous = 1.0;
     for (int i = 0; i < kRarityCount; ++i) {
-        p.loadout[0] = slot("antennae", static_cast<Rarity>(i));
+        p.loadout[0] = slot("observer", static_cast<Rarity>(i));
         const double zoom = zoomOf(p);
-        const double asked = scaled(0.92, static_cast<Rarity>(i));
+        const double asked = scaled(0.85, static_cast<Rarity>(i));
         CHECK_NEAR(zoom, std::max(kZoomFloor, asked), 1e-12);
         if (asked > kZoomFloor) CHECK(zoom < previous);
         else CHECK_NEAR(zoom, kZoomFloor, 1e-12);
