@@ -381,6 +381,17 @@ constexpr ChangelogEntry kChangelog[] = {
       "loaded petal swaps you to your other half",
       "Fixed some bugs",
     }},
+    {"September 25, 2026",
+     {
+      "Sewers overhaul",
+      "New petal: Fang",
+      "New petal: Pearl",
+      "New petal: Claw",
+      "New petal: Poo",
+      "New petal: Talisman",
+      "Mob aggro range bugs fixed",
+      "Patched some pet duping glitches",
+    }},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

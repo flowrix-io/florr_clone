@@ -849,6 +849,26 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             if (instance && instance->subIndex < 64) present |= 1ull << instance->subIndex;
         }
 
+        // A grain can leave the field without the fold above ever seeing it
+        // go. Combat marks the petal it kills Dead, as do the actions that
+        // spend one -- a heal delivered, a web laid, a bomb gone off -- and the
+        // reaper destroys it at the end of that same tick, so by this pass its
+        // handle names nothing and the grain is simply absent. The shared pool
+        // already charges an absent instance as a full loss (`missing`,
+        // above); an independent slot has to as well, or the grain reads as
+        // never having broken and is respawned just below with no reload at
+        // all -- a clump that came back faster than one petal of the same kind.
+        //
+        // A grain on the field holds a ready time of zero. One that broke in
+        // view of the fold already holds its deadline and is left alone.
+        if (slotState.independent && slotState.populated) {
+            for (int k = 0; k < count && k < 64; ++k) {
+                if ((present & (1ull << k)) != 0) continue;
+                double& ready = slotState.instanceReadyAtMillis[static_cast<std::size_t>(k)];
+                if (ready <= 0.0) ready = nowMillis + reload;
+            }
+        }
+
         const double spawnHealth = stats.breakable
                                        ? (slotState.independent ? stats.health : slotState.poolHealth)
                                        : 0.0;

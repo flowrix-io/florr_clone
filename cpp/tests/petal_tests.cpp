@@ -215,6 +215,18 @@ struct Rig {
     /// where the ring puts a petal wants a flower that holds still.
     void withMovement() { stepMovement = true; }
 
+    /// The server's end-of-tick reaper: everything marked Dead is destroyed
+    /// before the next tick's ring pass runs. tick() leaves it out, so a
+    /// petal killed there is still around to be seen next tick -- which is
+    /// never true in production, where combat marks the kill and the reaper
+    /// takes it the same tick.
+    void reap() {
+        Query<Dead> dead{world};
+        std::vector<Entity> doomed;
+        dead.collect(doomed);
+        for (const Entity e : doomed) world.destroy(e);
+    }
+
     /// Steps until `done` holds, so a test can wait on a reload without
     /// hard-coding how many ticks that is.
     template <class F>
@@ -1093,16 +1105,58 @@ TEST(a_combat_killed_independent_petal_still_pays_its_reload) {
     rig.equip(0, "shards");
     rig.tick();
 
+    // As the server does it: combat marks the kill, and the reaper destroys
+    // the petal at the end of that same tick. The ring pass never sees the
+    // corpse -- only a grain that is missing.
     const Entity shard = rig.petalWithSub(0, 1);
     const double brokenAt = rig.now + net::kTickMillis;
     rig.world.add<Dead>(shard);
+    rig.reap();
     rig.tick();
 
     CHECK_EQ(rig.petals(0).size(), std::size_t(2));
     const PetalSlotState& state = rig.world.get<PetalSlotState>(rig.player);
     CHECK_NEAR(state.slots[0].instanceReadyAtMillis[1], brokenAt + 500.0, 1e-9);
-    rig.tick(5);
-    CHECK_EQ(rig.petals(0).size(), std::size_t(2));
+    // Stays down for the whole reload, as a single petal would, and not a
+    // tick longer.
+    while (rig.now + net::kTickMillis < brokenAt + 500.0) {
+        rig.tick();
+        CHECK_EQ(rig.petals(0).size(), std::size_t(2));
+    }
+    rig.tick();
+    CHECK_EQ(rig.petals(0).size(), std::size_t(3));
+}
+
+TEST(a_clumped_grain_killed_and_reaped_pays_the_same_reload_as_a_single_petal) {
+    if (!contentLoaded()) return;
+    // The two health models side by side, both killed the way combat kills:
+    // marked Dead, reaped before the ring pass. A clump must not reload any
+    // faster than a single petal does.
+    Rig single;
+    single.equip(0, "basic");
+    single.settleEquips();
+    single.world.add<Dead>(single.petals(0).front());
+    single.reap();
+    const double singleBrokenAt = single.now + net::kTickMillis;
+    single.tick();
+    CHECK(single.slot(0).broken);
+    CHECK_NEAR(single.slot(0).reloadReadyAtMillis, singleBrokenAt + 1200.0, 1e-9);
+
+    Rig clump;
+    clump.equip(0, "sandy");
+    clump.tick();
+    CHECK_EQ(clump.petals(0).size(), std::size_t(4));
+    for (const Entity grain : clump.petals(0)) clump.world.add<Dead>(grain);
+    clump.reap();
+    const double clumpBrokenAt = clump.now + net::kTickMillis;
+    clump.tick();
+    CHECK_EQ(clump.petals(0).size(), std::size_t(0));
+    CHECK(clump.slot(0).broken);
+    CHECK_NEAR(clump.slot(0).reloadReadyAtMillis, clumpBrokenAt + 800.0, 1e-9);
+    clump.tick(5);
+    CHECK_EQ(clump.petals(0).size(), std::size_t(0));
+    CHECK(clump.tickUntil([&] { return clump.petals(0).size() == 4; }));
+    CHECK(clump.now >= clumpBrokenAt + 800.0);
 }
 
 TEST(an_independent_slot_reads_as_broken_only_when_all_of_it_is_down) {
