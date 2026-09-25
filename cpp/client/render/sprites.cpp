@@ -1,5 +1,6 @@
 #include "client/render/sprites.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 
@@ -528,6 +529,19 @@ bool SpriteCache::petalAnimated(std::uint16_t index) const {
     // bake blind: reported as animated so they take the long way.
     if (!sprite.usable || !sprite.document) return true;
     return sprite.document->animated();
+}
+
+Vec2 SpriteCache::petalOrigin(std::uint16_t index) const {
+    if (index >= petals_.size()) return {};
+    const Sprite& sprite = petals_[index];
+    if (!sprite.usable || !sprite.document) return {};
+    const SvgDocument& doc = *sprite.document;
+    // 'meet' scales the LONGER side of the viewBox to the box and centres the
+    // other, so one factor serves both axes.
+    const double side = std::max(doc.viewBoxWidth(), doc.viewBoxHeight());
+    if (side <= 0.0) return {};
+    return {-(doc.viewBoxX() + doc.viewBoxWidth() * 0.5) / side,
+            -(doc.viewBoxY() + doc.viewBoxHeight() * 0.5) / side};
 }
 
 void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, double x, double y,

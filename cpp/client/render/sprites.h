@@ -30,6 +30,7 @@
 
 #include "canvas.h"
 #include "client/render/mob_art.h"
+#include "shared/core/types.h"
 #include "svg.h"
 
 namespace flix {
@@ -72,6 +73,15 @@ public:
     /// True when this petal's artwork moves on its own clock, in which case a
     /// caller must not bake it into a bitmap -- the bake would freeze it.
     bool petalAnimated(std::uint16_t index) const;
+
+    /// Where the petal document's own (0, 0) lands relative to the centre of
+    /// the box drawPetal fits it into, as a fraction of that box's side and
+    /// before any rotation. A document ported from gardn keeps gardn's origin,
+    /// which is the point gardn places a petal BY; drawPetal centres the
+    /// viewBox instead, and the two differ wherever the viewBox is lopsided --
+    /// the stinger's is, by 1.75 of its 15.5 units. Zero for a symmetric box,
+    /// and for art that is not a document. Assumes the default xMidYMid meet.
+    Vec2 petalOrigin(std::uint16_t index) const;
 
     /// The artwork of one map tile, by the BARE file name its tileset names
     /// (`grass_c_0.svg`). Read out of the data directory the first time it is

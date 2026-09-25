@@ -827,8 +827,9 @@ struct PetalInstance {
     /// slot's bearing for a lone petal, and the outward sub-bearing that places
     /// the grain inside its cluster for a clumped one -- so a clump of four
     /// peas faces four ways. `Transform::angle` stays the slot bearing because
-    /// that is what the clump is drawn against; anything a grain LAUNCHES goes
-    /// down this instead.
+    /// that is what the clump is placed against; anything a grain LAUNCHES goes
+    /// down this instead. It is also the angle the petal is REPLICATED at, so
+    /// the client can turn a grain in towards its clump's centre.
     double facingAngle = 0;
     /// Projectile firing has its own attack-gated clock. Keeping it separate
     /// means an idle ring does not spend a shot cooldown, and an aura on the

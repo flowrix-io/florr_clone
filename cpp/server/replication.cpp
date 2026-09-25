@@ -41,6 +41,19 @@ double replicatedRadius(World& world, Entity e) {
     return 10.0;
 }
 
+/// The facing an entity is described at: its transform's, except for a
+/// flower's petal, which is sent the way its INSTANCE faces. That is the same
+/// number for every petal but a clump's grain, whose transform holds the
+/// clump's shared ring bearing while the grain itself faces out along its own
+/// sub-bearing -- and the client needs the latter to turn a stinger's grains
+/// in towards the middle of their clump.
+double replicatedAngle(World& world, Entity e, const Transform& transform) {
+    if (const PetalInstance* instance = world.tryGet<PetalInstance>(e)) {
+        return instance->facingAngle;
+    }
+    return transform.angle;
+}
+
 } // namespace
 
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
@@ -376,8 +389,9 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         out.u16(info.typeIndex);
         out.u8(static_cast<std::uint8_t>(info.rarity));
         out.u8(flags);
+        const double angle = replicatedAngle(world, candidate.entity, transform);
         out.position(transform.position);
-        out.angle(transform.angle);
+        out.angle(angle);
         out.f32(static_cast<float>(radius));
         // Current health and state travel WITH the spawn. Without them an
         // entity that enters view already hurt draws a full health bar until
@@ -423,7 +437,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         // this tick's update pass has nothing left to say about it.
         ClientView::Tracked tracked;
         tracked.position = transform.position;
-        tracked.angle = transform.angle;
+        tracked.angle = angle;
         tracked.radius = radius;
         tracked.seenThisTick = true;
         tracked.healthFraction = spawnSent;
@@ -476,7 +490,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tolerances.position * tolerances.position) {
             mask |= net::FieldPosition;
         }
-        if (std::fabs(wrapAngle(transform.angle - tracked.angle)) > tolerances.angle) {
+        const double angle = replicatedAngle(world, candidate.entity, transform);
+        if (std::fabs(wrapAngle(angle - tracked.angle)) > tolerances.angle) {
             mask |= net::FieldAngle;
         }
         // Compared AT THE WIDTH it would be sent in, which is the only
@@ -516,8 +531,8 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
             tracked.position = transform.position;
         }
         if (mask & net::FieldAngle) {
-            out.angle(transform.angle);
-            tracked.angle = transform.angle;
+            out.angle(angle);
+            tracked.angle = angle;
         }
         if (mask & net::FieldHealth) {
             net::writeHealthFraction(out, health->fraction(), healthWide);

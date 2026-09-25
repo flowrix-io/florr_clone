@@ -277,9 +277,13 @@ PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat) {
 /// outside the box it was fitted into is not cropped by the bake.
 constexpr double kClusterBakeMargin = 1.35;
 
+/// The stack size from which an inward-facing cluster closes up the way
+/// gardn's pinger does: five stingers turned in on its clump radius of 10.
+constexpr int kTightClusterCount = 5;
+
 void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t petalIndex,
                       double sizeStat, int count, double cx, double cy, double maxDiameter,
-                      double timeSeconds) {
+                      double timeSeconds, bool facesInward) {
     if (petalIndex == kNoPetal || !sprites.petalDrawable(petalIndex)) return;
 
     // A configured count below one means "not a stack" -- third eye, antennae
@@ -296,6 +300,14 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
 
     const double diameter = shape.diameter * fit;
     const double ring = shape.ring * fit;
+    // gardn measures its clump radius to each petal's own ORIGIN -- a
+    // stinger's is the middle of its triangle -- while drawPetal centres the
+    // viewBox, which for a stinger sits 1.75 units nearer the point. Turned
+    // inward, that left every triangle 1.75 units further out than the pinger
+    // draws it, and a ring of five read as a loose pinwheel rather than one
+    // closed shape. A big enough inward cluster puts the origin on the ring.
+    const bool tight = facesInward && drawCount >= kTightClusterCount;
+    const Vec2 origin = tight ? sprites.petalOrigin(petalIndex) : Vec2{};
 
     const auto paintCluster = [&](Canvas& into, double ox, double oy) {
         if (drawCount == 1) {
@@ -307,9 +319,16 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
             // Turned to face outward AND tilted by the petal's own icon angle,
             // which is the order gardn applies them in: it rotates to the ring
             // place, steps out along it, then rotates again by `icon_angle`.
-            sprites.drawPetal(into, petalIndex, ox + std::cos(angle) * ring,
-                              oy + std::sin(angle) * ring, diameter, angle + shape.tilt,
-                              timeSeconds);
+            // An inward-facing cluster is turned the other half of the way
+            // round, so its icons point at each other.
+            const double facing = facesInward ? angle + kPi : angle;
+            const double turn = facing + shape.tilt;
+            // The origin's offset from the box centre, turned with the icon;
+            // stepping back by it lands the origin on the ring place.
+            const double backX = (origin.x * std::cos(turn) - origin.y * std::sin(turn)) * diameter;
+            const double backY = (origin.x * std::sin(turn) + origin.y * std::cos(turn)) * diameter;
+            sprites.drawPetal(into, petalIndex, ox + std::cos(angle) * ring - backX,
+                              oy + std::sin(angle) * ring - backY, diameter, turn, timeSeconds);
         }
     };
 
@@ -336,6 +355,7 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
         variant = variant * 1000003u + q(diameter);
         variant = variant * 1000003u + q(ring);
         variant = variant * 1000003u + q(shape.tilt);
+        variant = variant * 2u + (facesInward ? 1u : 0u);
         if (drawCachedPicture(canvas, &sprites, variant, cx - side * 0.5, cy - side * 0.5, side,
                               side, [&](Canvas& bitmap) {
                                   paintCluster(bitmap, side * 0.5, side * 0.5);
@@ -423,11 +443,17 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         canvas.translate(0.0f, static_cast<float>(-kItemTileIconRise));
         canvas.scale(static_cast<float>(kItemTileIconScale),
                      static_cast<float>(kItemTileIconScale));
+        // A clump the world draws pointing inward is drawn that way here too
+        // -- all but the mythic stinger, whose three outward triangles close
+        // up into one bigger triangle and are kept that way on purpose.
+        const PetalConfig& config = content().petal(tile.petalIndex);
+        const bool facesInward = config.clumpFacesInward &&
+                                 !(config.id == "stinger" && tile.rarity == Rarity::Mythic);
         // No cap: gardn's own oversize rule lives inside the cluster, and every
         // petal it measures already fits its plate. The face clip is what
         // catches anything this game later adds that does not.
         drawPetalCluster(canvas, sprites, tile.petalIndex, stats.size, stats.count, 0.0, 0.0, 0.0,
-                         tile.timeSeconds);
+                         tile.timeSeconds, facesInward);
         canvas.restore();
     }
 

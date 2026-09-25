@@ -1278,3 +1278,20 @@ TEST(the_content_hash_covers_the_staged_maps) {
     std::remove((dir + "/tiny.tmj").c_str());
     std::remove((dir + "/tiny.tsj").c_str());
 }
+
+TEST(a_stinger_clump_splits_its_slots_damage_rather_than_multiplying_it) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t stinger = r.petalIndex("stinger");
+    const auto damage = [&](Rarity t) { return r.petalStats(stinger, t).damage; };
+    // One stinger to three holds each where it was; three to five spreads the
+    // tier's tripling over the two extra.
+    CHECK_NEAR(damage(Rarity::Legendary), 8100.0, 1e-9);
+    CHECK_NEAR(damage(Rarity::Mythic), 8100.0, 1e-9);
+    CHECK_NEAR(damage(Rarity::Ultra), 14580.0, 1e-9);
+    // The slot as a whole stays on the plain ladder at every tier.
+    for (int i = 0; i < kRarityCount; ++i) {
+        const Rarity t = static_cast<Rarity>(i);
+        const PetalStats s = r.petalStats(stinger, t);
+        CHECK_NEAR(s.damage * s.count, r.petal(stinger).damage * petalStatScale(t), 1e-6);
+    }
+}

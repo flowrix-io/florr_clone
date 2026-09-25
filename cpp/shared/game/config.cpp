@@ -905,6 +905,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.noPhysics = ctx.boolean(src, "noPhysics");
     p.defendOnly = ctx.boolean(src, "defendOnly");
     p.clumped = ctx.boolean(src, "clumped");
+    p.clumpFacesInward = ctx.boolean(src, "clumpFacesInward");
     p.independentHealth = ctx.boolean(src, "independentHealth");
     p.wallCollide = ctx.boolean(src, "wallCollide");
     p.emissive = ctx.boolean(src, "emissive");
@@ -1516,16 +1517,25 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // verbatim with the browser build, which reads its overrides from
     // TypeScript.
     s.count = c.count;
-    if (c.id == "light" || c.id == "pollen") {
+    if (c.id == "light" || c.id == "pollen" || c.id == "stinger") {
         static constexpr std::array<int, kRarityCount> kLightCount = {
             1, 2, 2, 3, 3, 5, 5, 5, 5, 5,
         };
         static constexpr std::array<int, kRarityCount> kPollenCount = {
             1, 2, 2, 2, 3, 3, 5, 5, 5, 7,
         };
+        static constexpr std::array<int, kRarityCount> kStingerCount = {
+            1, 1, 1, 1, 1, 3, 5, 5, 5, 7,
+        };
         const auto t = static_cast<std::size_t>(rarityIndex(tier));
-        s.count = c.id == "light" ? kLightCount[t] : kPollenCount[t];
+        s.count = c.id == "light" ? kLightCount[t] : c.id == "pollen" ? kPollenCount[t] : kStingerCount[t];
     }
+    // A stinger clump SPLITS its slot's damage rather than multiplying it: the
+    // slot as a whole stays on the plain 3x ladder, shared evenly among however
+    // many stingers the tier fields. So legendary -> mythic, one stinger to
+    // three, holds each at 8100, and mythic -> ultra, three to five, takes each
+    // from 8100 to 14580.
+    if (c.id == "stinger" && s.count > 1) s.damage /= s.count;
     s.breakable = c.breakable;
     // Geometric, not the passive-modifier curve the rest of this block takes:
     // see petalZoomScale.

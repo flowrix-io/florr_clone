@@ -88,8 +88,12 @@ inline constexpr double kItemTilePlateShade = 0.8;
 ///
 /// `sizeStat` and `count` are the RARITY-scaled values (`petalStats`), not the
 /// base ones: a mythic light is five icons where a common one is a single icon.
+///
+/// `facesInward` turns each icon of a stack to point at the cluster's centre
+/// instead of away from it, as the world draws a `clumpFacesInward` clump.
 void drawPetalCluster(Canvas&, const SpriteCache&, std::uint16_t petalIndex, double sizeStat,
-                      int count, double cx, double cy, double maxDiameter, double timeSeconds);
+                      int count, double cx, double cy, double maxDiameter, double timeSeconds,
+                      bool facesInward = false);
 
 /// What ONE icon of a petal measures inside a tile's 60-unit cell, and the
 /// tilt it is drawn at.

@@ -1892,8 +1892,9 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
 
     // The sprite's own spin is the ring's shared phase and nothing else, so
     // every instance of one petal type on a flower points the same way rather
-    // than fanning outward like spokes. entity.angle is the orbit POSITION and
-    // must not be reused here.
+    // than fanning outward like spokes. entity.angle is where the INSTANCE
+    // faces -- its ring bearing, or a clump grain's bearing out of its clump --
+    // and only an inward-facing clump reads it.
     double rotation = 0;
     if (entity.isRingPetal()) {
         // gardn's kFollowRot: turned to its own outward bearing, so whatever
@@ -1905,6 +1906,13 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
         rotation = out.lengthSq() > 0.0 ? out.angle() : entity.angle;
     } else if (config && config->hasFixedDirection) {
         rotation = config->fixedDirection;
+    } else if (config && config->clumpFacesInward &&
+               content_->petalStats(entity.typeIndex, entity.rarity).count > 1) {
+        // A grain faces out of its clump's centre, so half a turn on points
+        // the artwork's +X tip -- a stinger's point -- back into the middle.
+        // Gated on the count: a lone petal's facing is its ring bearing, and
+        // turning that round would aim it at the flower.
+        rotation = entity.angle + kPi;
     } else {
         const double speed = (config && config->speed > 0) ? config->speed : 1.0;
         rotation = std::fmod(timeSeconds * kPetalSpinRate * speed, kTau) + kPi * 0.5;

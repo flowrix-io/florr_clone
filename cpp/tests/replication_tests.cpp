@@ -1049,3 +1049,35 @@ TEST(a_mobs_ring_seed_is_replicated_as_a_petal_anchored_to_it) {
     f.tick(client, 2, 1033.0);
     CHECK(client.entities().count(netIdOf(f.world, mob)) == 1);
 }
+
+TEST(a_clump_grain_is_replicated_at_its_own_facing_not_the_clump_bearing) {
+    // Every grain of a clump holds the clump's one ring bearing in its
+    // transform. What the client needs to point a stinger's grains in towards
+    // their centre is the way each grain FACES, so that is what goes out.
+    Fixture f;
+    WorldView client;
+
+    const Entity grain = f.world.create();
+    PetalInstance instance;
+    instance.owner = f.viewer;
+    instance.subIndex = 1;
+    instance.subCount = 3;
+    instance.facingAngle = 0.3 + kTau / 3.0;
+    f.world.add<PetalInstance>(grain, instance);
+    f.world.add<Transform>(grain, Transform{{1060, 1000}, 0.3});
+    f.world.add<Body>(grain, Body{10.0, 1.0});
+    f.world.add<NetId>(grain, NetId{f.ids.next()});
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Petal;
+    f.world.add<Replicated>(grain, replicated);
+
+    f.tick(client, 1, 1000.0);
+    const std::uint32_t id = netIdOf(f.world, grain);
+    CHECK_NEAR(client.entities().at(id).targetAngle, 0.3 + kTau / 3.0, 1e-3);
+
+    // And it is the facing the update pass diffs against: the clump turning
+    // while the transform stands still still reaches the client.
+    f.world.get<PetalInstance>(grain).facingAngle = 0.5 + kTau / 3.0;
+    f.tick(client, 2, 1033.0);
+    CHECK_NEAR(client.entities().at(id).targetAngle, 0.5 + kTau / 3.0, 1e-3);
+}

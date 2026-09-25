@@ -486,15 +486,21 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
 
         // Smooth where the petal sits IN THE FLOWER'S FRAME, then put it back
         // on the flower's drawn position. See RemoteEntity::ownerOffset.
+        //
+        // The facing is eased at the same rate as the offset. A clump grain
+        // drawn pointing at its clump's centre turns with the ring, and taken
+        // straight off the wire it would hold still for a snapshot and then
+        // jump, while the grain it is painted on glides.
         const Vec2 targetOffset = e.targetPosition - owner->second.targetPosition;
         if (e.needsSnap) {
             e.ownerOffset = targetOffset;
+            e.angle = e.targetAngle;
             e.needsSnap = false;
         } else {
             e.ownerOffset += (targetOffset - e.ownerOffset) * t;
+            e.angle = lerpAngle(e.angle, e.targetAngle, t);
         }
         e.position = owner->second.position + e.ownerOffset;
-        e.angle = e.targetAngle;
     }
 }
 

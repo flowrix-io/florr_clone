@@ -41,14 +41,6 @@
       },
       {
         "type": "petal",
-        "itemType": "rose",
-        "rarity": "uncommon",
-        "probability": 0.1,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
         "itemType": "light",
         "rarity": "common",
         "probability": 0.5,
@@ -72,14 +64,6 @@
         "type": "petal",
         "itemType": "clover",
         "rarity": "common",
-        "probability": 0.1,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "clover",
-        "rarity": "uncommon",
         "probability": 0.1,
         "minQuantity": 1,
         "maxQuantity": 1
@@ -209,22 +193,6 @@
       },
       {
         "type": "petal",
-        "itemType": "bone",
-        "rarity": "uncommon",
-        "probability": 0.2,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "consumable",
-        "itemType": "speed_boost",
-        "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
         "itemType": "yucca",
         "rarity": "common",
         "probability": 0.4,
@@ -276,22 +244,6 @@
       {
         "type": "petal",
         "itemType": "dahlia",
-        "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "petal",
-        "itemType": "bone",
-        "rarity": "common",
-        "probability": 0.4,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "consumable",
-        "itemType": "shield",
         "rarity": "common",
         "probability": 0.4,
         "minQuantity": 1,
@@ -590,7 +542,7 @@
         "type": "petal",
         "itemType": "golden_leaf",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.08,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -1020,22 +972,6 @@
       {
         "type": "petal",
         "itemType": "pollen",
-        "rarity": "uncommon",
-        "probability": 0.5,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "consumable",
-        "itemType": "speed_boost",
-        "rarity": "uncommon",
-        "probability": 0.5,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      },
-      {
-        "type": "consumable",
-        "itemType": "shield",
         "rarity": "uncommon",
         "probability": 0.5,
         "minQuantity": 1,

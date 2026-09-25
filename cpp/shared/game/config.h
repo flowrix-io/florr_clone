@@ -539,6 +539,10 @@ struct PetalConfig {
     bool noPhysics = false;     ///< no body, no collision: a pure modifier
     bool defendOnly = false;    ///< only acts while the ring is pulled in
     bool clumped = false;       ///< a count > 1 spawns as one cluster
+    /// A clump's grains are drawn pointing at the clump's centre rather than
+    /// spinning in step with the rest of the ring. Only means anything for a
+    /// clumped petal at a count above 1; the stinger's triangles are the case.
+    bool clumpFacesInward = false;
     bool independentHealth = false;  ///< each petal of a cluster breaks alone
     bool wallCollide = false;
     bool emissive = false;
