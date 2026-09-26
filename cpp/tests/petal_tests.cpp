@@ -51,6 +51,7 @@ const char* const kPetalsJson = R"JSON({
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
+  "capacitor":{"name":"Capacitor","damage":0,"health":null,"size":1.25,"cooldown":2500,"count":1,"color":"#000000"},
   "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "pearl":    {"name":"Pearl","damage":20,"health":50,"size":1.25,"cooldown":4000,"count":1,"color":"#FFFFFF"},
   "cotton":   {"name":"Cotton","damage":0,"health":2,"size":1,"cooldown":1500,"count":1,"defendOnly":true,"color":"#FFFFFF"},
@@ -907,6 +908,105 @@ TEST(a_battery_ignores_a_mob_that_only_touches_the_ring) {
     rig.tick(40);
     CHECK_EQ(countStrikes(rig), std::size_t(0));
     CHECK_EQ(batteryCharges(rig), kBatteryCharges);
+}
+
+// ---------------------------------------------------------------------------
+// The capacitor
+// ---------------------------------------------------------------------------
+
+/// PetalSystem's own capacitor figures, private to it and spelt out here for
+/// the reason the battery's are.
+constexpr double kCapacitorMaxCharge = 60.0;
+constexpr double kCapacitorWindowMillis = 1000.0;
+
+/// A capacitor on a frozen ring, with a mob sitting on it. Off its centre by a
+/// few units, which touchesMob would otherwise read as a degenerate overlap.
+Entity touchCapacitor(Rig& rig, Rarity rarity = Rarity::Common) {
+    rig.equip(0, "capacitor", rarity);
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    const Vec2 at = rig.position(rig.petals(0).front());
+    return addMob(rig, {at.x + 5.0, at.y});
+}
+
+/// Take the mob off the capacitor without taking it out of the strike's reach,
+/// so the discharge still has a bolt to report.
+void pullAway(Rig& rig, Entity mob) {
+    const Vec2 petal = rig.position(rig.petals(0).front());
+    rig.world.get<Transform>(mob).position = {petal.x + 300.0, petal.y};
+}
+
+TEST(a_capacitor_discharges_what_it_banked_when_contact_ends) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "capacitor");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    // Nothing to touch: no charge, no strike.
+    rig.tick(40);
+    CHECK_EQ(countStrikes(rig), std::size_t(0));
+
+    const Vec2 at = rig.position(rig.petals(0).front());
+    const Entity mob = addMob(rig, {at.x + 5.0, at.y});
+    // Charging, silently, for as long as the contact lasts.
+    rig.tick();
+    CHECK_EQ(countStrikes(rig), std::size_t(0));
+
+    pullAway(rig, mob);
+    rig.tick();
+    CHECK_EQ(countStrikes(rig), std::size_t(1));
+    // One point per millisecond: one tick against the mob, under the cap.
+    CHECK_NEAR(lastStrikeDamage(rig), net::kTickMillis, 1e-6);
+
+    // Spent: stepping clear again throws nothing more.
+    rig.tick(40);
+    CHECK_EQ(countStrikes(rig), std::size_t(1));
+}
+
+TEST(a_capacitor_holds_no_more_than_its_cap) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    const Entity mob = touchCapacitor(rig);
+    // A third of a second against the mob, well past what the cap takes.
+    rig.tick(10);
+    CHECK_EQ(countStrikes(rig), std::size_t(0));
+    pullAway(rig, mob);
+    rig.tick();
+    CHECK_EQ(countStrikes(rig), std::size_t(1));
+    CHECK_NEAR(lastStrikeDamage(rig), kCapacitorMaxCharge, 1e-6);
+}
+
+TEST(a_capacitor_that_never_leaves_discharges_every_second) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    touchCapacitor(rig);
+    const double start = rig.now;
+
+    // Held against the mob throughout. A capacitor that only fired on leaving
+    // would bank forever here.
+    CHECK(rig.tickUntil([&] { return countStrikes(rig) > 0; }, 60));
+    CHECK_NEAR(rig.now - start, kCapacitorWindowMillis, 1e-6);
+    CHECK_NEAR(lastStrikeDamage(rig), kCapacitorMaxCharge, 1e-6);
+
+    // And starts over rather than firing every tick from then on.
+    const double first = rig.now;
+    CHECK(rig.tickUntil([&] { return countStrikes(rig) > 1; }, 60));
+    CHECK_NEAR(rig.now - first, kCapacitorWindowMillis, 1e-6);
+}
+
+TEST(a_capacitor_climbs_the_rarity_ladder_like_lightning) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    const Entity mob = touchCapacitor(rig, Rarity::Legendary);
+    rig.tick(10);
+    pullAway(rig, mob);
+    rig.tick();
+    CHECK_EQ(countStrikes(rig), std::size_t(1));
+    CHECK_NEAR(lastStrikeDamage(rig), kCapacitorMaxCharge * petalStatScale(Rarity::Legendary),
+               1e-6);
 }
 
 // ---------------------------------------------------------------------------

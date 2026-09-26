@@ -564,7 +564,7 @@ struct CreditLine {
     double advance;  ///< how far the cursor moves afterwards
 };
 
-constexpr std::array<CreditLine, 15> kCredits = {{
+constexpr std::array<CreditLine, 16> kCredits = {{
     {"Flowrix.pro", 18.0, kPaper, true, 10.0, 30.0},
     {"Developers", 14.0, kGoldHeading, false, 10.0, 24.0},
     {"• sussybite8888", 12.0, kPaper, false, 8.0, 20.0},
@@ -580,6 +580,8 @@ constexpr std::array<CreditLine, 15> kCredits = {{
     {"• Assets extracted by Bismuth(https://github.com/trigonal-bacon/gardn)",
      12.0, kPaper, false, 8.0, 20.0},
     {"• UI style by Bismuth(https://github.com/trigonal-bacon/gardn)",
+     12.0, kPaper, false, 8.0, 20.0},
+    {"• Some SVG images from FreeSVG.org(https://freesvg.org)",
      12.0, kPaper, false, 8.0, 20.0},
     {"Thanks for playing!", 13.0, kFooterGrey, true, 8.0, 20.0},
 }};

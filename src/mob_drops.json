@@ -914,6 +914,35 @@
       }
     ]
   },
+  "server": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "capacitor",
+        "rarity": "common",
+        "probability": 0.04,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "javascript",
+        "rarity": "common",
+        "probability": 0.95,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "bomb",
+        "rarity": "common",
+        "probability": 0.47,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
   "desert_centipede": {
     "guaranteed": false,
     "drops": [

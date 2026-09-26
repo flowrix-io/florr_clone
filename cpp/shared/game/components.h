@@ -902,6 +902,11 @@ struct PetalInstance {
     /// the flower walks into -- a battery declares no timed action and never
     /// reaches that gate at all.
     double nextChargeMillis = 0;
+    /// The capacitor's contact clock: how long this petal has spent against a
+    /// mob since it last discharged. Its shock is one point per millisecond of
+    /// this, capped, and is let go when the contact ends. Zero on every other
+    /// petal.
+    double contactMillis = 0;
 };
 
 struct Projectile {

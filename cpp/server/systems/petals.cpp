@@ -107,6 +107,18 @@ constexpr double kBatteryStrikeIntervalMillis = 500.0;
 /// blade shares the first one's cadence instead of doubling the strike rate.
 constexpr double kLightningCutterIntervalMillis = 500.0;
 
+/// The capacitor banks one point of shock per millisecond it spends against a
+/// mob, holds no more than 60, and throws all of it as one strike the moment
+/// the contact ends. A full second of unbroken contact discharges it too:
+/// without that, a capacitor that never LEAVES -- one latched onto a mob by
+/// attraction, one parked inside a boss -- would bank forever and never fire.
+///
+/// Common figures. The strike goes up the same 3x petal ladder a lightning
+/// petal's does, so an apex capacitor charges at 3^n points a millisecond.
+constexpr double kCapacitorChargePerMillis = 1.0;
+constexpr double kCapacitorMaxCharge = 60.0;
+constexpr double kCapacitorWindowMillis = 1000.0;
+
 /// An explosion reaches three times the petal's DRAWN size, and the reference
 /// arrives at that by multiplying by 40 twice -- once turning the size stat
 /// into pixels and once again inside the blast -- so the radius really is this
@@ -521,6 +533,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         updateRing(world, player, aggregate, dt);
         placePetals(world, registry, player, aggregate, nowMillis, dt, terrain);
         runActions(world, registry, player, nowMillis, dt);
+        dischargeCapacitors(world, registry, player, dt);
         // Last, so a battery that goes flat is taken off the ring AFTER this
         // tick's placement rather than being flown to an orbit point it is
         // about to be reaped from.
@@ -2630,6 +2643,67 @@ void PetalSystem::strikeBatteries(World& world, const ContentRegistry& registry,
         // cooldown, holding three again.
         if (flat) spendPetal(world, player, petal, slotId, subIndex, stats, nowMillis);
     }
+}
+
+void PetalSystem::dischargeCapacitors(World& world, const ContentRegistry& registry,
+                                      Entity player, double dt) {
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    if (loadout == nullptr) return;
+
+    // Snapshotted for the reason the batteries are: a strike creates entities,
+    // and the loadout's own list must not be walked while that happens.
+    capacitorList_.clear();
+    for (const Entity petal : loadout->spawned) {
+        const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        if (instance == nullptr || world.has<Dead>(petal)) continue;
+        if (registry.petal(instance->configIndex).id != "capacitor") continue;
+        capacitorList_.push_back(petal);
+    }
+    if (capacitorList_.empty()) return;
+
+    for (const Entity petal : capacitorList_) {
+        PetalInstance* instance = world.tryGet<PetalInstance>(petal);
+        const Transform* transform = world.tryGet<Transform>(petal);
+        if (instance == nullptr || transform == nullptr) continue;
+        const Rarity rarity = instance->rarity;
+        const PetalStats stats = registry.petalStats(instance->configIndex, rarity);
+        const Vec2 at = transform->position;
+
+        const bool touching = touchesGridMob(world, transform->realm, at, stats.radius);
+        if (touching) instance->contactMillis += dt * 1000.0;
+        // Thirty ticks of 1000/30 ms can sum to a hair under a second in
+        // floating point, so the window closes with a tolerance rather than
+        // running a tick long.
+        const bool windowOver = instance->contactMillis >= kCapacitorWindowMillis - 1e-6;
+        if (instance->contactMillis <= 0.0 || (touching && !windowOver)) continue;
+
+        // Everything the strike needs is read and the clock is reset BEFORE it
+        // is thrown, because the strike creates entities and nothing past this
+        // point may reach back through `instance`.
+        const double charge =
+            std::min(instance->contactMillis * kCapacitorChargePerMillis, kCapacitorMaxCharge);
+        instance->contactMillis = 0.0;
+        strikeLightning(world, player, at, charge * petalStatScale(rarity), rarity);
+    }
+}
+
+bool PetalSystem::touchesGridMob(World& world, Realm realm, Vec2 at, double radius) {
+    // The attraction grid rather than touchesMob's linear sweep: a capacitor
+    // asks every tick for as long as it is on the ring, not once per life. The
+    // grid was filed at the top of this tick, after movement, so it is where
+    // the mobs are now.
+    attractionGrid_.query(realm, at, radius, attractionCandidates_);
+    for (const Entity mob : attractionCandidates_) {
+        if (!world.isAlive(mob) || world.has<Dead>(mob)) continue;
+        const Transform* transform = world.tryGet<Transform>(mob);
+        const Body* body = world.tryGet<Body>(mob);
+        if (transform == nullptr || body == nullptr) continue;
+        const double reach = radius + body->radius;
+        const double gap = distanceSq(transform->position, at);
+        // touchesMob's rule exactly, degenerate centre-on-centre case included.
+        if (gap < reach * reach && gap > 0.0) return true;
+    }
+    return false;
 }
 
 void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registry, Entity player,

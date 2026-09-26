@@ -313,6 +313,14 @@ private:
     void strikeBatteries(World& world, const ContentRegistry& registry, Entity player,
                          double nowMillis);
 
+    /// The capacitor's discharge: the same strike again, armed by the PETAL
+    /// leaving a mob it has been touching and worth the contact time it
+    /// banked. Its own pass rather than a behaviour because the thing that
+    /// fires it is the END of a contact, which the action pass -- asked about
+    /// contacts only on the tick they begin -- never sees.
+    void dischargeCapacitors(World& world, const ContentRegistry& registry, Entity player,
+                             double dt);
+
     /// `health` <= 0 spawns the petal with no Health component at all, which is
     /// what an unbreakable petal is: not one with zero hit points, which would
     /// break on its first tick.
@@ -375,6 +383,9 @@ private:
     /// the broadphase, so the realm test is theirs to make: two maps'
     /// coordinates overlap numerically.
     bool touchesMob(World& world, Realm realm, Vec2 at, double radius);
+    /// touchesMob asked of the attraction grid instead of the whole world, for
+    /// a petal that asks every tick rather than until its first contact.
+    bool touchesGridMob(World& world, Realm realm, Vec2 at, double radius);
     /// Wild mobs in `realm` whose CENTRE is inside `radius`, which is the
     /// test both the strike and the explosion use.
     void collectMobsNear(World& world, Realm realm, Vec2 at, double radius,
@@ -457,6 +468,8 @@ private:
     /// first one fires: a discharge creates entities and can put its slot on
     /// the reload, and neither is legal while the loadout's own list is walked.
     std::vector<Entity> batteryList_;
+    /// The player's live capacitors, snapshotted for the same reason.
+    std::vector<Entity> capacitorList_;
     /// One player's live petals bucketed by slot, rebuilt per player. Members
     /// so the per-tick work does not allocate.
     std::array<std::vector<Entity>, kLoadoutSlots> bySlot_;
