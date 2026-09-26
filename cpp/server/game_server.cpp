@@ -1818,6 +1818,10 @@ void GameServer::announceBossDefeat(const MobType& type,
     // mourning a boss nobody was told about. An ultra dies as quietly as it
     // spawned.
     if (rarityIndex(type.rarity) < rarityIndex(kAnnouncedRarity)) return;
+    // The head's death is the animal's. A centipede's beads each carry their
+    // own ledger and die one by one, and a line per bead would be ten more
+    // deaths than the one spawn line chat was given.
+    if (content().mob(type.configIndex).chainBody) return;
     // Credited to the top damage dealer alone, whatever the kill was shared
     // with: `ranked` is already sorted by damage, so that is its first row.
     if (ranked.empty()) return;

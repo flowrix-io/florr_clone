@@ -392,6 +392,7 @@ constexpr ChangelogEntry kChangelog[] = {
       "Mob aggro range bugs fixed",
       "Patched some pet duping glitches",
       "Reload talent now stops at unique; an apex tier is refunded",
+      "Only a centipede's or leech's head shows a bossbar or a kill message",
     }},
 };
 

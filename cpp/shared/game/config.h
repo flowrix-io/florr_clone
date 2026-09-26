@@ -423,6 +423,15 @@ struct MobConfig {
     /// two fields it reads so the rule cannot be spelled two ways.
     bool sharedChainBody() const { return sharedSegmentHealth && segmentCount == 0; }
 
+    /// Some chain head's body type -- a centipede's bead or a leech's trailing
+    /// tube, of either family. Set from the head's link once every mob is
+    /// loaded, since the body cannot see its own name in anyone's link. The
+    /// animal is announced by its head: a boss's screen-top bar and the
+    /// "has been defeated" line in chat both skip these, or a super centipede
+    /// would fill the top of the screen with eleven bars and chat with eleven
+    /// deaths.
+    bool chainBody = false;
+
     /// Applied when this mob is SUMMONED rather than spawned wild. Only the
     /// digger is nerfed, and only as a pet: a wild digger keeps its full stats.
     double petHealthScale = 1.0;

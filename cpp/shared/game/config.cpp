@@ -1256,6 +1256,11 @@ bool ContentRegistry::loadFiles(const std::string& mobsPath, const std::string& 
         ctx.subject = "mob '" + key + "'";
         mobs.push_back(parseMob(ctx, key, mobsRoot[key], mobIds, petalIds, mobGroups, mobGroupIds));
     }
+    // Only after the loop: a head sorts before its `_body`, so the body's
+    // config does not exist yet when the head's link is resolved.
+    for (const MobConfig& head : mobs) {
+        if (head.segmentBodyIndex < mobs.size()) mobs[head.segmentBodyIndex].chainBody = true;
+    }
     for (const std::string& key : petalIdList) {
         if (std::binary_search(petalKeys.sorted.begin(), petalKeys.sorted.end(), key)) {
             ctx.subject = "petal '" + key + "'";

@@ -497,6 +497,10 @@ TEST(every_chain_head_links_to_its_own_body) {
         CHECK_EQ(config.segmentCount, kCentipedeSegmentCount);
         // A segment tows nothing of its own, or one head would spawn a tree.
         CHECK_EQ(r.mob(config.segmentBodyIndex).segmentCount, 0);
+        // The body is marked as one, and the head is not: that flag is what
+        // keeps the boss bar and the defeat line on the head alone.
+        CHECK(r.mob(config.segmentBodyIndex).chainBody);
+        CHECK(!config.chainBody);
         // Which FAMILY the chain belongs to is the same kind of naming rule.
         // A leech is one animal on one health pool; a centipede is a string of
         // mobs, and mixing the two up is a leech with ten times its health or

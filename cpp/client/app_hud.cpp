@@ -481,6 +481,8 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
     // the ordinary bar under its body, which is also where its name is.
     // A pet is somebody's summon and a target dummy is a permanent DPS-test
     // fixture, so neither earns the screen-top bar whatever tier it wears.
+    // A centipede or a leech is one boss however many bodies it drags: the
+    // head wears the bar and the segments behind it none.
     std::vector<const RemoteEntity*> bosses;
     const Rect view = camera_.visibleWorld();
     for (const auto& entry : net_.view().entities()) {
@@ -492,7 +494,7 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
         }
         if ((entity.spawnFlags & net::SpawnIsPet) != 0) continue;
         const MobConfig& config = content().mob(entity.typeIndex);
-        if (config.id == "target_dummy") continue;
+        if (config.id == "target_dummy" || config.chainBody) continue;
 
         // The same generous test the browser build makes: the drawn size plus
         // a buffer of at least 100 units, so a boss keeps its bar until it is
