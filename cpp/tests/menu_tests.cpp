@@ -806,7 +806,11 @@ TEST(killing_a_mob_credits_the_ledger_and_pays_its_stars) {
         // Park the mob on the flower, one hit from death. The TypeScript
         // player pipeline resolves this body contact before moveEnemies(), so
         // this is deterministic without predicting next tick's petal angle.
+        // The MAX comes down with it: a kill is only credited to a flower
+        // that did 1% of the mob's health, and one body hit on whatever this
+        // map stocked need not be 1% of its spawned pool.
         world.get<Transform>(mob).position = world.get<Transform>(player).position;
+        world.get<Health>(mob).max = 1.0;
         world.get<Health>(mob).current = 1.0;
         world.get<Health>(mob).invulnerableUntilMillis = 0;
         world.get<Health>(player).current = world.get<Health>(player).max;

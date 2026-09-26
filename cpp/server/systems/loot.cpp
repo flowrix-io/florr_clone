@@ -522,6 +522,8 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         const Vec2 at = transform->position;
         const Dead* dead = world.tryGet<Dead>(corpse);
         const Entity killer = dead != nullptr ? dead->killer : NULL_ENTITY;
+        const Health* health = world.tryGet<Health>(corpse);
+        const double damageFloor = lootDamageFloor(health != nullptr ? health->max : 0.0);
 
         // Loot slots go to the highest positive contributors, just like XP.
         ranked_.clear();
@@ -548,7 +550,8 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
             std::stable_sort(ranked_.begin(), ranked_.end(), [](const auto& a, const auto& b) {
                 return a.damage > b.damage;
             });
-            selectLootRecipients(ranked_, lootSlotsForRarity(mobRarity), squads, eligible_);
+            selectLootRecipients(ranked_, lootSlotsForRarity(mobRarity), squads, eligible_,
+                                 damageFloor);
         }
 
         // A common mob rolls its authored rows one by one; everything above

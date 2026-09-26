@@ -22,6 +22,12 @@
 // flower at twenty does; three of them idle while the fourth does eighty
 // ranks the same again. A party cannot out-rank a solo player by being
 // numerous, and cannot pad its average by leaving the passengers out of it.
+//
+// A CONTENDER MUST HAVE EARNED IT. Nobody is paid for a mob they did less than
+// 1% of its health to -- a solo player on their own damage, a squad on that
+// same average over its full membership. Without the floor a single stray
+// petal on a boss twenty other flowers are killing is a full share of its
+// drops and XP.
 
 #include <algorithm>
 #include <cstddef>
@@ -46,6 +52,16 @@ inline int lootSlotsForRarity(Rarity rarity) {
     if (rarity == Rarity::Super) return 20;
     if (rarity == Rarity::Unique || rarity == Rarity::Apex) return 25;
     return 4;
+}
+
+/// The least damage a contender must have dealt to a mob of `mobMaxHealth` to
+/// be paid for it: 1% of the mob's health, measured against the ledger, which
+/// holds the damage SWUNG rather than what fitted in the health left.
+///
+/// Divided rather than multiplied by 0.01, so a round health lands on an exact
+/// floor and a contender who did exactly 1% is not refused by a rounding ulp.
+inline double lootDamageFloor(double mobMaxHealth) {
+    return mobMaxHealth > 0.0 ? mobMaxHealth / 100.0 : 0.0;
 }
 
 /// How many PEOPLE a group of bodies holds.
@@ -76,8 +92,11 @@ inline int contenderSize(const std::vector<SquadBody>& group) {
 /// damage tie is settled by who hit first, which is the reference's rule.
 /// `squads` may be null, which is the ordinary case: no squad on the corpse
 /// means every contributor ranks as itself and this is a sort and a truncate.
+/// `minScore` is the least a contender's score may be and still be paid --
+/// lootDamageFloor() of the mob's health, in every caller that has a mob.
 inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors, int slots,
-                                 const SquadEntityIndex* squads, std::vector<Entity>& out) {
+                                 const SquadEntityIndex* squads, std::vector<Entity>& out,
+                                 double minScore = 0.0) {
     out.clear();
     if (slots <= 0 || contributors.empty()) return;
 
@@ -142,6 +161,12 @@ inline void selectLootRecipients(const std::vector<Bounty::Share>& contributors,
     std::vector<net::ConnectionId> paid;
     for (const Contender& contender : ranked) {
         if (static_cast<int>(out.size()) >= slots) break;
+        // Sorted best-first, so the first contender under the floor is the
+        // end of everyone who earned a share. The floor reads the SAME score
+        // the ranking does: a squad qualifies on its average over the whole
+        // membership, and once it qualifies it is paid as a squad -- a member
+        // who did less than 1% alone is carried by the ones who did more.
+        if (contender.score < minScore) break;
 
         members.clear();
         if (!contender.squadded) {

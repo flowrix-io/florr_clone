@@ -19,6 +19,7 @@
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
 #include "server/guilds.h"
+#include "server/loot_eligibility.h"
 #include "server/text.h"
 #include "server/systems/combat.h"
 #include "server/systems/loot.h"
@@ -1717,6 +1718,7 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
 
 void GameServer::bankKills() {
     std::vector<Bounty::Share> ranked;
+    std::vector<Entity> recipients;
     // Connections already credited for the corpse in hand; see the loop.
     std::vector<net::ConnectionId> paidAccounts;
     for (const CombatSystem::DeathRecord& death : combat_->deaths()) {
@@ -1736,9 +1738,9 @@ void GameServer::bankKills() {
         // The gallery entry and the star bounty go to every player who earned
         // LOOT rights on the corpse, not to the finisher alone: five flowers
         // that bring down an apex are five apex kills and five lots of 250
-        // stars. Same ledger, same ranking and same per-tier slot cap the XP
-        // and drop paths already use, so the three cannot disagree about who
-        // was in on a kill.
+        // stars. Same ledger and the same selectLootRecipients() the XP and
+        // drop paths call -- squads, per-tier slot cap and 1% damage floor
+        // included -- so the three cannot disagree about who was in on a kill.
         ranked.clear();
         if (const Bounty* bounty = world_.tryGet<Bounty>(death.entity)) {
             for (const Bounty::Share& share : bounty->contributors) {
@@ -1754,19 +1756,21 @@ void GameServer::bankKills() {
                          [](const Bounty::Share& a, const Bounty::Share& b) {
                              return a.damage > b.damage;
                          });
-        int slots = 4;
-        if (type->rarity == Rarity::Ultra) slots = 15;
-        else if (type->rarity == Rarity::Super) slots = 20;
-        else if (type->rarity == Rarity::Unique || type->rarity == Rarity::Apex) slots = 25;
-        if (static_cast<int>(ranked.size()) > slots) {
-            ranked.resize(static_cast<std::size_t>(slots));
-        }
+        const Health* health = world_.tryGet<Health>(death.entity);
+        selectLootRecipients(ranked, lootSlotsForRarity(type->rarity), &squadIndex_, recipients,
+                             lootDamageFloor(health != nullptr ? health->max : 0.0));
 
         const std::string mobId = content().mob(type->configIndex).id;
         const int stars = starsForKill(type->rarity);
 
         paidAccounts.clear();
         for (const Bounty::Share& share : ranked) {
+            // Only a flower that landed damage enters the gallery: a squad's
+            // passenger is paid its drops and XP, but it did not kill this.
+            if (std::find(recipients.begin(), recipients.end(), share.player) ==
+                recipients.end()) {
+                continue;
+            }
             // A contributor who has left still holds their slot -- nobody is
             // promoted into the gap -- but there is no account left to pay.
             Session* session = sessionForEntity(share.player);

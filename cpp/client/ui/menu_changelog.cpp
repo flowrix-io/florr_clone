@@ -396,10 +396,11 @@ constexpr ChangelogEntry kChangelog[] = {
     }},
     {"September 26, 2026",
      {
-      "Added Pet Health talents",
-      "Petal Health talent now grants what its tooltip shows, up to 450% at apex",
+      "Added Pet HP talents",
+      "Fixed Petal HP talent applying only 190%",
       "Pet health and damage now scale with rarity like petals, not like mobs",
-      "Pets' health bars now say Summon",
+      "Pet HP bars now say \"summon\"",
+      "Looting a mob now takes at least 1% of its health"
     }},
 };
 

@@ -332,3 +332,56 @@ TEST(a_squads_passengers_are_cut_first_when_the_cap_falls_inside_it) {
     CHECK(paid(paidOut, body(3)));
     CHECK(paid(paidOut, body(4)));
 }
+
+TEST(a_contender_under_one_percent_of_the_mobs_health_is_paid_nothing) {
+    // A 1000-health mob: the floor is 10 damage.
+    const double floor = lootDamageFloor(1000.0);
+    CHECK(floor == 10.0);
+
+    // A stray hit on a mob somebody else killed earns nothing, even with
+    // three of the common tier's four slots still empty.
+    const std::vector<Bounty::Share> tally = {{body(1), 900}, {body(2), 10}, {body(3), 9.5}};
+    std::vector<Entity> paidOut;
+    selectLootRecipients(tally, lootSlotsForRarity(Rarity::Common), nullptr, paidOut, floor);
+    CHECK(paidOut.size() == 2);
+    CHECK(paid(paidOut, body(1)));
+    CHECK(paid(paidOut, body(2)));   // exactly 1% is enough
+    CHECK(!paid(paidOut, body(3)));
+
+    // No floor, no refusal: the rule without one is the rule it always was.
+    selectLootRecipients(tally, lootSlotsForRarity(Rarity::Common), nullptr, paidOut);
+    CHECK(paid(paidOut, body(3)));
+
+    // A mob with no health to measure against sets no floor at all.
+    CHECK(lootDamageFloor(0.0) == 0.0);
+}
+
+TEST(a_squad_clears_the_floor_on_its_average_over_the_whole_membership) {
+    const double floor = lootDamageFloor(1000.0);
+
+    // 36 damage over a squad of three is 12 each: over the floor, so the
+    // squad is paid as one -- body(2), on 4 alone, and body(3), who never
+    // touched it, included.
+    const std::vector<Bounty::Share> carried = {{body(9), 900}, {body(1), 32}, {body(2), 4}};
+    const SquadEntityIndex squads = indexOf({{body(1), body(2), body(3)}});
+    std::vector<Entity> paidOut;
+    selectLootRecipients(carried, lootSlotsForRarity(Rarity::Common), &squads, paidOut, floor);
+    CHECK(paidOut.size() == 4);
+    CHECK(paid(paidOut, body(1)));
+    CHECK(paid(paidOut, body(2)));
+    CHECK(paid(paidOut, body(3)));
+
+    // 27 over three is 9: under it, so NOBODY in the squad is paid -- not
+    // even body(1), whose 24 would have cleared the floor on its own. The
+    // average is the squad's score, and the passengers dilute it here too.
+    const std::vector<Bounty::Share> diluted = {{body(9), 900}, {body(1), 24}, {body(2), 3}};
+    selectLootRecipients(diluted, lootSlotsForRarity(Rarity::Common), &squads, paidOut, floor);
+    CHECK(paidOut.size() == 1);
+    CHECK(paid(paidOut, body(9)));
+    CHECK(!paid(paidOut, body(1)));
+
+    // Out of the squad, the same 24 clears the floor by itself.
+    selectLootRecipients(diluted, lootSlotsForRarity(Rarity::Common), nullptr, paidOut, floor);
+    CHECK(paid(paidOut, body(1)));
+    CHECK(!paid(paidOut, body(2)));
+}

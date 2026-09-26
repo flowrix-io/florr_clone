@@ -776,8 +776,10 @@ void CombatSystem::awardBounty(World& world, Entity victim) {
                      });
     Rarity rarity = Rarity::Common;
     if (const MobType* type = world.tryGet<MobType>(victim)) rarity = type->rarity;
+    const Health* health = world.tryGet<Health>(victim);
     std::vector<Entity> recipients;
-    selectLootRecipients(shares, lootSlotsForRarity(rarity), squads, recipients);
+    selectLootRecipients(shares, lootSlotsForRarity(rarity), squads, recipients,
+                         lootDamageFloor(health != nullptr ? health->max : 0.0));
 
     // Every recipient is paid the mob's full XP -- the corpse is not split
     // between them, and no account earns at a different rate than another.
