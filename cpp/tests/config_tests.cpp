@@ -817,6 +817,34 @@ TEST(grapes_are_peas_of_the_same_size_that_poison) {
     }
 }
 
+TEST(blueberries_are_peas_of_the_same_size_that_run_on_mana_and_lightning) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t berries = r.petalIndex("magic_peas");
+    const std::uint16_t peas = r.petalIndex("peas");
+    const PetalConfig& b = r.petal(berries);
+    CHECK_EQ(b.name, std::string("Blueberries"));
+    // Peas' magic form: what a pea drops as for a flower wearing an orb.
+    CHECK_EQ(r.magicFormOf(peas), berries);
+    CHECK_EQ(r.magicSourceOf(berries), peas);
+    CHECK(b.lightningDamage);
+    CHECK(!r.petal(peas).lightningDamage);
+    CHECK(b.clumped);
+    CHECK(b.defendOnly);
+    CHECK(b.projectile.present);
+    CHECK_NEAR(b.reloadMana, 1.2, 1e-12);
+    const PetalStats bs = r.petalStats(berries, Rarity::Common);
+    const PetalStats ps = r.petalStats(peas, Rarity::Common);
+    CHECK_EQ(bs.count, ps.count);
+    CHECK_NEAR(bs.radius, ps.radius, 1e-12);
+    CHECK_NEAR(bs.reloadMillis, 50.0, 1e-9);
+    CHECK_NEAR(bs.reloadMana, 1.2, 1e-12);
+    // On the one mana ladder, as every other mana figure is.
+    const std::uint16_t missile = r.petalIndex("magic_missile");
+    const double ladder = r.petalStats(missile, Rarity::Rare).requiredMana /
+                          r.petalStats(missile, Rarity::Common).requiredMana;
+    CHECK_NEAR(r.petalStats(berries, Rarity::Rare).reloadMana, 1.2 * ladder, 1e-9);
+}
+
 TEST(poison_without_a_duration_remains_inert_like_typescript) {
     const ContentRegistry& r = shipped().registry;
     const PetalConfig& gas = r.petal(r.petalIndex("gas"));

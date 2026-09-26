@@ -842,7 +842,12 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             }
         }
 
-        if (slot.broken && !slotState.independent && nowMillis >= slot.reloadReadyAtMillis) {
+        // A petal with a reload price comes back only once it is paid, and
+        // the slot waits broken until then rather than coming back empty:
+        // the fold above would charge an absent instance as a full loss and
+        // break it again on the next tick.
+        if (slot.broken && !slotState.independent && nowMillis >= slot.reloadReadyAtMillis &&
+            spendMana(world, player, stats.reloadMana)) {
             slot.broken = false;
             slot.reloadReadyAtMillis = 0;
             slotState.poolHealth = slotState.poolMax;
@@ -888,6 +893,10 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             if (slotState.independent) {
                 const double ready = slotState.instanceReadyAtMillis[static_cast<std::size_t>(k)];
                 if (slotState.populated && nowMillis < ready) continue;
+                // Each grain is its own reload and its own payment. One that
+                // is due and cannot be paid for keeps its lapsed deadline, so
+                // it returns the moment the pool can cover it.
+                if (!canAffordMana(world, player, stats.reloadMana)) continue;
             } else if (slot.broken) {
                 continue;
             }
@@ -896,6 +905,8 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
                                             static_cast<std::uint8_t>(count), config, stats,
                                             slot.configIndex, slot.rarity, spawnHealth, nowMillis);
             if (petal == NULL_ENTITY) continue;
+            // Paid once the grain exists, never before it.
+            if (slotState.independent) spendMana(world, player, stats.reloadMana);
             live.push_back(petal);
             present |= 1ull << k;
             if (slotState.independent) {

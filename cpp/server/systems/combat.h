@@ -368,6 +368,10 @@ private:
         double lightningRadius = 0;
         double lightningDamage = 0;
         double lightningCooldownMillis = 0;
+        /// How this body's own hit is reported. Lightning for a petal whose
+        /// config says `lightningDamage` (blueberries), Direct for the rest.
+        /// Unrelated to the strike above: this is the one victim touched.
+        DamageKind hitKind = DamageKind::Direct;
         /// The space the body is in; the broadphase is asked about this one.
         Realm realm = Realm::Overworld;
     };

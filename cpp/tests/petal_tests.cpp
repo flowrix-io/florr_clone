@@ -65,7 +65,8 @@ const char* const kPetalsJson = R"JSON({
   "leafy":    {"name":"Leafy","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"color":"#39B54A"},
   "yuccaish": {"name":"Yuccaish","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"passiveHealDefendOnly":true,"color":"#74B53F"},
   "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
-  "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"}
+  "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"},
+  "berries":  {"name":"Berries","damage":8,"health":10,"size":1,"cooldown":50,"count":4,"clumped":true,"defendOnly":true,"reloadMana":10,"lightningDamage":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#42E3F5"}
 })JSON";
 
 const char* const kMobsJson = R"JSON({
@@ -2159,6 +2160,54 @@ TEST(a_magic_missile_is_paid_for_in_mana_and_stops_firing_when_the_pool_is_dry) 
     CHECK(rig.countOf(net::EntityKind::Projectile) <= flown);
     // And the petal is still in the ring waiting, not spent.
     CHECK(!rig.slot(1).broken);
+}
+
+TEST(a_berry_comes_back_only_once_its_reload_is_paid_for) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "berries");
+    rig.settleEquips();
+    ManaPool& pool = rig.world.get<ManaPool>(rig.player);
+    pool.current = 100.0;
+    CHECK(rig.tickUntil([&] { return rig.petals(1).size() == 4; }));
+
+    // One volley spends all four berries.
+    pool.current = 15.0;
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    CHECK_EQ(rig.countOf(net::EntityKind::Projectile), std::size_t(4));
+    rig.setFlags(0);
+
+    // Their 50 ms reload is long over, but 15 mana pays for one berry and
+    // not two: the rest wait, and nothing is taken for them.
+    rig.tick(30);
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 5.0, 1e-9);
+
+    // Funded, the three that were waiting are back on the very next tick,
+    // each one paid for.
+    rig.world.get<ManaPool>(rig.player).current = 100.0;
+    rig.tick();
+    CHECK_EQ(rig.petals(1).size(), std::size_t(4));
+    CHECK_NEAR(rig.world.get<ManaPool>(rig.player).current, 70.0, 1e-9);
+}
+
+TEST(a_berry_reloads_on_its_own_short_cooldown_when_the_pool_can_pay) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "vessel");
+    rig.equip(1, "berries");
+    rig.settleEquips();
+    rig.world.get<ManaPool>(rig.player).current = 100.0;
+    CHECK(rig.tickUntil([&] { return rig.petals(1).size() == 4; }));
+
+    // Held attack with a full pool: the ring keeps firing, a volley every
+    // few ticks rather than once a second, for 10 mana a berry.
+    rig.setFlags(net::InputAttack);
+    rig.tick(6);
+    CHECK(rig.countOf(net::EntityKind::Projectile) >= 8);
+    CHECK(rig.world.get<ManaPool>(rig.player).current <= 100.0 - 40.0 + 1e-9);
 }
 
 TEST(a_magic_bubble_that_cannot_be_paid_for_does_not_pop) {

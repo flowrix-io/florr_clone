@@ -929,6 +929,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.burstManaChargeMillis = ctx.range(src, "burstManaChargeMs", 0.0, 0.0, kMaxDurationMillis);
     p.passiveMana = ctx.range(src, "passiveMana", 0.0, 0.0, kMaxBaseStat);
     p.requiredMana = ctx.range(src, "requiredMana", 0.0, 0.0, kMaxBaseStat);
+    p.reloadMana = ctx.range(src, "reloadMana", 0.0, 0.0, kMaxBaseStat);
+    p.lightningDamage = ctx.boolean(src, "lightningDamage");
 
     if (src.contains("fixedDirection")) {
         p.hasFixedDirection = true;
@@ -1506,6 +1508,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     s.manaChargeMillis = c.burstManaChargeMillis;
     s.passiveManaPerSecond = c.passiveMana * mana;
     s.requiredMana = c.requiredMana * mana;
+    s.reloadMana = c.reloadMana * mana;
     // TypeScript keeps ordinary petal knockback flat across rarities. Jelly is
     // the one intentional exception: its per-rarity values are literal
     // overrides in petals.ts, not another copy of the damage multiplier.

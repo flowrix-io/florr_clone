@@ -2027,7 +2027,7 @@ std::vector<Entity> farmLeafbugs(World& world, LootSystem& loot, CommandBuffer& 
 
 TEST(the_magic_form_table_is_derived_from_the_petal_ids) {
     // magic_X is the magic form of X, and the orb is the rose's.
-    for (const char* id : {"leaf", "stick", "cactus", "missile", "bubble"}) {
+    for (const char* id : {"leaf", "stick", "cactus", "missile", "bubble", "peas"}) {
         const std::uint16_t base = shipped().petalIndex(id);
         CHECK_EQ(shipped().magicFormOf(base), shipped().petalIndex(std::string("magic_") + id));
     }

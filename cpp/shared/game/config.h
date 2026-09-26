@@ -608,6 +608,15 @@ struct PetalConfig {
     /// fired and the petal keeps its cooldown, so an unfuelled magic missile
     /// sits in the ring rather than reloading forever.
     double requiredMana = 0;
+    /// What bringing one of this petal back onto the ring costs, before rarity.
+    /// A petal whose reload has run out and cannot be paid for stays off the
+    /// ring until the pool can cover it, then returns at once. Charged per
+    /// grain, so a clump of four is four payments. Blueberries.
+    double reloadMana = 0;
+    /// Every hit this petal lands -- its body and its shots alike -- is
+    /// lightning damage (DamageKind::Lightning), with no strike attached: the
+    /// one victim touched, nothing chained. Blueberries.
+    bool lightningDamage = false;
 
     /// Held at a fixed angle instead of orbiting. `has` distinguishes the
     /// petals pinned to 0 radians from the ones that simply orbit.
@@ -755,6 +764,8 @@ struct PetalStats {
     double passiveManaPerSecond = 0;
     /// What one act of this petal costs, this tier. See PetalConfig.
     double requiredMana = 0;
+    /// What one reload of this petal costs, this tier. See PetalConfig.
+    double reloadMana = 0;
     double knockback = 0;
     double shield = 0;
     double slowFactor = 1.0;

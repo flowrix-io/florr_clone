@@ -1573,6 +1573,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         source.owner = petal.owner;
         source.rarity = petal.rarity;
         source.isPetal = true;
+        if (config.lightningDamage) source.hitKind = DamageKind::Lightning;
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
         // swapping a damage petal in must affect the ring on the same tick.
@@ -1717,7 +1718,8 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A claw's bonus is decided here, per victim, off the health the
             // victim has BEFORE this hit.
             const double swing = swingDamage(world, source.damage, source.critDamage, victim);
-            DamageResult hit = applyDamage(world, victim, source.attacker, swing, nowMillis);
+            DamageResult hit =
+                applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
             // A swing of NOTHING is still a swing. canHit() has already vouched
             // for this victim one line above -- alive, not a corpse, not
             // invulnerable, on the other side -- so the only refusal
@@ -1982,7 +1984,8 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
 
     // A claw opens on a fresh duellist exactly as it opens on a fresh mob.
     const double swing = swingDamage(world, source.damage, source.critDamage, victim);
-    const DamageResult hit = applyDamage(world, victim, source.attacker, swing, nowMillis);
+    const DamageResult hit =
+        applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
     // And a fang drinks from one: what the victim's bar lost, never what a
     // shield, a cotton or a sponge took instead.
     if (source.lifesteal > 0.0 && hit.applied > 0.0) {
@@ -2049,6 +2052,11 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
         const std::uint16_t petalIndex = projectile->petalConfigIndex;
         const Rarity rarity = projectile->rarity;
         const bool infecting = projectile->glitchInfecting;
+        // A blueberry's shot lands as lightning, exactly as its body does.
+        const DamageKind hitKind =
+            petalIndex != kNoPetal && content.petal(petalIndex).lightningDamage
+                ? DamageKind::Lightning
+                : DamageKind::Direct;
 
         // Centred on the segment, so the pad the broadphase already spends on
         // the tick's travel covers the whole of it rather than only the end.
@@ -2139,7 +2147,7 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
             const bool victimIsShot = world.has<Projectile>(impact.victim);
 
             DamageResult hit =
-                applyDamage(world, impact.victim, shot.entity, damage, nowMillis);
+                applyDamage(world, impact.victim, shot.entity, damage, nowMillis, hitKind);
             // A shot of zero is refused before applyDamage rolls evasion, and
             // its riders below land regardless -- so it is rolled here, as a
             // zero-damage petal's swing is in resolveMelee.

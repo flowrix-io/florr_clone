@@ -402,6 +402,7 @@ struct SimContent {
     std::uint16_t toucher = kInvalidIndex;   ///< strikes on contact, like a firefly
     std::uint16_t inert = kInvalidIndex;     ///< no lightning at all
     std::uint16_t pea = kInvalidIndex;
+    std::uint16_t berry = kInvalidIndex;   ///< lands its hits as lightning
 };
 
 const SimContent& simContent() {
@@ -420,7 +421,8 @@ const SimContent& simContent() {
               "inert":{"name":"Inert","health":500,"damage":30,"size":1,"speed":0.2}
             })")) &&
             writeFile(petals, test::fixturePetals(R"({
-              "pea":{"name":"Pea","damage":10,"health":50,"size":1}
+              "pea":{"name":"Pea","damage":10,"health":50,"size":1},
+              "berry":{"name":"Berry","damage":10,"health":50,"size":1,"lightningDamage":true}
             })"));
         if (!wrote) {
             c.error = "cannot write the fixture content";
@@ -431,6 +433,7 @@ const SimContent& simContent() {
         c.toucher = c.registry.mobIndex("toucher");
         c.inert = c.registry.mobIndex("inert");
         c.pea = c.registry.petalIndex("pea");
+        c.berry = c.registry.petalIndex("berry");
         return c;
     }();
     return state;
@@ -438,12 +441,13 @@ const SimContent& simContent() {
 
 /// A petal orbiting `owner` and sitting on top of `at`, for the one case that
 /// must NOT discharge anything.
-Entity petalAt(Sim& sim, Entity owner, Vec2 at) {
+Entity petalAt(Sim& sim, Entity owner, Vec2 at, std::uint16_t configIndex = kInvalidIndex) {
     const Entity e = sim.world.create();
     sim.world.add<Transform>(e, Transform{at, 0.0});
     sim.world.add<Body>(e, Body{10.0, 1.0});
     sim.world.add<Health>(e, Health{50.0, 50.0, 0.0, 0.0});
-    sim.world.add<PetalInstance>(e, PetalInstance{owner, simContent().pea, Rarity::Common});
+    const std::uint16_t petal = configIndex != kInvalidIndex ? configIndex : simContent().pea;
+    sim.world.add<PetalInstance>(e, PetalInstance{owner, petal, Rarity::Common});
     sim.world.add<NetId>(e, NetId{sim.nextNetId++});
     return e;
 }
@@ -718,6 +722,57 @@ TEST(only_a_strike_is_reported_as_lightning) {
     // paint the whole screen cyan and nobody would notice the strike.
     CHECK(sim.cyanNumbers().empty());
     CHECK(sim.bolts().empty());
+}
+
+TEST(a_lightning_damage_petal_hits_as_lightning_and_strikes_nothing_else) {
+    Sim sim;
+    const SimContent& content = simContent();
+    const Entity mob = sim.mob({0, 0}, content.inert, 0.0);
+    const Entity bystander = sim.mob({0, 90}, content.inert, 0.0);
+    const Entity player = sim.player({600, 0});
+    petalAt(sim, player, {30, 0}, content.berry);
+
+    sim.step(10000.0, content.registry);
+
+    // The blueberry's own hit, and only that: cyan, on the mob it touched.
+    CHECK_NEAR(sim.health(mob), 490.0, 1e-9);
+    const std::vector<const WireEvent*> cyan = sim.cyanNumbers();
+    CHECK_EQ(cyan.size(), std::size_t(1));
+    if (!cyan.empty()) CHECK_EQ(cyan[0]->netId, sim.world.get<NetId>(mob).value);
+    // No strike: nothing drawn, nobody else hurt.
+    CHECK(sim.bolts().empty());
+    CHECK_NEAR(sim.health(bystander), 500.0, 1e-9);
+}
+
+TEST(a_lightning_damage_petals_shot_hits_as_lightning_and_strikes_nothing_else) {
+    Sim sim;
+    const SimContent& content = simContent();
+    const Entity mob = sim.mob({0, 0}, content.inert, 0.0);
+    const Entity bystander = sim.mob({0, 90}, content.inert, 0.0);
+    const Entity player = sim.player({600, 0});
+
+    const Entity shot = sim.world.create();
+    sim.world.add<ProjectileTag>(shot);
+    Projectile projectile;
+    projectile.owner = player;
+    projectile.creditTo = player;
+    projectile.damage = 10.0;
+    projectile.remainingDistance = 1000.0;
+    projectile.petalConfigIndex = content.berry;
+    projectile.lastPosition = {-15, 0};
+    sim.world.add<Projectile>(shot, projectile);
+    sim.world.add<Transform>(shot, Transform{{-15, 0}, 0.0});
+    sim.world.add<Motion>(shot, Motion{{0, 0}});
+    sim.world.add<Body>(shot, Body{5.0, 0.1});
+
+    sim.step(10000.0, content.registry);
+
+    CHECK_NEAR(sim.health(mob), 490.0, 1e-9);
+    const std::vector<const WireEvent*> cyan = sim.cyanNumbers();
+    CHECK_EQ(cyan.size(), std::size_t(1));
+    if (!cyan.empty()) CHECK_EQ(cyan[0]->netId, sim.world.get<NetId>(mob).value);
+    CHECK(sim.bolts().empty());
+    CHECK_NEAR(sim.health(bystander), 500.0, 1e-9);
 }
 
 TEST(a_lightning_burst_reports_its_chip_as_lightning) {

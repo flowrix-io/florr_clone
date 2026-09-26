@@ -610,6 +610,29 @@
             "distance": 1000
         }
     },
+    "magic_peas": {
+        "name": "Blueberries",
+        "damage": 8,
+        "health": 10,
+        "size": 1,
+        "cooldown": 50,
+        "price": 20,
+        "reloadMana": 1.2,
+        "lightningDamage": true,
+        "description": "Shoots out in 4 directions, striking with lightning. Each berry costs mana to reload",
+        "color": "#000000",
+        "count": 4,
+        "clumped": true,
+        "defendOnly": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#42E3F5\" stroke-width=\"4\" stroke=\"#35B8C6\"/>\n</svg>",
+        "isAdminPetal": false,
+        "projectile": {
+            "count": 1,
+            "spreadAngle": 1.5708,
+            "speed": 800,
+            "distance": 1000
+        }
+    },
     "soil": {
         "name": "Soil",
         "damage": 10,
@@ -1248,6 +1271,7 @@
         "color": "#000000",
         "count": 1,
         "passiveMana": 2.55,
+        "baseMaxMana": 57.75,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-21.5 -10.5 38 21\" xmlns=\"http://www.w3.org/2000/svg\">   <path d=\"M -20 0 L -15 0 C -10 -12, 5 -12, 15 0 C 5 12, -10 12, -15 0\" fill=\"#42E3F5\"  stroke=\"#35B8C6\"  stroke-width=\"3\"  stroke-linecap=\"round\"  stroke-linejoin=\"round\"/>   <path d=\"M -9 0 Q 0 -1.5, 7.5 0\"  fill=\"none\"  stroke=\"#35B8C6\"  stroke-width=\"3\"  stroke-linecap=\"round\"  stroke-linejoin=\"round\"/></svg>",
         "isAdminPetal": false
     },

@@ -402,7 +402,9 @@ constexpr ChangelogEntry kChangelog[] = {
       "Pet HP bars now say \"summon\"",
       "Looting a mob now takes at least 1% of its health",
       "New petal: Oranges",
-      "New petal: Grapes"
+      "New petal: Grapes",
+      "New magic petal: Blueberries",
+      "Fixed peas and grapes only shooting when attacking"
     }},
 };
 

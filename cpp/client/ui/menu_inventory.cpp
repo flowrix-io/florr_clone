@@ -287,9 +287,12 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     hp.altText = "HP: " + exactNumber(health);
     lines.push_back(hp);
 
-    TooltipLine hit{"Damage: " + abbreviate(damage), 12.0};
+    // Blueberries land every hit as lightning, and nothing else on the card
+    // says so.
+    const std::string damageLabel = config.lightningDamage ? "Lightning Damage: " : "Damage: ";
+    TooltipLine hit{damageLabel + abbreviate(damage), 12.0};
     hit.alpha = 0.56;
-    hit.altText = "Damage: " + exactNumber(damage);
+    hit.altText = damageLabel + exactNumber(damage);
     lines.push_back(hit);
 
     // Bur alone. Its description says the petal debuffs armour and cannot say
@@ -343,6 +346,18 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
         cost.alpha = 0.56;
         cost.altText = "Mana Cost: " + exactNumber(stats.requiredMana);
         lines.push_back(cost);
+    }
+    if (stats.reloadMana > 0.0) {
+        // One decimal: a blueberry's 1.2 would read as 1 through abbreviate().
+        char figure[32];
+        std::snprintf(figure, sizeof figure, "%.1f", stats.reloadMana);
+        std::string text = figure;
+        if (text.size() > 2 && text.compare(text.size() - 2, 2, ".0") == 0) {
+            text.erase(text.size() - 2);
+        }
+        TooltipLine reload{"Mana per Reload: " + text, 12.0};
+        reload.alpha = 0.56;
+        lines.push_back(reload);
     }
     if (stats.maxMana > 0.0) {
         TooltipLine pool{"Max Mana: +" + abbreviate(stats.maxMana), 12.0};
