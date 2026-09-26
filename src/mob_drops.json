@@ -524,7 +524,7 @@
         "type": "petal",
         "itemType": "missile",
         "rarity": "common",
-        "probability": 1,
+        "probability": 0.87,
         "minQuantity": 1,
         "maxQuantity": 1
       },
@@ -533,6 +533,14 @@
         "itemType": "antennae",
         "rarity": "common",
         "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "orange",
+        "rarity": "common",
+        "probability": 0.87,
         "minQuantity": 1,
         "maxQuantity": 1
       }

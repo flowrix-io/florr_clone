@@ -84,9 +84,10 @@ constexpr double kReloadAlpha = 0.25;
 /// its own: gardn's `draw_static_petal` default.
 constexpr double kClusterRing = 10.0;
 
-/// gardn's `clump_radius` over its clustered petals' radius, for the petals
-/// gardn does not have -- see kGardnIcon for the ones it does.
-constexpr double kClusterRingRatio = 10.0 / 7.0;
+/// How far out a cluster's icons sit for a petal gardn does not have, in that
+/// petal's radii: just under one, so neighbours overlap slightly rather than
+/// only touching outlines.
+constexpr double kClusterRingPerRadius = 0.8;
 
 /// gardn's `radius` past which it shrinks a petal to fit its plate, and the
 /// radius it shrinks it to. `draw_loadout_background` does this as
@@ -254,11 +255,15 @@ ClusterShape clusterShape(std::uint16_t petalIndex, double sizeStat, int count) 
     // exactly as the world renderer's petalArtScale() reads it.
     const double scale =
         petalIndex < content().petalCount() ? content().petal(petalIndex).visualScale : 0.0;
-    out.diameter = kPetalIconSize * (sizeStat > 0 ? sizeStat : 1.0) * (scale > 0 ? scale : 1.0);
-    // Kept as a RATIO rather than gardn's fixed ring, because this game authors
-    // petal size per petal: a fixed ring would leave a large petal's cluster
-    // fused into a blob and a small one's scattered.
-    out.ring = count > 1 ? out.diameter * 0.5 * kClusterRingRatio : 0.0;
+    const double radius = kPetalIconSize * 0.5 * (sizeStat > 0 ? sizeStat : 1.0);
+    out.diameter = radius * 2.0 * (scale > 0 ? scale : 1.0);
+    // Kept to the petal's size rather than gardn's fixed ring, because this
+    // game authors petal size per petal: a fixed ring would leave a large
+    // petal's cluster fused into a blob and a small one's scattered. And the
+    // radius is taken BEFORE visual_scale, which grows each icon and not the
+    // ring: a ring grown with it set the oranges -- whose fruit covers barely
+    // three fifths of its box -- so far apart they fell off the plate.
+    out.ring = count > 1 ? radius * kClusterRingPerRadius : 0.0;
     return out;
 }
 

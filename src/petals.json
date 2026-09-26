@@ -1401,6 +1401,22 @@
         "color": "#000000",
         "count": 1
     },
+    "orange": {
+        "name": "Oranges",
+        "damage": 35,
+        "health": 10,
+        "size": 1.25,
+        "cooldown": 2499,
+        "price": 53,
+        "visual_scale": 1.5,
+        "description": "The power of 3 oranges",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><g transform=\"translate(14.9 16)scale(.6773)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle r=\"12\" fill=\"#f0bd48\" stroke=\"#c2993a\" stroke-width=\"4\"/><path d=\"M6.001-5.999c8.05-.645 7.263 6.961 9.24 10.715C10.944 3.383 2.793-.714 6.001-6\" fill=\"#39b54a\" stroke=\"#2e933c\" stroke-width=\"2.999\"/></g></svg>",
+        "color": "#000000",
+        "count": 3,
+        "clumped": true,
+        "clumpSpacing": 3,
+        "clumpOutsideRing": true
+    },
     "capacitor": {
         "name": "Capacitor",
         "damage": 0,

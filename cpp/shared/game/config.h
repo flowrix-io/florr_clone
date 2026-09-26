@@ -565,6 +565,15 @@ struct PetalConfig {
     /// spinning in step with the rest of the ring. Only means anything for a
     /// clumped petal at a count above 1; the stinger's triangles are the case.
     bool clumpFacesInward = false;
+    /// How far out from its clump's centre each grain sits in the world, as a
+    /// multiple of the petal's own radius. World only: the item tile lays out
+    /// its icon by its own rules. Oranges spread theirs well past the default
+    /// because their artwork is drawn half again bigger than their body.
+    double clumpSpacing = 1.0;
+    /// The clump hangs off the ring instead of straddling it: its centre sits
+    /// one clumpSpacing outside the orbit, so one grain rides the orbit itself
+    /// and the rest fan out beyond it. World only, like clumpSpacing.
+    bool clumpOutsideRing = false;
     bool independentHealth = false;  ///< each petal of a cluster breaks alone
     bool wallCollide = false;
     bool emissive = false;

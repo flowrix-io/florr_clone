@@ -26,6 +26,8 @@ namespace {
 const char* const kPetalsJson = R"JSON({
   "basic":    {"name":"Basic","damage":10,"health":10,"size":2,"cooldown":1200,"count":1,"color":"#90EE90"},
   "sandy":    {"name":"Sandy","damage":4,"health":12,"size":1,"cooldown":800,"count":4,"clumped":true,"color":"#8B0000"},
+  "spready":  {"name":"Spready","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"color":"#F0BD48"},
+  "hanging":  {"name":"Hanging","damage":4,"health":12,"size":1,"cooldown":800,"count":3,"clumped":true,"clumpSpacing":2.5,"clumpOutsideRing":true,"color":"#F0BD48"},
   "shards":   {"name":"Shards","damage":3,"health":6,"size":1,"cooldown":500,"count":3,"independentHealth":true,"color":"#CCCCCC"},
   "rock":     {"name":"Rock","damage":1,"size":2,"cooldown":1000,"count":1,"color":"#777777"},
   "healer":   {"name":"Healer","damage":1,"health":5,"size":1,"cooldown":3500,"count":1,"burstHeal":10,"burstHealChargeMs":1000,"defendOnly":true,"color":"#FF69B4"},
@@ -505,6 +507,56 @@ TEST(a_clumped_slot_spawns_a_cluster_around_one_ring_position) {
     for (std::size_t i = 1; i < subAngles.size(); ++i) {
         CHECK_NEAR(subAngles[i] - subAngles[i - 1], kTau / 4.0, 1e-6);
     }
+}
+
+TEST(a_clump_spacing_moves_the_grains_that_many_radii_out) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "spready");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    const std::vector<Entity> grains = rig.petals(0);
+    CHECK_EQ(grains.size(), std::size_t(3));
+
+    const Vec2 slotPoint =
+        rig.position(rig.player) + Vec2::fromAngle(rig.ring().spin, rig.ring().radius);
+    const double radius = fixture().registry.petalStats(petalId("spready"), Rarity::Common).radius;
+    for (const Entity grain : grains) {
+        CHECK_NEAR((rig.position(grain) - slotPoint).length(), radius * 2.5, 1e-6);
+    }
+}
+
+TEST(a_clump_outside_the_ring_puts_one_grain_on_the_orbit_and_the_rest_beyond) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "hanging");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    const std::vector<Entity> grains = rig.petals(0);
+    CHECK_EQ(grains.size(), std::size_t(3));
+
+    const Vec2 flower = rig.position(rig.player);
+    const double orbit = rig.ring().radius;
+    const double spacing =
+        fixture().registry.petalStats(petalId("hanging"), Rarity::Common).radius * 2.5;
+    // The clump's centre is one spacing outside the orbit, on the slot's bearing.
+    const Vec2 hub = flower + Vec2::fromAngle(rig.ring().spin, orbit + spacing);
+
+    int onOrbit = 0;
+    for (const Entity grain : grains) {
+        CHECK_NEAR((rig.position(grain) - hub).length(), spacing, 1e-6);
+        const double out = (rig.position(grain) - flower).length();
+        if (std::fabs(out - orbit) < 1e-6) {
+            ++onOrbit;
+        } else {
+            CHECK(out > orbit + spacing);
+        }
+    }
+    CHECK_EQ(onOrbit, 1);
 }
 
 TEST(an_empty_loadout_places_nothing_and_leaves_modifiers_neutral) {

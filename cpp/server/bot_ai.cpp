@@ -709,7 +709,24 @@ double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
                         (config.range > 0.0 ? config.range : 1.0);
         // A clumped petal's grains fan out around their shared ring place, and
         // one of them points outward on every revolution.
-        if (config.clumped && stats.count > 1) radius += stats.radius;
+        if (config.clumped && stats.count > 1) {
+            const double spacing = stats.radius * config.clumpSpacing;
+            if (config.clumpOutsideRing) {
+                // The centre sits one spacing out and the first grain points
+                // back at the flower, so the farthest grain is whichever lies
+                // nearest the outward bearing.
+                const double hub = radius + spacing;
+                double far = 0;
+                for (int k = 0; k < stats.count; ++k) {
+                    const double turn = kPi + kTau * k / stats.count;
+                    far = std::max(far, std::hypot(hub + spacing * std::cos(turn),
+                                                   spacing * std::sin(turn)));
+                }
+                radius = far;
+            } else {
+                radius += spacing;
+            }
+        }
         // Measured to the petal's far EDGE, which is what actually touches.
         farthest = std::max(farthest, radius + stats.radius);
     }

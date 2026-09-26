@@ -12,11 +12,6 @@
 namespace flix {
 namespace {
 
-/// Cluster spacing as a multiple of a petal's own radius. The reference states
-/// it as `size * 20 * 0.5`, which is exactly the 10 x size a petal's body
-/// already is, so the grains sit one radius out from the slot centre -- and
-/// gardn authors the same figure as a flat `clump_radius` of 10.
-constexpr double kClumpSpacing = 1.0;
 /// A pollen puff is stated as 12 x the petal's size across, and the field takes
 /// half of that. Stated against `size` rather than against the petal's radius:
 /// dividing the radius back out is what hid the halved petal scale.
@@ -1511,13 +1506,27 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         Vec2 orbit = centre + Vec2::fromAngle(angle, reach);
         double facingAngle = angle;
         if (config.clumped && subCount > 1) {
+            // Cluster spacing is a multiple of the petal's own radius, 1 unless
+            // petals.json says otherwise. The reference states it as
+            // `size * 20 * 0.5`, which is exactly the 10 x size a petal's body
+            // already is, so by default the grains sit one radius out from the
+            // slot centre -- and gardn authors the same figure as a flat
+            // `clump_radius` of 10.
             const Body* body = world.tryGet<Body>(petal);
-            const double spacing = (body ? body->radius : 0.0) * kClumpSpacing;
+            const double spacing = (body ? body->radius : 0.0) * config.clumpSpacing;
+            // A clump that hangs off the ring moves its centre one spacing out
+            // and turns its first grain back toward the flower, which lands
+            // that grain on the orbit and fans the rest out past it.
+            double first = angle;
+            if (config.clumpOutsideRing) {
+                orbit += Vec2::fromAngle(angle, spacing);
+                first = angle + kPi;
+            }
             // The grain sits out along this bearing from the clump centre, so
             // this is the way it faces -- and the way its volley goes. The
             // offset is fed to `fromAngle` unwrapped, exactly as before, so the
             // clump's positions are bit-for-bit what they were.
-            const double sub = angle + kTau * instance->subIndex / subCount;
+            const double sub = first + kTau * instance->subIndex / subCount;
             orbit += Vec2::fromAngle(sub, spacing);
             facingAngle = wrapAngle(sub);
         }

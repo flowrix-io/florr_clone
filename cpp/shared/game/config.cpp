@@ -912,6 +912,8 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.defendOnly = ctx.boolean(src, "defendOnly");
     p.clumped = ctx.boolean(src, "clumped");
     p.clumpFacesInward = ctx.boolean(src, "clumpFacesInward");
+    p.clumpSpacing = ctx.range(src, "clumpSpacing", 1.0, 0.0, kMaxSize);
+    p.clumpOutsideRing = ctx.boolean(src, "clumpOutsideRing");
     p.independentHealth = ctx.boolean(src, "independentHealth");
     p.wallCollide = ctx.boolean(src, "wallCollide");
     p.emissive = ctx.boolean(src, "emissive");
