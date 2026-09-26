@@ -427,10 +427,6 @@ inline constexpr double kMobCollisionBuffer = 5.0;
 inline constexpr double kMobSeparationMaxPushPerPair = 10.0;
 inline constexpr double kMobSeparationPushHeadroom = 3.0;
 
-/// Knockback a projectile deals to a mob. A flat force divided by the victim's
-/// mass, deliberately independent of the firing petal's own knockback stat.
-inline constexpr double kMobKnockbackForce = 20.0;
-
 // -- projectiles as bodies (the arras.io model) ------------------------------
 //
 // A shot is not a hitscan token that vanishes into the first thing it touches.
@@ -462,7 +458,7 @@ inline constexpr double kProjectileDefaultBodyDamage = 1.0;
 
 /// Momentum (mass x speed) to displacement, before the victim's mass divides
 /// it. Chosen so a stock size-1 shot at 300 u/s lands within a few units of
-/// the flat kMobKnockbackForce it replaces: the shove stays where it has
+/// the flat 20 the reference stamps on a mob: the shove stays where it has
 /// always been for ordinary ammunition, and only grows when the shot itself
 /// does.
 inline constexpr double kProjectilePushPerMomentum = 0.27;

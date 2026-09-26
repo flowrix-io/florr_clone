@@ -2170,11 +2170,14 @@ void CombatSystem::tickProjectiles(World& world, const SpatialGrid& grid,
                 // volley's: projectileCollision.ts stamps a flat force on a
                 // mob whatever fired it. What replaces the flat number here is
                 // the shot's momentum, which is the same value for stock
-                // ammunition and grows only when the shot itself does.
-                applyKnockback(world, impact.victim, impact.offset,
-                               world.has<MobTag>(impact.victim) ? kMobKnockbackForce
-                                                                : stats.knockback);
-                pushFromImpact(world, impact.victim, impact.offset, shot.mass, shot.speed);
+                // ammunition and grows only when the shot itself does -- so a
+                // mob takes that push ALONE. Queueing the flat force as well
+                // would shove it twice for one hit.
+                if (world.has<MobTag>(impact.victim)) {
+                    pushFromImpact(world, impact.victim, impact.offset, shot.mass, shot.speed);
+                } else {
+                    applyKnockback(world, impact.victim, impact.offset, stats.knockback);
+                }
                 applyPoison(world, impact.victim, shot.entity, stats.poisonPerSecond,
                             stats.poisonDurationMillis, nowMillis);
                 applySlow(world, impact.victim, stats.slowFactor, stats.slowDurationMillis,
@@ -2223,12 +2226,12 @@ void CombatSystem::pushFromImpact(World& world, Entity victim, Vec2 offset, doub
     const Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;   // exactly co-located: no direction to push along
 
-    // Committed to the position rather than to Knockback, because a MOB's
-    // Knockback component is a pure record: moveMobs() deliberately never
-    // drains it (see the note there), so a mob written to it is a mob that
-    // never moves. This is the same shape as the shove a flower takes from mob
-    // contact -- an immediate displacement, no wall resolve, small enough that
-    // the next movement step puts it back on legal ground.
+    // Committed to the position rather than to Knockback. Knockback holds ONE
+    // pending shove and the next hit replaces it, so a petal landing on the
+    // same tick would erase the shot's momentum outright. This is the same
+    // shape as the shove a flower takes from mob contact -- an immediate
+    // displacement, no wall resolve, small enough that the next movement step
+    // puts it back on legal ground.
     transform->position += direction * push;
 }
 

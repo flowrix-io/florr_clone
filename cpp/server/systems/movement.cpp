@@ -109,6 +109,24 @@ void applyPendingKnockback(World& world, Entity e, Transform& transform) {
     transform.position += displacement;
 }
 
+/// Whether a knockback leaves this mob where it stands.
+///
+/// gardn weighs a stationary mob at ten thousand times its mass, which at any
+/// shove a petal deals is "never". Here that is the mobs that cannot walk: a
+/// nest, a rock, a cactus, the target dummy. Nothing would ever walk one of
+/// them back, so a ring that nudged a nest would leave it wherever the fight
+/// ended, and in time inside a wall.
+bool anchoredAgainstKnockback(World& world, const ContentRegistry& registry, Entity e) {
+    if (const MobAi* ai = world.tryGet<MobAi>(e); ai != nullptr && ai->kind == AiKind::Stationary) {
+        return true;
+    }
+    const MobType* type = world.tryGet<MobType>(e);
+    if (type == nullptr || type->configIndex >= registry.mobCount()) return false;
+    // Zero, not "not positive": a moth's speed is written negative and it
+    // flies.
+    return registry.mob(type->configIndex).speed == 0.0;
+}
+
 /// The velocity to store after a step.
 ///
 /// On contact, velocity is rebuilt from what the body actually achieved. That
@@ -374,13 +392,25 @@ void MovementSystem::stepTeleporters(World& world, double nowMillis, double dt) 
 
 void MovementSystem::moveMobs(World& world, const Terrain& terrain,
                               double nowMillis, double dt) {
-    queries_->mobs.each([&](Entity, MobTag&, Transform& transform, Motion& motion, Body& body) {
-        // Knockback is deliberately NOT drained here. The reference writes a
-        // mob's knockback vector on every petal and projectile hit and then no
-        // system ever reads it back into a position -- a mob walks straight
-        // through a petal ring rather than being shoved out of it, and that
-        // sets both the DPS-in-contact and the feel of melee. The component
-        // stays a pure record, which is exactly what it is over there.
+    const ContentRegistry& registry = content();
+    queries_->mobs.each([&](Entity e, MobTag&, Transform& transform, Motion& motion, Body& body) {
+        // The shove a petal or a blast queued. The TypeScript server wrote
+        // this vector on every hit and then never read it back, so a mob
+        // walked straight through a ring; that was a bug, not a design.
+        //
+        // Spent before the mob's own step, and through the wall resolver
+        // rather than added raw as a flower's is: a rare jelly's shove is a
+        // hundred units before mass divides it, and a mob pressed against a wall
+        // would otherwise be put through it. The crossing guard is the same
+        // one the flower's step takes after its shove. Speed 1 for the
+        // displacement over one second, so a dt of zero still delivers it.
+        const Vec2 knockback = takeKnockback(world, e);
+        if ((knockback.x != 0.0 || knockback.y != 0.0) &&
+            !anchoredAgainstKnockback(world, registry, e)) {
+            stepCollide(terrain, transform.realm, transform.position, knockback, body.radius, 1.0,
+                        true, true);
+        }
+
         const Vec2 velocity = sanitizeMovementVelocity(motion.velocity);
 
         // Unlike a player's, a mob's slow and water penalty scale the DISPLACEMENT
@@ -399,8 +429,8 @@ void MovementSystem::moveMobs(World& world, const Terrain& terrain,
 
         // No friction is applied here. The AI phase runs the shared
         // integrateVelocity() against its desired heading and so owns a mob's
-        // acceleration and coast-down. A TypeScript knockback is positional,
-        // so it does not alter this stored velocity at all.
+        // acceleration and coast-down. A knockback is positional, so it does
+        // not alter this stored velocity at all.
         motion.velocity = velocityAfterStep(attempted, out, dt, envScale);
     });
 }

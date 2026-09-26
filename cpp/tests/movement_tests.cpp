@@ -303,29 +303,55 @@ TEST(knockback_is_a_one_shot_positional_displacement) {
     CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 1e-9);
 }
 
-TEST(a_mobs_knockback_is_a_record_the_movement_pass_never_reads) {
+TEST(a_mobs_knockback_moves_it_once_and_leaves_its_velocity_alone) {
     Fixture fx;
     const Entity light = fx.spawnMob({5000, 5000}, 20.0, 1.0);
     const Entity heavy = fx.spawnMob({5000, 6000}, 20.0, 4.0);
-    const Entity weightless = fx.spawnMob({5000, 7000}, 20.0, 0.0);
 
-    fx.world.get<Knockback>(light).impulse = {400, 0};
-    fx.world.get<Knockback>(heavy).impulse = {400, 0};
-    fx.world.get<Knockback>(weightless).impulse = {400, 0};
+    // Combat has already divided by mass when it writes the offset, so the
+    // movement pass applies what it is handed, whatever the body weighs.
+    fx.world.get<Knockback>(light).impulse = {40, 0};
+    fx.world.get<Knockback>(heavy).impulse = {0, -10};
     fx.step(1);
 
-    // The reference writes a mob's knockback vector on every petal and
-    // projectile hit and then never reads it back into a position -- the
-    // getters exist, the one import of them is unused. A mob walks straight
-    // through a petal ring rather than being shoved out of it, and that sets
-    // both the damage a ring does in contact and the whole feel of melee.
-    CHECK_NEAR(fx.positionOf(light).x, 5000.0, 1e-12);
-    CHECK_NEAR(fx.positionOf(heavy).x, 5000.0, 1e-12);
-    CHECK_NEAR(fx.positionOf(weightless).x, 5000.0, 1e-12);
-    // Nor into a velocity.
+    CHECK_NEAR(fx.positionOf(light).x, 5040.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(light).y, 5000.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(heavy).y, 5990.0, 1e-9);
+    // Spent, and not turned into momentum: the AI owns a mob's velocity.
+    CHECK_NEAR(fx.world.get<Knockback>(light).impulse.x, 0.0, 1e-12);
     CHECK_NEAR(fx.velocityOf(light).length(), 0.0, 1e-12);
-    // And the record itself is left standing for whatever wants to report it.
-    CHECK_NEAR(fx.world.get<Knockback>(light).impulse.x, 400.0, 1e-12);
+
+    fx.step(10);
+    CHECK_NEAR(fx.positionOf(light).x, 5040.0, 1e-9);
+}
+
+TEST(a_stationary_mob_is_not_moved_by_knockback) {
+    Fixture fx;
+    const Entity nest = fx.spawnMob({5000, 5000});
+    MobAi ai;
+    ai.kind = AiKind::Stationary;
+    fx.world.add<MobAi>(nest, ai);
+
+    fx.world.get<Knockback>(nest).impulse = {50, 0};
+    fx.step(1);
+    CHECK_NEAR(fx.positionOf(nest).x, 5000.0, 1e-12);
+    // Spent all the same, so it cannot land later on a mob that changed.
+    CHECK_NEAR(fx.world.get<Knockback>(nest).impulse.x, 0.0, 1e-12);
+}
+
+TEST(knockback_cannot_put_a_mob_through_a_wall) {
+    Fixture fx;
+    fx.wallColumn(10);                       // x in [kWallWest, kWallEast)
+    const Entity mob = fx.spawnMob({kWallWest - 30.0, 5000}, 20.0, 1.0);
+
+    // Enough to carry the whole body clear of the far face if nothing stopped
+    // it.
+    fx.world.get<Knockback>(mob).impulse = {400, 0};
+    fx.step(1);
+
+    const Vec2 at = fx.positionOf(mob);
+    CHECK(!fx.terrain.blocked(at, Realm::Overworld));
+    CHECK(at.x <= kWallWest - 20.0 + 1e-6);
 }
 
 TEST(a_nonsense_impulse_is_dropped_rather_than_propagated) {
@@ -537,21 +563,21 @@ TEST(movement_does_not_apply_the_ai_owned_mob_slow_twice) {
 TEST(mob_velocity_is_left_for_the_ai_phase_to_own) {
     Fixture fx;
     const Entity mob = fx.spawnMob({5000, 5000});
-    fx.world.get<Knockback>(mob).impulse = {800, 0};
+    fx.world.get<Knockback>(mob).impulse = {80, 0};
     fx.step(1);
     // The AI is the sole owner of a mob's velocity: the movement pass reads it
     // and integrates it, and writes it only to zero it against a wall. A
-    // knockback record contributes to neither.
+    // knockback moves the body and contributes nothing to it.
     CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
     fx.step(1);
     CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(mob).x, 5000.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, 5080.0, 1e-9);
 
     // What the AI DOES write is carried, undamped, exactly as handed over.
     fx.world.get<Motion>(mob).velocity = {600, 0};
     fx.step(1);
     CHECK_NEAR(fx.velocityOf(mob).x, 600.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(mob).x, 5000.0 + 600.0 * net::kTickSeconds, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, 5080.0 + 600.0 * net::kTickSeconds, 1e-9);
 }
 
 // ---------------------------------------------------------------------------

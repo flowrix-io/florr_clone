@@ -864,8 +864,9 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // shot, not diep.io's reverse thruster, and it is the reason a firing mob
     // reads as firing at all when its missile is off-screen.
     //
-    // Written straight to the position and not to Knockback, because moveMobs
-    // deliberately never drains that component (see the note there). FLOWERS
+    // Written straight to the position and not to Knockback, which holds one
+    // pending shove that the next petal hit replaces: a mob firing into a ring
+    // would lose its kick to it. FLOWERS
     // get none of this at all: their movement is eased from the wire with no
     // prediction, so a server-side kick arrives as a rubber-band rather than
     // as recoil.

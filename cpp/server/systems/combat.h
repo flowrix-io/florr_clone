@@ -207,9 +207,9 @@ public:
     /// The momentum a shot transfers into a MOB it hits, committed straight to
     /// the victim's position.
     ///
-    /// Flowers are excluded: applyKnockback already moves them and movement
-    /// drains it. Mobs are the ones that need this, because a mob's Knockback
-    /// component is written but never read back into a position.
+    /// Flowers are excluded: a shot moves them through applyKnockback, which
+    /// movement drains. A mob takes this INSTEAD of a queued knockback, so the
+    /// momentum is the whole of the shove and is not replaced by the next hit.
     void pushFromImpact(World& world, Entity victim, Vec2 offset, double shotMass,
                         double shotSpeed);
 

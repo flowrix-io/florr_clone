@@ -72,10 +72,10 @@ struct Body {
 
 /// One pending positional displacement from a knockback-producing hit.
 ///
-/// This intentionally is not momentum. TypeScript writes the resulting x/y
-/// offset to the mob's Knockback component and the next movement pass applies
-/// it directly, leaving ordinary velocity untouched. A later hit replaces the
-/// previous value rather than launching a mob with an accumulated volley.
+/// This intentionally is not momentum. A hit writes the x/y offset here and
+/// the next movement pass applies it directly, leaving ordinary velocity
+/// untouched. A later hit replaces the previous value rather than launching a
+/// mob with an accumulated volley.
 struct Knockback {
     Vec2 impulse;
 };
