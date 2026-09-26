@@ -816,7 +816,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         record.totalXp = 100000;
         record.skills.set(SkillId::Healing, rarityIndex(Rarity::Epic));
         record.skills.set(SkillId::Absorbing, rarityIndex(Rarity::Common));
-        record.skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
+        record.skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
         db.markDirty();
         CHECK(db.save());
     }
@@ -834,9 +834,47 @@ TEST(a_talent_tree_round_trips_through_the_database) {
             CHECK_EQ(record->skills.level(SkillId::Absorbing), rarityIndex(Rarity::Common));
             // The newest branch, at the tier the tree's own key table has to
             // spell correctly for a saved account to keep it.
-            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Apex));
-            CHECK_NEAR(record->skills.reloadScale(), 0.25, 1e-12);
+            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Unique));
+            CHECK_NEAR(record->skills.reloadScale(), 0.292, 1e-12);
             CHECK_EQ(record->skills.level(SkillId::Damage), -1);
+        }
+    }
+    std::remove(path.c_str());
+}
+
+TEST(a_saved_tier_past_the_top_of_its_branch_loads_clamped) {
+    // Reload used to go to apex. An account saved back then keeps the unique
+    // tier it paid for on the way up, and gets back only the apex tier's cost,
+    // rather than losing the whole branch.
+    const std::string path = flix::testsupport::tempPath("skill-clamp-json");
+    std::remove(path.c_str());
+    {
+        Database db;
+        std::string error;
+        db.load(path, error);
+        db.setPasswordCost(4);
+        const CreateResult created = db.createUser("apexreload", "password7");
+        CHECK(created.ok());
+        if (!created.ok()) return;
+        PlayerRecord& record = db.progress(created.account->id);
+        record.totalXp = 100000;
+        record.skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
+        db.markDirty();
+        CHECK(db.save());
+    }
+
+    Database reopened;
+    std::string error;
+    CHECK(reopened.load(path, error));
+    const Account* account = reopened.findUser("apexreload");
+    CHECK(account != nullptr);
+    if (account != nullptr) {
+        const PlayerRecord* record = reopened.findProgress(account->id);
+        CHECK(record != nullptr);
+        if (record != nullptr) {
+            CHECK_EQ(skillTierCount(SkillId::Reload), rarityIndex(Rarity::Unique) + 1);
+            CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Unique));
+            CHECK_NEAR(record->skills.reloadScale(), 0.292, 1e-12);
         }
     }
     std::remove(path.c_str());

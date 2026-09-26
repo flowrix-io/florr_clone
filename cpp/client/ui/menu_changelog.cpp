@@ -391,6 +391,7 @@ constexpr ChangelogEntry kChangelog[] = {
       "New petal: Talisman",
       "Mob aggro range bugs fixed",
       "Patched some pet duping glitches",
+      "Reload talent now stops at unique; an apex tier is refunded",
     }},
 };
 

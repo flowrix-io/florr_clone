@@ -138,8 +138,11 @@ PlayerRecord playerFromJson(const Json& value) {
                 if (unknown != nullptr) (*unknown)[key] = skills[key];
                 continue;
             }
+            // A tier past the branch's top is clamped to it, not dropped: a
+            // branch that was later cut short (Reload lost apex) keeps every
+            // tier that still exists and refunds only the ones that don't.
             const int tier = rarityIndex(parseRarity(skills[key].asString()));
-            if (tier < skillTierCount(id)) out.set(id, tier);
+            out.set(id, std::min(tier, skillTierCount(id) - 1));
         }
     };
     readSkills(value["skills"], record.skills, nullptr);

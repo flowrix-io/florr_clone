@@ -52,9 +52,10 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
     "Survive a killing blow at 1 HP.",
 };
 
-/// How many tiers each branch has. Two of them stop short of the full ladder.
+/// How many tiers each branch has. Three of them stop short of the full
+/// ladder: Reload tops out at unique, with no apex tier to buy.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
-    kRarityCount, kRarityCount, kRarityCount, 4, kRarityCount, kRarityCount, 2,
+    kRarityCount, kRarityCount, kRarityCount, 4, kRarityCount, rarityIndex(Rarity::Unique) + 1, 2,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -103,8 +104,9 @@ inline constexpr std::array<double, kRarityCount> kAbsorbSkillScale = {
 
 /// Applied to petal COOLDOWNS, and the only table that shrinks its input: a
 /// reload is a wait, so the branch is worth having when the number goes DOWN.
-/// Geometric like the absorb curve, so apex lands on exactly a quarter of the
-/// petal's own reload and every step is worth the same proportion of the last.
+/// Geometric like the absorb curve, so every step is worth the same proportion
+/// of the last. The branch stops at unique (0.292); the apex entry is there
+/// only because every table spans the ladder, and no tree can reach it.
 inline constexpr std::array<double, kRarityCount> kReloadSkillScale = {
     1.0, 0.857, 0.735, 0.630, 0.540, 0.463, 0.397, 0.340, 0.292, 0.25,
 };

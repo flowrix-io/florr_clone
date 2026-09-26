@@ -949,7 +949,7 @@ TEST(the_reload_talent_shortens_a_broken_petals_cooldown) {
     if (!contentLoaded()) return;
 
     // The same break on two flowers, one of them at the top of the Reload
-    // branch. Basic's own cooldown is 1200ms, which apex must quarter.
+    // branch. Basic's own cooldown is 1200ms, which unique cuts to 29.2%.
     const auto breakBasic = [](Rig& rig) {
         rig.equip(0, "basic");
         rig.settleEquips();
@@ -963,19 +963,19 @@ TEST(the_reload_talent_shortens_a_broken_petals_cooldown) {
     Rig plain;
     CHECK_NEAR(breakBasic(plain), 1200.0, 1e-9);
 
-    Rig apex;
-    apex.world.add<PlayerSkillTree>(apex.player);
-    apex.world.get<PlayerSkillTree>(apex.player)
-        .skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
-    CHECK_NEAR(breakBasic(apex), 300.0, 1e-9);
+    Rig unique;
+    unique.world.add<PlayerSkillTree>(unique.player);
+    unique.world.get<PlayerSkillTree>(unique.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
+    CHECK_NEAR(breakBasic(unique), 350.4, 1e-9);
 
-    // And it is a real wait, not just a shorter number on the slot. Ten ticks
-    // is a third of a second: enough for apex to have its petal back, and far
-    // short of the full cooldown the plain flower is still serving.
-    plain.tick(10);
-    apex.tick(10);
-    CHECK(!apex.slot(0).broken);
-    CHECK_EQ(apex.petals(0).size(), std::size_t(1));
+    // And it is a real wait, not just a shorter number on the slot. Twelve
+    // ticks is 400ms: enough for unique to have its petal back, and far short
+    // of the full cooldown the plain flower is still serving.
+    plain.tick(12);
+    unique.tick(12);
+    CHECK(!unique.slot(0).broken);
+    CHECK_EQ(unique.petals(0).size(), std::size_t(1));
     CHECK(plain.slot(0).broken);
 }
 
@@ -1002,16 +1002,16 @@ TEST(the_reload_talent_paces_a_projectile_petals_volleys) {
     Rig plain;
     const int slow = volleys(plain, 300);
 
-    Rig apex;
-    apex.world.add<PlayerSkillTree>(apex.player);
-    apex.world.get<PlayerSkillTree>(apex.player)
-        .skills.set(SkillId::Reload, rarityIndex(Rarity::Apex));
-    const int fast = volleys(apex, 300);
+    Rig unique;
+    unique.world.add<PlayerSkillTree>(unique.player);
+    unique.world.get<PlayerSkillTree>(unique.player)
+        .skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
+    const int fast = volleys(unique, 300);
 
     CHECK(slow > 0);
     // Not an exact ratio: the first volley of each run is paced by the equip
-    // reload rather than by the shot timer, so apex is a volley ahead of four
-    // times the count rather than exactly four times it.
+    // reload rather than by the shot timer, so unique lands near, not exactly
+    // on, 1/0.292 times the count.
     CHECK(fast >= slow * 3);
 }
 
