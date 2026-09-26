@@ -264,6 +264,13 @@ bool GuildPanel::render(MenuContext& ctx) {
 
     ThumbDrag& drag = thumbDrag();
     const bool scrollable = scroll_.contentHeight > visible;
+    // Everything under the heading but the grab zone, which a finger drags
+    // the other way. Not while a dialog stands over the list: the finger is
+    // there for the dialog's buttons, not the rows behind it.
+    if (!modal.up()) {
+        scroll_.offset -= touchScroll(
+            ctx.window, Rect{panel.x, bodyTop, grab.x - panel.x, visible}, scrollable);
+    }
     if (ctx.pressed() && scrollable && grab.contains(mouse)) {
         drag.active = true;
         drag.startY = mouse.y;

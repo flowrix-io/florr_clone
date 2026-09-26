@@ -573,6 +573,16 @@ Tutorial::Layout Tutorial::layout(int viewWidth, double nowSeconds) const {
 // Input
 // ---------------------------------------------------------------------------
 
+void Tutorial::noteGestures(const Gestures& gestures) {
+    // Watched over the same span the keys are: from the moment the card is
+    // armed, so a panel opened during an earlier step still counts later.
+    if (!pending_ && !visible_) return;
+    if (gestures.moved) movementDetected_ = true;
+    if (gestures.extended) petalsExtended_ = true;
+    if (gestures.inventoryOpen) inventoryOpened_ = true;
+    if (gestures.craftingOpen) craftingOpened_ = true;
+}
+
 void Tutorial::update(Window& window, ClientSettings& settings, const Profile& profile,
                       double nowSeconds) {
     const double dt = lastNow_ < 0 ? 0.0 : clamp(nowSeconds - lastNow_, 0.0, 0.1);

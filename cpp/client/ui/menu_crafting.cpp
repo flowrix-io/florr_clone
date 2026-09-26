@@ -496,6 +496,7 @@ bool CraftingPanel::render(MenuContext& ctx) {
     if (panel.contains(mouse) && mouse.y >= inventoryTop) {
         scroll_.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
     }
+    scroll_.offset -= touchScroll(ctx.window, view, scroll_.maxOffset() > 0);
     scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
 
     canvas.save();

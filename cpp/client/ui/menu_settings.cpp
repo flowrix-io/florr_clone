@@ -746,6 +746,11 @@ bool SettingsPanel::render(MenuContext& ctx) {
     // canvas, not on the card, and forwards every notch to whichever panel is
     // open. A cursor resting over the world still scrolls this list.
     scroll_.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
+    // A finger is more particular: only the list itself, the band the clip
+    // below spans. A sideways drag still reaches a slider -- see Window's
+    // note on dragging a list.
+    scroll_.offset -= touchScroll(ctx.window, Rect{panel.x, contentTop, panel.w, viewHeight},
+                                  scroll_.maxOffset() > 0);
     scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
 
     canvas.save();

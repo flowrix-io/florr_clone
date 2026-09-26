@@ -31,6 +31,7 @@
 #include "client/interpolation.h"
 #include "client/render/world_renderer.h"
 #include "client/ui/menu_widgets.h"
+#include "client/ui/touch_scroll.h"
 #include "shared/core/types.h"
 #include "shared/game/skills.h"
 
@@ -917,10 +918,18 @@ private:
     /// Recomputed by the draw pass, which is the only one that lays the bar
     /// out, and read by the input pass that runs after it.
     int loadoutHovered_ = -1;
-    /// Whether that slot is one a press would actually lift a petal out of.
-    /// The bar swallows a click for that and for nothing else -- an empty
-    /// slot, the trash and the gaps all fall through and fire an attack.
-    bool loadoutGrabbable_ = false;
+    /// Where the pointer was when a petal was lifted off the bar, so a release
+    /// that barely moved can still be told from a drag. See drawLoadoutBar.
+    Vec2 loadoutGrabAt_{};
+    /// Which slots a press would actually lift a petal out of, as of the last
+    /// paint. The bar swallows a click for those and for nothing else -- an
+    /// empty slot, the trash and the gaps all fall through and fire an attack.
+    ///
+    /// Per slot rather than "is the hovered one grabbable": capturesMouse is
+    /// asked about THIS frame's pointer before the bar is painted, and a
+    /// finger's pointer jumps. A flag about where the pointer was at the last
+    /// paint answered for wherever the previous tap had lifted.
+    std::array<bool, kLoadoutBarSlots> loadoutGrabbable_{};
     /// Which of the ten secondary slots Q/E has selected, or -1. Clears itself
     /// five seconds after the last press.
     int selectedSecondary_ = -1;

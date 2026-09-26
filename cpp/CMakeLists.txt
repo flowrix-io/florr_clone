@@ -67,6 +67,7 @@ add_library(cpp_canvas STATIC
   third_party/cpp_canvas/svg.cpp
   third_party/cpp_canvas/font.cpp
   third_party/cpp_canvas/window.cpp
+  third_party/cpp_canvas/touch_gesture.cpp
 )
 target_include_directories(cpp_canvas PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp_canvas)
 target_compile_options(cpp_canvas PRIVATE -w)   # third-party: not ours to lint
@@ -162,6 +163,7 @@ add_library(flix_client STATIC
   client/ui/menu_changelog.cpp
   client/ui/menu_settings.cpp
   client/ui/mobile_controls.cpp
+  client/ui/touch_scroll.cpp
   client/ui/tutorial.cpp
   client/render/art_cache.cpp
   client/render/mob_art.cpp

@@ -454,6 +454,9 @@ bool InventoryPanel::render(MenuContext& ctx) {
     // The browser's wheel listener is on the whole canvas, so the title and the
     // controls row scroll the grid too.
     if (panel.contains(mouse)) scroll_.offset -= ctx.wheel() * kWheelStep;
+    // A finger drags the grid itself, not the header: the search field and
+    // the toggle keep answering the moment they are touched.
+    scroll_.offset -= touchScroll(ctx.window, view, scroll_.maxOffset() > 0);
     scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
 
     const double originX = panel.x;
@@ -548,8 +551,16 @@ bool InventoryPanel::render(MenuContext& ctx) {
     // --- tooltip -----------------------------------------------------------
     // Anchored to the CELL rather than the cursor, and only after the dwell.
     // A press cancels it: what follows is a drag, and a box under the dragged
-    // petal is the one thing in the way.
-    const bool pointerDown = ctx.window.mouseDown(MouseButton::Left) || ctx.drag.active();
+    // petal is the one thing in the way. `mousePressed` as well as `mouseDown`,
+    // because a quick click -- and every tap on a list -- is pressed and
+    // released on one frame and is never seen held.
+    //
+    // A finger never dwells at all. Its pointer only rests where it last
+    // lifted, which after a scroll is on whatever petal happened to slide
+    // under it; the dwell would put that petal's box up after every drag.
+    const bool pointerDown = ctx.window.mouseDown(MouseButton::Left) ||
+                             ctx.window.mousePressed(MouseButton::Left) || ctx.drag.active() ||
+                             ctx.window.pointerIsTouch();
     if (tooltipDelay.update(hovered, ctx.timeSeconds, pointerDown) && hovered >= 0) {
         const Cell& cell = grid.cells[static_cast<std::size_t>(hovered)];
         const std::vector<TooltipLine> lines =

@@ -405,6 +405,9 @@ struct Studio {
     /// would be two things to keep in step. Null before the first render, and
     /// whenever the panel draws without a connection.
     const NetClient* net = nullptr;
+    /// Rebound every frame for the same reason: the two lists read a finger's
+    /// drag off it while they lay themselves out. Null before the first render.
+    const Window* window = nullptr;
 
     static const std::vector<CustomSkin>& noSkins() {
         static const std::vector<CustomSkin> none;
@@ -777,6 +780,9 @@ void Studio::drawShapeList(Canvas& canvas, Rect view) {
 
     shapeScroll.contentHeight = static_cast<double>(shapes.size()) * kRowPitch + 8.0;
     shapeScroll.viewHeight = view.h;
+    if (window && !confirming) {
+        shapeScroll.offset -= touchScroll(*window, view, shapeScroll.maxOffset() > 0);
+    }
     shapeScroll.offset = clamp(shapeScroll.offset, 0.0, shapeScroll.maxOffset());
 
     canvas.save();
@@ -1044,6 +1050,9 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
     const double rows = std::ceil(static_cast<double>(sorted.size()) / cols);
     browseScroll.contentHeight = rows * (kCardH + kGap) - kGap;
     browseScroll.viewHeight = view.h;
+    if (window && !confirming) {
+        browseScroll.offset -= touchScroll(*window, view, browseScroll.maxOffset() > 0);
+    }
     browseScroll.offset = clamp(browseScroll.offset, 0.0, browseScroll.maxOffset());
 
     canvas.save();
@@ -1658,6 +1667,7 @@ bool SkinsPanel::render(MenuContext& ctx) {
     // singleton and the connection it reads is not, so a reconnect must not
     // leave it pointed at a dead one.
     state.net = &ctx.net;
+    state.window = &ctx.window;
     // From the shared anchor, so the card, its hit regions and the box
     // MenuSystem captures the mouse in are one rect.
     state.layout = layoutOf(ctx.bounds);

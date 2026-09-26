@@ -149,6 +149,15 @@ TextEditResult editText(const TextEditFrame& frame, std::string& value, TextSele
 
     if (frame.selectAll) selection.selectAll(value);
 
+    // Each one a Backspace, selection first, exactly as the key would be.
+    for (int i = 0; i < frame.eraseBefore; ++i) {
+        if (dropSelection()) continue;
+        if (selection.caret == 0) break;
+        const std::size_t from = utf8Prev(value, selection.caret);
+        value.erase(from, selection.caret - from);
+        selection.collapse(from);
+        out.changed = true;
+    }
     insert(frame.typed);
     insert(frame.pasted);
 
@@ -324,7 +333,10 @@ bool editText(Window& window, std::string& value, TextFieldState& state, double 
     // one: an SDL layout may hand back a "v", the browser's keydown handler
     // filters it out, and a field that took both would paste and type on the
     // same keystroke.
-    if (!ctrl && !window.altHeld()) frame.typed = window.typedText();
+    if (!ctrl && !window.altHeld()) {
+        frame.eraseBefore = window.typedErase();
+        frame.typed = window.typedText();
+    }
     frame.pasted = window.pastedText();
     frame.shift = window.shiftHeld();
     frame.copy = ctrl && window.keyPressed(Key::C);

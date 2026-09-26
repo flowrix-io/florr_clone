@@ -408,6 +408,13 @@ bool NotificationsPanel::render(MenuContext& ctx) {
     // walks the list back toward the newest notice.
     const bool wheeled = ctx.wheel() != 0.0f && panel.contains(mouse);
     if (wheeled) scroll_.offset += ctx.wheel() * kWheelStep;
+    // A finger is NOT inverted: the list follows it. Everything under the
+    // heading but the thumb's track, which a finger drags the other way. Held
+    // for a list that still has pages to fetch even when this one fits, since
+    // dragging it is what asks for the next.
+    const Rect body{panel.x, panel.y + kHeaderHeight, track.x - panel.x, panel.h - kHeaderHeight};
+    const double dragged = touchScroll(ctx.window, body, scrollable || hasMore);
+    scroll_.offset -= dragged;
 
     ThumbDrag& drag = thumbDrag();
     if (ctx.pressed() && scrollable && track.contains(mouse)) {
@@ -422,9 +429,10 @@ bool NotificationsPanel::render(MenuContext& ctx) {
     }
     scroll_.offset = clamp(scroll_.offset, 0.0, maxScroll);
 
-    // Paging happens on the wheel and only on the wheel, as it does in the
-    // reference: dragging the thumb to the foot of the list loads nothing.
-    if (wheeled && hasMore && !loading && !entries.empty() &&
+    // Paging happens on the wheel -- or a finger, a phone's wheel -- as it
+    // does in the reference: dragging the thumb to the foot of the list loads
+    // nothing.
+    if ((wheeled || dragged != 0.0) && hasMore && !loading && !entries.empty() &&
         scroll_.offset >= maxScroll - kPagePrefetch) {
         ctx.net.requestNotifications(kNotificationPage, entries.back().timestampMillis);
     }

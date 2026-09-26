@@ -123,6 +123,38 @@ TEST(backspace_erases_a_whole_character) {
     CHECK_EQ(selection.caret, std::size_t{1});
 }
 
+TEST(a_phone_keyboards_correction_erases_before_it_inserts) {
+    // What Android sends for autocorrect: not keys, but "take back two, put
+    // in three" -- "helo " becomes "hello ". Inserting first and erasing
+    // after, which is the order a Backspace key and typing share, would eat
+    // the correction it had just made.
+    std::string value = "say helo ";
+    TextSelection selection;
+    selection.collapse(value.size());
+    TextEditFrame frame;
+    frame.eraseBefore = 2;
+    frame.typed = "lo ";
+    editText(frame, value, selection);
+    CHECK_EQ(value, std::string("say hello "));
+    CHECK_EQ(selection.caret, value.size());
+}
+
+TEST(a_phone_keyboards_erase_counts_characters_not_bytes) {
+    std::string value = "caf" + kEAcute + kStar;
+    TextSelection selection;
+    selection.collapse(value.size());
+    TextEditFrame frame;
+    frame.eraseBefore = 2;
+    editText(frame, value, selection);
+    CHECK_EQ(value, std::string("caf"));
+
+    // Past the start it stops, rather than wrapping or underflowing.
+    frame.eraseBefore = 10;
+    editText(frame, value, selection);
+    CHECK_EQ(value, std::string());
+    CHECK_EQ(selection.caret, std::size_t(0));
+}
+
 TEST(delete_erases_forward) {
     std::string value = "a" + kStar + "b";
     TextSelection selection;

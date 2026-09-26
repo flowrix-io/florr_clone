@@ -911,6 +911,7 @@ bool ShopPanel::render(MenuContext& ctx) {
         // The wheel works anywhere over the card, not just over the list, and
         // is dead while a modal is up.
         if (!modalUp && panel.contains(mouse)) scroll_.offset -= ctx.wheel() * kWheelPixels;
+        if (!modalUp) scroll_.offset -= touchScroll(ctx.window, body, scroll_.maxOffset() > 0);
         scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
         state.scroll[tabIndex] = scroll_.offset;
 

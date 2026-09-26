@@ -1,4 +1,5 @@
 #include "window.h"
+#include "touch_gesture.h"
 
 #include <algorithm>
 #include <array>
@@ -119,6 +120,28 @@ Key fromDomCode(const char* code) {
   return Key::Unknown;
 }
 
+// KeyboardEvent.key -> Key, for the editing keys only. A phone's keyboard has
+// no physical keys, so it may leave `code` empty and name only the key it
+// meant -- and a Backspace or an Enter matched on `code` alone then never
+// happens, which leaves a field that cannot be corrected and a chat line that
+// cannot be sent. Letters are not mapped: their text arrives as text anyway,
+// and a soft keyboard's "w" is not a request to walk.
+Key fromDomKey(const char* name) {
+  struct Named { const char* key; Key value; };
+  static const Named kNamed[] = {
+    {"Enter", Key::Enter},         {"Backspace", Key::Backspace},
+    {"Delete", Key::Delete},       {"Tab", Key::Tab},
+    {"Escape", Key::Escape},       {"ArrowLeft", Key::Left},
+    {"ArrowRight", Key::Right},    {"ArrowUp", Key::Up},
+    {"ArrowDown", Key::Down},      {"Home", Key::Home},
+    {"End", Key::End},
+  };
+  for (const Named& named : kNamed) {
+    if (std::strcmp(name, named.key) == 0) return named.value;
+  }
+  return Key::Unknown;
+}
+
 // The clipboard a page is allowed to read without asking is the one the user
 // just pasted into it, so that is what is kept. navigator.clipboard.readText()
 // would need a permission prompt mid-game; a paste event needs none.
@@ -188,9 +211,18 @@ EM_JS(int, web_coarse_pointer, (), {
 // font is not decoration either -- iOS zooms the whole page when a smaller
 // field takes focus, and the zoom does not come back.
 //
-// Nothing is ever read off this element. It exists to be focused; the
-// keystrokes it produces bubble to the window, where the key handler above
-// already listens, and that is the whole of the path text takes.
+// Two paths bring text out of it, because keyboards disagree about what a key
+// is. A desktop keyboard -- and iOS's -- sends a keydown naming the character,
+// which the key handler below types and cancels, so the element never changes.
+// Android's keyboards send "Unidentified" for every key and do their work on
+// the element itself: composing a word, swapping in a suggestion, deleting
+// through it. For those, the element's value is read after each change and
+// the difference is queued as "erase N, then insert this" -- the only form
+// that a correction ("helo" -> "hello") survives.
+//
+// The value always starts with one space the player did not type. Deleting it
+// is how a Backspace past everything typed since the field was tapped shows
+// up at all: a keyboard with an empty box to work on reports nothing.
 EM_JS(void, web_soft_keyboard, (int wanted), {
   let node = document.getElementById('__flix_soft_keyboard');
   if (!node) {
@@ -207,14 +239,77 @@ EM_JS(void, web_soft_keyboard, (int wanted), {
         'position:fixed;top:35%;left:50%;width:2px;height:2px;opacity:0;' +
         'font-size:16px;border:none;padding:0;background:transparent;' +
         'pointer-events:none;z-index:-1;';
-    // Never allowed to hold text: the value is not what the client reads, and
-    // a growing one would let a soft keyboard's autocorrect rewrite history
-    // the client already consumed.
-    node.addEventListener('input', () => { node.value = ''; });
+
+    Module.cppSoftErase = 0;
+    Module.cppSoftText = '';
+    node.__last = ' ';
+    node.__composing = false;
+    // Back to the lone space, but never mid-word: resetting under a keyboard
+    // that is composing throws its word away. Only once the space is gone, or
+    // once the box has grown long enough to be worth trimming.
+    const settle = () => {
+      if (node.__composing) return;
+      if (node.value.startsWith(' ') && node.value.length <= 64) return;
+      node.value = ' ';
+      node.__last = ' ';
+    };
+    node.addEventListener('compositionstart', () => { node.__composing = true; });
+    node.addEventListener('compositionend', () => { node.__composing = false; settle(); });
+    node.addEventListener('input', (event) => {
+      const before = Array.from(node.__last);
+      const after = Array.from(node.value);
+      node.__last = node.value;
+      const kind = event.inputType || '';
+      // A paste is the page's own paste listener's to deliver; taking it here
+      // too would put it in twice. So is a character a keydown already typed,
+      // should a keyboard both name the key and insert it.
+      const keyed = kind === 'insertText' && event.data === Module.cppSoftKeyed &&
+                    performance.now() - (Module.cppSoftKeyedAt || 0) < 100;
+      Module.cppSoftKeyed = null;
+      if (kind !== 'insertFromPaste' && kind !== 'insertFromDrop' && !keyed) {
+        let same = 0;
+        while (same < before.length && same < after.length && before[same] === after[same]) ++same;
+        let erase = before.length - same;
+        // Folded into what is already queued for this frame: an erase takes
+        // back queued text before it reaches anything the field holds.
+        const queued = Array.from(Module.cppSoftText);
+        while (erase > 0 && queued.length > 0) { queued.pop(); --erase; }
+        Module.cppSoftErase += erase;
+        Module.cppSoftText = queued.join('') + after.slice(same).join('');
+      }
+      settle();
+    });
     document.body.appendChild(node);
   }
-  if (wanted) node.focus({ preventScroll: true });
-  else node.blur();
+  if (wanted) {
+    // Fresh for every tap: the tap may have put the caret somewhere else in
+    // the field, and the keyboard's idea of the text around it is now wrong.
+    node.value = ' ';
+    node.__last = ' ';
+    node.__composing = false;
+    node.focus({ preventScroll: true });
+  } else {
+    node.blur();
+  }
+});
+// What the keyboard did to the element since the last frame, taken once.
+EM_JS(int, web_soft_erase_take, (), {
+  const n = Module.cppSoftErase | 0;
+  Module.cppSoftErase = 0;
+  return n;
+});
+EM_JS(int, web_soft_text_size, (), {
+  return new TextEncoder().encode(Module.cppSoftText || '').length + 1;
+});
+EM_JS(void, web_soft_text_take, (char* out, int capacity), {
+  stringToUTF8(Module.cppSoftText || '', out, capacity);
+  Module.cppSoftText = '';
+});
+// The character a keydown just typed, so the element's echo of it -- from a
+// keyboard that both names the key and inserts it -- is not typed again.
+EM_JS(void, web_soft_keyed, (const char* text), {
+  Module.cppSoftKeyed = UTF8ToString(text);
+  Module.cppSoftKeyedAt = performance.now();
 });
 #endif
 
@@ -243,17 +338,20 @@ struct Window::Impl {
   std::array<bool, kButtonCount> pendingDownEdge{}, pendingUpEdge{};
   float pendingWheel = 0;
   std::string pendingTyped;
+  int pendingErase = 0;
   // The paste counter as of the last frame, and whether it moved since.
   int pasteSeq = 0;
   bool pasted = false;
 
   void takePendingEvents() {
+    takeSoftKeyboardEdits();
     pressed = pendingPressed;
     released = pendingReleased;
     mouseDownEdge = pendingDownEdge;
     mouseUpEdge = pendingUpEdge;
     wheel = pendingWheel;
     typed = pendingTyped;
+    typedErase = pendingErase;
 
     pendingPressed.fill(false);
     pendingReleased.fill(false);
@@ -261,6 +359,7 @@ struct Window::Impl {
     pendingUpEdge.fill(false);
     pendingWheel = 0;
     pendingTyped.clear();
+    pendingErase = 0;
 
     // A paste is a page event rather than a key: the browser fires it after
     // the keystroke's own default action, and fires it for the context menu
@@ -269,6 +368,29 @@ struct Window::Impl {
     const int seq = web_clipboard_paste_seq();
     pasted = seq != pasteSeq;
     pasteSeq = seq;
+  }
+
+  /// Folds what the keyboard did to the on-screen keyboard's element into
+  /// this frame's typing, AFTER whatever keydowns typed: an erase takes back
+  /// characters still waiting to be typed before it reaches the field. See
+  /// web_soft_keyboard.
+  void takeSoftKeyboardEdits() {
+    int erase = web_soft_erase_take();
+    const int size = web_soft_text_size();
+    std::string text;
+    if (size > 1) {
+      text.assign(static_cast<std::size_t>(size), '\0');
+      web_soft_text_take(&text[0], size);
+      text.resize(std::strlen(text.c_str()));
+    }
+    for (; erase > 0 && !pendingTyped.empty(); --erase) {
+      // One character, however many bytes: back over the continuation bytes.
+      std::size_t at = pendingTyped.size() - 1;
+      while (at > 0 && (static_cast<unsigned char>(pendingTyped[at]) & 0xC0) == 0x80) --at;
+      pendingTyped.erase(at);
+    }
+    pendingErase += erase;
+    pendingTyped += text;
   }
 #else
   SDL_Window* window = nullptr;
@@ -300,6 +422,7 @@ struct Window::Impl {
   std::array<bool, kButtonCount> mouseHeld{}, mouseDownEdge{}, mouseUpEdge{};
   float mouseX = 0, mouseY = 0, wheel = 0;
   std::string typed;
+  int typedErase = 0;
   bool shift = false, ctrl = false, alt = false;
 
   // -- touch ----------------------------------------------------------------
@@ -319,17 +442,59 @@ struct Window::Impl {
   /// this every "is the pointer even in the window" test -- which is what the
   /// title screen gates its buttons on -- answers no, forever.
   bool touchInside = false;
+  /// Whether a finger, rather than a mouse, last put the pointer where it is.
+  bool pointerIsTouch = false;
   Window::TouchClaimHandler touchClaim;
   std::vector<WindowRect> keyboardRegions;
+  /// What the mirrored finger is doing when it may be scrolling a list, and
+  /// what that does to the left button. See touch_gesture.h.
+  TouchScrollGesture gesture;
 
   void recordTouch(TouchPhase phase, std::int64_t id, float x, float y) {
     touchSeen = true;
     pendingTouches.push_back(TouchEvent{phase, TouchPoint{id, x, y}});
   }
 
+  /// Whether a point is on one of the text fields the client last painted. See
+  /// the note on Window::setSoftKeyboardRegions for why the window is the one
+  /// holding this list at all. Always false natively, where nothing publishes
+  /// any.
+  bool onKeyboardField(float x, float y) const {
+    for (const WindowRect& region : keyboardRegions) {
+      if (x >= region.x && x <= region.x + region.w && y >= region.y &&
+          y <= region.y + region.h) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void applyMouse(const TouchScrollGesture::Mouse& out) {
+    const auto left = static_cast<std::size_t>(MouseButton::Left);
+    if (out.moved) {
+      mouseX = out.x;
+      mouseY = out.y;
+      touchInside = true;
+      pointerIsTouch = true;
+    }
+    if (out.press) {
+      mouseHeld[left] = true;
+      mouseDownEdge[left] = true;
+    }
+    if (out.release) {
+      mouseHeld[left] = false;
+      mouseUpEdge[left] = true;
+    }
+  }
+
   /// Moves the parked contacts into this frame's stream, keeps the live set,
   /// and mirrors the one unclaimed contact onto the left mouse button.
-  void drainTouches() {
+  void drainTouches(double now) {
+    gesture.setUnitsPerPoint(fit > 0 ? 1.0 / fit : 1.0);
+    // Before the contacts: a press held long enough, a fling still coasting
+    // and a pointer move an earlier press deferred all belong to this frame
+    // whether or not a finger moved in it.
+    applyMouse(gesture.beginFrame(now));
     touchEvents.swap(pendingTouches);
     pendingTouches.clear();
     for (const TouchEvent& event : touchEvents) {
@@ -349,23 +514,18 @@ struct Window::Impl {
           if (mirroring) break;
           mirroring = true;
           mirrored = point.id;
-          mouseX = point.x;
-          mouseY = point.y;
           touchInside = true;
-          const auto left = static_cast<std::size_t>(MouseButton::Left);
-          mouseHeld[left] = true;
-          mouseDownEdge[left] = true;
+          // A text field's tap is never held: it is the one gesture the page
+          // is left to finish (see onTouch), and the field has to see its
+          // press on the frame the keyboard is asked for.
+          applyMouse(gesture.began(point, now, onKeyboardField(point.x, point.y)));
           break;
         }
         case TouchPhase::Moved: {
           for (TouchPoint& live : touches) {
             if (live.id == point.id) { live.x = point.x; live.y = point.y; }
           }
-          if (mirroring && point.id == mirrored) {
-            mouseX = point.x;
-            mouseY = point.y;
-            touchInside = true;
-          }
+          if (mirroring && point.id == mirrored) applyMouse(gesture.moved(point, now));
           break;
         }
         case TouchPhase::Ended: {
@@ -377,18 +537,20 @@ struct Window::Impl {
           claimed.erase(std::remove(claimed.begin(), claimed.end(), point.id), claimed.end());
           if (mirroring && point.id == mirrored) {
             mirroring = false;
-            // The release lands where the finger left, not where it landed:
-            // a UI that dispatches its click on mouseup tests that position.
-            mouseX = point.x;
-            mouseY = point.y;
-            const auto left = static_cast<std::size_t>(MouseButton::Left);
-            mouseHeld[left] = false;
-            mouseUpEdge[left] = true;
+            applyMouse(gesture.ended(point, now));
           }
           break;
         }
       }
     }
+  }
+
+  double nowSeconds() const {
+#ifdef __EMSCRIPTEN__
+    return emscripten_get_now() / 1000.0;
+#else
+    return static_cast<double>(SDL_GetPerformanceCounter()) / SDL_GetPerformanceFrequency();
+#endif
   }
 #ifdef __EMSCRIPTEN__
   bool pointerInside = false;
@@ -546,6 +708,7 @@ struct Window::Impl {
     // whatever it landed on a second time.
     if (emscripten_get_now() < impl->ghostUntilMillis) return EM_TRUE;
     recordPointer(impl, event->targetX, event->targetY);
+    impl->pointerIsTouch = false;
     recordModifiers(impl, event->shiftKey, event->ctrlKey, event->altKey, event->metaKey);
     if (type == EMSCRIPTEN_EVENT_MOUSEMOVE || type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
       // A pointer event targeted at the canvas is also authoritative when the
@@ -656,19 +819,6 @@ struct Window::Impl {
     return EM_TRUE;
   }
 
-  /// Whether a point is on one of the text fields the client last painted. See
-  /// the note on Window::setSoftKeyboardRegions for why the window is the one
-  /// holding this list at all.
-  bool onKeyboardField(float x, float y) const {
-    for (const WindowRect& region : keyboardRegions) {
-      if (x >= region.x && x <= region.x + region.w && y >= region.y &&
-          y <= region.y + region.h) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   void lowerKeyboard() {
     if (!softKeyboardUp) return;
     web_soft_keyboard(0);
@@ -701,7 +851,16 @@ struct Window::Impl {
     Impl* impl = implOf(userData);
     recordModifiers(impl, event->shiftKey, event->ctrlKey, event->altKey, event->metaKey);
 
-    const Key key = fromDomCode(event->code);
+    // What a keyboard with no keys calls a key it is still composing with.
+    // It is not one: the text arrives on the on-screen keyboard's element, and
+    // cancelling this event would only get in the way of it.
+    const bool composing = event->keyCode == 229 || std::strcmp(event->key, "Unidentified") == 0 ||
+                           std::strcmp(event->key, "Process") == 0;
+    if (composing) return EM_FALSE;
+
+    Key key = fromDomCode(event->code);
+    // A phone's keyboard may name the key and leave its physical code empty.
+    if (key == Key::Unknown) key = fromDomKey(event->key);
     const std::size_t i = static_cast<std::size_t>(key);
     if (type == EMSCRIPTEN_EVENT_KEYUP) {
       if (i < kKeyCount) { impl->down[i] = false; impl->pendingReleased[i] = true; }
@@ -728,7 +887,10 @@ struct Window::Impl {
           (bytes == 1 ? static_cast<unsigned char>(text[0]) >= 0x20 &&
                             static_cast<unsigned char>(text[0]) != 0x7F
                       : (static_cast<unsigned char>(text[0]) & 0x80) != 0);
-      if (oneCodePoint) impl->pendingTyped += text;
+      if (oneCodePoint) {
+        impl->pendingTyped += text;
+        web_soft_keyed(text);
+      }
     }
 
     // Consumed, so the page does not also scroll on Space, tab away, or open a
@@ -757,6 +919,7 @@ struct Window::Impl {
     impl->claimed.clear();
     impl->mirroring = false;
     impl->touchInside = false;
+    impl->gesture.cancel();
     return EM_TRUE;
   }
 #endif
@@ -809,6 +972,7 @@ struct Window::Impl {
     mouseUpEdge.fill(false);
     wheel = 0;
     typed.clear();
+    typedErase = 0;
   }
 };
 
@@ -944,6 +1108,7 @@ void Window::close() {
   impl_->claimed.clear();
   impl_->mirroring = false;
   impl_->touchInside = false;
+  impl_->gesture.cancel();
 #ifdef __EMSCRIPTEN__
   impl_->pointerInside = false;
 #endif
@@ -971,7 +1136,7 @@ bool Window::pump() {
   // After the edge state has been moved across, never before: the mirrored
   // contact writes a mouse edge, and takePendingEvents ASSIGNS that array
   // rather than merging into it.
-  impl_->drainTouches();
+  impl_->drainTouches(impl_->nowSeconds());
   // After that, so this frame's pointer positions are converted with the
   // geometry this frame will be drawn with, as the native path does too.
   impl_->refreshGeometry();
@@ -1025,11 +1190,13 @@ bool Window::pump() {
         const float toDesign = impl_->fit > 0 ? static_cast<float>(1.0 / impl_->fit) : 1.0f;
         impl_->mouseX = event.motion.x * toDesign;
         impl_->mouseY = event.motion.y * toDesign;
+        impl_->pointerIsTouch = false;
         break;
       }
 
       case SDL_MOUSEBUTTONDOWN:
       case SDL_MOUSEBUTTONUP: {
+        impl_->pointerIsTouch = false;
         std::size_t index = kButtonCount;
         if (event.button.button == SDL_BUTTON_LEFT) index = static_cast<std::size_t>(MouseButton::Left);
         else if (event.button.button == SDL_BUTTON_MIDDLE) index = static_cast<std::size_t>(MouseButton::Middle);
@@ -1070,7 +1237,7 @@ bool Window::pump() {
 
   // After the queue, for the same reason the web path drains after taking its
   // pending set: the mirror writes this frame's mouse edges.
-  impl_->drainTouches();
+  impl_->drainTouches(impl_->nowSeconds());
 
   const SDL_Keymod mods = SDL_GetModState();
   impl_->shift = (mods & KMOD_SHIFT) != 0;
@@ -1247,6 +1414,13 @@ void Window::setTouchClaimHandler(TouchClaimHandler handler) {
   impl_->touchClaim = std::move(handler);
 }
 
+void Window::setTouchScrollRegions(std::vector<WindowRect> regions) {
+  impl_->gesture.setRegions(std::move(regions));
+}
+const TouchPan& Window::touchPan() const { return impl_->gesture.pan(); }
+bool Window::touchScrolling() const { return impl_->gesture.scrolling(); }
+bool Window::pointerIsTouch() const { return impl_->pointerIsTouch; }
+
 void Window::setSoftKeyboardRegions(std::vector<WindowRect> regions) {
 #ifdef __EMSCRIPTEN__
   impl_->keyboardRegions = std::move(regions);
@@ -1270,6 +1444,7 @@ void Window::dismissSoftKeyboard() {
 #endif
 }
 const std::string& Window::typedText() const { return impl_->typed; }
+int Window::typedErase() const { return impl_->typedErase; }
 bool Window::shiftHeld() const { return impl_->shift; }
 bool Window::ctrlHeld() const { return impl_->ctrl; }
 bool Window::altHeld() const { return impl_->alt; }

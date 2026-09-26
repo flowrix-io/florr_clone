@@ -30,6 +30,7 @@
 #include "client/ui/markup.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
+#include "client/ui/touch_scroll.h"
 
 namespace flix {
 
@@ -437,6 +438,21 @@ bool App::pressedChatBox() const {
 }
 
 bool App::scrollChat() {
+    // A finger dragging the transcript, which is a phone's only way back
+    // through it. Tested against where the finger LANDED, as every list's drag
+    // is, and never claims the wheel: a finger has none to give the zoom.
+    const TouchPan& pan = window_.touchPan();
+    const bool suggestingNow = chatOpen_ && !chatDraft_.empty() && chatDraft_[0] == '/';
+    if (pan.active && menus_.settings().showChat && chatColumn_.w > 0 && !suggestingNow) {
+        const Vec2 origin{pan.originX, pan.originY};
+        if (chatColumn_.contains(origin) && !menus_.capturesMouse(origin)) {
+            // Dragging DOWN pulls older lines into view, and older is further
+            // off the bottom, which is what the offset counts. The draw clamps
+            // the ceiling, as it does for the wheel.
+            chatScroll_ = std::max(0.0, chatScroll_ + pan.dy);
+        }
+    }
+
     // Hovering the chat is not scrolling it: a frame with no wheel in it is
     // nobody's, and claiming those would stop the zoom working for a pointer
     // that happens to be resting in the corner.
@@ -811,6 +827,12 @@ void App::drawChat(Canvas& canvas, double time) {
         if (it == oldest) {
             const double slack = content - column.h;
             chatScroll_ = clamp(chatScroll_, 0.0, slack > 0 ? slack : 0.0);
+        }
+        // A transcript with more than it can show is one a finger can drag --
+        // see scrollChat. One that fits keeps its press immediate, so a finger
+        // aimed across the corner still swings.
+        if (content > column.h || chatScroll_ > 0) {
+            ui::TouchScrollRegions::instance().record(column);
         }
 
         if (!newestFirst.empty()) {

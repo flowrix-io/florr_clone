@@ -574,6 +574,11 @@ bool ChangelogPanel::render(MenuContext& ctx) {
     // The wheel is INVERTED here: in the reference a notch DOWN walks the list
     // back toward the newest entry. Odd, deliberate there, kept here.
     if (panel.contains(mouse)) scroll_.offset += ctx.wheel() * kWheelStep;
+    // A finger is NOT inverted: the text follows it, whichever way the wheel
+    // goes. Everything under the heading but the thumb's track, which a finger
+    // drags the other way.
+    const Rect body{panel.x, panel.y + kHeaderHeight, track.x - panel.x, panel.h - kHeaderHeight};
+    scroll_.offset -= touchScroll(ctx.window, body, scrollable);
 
     ThumbDrag& drag = thumbDrag();
     if (ctx.pressed() && scrollable && track.contains(mouse)) {

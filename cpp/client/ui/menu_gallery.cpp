@@ -634,13 +634,20 @@ bool GalleryPanel::render(MenuContext& ctx) {
         // sign is inverted against SDL's.
         scroll_.offset -= ctx.wheel() * 100.0;
     }
+    // The grid band, which already stops short of the track.
+    scroll_.offset -= touchScroll(ctx.window, view, maxScroll > 0);
     scroll_.offset = clamp(scroll_.offset, 0.0, maxScroll);
 
     // Hit-tested over EVERY cell, not just the drawn ones, and gated on the
     // content band rather than the grid: that is what the reference does, and
     // it is why a cell in the never-drawn bottom strip can still be hovered.
+    //
+    // Not while a finger is dragging the grid: the cell under it rides along
+    // with it, and its card would follow the whole scroll. A TAP still hovers
+    // -- it is the only way a phone has to read a cell at all.
     int hovered = -1;
-    if (overPanel && !drag.active && mouse.y >= view.y && mouse.y <= view.bottom()) {
+    if (overPanel && !drag.active && !ctx.window.touchScrolling() && mouse.y >= view.y &&
+        mouse.y <= view.bottom()) {
         const double yInGrid = mouse.y - panel.y + scroll_.offset;
         for (std::size_t i = 0; i < cells.size(); ++i) {
             const Rect& r = cells[i].rect;

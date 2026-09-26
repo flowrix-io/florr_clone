@@ -83,6 +83,21 @@ public:
     /// way the browser's DOM box takes it before the canvas does.
     void update(Window&, ClientSettings&, const Profile&, double nowSeconds);
 
+    /// The same gestures, made without the keys `update` watches for.
+    struct Gestures {
+        bool moved = false;          ///< the on-screen stick is pushed
+        bool extended = false;       ///< the on-screen attack button is held
+        bool inventoryOpen = false;  ///< however it was opened
+        bool craftingOpen = false;
+    };
+
+    /// A phone has no W, Space, Z or C. It moves with the stick, extends with
+    /// the attack button and opens a panel by tapping its icon -- and a step
+    /// that waited for the keys alone had no Next button to fall back on, so
+    /// a phone player could not get past the second card. Latched exactly as
+    /// the keys are. Call it before `update` on the same frame.
+    void noteGestures(const Gestures&);
+
     /// Paints the card. `highlightCard` is the crafting panel's box while that
     /// panel is open and empty otherwise -- see `kCraftingHighlightStep`.
     void draw(Canvas&, double nowSeconds, Rect highlightCard);

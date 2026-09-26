@@ -258,6 +258,12 @@ constexpr double kLoadoutTileArmed = 20.0;
 /// MenuSystem::expectedLoadout_.
 constexpr double kLoadoutEchoGrace = 1.0;
 
+/// How far, in design units, a petal lifted off the bar may move before its
+/// release off every slot stops being a click and becomes a drop that takes
+/// it off. Wider than the 6-10 unit gaps between slots, which a finger lifting
+/// from a tap drifts across; far short of any drag meant to unequip.
+constexpr double kLoadoutClickSlop = 16.0;
+
 struct LoadoutLayout {
     std::array<Rect, kLoadoutBarSlots> slots{};
     Rect trash{};
@@ -1186,7 +1192,7 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         // must not go on answering for clicks where it used to be, and it has
         // no selection or queued keystroke to carry into the next screen.
         loadoutHovered_ = -1;
-        loadoutGrabbable_ = false;
+        loadoutGrabbable_.fill(false);
         selectedSecondary_ = -1;
         pendingCycle_ = 0;
         pendingSwapSlot_ = -1;
@@ -1306,8 +1312,10 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     loadoutHovered_ = hovered;
     // The browser intercepts a press on the bar only to begin a drag, so this
     // is exactly the condition under which the click is the bar's at all.
-    loadoutGrabbable_ = hovered >= 0 && hovered < kLoadoutBarSlots && hovered < owned &&
-                        !shown[static_cast<std::size_t>(hovered)].empty();
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        loadoutGrabbable_[at] = i < owned && !shown[at].empty();
+    }
 
     canvas.save();
     canvas.translate(0.0f, static_cast<float>((1.0 - loadoutSlide_) * 120.0));
@@ -1557,10 +1565,23 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeS
             drag_.petalIndex = shown[at].petalIndex;
             drag_.rarity = shown[at].rarity;
             drag_.slot = hovered;
+            loadoutGrabAt_ = {window.mouseX(), window.mouseY()};
         }
     }
 
     if (!window.mouseReleased(MouseButton::Left) || !drag_.active()) return;
+
+    // A release that has barely moved is the click it was aimed as, wherever
+    // it lands. The gaps between slots are a few pixels on a phone and a
+    // finger lifts a little way from where it landed: a tap that drifted into
+    // a gap used to take the petal off the bar, and one that drifted onto the
+    // next slot swapped the two.
+    if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot < owned &&
+        (Vec2{window.mouseX(), window.mouseY()} - loadoutGrabAt_).length() <= kLoadoutClickSlop) {
+        useLoadoutSlot(net, drag_.slot);
+        drag_.clear();
+        return;
+    }
 
     if (hovered >= 0 && hovered < kLoadoutBarSlots) {
         if (hovered < owned) {
@@ -1582,9 +1603,9 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeS
         return;
     }
 
-    // Anywhere that is not a slot sends the petal back to the inventory --
-    // including the trash, and including a drop over an open panel. gardn has
-    // no such rule: it throws a petal away on its Delete slot and floats
+    // Anywhere else that is not a slot sends the petal back to the inventory
+    // -- including the trash, and including a drop over an open panel. gardn
+    // has no such rule: it throws a petal away on its Delete slot and floats
     // everything else home. This game keeps the rule because its bar has no
     // Delete slot to offer instead.
     if (drag_.source == DragState::Source::LoadoutSlot && drag_.slot < owned) {
@@ -2224,7 +2245,7 @@ void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeco
     wantsText_ = false;
     panelRect_ = Rect{};
     loadoutHovered_ = -1;
-    loadoutGrabbable_ = false;
+    loadoutGrabbable_.fill(false);
     drawIconStrip(canvas, window, timeSeconds);
 }
 
@@ -2259,10 +2280,13 @@ bool MenuSystem::capturesMouse(Vec2 mouse) const {
     // The bar takes the click for one thing only: lifting a petal out of a
     // filled slot. An empty slot, the trash, the gaps between the rows and the
     // caption strip above them all fall through and fire an attack, so no
-    // bounding box around the bar answers here. Read off the hover scan rather
-    // than `mouse`, because only that pass has the account's loadout to say
-    // whether the slot holds anything.
-    if (loadoutGrabbable_) return true;
+    // bounding box around the bar answers here. Which slots are filled comes
+    // off the last paint -- only that pass has the account's loadout -- but
+    // the pointer tested against them is this one.
+    for (int i = 0; i < kLoadoutBarSlots; ++i) {
+        const auto at = static_cast<std::size_t>(i);
+        if (loadoutGrabbable_[at] && insideInclusive(loadoutRects_[at], mouse)) return true;
+    }
     for (const Rect& button : stripRects_) {
         if (insideInclusive(button, mouse)) return true;
     }

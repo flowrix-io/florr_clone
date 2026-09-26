@@ -136,6 +136,10 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     // rank 50. Folded in here because the shared Scroller applies a wheel the
     // other way round, at its own step, and the other panels want that.
     if (panel.contains(mouse)) scroll_.offset += ctx.wheel() * kWheelStep;
+    // A finger is not inverted: the board follows it. Everything but the
+    // track, which a finger drags the other way.
+    scroll_.offset -=
+        touchScroll(ctx.window, Rect{view.x, view.y, bar.x - view.x, view.h}, scrollable);
 
     // Press, not release: the browser panel acts on mousedown, and a press
     // that reaches the track is one the two buttons did not take.

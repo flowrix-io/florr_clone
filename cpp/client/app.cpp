@@ -32,6 +32,7 @@
 #include "client/ui/draw.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
+#include "client/ui/touch_scroll.h"
 #include "client/web/reload.h"
 #include "shared/game/config.h"
 #include "shared/game/constants.h"
@@ -402,6 +403,10 @@ void App::frame(double dt) {
     // it is hit-tested, and the window is handed the set at the end of the
     // frame so a touch can raise the keyboard from inside its own gesture.
     ui::TextFieldRegions::instance().beginFrame();
+    // And the lists a finger can drag, on the same contract: a list records
+    // itself as it lays out, and the window holds the set for the touches that
+    // land before the next frame.
+    ui::TouchScrollRegions::instance().beginFrame();
 
     // The pointer starts every frame as an arrow and whatever is under it says
     // otherwise, which is how the reference works: `canvas.style.cursor` is
@@ -512,6 +517,13 @@ void App::frame(double dt) {
     // never hears about it, which is what the capturesMouse() guards below
     // stand in for.
     if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
+        ui::Tutorial::Gestures gestures;
+        ui::MobileControls::Stick stick;
+        gestures.moved = touchControlsVisible() && mobile_.stick(stick);
+        gestures.extended = touchControlsVisible() && mobile_.attackPressed();
+        gestures.inventoryOpen = menus_.open() == MenuId::Inventory;
+        gestures.craftingOpen = menus_.open() == MenuId::Crafting;
+        tutorial_.noteGestures(gestures);
         tutorial_.update(window_, menus_.settings(), net_.profile(), timeSeconds_);
     }
 
@@ -768,6 +780,15 @@ void App::publishKeyboardRegions() {
     // a line closed by Enter -- or by the panel it lived in shutting -- never
     // gets, and the keyboard would stay up over a game nobody is typing into.
     if (!keyboardCaptured()) window_.dismissSoftKeyboard();
+
+    // The lists a finger can drag, for the same reason the fields are handed
+    // over here: the window decides what a touch is as it lands.
+    std::vector<WindowRect> lists;
+    for (const Rect& box : ui::TouchScrollRegions::instance().boxes()) {
+        lists.push_back(WindowRect{static_cast<float>(box.x), static_cast<float>(box.y),
+                                   static_cast<float>(box.w), static_cast<float>(box.h)});
+    }
+    window_.setTouchScrollRegions(std::move(lists));
 }
 
 bool App::keyboardCaptured() const {

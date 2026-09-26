@@ -74,6 +74,11 @@ struct TextSelection {
 /// by any test, because the only parts a test could call were the pure helpers
 /// that happened to be correct.
 struct TextEditFrame {
+    /// Characters to take back from before the caret BEFORE `typed` goes in.
+    /// A phone keyboard edits text, not keys: correcting "helo" to "hello",
+    /// finishing a swiped word or deleting through its own suggestion arrives
+    /// as so many characters erased and a run inserted, in that order.
+    int eraseBefore = 0;
     /// Characters the layout produced this frame.
     std::string typed;
     /// Text a paste delivered this frame.

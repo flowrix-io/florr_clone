@@ -64,6 +64,22 @@ struct TouchEvent {
     TouchPoint point;
 };
 
+// A finger dragging a scrollable list, or the list still coasting after it.
+// See Window::setTouchScrollRegions.
+struct TouchPan {
+    /// Whether this frame belongs to a drag or a fling at all.
+    bool active = false;
+    /// Where the finger landed, in design units. A list takes the pan when
+    /// this is inside it -- NOT the finger's current position, so a finger
+    /// that wanders off the list it grabbed keeps scrolling that list.
+    float originX = 0;
+    float originY = 0;
+    /// How far the finger moved this frame, in design units, positive right
+    /// and down. Content follows the finger: a list's offset goes DOWN by dy.
+    float dx = 0;
+    float dy = 0;
+};
+
 // The pointer's shape. `Text` is the I-beam a text field asks for.
 enum class CursorShape : std::uint8_t { Arrow = 0, Hand, Text, Count };
 
@@ -216,6 +232,41 @@ public:
     using TouchClaimHandler = std::function<bool(const TouchPoint&)>;
     void setTouchClaimHandler(TouchClaimHandler handler);
 
+    // -- dragging a list -----------------------------------------------------
+    //
+    // A list scrolls on the wheel and a finger has no wheel. Worse, a finger
+    // dragged across a list is the mouse dragged across it, and the press it
+    // lands with has already pressed whatever was under it. So the caller
+    // publishes where its scrollable lists are, and a finger that lands in one
+    // has its press HELD until it shows what it is: a vertical move is a pan
+    // (touchPan(), and nothing is ever pressed), a sideways move or a hold is
+    // a press where it landed, and a lift is a tap. See touch_gesture.h.
+    //
+    // Published at the end of a frame, like the keyboard regions, because the
+    // decision is made as the finger lands -- before the next frame has laid
+    // anything out.
+
+    /// Where this frame's scrollable lists are, in design units. Only lists
+    /// whose content overflows belong here: a finger on one that cannot move
+    /// gains nothing from having its press held.
+    void setTouchScrollRegions(std::vector<WindowRect> regions);
+
+    /// This frame's list drag. Inactive when no finger is dragging a list and
+    /// none is coasting.
+    const TouchPan& touchPan() const;
+
+    /// Whether the pointer is where it is because of a list drag, not because
+    /// it is pointing at anything: from the moment a finger lands on a list
+    /// until it presses, and after a pan until the next finger lands. The
+    /// pointer follows the finger but nothing is pressed, so whatever shows
+    /// on hover alone (a tooltip) should stay down.
+    bool touchScrolling() const;
+
+    /// Whether the pointer was last put where it is by a finger. A finger is
+    /// not a hovering pointer: once it lifts, the position it left behind is
+    /// where something WAS pressed, not something being pointed at.
+    bool pointerIsTouch() const;
+
     // -- the on-screen keyboard ----------------------------------------------
     //
     // A canvas cannot take keyboard focus, so a phone browser never opens its
@@ -244,6 +295,16 @@ public:
     /// UTF-8 typed this frame, for text fields. Distinct from keyPressed:
     /// this is what the keyboard layout produced, not which key was struck.
     const std::string& typedText() const;
+
+    /// Characters to erase from before the caret BEFORE typedText() goes in.
+    ///
+    /// A phone keyboard does not type keys, it edits text: it composes a word,
+    /// swaps it for the suggestion that was tapped, deletes through it. None of
+    /// that is a keystroke -- Android reports every one as an "Unidentified"
+    /// key -- so the page reads what the keyboard did to the on-screen
+    /// keyboard's <input> and hands it over as "take back N, then insert
+    /// this". Always zero natively, where every edit IS a keystroke.
+    int typedErase() const;
 
     /// True while a modifier is held, for shortcuts.
     bool shiftHeld() const;
