@@ -587,6 +587,29 @@
             "distance": 1000
         }
     },
+    "grapes": {
+        "name": "Grapes",
+        "damage": 0.625,
+        "health": 10,
+        "size": 1,
+        "cooldown": 1000,
+        "price": 15,
+        "poison": 0.00625,
+        "poisonDuration": 500,
+        "description": "Shoots out in 4 directions, now with a secret ingredient: poison",
+        "color": "#000000",
+        "count": 4,
+        "clumped": true,
+        "defendOnly": true,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ce76db\" stroke-width=\"4\" stroke=\"#a760b1\"/>\n</svg>",
+        "isAdminPetal": false,
+        "projectile": {
+            "count": 1,
+            "spreadAngle": 1.5708,
+            "speed": 800,
+            "distance": 1000
+        }
+    },
     "soil": {
         "name": "Soil",
         "damage": 10,

@@ -148,6 +148,8 @@ constexpr GardnIcon kGardnIcon[] = {
     {"dandelion",          31,   10,  0,       1, 0.795},   // art fills 80% of its box
     {"egg",                28, 12.5,  0,       0, 0.938},   // art fills 94% of its box
     {"faster",             17,    7,  0,       0,     1},
+    // rysteria_gardn's kPoisonPeas: peas' radius, clump and drawing, recoloured.
+    {"grapes",             17,    7,  8,       0,     1},
     {"heaviest",           35,   12,  0,       0,     1},
     {"honey",              25,   11,  0,       0,     1},
     {"iris",               17,    7,  0,       0,     1},

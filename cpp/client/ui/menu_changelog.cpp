@@ -401,7 +401,8 @@ constexpr ChangelogEntry kChangelog[] = {
       "Pet health and damage now scale with rarity like petals, not like mobs",
       "Pet HP bars now say \"summon\"",
       "Looting a mob now takes at least 1% of its health",
-      "New petal: Oranges"
+      "New petal: Oranges",
+      "New petal: Grapes"
     }},
 };
 

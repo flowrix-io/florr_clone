@@ -1087,6 +1087,14 @@
         "probability": 0.5,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "grapes",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
@@ -1104,6 +1112,14 @@
       {
         "type": "petal",
         "itemType": "iris",
+        "rarity": "common",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "grapes",
         "rarity": "common",
         "probability": 0.5,
         "minQuantity": 1,

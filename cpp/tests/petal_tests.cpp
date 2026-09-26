@@ -38,6 +38,7 @@ const char* const kPetalsJson = R"JSON({
   "sponge":   {"name":"Sponge","damage":10,"health":10,"size":1,"cooldown":2000,"count":1,"spongeDamageDuration":1000,"color":"#FF96E0"},
   "root":     {"name":"Root","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"armorPerStack":12,"defendOnly":true,"color":"#B86C32"},
   "peas":     {"name":"Peas","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"projectile":{"count":3,"spreadAngle":0.5,"speed":800,"distance":1000},"color":"#00FF00"},
+  "pod":      {"name":"Pod","damage":2.5,"health":10,"size":1,"cooldown":1000,"count":4,"clumped":true,"defendOnly":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#8AC255"},
   "peaclump": {"name":"Peaclump","damage":6,"health":5,"size":1,"cooldown":1000,"count":4,"clumped":true,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#00FF00"},
   "emitter":  {"name":"Emitter","damage":2,"health":null,"size":1,"cooldown":1000,"count":1,"projectile":{"count":2,"spreadAngle":0.3,"speed":400,"distance":400},"color":"#00FF00"},
   "lucky":    {"name":"Lucky","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"luck":2,"speed":1.5,"magnetism":50},"color":"#FFD700"},
@@ -2467,6 +2468,54 @@ TEST(a_projectile_petal_fires_its_fan_and_respects_its_cooldown) {
     CHECK_EQ(rig.countOf(net::EntityKind::Projectile), std::size_t(3));
     CHECK(rig.tickUntil([&] { return rig.countOf(net::EntityKind::Projectile) > 3; }));
     CHECK_EQ(rig.countOf(net::EntityKind::Projectile), std::size_t(6));
+}
+
+TEST(a_defend_only_projectile_petal_fires_on_attack_and_on_defend) {
+    // The shipped peas and grapes: defend-only keeps them in on attack, and
+    // either input fires them. Behind the defend-only action gate they once
+    // needed defend AND attack at once, which the input cannot say.
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "pod");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    CHECK_EQ(rig.petals(0).size(), std::size_t(4));
+
+    rig.setFlags(net::InputAttack);
+    rig.tick();
+    CHECK_EQ(rig.countOf(net::EntityKind::Projectile), std::size_t(4));
+
+    // Defending alone fires them too.
+    Rig held;
+    held.equip(0, "pod");
+    held.freezeRing();
+    held.settleEquips();
+    held.settleRing();
+    held.setFlags(net::InputDefend);
+    held.tick();
+    CHECK_EQ(held.countOf(net::EntityKind::Projectile), std::size_t(4));
+
+    // Idle fires nothing.
+    Rig idle;
+    idle.equip(0, "pod");
+    idle.freezeRing();
+    idle.settleEquips();
+    idle.settleRing();
+    idle.tick(40);
+    CHECK_EQ(idle.countOf(net::EntityKind::Projectile), std::size_t(0));
+}
+
+TEST(an_ordinary_projectile_petal_does_not_fire_on_defend) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "peas");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+    rig.setFlags(net::InputDefend);
+    rig.tick(40);
+    CHECK_EQ(rig.countOf(net::EntityKind::Projectile), std::size_t(0));
 }
 
 TEST(each_grain_of_a_clump_fires_along_its_own_facing) {

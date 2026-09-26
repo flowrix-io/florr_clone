@@ -1937,13 +1937,15 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             continue;
         }
 
-        // Other defend-only actions (notably web) fire only while pulled in.
-        // Burst heal/shield was handled above because it homes when useful,
-        // independently of the current input, as in the reference ring.
-        if (config.defendOnly && !defending) continue;
         if (!hasTimedAction(config, stats)) continue;
 
-        if (config.projectile.present && attacking &&
+        // A projectile is asked before the defend-only gate below, because a
+        // defend-only shooter fires on EITHER input: peas and grapes split on
+        // attack and on defend alike. Defend-only is what keeps them from
+        // swinging out with the ring -- gardn's `defend_only` -- not what
+        // decides when they shoot. Every other shooter fires on attack only.
+        const bool shooting = attacking || (config.defendOnly && defending);
+        if (config.projectile.present && shooting &&
             nowMillis >= instance->nextProjectileMillis) {
             // Affordability is checked BEFORE the cooldown is armed. A magic
             // missile over an empty pool is a petal still waiting to fire, not
@@ -1972,6 +1974,10 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             }
         }
 
+        // Other defend-only actions (notably web) fire only while pulled in.
+        // Burst heal/shield was handled above because it homes when useful,
+        // independently of the current input, as in the reference ring.
+        if (config.defendOnly && !defending) continue;
         if (!hasNonProjectileAction(config, stats)) continue;
         if (nowMillis < instance->nextActionMillis) continue;
 

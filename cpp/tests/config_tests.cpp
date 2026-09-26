@@ -793,6 +793,30 @@ TEST(a_spread_angle_is_read_as_radians_however_odd_the_number_looks) {
     CHECK_NEAR(r.petal(r.petalIndex("peas")).projectile.spreadAngle, 1.5708, 1e-9);
 }
 
+TEST(grapes_are_peas_of_the_same_size_that_poison) {
+    // rysteria_gardn's poison peas: the same four-way split at the same size,
+    // trading most of the impact damage for poison.
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t grapes = r.petalIndex("grapes");
+    const std::uint16_t peas = r.petalIndex("peas");
+    const PetalConfig& g = r.petal(grapes);
+    const PetalConfig& p = r.petal(peas);
+    CHECK(g.clumped);
+    CHECK(g.defendOnly);
+    CHECK(g.projectile.present);
+    CHECK_EQ(g.projectile.count, p.projectile.count);
+    CHECK_NEAR(g.projectile.spreadAngle, p.projectile.spreadAngle, 1e-12);
+    for (const Rarity rarity : {Rarity::Common, Rarity::Legendary}) {
+        const PetalStats gs = r.petalStats(grapes, rarity);
+        const PetalStats ps = r.petalStats(peas, rarity);
+        CHECK_EQ(gs.count, ps.count);
+        CHECK_NEAR(gs.radius, ps.radius, 1e-12);
+        CHECK(gs.poisonPerSecond > 0.0);
+        CHECK(gs.poisonDurationMillis > 0.0);
+        CHECK(gs.damage < ps.damage);
+    }
+}
+
 TEST(poison_without_a_duration_remains_inert_like_typescript) {
     const ContentRegistry& r = shipped().registry;
     const PetalConfig& gas = r.petal(r.petalIndex("gas"));
