@@ -1,6 +1,6 @@
 // The talent tree.
 //
-// Six branches fan out from the flower, one per stat, each a chain of tiers
+// Seven branches fan out from the flower, one per stat, each a chain of tiers
 // on the rarity ladder. A branch walks outward in equal steps and turns a
 // little more with each step past the third, which is what keeps ten nodes
 // evenly spaced instead of crossing their neighbours. Second Chance is not a
@@ -217,7 +217,15 @@ Vec2 avatarEye(const WorldView& view) {
     return {self.eyeX != 0.0 ? self.eyeX : 2.0, self.eyeY};
 }
 
-/// Where a branch starts, in the fan. Five branches, first one straight up.
+/// The branches that grow out of the flower, in fan order: every skill but
+/// Second Chance, which forks off Flower Health instead. Pet Health is last, so
+/// it opens up-left beside Damage and the older branches keep their order.
+constexpr std::array<SkillId, kSkillCount - 1> kTrunks = {
+    SkillId::Damage,    SkillId::PetalHealth, SkillId::PlayerHealth, SkillId::Healing,
+    SkillId::Absorbing, SkillId::Reload,      SkillId::PetHealth,
+};
+
+/// Where a branch starts, in the fan. First one straight up.
 double branchAngle(int branchIndex, int branchCount) {
     return -kPi * 0.5 + (kTau / branchCount) * branchIndex;
 }
@@ -243,9 +251,17 @@ std::string effectLine(SkillId skill, int tier) {
                       scaleAt(kReloadSkillScale, tier) * 100.0);
         return buffer;
     }
-    // The effect curve for every branch, including the three whose own numbers
-    // follow the gentler stat curve. That is what the browser quotes, and a
-    // tooltip promising 190% where the panel is showing 480% would be worse.
+    // Petal Health and Pet Health quote the table the server applies, which
+    // is the whole point of it having one of its own.
+    if (skill == SkillId::PetalHealth || skill == SkillId::PetHealth) {
+        std::snprintf(buffer, sizeof buffer, "%.0f%% multiplier",
+                      scaleAt(kHealthSkillScale, tier) * 100.0);
+        return buffer;
+    }
+    // The effect curve for every other branch, including the two whose own
+    // numbers follow the gentler stat curve. That is what the browser quotes,
+    // and a tooltip promising 190% where the panel is showing 480% would be
+    // worse.
     std::snprintf(buffer, sizeof buffer, "%.0f%% multiplier",
                   scaleAt(kEffectSkillScale, tier) * 100.0);
     return buffer;
@@ -319,6 +335,41 @@ void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
             // of it, putting the furthest corner inside the 0.76 the ring
             // leaves. Filling that gap makes the two read as one blob.
             roundedCross(canvas, at, size * 0.54, size * 0.20);
+            break;
+        }
+        case SkillId::PetHealth: {      // a plus inside an egg
+            // The third of the health family, built the way Petal Health is:
+            // the shared cross, inside an outline that says whose health. A pet
+            // is hatched from an egg, so the outline is one -- a narrow crown
+            // and a wide base, widest a little below the middle.
+            const double weight = size * 0.11;
+            const double tall = half - weight * 0.5;
+            const double wide = tall * 0.76;
+            // Where the egg is widest, and the one quarter-ellipse split: the
+            // crown is the taller quarter, which is what narrows it.
+            const double belly = tall * 0.12;
+            constexpr double kKappa = 0.5523;
+            const double crown = tall + belly;
+            const double base = tall - belly;
+            const auto x = [&](double dx) { return static_cast<float>(at.x + dx); };
+            const auto y = [&](double dy) { return static_cast<float>(at.y + dy); };
+
+            canvas.setLineWidth(static_cast<float>(weight));
+            canvas.beginPath();
+            canvas.moveTo(x(0.0), y(-tall));
+            canvas.bezierCurveTo(x(wide * kKappa), y(-tall), x(wide), y(belly - crown * kKappa),
+                                 x(wide), y(belly));
+            canvas.bezierCurveTo(x(wide), y(belly + base * kKappa), x(wide * kKappa), y(tall),
+                                 x(0.0), y(tall));
+            canvas.bezierCurveTo(x(-wide * kKappa), y(tall), x(-wide), y(belly + base * kKappa),
+                                 x(-wide), y(belly));
+            canvas.bezierCurveTo(x(-wide), y(belly - crown * kKappa), x(-wide * kKappa), y(-tall),
+                                 x(0.0), y(-tall));
+            canvas.closePath();
+            canvas.stroke();
+            // Centred on the belly rather than the node: that is where the egg
+            // has room, and a cross at the true centre crowds the crown.
+            roundedCross(canvas, {at.x, at.y + belly}, size * 0.44, size * 0.18);
             break;
         }
         case SkillId::Healing: {        // a heart, drawn as an outline
@@ -526,15 +577,15 @@ void TalentsPanel::layout() {
     nodes_.clear();
 
     // Every main branch's node positions, so the sub-branch can fork off one.
-    std::vector<std::vector<Vec2>> trunkPoints;
-    std::vector<std::vector<double>> trunkAngles;
+    // Indexed by SkillId rather than by place in the fan, which is what the
+    // fork looks its parent up by.
+    std::vector<std::vector<Vec2>> trunkPoints(kSkillCount);
+    std::vector<std::vector<double>> trunkAngles(kSkillCount);
 
-    constexpr int kBranchCount = kSkillCount - 1;   // Second Chance is a fork
-    trunkPoints.resize(kBranchCount);
-    trunkAngles.resize(kBranchCount);
-
+    constexpr int kBranchCount = static_cast<int>(kTrunks.size());
     for (int branch = 0; branch < kBranchCount; ++branch) {
-        const auto id = static_cast<SkillId>(branch);
+        const SkillId id = kTrunks[static_cast<std::size_t>(branch)];
+        const auto at = static_cast<std::size_t>(id);
         const int tiers = skillTierCount(id);
         Vec2 cursor{0, 0};
         double heading = branchAngle(branch, kBranchCount);
@@ -549,8 +600,8 @@ void TalentsPanel::layout() {
                 heading += kMaxTurn * ramp * ease;
             }
             cursor += Vec2::fromAngle(heading, kBaseStep);
-            trunkPoints[static_cast<std::size_t>(branch)].push_back(cursor);
-            trunkAngles[static_cast<std::size_t>(branch)].push_back(heading);
+            trunkPoints[at].push_back(cursor);
+            trunkAngles[at].push_back(heading);
             nodes_.push_back({id, tier, cursor, {}});
         }
     }

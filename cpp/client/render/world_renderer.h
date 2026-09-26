@@ -35,6 +35,10 @@ class Terrain;
 class WorldMaps;
 struct MobConfig;
 
+/// The "Summon" under a pet's bar. The flower's body yellow: the summon wears
+/// the colour of what summoned it.
+inline constexpr std::uint32_t kPetLabelColor = 0xFBE878u;
+
 /// One piece of an explosion's debris. Velocity and life are per second here;
 /// the browser build counts both per frame at 60 Hz.
 struct EffectParticle {
@@ -326,6 +330,8 @@ private:
         /// Locked on to a player. A neutral or hostile mob animates at double
         /// speed while it is.
         bool chasing = false;
+        /// Somebody's summon rather than a wild mob. Its plate says so.
+        bool pet = false;
         /// Negative for a live mob; 0..1 while the death animation runs.
         double deathProgress = -1.0;
     };
@@ -333,7 +339,8 @@ private:
     /// `clockSeconds` is the frame clock; a chasing mob's artwork is advanced
     /// at twice that rate, which is where the two names differ.
     void drawMobBody(Canvas&, const Camera&, const MobDraw&, double clockSeconds) const;
-    /// Name, tier, health bar and (for a dummy) DPS, all below the body.
+    /// Name, tier, health bar and (for a dummy) DPS, all below the body. A
+    /// pet's tier row also says "Summon".
     void drawMobLabel(Canvas&, const Camera&, const MobDraw&) const;
     /// The digger: a grey flower carrying a spinning cutter, never its SVG.
     void drawDiggerMob(Canvas&, const MobDraw&, double radius, double timeSeconds) const;

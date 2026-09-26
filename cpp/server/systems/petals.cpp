@@ -679,7 +679,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     Loadout& loadout = world.get<Loadout>(player);
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
     const double petalHealthScale =
-        tree ? tree->skills.statScale(SkillId::PetalHealth) : 1.0;
+        tree ? tree->skills.healthScale(SkillId::PetalHealth) : 1.0;
     const double reloadScale = tree ? tree->skills.reloadScale() : 1.0;
 
     // What every sponge on the bar is still holding. One figure for the whole
@@ -750,9 +750,9 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         //
         // Rounded, as the reference rounds it at every one of the three places
         // it recomputes a petal's max. Left fractional, a pool that lands just
-        // above an integer survives the exact run of hits that empties it in
-        // production: a rare stinger under the legendary talent is 25 there and
-        // 25.2 here, and blocks a sixth 5-damage hit the reference lets kill it.
+        // above an integer survives the exact run of hits that empties it: a
+        // rare stinger under the epic talent would hold 24.3 rather than 24,
+        // and survive the fourth 6-damage hit that ought to break it.
         stats.health = std::round(stats.health * petalHealthScale);
         const int count = std::max(0, stats.count);
         const double reload = reloadMillisFor(stats, reloadScale);
@@ -2883,8 +2883,23 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
     // at common, two thirds of it by unique. Mass stays the tier's, exactly as a
     // wild mob's does whatever body it rolled.
     const double petSizeScale = mobSizeRamp(rarity, kPetSizeScaleAtUnique);
-    mob.health *= petScale;
-    mob.damage *= petScale;
+    // Health and damage climb the PETAL ladder, not the mob one. A pet comes
+    // out of an egg worn in the loadout, so a tier of egg is worth what a tier
+    // of any other petal is worth: 3x. The wild health ladder is superlinear on
+    // purpose, to make each tier a wall, and a unique pet on it carried over a
+    // thousand times what this gives it. Damage is 3x a tier on both ladders
+    // up to unique, the top a pet reaches, so taking it from here is what
+    // keeps the two in step rather than a change in what a pet hits for.
+    const double ladder = petalStatScale(rarity);
+    mob.health = config.health * ladder * petScale;
+    mob.damage = config.damage * ladder * petScale;
+    // The Pet Health talent is the Petal Health talent for the squad: the same
+    // curve, and on this pool alone. Read at the hatch, as the petal talent is
+    // read when the slot's pool is sized, so a tier bought while the squad is
+    // out reaches the next one summoned.
+    if (const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player)) {
+        mob.health *= tree->skills.healthScale(SkillId::PetHealth);
+    }
     // Zero means "unstated", and an unstated range reads as the default chase
     // range wherever a pet's target acquisition consumes it -- so the bonus is
     // added first and the fallback only covers a pet that still has none.

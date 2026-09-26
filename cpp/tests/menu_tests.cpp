@@ -173,6 +173,26 @@ TEST(the_reload_branch_is_bought_over_the_wire_like_any_other) {
     CHECK_NEAR(client.profile().skills.reloadScale(), kReloadSkillScale[0], 1e-12);
 }
 
+TEST(the_pet_health_branch_is_bought_over_the_wire_like_any_other) {
+    Harness h("talent-pet");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "petkeeper", "password7"));
+
+    // The branch was appended after Second Chance rather than filed beside
+    // Petal Health, so no id an older build knows moved. Buying it and finding
+    // both of its neighbours on the wire untouched is what says the two
+    // halves still read the same table.
+    client.requestUpgradeSkill(SkillId::PetHealth, 0);
+    CHECK(awaitProfile(h, client, [](const Profile& p) {
+        return p.skills.level(SkillId::PetHealth) == 0;
+    }));
+    CHECK_EQ(client.profile().skills.level(SkillId::SecondChance), -1);
+    CHECK_EQ(client.profile().skills.level(SkillId::PetalHealth), -1);
+    CHECK_EQ(client.profile().talentPoints(), 0);
+}
+
 TEST(second_chance_stays_locked_until_flower_health_is_rare) {
     Harness h("talent-fork");
     if (!h.ready) { CHECK(false); return; }
@@ -817,6 +837,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         record.skills.set(SkillId::Healing, rarityIndex(Rarity::Epic));
         record.skills.set(SkillId::Absorbing, rarityIndex(Rarity::Common));
         record.skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
+        record.skills.set(SkillId::PetHealth, rarityIndex(Rarity::Legendary));
         db.markDirty();
         CHECK(db.save());
     }
@@ -832,10 +853,12 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         if (record != nullptr) {
             CHECK_EQ(record->skills.level(SkillId::Healing), rarityIndex(Rarity::Epic));
             CHECK_EQ(record->skills.level(SkillId::Absorbing), rarityIndex(Rarity::Common));
-            // The newest branch, at the tier the tree's own key table has to
-            // spell correctly for a saved account to keep it.
             CHECK_EQ(record->skills.level(SkillId::Reload), rarityIndex(Rarity::Unique));
             CHECK_NEAR(record->skills.reloadScale(), 0.292, 1e-12);
+            // The newest branch, at the tier the tree's own key table has to
+            // spell correctly for a saved account to keep it.
+            CHECK_EQ(record->skills.level(SkillId::PetHealth), rarityIndex(Rarity::Legendary));
+            CHECK_NEAR(record->skills.healthScale(SkillId::PetHealth), 1.6, 1e-12);
             CHECK_EQ(record->skills.level(SkillId::Damage), -1);
         }
     }

@@ -24,6 +24,10 @@ enum class SkillId : std::uint8_t {
     Absorbing,
     Reload,
     SecondChance,
+    /// Appended rather than filed beside Petal Health: the wire and the
+    /// profile both carry a branch by this index, so a new branch goes on the
+    /// end where it cannot renumber one an older build already knows.
+    PetHealth,
     Count,
 };
 
@@ -34,11 +38,12 @@ inline constexpr int kSkillCount = static_cast<int>(SkillId::Count);
 /// branch out from under an account.
 inline constexpr std::array<const char*, kSkillCount> kSkillKeys = {
     "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "reload",
-    "secondChance",
+    "secondChance", "petHealth",
 };
 
 inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
     "Damage", "Petal Health", "Flower Health", "Healing", "Absorption", "Reload", "Second Chance",
+    "Pet Health",
 };
 
 /// One line of what the branch actually does, shown in its tooltip.
@@ -50,12 +55,14 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
     "Multiplies XP from absorbed petals.",
     "Shortens every petal cooldown.",
     "Survive a killing blow at 1 HP.",
+    "Multiplies the health of every pet you summon.",
 };
 
 /// How many tiers each branch has. Three of them stop short of the full
 /// ladder: Reload tops out at unique, with no apex tier to buy.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
     kRarityCount, kRarityCount, kRarityCount, 4, kRarityCount, rarityIndex(Rarity::Unique) + 1, 2,
+    kRarityCount,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -86,7 +93,7 @@ inline std::array<double, 2> secondChanceEffect(int tier) {
     return {kSecondChanceDurationMillis[t], kSecondChanceCooldownMillis[t]};
 }
 
-/// Applied to the player's own numbers: max health, body damage, petal health.
+/// Applied to the player's own numbers: max health and body damage.
 /// A gentle curve -- these compound with level and with petal modifiers.
 inline constexpr std::array<double, kRarityCount> kStatSkillScale = {
     1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
@@ -95,6 +102,14 @@ inline constexpr std::array<double, kRarityCount> kStatSkillScale = {
 /// Applied to petal EFFECTS: healing output. Steeper than the stat curve.
 inline constexpr std::array<double, kRarityCount> kEffectSkillScale = {
     1.0, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.8,
+};
+
+/// Applied to the health of what the flower fields: its petals (Petal Health)
+/// and its summons (Pet Health). One table for the tooltip and the server, so
+/// the percentage a tier advertises is the percentage it grants. The effect
+/// curve's shape through unique, and 4.5x at apex.
+inline constexpr std::array<double, kRarityCount> kHealthSkillScale = {
+    1.0, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.5,
 };
 
 /// Applied to absorbed-petal XP. Geometric, so apex lands on exactly 8x.
@@ -143,6 +158,8 @@ struct SkillSet {
 
     double statScale(SkillId id) const { return scaleAt(kStatSkillScale, level(id)); }
     double effectScale(SkillId id) const { return scaleAt(kEffectSkillScale, level(id)); }
+    /// Petal Health's or Pet Health's multiplier. See kHealthSkillScale.
+    double healthScale(SkillId id) const { return scaleAt(kHealthSkillScale, level(id)); }
 
     /// What every petal cooldown is multiplied by. A factor below one, so it
     /// is the one scale a caller must not clamp UP to 1.0 on a missing tree.

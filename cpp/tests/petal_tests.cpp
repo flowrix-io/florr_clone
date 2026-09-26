@@ -2608,6 +2608,115 @@ TEST(a_pet_is_smaller_than_the_wild_mob_of_its_tier) {
     }
 }
 
+TEST(a_pet_climbs_the_petal_ladder_not_the_mob_one) {
+    if (!contentLoaded()) return;
+    const ContentRegistry& content = fixture().registry;
+    const std::uint16_t critter = content.mobIndex("critter");
+    const MobConfig& config = content.mob(critter);
+    // The egg's tier is the pet's tier, and a tier of egg is worth what a tier
+    // of any other petal is: 3x, health and damage alike. Unique is the top a
+    // pet reaches, and where the wild ladder is furthest from it.
+    for (const Rarity rarity : {Rarity::Common, Rarity::Rare, Rarity::Unique}) {
+        Rig rig;
+        rig.equip(0, "summoner", rarity);
+        CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+        const double ladder = petalStatScale(rarity);
+        Query<Pet> pets{rig.world};
+        for (const Entity pet : pets.collect()) {
+            const Health& health = rig.world.get<Health>(pet);
+            CHECK_NEAR(health.max, config.health * ladder, 1e-9);
+            CHECK_NEAR(health.current, health.max, 1e-9);
+            CHECK_NEAR(rig.world.get<ContactDamage>(pet).amount, config.damage * ladder, 1e-9);
+        }
+    }
+    // What the pet used to inherit, and what it no longer does: a unique
+    // critter in the wild has far more health than the petal ladder gives.
+    CHECK(content.mobStats(critter, Rarity::Unique).health >
+          config.health * petalStatScale(Rarity::Unique) * 100.0);
+}
+
+TEST(the_pet_health_talent_multiplies_pets_and_nothing_else) {
+    if (!contentLoaded()) return;
+    const MobConfig& critter = fixture().registry.mob(fixture().registry.mobIndex("critter"));
+    const Rarity tier = Rarity::Legendary;
+    const double talent = kHealthSkillScale[static_cast<std::size_t>(rarityIndex(tier))];
+
+    Rig rig;
+    rig.world.add<PlayerSkillTree>(rig.player);
+    rig.world.get<PlayerSkillTree>(rig.player).skills.set(SkillId::PetHealth, rarityIndex(tier));
+    rig.equip(0, "summoner");
+    rig.equip(1, "basic");
+    rig.settleEquips();
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        // The pool grows on the Petal Health talent's own table...
+        CHECK_NEAR(rig.world.get<Health>(pet).max, critter.health * talent, 1e-9);
+        // ...and it is health alone: what the pet hits for is untouched.
+        CHECK_NEAR(rig.world.get<ContactDamage>(pet).amount, critter.damage, 1e-9);
+    }
+    // The ring does not share in it. A basic petal is worth its own 10.
+    const std::vector<Entity> basic = rig.petals(1);
+    CHECK_EQ(basic.size(), std::size_t(1));
+    if (!basic.empty()) CHECK_NEAR(rig.world.get<Health>(basic.front()).max, 10.0, 1e-9);
+    // Nor does the flower.
+    CHECK_NEAR(rig.world.get<Health>(rig.player).max, maxHealthForLevel(1), 1e-9);
+}
+
+TEST(both_health_talents_grant_what_their_tooltip_quotes) {
+    if (!contentLoaded()) return;
+    const MobConfig& critter = fixture().registry.mob(fixture().registry.mobIndex("critter"));
+    // Apex on both branches is 450%, on the ring and on the squad alike: the
+    // server reads the very table the talent tooltip prints.
+    Rig rig;
+    rig.world.add<PlayerSkillTree>(rig.player);
+    SkillSet& skills = rig.world.get<PlayerSkillTree>(rig.player).skills;
+    skills.set(SkillId::PetalHealth, rarityIndex(Rarity::Apex));
+    skills.set(SkillId::PetHealth, rarityIndex(Rarity::Apex));
+    rig.equip(0, "summoner");
+    rig.equip(1, "basic");
+    rig.settleEquips();
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+
+    const std::vector<Entity> basic = rig.petals(1);
+    CHECK_EQ(basic.size(), std::size_t(1));
+    if (!basic.empty()) CHECK_NEAR(rig.world.get<Health>(basic.front()).max, 45.0, 1e-9);
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        CHECK_NEAR(rig.world.get<Health>(pet).max, critter.health * 4.5, 1e-9);
+    }
+}
+
+TEST(a_petal_health_pool_is_rounded_to_a_whole_number) {
+    if (!contentLoaded()) return;
+    // Cotton's 2 under the epic tier's 135% is 2.7, and the petal gets 3.
+    Rig rig;
+    rig.world.add<PlayerSkillTree>(rig.player);
+    rig.world.get<PlayerSkillTree>(rig.player)
+        .skills.set(SkillId::PetalHealth, rarityIndex(Rarity::Epic));
+    rig.equip(0, "cotton");
+    rig.settleEquips();
+    const std::vector<Entity> cotton = rig.petals(0);
+    CHECK_EQ(cotton.size(), std::size_t(1));
+    if (!cotton.empty()) CHECK_NEAR(rig.world.get<Health>(cotton.front()).max, 3.0, 1e-9);
+}
+
+TEST(the_petal_health_talent_leaves_pets_alone) {
+    if (!contentLoaded()) return;
+    const MobConfig& critter = fixture().registry.mob(fixture().registry.mobIndex("critter"));
+    Rig rig;
+    rig.world.add<PlayerSkillTree>(rig.player);
+    rig.world.get<PlayerSkillTree>(rig.player)
+        .skills.set(SkillId::PetalHealth, rarityIndex(Rarity::Apex));
+    rig.equip(0, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+    Query<Pet> pets{rig.world};
+    for (const Entity pet : pets.collect()) {
+        CHECK_NEAR(rig.world.get<Health>(pet).max, critter.health, 1e-9);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------

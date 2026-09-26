@@ -352,6 +352,11 @@ constexpr double kPetalGlowPad = 16.0;
 constexpr double kMobBarMinWidth = 60.0;
 constexpr double kMobBarHeight = 8.0;
 
+/// What a summon's plate says it is, at the left of the tier row, and the
+/// least clear space kept between it and the tier at the right of that row.
+constexpr const char* kPetLabel = "Summon";
+constexpr double kPetLabelGap = 6.0;
+
 /// Flower-shaped mobs. Neither colour is read off mob stats: the loader
 /// overwrites every mob's colour with its rarity colour, and the whole point
 /// of these two is that they look like flowers.
@@ -2628,7 +2633,17 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
     const double enemySize = mob.radius * 2.0 * visualScale;
     // A hornet is the smallest mob the bar is allowed to shrink to: below that
     // the name would be wider than the bar it labels.
-    const double barWidth = std::max(enemySize, kMobBarMinWidth) * zoom;
+    double minWidth = kMobBarMinWidth;
+    // A summon's tier row carries two words, one at each end, and a common
+    // ladybug's bar is narrower than "Summon" and "Common" side by side. So a
+    // pet's bar is widened until the row fits, rather than letting the two
+    // overlap on exactly the small, low-tier pets most eggs hatch. Measured at
+    // design size: text scales with the zoom, so the ratio holds at any zoom.
+    if (mob.pet && options.names) {
+        minWidth = std::max(minWidth, ui::textWidth(canvas, kPetLabel, 10.0) + kPetLabelGap +
+                                          ui::textWidth(canvas, rarityLabel(mob.rarity), 10.0));
+    }
+    const double barWidth = std::max(enemySize, minWidth) * zoom;
     const double barHeight = kMobBarHeight * zoom;
     const double barY = screen.y + (enemySize * 0.5 + 8.0) * zoom;
     const double barX = screen.x - barWidth * 0.5;
@@ -2685,6 +2700,22 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         tier.strokeWidth = 3.0 * zoom;
         tier.fill = rarityColor(mob.rarity);
         ui::text(canvas, rarityLabel(mob.rarity), barX + barWidth, barY + 20.0 * zoom, tier);
+    }
+
+    // A summon looks exactly like the wild animal it was hatched from, so its
+    // plate is the one place that can tell a player which of two ladybugs is
+    // on their side: "Summon" opposite the tier, in the flower's own yellow.
+    // Drawn whenever any of the plate is: it captions the bar, and it is also
+    // part of what the mob is called, so either option alone still has to say
+    // whose it is.
+    if (mob.pet && (options.healthBars || options.names)) {
+        ui::TextStyle summon;
+        summon.size = 10.0 * zoom;
+        summon.align = ui::Align::Left;
+        summon.baseline = ui::Baseline::Alphabetic;
+        summon.strokeWidth = 3.0 * zoom;
+        summon.fill = kPetLabelColor;
+        ui::text(canvas, kPetLabel, barX, barY + 20.0 * zoom, summon);
     }
     canvas.restore();
 
@@ -2834,6 +2865,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mob.rarity = entity.rarity;
             mob.healthFraction = entity.healthFraction;
             mob.chasing = (entity.state & net::StateChasing) != 0;
+            mob.pet = (entity.spawnFlags & net::SpawnIsPet) != 0;
             drawMobBody(canvas, camera, mob, timeSeconds);
 
             // A Killed event arrives after the snapshot has already erased the

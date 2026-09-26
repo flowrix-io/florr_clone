@@ -266,7 +266,7 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
                                            const SkillSet& skills) {
     const PetalConfig& config = content().petal(petalIndex);
     const PetalStats stats = content().petalStats(petalIndex, rarity);
-    const double health = std::round(stats.health * skills.effectScale(SkillId::PetalHealth));
+    const double health = std::round(stats.health * skills.healthScale(SkillId::PetalHealth));
     const double damage = std::round(stats.damage * skills.effectScale(SkillId::Damage));
 
     std::vector<TooltipLine> lines;

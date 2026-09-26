@@ -394,6 +394,13 @@ constexpr ChangelogEntry kChangelog[] = {
       "Reload talent now stops at unique; an apex tier is refunded",
       "Only a centipede's or leech's head shows a bossbar or a kill message",
     }},
+    {"September 26, 2026",
+     {
+      "Added Pet Health talents",
+      "Petal Health talent now grants what its tooltip shows, up to 450% at apex",
+      "Pet health and damage now scale with rarity like petals, not like mobs",
+      "Pets' health bars now say Summon",
+    }},
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));
