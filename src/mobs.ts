@@ -349,16 +349,16 @@ const MOB_XP_TABLES: { [mobType: string]: { [rarity: string]: number } } = {
         super: 2100000,
         unique: 6800000
     },
-    shiny_ladybug: {
-        common: 1,
-        uncommon: 5,
-        rare: 20,
-        epic: 180,
-        legendary: 900,
-        mythic: 28000,
-        ultra: 120000,
-        super: 960000,
-        unique: 5440000
+    golden_ladybug: {
+        common: 500,
+        uncommon: 5105,
+        rare: 20415,
+        epic: 180663,
+        legendary: 9007747,
+        mythic: 19428951,
+        ultra: 120000000,
+        super: 960000591529,
+        unique: 544000032132840
     },
     dandelion: {
         common: 1,
