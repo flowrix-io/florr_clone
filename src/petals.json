@@ -9,7 +9,8 @@
         "description": "A simple petal that provides basic protection",
         "color": "#90EE90",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#cfcfcf\"/>\n</svg>"
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"white\" stroke-width=\"4\" stroke=\"#cfcfcf\"/>\n</svg>",
+        "tradable": false
     },
     "rose": {
         "name": "Rose",
@@ -317,7 +318,8 @@
         "color": "#000000",
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<rect width=\"28\" height=\"28\" x=\"2\" y=\"2\" fill=\"#ffe869\"/>\n<path d=\"M 2 2 L 2 30 M 2 30 L 30 30 M 30 30 L 30 2 M 30 2 L 2 2 M 2 2 Z\" stroke=\"#cfbc55\" stroke-linecap=\"round\" stroke-width=\"3\"/>\n</svg>",
-        "isAdminPetal": false
+        "isAdminPetal": false,
+        "tradable": false
     },
     "golden_leaf": {
         "name": "Golden Leaf",
@@ -439,7 +441,8 @@
         "count": 1,
         "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 10 32 10\" fill=\"none\">\n<image href=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHwAAAB8CAYAAACrHtS+AAAAAXNSR0IArs4c6QAAAFBlWElmTU0AKgAAAAgAAgESAAMAAAABAAEAAIdpAAQAAAABAAAAJgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAfKADAAQAAAABAAAAfAAAAACct/r/AAABWWlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iWE1QIENvcmUgNi4wLjAiPgogICA8cmRmOlJERiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAgICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyI+CiAgICAgICAgIDx0aWZmOk9yaWVudGF0aW9uPjE8L3RpZmY6T3JpZW50YXRpb24+CiAgICAgIDwvcmRmOkRlc2NyaXB0aW9uPgogICA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgoZXuEHAAAHeElEQVR4Ae3dzW7jSAyFUXvg939lD6WsXPcUXBNgFiHYiwbM5v9twR9KivJ8PN7vx/InLY/Hc/HZfnymJ/OlW3USrTyeyFc9R/n3OxMqNCMrlepy4oxG2YrMXtDyVTjnQKjyvRErlZ5LiX+i4hhab2AEby1vDjeC505aW0bw1vLmcC/wCqFDcELYQULCExKCV1SiQC4HESc5GLEwob3HCkA/YdkMVlCuCz1dwRjkKb+fQgd/Z433UmOu8IM1dnIZwTupeTDLCH6wpE4uI3gnNQ9medEHdAIToYNwgiILS9wegp0nCieaXOGwHhZJ7KpsSAdTgRytOTGKnJ6WsURWEAPGIHOFY3GdTSN4Z3Ux2wiOpXQ2jeCd1cVsL3INHH2SlY66nanbnhlZltNmAEAwkeNU9xC7Huup1ZWLsaAs+TFYDQJcdSsUZWOlc4VrwY1tI3hjcTXaCK6tNLaN4I3F1WgvwYSeodLRk2JVhDZRFqjjDVpUqPBJkKVeNK9A03Uz42ldjFbJsFXeq826il2f9ZsrXHtrbBvBG4ur0UZwbaWxbQRvLK5Ge+kQR4wgwNDzV+AuhaoX4UqcFF2BBCqd0iGjAA1u/6FnoBy4S0ClItwfSnCB8Ft3NVc4N9fXOIL31ZaTjeBcS1/jCN5XW07GkzZDDIgAjmQnlNbzXGcVrhuD8AQowas6PnN8glwRickuEzyxGAEzf9oB6einvSxLmCt8I1lX8wjeVdnNXCP4ZjFdzSN4V2U3c12HZYEE4JUNh0RolVkoYVPYZuSDySVQV8dWKgygUlktgXCHVghoufp6bi4bVA3tAFIW230mnCs899vaMoK3ljeHG8FzJ60tI3hreXM4nrQJMN40ZsJTmECkQuVWqPMJIpdTWi7EklUpE9FW2LmjmC5jN+QVhRFZHauIPSMhDAuzPeYKx5I6m0bwzupithEcS+lsGsE7q4vZ6o0VeRyFg6d6jgwwIVOmQ1mbCFmogQMqoo5uIQp/TiFLaKj29EMbfDgPg/zfe54r3P/32lpH8LbSerAR3Htpax3B20rrwfieNoGN3pdm2CHGRHWy3VnoOaCdgmZ0VwYugcaIJnwqIfo7XIH40T0v3c0Vviyk+8cRvLvCy3wj+LKQ7h9H8O4KL/O9dDtOaELmWJL9fMxoggiP8zKhYDErZNy2F4CSTuQ8LyZBMxrN+TKYrwtJtw24qr/P4LnCd/9XmtpH8KbC7sYawXebaWofwZsKuxvr+pb//FaXYROtx9zsGiXqkA6Aka1Ud+nHUBTWaZ5eUyIC0m1KxeZk1Ui2XKY0KpY15Ih59WLj1W2u8HUjzT+P4M0FXscbwdeNNP88gjcXeB3v/AcRAFQCL/5aJ1KWSCTB5hhiMpSPkQnGMFrtKfvzbc91pWQ2ZLvisoZM4L2KxcBKt7jNFZ56tbaM4K3lzeFG8NxJa8sI3lreHO76Ss+v+rSQERy6UEIVIMgBOvTKChUWyMkvx706xnDZskJt00kga2QR/AxIgWb6cc+oqwbX28tzhWtLjW0jeGNxNdoIrq00to3gjcXVaC+BA3iquEEwgZS4Z6oTqhUm7kyoYT/UBSgh3WYOgByCDYsZy3nRsm6Zwm3Tc3pKobWXucJzb60tI3hreXO4ETx30toygreWN4e7OCSpA9/+x8+HZQ0UgNNtysJpMcOcnuYJSE/BFTxaXavDnO/4PXcZurFkXQHuqttc4Zt1djWP4F2V3cw1gm8W09U8gndVdjNXffOvX+tloTMgQY7pxmynofJDy6zhkyxmzHjMsZ5a3UG5vsy1sehWqNId3jG1bgtpzhW+EaOreQTvquxmrhF8s5iu5hG8q7KbueorHZgArgHDbO6YpqdvK6YfcRG9cBakU+jCMEx1G0FKyidS0omX/HxKl1XScnWYA6vuqu5c4XvJW/7LCN5S1v1QI/h+Ny3/ZQRvKet+qOubH0yQprRc2JDgoGxyU9kVMO62UcJ1s8O0XBmVMD0Jdwhlz3fjv/wLNdizCgM0V2CeK/yXuvzVsBH8ryr3y75H8F8u7q+GjeB/Vblf9l2v/EhgOYcEVBV0CDAQKp46bg/5dPtRB4usoWawKo3rl/XKMxPylSQgSPBZbUD5PhczV/jnPtp/GsHbS/w54Aj+uY/2n0bw9hJ/Dli/xgowAcji6dZnrvuTHupHhcKLtKYFBTYm9weIYXxWTouQ6EqWNcBYdSs5/djKaT4Hf7XOFf51Rb0cRvBeen6dZgT/uqJeDiN4Lz2/TlO/xiphAm+7qETpJ+AT7IDPmO6sgltRrPrTRrQD+SmfTrzUyxNLhan2ktGnLzE+AeG5wq1sW+sI3lZaDzaCey9trSN4W2k9WL0pIynBp1aZQLdWFWu/zGdLYmBiTeFUuhGA6IiEAirDnQpjEtTQbVSCl2IF0WhlzTdXOLTpbBrBO6uL2UZwLKWzaQTvrC5mu15vRiSAb5gMMeGmA6oCqiQMmCpZtpeRqHmb0jOzVXvJrdVexqKVOkRkRjSUfitQXUHMp1YyHWomzM4VzjX1NY7gfbXlZCM419LX+C+0g9bvfr+CNgAAAABJRU5ErkJggg==\" height=\"32\" width=\"32\"/>\n</svg>",
-        "isAdminPetal": false
+        "isAdminPetal": false,
+        "tradable": false
     },
     "corn": {
         "name": "Corn",
@@ -665,7 +668,8 @@
         "playerModifiers": {
             "playerRadius": 1.1
         },
-        "isAdminPetal": false
+        "isAdminPetal": false,
+        "tradable": false
     },
     "magnet": {
         "name": "Magnet",
@@ -907,7 +911,8 @@
         "count": 1,
         "defendOnly": true,
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-30 -30 60 60\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <clipPath id=\"eye-clip\">\n      <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n      <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" />\n    </clipPath>\n    <clipPath id=\"split-clip\">\n      <path d=\"M 0 -30 L -10 -10 L 4 10 L 0 30 L -30 30L -30 -30\"/>\n    </clipPath>\n  </defs>\n\n  <g clip-path=\"url(#split-clip)\">\n\n  <circle cx=\"0\" cy=\"0\" r=\"26.5\" fill=\"#CFBB50\" />\n\n  <circle cx=\"0\" cy=\"0\" r=\"23.5\" fill=\"#FFE763\" />\n\n  <path d=\"M -6 10 Q 0 14.5 6 10\" fill=\"none\" stroke=\"#000\" stroke-width=\"1.7\" stroke-linecap=\"round\" />\n\n  <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"#000\" />\n  <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"#000\" />\n\n  <g clip-path=\"url(#eye-clip)\">\n    <circle cx=\"-5.2\" cy=\"-4.8\" r=\"3\" fill=\"#fff\" />\n    <circle cx=\"8.8\" cy=\"-4.8\" r=\"3\" fill=\"#fff\" />\n  </g>\n\n  <ellipse cx=\"-7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"1\" />\n  <ellipse cx=\"7\" cy=\"-4.8\" rx=\"3.2\" ry=\"6.5\" fill=\"none\" stroke=\"#000\" stroke-width=\"1\" />\n  </g>\n</svg>",
-        "isAdminPetal": false
+        "isAdminPetal": false,
+        "tradable": false
     },
     "hornet_missile": {
         "name": "Hornet Missile",
@@ -1517,6 +1522,7 @@
         "description": "A simple petal that provides basic protection",
         "color": "#90EE90",
         "count": 1,
-        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16 16)scale(1.10345)\"><circle r=\"14.5\" fill=\"#f5bf39\"/><circle r=\"11.5\" fill=\"#c69b2e\"/><path d=\"M-1.055-7.723v2.094q-1.58.359-2.65 1.358-1.667 1.56-1.667 4.277 0 2.687 1.637 4.257Q-2.65 5.3-1.055 5.652v2.135h2.112v-1.96c.71-.02 1.396-.106 2.07-.26.775-.176 1.857-.436 2.58-.79L5.179-.628h-3.66L.331 1.312h2.297l.264 2.185c-.535.205-1.198.234-1.802.234q-1.658.001-2.564-.973-.905-.97-.904-2.752-.001-1.801.934-2.766.941-.97 2.67-.97.934.001 1.86.264c.624.175 1.116.442 1.743.799L4.565-5.06c-.607-.275-.858-.418-1.548-.559q-.935-.195-1.96-.21v-1.894z\" fill=\"#ffe783\"/></g></svg>"
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16 16)scale(1.10345)\"><circle r=\"14.5\" fill=\"#f5bf39\"/><circle r=\"11.5\" fill=\"#c69b2e\"/><path d=\"M-1.055-7.723v2.094q-1.58.359-2.65 1.358-1.667 1.56-1.667 4.277 0 2.687 1.637 4.257Q-2.65 5.3-1.055 5.652v2.135h2.112v-1.96c.71-.02 1.396-.106 2.07-.26.775-.176 1.857-.436 2.58-.79L5.179-.628h-3.66L.331 1.312h2.297l.264 2.185c-.535.205-1.198.234-1.802.234q-1.658.001-2.564-.973-.905-.97-.904-2.752-.001-1.801.934-2.766.941-.97 2.67-.97.934.001 1.86.264c.624.175 1.116.442 1.743.799L4.565-5.06c-.607-.275-.858-.418-1.548-.559q-.935-.195-1.96-.21v-1.894z\" fill=\"#ffe783\"/></g></svg>",
+        "tradable": false
     }
 }
