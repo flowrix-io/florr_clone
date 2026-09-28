@@ -337,11 +337,11 @@ void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
             roundedCross(canvas, at, size * 0.54, size * 0.20);
             break;
         }
-        case SkillId::PetHealth: {      // a plus inside an egg
-            // The third of the health family, built the way Petal Health is:
-            // the shared cross, inside an outline that says whose health. A pet
-            // is hatched from an egg, so the outline is one -- a narrow crown
-            // and a wide base, widest a little below the middle.
+        case SkillId::PetHealth: {      // an egg
+            // The third of the health family: the outline that says whose
+            // health, with no cross inside. A pet is hatched from an egg, so
+            // the outline is one -- a narrow crown and a wide base, widest a
+            // little below the middle.
             const double weight = size * 0.11;
             const double tall = half - weight * 0.5;
             const double wide = tall * 0.76;
@@ -367,9 +367,6 @@ void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
                                  x(0.0), y(-tall));
             canvas.closePath();
             canvas.stroke();
-            // Centred on the belly rather than the node: that is where the egg
-            // has room, and a cross at the true centre crowds the crown.
-            roundedCross(canvas, {at.x, at.y + belly}, size * 0.44, size * 0.18);
             break;
         }
         case SkillId::Healing: {        // a heart, drawn as an outline
