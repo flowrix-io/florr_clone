@@ -2023,3 +2023,34 @@
         "noEggDrop": true
     }
 }
+},
+    "oracraft": {
+        "name": "Oracraft",
+        "damage": 200,
+        "health": 150,
+        "size": 2,
+        "speed": 0.50,
+        "cooldown": 2000,
+        "xp": {
+            "common": 3,
+            "uncommon": 100,
+            "rare": 400,
+            "epic": 3500,
+            "legendary": 18000,
+            "mythic": 450000,
+            "ultra": 2200000,
+            "super": 18000000,
+            "unique": 900000000
+        },
+        "description": "It has already seen what you will craft",
+        "color": "#FFE763",
+        "image": "$oracle",
+        "ai_type": "hostile",
+        "range": 450,
+        "bee_ai": "idle",
+        "npc": {
+            "service": "oracle"
+        },
+        "noEggDrop": true
+    }
+}
