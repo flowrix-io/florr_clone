@@ -2023,3 +2023,34 @@
         "noEggDrop": true
     }
 }
+},
+    "oracraft": {
+        "name": "Oracraft",
+        "damage": 20,
+        "health": 150,
+        "size": 1.5,
+        "speed": 0.15,
+        "cooldown": 2000,
+        "xp": {
+            "common": 3,
+            "uncommon": 1,
+            "rare": 5,
+            "epic": 35,
+            "legendary": 180,
+            "mythic": 4500,
+            "ultra": 22000,
+            "super": 900000,
+            "unique": 6000000
+        },
+        "description": "It craft ur petals if you get rq",
+        "color": "#999999",
+        "image": "$oracle",
+        "ai_type": "hostile",
+        "range": 450,
+        "bee_ai": "idle",
+        "npc": {
+            "service": "oracle"
+        },
+        "noEggDrop": true
+    }
+}
