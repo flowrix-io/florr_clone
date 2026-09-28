@@ -224,6 +224,16 @@ std::string agoLabel(std::int64_t millis) {
     return std::to_string(minutes / 60) + "h " + std::to_string(minutes % 60) + "m ago";
 }
 
+/// What is left on a boss clock: "ready", "12m 3s", or "1h 5m" past an hour.
+std::string clockWaitLabel(double leftMillis) {
+    if (leftMillis <= 0.0) return "ready";
+    const long seconds = static_cast<long>(std::ceil(leftMillis / 1000.0));
+    if (seconds < 3600) {
+        return std::to_string(seconds / 60) + "m " + std::to_string(seconds % 60) + "s";
+    }
+    return std::to_string(seconds / 3600) + "h " + std::to_string(seconds % 3600 / 60) + "m";
+}
+
 /// The reference prints `new Date(createdAt).toLocaleString()`, which on its
 /// servers is the en-US form. Same shape, from the same instant.
 std::string localeTimestamp(std::int64_t millis) {
@@ -1332,16 +1342,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     if (verb == "boss_timers") {
         // A wild unique or apex is a super its biome's clock upgraded, so
         // "why has nobody seen a unique" is a question about these clocks.
-        // "ready" means the next super spawned there rolls for the upgrade.
+        // "ready" means the next super spawned there rolls for the upgrade;
+        // until then `spawn` refuses that tier there as well.
         const auto wait = [&](double readyMillis) {
-            const double left = readyMillis - clockMillis_;
-            if (left <= 0.0) return std::string("ready");
-            const long seconds = static_cast<long>(std::ceil(left / 1000.0));
-            if (seconds < 3600) {
-                return std::to_string(seconds / 60) + "m " + std::to_string(seconds % 60) + "s";
-            }
-            return std::to_string(seconds / 3600) + "h " + std::to_string(seconds % 3600 / 60) +
-                   "m";
+            return clockWaitLabel(readyMillis - clockMillis_);
         };
         const auto& clocks = spawning_->bossClocks();
         if (clocks.empty()) {
@@ -1492,6 +1496,22 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
 
         if (mobIndex != kInvalidIndex && knownRarity) {
+            // The console is held to the biome's boss clocks like every other
+            // path: while one is cooling down, spawnMob refuses its tier
+            // outright. Asked here only so the operator is told why nothing
+            // appeared -- at the tier the mob would really stand at, its own
+            // floor included.
+            const Rarity standing = clampRarity(
+                std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
+            const double cooling =
+                spawning_->bossCooldownLeft(standing, spawnRealm, clockMillis_);
+            if (cooling > 0.0) {
+                const std::string biome = biomeOfRealm(spawnRealm);
+                out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
+                    "'s " + rarityName(standing) + " clock is cooling down (ready in " +
+                    clockWaitLabel(cooling) + "; see boss_timers)");
+                return;
+            }
             for (int i = 0; i < count; ++i) {
                 Vec2 at{x, y};
                 if (!stack && count > 1) {

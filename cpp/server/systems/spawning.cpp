@@ -388,6 +388,18 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // here rather than at each call site so a nest, a script and the ambient
     // roll cannot disagree about it.
     rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
+
+    // A wild unique or apex is its biome's clock's to hand out, and nobody
+    // else's. One asked for any other way while that clock is still cooling
+    // down -- an operator's console, a band naming a mob whose floor sits
+    // above super, a path nobody has written yet -- is gone before it exists:
+    // no entity, no announcement, nothing on the wire. The clock's own upgrade
+    // only ever asks while it is ready, so it always passes. After the floor,
+    // because that is the tier the mob would actually stand at; roots only,
+    // as with the announcement, because a centipede's segments carry the
+    // head's tier and the head was already let in.
+    if (depth == 0 && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) return NULL_ENTITY;
+
     const MobStats stats = content.mobStats(mobIndex, rarity);
 
     const double jitter = rollSizeJitter(config, rarity, rng);
@@ -1166,6 +1178,15 @@ Rarity SpawnSystem::rollBossUpgrade(World& world, const SpawnZone& zone, double 
     if (rolls(clock.apexReadyMillis, Rarity::Apex)) return Rarity::Apex;
     if (rolls(clock.uniqueReadyMillis, Rarity::Unique)) return Rarity::Unique;
     return Rarity::Super;
+}
+
+double SpawnSystem::bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const {
+    if (rarity != Rarity::Unique && rarity != Rarity::Apex) return 0.0;
+    const std::uint16_t slot = realmBiome_[realmIndex(realm)];
+    if (slot >= bossClocks_.size()) return 0.0;
+    const BiomeBossClock& clock = bossClocks_[slot];
+    const double ready = rarity == Rarity::Apex ? clock.apexReadyMillis : clock.uniqueReadyMillis;
+    return std::max(0.0, ready - nowMillis);
 }
 
 std::uint32_t SpawnSystem::biomeKey(Realm realm) const {

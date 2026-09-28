@@ -332,7 +332,12 @@ inline constexpr Rarity kAnnouncedRarity = Rarity::Super;
 /// nobody is killing anything in spawns no supers to upgrade.
 ///
 /// A mob placed any other way -- a console spawn, a nest's escorts -- is not a
-/// band's super and is neither upgraded nor charged to a clock.
+/// band's super and is neither upgraded nor charged to a clock. It is still
+/// HELD to the clock, though: a unique or apex that would appear in a biome
+/// while that biome's clock for its tier is cooling down is refused outright,
+/// before it is an entity (SpawnSystem::bossCooldownLeft, asked in
+/// spawnMobAt). The clock's own upgrade only asks while it is ready, so the
+/// rule never stands in its way.
 ///
 /// A biome holds at most ONE live unique and ONE live apex, however they got
 /// there. A clock whose tier is already standing in its biome does not roll
@@ -464,7 +469,8 @@ public:
              CommandBuffer& commands);
 
     /// Places one mob, with its nest escorts if it has any, and returns it.
-    /// NULL_ENTITY when `mobIndex` names nothing.
+    /// NULL_ENTITY when `mobIndex` names nothing, or when it is a unique or an
+    /// apex its biome's clock is not ready for (bossCooldownLeft).
     ///
     /// `position` is a request, not a promise: it is pushed out of the terrain
     /// before use, so a caller may hand over a point in a wall and still get a
@@ -542,6 +548,14 @@ public:
     /// operator can wind a clock on; the list itself is the system's.
     const std::vector<BiomeBossClock>& bossClocks() const { return bossClocks_; }
     std::vector<BiomeBossClock>& bossClocks() { return bossClocks_; }
+
+    /// How long a `rarity` mob must still wait before it may appear in
+    /// `realm`'s biome: what is left on that biome's clock for a unique or an
+    /// apex. Zero for every other tier, for a ready clock, and for a realm no
+    /// staged map claims -- the arena, the maze, a harness with no maps --
+    /// which is not a biome and keeps no clock. Anything above zero is a spawn
+    /// spawnMobAt refuses.
+    double bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const;
 
     /// Seeds the stream the boss clocks are scattered and rolled from. Theirs
     /// alone, so an upgrade roll never moves what the world's own stream hands

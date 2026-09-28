@@ -295,6 +295,44 @@ TEST(a_boss_from_the_console_is_announced_to_the_whole_server) {
     CHECK(!sawText(client, "Ultra bee has spawned"));
 }
 
+TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
+    // A server that has just started has every boss clock cooling down (they
+    // are dealt out over one cooldown, none ready at boot), so a unique or an
+    // apex typed now is refused -- nothing stands and chat says why -- while
+    // a super beside it is spawned as ever.
+    Harness h("cmd-spawn-cooling", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    const auto liveOfRarity = [&](Rarity rarity) {
+        int count = 0;
+        Query<MobTag, MobType> mobs{h.server.world()};
+        mobs.each([&](Entity, MobTag&, MobType& type) { count += type.rarity == rarity ? 1 : 0; });
+        return count;
+    };
+
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "unique clock is cooling down"));
+    CHECK(say(h, client, "/admin spawn bee apex 3"));
+    CHECK(sawText(client, "apex clock is cooling down"));
+    h.step(30, {&client});
+    CHECK_EQ(liveOfRarity(Rarity::Unique), 0);
+    CHECK_EQ(liveOfRarity(Rarity::Apex), 0);
+    CHECK(!sawText(client, "Unique bee has spawned"));
+    CHECK(!sawText(client, "Apex bee has spawned"));
+
+    const int supers = liveOfRarity(Rarity::Super);
+    CHECK(say(h, client, "/admin spawn bee super"));
+    CHECK(sawText(client, "Spawned super bee"));
+    CHECK(liveOfRarity(Rarity::Super) > supers);
+}
+
 TEST(spawn_with_a_bad_mob_type_spawns_nothing) {
     Harness h("cmd-spawn-bad", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
