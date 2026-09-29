@@ -4,6 +4,11 @@
 // the account owns laid out as petal-per-row and tier-per-column -- which is
 // the shape that makes "what am I five away from upgrading" readable at a
 // glance, and is why the crafting grid is not the inventory grid.
+//
+// It is drawn on the slot card every craft-key card shares (menus.h), so it
+// is the oracle's and the trader's card in the forge's orange: the ring turns
+// about the centre of the one slot those two hold, the Craft button and the
+// line sit where theirs do, and the grid is theirs, stopping at unique.
 
 #include <algorithm>
 #include <array>
@@ -26,8 +31,7 @@ namespace {
 /// is here so the panel can refuse a stack that cannot fill the ring.
 constexpr int kBatch = 5;
 
-constexpr double kRingTop = 50.0;
-constexpr double kRingBox = 180.0;
+/// The ring, about the slot card's slot centre.
 constexpr double kRingRadius = 70.0;
 constexpr double kRingSlot = 40.0;
 constexpr double kSpinMillis = 1500.0;
@@ -57,27 +61,6 @@ constexpr double kNameDropPull = 0.5;
 /// after this and drop back to idle; the craft is resolved server-side anyway.
 constexpr double kCraftTimeoutMillis = 8000.0;
 
-constexpr double kGridCell = 56.0;
-constexpr double kGridGap = 4.0;
-constexpr double kGridPadding = 12.0;
-/// Columns of the tier grid: EVERY craftable tier, common through unique,
-/// whether or not the account holds one. Apex is not among them because
-/// nothing upgrades out of apex -- there is no tier above it to craft toward,
-/// which is the same reason the inventory sweep below skips apex stacks.
-///
-/// Built from what the player owned, the grid was two columns wide on a fresh
-/// account and never said what the forge is FOR, and it reflowed sideways the
-/// first time a craft landed a new tier -- moving every cell out from under
-/// the cursor mid-click.
-constexpr std::size_t kTierColumns = static_cast<std::size_t>(Rarity::Unique) + 1;
-/// The grid is CLIPPED to four pixels off the card's bottom edge but SCROLLS
-/// against a view fourteen off it. Two different numbers on purpose: the thumb
-/// and the scroll limit follow the shorter one, the paint the taller.
-constexpr double kClipInset = 4.0;
-constexpr double kScrollInset = 14.0;
-/// One wheel notch, in content pixels -- what a browser deltaY delivers.
-constexpr double kWheelStep = 100.0;
-
 constexpr double kSwitchWidth = 58.0;
 constexpr std::uint32_t kSwitchFill = 0x8A7AC9u;
 constexpr std::uint32_t kSwitchBorder = 0x6A5AA8u;
@@ -86,14 +69,6 @@ constexpr std::uint32_t kDisabledFill = 0x8A8A8Au;
 constexpr std::uint32_t kDisabledBorder = 0x5A5A5Au;
 constexpr double kDisabledAlpha = 0.45;
 
-/// With nothing staged the Craft button is a solid grey, at full opacity and
-/// still lightening under the cursor. It is never a disabled control.
-constexpr std::uint32_t kCraftIdleFill = 0x777777u;
-constexpr std::uint32_t kCraftIdleBorder = 0x555555u;
-
-/// Not every outline here is solid black: the labels under the ring are
-/// stroked at 60%, which is a visibly lighter weight at these sizes.
-constexpr double kSoftStroke = 0.6;
 
 /// Absorb -- the purple half of this panel -- is maze-only, and this build has
 /// no maze. The Switch button is still laid out and hit-tested, drawn in the
@@ -104,15 +79,6 @@ constexpr bool kAbsorbAvailable = false;
 /// crafted adds this many percentage points. Storage slots do not count.
 constexpr double kCloverBonus = 0.05;
 constexpr std::size_t kPrimarySlots = 10;
-
-/// A cell of the tier grid. An unowned combination still gets a cell, drawn
-/// empty: the gap is the information.
-struct GridCell {
-    Rect rect;
-    std::uint16_t petalIndex = kNoPetal;
-    Rarity rarity = Rarity::Common;
-    std::uint32_t count = 0;
-};
 
 /// The shortest string that round-trips a percentage rounded to two decimals:
 /// "64%", "8%", "0.5%", "0.25%". The top tiers are fractions of a percent and
@@ -158,10 +124,10 @@ double cloverBonus(const Profile& profile, Rarity rarity) {
 
 } // namespace
 
-double CraftingPanel::preferredWidth() { return 580.0; }
+Rect CraftingPanel::bounds(int w, int h) { return slotCardBounds(false, w, h); }
 
 void CraftingPanel::reset() {
-    scroll_ = {};
+    grid_.reset();
     stagedPetal_ = kNoPetal;
     batches_ = 0;
     phase_ = Phase::Idle;
@@ -184,7 +150,6 @@ void CraftingPanel::stage(const Profile& profile, std::uint16_t petalIndex, Rari
 bool CraftingPanel::render(MenuContext& ctx) {
     Canvas& canvas = ctx.canvas;
     const Profile& profile = ctx.net.profile();
-    const Rect panel = ctx.bounds;
     const Vec2 mouse = ctx.mouse();
 
     // One click of the ring hands back one batch of five, not the whole
@@ -233,12 +198,9 @@ bool CraftingPanel::render(MenuContext& ctx) {
         if (batches_ <= 0) stagedPetal_ = kNoPetal;
     }
 
-    panelCard(canvas, panel, kCraftingSkin);
-    panelTitle(canvas, panel, "Craft");
-
-    const Rect closeRect = closeButtonRect(panel);
-    // 3/1, not the inventory's 4/3: the forge spells its own corners out.
-    panelClose(canvas, closeRect, closeRect.contains(mouse));
+    const SlotCardLayout card = drawSlotCard(canvas, ctx.bounds, kCraftingSkin, "Craft", mouse);
+    const Rect panel = card.panel;
+    const Rect closeRect = card.close;
 
     const Rect switchRect{closeRect.x - 6.0 - kSwitchWidth, closeRect.y, kSwitchWidth, kCloseSize};
     const bool switchHovered = kAbsorbAvailable && switchRect.contains(mouse);
@@ -251,12 +213,13 @@ bool CraftingPanel::render(MenuContext& ctx) {
     canvas.setGlobalAlpha(static_cast<float>(switchAlpha));
     outlinedText(canvas, "Switch", switchRect.x + switchRect.w * 0.5,
                  switchRect.y + switchRect.h * 0.5 + 1.0,
-                 panelLabel(12.0, Align::Centre, Baseline::Middle), kSoftStroke);
+                 panelLabel(12.0, Align::Centre, Baseline::Middle), kSlotCardLabelStroke);
     canvas.setGlobalAlpha(1.0f);
 
     // --- the ring ----------------------------------------------------------
-    const double centreX = panel.x + panel.w * 0.5;
-    const double centreY = panel.y + kRingTop + kRingBox * 0.5;
+    // Turned about where the oracle and the trader hold their one slot.
+    const double centreX = card.slot.x;
+    const double centreY = card.slot.y;
 
     if (phase_ == Phase::Spinning) {
         const double elapsed = (ctx.timeSeconds - phaseStarted_) * 1000.0;
@@ -355,11 +318,10 @@ bool CraftingPanel::render(MenuContext& ctx) {
         if (!showingSuccess) drawItemTile(canvas, ctx.sprites, slot, tile);
     }
 
-    // The outcome, in the middle of the ring. A failure draws nothing here --
-    // the emptied slots behind it are the whole message.
+    // The outcome, in the middle of the ring -- where the other cards hold
+    // their one slot, at that slot's size. A failure draws nothing here: the
+    // emptied slots behind it are the whole message.
     if (showingSuccess && knownPetal(resultPetal_)) {
-        const double size = 60.0;
-        const Rect card{centreX - size * 0.5, centreY - size * 0.5, size, size};
         ItemTile tile;
         tile.petalIndex = resultPetal_;
         tile.rarity = resultRarity_;
@@ -373,11 +335,11 @@ bool CraftingPanel::render(MenuContext& ctx) {
             tile.badge = "x" + stackCountText(static_cast<std::uint64_t>(resultCount_));
         }
         tile.timeSeconds = ctx.timeSeconds;
-        drawItemTile(canvas, ctx.sprites, card, tile);
+        drawItemTile(canvas, ctx.sprites, card.slotRect, tile);
     }
 
     // --- craft button ------------------------------------------------------
-    const Rect craftRect{centreX + kRingBox * 0.5 + 10.0, centreY - 15.0, 60.0, 30.0};
+    const Rect craftRect = card.button;
     const bool canCraft = phase_ == Phase::Idle && stagedPetal_ != kNoPetal && batches_ > 0;
     // The button wears the colour of the tier being crafted TOWARD, and keeps
     // wearing it through the spin.
@@ -385,13 +347,9 @@ bool CraftingPanel::render(MenuContext& ctx) {
     const Rarity fromRarity = stagedPetal_ != kNoPetal ? stagedRarity_ : ringRarity;
     const Rarity nextRarity = upgradeRarity(fromRarity);
     const bool tinted = buttonPetal != kNoPetal && nextRarity != fromRarity;
-    const std::uint32_t craftFill = tinted ? rarityColor(nextRarity) : kCraftIdleFill;
-    const std::uint32_t craftBorder = tinted ? darken(craftFill, 0.25) : kCraftIdleBorder;
-    inlaid(canvas, craftRect,
-           craftRect.contains(mouse) ? lighten(craftFill, 0.15) : craftFill, craftBorder, 3.0, 6.0);
-    outlinedText(canvas, "Craft", craftRect.x + craftRect.w * 0.5,
-                 craftRect.y + craftRect.h * 0.5,
-                 panelLabel(13.0, Align::Centre, Baseline::Middle), kSoftStroke);
+    drawSlotButton(canvas, craftRect, "Craft",
+                   tinted ? std::optional<std::uint32_t>(rarityColor(nextRarity)) : std::nullopt,
+                   craftRect.contains(mouse));
 
     // A valid craft always has a chance above zero, even if it is a quarter of
     // a percent; a zero means nothing is staged, which reads as "?%".
@@ -402,118 +360,31 @@ bool CraftingPanel::render(MenuContext& ctx) {
         odds = percentText(percent) + " success chance";
     }
     outlinedText(canvas, odds, craftRect.x + craftRect.w * 0.5, craftRect.bottom() + 6.0,
-                 panelLabel(12.0, Align::Centre, Baseline::Top), kSoftStroke);
+                 panelLabel(12.0, Align::Centre, Baseline::Top), kSlotCardLabelStroke);
 
-    const double instructionY = panel.y + kRingTop + kRingBox + 10.0;
-    outlinedText(canvas, "Combine 5 of the same petal to craft an upgrade",
-                 panel.x + panel.w * 0.5, instructionY + 4.0,
-                 panelLabel(13.0, Align::Centre, Baseline::Top), kSoftStroke);
+    drawSlotLine(canvas, card, "Combine 5 of the same petal to craft an upgrade");
 
     // --- the grid ----------------------------------------------------------
-    // Columns are the fixed tier run (see kTierColumns); rows are the petal
-    // types the account owns. Those come from the UNDEDUCTED profile on
-    // purpose: a stack staged down to nothing keeps its row, so the grid
-    // cannot reflow under the cursor mid-click and drop the next click onto a
-    // different petal.
-    std::vector<std::uint16_t> types;
-    for (const Profile::Stack& stack : profile.inventory) {
-        if (stack.count == 0 || stack.rarity == Rarity::Apex) continue;
-        if (std::find(types.begin(), types.end(), stack.petalIndex) == types.end()) {
-            types.push_back(stack.petalIndex);
-        }
-    }
-    std::sort(types.begin(), types.end());
-
-    const double inventoryTop = instructionY + 30.0;
-    const Rect view{panel.x + kClipInset, inventoryTop, panel.w - kClipInset * 2,
-                    std::max(0.0, panel.bottom() - kClipInset - inventoryTop)};
-    const double scrollHeight = std::max(0.0, panel.bottom() - kScrollInset - inventoryTop);
-
-    const double gridWidth =
-        static_cast<double>(kTierColumns) * kGridCell +
-        static_cast<double>(kTierColumns - 1) * kGridGap;
-    const double startX = panel.x + kGridPadding + std::max(0.0, (panel.w - kGridPadding * 2 - gridWidth) * 0.5);
-
+    // Common through unique: nothing upgrades out of apex, so there is no
+    // column for it -- the same reason stage() refuses one.
     const std::uint32_t held =
         static_cast<std::uint32_t>(std::max(0, batches_)) * static_cast<std::uint32_t>(kBatch);
-    std::vector<GridCell> cells;
-    double y = kGridPadding;
-    for (const std::uint16_t petalIndex : types) {
-        for (std::size_t column = 0; column < kTierColumns; ++column) {
-            const Rarity rarity = static_cast<Rarity>(column);
-            std::uint32_t count = profile.stackCount(petalIndex, rarity);
-            // Staged petals are gone from the player's point of view the moment
-            // they land in the ring, so the badge counts down with each click.
+    const std::optional<SlotGrid::Pick> hovered = grid_.render(
+        ctx, card, kCraftingSkin, false,
+        [&](std::uint16_t petalIndex, Rarity rarity, std::uint32_t owned) {
+            SlotCell cell;
+            cell.count = owned;
+            // Staged petals are gone from the player's point of view the
+            // moment they land in the ring, so the badge counts down with each
+            // click.
             if (petalIndex == stagedPetal_ && rarity == stagedRarity_) {
-                count = count > held ? count - held : 0;
+                cell.count = owned > held ? owned - held : 0;
             }
-            cells.push_back({Rect{startX + static_cast<double>(column) * (kGridCell + kGridGap), y,
-                                  kGridCell, kGridCell},
-                             petalIndex, rarity, count});
-        }
-        y += kGridCell + kGridGap;
-    }
-    const double contentHeight = y + kGridPadding;
-
-    scroll_.contentHeight = contentHeight;
-    scroll_.viewHeight = scrollHeight;
-    // Scrolls anywhere below the instruction line, not just over the cells, and
-    // by the raw wheel delta rather than a step of this panel's own choosing.
-    if (panel.contains(mouse) && mouse.y >= inventoryTop) {
-        scroll_.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
-    }
-    scroll_.offset -= touchScroll(ctx.window, view, scroll_.maxOffset() > 0);
-    scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
-
-    canvas.save();
-    canvas.beginPath();
-    canvas.rect(static_cast<float>(view.x), static_cast<float>(view.y), static_cast<float>(view.w),
-                static_cast<float>(view.h));
-    canvas.clip();
-
-    int hovered = -1;
-    for (std::size_t i = 0; i < cells.size(); ++i) {
-        const GridCell& cell = cells[i];
-        const Rect rect{cell.rect.x, view.y - scroll_.offset + cell.rect.y, cell.rect.w,
-                        cell.rect.h};
-        if (rect.bottom() < view.y || rect.y > view.bottom()) continue;
-
-        if (cell.count == 0) {
-            // A tier the account holds none of: a flat tan block, fill and
-            // border the same colour. Not hoverable and not clickable.
-            ItemTile blank;
-            blank.empty = true;
-            blank.emptyFill = kCraftingSkin.border;
-            blank.emptyBorder = kCraftingSkin.border;
-            drawItemTile(canvas, ctx.sprites, rect, blank);
-            continue;
-        }
-        if (rect.contains(mouse) && view.contains(mouse)) hovered = static_cast<int>(i);
-
-        ItemTile tile;
-        tile.petalIndex = cell.petalIndex;
-        tile.rarity = cell.rarity;
-        tile.hovered = hovered == static_cast<int>(i);
-        // A lone petal carries no badge; "x1" is noise on every cell of a fresh
-        // account.
-        if (cell.count > 1) tile.badge = "x" + stackCountText(cell.count);
-        tile.timeSeconds = ctx.timeSeconds;
-        drawItemTile(canvas, ctx.sprites, rect, tile);
-    }
-    canvas.restore();
-
-    // Thumb only, no track, square-cornered, and inset from the card's edge
-    // rather than the clip's: it is a hint at how far down the list is, not a
-    // control to grab.
-    if (contentHeight > scrollHeight && scrollHeight > 0.0) {
-        const double thumbHeight = std::max(20.0, scrollHeight * scrollHeight / contentHeight);
-        const double travel = contentHeight - scrollHeight;
-        const double thumbY =
-            inventoryTop + clamp(scroll_.offset / travel, 0.0, 1.0) * (scrollHeight - thumbHeight);
-        setFill(canvas, kInk, 0.25);
-        canvas.fillRect(static_cast<float>(panel.right() - 10.0), static_cast<float>(thumbY), 4.0f,
-                        static_cast<float>(thumbHeight));
-    }
+            // A lone petal carries no badge; "x1" is noise on every cell of a
+            // fresh account.
+            if (cell.count > 1) cell.badge = "x" + stackCountText(cell.count);
+            return cell;
+        });
 
     // --- input -------------------------------------------------------------
     // On press, not release: the browser hit-tests in mousedown, so a press
@@ -566,9 +437,8 @@ bool CraftingPanel::render(MenuContext& ctx) {
         }
     }
 
-    if (hovered >= 0 && phase_ == Phase::Idle) {
-        const GridCell& cell = cells[static_cast<std::size_t>(hovered)];
-        stage(profile, cell.petalIndex, cell.rarity, ctx.window.shiftHeld());
+    if (hovered && phase_ == Phase::Idle) {
+        stage(profile, hovered->petalIndex, hovered->rarity, ctx.window.shiftHeld());
     }
     return true;
 }

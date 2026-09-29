@@ -217,7 +217,7 @@ of it as a duration, so the client's countdown never depends on its own clock
 agreeing with the server's.
 
 The trader is the second, built the same way end to end: within reach of one
-the craft key opens `TradePanel` (the oracle's card, in the flower yellow), and
+the craft key opens `TradePanel` (in the flower yellow), and
 `ClientMessage::Trade` hands the server one petal of one tier for one
 `kTraderCoinPetal` of the same tier -- refused for a petal whose petals.json
 entry says `"tradable": false` (`PetalConfig::tradable`; the basic petal and
@@ -228,6 +228,15 @@ is drawn by the `$trader` painter: a player's own face -- its eyes drawn by
 the one `paintFlowerEyes` every flower uses, moved by its facing at a
 flower's eye travel -- in a ring of basic petals outlined only on the
 outside.
+
+The craft key's three cards -- `CraftingPanel`, `OraclePanel`, `TradePanel` --
+are one SLOT CARD (`menus.h`, `ui/menu_slot_card.cpp`), laid out against the
+trade reference shot: the frame and its anchoring, the slot and the action
+button either side of the centre line, the line of text, the tier grid
+(`SlotGrid`, through unique, or through apex for the trader) and the oracle's
+and trader's landing (`SlotFlourish`). Each panel keeps its own staging,
+animation and input, and says per cell what its grid shows; the forge turns
+its ring of five about the slot's centre where the other two hold one.
 
 ## Networking
 

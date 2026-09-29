@@ -931,9 +931,9 @@ namespace {
 /// literal width, and a viewport too narrow for one simply lets it overflow --
 /// it does not narrow the card and re-centre it, which would move a panel a
 /// player has learnt the position of.
-/// The highest the oracle's card may reach: clear of the player's own plate in
-/// the top-left corner, whatever the window's height.
-constexpr double kOracleTopMin = 160.0;
+/// The highest a slot card may reach: clear of the player's own plate in the
+/// top-left corner, whatever the window's height.
+constexpr double kSlotCardTopMin = 160.0;
 
 Rect listPanel(double width, int, int viewHeight) {
     const double top = static_cast<double>(viewHeight) * kMenuListTopFraction;
@@ -953,19 +953,14 @@ Rect cornerPanel(double width, double height, double top, int, int) {
 } // namespace
 
 Rect InventoryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
-Rect CraftingPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w, h); }
-/// The oracle's card is its reference's size rather than a share of the view:
-/// it stands on the list family's bottom edge and reaches up its own height,
-/// stopping short of the HUD at the top-left on a window too short for it.
-Rect OraclePanel::bounds(int w, int h) {
-    const Rect list = listPanel(preferredWidth(), w, h);
-    const double height = std::max(0.0, std::min(preferredHeight(), list.bottom() - kOracleTopMin));
-    return {list.x, list.bottom() - height, list.w, height};
-}
-/// The trader's card is the oracle's reference card, on the same edges.
-Rect TradePanel::bounds(int w, int h) {
-    const Rect list = listPanel(preferredWidth(), w, h);
-    const double height = std::max(0.0, std::min(preferredHeight(), list.bottom() - kOracleTopMin));
+/// The craft key's cards are their reference's size rather than a share of the
+/// view: each stands on the list family's bottom edge and reaches up its own
+/// height, stopping short of the HUD at the top-left on a window too short for
+/// it. The forge, the oracle and the trader all anchor here.
+Rect slotCardBounds(bool withApex, int w, int h) {
+    const Rect list = listPanel(slotCardWidth(withApex), w, h);
+    const double height =
+        std::max(0.0, std::min(slotCardHeight(), list.bottom() - kSlotCardTopMin));
     return {list.x, list.bottom() - height, list.w, height};
 }
 /// The talent card is SQUARE, alone among the list panels: the tree is a fan

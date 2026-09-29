@@ -153,6 +153,7 @@ add_library(flix_client STATIC
   client/ui/item_tile.cpp
   client/ui/menus.cpp
   client/ui/menu_inventory.cpp
+  client/ui/menu_slot_card.cpp
   client/ui/menu_crafting.cpp
   client/ui/menu_oracle.cpp
   client/ui/menu_trade.cpp
