@@ -357,6 +357,24 @@ private:
     void drawPetalRingMob(Canvas&, const MobConfig&, const MobDraw&, double radius,
                           double rotation, bool mirrored, Vec2 bodyShift,
                           double timeSeconds) const;
+    /// How drawMobBody will pose a mob this frame: its animation clock, drawn
+    /// size and fade after any death pop, facing, mirroring and art offset.
+    /// False when there is nothing to draw. Shared with the web build's glitch
+    /// atlas, which has to paint a glitch flower exactly as the entity pass
+    /// then places it.
+    struct MobPose {
+        double timeSeconds = 0;
+        double diameter = 0;
+        double alpha = 1.0;
+        double rotation = 0;
+        bool mirrored = false;
+        Vec2 bodyShift;
+    };
+    bool poseMob(const MobDraw&, const MobConfig*, double zoom, double clockSeconds,
+                 MobPose&) const;
+    /// The radius a glitch flower's tear has to cover: the ring, not just the
+    /// body.
+    double glitchFlowerReach(const MobConfig&, const MobPose&) const;
     /// The garbage mob, whose artwork in mobs.json is an empty document: a
     /// deterministic pile of petals seeded on where it stands.
     void drawGarbagePile(Canvas&, Vec2 at, double baseSize, double timeSeconds) const;
@@ -508,6 +526,10 @@ private:
         /// another reason by the first frame this is asked.
         Vec2 gaze;
         bool gazeLive = false;
+        /// The frame `offset` was last eased in. mobEye() eases once a frame
+        /// and answers the same again if asked twice -- a glitched ring mob
+        /// is painted into the web glitch atlas and then again in its place.
+        std::uint64_t easedFrame = 0;
     };
     mutable std::unordered_map<std::uint32_t, MobEye> mobEyes_;
 
@@ -559,19 +581,68 @@ private:
     std::unordered_map<std::uint64_t, double> damageTextAt_;
     std::unordered_map<std::uint64_t, double> damagePending_;
 
+#ifdef __EMSCRIPTEN__
+    // The web build's glitch buffers: ONE atlas holding every body that is
+    // bursting this frame, and one tint surface holding its red and cyan
+    // copies side by side. Both are drawn once, before the entity pass, and
+    // only ever read from after it -- each glitched body then blits its bands
+    // and its fringe out of them in its own place in the draw order.
+    //
+    // Why not a scratch buffer per burst, as native has: in a browser every
+    // offscreen canvas that is redrawn in a frame is a GPU raster flush of its
+    // own, and redrawing one the page has already drawn from that frame also
+    // forces a whole-surface copy first. Per burst that was the body buffer
+    // plus a tint surface built twice -- six legendary glitch flowers traced
+    // at 9.7 flushes a frame and a crowd of twenty at 41, against 1 for any
+    // number of hornets -- and a buffer that only ever grew made each copy
+    // the size of the largest glitched body seen all session (92% GPU on an
+    // M2 after one 8x flower). The atlas adds two flushes to a frame, however
+    // many bodies are glitching: both of those scenes trace at 3. Native
+    // writes pixels in place and has neither cost, so it keeps its single
+    // buffer below.
+    struct GlitchCell {
+        int x = 0;
+        int y = 0;
+        /// The body square it holds, in canvas units -- drawGlitched's `side`
+        /// -- and the atlas pixels per unit it was laid down at.
+        int side = 0;
+        double scale = 1.0;
+    };
+    struct GlitchAtlas {
+        std::unique_ptr<Canvas> bodies;  ///< size x size
+        std::unique_ptr<Canvas> tints;   ///< 2*size x size: red copies, then cyan
+        int size = 0;
+        bool overflowed = false;         ///< ran out of room last frame: grow
+        std::uint64_t usedFrame = 0;
+    };
+    /// Lays down this frame's bursting bodies and their tints. `onScreen` is
+    /// the entity pass's own cull, so only what will be drawn takes a cell.
+    void prepareGlitchAtlas(const EntityMap&, const Camera&, Vec2 selfDrawn,
+                            double timeSeconds,
+                            const std::function<bool(Vec2, double)>& onScreen) const;
+    /// Shelf-packs one body into the atlas and paints it there. False when the
+    /// atlas is full, and the body then draws without the effect this frame.
+    bool placeGlitchBody(std::uint32_t seed, int side,
+                         const std::function<void(Canvas&)>& body) const;
+    mutable GlitchAtlas glitchAtlas_;
+    /// This frame's cells, by the seed drawGlitched is called with.
+    mutable std::unordered_map<std::uint32_t, GlitchCell> glitchCells_;
+    mutable int glitchShelfX_ = 0;
+    mutable int glitchShelfY_ = 0;
+    mutable int glitchShelfRow_ = 0;
+    mutable int glitchShelfWidth_ = 0;
+#else
     // A single transparent buffer is reused one flower at a time for the
     // Glitch flag. It grows with the largest on-screen flower and never needs
     // to survive a frame, so sharing avoids a canvas allocation per player.
-    // The second buffer holds one chromatic-fringe copy of the first, built
-    // and blitted twice per burst frame.
+    // Natively the chromatic fringe is folded into a tinted blit, so there is
+    // no second surface. The web build's atlas above explains why it cannot
+    // work this way.
     mutable std::unique_ptr<Canvas> glitchBody_;
-#ifdef __EMSCRIPTEN__
-    // Only the web build needs the second surface: it makes each tint with
-    // Canvas2D composite operations, which need somewhere to compose into.
-    // Natively the tint is folded into the blit itself.
-    mutable std::unique_ptr<Canvas> glitchTint_;
-#endif
     mutable int glitchSide_ = 0;
+#endif
+    /// Advanced once per draw(). What mobEye's once-a-frame easing counts by.
+    mutable std::uint64_t frame_ = 0;
 };
 
 } // namespace flix

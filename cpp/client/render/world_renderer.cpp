@@ -1397,6 +1397,231 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     }
 }
 
+namespace {
+// One glitch bucket: how long a burst, and the pattern of one, holds.
+std::uint32_t glitchBucket(double timeSeconds) {
+    return static_cast<std::uint32_t>(std::max(0.0, std::floor(timeSeconds * 1000.0 / 70.0)));
+}
+bool glitchBursts(std::uint32_t seed, std::uint32_t bucket) { return hash01(seed, bucket) < 0.45; }
+// The square a glitched body is torn within, in canvas units, around its
+// centre. The body is nominally `radius`, but equipment (antennae, third eye)
+// and skins overshoot it, hence the generous margin.
+int glitchSide(double radius) {
+    return 2 * std::max(16, static_cast<int>(std::ceil(radius * 2.0 + 24.0)));
+}
+} // namespace
+
+#ifdef __EMSCRIPTEN__
+namespace {
+// The reference's MAX_BUFFER_SIDE (src/graphics/glitch-effect.ts): a body
+// bigger than this is laid into the atlas smaller and stretched back on the
+// way out, so the effect goes soft on exactly the biggest bodies rather than
+// costing without limit.
+constexpr int kGlitchMaxCell = 1024;
+// The atlas is one of these two sizes: it starts small and grows once if a
+// frame runs out of room. A frame that wants more than the larger holds draws
+// the rest of its bursts without the effect -- a burst is on screen for a few
+// frames at a time -- which is what a crowd of mythics at full zoom gets.
+//
+// No bigger than 1536, because the tint surface is twice as wide: Chrome
+// rasters a canvas past about eight million pixels in pieces, and a 4096x2048
+// one measured 8 GPU flushes a frame where 3072x1536 measured the expected 3.
+constexpr int kGlitchMinAtlas = 1024;
+constexpr int kGlitchMaxAtlas = 1536;
+// Two seconds at 60 fps: an atlas nothing has wanted for that long is freed.
+constexpr std::uint64_t kGlitchAtlasIdleFrames = 120;
+
+int glitchAtlasSize(int atLeast) {
+    return atLeast <= kGlitchMinAtlas ? kGlitchMinAtlas : kGlitchMaxAtlas;
+}
+} // namespace
+
+bool WorldRenderer::placeGlitchBody(std::uint32_t seed, int side,
+                                    const std::function<void(Canvas&)>& body) const {
+    const double scale = std::min(1.0, static_cast<double>(kGlitchMaxCell) / side);
+    const int cell = std::max(1, static_cast<int>(std::ceil(side * scale)));
+
+    GlitchAtlas& atlas = glitchAtlas_;
+    if (atlas.size == 0) {
+        const int size = glitchAtlasSize(cell);
+        atlas.bodies = std::make_unique<Canvas>(Canvas::createVirtual(size, size));
+        atlas.tints = std::make_unique<Canvas>(Canvas::createVirtual(size * 2, size));
+        atlas.size = size;
+    }
+    // Shelf-packed, left to right and then down.
+    if (glitchShelfX_ + cell > atlas.size) {
+        glitchShelfX_ = 0;
+        glitchShelfY_ += glitchShelfRow_;
+        glitchShelfRow_ = 0;
+    }
+    if (glitchShelfY_ + cell > atlas.size) {
+        atlas.overflowed = true;
+        return false;
+    }
+
+    GlitchCell placed;
+    placed.x = glitchShelfX_;
+    placed.y = glitchShelfY_;
+    placed.side = side;
+    placed.scale = scale;
+    glitchShelfX_ += cell;
+    glitchShelfRow_ = std::max(glitchShelfRow_, cell);
+    glitchShelfWidth_ = std::max(glitchShelfWidth_, glitchShelfX_);
+    atlas.usedFrame = frame_;
+
+    // Clipped to its own cell: a body that overshoots the square it was given
+    // must not paint into the one beside it in the atlas.
+    Canvas& bodies = *atlas.bodies;
+    const float x = static_cast<float>(placed.x);
+    const float y = static_cast<float>(placed.y);
+    const float extent = static_cast<float>(cell);
+    bodies.clearRect(x, y, extent, extent);
+    bodies.save();
+    bodies.beginPath();
+    bodies.rect(x, y, extent, extent);
+    bodies.clip();
+    bodies.translate(static_cast<float>(placed.x + side * 0.5 * scale),
+                     static_cast<float>(placed.y + side * 0.5 * scale));
+    if (scale < 1.0) bodies.scale(static_cast<float>(scale), static_cast<float>(scale));
+    body(bodies);
+    bodies.restore();
+    glitchCells_[seed] = placed;
+    return true;
+}
+
+void WorldRenderer::prepareGlitchAtlas(const EntityMap& entities, const Camera& camera,
+                                       Vec2 selfDrawn, double timeSeconds,
+                                       const std::function<bool(Vec2, double)>& onScreen) const {
+    // Exactly the bodies the entity pass will glitch this frame, painted the
+    // way it will paint them: drawFlower's and drawMobBody's own sizing, and
+    // the same painters. Gathered first and laid down after, so the ones that
+    // need a fringe can go first: the tint pass then covers only their rows.
+    struct Burst {
+        std::uint32_t seed = 0;
+        int side = 0;
+        bool fringe = false;
+        std::function<void(Canvas&)> paint;
+    };
+    std::vector<Burst> bursts;
+    const auto fringes = [](std::uint32_t seed, std::uint32_t bucket) {
+        return hash01(seed ^ 0x27D4EB2Fu, bucket) < 0.65;
+    };
+    const double zoom = camera.zoom();
+    const auto prepareMob = [&](const MobDraw& mob) {
+        if (!content_) return;
+        const MobConfig& config = content_->mob(mob.typeIndex);
+        if (config.id != "glitch_flower" || !config.petalRing.present) return;
+        MobPose pose;
+        if (!poseMob(mob, &config, zoom, timeSeconds, pose)) return;
+        const std::uint32_t bucket = glitchBucket(pose.timeSeconds);
+        if (!glitchBursts(mob.netId, bucket)) return;
+        const double radius = pose.diameter * 0.5;
+        const MobConfig* type = &config;
+        bursts.push_back({mob.netId, glitchSide(glitchFlowerReach(config, pose)),
+                          fringes(mob.netId, bucket),
+                          [this, type, mob, radius, pose](Canvas& target) {
+                              drawPetalRingMob(target, *type, mob, radius, pose.rotation,
+                                               pose.mirrored, pose.bodyShift, pose.timeSeconds);
+                          }});
+    };
+    for (const auto& entry : entities) {
+        const RemoteEntity& entity = entry.second;
+        const Vec2 at = entity.isSelf() ? selfDrawn : entity.position;
+        if (entity.kind == net::EntityKind::Player) {
+            if (entity.dead() || !(entity.renderFlags & PlayerRenderGlitch)) continue;
+            if (!onScreen(at, entity.radius)) continue;
+            const std::uint32_t bucket = glitchBucket(timeSeconds);
+            if (!glitchBursts(entity.netId, bucket)) continue;
+            const double radius = kFlowerArtRadius * playerSizeMultiplier(entity) * zoom;
+            if (radius <= 0.5) continue;
+            const double scale = radius / kFlowerArtRadius;
+            const RemoteEntity* flower = &entity;
+            bursts.push_back({entity.netId, glitchSide(radius), fringes(entity.netId, bucket),
+                              [this, flower, scale, timeSeconds](Canvas& target) {
+                                  target.scale(static_cast<float>(scale),
+                                               static_cast<float>(scale));
+                                  drawFlowerBody(target, *flower, timeSeconds);
+                              }});
+        } else if (entity.kind == net::EntityKind::Mob || entity.kind == net::EntityKind::Npc) {
+            if (!onScreen(at, entity.radius)) continue;
+            // The fields drawEntity fills that the pose and painter read.
+            MobDraw mob;
+            mob.netId = entity.netId;
+            mob.position = at;
+            mob.angle = entity.angle;
+            mob.radius = entity.radius;
+            mob.typeIndex = entity.typeIndex;
+            mob.rarity = entity.rarity;
+            mob.npc = entity.kind == net::EntityKind::Npc;
+            mob.chasing = !mob.npc && (entity.state & net::StateChasing) != 0;
+            prepareMob(mob);
+        }
+    }
+    for (const DyingMob& dying : dying_) {
+        if (!onScreen(dying.position, dying.radius)) continue;
+        MobDraw mob;
+        mob.netId = dying.netId;
+        mob.position = dying.position;
+        mob.angle = dying.angle;
+        mob.radius = dying.radius;
+        mob.typeIndex = dying.typeIndex;
+        mob.rarity = dying.rarity;
+        mob.deathProgress = clamp(dying.ageSeconds / kDeathAnimationSeconds, 0.0, 1.0);
+        prepareMob(mob);
+    }
+    if (bursts.empty()) return;
+
+    // Fringed first, then biggest first within each: shelves pack tighter
+    // tallest-first, and the fringed ones end up in a block at the top.
+    std::sort(bursts.begin(), bursts.end(), [](const Burst& a, const Burst& b) {
+        if (a.fringe != b.fringe) return a.fringe;
+        return a.side > b.side;
+    });
+    int tintWide = 0;
+    int tintUsed = 0;
+    for (const Burst& burst : bursts) {
+        if (!placeGlitchBody(burst.seed, burst.side, burst.paint)) continue;
+        if (!burst.fringe) continue;
+        tintWide = glitchShelfWidth_;
+        tintUsed = glitchShelfY_ + glitchShelfRow_;
+    }
+    if (tintUsed == 0) return;
+
+    // The reference's tint, for every fringed body at once: multiply by a
+    // pure primary, then re-mask to the bodies' own alpha. Red copies on the
+    // left of the tint surface, cyan on the right, and each half clipped for
+    // its re-mask -- destination-in clears whatever it does not cover, which
+    // unclipped would be the other half. Only the block the fringed bodies
+    // were packed into.
+    GlitchAtlas& atlas = glitchAtlas_;
+    const float size = static_cast<float>(atlas.size);
+    const float wide = static_cast<float>(std::min(atlas.size, tintWide));
+    const float used = static_cast<float>(std::min(atlas.size, tintUsed));
+    Canvas& tints = *atlas.tints;
+    const Canvas& bodies = *atlas.bodies;
+    tints.clearRect(0, 0, wide, used);
+    tints.clearRect(size, 0, wide, used);
+    tints.drawCanvas(bodies, 0, 0, wide, used, 0, 0, wide, used);
+    tints.drawCanvas(bodies, 0, 0, wide, used, size, 0, wide, used);
+    tints.save();
+    tints.setGlobalCompositeOperation("multiply");
+    tints.setFillStyle(Color{255, 0, 0});
+    tints.fillRect(0, 0, wide, used);
+    tints.setFillStyle(Color{0, 255, 255});
+    tints.fillRect(size, 0, wide, used);
+    tints.setGlobalCompositeOperation("destination-in");
+    for (const float at : {0.0f, size}) {
+        tints.save();
+        tints.beginPath();
+        tints.rect(at, 0, wide, used);
+        tints.clip();
+        tints.drawCanvas(bodies, 0, 0, wide, used, at, 0, wide, used);
+        tints.restore();
+    }
+    tints.restore();
+}
+#endif
+
 void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std::uint32_t seed,
                                  double timeSeconds,
                                  const std::function<void(Canvas&)>& body) const {
@@ -1405,18 +1630,34 @@ void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std
     // bands, each one blitted straight out of the buffer. That is what keeps
     // it composable with the Pumpkin and Robot skins, and what lets the glitch
     // flower tear its petal ring along with its face.
-    const std::uint32_t bucket =
-        static_cast<std::uint32_t>(std::max(0.0, std::floor(timeSeconds * 1000.0 / 70.0)));
-    if (hash01(seed, bucket) >= 0.45) {
+    const std::uint32_t bucket = glitchBucket(timeSeconds);
+    const auto drawPlain = [&] {
         canvas.save();
         canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
         body(canvas);
         canvas.restore();
+    };
+    if (!glitchBursts(seed, bucket)) {
+        drawPlain();
         return;
     }
 
-    const int half = std::max(16, static_cast<int>(std::ceil(radius * 2.0 + 24.0)));
-    const int side = half * 2;
+    const int side = glitchSide(radius);
+    const int half = side / 2;
+#ifdef __EMSCRIPTEN__
+    // The body is already in the atlas, laid down before the entity pass by
+    // prepareGlitchAtlas. A burst it has no cell for -- the atlas was full --
+    // draws without the effect for the frame.
+    const auto cell = glitchCells_.find(seed);
+    if (cell == glitchCells_.end() || cell->second.side != side) {
+        drawPlain();
+        return;
+    }
+    const Canvas& buffer = *glitchAtlas_.bodies;
+    const double sourceX = cell->second.x;
+    const double sourceY = cell->second.y;
+    const double sourceScale = cell->second.scale;
+#else
     // The buffer only ever GROWS, but the work is confined to the top-left
     // `side` square of it: everything below reads `side`, never `glitchSide_`.
     // Sizing the passes off the buffer instead meant one oversized glitched
@@ -1429,19 +1670,20 @@ void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std
         // otherwise reallocates the surface for each of them.
         const int target = ((side + 63) / 64) * 64;
         glitchBody_ = std::make_unique<Canvas>(Canvas::createVirtual(target, target));
-#ifdef __EMSCRIPTEN__
-        glitchTint_ = std::make_unique<Canvas>(Canvas::createVirtual(target, target));
-#endif
         glitchSide_ = target;
     }
 
     Canvas& buffer = *glitchBody_;
-    const int bufferHalf = half;
     buffer.clearRect(0, 0, static_cast<float>(side), static_cast<float>(side));
     buffer.save();
-    buffer.translate(static_cast<float>(bufferHalf), static_cast<float>(bufferHalf));
+    buffer.translate(static_cast<float>(half), static_cast<float>(half));
     body(buffer);
     buffer.restore();
+    constexpr double sourceX = 0;
+    constexpr double sourceY = 0;
+    constexpr double sourceScale = 1.0;
+#endif
+    const int bufferHalf = half;
 
     constexpr int kBandCount = 9;
     for (int i = 0; i < kBandCount; ++i) {
@@ -1458,8 +1700,10 @@ void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std
         const int top = side * i / kBandCount;
         const int bottom = side * (i + 1) / kBandCount;
         if (bottom <= top) continue;
-        canvas.drawCanvas(buffer, 0, static_cast<float>(top), static_cast<float>(side),
-                          static_cast<float>(bottom - top),
+        canvas.drawCanvas(buffer, static_cast<float>(sourceX),
+                          static_cast<float>(sourceY + top * sourceScale),
+                          static_cast<float>(side * sourceScale),
+                          static_cast<float>((bottom - top) * sourceScale),
                           static_cast<float>(screen.x - bufferHalf + dx),
                           static_cast<float>(screen.y - bufferHalf + top),
                           static_cast<float>(side), static_cast<float>(bottom - top));
@@ -1476,22 +1720,16 @@ void WorldRenderer::drawGlitched(Canvas& canvas, Vec2 screen, double radius, std
 
     // The reference builds each copy by multiplying the body with a pure
     // primary and re-masking it to the body's own alpha. In a browser those
-    // are native Canvas2D composite operations: keep the body and tint buffers
-    // in the browser, never read their pixels into Wasm. The native client has
-    // no compositing backend, so it keeps the equivalent CPU pixel pass.
+    // are native Canvas2D composite operations, done for the whole atlas at
+    // once by prepareGlitchAtlas: the copies are already waiting in the tint
+    // surface, red on its left and cyan on its right. The native client has
+    // no compositing backend, so it folds the tint into the blit.
 #ifdef __EMSCRIPTEN__
     const auto drawTint = [&](Color colour, double offset) {
-        glitchTint_->clearRect(0, 0, static_cast<float>(side), static_cast<float>(side));
-        glitchTint_->drawCanvas(buffer, 0, 0, static_cast<float>(side), static_cast<float>(side),
-                                0, 0, static_cast<float>(side), static_cast<float>(side));
-        glitchTint_->setGlobalCompositeOperation("multiply");
-        glitchTint_->setFillStyle(colour);
-        glitchTint_->fillRect(0, 0, static_cast<float>(side), static_cast<float>(side));
-        glitchTint_->setGlobalCompositeOperation("destination-in");
-        glitchTint_->drawCanvas(buffer, 0, 0, static_cast<float>(side), static_cast<float>(side),
-                                0, 0, static_cast<float>(side), static_cast<float>(side));
-        glitchTint_->setGlobalCompositeOperation("source-over");
-        canvas.drawCanvas(*glitchTint_, 0, 0, static_cast<float>(side), static_cast<float>(side),
+        const double tintX = sourceX + (colour.r != 0 ? 0.0 : glitchAtlas_.size);
+        canvas.drawCanvas(*glitchAtlas_.tints, static_cast<float>(tintX),
+                          static_cast<float>(sourceY), static_cast<float>(side * sourceScale),
+                          static_cast<float>(side * sourceScale),
                           static_cast<float>(screen.x - bufferHalf + offset),
                           static_cast<float>(screen.y - bufferHalf), static_cast<float>(side),
                           static_cast<float>(side));
@@ -2344,6 +2582,11 @@ Vec2 WorldRenderer::mobEye(const MobDraw& mob) const {
     const auto entry = mobEyes_.emplace(mob.netId, MobEye{});
     MobEye& state = entry.first->second;
     const bool first = entry.second;
+    // Asked twice in one frame -- a glitched ring mob is painted into the web
+    // glitch atlas and then again in its place -- the eye answers the same,
+    // rather than easing two steps and tracking at double speed.
+    if (!first && state.easedFrame == frame_) return state.offset;
+    state.easedFrame = frame_;
 
     double look = mob.angle;
     if (upright) {
@@ -2533,52 +2776,74 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
     }
 }
 
-void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobDraw& mob,
-                                double clockSeconds) const {
-    const MobConfig* config = content_ ? &content_->mob(mob.typeIndex) : nullptr;
+bool WorldRenderer::poseMob(const MobDraw& mob, const MobConfig* config, double zoom,
+                            double clockSeconds, MobPose& pose) const {
     // A mob that has locked on beats its wings twice as fast, but only the two
     // kinds that actually chase: a passive mob fleeing is not excited, and a
     // sandstorm has no target to lock on to in the first place.
     const bool hurries = mob.chasing && config &&
                          (config->ai == AiKind::Neutral || config->ai == AiKind::Hostile);
-    const double timeSeconds = hurries ? clockSeconds * 2.0 : clockSeconds;
-    const double zoom = camera.zoom();
-    const Vec2 screen = camera.worldToScreen(mob.position);
+    pose.timeSeconds = hurries ? clockSeconds * 2.0 : clockSeconds;
 
     const double visualScale = (config && config->visualScale > 0) ? config->visualScale : 1.0;
-    double diameter = mob.radius * 2.0 * visualScale * zoom;
-    double alpha = 1.0;
+    pose.diameter = mob.radius * 2.0 * visualScale * zoom;
+    pose.alpha = 1.0;
     if (mob.deathProgress >= 0.0) {
         const double p = clamp(mob.deathProgress, 0.0, 1.0);
         // Balloons to three times its size while it fades on a cubic curve,
         // which is what makes a kill read at a glance in a crowd.
-        diameter *= 1.0 + p * 2.0;
-        alpha = 1.0 - p * p * p;
+        pose.diameter *= 1.0 + p * 2.0;
+        pose.alpha = 1.0 - p * p * p;
     }
-    if (diameter <= 0.5 || alpha <= 0.0) return;
+    if (pose.diameter <= 0.5 || pose.alpha <= 0.0) return false;
 
-    double rotation = (config && config->hideRotation) ? 0.0 : mob.angle;
-    bool mirrored = config && config->reversed;
+    pose.rotation = (config && config->hideRotation) ? 0.0 : mob.angle;
+    pose.mirrored = config && config->reversed;
     // The server points `reversed` art backwards by adding pi to the facing.
     // The browser build MIRRORS it instead, which is a different transform for
     // anything asymmetric, so undo the half turn and reflect it here.
-    if (mirrored && !(config && config->hideRotation)) rotation = mob.angle - kPi;
+    if (pose.mirrored && !(config && config->hideRotation)) pose.rotation = mob.angle - kPi;
 
     // `visualOffsetX/Y`, resolved to a screen vector because the sprite is
     // handed a centre rather than a transform. The offset lives in the art's
     // own frame, which the sprite cache mirrors AFTER rotating, so the X is
     // flipped before the turn. Scaled by the drawn radius -- death pop
     // included -- so the same point of the drawing stays on the body.
-    Vec2 bodyShift;
+    pose.bodyShift = {};
     if (config && (config->visualOffsetX != 0 || config->visualOffsetY != 0)) {
-        const double r = diameter * 0.5;
-        const double ox = (mirrored ? -config->visualOffsetX : config->visualOffsetX) * r;
+        const double r = pose.diameter * 0.5;
+        const double ox = (pose.mirrored ? -config->visualOffsetX : config->visualOffsetX) * r;
         const double oy = config->visualOffsetY * r;
-        const double c = std::cos(rotation);
-        const double s = std::sin(rotation);
-        bodyShift = {ox * c - oy * s, ox * s + oy * c};
+        const double c = std::cos(pose.rotation);
+        const double s = std::sin(pose.rotation);
+        pose.bodyShift = {ox * c - oy * s, ox * s + oy * c};
     }
+    return true;
+}
+
+double WorldRenderer::glitchFlowerReach(const MobConfig& config, const MobPose& pose) const {
+    // The wrapper has to cover the RING, not just the body: it sizes its
+    // buffer from the radius it is handed. The ring stays on the hitbox, so a
+    // shifted body only needs the shift added on.
+    return pose.diameter * 0.5 * (config.petalRing.orbitScale * 0.5 + 0.3) +
+           pose.bodyShift.length();
+}
+
+void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobDraw& mob,
+                                double clockSeconds) const {
+    const MobConfig* config = content_ ? &content_->mob(mob.typeIndex) : nullptr;
+    const double zoom = camera.zoom();
+    MobPose pose;
+    if (!poseMob(mob, config, zoom, clockSeconds, pose)) return;
+    const double timeSeconds = pose.timeSeconds;
+    const double diameter = pose.diameter;
+    const double alpha = pose.alpha;
+    const double rotation = pose.rotation;
+    const bool mirrored = pose.mirrored;
+    const Vec2 bodyShift = pose.bodyShift;
+    const Vec2 screen = camera.worldToScreen(mob.position);
     const Vec2 art = screen + bodyShift;
+    const double visualScale = (config && config->visualScale > 0) ? config->visualScale : 1.0;
 
     canvas.save();
     if (alpha < 1.0) canvas.setGlobalAlpha(static_cast<float>(alpha));
@@ -2622,12 +2887,8 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
                              timeSeconds);
         };
         if (id == "glitch_flower") {
-            // The wrapper has to cover the RING, not just the body: it sizes
-            // its buffer from the radius it is handed. The ring stays on the
-            // hitbox, so a shifted body only needs the shift added on.
-            drawGlitched(canvas, screen,
-                         radius * (config->petalRing.orbitScale * 0.5 + 0.3) + bodyShift.length(),
-                         mob.netId, timeSeconds, paint);
+            drawGlitched(canvas, screen, glitchFlowerReach(*config, pose), mob.netId, timeSeconds,
+                         paint);
         } else {
             canvas.save();
             canvas.translate(static_cast<float>(screen.x), static_cast<float>(screen.y));
@@ -3262,6 +3523,25 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     // tints -- of its own.
     ops_ = SectionOps{};
     opMark_ = canvasOps();
+    ++frame_;
+#ifdef __EMSCRIPTEN__
+    // A new frame empties the glitch atlas. One that ran out of room last
+    // frame is made bigger now, between frames, and one nothing has wanted
+    // for two seconds is given back.
+    glitchCells_.clear();
+    glitchShelfX_ = glitchShelfY_ = glitchShelfRow_ = glitchShelfWidth_ = 0;
+    if (glitchAtlas_.size > 0) {
+        if (glitchAtlas_.usedFrame + kGlitchAtlasIdleFrames < frame_) {
+            glitchAtlas_ = GlitchAtlas{};
+        } else if (glitchAtlas_.overflowed && glitchAtlas_.size < kGlitchMaxAtlas) {
+            const int size = glitchAtlasSize(glitchAtlas_.size * 2);
+            glitchAtlas_.bodies = std::make_unique<Canvas>(Canvas::createVirtual(size, size));
+            glitchAtlas_.tints = std::make_unique<Canvas>(Canvas::createVirtual(size * 2, size));
+            glitchAtlas_.size = size;
+        }
+        glitchAtlas_.overflowed = false;
+    }
+#endif
 
     if (realm_ == Realm::Maze) {
         drawMaze(canvas, camera);
@@ -3283,6 +3563,12 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         return at.x + margin >= visible.left() && at.x - margin <= visible.right() &&
                at.y + margin >= visible.top() && at.y - margin <= visible.bottom();
     };
+
+#ifdef __EMSCRIPTEN__
+    // Before any body is drawn, so the glitched ones find theirs waiting.
+    prepareGlitchAtlas(entities, camera, selfDrawn, timeSeconds, onScreen);
+    chargeOps(ops_.mobs);
+#endif
 
     // Draw order is by kind, not by position, and follows the browser build's:
     // ground effects, mobs, then every flower with its petals over it, then

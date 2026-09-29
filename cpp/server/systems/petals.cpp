@@ -1496,13 +1496,18 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         ordinal[static_cast<std::size_t>(i)] = occupied;
         const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
         if (slot.empty()) continue;
-        // A count of zero still occupies one place, as the reference's
-        // `stats.count || 1` does.
+        const PetalConfig& config = registry.petal(slot.configIndex);
+        // A noPhysics petal -- the cutters, third eye, antennae, observer -- is
+        // worn on the flower, not carried on the ring, so it leaves no gap in
+        // it. Any other count of zero still occupies one place, as the
+        // reference's `stats.count || 1` does.
+        if (config.noPhysics) continue;
         const int count = std::max(1, registry.petalStats(slot.configIndex, slot.rarity).count);
-        occupied += registry.petal(slot.configIndex).clumped ? 1 : count;
+        occupied += config.clumped ? 1 : count;
     }
-    if (occupied == 0) return;
-    const double wedge = kTau / occupied;
+    // A bar of nothing but worn petals leaves the ring empty, but anything
+    // they did spawn still has to be pinned to the flower below.
+    const double wedge = occupied > 0 ? kTau / occupied : 0.0;
 
     for (const Entity petal : loadout->spawned) {
         PetalInstance* instance = world.tryGet<PetalInstance>(petal);

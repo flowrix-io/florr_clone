@@ -54,6 +54,7 @@ const char* const kPetalsJson = R"JSON({
   "toxic":    {"name":"Toxic","damage":2,"health":5,"size":1,"cooldown":1000,"count":1,"poison":0.05,"poisonDuration":3000,"color":"#00AA00"},
   "blade":    {"name":"Blade","damage":0,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#111111"},
   "sparkblade":{"name":"Spark Blade","damage":1,"health":null,"size":4,"cooldown":1,"count":0,"range":0,"bodyDamage":10,"equipFlags":"Cutter","noPhysics":true,"color":"#00FFFF"},
+  "gazer":    {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"equipFlags":"ThirdEye","noPhysics":true,"color":"#000000"},
   "lightning":{"name":"Lightning","damage":25,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "battery":  {"name":"Battery","damage":0,"health":null,"size":1,"cooldown":2500,"count":1,"color":"#FCDD86"},
   "capacitor":{"name":"Capacitor","damage":0,"health":null,"size":1.25,"cooldown":2500,"count":1,"color":"#000000"},
@@ -621,6 +622,33 @@ TEST(a_worn_cutter_adds_body_damage_and_takes_no_ring_place) {
     rig.tick(5);
     CHECK_NEAR(rig.modifiers().bodyDamageBonus, 0.0, 1e-12);
     CHECK_NEAR(rig.world.get<ContactDamage>(rig.player).amount, bodyDamageForLevel(level), 1e-9);
+}
+
+TEST(petals_worn_on_the_flower_leave_no_gap_in_the_ring) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "blade");
+    rig.equip(2, "basic");
+    rig.equip(4, "gazer");
+    rig.equip(5, "sparkblade");
+    rig.equip(7, "basic");
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    // The two blades and the eye sit on the flower, so the two basics and the
+    // anchor are the whole ring and split it in thirds -- not sixths with
+    // three empty places where the worn petals were counted.
+    const std::vector<Entity> petals = rig.petals();
+    CHECK_EQ(petals.size(), std::size_t(3));
+    const double wedge = kTau / 3.0;
+    const double spin = rig.ring().spin;
+    for (const Entity petal : petals) {
+        const int slot = rig.world.get<PetalInstance>(petal).slot;
+        const int ordinal = slot == 2 ? 0 : (slot == 7 ? 1 : 2);
+        CHECK_NEAR(angularGap(rig.angleOf(petal), spin + wedge * ordinal), 0.0, 1e-6);
+        CHECK_NEAR(rig.radiusOf(petal), rig.ring().radius, 1e-6);
+    }
 }
 
 // ---------------------------------------------------------------------------
