@@ -1264,7 +1264,23 @@ void WorldRenderer::drawTerrain(Canvas& canvas, const Camera& camera, Realm real
     // tile picture would occupy up to four entries instead of one. Only the
     // CORNER moves per tile, so the art is scaled identically everywhere and
     // the grid as a whole is quantised to the pixel it is drawn on.
-    const double side = std::round((kTileSize + kTileOverlap * 2.0) * zoom * toPixels) / toPixels;
+    //
+    // And never less than a whole pixel past the next cell's corner. The
+    // overlap is in WORLD units, so it shrinks with the camera, and a high
+    // tier of antennae takes the camera out to 0.1 -- where 1.5 units is a
+    // fifth of a pixel. Two neighbouring corners, each rounded on its own,
+    // can then land a whole pixel further apart than `side` reaches, and that
+    // pixel is the black the frame was cleared to: at every boundary where the
+    // rounding falls that way, a grid of black lines a dozen tiles apart.
+    // Corners one cell apart are never more than ceil(step) pixels apart, so
+    // ceil(step) + 1 always overlaps. At any zoom where the overlap is a pixel
+    // and a half or more -- every zoom short of those antennae -- the first
+    // term is already the larger one and nothing moves.
+    const double step = kTileSize * zoom * toPixels;
+    const double side =
+        std::max(std::round((kTileSize + kTileOverlap * 2.0) * zoom * toPixels),
+                 std::ceil(step) + 1.0) /
+        toPixels;
     const double half = side * 0.5;
 
     // A cell's compiled artwork, or null: an empty cell, a tile whose art

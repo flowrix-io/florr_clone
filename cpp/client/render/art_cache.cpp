@@ -145,23 +145,31 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
         return false;
     }
 
+    // A SNAPPED picture is baked a pixel wider and taller than the box,
+    // because it is shifted into its bitmap by up to a whole pixel and the
+    // shift must not push its far edge out, and the blit below grows the box
+    // to match. An unsnapped one is blitted into exactly w x h, so its bitmap
+    // must be exactly the box: a padded one is squashed into it, the empty
+    // last row and column filtered into the picture's edge. On the ground that
+    // edge is what a tile's neighbour overlaps by kTileOverlap, and at a small
+    // enough scale the overlap is under a pixel -- the black backdrop showed
+    // through along every tile boundary on screen, as a grid.
+    const int pad = snapToDevice ? 1 : 0;
+
     Cache& c = cache();
     const Key key{owner, variant, bakeW, bakeH, phaseX, phaseY};
     auto found = c.entries.find(key);
     if (found == c.entries.end()) {
         // Baked at DEVICE resolution and drawn back into a user-space box of
         // exactly w x h, so the browser samples it one texel to one pixel.
-        // A pixel wider and taller than the box, because the picture is shifted
-        // into it by up to a whole pixel and the shift must not push its far
-        // edge out of the bitmap.
-        Canvas bitmap = Canvas::createVirtual(bakeW + 1, bakeH + 1);
+        Canvas bitmap = Canvas::createVirtual(bakeW + pad, bakeH + pad);
         if (phaseX != 0 || phaseY != 0) {
             bitmap.translate(static_cast<float>(static_cast<double>(phaseX) / kPhaseBuckets),
                              static_cast<float>(static_cast<double>(phaseY) / kPhaseBuckets));
         }
         paint(bitmap, bakeW, bakeH);
         Entry entry{std::move(bitmap),
-                    static_cast<std::size_t>(bakeW + 1) * (bakeH + 1) * 4, 0};
+                    static_cast<std::size_t>(bakeW + pad) * (bakeH + pad) * 4, 0};
         c.bytes += entry.bytes;
         found = c.entries.emplace(key, std::move(entry)).first;
         evictIfNeeded();
@@ -189,8 +197,8 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
         // unmirrored, so a device position is just m[0]*x + m[4].
         x = (std::floor(deviceX) - m[4]) / m[0];
         y = (std::floor(deviceY) - m[5]) / m[3];
-        w = (bakeW + 1) / scaleX;
-        h = (bakeH + 1) / scaleY;
+        w = (bakeW + pad) / scaleX;
+        h = (bakeH + pad) / scaleY;
     }
     canvas.drawCanvas(found->second.bitmap, static_cast<float>(x), static_cast<float>(y),
                       static_cast<float>(w), static_cast<float>(h));
