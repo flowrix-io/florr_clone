@@ -357,42 +357,110 @@ TEST(reversed_mobs_face_away_from_where_they_are_going) {
 // Hostile
 // ---------------------------------------------------------------------------
 
-TEST(an_idle_hop_is_the_same_fraction_of_the_body_at_every_tier) {
+TEST(no_idle_mover_travels_faster_for_being_bigger) {
     CHECK(contentReady());
 
-    // THE LAW this drift is built on: a hop carries a mob a fixed fraction of
-    // its own body, whatever tier it is. The acceleration is stated per body
-    // (sizeFactor) and the pulse durations are fixed, so the distance follows
-    // -- and a mob you can see is a mob moving relative to its own width, not
-    // one moving some absolute number of units.
-    //
-    // It used to break above mythic. The CEILING on the drift was a flat 300
-    // sitting over an acceleration measured in bodies, the two crossed just
-    // past mythic, and from there up the clamp cancelled the scaling: ultra
-    // hopped 1.03 bodies, super 0.73, unique 0.49 and an apex 0.32 -- a mob
-    // wider than the viewport inching a third of its own width while a common
-    // one crossed a full body and a sixth. See kMaxWanderSpeedPerBody.
+    // An idle mob's pace comes from its authored speed and nothing else: a
+    // mythic covers the ground its common does. All three idle movers were
+    // once stated per body, so an apex hopped, cruised and strolled at several
+    // times a flower's top speed. One of each: the hop (a roach), the bee
+    // cruise (a bee) and the walk to a point (a centipede head). None is
+    // `gardn_ai`, whose hop ignores speed as well (see the test below).
     //
     // Measured as PATH LENGTH rather than displacement, so the answer does not
-    // depend on which way the two hops in the window happened to be aimed.
-    const auto bodiesTravelled = [](Rarity rarity) {
+    // depend on which way the moves in the window happened to be aimed. Every
+    // Sim seeds the AI alike, so each tier draws the same headings.
+    const auto pathOf = [](const char* id, Rarity rarity, bool chainHead) {
         Sim sim;
         sim.autoActive = false;          // nobody watching: the LOD's permissive case
-        const Entity spider = sim.spawnMob("spider", kOrigin, rarity);
-        const double radius = sim.world.get<Body>(spider).radius;
+        const Entity mob = sim.spawnMob(id, kOrigin, rarity);
+        if (chainHead) link(sim, mob, NULL_ENTITY, 0.0);
         double path = 0.0;
         for (int i = 0; i < 240; ++i) {  // 8s at 30 TPS: two full hop cycles
             sim.tickIntent();
-            path += sim.velocityOf(spider).length() * sim.dt;
+            path += sim.velocityOf(mob).length() * sim.dt;
         }
-        return path / (2.0 * radius);
+        return path;
     };
 
-    const double common = bodiesTravelled(Rarity::Common);
-    CHECK(common > 0.5);                 // it really did hop
-    for (int t = 0; t < kRarityCount; ++t) {
-        CHECK_NEAR(bodiesTravelled(clampRarity(t)), common, 1e-3);
+    for (const char* id : {"roach", "bee", "centipede"}) {
+        CHECK(!content().mob(content().mobIndex(id)).gardnMotion);
+        const bool head = std::string(id) == "centipede";
+        const double common = pathOf(id, Rarity::Common, head);
+        CHECK(common > 50.0);            // it really did move
+        for (int t = 0; t < kRarityCount; ++t) {
+            CHECK_NEAR(pathOf(id, clampRarity(t), head), common, 1e-6);
+        }
     }
+}
+
+TEST(a_gardn_mob_hops_gardns_stride_whatever_its_speed_or_size) {
+    CHECK(contentReady());
+
+    // gardn ramps every walker's idle hop at the same 2 * PLAYER_ACCELERATION
+    // * (r - r^2), so a ladybug covers the ground an ant does. Hopping on its
+    // authored speed instead, a ladybug at a tenth of a flower's speed crept
+    // twelve units a cycle and looked parked. Both are `gardn_ai`, nearly five
+    // times apart in authored speed.
+    const auto pathOf = [](const char* id, Rarity rarity = Rarity::Common) {
+        Sim sim;
+        sim.autoActive = false;
+        const Entity mob = sim.spawnMob(id, kOrigin, rarity);
+        double path = 0.0;
+        for (int i = 0; i < 240; ++i) {  // 8s: two full hop cycles
+            sim.tickIntent();
+            path += sim.velocityOf(mob).length() * sim.dt;
+        }
+        return path;
+    };
+    CHECK(content().mob(content().mobIndex("ladybug")).gardnMotion);
+    const double ladybug = pathOf("ladybug");
+    CHECK_NEAR(ladybug, pathOf("soldier_ant"), 1e-6);
+    // Two of gardn's 200-unit hops, less the tail of the second one's coast.
+    CHECK_NEAR(ladybug, 400.0, 10.0);
+    // Nor does size: a beetle, half as wide again, and every tier up to an
+    // apex hop exactly what a common ladybug does.
+    CHECK_NEAR(pathOf("beetle"), ladybug, 1e-6);
+    for (int t = 0; t < kRarityCount; ++t) {
+        CHECK_NEAR(pathOf("ladybug", clampRarity(t)), ladybug, 1e-6);
+    }
+}
+
+TEST(a_gardn_pursuit_builds_into_its_speed_and_carries_it_through_a_turn) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity ant = sim.spawnMob("soldier_ant", kOrigin);
+    const Entity player = sim.spawnPlayer(kOrigin + Vec2{200, 0});
+    const double chase =
+        content().mobStats(content().mobIndex("soldier_ant"), Rarity::Common).chaseSpeed;
+    // gardn's (1 - 1/3) per 20 Hz tick, over one of this server's ticks.
+    const double decay = std::pow(2.0 / 3.0, sim.dt * 20.0);
+
+    // Off a standing start the velocity builds toward the chase speed rather
+    // than being handed all of it on the first tick.
+    sim.tickIntent();
+    CHECK_NEAR(sim.velocityOf(ant).x, chase * (1.0 - decay), 1e-6);
+    CHECK_NEAR(sim.velocityOf(ant).y, 0.0, 1e-9);
+    sim.tickIntent(29);
+    CHECK_NEAR(sim.velocityOf(ant).length(), chase, chase * 1e-3);
+
+    // The flower darts behind it. The mob faces round at once, as gardn's does,
+    // but its momentum still carries it on for the tick -- it swings wide
+    // instead of pivoting on the spot.
+    sim.world.get<Transform>(player).position = kOrigin + Vec2{-200, 0};
+    const double before = sim.velocityOf(ant).x;
+    sim.tickIntent();
+    CHECK_NEAR(sim.velocityOf(ant).x, before * decay - chase * (1.0 - decay), 1e-6);
+    CHECK(sim.velocityOf(ant).x > 0.0);
+    CHECK(std::cos(sim.angleOf(ant)) < -0.99);
+
+    // Losing the flower drops it into the idle second from the speed it had,
+    // so it coasts to a stop rather than halting dead.
+    sim.world.add<Dead>(player);
+    const Vec2 coasting = sim.velocityOf(ant);
+    sim.tickIntent();
+    CHECK(sim.brainOf(ant).target == NULL_ENTITY);
+    CHECK_NEAR(sim.velocityOf(ant).x, coasting.x * decay, 1e-6);
 }
 
 TEST(hostile_mob_charges_a_player_inside_its_range) {
@@ -2101,11 +2169,8 @@ DriftSpeeds driftSpeeds(const char* id, int ticks = 120) {
     return out;
 }
 
-/// The ceiling on that mob's cruise: the bee's own rate, scaled by its body.
-double cruiseCeiling(const char* id) {
-    const MobStats stats = content().mobStats(content().mobIndex(id), Rarity::Common);
-    return kBeeCruiseSpeed * stats.radius / kWanderRefRadius;
-}
+/// The ceiling on any cruise: gardn's flat rate, whatever the mob.
+double cruiseCeiling(const char*) { return kBeeCruiseSpeed; }
 
 } // namespace
 

@@ -407,6 +407,13 @@ struct MobConfig {
     /// `"idle"` is the stingers, which cruise like bees but close straight.
     bool beeChaseWeave = false;
 
+    /// Moves the way gardn's walkers do (`gardn_ai`): one velocity carried
+    /// between ticks under gardn's per-tick friction, so a pursuit accelerates
+    /// into its speed and swings wide on a turn instead of snapping to it; an
+    /// idle hop of gardn's fixed stride rather than one scaled by `speed`; and
+    /// a recoil off every flower it touches. See MobAiSystem's gardn notes.
+    bool gardnMotion = false;
+
     /// The mob never appears in a GROUP roll -- a band or a region naming a
     /// group never produces it. `target_dummy` declares no
     /// spawn_weight and would otherwise inherit the default 1.0 and take its

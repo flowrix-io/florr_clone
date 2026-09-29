@@ -784,6 +784,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
             ctx.warn("bee_ai '" + bee + "' is neither \"idle\" nor \"always\"; the mob hops");
         }
     }
+    m.gardnMotion = ctx.boolean(src, "gardn_ai");
 
     // Three rules the reference states by NAME rather than in the JSON. They
     // are resolved once here so no spawner, no combat path and no despawn

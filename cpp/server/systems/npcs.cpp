@@ -128,8 +128,6 @@ void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry&
 
     npcs_->each([&](Entity e, NpcTag&, Npc& npc, Transform& transform) {
         if (npc.cruises) {
-            const Body* body = world.tryGet<Body>(e);
-            const double radius = body != nullptr ? body->radius : kMobBaseRadius;
             // The leash: out past it, the heading swings back toward home a
             // little each tick, and the weave the cruise lays over it goes on.
             const Vec2 fromHome = transform.position - npc.home;
@@ -140,8 +138,8 @@ void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry&
             }
             // The fixed step, as the mob half of the tick is: the cruise's
             // friction is stated per tick.
-            const Vec2 velocity = stepBeeCruise(npc.cruise, npc.speed, radius, nowMillis,
-                                                net::kTickSeconds, rng_);
+            const Vec2 velocity =
+                stepBeeCruise(npc.cruise, npc.speed, nowMillis, net::kTickSeconds, rng_);
             // Against walls as a point, and stepped as a mob's move is, so a
             // point cannot plunge through a thin wall in one go.
             const Vec2 from = transform.position;

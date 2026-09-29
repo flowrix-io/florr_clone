@@ -975,6 +975,21 @@ void applyMobContactKnockback(World& world, Entity player, Vec2 offset) {
     transform->position += direction * kMobContactKnockback;
 }
 
+/// The other half of that bump, for a `gardn_ai` mob: gardn knocks the mob
+/// back off the flower too, which is what makes a pursuer bounce and re-close
+/// instead of burrowing into the flower it caught. Added to the velocity the
+/// mob carries (see gardnStep), so it decays out over the next few ticks. A
+/// plain field write, safe inside the candidate loop. `offset` runs from the
+/// mob to the flower, as it does for the flower's shove.
+void recoilOffFlower(World& world, Entity mob, Vec2 offset, double mobRadius) {
+    Motion* motion = world.tryGet<Motion>(mob);
+    if (motion == nullptr) return;
+    const Vec2 direction = offset.normalized();
+    if (direction.lengthSq() < 1e-12) return;
+    const double mobMass = 1.0 + std::max(0.0, mobRadius) / kGardnMassRadius;
+    motion->velocity -= direction * (kGardnContactRecoil / (1.0 + mobMass));
+}
+
 /// A glitch mob's touch -- body or shot -- leaves the flower glitched.
 ///
 /// Infection is a property of TOUCH, not of damage: playerState.ts sets it
@@ -1635,6 +1650,9 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
             source.poisonDurationMillis = stats.poisonDurationMillis;
             source.rarity = rarity;
             source.glitchInfecting = config.glitchInfecting;
+            // Wild only: a pet's velocity is published raw by its own pass,
+            // which would drop the recoil on the next tick anyway.
+            source.gardnRecoil = source.isMobBody && !source.isPet && config.gardnMotion;
             if (config.lightning.present && config.lightning.onContact) {
                 // Past the BODY. A flower touching this mob has its centre a
                 // whole body radius away, so a reach measured from the centre
@@ -1797,6 +1815,10 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                                           world.has<Health>(victim) &&
                                           canDamage(world, source.attacker, victim);
             if (mobTouchesPlayer) {
+                // Every mob touching the flower recoils, ahead of the one-bump
+                // rule below: that rule stops a pile stacking shoves on the
+                // FLOWER, and each mob in the pile still hit it.
+                if (source.gardnRecoil) recoilOffFlower(world, source.attacker, offset, source.radius);
                 // resolvePlayerMobContact() breaks after its first collision:
                 // one flower wedged in a pile takes one hit/bump per tick, not
                 // a full stack. Preserve that rule across C++'s source-first

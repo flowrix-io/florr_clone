@@ -685,9 +685,8 @@ enum class PassiveState : std::uint8_t { Idle = 0, Moving };
 ///
 /// Not a wander heading held at constant speed: the mob sits still for a
 /// second, picks a heading, coasts for half a second under friction alone, then
-/// accelerates through a two-second parabolic ramp and stops. Acceleration
-/// scales with the mob's radius so a big mob's hop covers ground in proportion
-/// to its body rather than crawling.
+/// accelerates through a two-second parabolic ramp and stops. The mob's size
+/// plays no part: a mythic's hop covers the ground its common's does.
 struct PassiveMotion {
     PassiveState state = PassiveState::Idle;
     double stateStartMillis = 0;

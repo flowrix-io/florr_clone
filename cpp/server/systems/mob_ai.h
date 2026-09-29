@@ -13,8 +13,11 @@
 // step at the mob's speed, and an idle mob runs the gardn stop-and-go machine,
 // which carries its own friction, its own clamp and its own drift store
 // (PassiveMotion::velocity). Easing either of those a second time is an
-// invented acceleration that shortens every hop and every pursuit. There is
-// one deliberate exception, at placeFollower(): a centipede's trailing segment
+// invented acceleration that shortens every hop and every pursuit. A mob whose
+// config opts into gardn's motion (`gardn_ai`, see "gardn motion" below) is
+// the exception by design: it carries its velocity between ticks under gardn's
+// friction, because that inertia is the feel being asked for. There is one
+// other deliberate exception, at placeFollower(): a centipede's trailing segment
 // has no motion of its own, its place is a CONSTRAINT on the segment ahead of
 // it, and expressing a constraint as a velocity leaves the chain permanently a
 // tick behind and visibly elastic.
@@ -109,21 +112,22 @@ inline constexpr int kTargetLosRayCap = 8;
 // what gives the field its characteristic pulse -- a mob that instead cruises
 // on a heading at a fraction of its speed reads as gliding, however close the
 // average distance travelled comes out.
-
-/// Radius the drift's acceleration and the wander range are stated against, so
-/// a mob ten times wider hops ten times as far rather than crawling relative to
-/// its own body. Above the common tier's radius so small mobs settle down in
-/// absolute terms too.
-inline constexpr double kWanderRefRadius = 50.0;
+//
+// No idle mover here scales with the mob's SIZE -- not the hop, not the bee
+// cruise, not the walk to a point. A mythic covers the ground its common does;
+// only the authored speed (or, for `gardn_ai`, nothing at all) sets the pace.
+// All three were once stated per body, so an apex hopped at several times a
+// flower's top speed, and that was taken out on purpose.
 
 /// Fraction of the drift velocity lost per TICK. Calibrated per tick and not
 /// per second, exactly as in the reference: it is gardn's 1/3 at 20 TPS
 /// restated for this server's 30.
 inline constexpr double kPassiveFriction = 0.25;
 
-/// The hop's acceleration, as a fraction of the mob's speed, before the size
-/// factor and the ramp. Distance per hop is the sum of the accelerations
-/// divided by the friction, so scaling this is what scales the hop.
+/// The hop's acceleration, as a fraction of the mob's speed, before the ramp.
+/// Distance per hop is the sum of the accelerations divided by the friction,
+/// so scaling this is what scales the hop. The TypeScript server's figure, to
+/// the unit: `speed * ENEMY_SPEED_MULTIPLIER * 0.25` per tick.
 inline constexpr double kPassiveAccelScale = 0.25;
 
 /// The two-state clock, in milliseconds: a second idle, then a Moving phase
@@ -133,31 +137,55 @@ inline constexpr double kPassiveCoastMillis = 500.0;
 inline constexpr double kPassiveRampMillis = 2000.0;
 inline constexpr double kPassiveMoveMillis = kPassiveCoastMillis + kPassiveRampMillis;
 
-/// Ceiling on the drift, PER kWanderRefRadius OF BODY, in units a second.
-///
-/// Per body, and emphatically so -- the currency is the whole point of this
-/// number. It was once a flat 300 (the reference's own 300/30 units per tick,
-/// and a player's top speed), which is a ceiling in ABSOLUTE units sitting on
-/// top of an acceleration stated in BODIES. The two cross just above mythic,
-/// and past that the ceiling quietly cancelled the size scaling: every tier
-/// from common to mythic hopped 1.13 of its own body-lengths, ultra hopped
-/// 1.03, and an apex hopped 0.32 -- a mob that fills the screen inching a
-/// third of its own width while the mobs around it cross theirs. Which is the
-/// exact failure sizeFactor() exists to prevent, reintroduced one line below
-/// it by a clamp.
-///
-/// It bound on the bee cruise the same way, and worse: kBeeCruiseSpeed is
-/// already stated per body and is documented as the TIGHTER ceiling of the
-/// two, and above mythic a flat 300 was quietly overriding it.
-///
-/// A flat guard is not wanted here at all. The drift's distance is meant to
-/// scale with the body and the pulse duration is fixed, so a big mob's hop is
-/// a big mob's hop; anything that bounds the speed in absolute terms bounds
-/// the DISTANCE too, which is the design. What stops a corrupt config putting
-/// a mob through a wall is the movement system -- sanitizeMovementVelocity()'s
-/// absolute clamp and stepCollide()'s substep budget -- rather than a number
-/// here that has to be re-derived every time the size ladder moves.
-inline constexpr double kMaxWanderSpeedPerBody = kPlayerMaxSpeed;
+/// Ceiling on any idle drift, in units a second: a flower's top speed, the
+/// reference's own 300/30 units per tick. Flat, like everything else in the
+/// drift. It binds only on a mob authored faster than a flower runs, so an idle
+/// one never outpaces the players walking past it.
+inline constexpr double kMaxWanderSpeed = kPlayerMaxSpeed;
+
+// -- gardn motion --------------------------------------------------------------
+//
+// A mob whose config sets `gardn_ai` moves the way ~/gardn's walkers do
+// (Server/Process/Ai.cc + Motion.cc). Everything above publishes a velocity
+// RAW, so a chase is at full speed on the tick it starts and turns on a dime,
+// and the idle hop's thrust is the mob's authored `speed` -- which leaves a
+// ladybug authored at 30 u/s hopping about twelve units a cycle. gardn has one
+// integrator for every mob, `v = v * (1 - 1/3) + a` once per 20 Hz tick, and
+// its AI only ever sets `a`:
+//
+//   idle    the same stop-and-go clock as the hop above, but the ramp is
+//           2 * PLAYER_ACCELERATION * (r - r^2) whatever the mob -- neither
+//           its speed nor its size plays any part, so every walker at every
+//           tier covers the same 200 units per hop.
+//   chase   PLAYER_ACCELERATION * factor toward the target. The velocity
+//           builds into that over a few ticks and keeps its momentum through
+//           a turn, which is what makes a pursuit arc and overshoot.
+//   touch   a flower knocks the mob back (Collision.cc _deal_knockback), so
+//           a pursuer bumps and re-closes rather than burrowing into the
+//           flower's centre.
+//
+// Restated for this server as a terminal velocity: `a` against gardn's
+// friction settles at a / (1/3) units a tick, 20 ticks a second -- the chase's
+// 0.95 of player acceleration is 285 u/s, the same number mobs.json `speed`
+// states as 0.95. See gardnStep().
+
+/// gardn's mob friction, lost per gardn tick, and how many of those ticks run
+/// in a second. The pair defines the decay; this server's own 30 Hz tick never
+/// enters into it.
+inline constexpr double kGardnFriction = 1.0 / 3.0;
+inline constexpr double kGardnTicksPerSecond = 20.0;
+
+/// The top of gardn's idle hop, units a second: its ramp peaks at
+/// 2 * 5 * 1/4 units a tick squared, which against 1/3 friction is 7.5 units a
+/// tick. Over the two-second ramp that carries a mob 200 units, whatever its
+/// size.
+inline constexpr double kGardnHopPeakSpeed = 150.0;
+
+/// One step of gardn's integrator: `velocity` decays toward `terminal` -- the
+/// velocity the mob's current acceleration settles at, in units a second --
+/// with gardn's time constant, whatever `dt` is. Exactly gardn's per-tick
+/// update at a 1/20 s step.
+Vec2 gardnStep(Vec2 velocity, Vec2 terminal, double dt);
 
 // -- the bee cruise ----------------------------------------------------------
 //
@@ -187,34 +215,30 @@ inline constexpr double kBeePulsePeriodMillis = 1500.0;
 inline constexpr double kBeePulseMillis = 500.0;
 inline constexpr double kBeePulseScale = 0.5;
 
-/// What a cruise tops out at, per kWanderRefRadius of body, in units a second.
+/// What a cruise tops out at, in units a second, whatever the cruiser's size.
 ///
 /// The cruise is SUSTAINED where the hop is pulsed, so the same acceleration
 /// carries a cruising mob some six times as fast as a hopping one. That went
-/// unnoticed while the machine was the bee's alone -- a bee is authored at 30
-/// u/s and cruises at 54 -- but the flag is on the mob TYPE, and a hornet
-/// authored at 120 would cruise at 280: faster than it chases, and faster
-/// than most things it would be cruising past.
+/// unnoticed while the machine was the bee's alone, but the flag is on the mob
+/// TYPE, and a hornet authored at 120 would cruise at 360: faster than it
+/// chases, and faster than most things it would be cruising past.
 ///
-/// The number is the reference's own cruise, which is flat: 1.5 units of
-/// acceleration against 1/3 friction a tick at 20 ticks a second, for every
-/// mob that runs the bee machine whatever its stated speed. Scaled here by the
-/// body the way everything else in the drift is, which lands the common bee on
-/// exactly the 54 it already flies at -- this ceiling is that bee's own cruise
-/// restated, and it binds on nothing that was cruising sanely to begin with.
+/// The number is gardn's own cruise, which is flat: 1.5 units of acceleration
+/// against 1/3 friction a tick at 20 ticks a second, for every mob that runs
+/// the bee machine whatever its stated speed or size. A common bee, authored
+/// at 30 u/s, cruises at exactly this.
 inline constexpr double kBeeCruiseSpeed = 90.0;
 
 /// One fixed step of the bee cruise, for any cruiser: the base heading is
 /// re-picked every kBeeHeadingMillis, swings on the weave, and is pushed along
 /// with a pulsed thrust against per-tick friction under the cruise's ceiling.
-/// `speed` is the authored speed in units a second, `radius` the body it is
-/// scaled by. Returns the new velocity, which is also left in the cruise.
+/// `speed` is the authored speed in units a second; the cruiser's size plays
+/// no part. Returns the new velocity, which is also left in the cruise.
 ///
 /// The ONE implementation: a bee's idle drift (MobAiSystem::driftPassive)
 /// and an NPC's cruise (NpcSystem) both step through here, so an oracle and a
 /// bee cannot come to fly differently.
-Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double radius, double nowMillis, double dt,
-                   Rng& rng);
+Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double nowMillis, double dt, Rng& rng);
 
 // -- walking to a point ------------------------------------------------------
 //
@@ -222,7 +246,8 @@ Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double radius, double nowMil
 // heading, which is what keeps a centipede's turns long and smooth instead of
 // hopping like the animals behind it.
 
-/// Base wander range, scaled per mob by its size factor.
+/// How far from where it stands a walker picks its next point, whatever its
+/// size.
 inline constexpr double kEnemyWanderRange = 200.0;
 
 /// How long a wander destination stands before a fresh one is picked.
@@ -610,6 +635,9 @@ private:
         bool beeFlight = false;
         /// Flies that sway about its bearing while chasing, too.
         bool beeChaseWeave = false;
+        /// Carries its velocity under gardn's friction and hops gardn's
+        /// stride. See MobConfig::gardnMotion.
+        bool gardnMotion = false;
         /// Has a projectile block, so the volley path is worth entering.
         bool shoots = false;
         /// How far one of this mob's shots travels at this tier, world units.
@@ -677,13 +705,13 @@ private:
 
     /// The idle branch. Writes the velocity itself -- the drift machine owns
     /// its own store and its own friction -- and returns the heading facing
-    /// should follow.
+    /// should follow. `slow` is what a web or a pincer leaves of the mob's
+    /// speed this tick.
     Vec2 steerIdle(World& world, Entity self, const Transform& transform, Motion& motion,
-                   const Body& body, MobAi& ai, double speed, double nowMillis, double dt);
-    void driftPassive(World& world, Entity self, const Body& body, Motion& motion, MobAi& ai,
-                      double speed, double nowMillis, double dt);
-    Vec2 wanderToPoint(WanderTarget& wander, Vec2 from, const Body& body, double speed,
-                       double nowMillis);
+                   MobAi& ai, const Drive& drive, double slow, double nowMillis, double dt);
+    void driftPassive(World& world, Entity self, Motion& motion, MobAi& ai, const Drive& drive,
+                      double slow, double nowMillis, double dt);
+    Vec2 wanderToPoint(WanderTarget& wander, Vec2 from, double speed, double nowMillis);
 
     /// Weather. Blows toward a point re-picked on its own fast clock, and from
     /// kSandstormSuckRarity up drags the players around it in as it goes.

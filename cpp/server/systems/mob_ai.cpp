@@ -81,13 +81,6 @@ bool idleDrifting(World& world, Entity self, const MobAi& ai) {
     return !world.has<BodySegment>(self);
 }
 
-/// Both the drift acceleration and the wander range are stated per body.
-///
-/// Mob speed is constant across rarities -- only size grows -- so an unscaled
-/// step that reads as a few body-lengths for a common is a tenth of one for an
-/// apex, which is what makes big mobs look frozen.
-double sizeFactor(double radius) { return radius / kWanderRefRadius; }
-
 /// Whether a stinger shooter has its tail on the bearing closely enough to let
 /// the volley go. Measured off the nose's OFFSET from the bearing, so it does
 /// not care which side of the wrap the mob's absolute angle landed on.
@@ -366,6 +359,7 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         // like something that walks -- but they close on a flower straight.
         drive.beeFlight = config.beeFlight;
         drive.beeChaseWeave = config.beeChaseWeave;
+        drive.gardnMotion = config.gardnMotion;
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
         // Stated in COMMON-TIER units: `distance` IS the reach a common shooter
@@ -889,8 +883,17 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
 // Behaviours
 // ---------------------------------------------------------------------------
 
-void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Motion& motion,
-                               MobAi& ai, double speed, double nowMillis, double dt) {
+Vec2 gardnStep(Vec2 velocity, Vec2 terminal, double dt) {
+    // gardn applies (1 - friction) once per 20 Hz tick; this is the same decay
+    // spread over whatever step the caller takes, so the mob covers the same
+    // ground per second at any tick rate.
+    const double decay = std::pow(1.0 - kGardnFriction, dt * kGardnTicksPerSecond);
+    return velocity * decay + terminal * (1.0 - decay);
+}
+
+void MobAiSystem::driftPassive(World& world, Entity self, Motion& motion, MobAi& ai,
+                               const Drive& drive, double slow, double nowMillis, double dt) {
+    const double speed = drive.speed * slow;
     PassiveMotion* passive = world.tryGet<PassiveMotion>(self);
     // An immobile mob never drifts, and one that was never given the machine
     // has nothing to run: either way it holds still rather than coasting on
@@ -906,24 +909,16 @@ void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Moti
         // clock in the drift machine, the phase in the Wobble.
         BeeCruise cruise{ai.wanderAngle, passive->stateStartMillis, passive->velocity,
                          wobble->phase};
-        passive->velocity = stepBeeCruise(cruise, speed, body.radius, nowMillis, dt, rng_);
+        passive->velocity = stepBeeCruise(cruise, speed, nowMillis, dt, rng_);
         ai.wanderAngle = cruise.heading;
         passive->stateStartMillis = cruise.headingPickedMillis;
         motion.velocity = passive->velocity;
         return;
     }
 
-    // Distance per hop is the sum of the accelerations divided by the friction,
-    // so scaling the ACCELERATION by the size factor scales how far a hop
-    // carries while the phase durations stay fixed. That is what makes a big
-    // mob's hop proportional to its body instead of merely slower.
-    const double accel = speed * kPassiveAccelScale * sizeFactor(body.radius);
-    Vec2 push{0, 0};
-    // What the drift may reach -- scaled by the same body the acceleration is,
-    // because a ceiling in absolute units over an acceleration in bodies caps
-    // the hop's DISTANCE and not just its speed. See kMaxWanderSpeedPerBody.
-    const double limit = kMaxWanderSpeedPerBody * sizeFactor(body.radius);
-
+    // Where the ramp stands this tick, as r - r^2: zero while idle and while
+    // coasting, peaking at a quarter halfway through the ramp.
+    double ramp = 0.0;
     const double elapsed = nowMillis - passive->stateStartMillis;
     if (passive->state == PassiveState::Idle) {
         if (elapsed >= kPassiveIdleMillis) {
@@ -941,21 +936,37 @@ void MobAiSystem::driftPassive(World& world, Entity self, const Body& body, Moti
         // Moving state but is not being pushed yet -- then a parabolic ramp
         // peaking halfway through the two seconds after it.
         const double r = (elapsed - kPassiveCoastMillis) / kPassiveRampMillis;
-        push = Vec2::fromAngle(ai.wanderAngle, accel * 2.0 * (r - r * r));
+        ramp = r - r * r;
     }
+
+    if (drive.gardnMotion) {
+        // gardn's hop: neither the mob's speed nor its size plays any part, so
+        // a ladybug covers the ground an ant does and a mythic covers what a
+        // common does. Integrated on the mob's one carried velocity, so a
+        // chase that has just ended coasts out through the idle second instead
+        // of stopping dead -- and a recoil off a flower carries into the drift.
+        const double terminal = kGardnHopPeakSpeed * 4.0 * ramp * slow;
+        motion.velocity =
+            gardnStep(motion.velocity, Vec2::fromAngle(ai.wanderAngle, terminal), dt);
+        passive->velocity = motion.velocity;
+        return;
+    }
+
+    // Distance per hop is the sum of the accelerations divided by the friction,
+    // so the authored speed is what sets how far a hop carries; the mob's size
+    // plays no part.
+    const double accel = speed * kPassiveAccelScale;
+    const Vec2 push = Vec2::fromAngle(ai.wanderAngle, accel * 2.0 * ramp);
 
     // Friction is per TICK, not per second: this is a fixed-step integrator and
     // spreading it over dt changes how far every idle mob in the world travels.
-    // The clamp is what stops radius-proportional acceleration from drifting an
-    // apex mob at several times a player's top speed.
-    passive->velocity =
-        (passive->velocity * (1.0 - kPassiveFriction) + push).clampedLength(limit);
+    passive->velocity = (passive->velocity * (1.0 - kPassiveFriction) + push)
+                            .clampedLength(kMaxWanderSpeed);
     motion.velocity = passive->velocity;
 }
 
-Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double radius, double nowMillis, double dt,
-                   Rng& rng) {
-    const double accel = speed * kPassiveAccelScale * sizeFactor(radius);
+Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double nowMillis, double dt, Rng& rng) {
+    const double accel = speed * kPassiveAccelScale;
     // The heading sways at 1.5 rad/s scaled by sin(2t) -- which integrates to
     // the +-0.75 rad weave of the flight line -- around a base heading
     // re-picked every five seconds.
@@ -975,17 +986,14 @@ Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double radius, double nowMil
     const Vec2 push = Vec2::fromAngle(cruise.heading, magnitude);
     // The hop's ceiling, and the cruise's own tighter one under it; see
     // kBeeCruiseSpeed. Friction is per TICK, as it is for the hop.
-    const double limit = std::min(kMaxWanderSpeedPerBody * sizeFactor(radius),
-                                  kBeeCruiseSpeed * sizeFactor(radius));
+    const double limit = std::min(kMaxWanderSpeed, kBeeCruiseSpeed);
     cruise.velocity = (cruise.velocity * (1.0 - kPassiveFriction) + push).clampedLength(limit);
     return cruise.velocity;
 }
 
-Vec2 MobAiSystem::wanderToPoint(WanderTarget& wander, Vec2 from, const Body& body, double speed,
-                                double nowMillis) {
-    const double factor = sizeFactor(body.radius);
+Vec2 MobAiSystem::wanderToPoint(WanderTarget& wander, Vec2 from, double speed, double nowMillis) {
     if (wander.pickedAtMillis <= 0.0 || nowMillis - wander.pickedAtMillis > kWanderRepickMillis) {
-        const double range = kEnemyWanderRange * factor;
+        const double range = kEnemyWanderRange;
         wander.destination = from + Vec2{rng_.range(-range, range), rng_.range(-range, range)};
         wander.pickedAtMillis = nowMillis;
     }
@@ -995,26 +1003,24 @@ Vec2 MobAiSystem::wanderToPoint(WanderTarget& wander, Vec2 from, const Body& bod
     const double gap = offset.length();
     // Arrived: stop rather than jitter across the last unit of it.
     if (!(gap > kWanderArriveDistance)) return Vec2{0, 0};
-    // Both terms per body, for the reason kMaxWanderSpeedPerBody gives: a flat
-    // ceiling here shortened a big walker's stroll into a shuffle exactly the
-    // way it flattened the hop.
-    return offset *
-           (std::min(speed * kMobWanderSpeedScale, kMaxWanderSpeedPerBody) * factor / gap);
+    return offset * (std::min(speed * kMobWanderSpeedScale, kMaxWanderSpeed) / gap);
 }
 
 Vec2 MobAiSystem::steerIdle(World& world, Entity self, const Transform& transform, Motion& motion,
-                            const Body& body, MobAi& ai, double speed, double nowMillis, double dt) {
+                            MobAi& ai, const Drive& drive, double slow, double nowMillis,
+                            double dt) {
     // A centipede head keeps the destination wander deliberately: a chain that
     // stopped dead every second would read as a broken animal rather than a
     // crawling one, and the head is what the whole body traces.
     if (world.has<BodySegment>(self)) {
         if (WanderTarget* wander = world.tryGet<WanderTarget>(self)) {
-            motion.velocity = wanderToPoint(*wander, transform.position, body, speed, nowMillis);
+            motion.velocity =
+                wanderToPoint(*wander, transform.position, drive.speed * slow, nowMillis);
             return motion.velocity;
         }
     }
 
-    driftPassive(world, self, body, motion, ai, speed, nowMillis, dt);
+    driftPassive(world, self, motion, ai, drive, slow, nowMillis, dt);
     // Facing follows the HEADING rather than the velocity here: the machine
     // turns the mob when it picks a direction, while it is still at rest, and
     // accelerates along it afterwards.
@@ -1343,10 +1349,8 @@ void MobAiSystem::driftUnwatched(World& world, Entity self, double nowMillis, do
     if (motion == nullptr) return;
 
     MobAi* ai = world.tryGet<MobAi>(self);
-    const Body* body = world.tryGet<Body>(self);
     const MobType* type = world.tryGet<MobType>(self);
-    if (ai == nullptr || body == nullptr || type == nullptr ||
-        !idleDrifting(world, self, *ai)) {
+    if (ai == nullptr || type == nullptr || !idleDrifting(world, self, *ai)) {
         // Nothing decided this tick means nothing travelled this tick.
         motion->velocity = Vec2{0, 0};
         return;
@@ -1355,8 +1359,8 @@ void MobAiSystem::driftUnwatched(World& world, Entity self, double nowMillis, do
     // A mob that has never thought has never been handed the drift machine
     // either; driftPassive() holds it still until its first step equips it.
     const Drive drive = driveFor(type->configIndex, type->rarity);
-    driftPassive(world, self, *body, *motion, *ai,
-                 drive.speed * slowFactorOf(world, self, nowMillis), nowMillis, dt);
+    driftPassive(world, self, *motion, *ai, drive, slowFactorOf(world, self, nowMillis), nowMillis,
+                 dt);
 
     // The drift's heading IS the mob's facing over there -- the same ungated
     // integrator writes both -- so the angle keeps full rate as well, rather
@@ -1397,7 +1401,7 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
     // dragged too far from the nest that made it abandons what it was chasing,
     // and a tick spent walking home is spent on nothing else.
     if (walkHome(world, self, transform, ai, chaseSpeed, nowMillis, desired, commands)) {
-        motion.velocity = desired;
+        motion.velocity = drive.gardnMotion ? gardnStep(motion.velocity, desired, dt) : desired;
         transform.angle =
             steerFacing(transform.angle, desired, drive.hideRotation, drive.reversed, kPi);
         return;
@@ -1436,10 +1440,22 @@ void MobAiSystem::steerMob(World& world, const Terrain& terrain, const SpatialGr
         break;
     }
 
-    if (driven) {
+    if (driven && drive.gardnMotion) {
+        // `desired` is what gardn's acceleration settles at; the velocity
+        // builds into it and keeps its momentum through a turn, so a pursuit
+        // arcs round a dodging flower rather than pivoting on the spot.
+        motion.velocity = gardnStep(motion.velocity, desired, dt);
+        // gardn drops a mob that loses its target to a standing start of the
+        // idle clock, so it drifts to a stop and pauses before it hops rather
+        // than lurching into whatever phase the clock reached mid-chase.
+        if (PassiveMotion* passive = world.tryGet<PassiveMotion>(self)) {
+            passive->state = PassiveState::Idle;
+            passive->stateStartMillis = nowMillis;
+        }
+    } else if (driven) {
         motion.velocity = desired;
     } else {
-        desired = steerIdle(world, self, transform, motion, body, ai, speed, nowMillis, dt);
+        desired = steerIdle(world, self, transform, motion, ai, drive, factor, nowMillis, dt);
     }
 
     // Facing follows what the mob is TRYING to do, falling back to what it is
@@ -1638,7 +1654,7 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
                                        transform.realm, ai, false, Vec2{0, 0}, range);
         }
         if (WanderTarget* wander = world.tryGet<WanderTarget>(self)) {
-            desired = wanderToPoint(*wander, transform.position, body, speed, nowMillis);
+            desired = wanderToPoint(*wander, transform.position, speed, nowMillis);
         }
     }
 

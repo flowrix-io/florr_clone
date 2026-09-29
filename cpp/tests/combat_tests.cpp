@@ -2641,6 +2641,66 @@ TEST(a_whole_animal_lands_one_contact_a_tick_however_many_seeds_it_wears) {
                1e-9);
 }
 
+struct RecoilFixture {
+    ContentRegistry registry;
+    std::string error;
+    bool ok = false;
+    std::uint16_t walker = kInvalidIndex;    ///< `gardn_ai`
+    std::uint16_t plodder = kInvalidIndex;   ///< the same animal without it
+};
+
+const RecoilFixture& recoilFixture() {
+    static const RecoilFixture state = [] {
+        RecoilFixture f;
+        const std::string mobs = tempDir() + "/recoil_mobs.json";
+        const std::string petals = tempDir() + "/recoil_petals.json";
+        const bool wrote =
+            writeText(mobs, test::fixtureMobs(R"({
+  "walker": {"name":"Walker","health":100,"damage":5,"size":1,"speed":0.5,"gardn_ai":true},
+  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5}
+})")) &&
+            writeText(petals, test::fixturePetals(
+                          R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1}})"));
+        if (!wrote) {
+            f.error = "cannot write the recoil fixture content";
+            return f;
+        }
+        f.ok = f.registry.loadFiles(mobs, petals, f.error);
+        f.walker = f.registry.mobIndex("walker");
+        f.plodder = f.registry.mobIndex("plodder");
+        return f;
+    }();
+    return state;
+}
+
+TEST(a_gardn_mob_recoils_off_a_flower_it_touches) {
+    const RecoilFixture& f = recoilFixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // gardn knocks BOTH bodies apart when a mob touches a flower, so a
+    // pursuer bumps and re-closes instead of burrowing into the flower's
+    // centre. The mob's half goes into the velocity it carries, split by
+    // gardn's masses: 1 for the flower, 1 + 30/25 for this body.
+    const auto velocityAfterTouch = [&](std::uint16_t config) {
+        Arena a;
+        const Entity mob = a.mob({1000, 1000}, 100.0, 0.0, 30.0);
+        a.world.add<MobType>(mob, MobType{config, Rarity::Common, 1.0});
+        a.world.add<ContactDamage>(mob, ContactDamage{5.0, kMobHitIntervalMillis});
+        a.world.get<Motion>(mob).velocity = Vec2{300.0, 0.0};   // charging east
+        a.player({1045, 1000});
+        a.step(1000.0, f.registry);
+        return a.world.get<Motion>(mob).velocity;
+    };
+
+    const Vec2 walker = velocityAfterTouch(f.walker);
+    CHECK_NEAR(walker.x, 300.0 - kGardnContactRecoil / 3.2, 1e-9);
+    CHECK_NEAR(walker.y, 0.0, 1e-9);
+    // Without the flag the mob's velocity is published raw by the AI every
+    // tick, and combat leaves it alone.
+    CHECK_NEAR(velocityAfterTouch(f.plodder).x, 300.0, 1e-9);
+}
+
 TEST(a_spinning_ring_is_decoration_and_bites_nobody) {
     const RingFixture& f = ringFixture();
     CHECK(f.ok);
