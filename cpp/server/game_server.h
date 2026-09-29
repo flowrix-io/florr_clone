@@ -227,6 +227,9 @@ private:
     /// A guaranteed craft at an oracle. Refused unless the session's body is
     /// alive and standing at one; see NpcSystem::findService.
     void handleOracleCraft(Session&, net::Connection&, ByteReader&);
+    /// One petal for one coin of its tier at a trader. Refused unless the
+    /// session's body is alive and standing at one, as the oracle's craft is.
+    void handleTrade(Session&, net::Connection&, ByteReader&);
     void handleRespawn(Session&);
     void handlePing(net::Connection&, ByteReader&);
     void handleUpgradeSkill(Session&, net::Connection&, ByteReader&);
@@ -308,6 +311,8 @@ private:
     /// How long `userId` has left to wait for the oracle, 0 when it may craft.
     /// A lapsed wait is forgotten on the way.
     double oracleWaitMillis(const std::string& userId);
+    /// The same for the trader: 0 when `userId` may trade.
+    double traderWaitMillis(const std::string& userId);
     /// Distinguishes two notifications written in the same millisecond. The id
     /// is only ever compared -- a client keys its read marks on it -- so a
     /// counter does the reference's nine random characters' whole job.
@@ -1086,6 +1091,8 @@ private:
     /// restart forgets every wait, which is what makes the half hour easy to
     /// test past. Keyed by account rather than connection, so a relog does not.
     std::unordered_map<std::string, double> oracleReadyAt_;
+    /// When each account may next trade, the same way: memory only, by userId.
+    std::unordered_map<std::string, double> traderReadyAt_;
 
     /// Positions of every live flower, bots included, each with the realm it
     /// stands in, rebuilt each tick. The mob LOD counts a bot as an observer,

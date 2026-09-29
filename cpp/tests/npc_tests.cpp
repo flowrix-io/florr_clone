@@ -1,4 +1,4 @@
-// NPCs, and the first of them: the oracle.
+// NPCs, and the first two with a service: the oracle and the trader.
 //
 // An NPC is a mob's config standing in the world without being a mob
 // (shared/game/npc.h). These hold the whole chain to account: the map places
@@ -7,7 +7,8 @@
 // walks up, it is streamed as its own kind and drawn with the mob's plate and
 // an invulnerable bar, an admin can still spawn the same creature as an enemy,
 // and the oracle's service, a guaranteed craft at a fixed price, is charged
-// exactly that price and is refused to anyone not standing at it.
+// exactly that price and is refused to anyone not standing at it. The trader's,
+// one petal for one coin of its tier once a day, is held to the same.
 
 #include "test.h"
 
@@ -204,9 +205,10 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     // world is one a map or an admin put there.
     CHECK(config.noEggDrop);
     CHECK(!content().mobStats(oracle, Rarity::Common).ambient);
-    // The target dummy is the other NPC: on the hostiles' side, so a flower
-    // can hit it, and offering nothing but that. Nothing else in the shipped
-    // content is an NPC by accident.
+    // The target dummy is another NPC: on the hostiles' side, so a flower
+    // can hit it, and offering nothing but that. The trader is the third
+    // (its own test below). Nothing else in the shipped content is an NPC by
+    // accident.
     const std::uint16_t dummy = content().mobIndex("target_dummy");
     CHECK(dummy != kInvalidIndex);
     if (dummy != kInvalidIndex) {
@@ -214,8 +216,9 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
         CHECK(content().mob(dummy).npc.team == Team::Hostiles);
         CHECK(content().mob(dummy).npc.service == NpcService::None);
     }
+    const std::uint16_t trader = content().mobIndex("trader");
     for (std::uint16_t i = 0; i < content().mobCount(); ++i) {
-        if (i == oracle || i == dummy) continue;
+        if (i == oracle || i == dummy || i == trader) continue;
         CHECK(!content().mob(i).npc.present);
     }
 }
@@ -1311,6 +1314,311 @@ TEST(the_oracle_wait_is_the_accounts_across_a_relog_and_ends_on_the_server_clock
 }
 
 // ---------------------------------------------------------------------------
+// The trader
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string traderWorld(const std::string& name) {
+    return npcWorld(name, fixtureNpc(kOracleX, kOracleY, "trader", "common"));
+}
+
+/// Waits for the trader's answer and hands it back with `pending` cleared, as
+/// the panel reads it.
+bool awaitTrade(Harness& h, NetClient& client, TradeOutcome& out) {
+    if (!h.stepUntil({&client}, [&] { return client.tradeOutcome().pending; }, 200)) return false;
+    out = client.tradeOutcome();
+    client.tradeOutcome().pending = false;
+    return true;
+}
+
+constexpr double kHourMillis = 60.0 * 60.0 * 1000.0;
+
+} // namespace
+
+TEST(the_trader_wait_is_said_in_whole_hours_rounded_down_then_in_minutes) {
+    // The reference says 23 the moment a trade is made: whole hours, down.
+    CHECK_EQ(traderCooldownText(kTraderCooldownMillis - 1000.0),
+             std::string("You'll be able to trade again in 23 hours"));
+    CHECK_EQ(traderCooldownText(kTraderCooldownMillis),
+             std::string("You'll be able to trade again in 24 hours"));
+    CHECK_EQ(traderCooldownText(1.5 * kHourMillis),
+             std::string("You'll be able to trade again in 1 hour"));
+    // Under an hour there is no whole hour to say: minutes, rounded up, and
+    // never zero.
+    CHECK_EQ(traderCooldownText(30.0 * 60000.0),
+             std::string("You'll be able to trade again in 30 minutes"));
+    CHECK_EQ(traderCooldownText(29.2 * 60000.0),
+             std::string("You'll be able to trade again in 30 minutes"));
+    CHECK_EQ(traderCooldownText(1.0), std::string("You'll be able to trade again in 1 minute"));
+}
+
+TEST(the_shipped_trader_stands_in_the_desert_and_takes_all_but_the_marked_petals) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t trader = content().mobIndex("trader");
+    CHECK(trader != kInvalidIndex);
+    if (trader == kInvalidIndex) return;
+    const MobConfig& config = content().mob(trader);
+    CHECK(config.npc.present);
+    CHECK(config.npc.service == NpcService::Trader);
+    CHECK(config.npc.team == Team::Players);
+    // Drawn by code: its eyes are a flower's, and they move.
+    CHECK_EQ(config.image, std::string("$trader"));
+    CHECK(config.noEggDrop);
+    CHECK(!content().mobStats(trader, Rarity::Common).ambient);
+
+    // What it hands back exists and is marked untradable -- or it would take
+    // its own coins back one for one -- and so is the basic petal. A petal
+    // petals.json says nothing about trades.
+    const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
+    CHECK(coin != kInvalidIndex);
+    if (coin != kInvalidIndex) CHECK(!content().petal(coin).tradable);
+    CHECK(!content().petal(content().petalIndex("basic")).tradable);
+    CHECK(content().petal(content().petalIndex("rose")).tradable);
+
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(dataDir(), &terrain, error));
+    Realm desert = Realm::Overworld;
+    bool haveDesert = false;
+    for (const MapData& map : maps.maps()) {
+        if (map.id() != "desert") continue;
+        desert = map.realm();
+        haveDesert = true;
+    }
+    CHECK(haveDesert);
+    NpcSystem npcs;
+    std::vector<std::string> warnings;
+    npcs.loadSites(maps, content(), warnings);
+    CHECK(warnings.empty());
+    int traders = 0;
+    for (const NpcSystem::Site& site : npcs.sites()) {
+        if (content().mob(site.mobIndex).npc.service != NpcService::Trader) continue;
+        ++traders;
+        CHECK(site.realm == desert);
+        CHECK(site.rarity == Rarity::Common);
+        // On open ground, body and all: nothing pushes it off its point, and
+        // a flower can walk right round it.
+        const double radius = content().mobStats(site.mobIndex, site.rarity).radius;
+        const Vec2 placed = terrain.resolveCircle(site.position, radius, site.realm);
+        CHECK_NEAR(placed.x, site.position.x, 1e-6);
+        CHECK_NEAR(placed.y, site.position.y, 1e-6);
+    }
+    CHECK_EQ(traders, 1);
+}
+
+TEST(a_trade_is_one_petal_for_one_coin_of_the_same_tier) {
+    const std::string dir = traderWorld("trader-trade");
+    Harness h("trader-trade", [](const std::string& path) {
+        seedAccount(path, "merchant");
+        seedStack(path, "merchant", "petal_rose", Rarity::Epic, 3);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
+    if (rose == kInvalidIndex || coin == kInvalidIndex) { CHECK(false); removeDataDir(dir); return; }
+
+    NetClient client;
+    CHECK(joinAs(h, client, "merchant"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Epic) == 3u;
+    }));
+    CHECK_EQ(client.traderCooldownRemainingMillis(), 0.0);
+
+    TradeOutcome outcome;
+    standBeside(h, client, "trader");
+    client.requestTrade(rose, Rarity::Epic);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK_EQ(outcome.petalIndex, rose);
+    CHECK(outcome.rarity == Rarity::Epic);
+    CHECK_EQ(outcome.receivedIndex, coin);
+    // One out of the stack, one coin of its tier in -- and the day's wait on
+    // the profile that followed, which the oracle's is not part of.
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Epic) == 2u && p.stackCount(coin, Rarity::Epic) == 1u;
+    }));
+    CHECK_EQ(client.profile().stackCount(coin, Rarity::Common), 0u);
+    const double wait = client.traderCooldownRemainingMillis();
+    CHECK(wait > kTraderCooldownMillis - 60000.0);
+    CHECK(wait <= kTraderCooldownMillis);
+    CHECK_EQ(client.oracleCooldownRemainingMillis(), 0.0);
+    removeDataDir(dir);
+}
+
+TEST(the_trader_refuses_what_it_does_not_take_and_a_refusal_starts_no_wait) {
+    const std::string dir = traderWorld("trader-refuse");
+    Harness h("trader-refuse", [](const std::string& path) {
+        seedAccount(path, "merchant");
+        seedStack(path, "merchant", "petal_basic", Rarity::Common, 3);
+        seedStack(path, "merchant", "petal_coin", Rarity::Rare, 2);
+        seedStack(path, "merchant", "petal_rose", Rarity::Apex, 1);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
+    const std::uint16_t basic = content().petalIndex("basic");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "merchant"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(coin, Rarity::Rare) == 2u && p.stackCount(basic, Rarity::Common) > 0u;
+    }));
+    const std::uint32_t basics = client.profile().stackCount(basic, Rarity::Common);
+
+    // Marked untradable, both of them: the basic petal, and a coin -- which
+    // would otherwise trade for itself.
+    TradeOutcome outcome;
+    standBeside(h, client, "trader");
+    client.requestTrade(basic, Rarity::Common);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.receivedIndex, kNoPetal);
+    standBeside(h, client, "trader");
+    client.requestTrade(coin, Rarity::Rare);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+    // A petal the account does not have, at a tier it does not have.
+    standBeside(h, client, "trader");
+    client.requestTrade(rose, Rarity::Epic);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+
+    h.step(5, {&client});
+    CHECK_EQ(client.profile().stackCount(basic, Rarity::Common), basics);
+    CHECK_EQ(client.profile().stackCount(coin, Rarity::Rare), 2u);
+    CHECK_EQ(client.traderCooldownRemainingMillis(), 0.0);
+
+    // None of that was a trade, so the day has not started -- and the top
+    // tier trades like any other.
+    standBeside(h, client, "trader");
+    client.requestTrade(rose, Rarity::Apex);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Apex) == 0u && p.stackCount(coin, Rarity::Apex) == 1u;
+    }));
+    removeDataDir(dir);
+}
+
+TEST(the_trader_serves_only_a_flower_standing_at_it) {
+    const std::string dir = traderWorld("trader-far");
+    Harness h("trader-far", [](const std::string& path) {
+        seedAccount(path, "merchant");
+        seedStack(path, "merchant", "petal_rose", Rarity::Common, 5);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("merchant", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+
+    // On the title screen there is no body to be standing anywhere.
+    TradeOutcome outcome;
+    client.requestTrade(rose, Rarity::Common);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+
+    client.joinGame(1920, 1080, {}, "merchant");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; },
+                      200));
+    h.step(3, {&client});
+    World& world = h.server.world();
+    const Entity player = onlyPlayer(world);
+    const Entity trader = npcWearing(world, "trader");
+    if (player == NULL_ENTITY || trader == NULL_ENTITY) { CHECK(false); removeDataDir(dir); return; }
+    const double radius = world.get<Body>(trader).radius;
+    const Vec2 at = world.get<Transform>(trader).position;
+
+    // Just past the reach and its slack, from the trader's skin: refused...
+    world.get<Transform>(player).position =
+        Vec2{at.x + radius + kNpcServiceReach + kNpcServiceSlack + 40.0, at.y};
+    h.step(1, {&client});
+    client.requestTrade(rose, Rarity::Common);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+    CHECK(outcome.reason.find("far") != std::string::npos);
+
+    // ...and just inside, served. The trader stands still, so its position
+    // read once is where it still is.
+    world.get<Transform>(player).position =
+        Vec2{at.x + radius + kNpcServiceReach + kNpcServiceSlack - 40.0, at.y};
+    h.step(1, {&client});
+    client.requestTrade(rose, Rarity::Common);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK_NEAR(world.get<Transform>(trader).position.x, at.x, 1e-9);
+    CHECK_NEAR(world.get<Transform>(trader).position.y, at.y, 1e-9);
+    removeDataDir(dir);
+}
+
+TEST(the_trader_grants_one_trade_a_day_kept_across_a_relog) {
+    const std::string dir = traderWorld("trader-wait");
+    Harness h("trader-wait", [](const std::string& path) {
+        seedAccount(path, "merchant");
+        seedStack(path, "merchant", "petal_rose", Rarity::Common, 5);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
+
+    {
+        NetClient client;
+        CHECK(joinAs(h, client, "merchant"));
+        h.step(3, {&client});
+        TradeOutcome outcome;
+        standBeside(h, client, "trader");
+        client.requestTrade(rose, Rarity::Common);
+        CHECK(awaitTrade(h, client, outcome));
+        CHECK(outcome.success);
+
+        // The next is refused in the panel's own words, and costs nothing.
+        standBeside(h, client, "trader");
+        client.requestTrade(rose, Rarity::Common);
+        CHECK(awaitTrade(h, client, outcome));
+        CHECK(!outcome.success);
+        CHECK_EQ(outcome.reason, std::string("You'll be able to trade again in 23 hours"));
+        client.disconnect();
+        h.step(10, {});
+    }
+
+    // A new connection is the same account, and the wait came with it.
+    NetClient client;
+    CHECK(joinAs(h, client, "merchant"));
+    h.step(3, {&client});
+    CHECK(client.traderCooldownRemainingMillis() > kTraderCooldownMillis - 60000.0);
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Common), 4u);
+    CHECK_EQ(client.profile().stackCount(coin, Rarity::Common), 1u);
+
+    // Measured on the server's tick clock: half an hour short of the day...
+    TradeOutcome outcome;
+    h.clock += kTraderCooldownMillis - 30.0 * 60000.0;
+    h.step(3, {&client});
+    standBeside(h, client, "trader");
+    client.requestTrade(rose, Rarity::Common);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.reason, std::string("You'll be able to trade again in 30 minutes"));
+
+    // ...and past it, the trader deals again.
+    h.clock += 31.0 * 60000.0;
+    h.step(3, {&client});
+    standBeside(h, client, "trader");
+    client.requestTrade(rose, Rarity::Common);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(outcome.success);
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Common) == 3u && p.stackCount(coin, Rarity::Common) == 2u;
+    }));
+    removeDataDir(dir);
+}
+
+// ---------------------------------------------------------------------------
 // On screen
 // ---------------------------------------------------------------------------
 
@@ -1465,4 +1773,131 @@ TEST(an_npc_is_drawn_with_its_eye_on_its_facing_and_an_invulnerable_bar) {
     }
     CHECK(left > 0);
     CHECK(right > 0);
+}
+
+namespace {
+
+/// White pixels inside a flower's two eye sockets -- the ellipses at (+-7,
+/// -4.8), 3.2 by 6.5, in its radius-25 art space -- split by which side of the
+/// sockets' middles they sit on: across when `vertical` is false, down when
+/// it is true. `unit` is pixels to the art unit, about the frame's centre.
+struct EyeSplit {
+    int before = 0;
+    int after = 0;
+};
+
+EyeSplit eyeSplit(const std::vector<std::uint8_t>& pixels, double unit, bool vertical) {
+    EyeSplit out;
+    const double c = kFrame * 0.5;
+    for (int y = 0; y < kFrame; ++y) {
+        for (int x = 0; x < kFrame; ++x) {
+            const std::size_t i = static_cast<std::size_t>((y * kFrame + x) * 4);
+            if (pixels[i] != 0xFF || pixels[i + 1] != 0xFF || pixels[i + 2] != 0xFF) continue;
+            const double ax = (x + 0.5 - c) / unit;
+            const double ay = (y + 0.5 - c) / unit;
+            for (const double eye : {-7.0, 7.0}) {
+                const double dx = ax - eye;
+                const double dy = ay + 4.8;
+                if (dx * dx / (3.2 * 3.2) + dy * dy / (6.5 * 6.5) > 1.0) continue;
+                const double along = vertical ? dy : dx;
+                if (along < 0.0) ++out.before;
+                else ++out.after;
+            }
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+TEST(the_trader_painter_borders_only_the_rings_outer_edge_and_moves_its_eyes_like_a_flower) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t trader = content().mobIndex("trader");
+    const SpriteCache& sprites = shippedSprites();
+    CHECK(sprites.mobArt(trader) == MobArt::Trader);
+    CHECK(sprites.mobDrawable(trader));
+
+    // 180 across in a 200 frame. The body's radius is the ring's outer edge,
+    // 33.75 art units -- the flower in the middle is 25 of them.
+    const double diameter = 180.0;
+    const double unit = diameter * 0.5 / 33.75;
+    const double c = kFrame * 0.5;
+    const auto frame = [&](Vec2 gaze) {
+        Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
+        sprites.drawMob(canvas, trader, c, c, diameter, 0.0, 0.0, false, 0.0, gaze);
+        return canvas.getImageData(0, 0, kFrame, kFrame);
+    };
+    const auto rgbAt = [&](const std::vector<std::uint8_t>& pixels, double angle, double art) {
+        const int x = static_cast<int>(c + std::cos(angle) * art * unit);
+        const int y = static_cast<int>(c + std::sin(angle) * art * unit);
+        const std::size_t i = static_cast<std::size_t>((y * kFrame + x) * 4);
+        return (static_cast<std::uint32_t>(pixels[i]) << 16) |
+               (static_cast<std::uint32_t>(pixels[i + 1]) << 8) | pixels[i + 2];
+    };
+
+    const std::vector<std::uint8_t> picture = frame({1.0, 0.0});
+    for (int i = 0; i < 12; ++i) {
+        const double spoke = kTau * i / 12;
+        // Halfway between two spokes, just outside the flower's ring, is where
+        // two petals overlap -- and where the capture drew both their outlines
+        // across the white. It is white.
+        CHECK_EQ(rgbAt(picture, spoke + kPi / 12, 27.6), 0xFFFFFFu);
+        // The ring's outer edge wears the basic petal's grey, on every petal.
+        CHECK_EQ(rgbAt(picture, spoke, 34.0), 0xCFCFCFu);
+        // And the flower's own ring is a player's: the flower yellow at 0.8.
+        CHECK_EQ(rgbAt(picture, spoke + kPi / 12, 25.0), 0xCCB94Fu);
+    }
+
+    // The eyes travel as a flower's do: two units across, 4.4 down.
+    const EyeSplit east = eyeSplit(frame({1.0, 0.0}), unit, false);
+    const EyeSplit west = eyeSplit(frame({-1.0, 0.0}), unit, false);
+    const EyeSplit down = eyeSplit(frame({0.0, 1.0}), unit, true);
+    const EyeSplit up = eyeSplit(frame({0.0, -1.0}), unit, true);
+    CHECK(east.after > east.before * 2);
+    CHECK(west.before > west.after * 2);
+    CHECK(down.after > down.before * 2);
+    CHECK(up.before > up.after * 2);
+}
+
+TEST(the_trader_is_drawn_upright_with_its_eyes_on_its_facing) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t trader = content().mobIndex("trader");
+    const Vec2 at{1000.0, 1000.0};
+    // Three screen pixels to the world unit, so the eyes are big enough to
+    // count pixels in.
+    constexpr double kZoom = 3.0;
+    const double radius = content().mobStats(trader, Rarity::Common).radius;
+    const double unit = radius / 33.75 * kZoom;
+    const auto frame = [&](double angle) {
+        Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        RemoteEntity npc;
+        npc.netId = 43;
+        npc.kind = net::EntityKind::Npc;
+        npc.typeIndex = trader;
+        npc.rarity = Rarity::Common;
+        npc.position = npc.targetPosition = at;
+        npc.angle = npc.targetAngle = angle;
+        npc.needsSnap = false;
+        npc.radius = radius;
+        npc.healthFraction = 1.0;
+        view.seedForTest(npc);
+        WorldRenderer renderer;
+        renderer.setContent(&content());
+        renderer.setSprites(&shippedSprites());
+        Camera camera;
+        camera.setViewport(kFrame, kFrame);
+        camera.userZoom = kZoom;
+        camera.snapTo(at);
+        renderer.draw(canvas, view, camera, at, 0.0);
+        return canvas.getImageData(0, 0, kFrame, kFrame);
+    };
+    // Facing west, the pupils sit west in their sockets; facing east, east.
+    // Were the body turned instead, the eyes would swing round the middle
+    // and neither would hold.
+    const EyeSplit west = eyeSplit(frame(kPi), unit, false);
+    const EyeSplit east = eyeSplit(frame(0.0), unit, false);
+    CHECK(west.before > west.after * 2);
+    CHECK(east.after > east.before * 2);
 }

@@ -755,10 +755,14 @@ void MenuSystem::toggle(MenuId id) {
     panelSlide_ = 0.0;
     switch (id) {
         case MenuId::Inventory:   inventory_.reset(); break;
-        // Both halves of the craft menu: which one shows is decided per
-        // frame by where the flower is standing, so either may be the one
-        // this open ends up drawing.
-        case MenuId::Crafting:    crafting_.reset(); oracle_.reset(); break;
+        // Every face of the craft menu: which one shows is decided per
+        // frame by where the flower is standing, so any of them may be the
+        // one this open ends up drawing.
+        case MenuId::Crafting:
+            crafting_.reset();
+            oracle_.reset();
+            trader_.reset();
+            break;
         case MenuId::Talents:     talents_.reset(); break;
         case MenuId::Gallery:     gallery_.reset(); break;
         case MenuId::Shop:        shop_.reset(); break;
@@ -958,6 +962,12 @@ Rect OraclePanel::bounds(int w, int h) {
     const double height = std::max(0.0, std::min(preferredHeight(), list.bottom() - kOracleTopMin));
     return {list.x, list.bottom() - height, list.w, height};
 }
+/// The trader's card is the oracle's reference card, on the same edges.
+Rect TradePanel::bounds(int w, int h) {
+    const Rect list = listPanel(preferredWidth(), w, h);
+    const double height = std::max(0.0, std::min(preferredHeight(), list.bottom() - kOracleTopMin));
+    return {list.x, list.bottom() - height, list.w, height};
+}
 /// The talent card is SQUARE, alone among the list panels: the tree is a fan
 /// spun about its own centre, and a tall card would only add height the fan
 /// never reaches while cropping the width it spreads across. It keeps the
@@ -1020,6 +1030,15 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::Debug:         return DebugPanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
+}
+
+Rect MenuSystem::craftPanelBounds(int w, int h) const {
+    switch (nearbyNpc_) {
+        case NpcService::Oracle: return OraclePanel::bounds(w, h);
+        case NpcService::Trader: return TradePanel::bounds(w, h);
+        case NpcService::None:   break;
+    }
+    return CraftingPanel::bounds(w, h);
 }
 
 const SvgDocument* MenuSystem::icon(int index) {
@@ -1164,12 +1183,17 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         }
 
         // At an oracle the craft key opens the oracle, so its button wears the
-        // oracle's slate: the button says which panel it will open before the
-        // player presses it.
-        const bool oracleFace =
-            slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Oracle;
-        const std::uint32_t face = oracleFace ? kOracleSkin.fill : slot.fill;
-        const std::uint32_t rim = oracleFace ? kOracleSkin.border : slot.border;
+        // oracle's slate -- and at a trader, the trader's yellow: the button
+        // says which panel it will open before the player presses it.
+        std::uint32_t face = slot.fill;
+        std::uint32_t rim = slot.border;
+        if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Oracle) {
+            face = kOracleSkin.fill;
+            rim = kOracleSkin.border;
+        } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Trader) {
+            face = kTraderSkin.fill;
+            rim = kTraderSkin.border;
+        }
 
         // Two filled rects rather than a stroke: the face keeps the frame's own
         // rounding one step tighter, where a centred stroke would blow the
@@ -2413,11 +2437,12 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     switch (drawn_) {
         case MenuId::Inventory:   keepOpen = inventory_.render(ctx); break;
         case MenuId::Crafting:
-            // Standing at an oracle, the craft key opens the oracle. It is
-            // the same menu -- one key, one card, one anchor -- showing what
-            // the ground under the flower offers.
-            keepOpen = nearbyNpc_ == NpcService::Oracle ? oracle_.render(ctx)
-                                                        : crafting_.render(ctx);
+            // Standing at an oracle, the craft key opens the oracle, and at a
+            // trader the trader. It is the same menu -- one key, one card, one
+            // anchor -- showing what the ground under the flower offers.
+            keepOpen = nearbyNpc_ == NpcService::Oracle   ? oracle_.render(ctx)
+                       : nearbyNpc_ == NpcService::Trader ? trader_.render(ctx)
+                                                          : crafting_.render(ctx);
             break;
         case MenuId::Talents:     keepOpen = talents_.render(ctx); break;
         case MenuId::Gallery:     keepOpen = gallery_.render(ctx); break;
@@ -2498,11 +2523,12 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     }
 
     if (drawn_ != MenuId::None) {
-        // The craft menu is the forge's card or the oracle's, whichever the
-        // ground under the flower offers -- and the oracle's is wider, so the
-        // card (and what captures the mouse) has to be the one being drawn.
-        panelRect_ = drawn_ == MenuId::Crafting && nearbyNpc_ == NpcService::Oracle
-                         ? OraclePanel::bounds(canvas.width(), canvas.height())
+        // The craft menu is the forge's card, the oracle's or the trader's,
+        // whichever the ground under the flower offers -- and the NPCs' are
+        // wider, so the card (and what captures the mouse) has to be the one
+        // being drawn.
+        panelRect_ = drawn_ == MenuId::Crafting
+                         ? craftPanelBounds(canvas.width(), canvas.height())
                          : panelBounds(drawn_, canvas.width(), canvas.height());
         // `transform: translateY(100vh)` -> `translateY(0)` over 300ms
         // `ease-out`, which is cubic-bezier(0, 0, 0.58, 1). 1-(1-t)^1.7 tracks

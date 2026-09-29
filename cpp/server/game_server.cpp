@@ -1047,6 +1047,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::UsePetal:      handleUsePetal(*session, reader); break;
         case net::ClientMessage::Craft:         handleCraft(*session, connection, reader); break;
         case net::ClientMessage::OracleCraft:   handleOracleCraft(*session, connection, reader); break;
+        case net::ClientMessage::Trade:         handleTrade(*session, connection, reader); break;
         case net::ClientMessage::Respawn:       handleRespawn(*session); break;
         case net::ClientMessage::Ping:          handlePing(connection, reader); break;
         case net::ClientMessage::UpgradeSkill:  handleUpgradeSkill(*session, connection, reader); break;
@@ -1531,6 +1532,10 @@ void GameServer::sendProfile(Session& session, net::Connection& connection) {
     // wrong by whatever the two disagree by.
     const double wait = oracleWaitMillis(session.userId);
     w.u32(static_cast<std::uint32_t>(clamp<double>(std::ceil(wait), 0.0, 4294967295.0)));
+    // And until it may trade again, the same way. A day is 86.4 million
+    // milliseconds, well inside the u32.
+    const double tradeWait = traderWaitMillis(session.userId);
+    w.u32(static_cast<std::uint32_t>(clamp<double>(std::ceil(tradeWait), 0.0, 4294967295.0)));
 
     // The saved loadouts, for the row the bar shows while K or L is held --
     // only the ones that exist. The ACCOUNT's, even from inside an arena run:
@@ -2165,6 +2170,83 @@ double GameServer::oracleWaitMillis(const std::string& userId) {
     const double wait = found->second - clockMillis_;
     if (wait > 0.0) return wait;
     oracleReadyAt_.erase(found);
+    return 0.0;
+}
+
+void GameServer::handleTrade(Session& session, net::Connection& connection, ByteReader& reader) {
+    const std::uint16_t petalIndex = reader.u16();
+    const Rarity rarity = clampRarity(reader.u8());
+    if (!reader.ok() || !session.authenticated()) return;
+
+    const auto refuse = [&](const std::string& reason) {
+        ByteWriter w;
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::TradeResult));
+        w.boolean(false);
+        w.u16(petalIndex);
+        w.u8(static_cast<std::uint8_t>(rarity));
+        w.u16(kNoPetal);
+        w.str(reason);
+        connection.send(w);
+    };
+
+    // Where the body IS decides, exactly as at the oracle: the trader is found
+    // here, never named on the wire.
+    const bool standing = session.playing() && world_.isAlive(session.entity) &&
+                          !world_.has<Dead>(session.entity);
+    const Transform* body = standing ? world_.tryGet<Transform>(session.entity) : nullptr;
+    if (body == nullptr) {
+        refuse("You need to be standing at a trader.");
+        return;
+    }
+    if (npcs_->findService(world_, NpcService::Trader, body->position, body->realm,
+                           kNpcServiceReach + kNpcServiceSlack) == NULL_ENTITY) {
+        refuse("You are too far from the trader.");
+        return;
+    }
+
+    // Once a day, per ACCOUNT.
+    const double wait = traderWaitMillis(session.userId);
+    if (wait > 0.0) {
+        refuse(traderCooldownText(wait));
+        return;
+    }
+
+    // The petals.json flag is the whole rule: every tier of a tradable petal
+    // is taken, apex included, and the coin itself is marked untradable.
+    const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
+    if (petalIndex >= content().petalCount() || !content().petal(petalIndex).tradable ||
+        coin == kInvalidIndex) {
+        refuse("The trader will not take that.");
+        return;
+    }
+    PlayerRecord& record = liveRecord(session);
+    if (!takeFromInventory(record, petalIndex, rarity, 1)) {
+        refuse("You don't have that petal.");
+        return;
+    }
+    giveToInventory(record, coin, rarity, 1);
+    traderReadyAt_[session.userId] = clockMillis_ + kTraderCooldownMillis;
+    database_.markDirty();
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::TradeResult));
+    w.boolean(true);
+    w.u16(petalIndex);
+    w.u8(static_cast<std::uint8_t>(rarity));
+    w.u16(coin);
+    w.str("");
+    connection.send(w);
+    // The profile carries the new wait: it is what turns the panel's line red
+    // and every stack in its grid grey.
+    sendProfile(session, connection);
+}
+
+double GameServer::traderWaitMillis(const std::string& userId) {
+    const auto found = traderReadyAt_.find(userId);
+    if (found == traderReadyAt_.end()) return 0.0;
+    const double wait = found->second - clockMillis_;
+    if (wait > 0.0) return wait;
+    traderReadyAt_.erase(found);
     return 0.0;
 }
 

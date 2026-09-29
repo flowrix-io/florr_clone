@@ -228,7 +228,7 @@ private:
     void drawBossBars(Canvas&, bool altHeld);
     /// The service of the nearest NPC in view whose skin is within
     /// kNpcServiceReach of `self`, or None. What turns the craft key into the
-    /// oracle's panel while the flower stands at one.
+    /// oracle's or the trader's panel while the flower stands at one.
     NpcService nearbyNpcService(Vec2 self) const;
     /// Puts the session back together after the socket came back.
     ///

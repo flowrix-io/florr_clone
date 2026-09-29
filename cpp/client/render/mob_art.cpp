@@ -637,7 +637,129 @@ void paintOracle(Canvas& canvas, const MobArtAttributes& attr) {
     canvas.strokeCircle(0.0f, 0.0f, static_cast<float>(kOracleSocketRadius * s));
 }
 
+// ---------------------------------------------------------------------------
+// The trader
+// ---------------------------------------------------------------------------
+//
+// Built from the reference art (trader.svg, a 12-frame capture): a player's
+// flower -- the 26.5 ring, the 23.5 body, the eyes and the resting smile, at
+// exactly a player's proportions in its radius-25 art space -- sitting in a
+// ring of twelve basic petals, 8.75 across, set 25 out and 30 degrees apart.
+// Everything below is stated in that space and scaled once, so the flower in
+// the middle is drawn by the same numbers a player's is.
+//
+// The capture gets two things wrong, and neither is copied:
+//
+//   * It strokes every petal's WHOLE outline, so the seams where neighbouring
+//     petals overlap are drawn in grey across the white. The ring is one
+//     silhouette with a border on its outside only: each petal gives the
+//     outline just its OUTER arc, from where it crosses the petal behind it
+//     to where it crosses the one ahead, and the twelve arcs close into one
+//     path that is filled and stroked once. The border lands exactly where
+//     the capture's outer edge does, and nothing is drawn inside the white.
+//   * Its pupils wander through their sockets and out of them. A trader's
+//     eyes are a flower's eyes (paintFlowerEyes), placed by `gaze` scaled to
+//     the flower's own eye travel.
+
+/// The ring's outer edge -- petal orbit plus petal radius -- which is the
+/// trader's body radius: the middle of its outline, as a mob's hitbox is.
+constexpr double kTraderArtRadius = 33.75;
+constexpr int kTraderPetals = 12;
+constexpr double kTraderPetalOrbit = 25.0;
+constexpr double kTraderPetalRadius = 8.75;
+/// The basic petal's own white and its #CFCFCF rim, three wide.
+constexpr double kTraderPetalRim = 3.0;
+constexpr std::uint32_t kTraderPetalFill = 0xFFFFFFu;
+constexpr std::uint32_t kTraderPetalRimColor = 0xCFCFCFu;
+/// A player's face, as WorldRenderer::drawFace draws it at rest.
+constexpr double kFlowerRingRadius = 26.5;
+constexpr double kFlowerBodyRadius = 23.5;
+constexpr double kFlowerRestingMouth = 14.5;
+constexpr std::uint32_t kFlowerMouthInk = 0x222222u;
+
+void paintTrader(Canvas& canvas, const MobArtAttributes& attr) {
+    const double s = attr.radius / kTraderArtRadius;
+    canvas.save();
+    canvas.scale(static_cast<float>(s), static_cast<float>(s));
+
+    // Where two neighbouring petals cross on the outside: on the line halfway
+    // between their spokes, `cross` out from the middle. Each petal's outer
+    // arc runs `sweep` either side of its own spoke, measured about the
+    // petal's centre, which is exactly the arc from one crossing to the next.
+    const double half = kPi / kTraderPetals;
+    const double off = kTraderPetalOrbit * std::sin(half);
+    const double cross = kTraderPetalOrbit * std::cos(half) +
+                         std::sqrt(kTraderPetalRadius * kTraderPetalRadius - off * off);
+    const double sweep =
+        std::atan2(cross * std::sin(half), cross * std::cos(half) - kTraderPetalOrbit);
+    canvas.beginPath();
+    for (int i = 0; i < kTraderPetals; ++i) {
+        const double spoke = kTau * i / kTraderPetals;
+        const Vec2 at = Vec2::fromAngle(spoke, kTraderPetalOrbit);
+        canvas.arc(static_cast<float>(at.x), static_cast<float>(at.y),
+                   static_cast<float>(kTraderPetalRadius), static_cast<float>(spoke - sweep),
+                   static_cast<float>(spoke + sweep), false);
+    }
+    canvas.closePath();
+    ui::setFill(canvas, kTraderPetalFill);
+    canvas.fill();
+    // Round, so the stroke's inside turns each notch the way a stroke round
+    // the union of twelve discs would, rather than spiking into the white.
+    ui::setStroke(canvas, kTraderPetalRimColor);
+    canvas.setLineWidth(static_cast<float>(kTraderPetalRim));
+    canvas.setLineJoin("round");
+    canvas.stroke();
+
+    // The flower: its ring in the body colour's outline shade, the body, the
+    // eyes where it is looking, and the smile a player wears at rest.
+    ui::setFill(canvas, outlineOf(attr.baseColor));
+    canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kFlowerRingRadius));
+    ui::setFill(canvas, attr.baseColor);
+    canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kFlowerBodyRadius));
+
+    Vec2 gaze = attr.gaze;
+    if (gaze.lengthSq() > 1.0) gaze = gaze * (1.0 / gaze.length());
+    paintFlowerEyes(canvas, gaze.x * kFlowerEyeTravelX, gaze.y * kFlowerEyeTravelY);
+
+    ui::setStroke(canvas, kFlowerMouthInk);
+    canvas.setLineWidth(1.5f);
+    canvas.setLineCap("round");
+    canvas.beginPath();
+    canvas.moveTo(-6.0f, 10.0f);
+    canvas.quadraticCurveTo(0.0f, static_cast<float>(kFlowerRestingMouth), 6.0f, 10.0f);
+    canvas.stroke();
+
+    canvas.restore();
+}
+
 } // namespace
+
+void paintFlowerEyes(Canvas& canvas, double eyeX, double eyeY) {
+    canvas.save();
+    ui::setFill(canvas, 0x000000u);
+    canvas.beginPath();
+    canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+    canvas.moveTo(10.2f, -4.8f);
+    canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+    canvas.fill();
+    canvas.clip();
+    ui::setFill(canvas, 0xFFFFFFu);
+    canvas.beginPath();
+    canvas.arc(static_cast<float>(-7 + eyeX), static_cast<float>(-4.8 + eyeY),
+               3, 0, static_cast<float>(kTau));
+    canvas.arc(static_cast<float>(7 + eyeX), static_cast<float>(-4.8 + eyeY),
+               3, 0, static_cast<float>(kTau));
+    canvas.fill();
+    ui::setStroke(canvas, 0x000000u);
+    canvas.setLineWidth(1.0f);
+    canvas.beginPath();
+    canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+    canvas.stroke();
+    canvas.beginPath();
+    canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
+    canvas.stroke();
+    canvas.restore();
+}
 
 MobArt mobArtFor(const std::string& image) {
     if (image.empty() || image[0] != '$') return MobArt::None;
@@ -651,6 +773,7 @@ MobArt mobArtFor(const std::string& image) {
     if (name == "leech_body") return MobArt::LeechBody;
     if (name == "spider") return MobArt::Spider;
     if (name == "oracle") return MobArt::Oracle;
+    if (name == "trader") return MobArt::Trader;
     return MobArt::None;
 }
 
@@ -666,6 +789,7 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         case MobArt::LeechBody: paintLeechBody(canvas, attr); break;
         case MobArt::Spider:    paintSpider(canvas, attr); break;
         case MobArt::Oracle:    paintOracle(canvas, attr); break;
+        case MobArt::Trader:    paintTrader(canvas, attr); break;
         case MobArt::None:      break;
     }
 }

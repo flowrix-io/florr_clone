@@ -49,12 +49,16 @@ enum class NpcService : std::uint8_t {
     /// Guaranteed crafts: a fixed number of one petal for one of the next
     /// tier, every time. See oracleCraftCost() in rarity.h.
     Oracle,
+    /// One petal for one coin (kTraderCoinPetal) of the same tier, once a day.
+    /// Any petal whose petals.json entry does not say `"tradable": false`.
+    Trader,
 };
 
 /// The service a mobs.json `npc.service` string names, or None for text this
 /// build does not know. Case-sensitive, like every other id in that file.
 inline NpcService parseNpcService(const std::string& name) {
     if (name == "oracle") return NpcService::Oracle;
+    if (name == "trader") return NpcService::Trader;
     return NpcService::None;
 }
 
@@ -81,6 +85,29 @@ inline constexpr double kOracleCooldownMillis = 30.0 * 60.0 * 1000.0;
 inline std::string oracleCooldownText(double remainingMillis) {
     const long minutes = std::max(1L, static_cast<long>(std::ceil(remainingMillis / 60000.0)));
     return "You'll be able to craft again in " + std::to_string(minutes) +
+           (minutes == 1 ? " minute" : " minutes");
+}
+
+/// The petal every trade hands back, at the tier of the petal traded for it.
+inline constexpr const char* kTraderCoinPetal = "coin";
+
+/// How long an account waits between two trades: one a day. Kept exactly as
+/// the oracle's wait is -- per account, in the server's memory only
+/// (GameServer::traderReadyAt_) -- so a relog keeps it and a restart clears it.
+inline constexpr double kTraderCooldownMillis = 24.0 * 60.0 * 60.0 * 1000.0;
+
+/// "You'll be able to trade again in 23 hours" -- the reference's sentence,
+/// which says 23 the moment a trade is made: whole hours rounded DOWN. Under
+/// an hour there is no whole hour left to say, so the last one counts down in
+/// minutes, rounded up as the oracle's are, and never reads "0".
+inline std::string traderCooldownText(double remainingMillis) {
+    const long hours = static_cast<long>(std::floor(remainingMillis / 3600000.0));
+    if (hours >= 1) {
+        return "You'll be able to trade again in " + std::to_string(hours) +
+               (hours == 1 ? " hour" : " hours");
+    }
+    const long minutes = std::max(1L, static_cast<long>(std::ceil(remainingMillis / 60000.0)));
+    return "You'll be able to trade again in " + std::to_string(minutes) +
            (minutes == 1 ? " minute" : " minutes");
 }
 

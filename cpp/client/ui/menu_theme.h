@@ -42,6 +42,11 @@ inline constexpr PanelSkin kCraftingSkin{0xDB9D5Bu, 0xB17F48u, 0xB17F48u};
 /// the border's slate is also what an empty slot, an empty cell and the scroll
 /// thumb are filled with there.
 inline constexpr PanelSkin kOracleSkin{0x6D859Cu, 0x586C7Eu, 0x586C7Eu};
+/// The trader's card is the flower yellow it is painted in, with that yellow's
+/// outline shade for the border, an empty slot and an empty cell, and the
+/// scroll thumb one step darker -- all three the reference shot's
+/// (After-trade_trade_menu.webp).
+inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCCB94Fu};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
 /// The talent card is the one panel drawn against a reference screenshot
 /// rather than the browser build's CSS, so its body is that shot's dusty red

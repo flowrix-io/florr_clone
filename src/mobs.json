@@ -2021,5 +2021,33 @@
             "service": "oracle"
         },
         "noEggDrop": true
+    },
+    "trader": {
+        "name": "Trader",
+        "damage": 10,
+        "health": 150,
+        "size": 1.5,
+        "speed": 0,
+        "cooldown": 2000,
+        "xp": {
+            "common": 3,
+            "uncommon": 10,
+            "rare": 40,
+            "epic": 350,
+            "legendary": 1800,
+            "mythic": 45000,
+            "ultra": 220000,
+            "super": 1800000,
+            "unique": 9000000
+        },
+        "description": "One petal, one coin. Come back tomorrow",
+        "color": "#FFE763",
+        "image": "$trader",
+        "ai_type": "passive",
+        "range": 100,
+        "npc": {
+            "service": "trader"
+        },
+        "noEggDrop": true
     }
 }

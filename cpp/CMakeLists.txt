@@ -155,6 +155,7 @@ add_library(flix_client STATIC
   client/ui/menu_inventory.cpp
   client/ui/menu_crafting.cpp
   client/ui/menu_oracle.cpp
+  client/ui/menu_trade.cpp
   client/ui/menu_gallery.cpp
   client/ui/menu_guild.cpp
   client/ui/menu_talents.cpp

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 40;
+inline constexpr std::uint16_t kProtocolVersion = 41;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -134,6 +134,13 @@ enum class ClientMessage : std::uint8_t {
                         ///< not there. Resolved server-side in one pass: the
                         ///< client does not know the presets, and a string of
                         ///< SetLoadouts could not move a petal between two slots.
+    Trade,              ///< u16 itemType, u8 rarity -- ONE petal handed to a
+                        ///< trader NPC for one kTraderCoinPetal of the same
+                        ///< tier. One trade per kTraderCooldownMillis, per
+                        ///< account, and only a petal petals.json does not
+                        ///< mark `"tradable": false`. Found and reached exactly
+                        ///< as OracleCraft's oracle is: the server looks for
+                        ///< the trader itself. (Version 41.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -142,7 +149,8 @@ enum class ServerMessage : std::uint8_t {
     Profile,            ///< full account state: xp, level, stars, inventory, loadout,
                         ///< skins, the talent tree and the mob-kill ledger,
                         ///< then u32 milliseconds until the account may craft
-                        ///< at an oracle again (0 when it may now), and last
+                        ///< at an oracle again (0 when it may now), u32 the
+                        ///< same until it may trade at a trader, and last
                         ///< u8 count, { u8 preset, u8 slotCount,
                         ///< { u16 itemType, u8 rarity }* }* -- the saved
                         ///< loadouts (loadoutPresetName), only those that exist
@@ -259,6 +267,14 @@ enum class ServerMessage : std::uint8_t {
                         ///< a replayed line is stamped with when it was said,
                         ///< not when it arrived. No speaker: a backlog is
                         ///< never floated as a bubble. (Version 40.)
+    TradeResult,        ///< u8 ok, u16 itemType, u8 rarity, u16 receivedType,
+                        ///< str reason. `itemType` and `rarity` are the petal
+                        ///< that was offered; `receivedType` is what came back
+                        ///< for it, at that same tier -- kNoPetal on a
+                        ///< refusal. Its own reply for OracleResult's reason:
+                        ///< the trade panel lands the coin, and a result any
+                        ///< other panel could read might land in that one.
+                        ///< (Version 41.)
 };
 
 // ---------------------------------------------------------------------------

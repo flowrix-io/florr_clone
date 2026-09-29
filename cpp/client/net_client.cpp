@@ -76,6 +76,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::SwapLoadoutRows:     return "swapLoadoutRows";
         case net::ClientMessage::SaveLoadoutPreset:   return "saveLoadoutPreset";
         case net::ClientMessage::LoadLoadoutPreset:   return "loadLoadoutPreset";
+        case net::ClientMessage::Trade:               return "trade";
     }
     return "unknown";
 }
@@ -111,6 +112,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::OracleResult:        return "oracleResult";
         case net::ServerMessage::SessionReplaced:     return "sessionReplaced";
         case net::ServerMessage::ChatHistory:         return "chatHistory";
+        case net::ServerMessage::TradeResult:         return "tradeResult";
     }
     return "unknown";
 }
@@ -293,6 +295,8 @@ void NetClient::forgetAccount() {
     craftOutcome_ = CraftOutcome{};
     oracleOutcome_ = OracleOutcome{};
     oracleReadyAtMillis_ = 0;
+    tradeOutcome_ = TradeOutcome{};
+    traderReadyAtMillis_ = 0;
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
     view_.clear();
@@ -418,6 +422,18 @@ void NetClient::requestOracleCraft(std::uint16_t petalIndex, Rarity rarity) {
 
 double NetClient::oracleCooldownRemainingMillis() const {
     return std::max(0.0, oracleReadyAtMillis_ - nowMillis());
+}
+
+void NetClient::requestTrade(std::uint16_t petalIndex, Rarity rarity) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::Trade);
+    w.u16(petalIndex);
+    w.u8(static_cast<std::uint8_t>(rarity));
+    send(w);
+}
+
+double NetClient::traderCooldownRemainingMillis() const {
+    return std::max(0.0, traderReadyAtMillis_ - nowMillis());
 }
 
 void NetClient::requestUpgradeSkill(SkillId skill, int tier) {
@@ -627,6 +643,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::RealmChange:   handleRealmChange(reader); break;
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         case net::ServerMessage::OracleResult:  handleOracleResult(reader); break;
+        case net::ServerMessage::TradeResult:   handleTradeResult(reader); break;
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
         default:
@@ -761,6 +778,7 @@ void NetClient::handleProfile(ByteReader& reader) {
         if (at < next.mobKills.size()) next.mobKills[at] = count;
     }
     next.oracleCooldownMillis = reader.u32();
+    next.traderCooldownMillis = reader.u32();
 
     const std::uint8_t presetCount = reader.u8();
     for (std::uint8_t i = 0; i < presetCount; ++i) {
@@ -782,6 +800,7 @@ void NetClient::handleProfile(ByteReader& reader) {
     if (!reader.ok()) return;
     profile_ = std::move(next);
     oracleReadyAtMillis_ = nowMillis() + static_cast<double>(profile_.oracleCooldownMillis);
+    traderReadyAtMillis_ = nowMillis() + static_cast<double>(profile_.traderCooldownMillis);
 }
 
 void NetClient::handleCraftResult(ByteReader& reader) {
@@ -810,6 +829,18 @@ void NetClient::handleOracleResult(ByteReader& reader) {
     if (!reader.ok()) return;
     outcome.pending = true;
     oracleOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleTradeResult(ByteReader& reader) {
+    TradeOutcome outcome;
+    outcome.success = reader.boolean();
+    outcome.petalIndex = reader.u16();
+    outcome.rarity = clampRarity(reader.u8());
+    outcome.receivedIndex = reader.u16();
+    outcome.reason = reader.str();
+    if (!reader.ok()) return;
+    outcome.pending = true;
+    tradeOutcome_ = std::move(outcome);
 }
 
 void NetClient::handleShopResult(ByteReader& reader) {

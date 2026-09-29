@@ -692,8 +692,9 @@ std::array<double, kRarityCount> parseXp(Ctx& ctx, const Json& src) {
     return xp;
 }
 
-/// The `npc` block: `{ "service": "oracle" }` for the oracle, `{ "team":
-/// "hostile" }` for the target dummy. Both keys are optional -- an empty block
+/// The `npc` block: `{ "service": "oracle" }` for the oracle, `{ "service":
+/// "trader" }` for the trader, `{ "team": "hostile" }` for the target dummy.
+/// Both keys are optional -- an empty block
 /// is a friendly NPC that offers nothing -- and a value this build does not
 /// know is reported and read as its default, never as a reason to drop the
 /// NPC: a map that places one would otherwise stand nothing there in silence.
@@ -913,6 +914,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.cooldownMillis = ctx.range(src, "cooldown", kDefaultPetalReloadMillis, 0.0, kMaxCooldownMillis);
     p.count = ctx.integer(src, "count", 1, 0, 64);
     p.isAdminPetal = ctx.boolean(src, "isAdminPetal");
+    p.tradable = ctx.boolean(src, "tradable", true);
 
     p.modifiers = parseModifiers(ctx, src);
 

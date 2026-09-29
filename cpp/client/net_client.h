@@ -57,6 +57,8 @@ struct Profile {
     /// when this profile was sent; 0 when it may craft now. A duration, not a
     /// deadline: NetClient turns it into one on its own clock as it arrives.
     std::uint32_t oracleCooldownMillis = 0;
+    /// The same for the account's next trade at a trader.
+    std::uint32_t traderCooldownMillis = 0;
     std::vector<std::uint32_t> mobKills;
 
     /// The saved loadouts, by preset number (loadoutPresetName), each in
@@ -186,6 +188,19 @@ struct OracleOutcome {
     int crafted = 0;
     /// How many petals went in.
     std::uint32_t spent = 0;
+    std::string reason;
+};
+
+/// The outcome of the last trade, for the trade panel's landing. Its own
+/// record for OracleOutcome's reason.
+struct TradeOutcome {
+    bool pending = false;      ///< a result arrived that the panel has not read
+    bool success = false;
+    /// The petal offered, and its tier -- which is also the coin's tier.
+    std::uint16_t petalIndex = 0;
+    Rarity rarity = Rarity::Common;
+    /// What came back for it; kNoPetal on a refusal.
+    std::uint16_t receivedIndex = kNoPetal;
     std::string reason;
 };
 
@@ -351,6 +366,12 @@ public:
     /// How long until the account may craft at an oracle again, counted down
     /// on this client's clock from the last profile; 0 when it may now.
     double oracleCooldownRemainingMillis() const;
+    /// Hands one petal of this tier to the trader the body is standing at, for
+    /// one coin of the same tier.
+    void requestTrade(std::uint16_t petalIndex, Rarity rarity);
+    /// How long until the account may trade again, counted down on this
+    /// client's clock from the last profile; 0 when it may now.
+    double traderCooldownRemainingMillis() const;
     void requestRespawn();
     void sendPing();
     /// Buys the NEXT tier of a branch. The server refuses anything else, so
@@ -548,6 +569,8 @@ public:
     CraftOutcome& craftOutcome() { return craftOutcome_; }
     /// The last oracle result, read and cleared the same way.
     OracleOutcome& oracleOutcome() { return oracleOutcome_; }
+    /// The last trade result, read and cleared the same way.
+    TradeOutcome& tradeOutcome() { return tradeOutcome_; }
 
     /// The last purchase or code redemption. The shop panel clears `pending`
     /// once it has raised the modal for it.
@@ -630,6 +653,7 @@ private:
     void handleRevived(ByteReader&);
     void handleCraftResult(ByteReader&);
     void handleOracleResult(ByteReader&);
+    void handleTradeResult(ByteReader&);
     void handleShopResult(ByteReader&);
     void handleChangePasswordResult(ByteReader&);
     void handleLeaderboard(ByteReader&);
@@ -717,6 +741,9 @@ private:
     /// When, on this client's steady clock, the oracle wait the last profile
     /// reported runs out.
     double oracleReadyAtMillis_ = 0;
+    TradeOutcome tradeOutcome_;
+    /// The same for the trader's wait.
+    double traderReadyAtMillis_ = 0;
     ShopOutcome shopOutcome_;
     PasswordOutcome passwordOutcome_;
 

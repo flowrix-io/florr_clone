@@ -2116,27 +2116,8 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
         canvas.beginPath(); canvas.rect(-10, -11.3f, 6, 13); canvas.stroke();
         canvas.beginPath(); canvas.rect(4, -11.3f, 6, 13); canvas.stroke();
     } else {
-        canvas.beginPath();
-        canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-        canvas.moveTo(10.2f, -4.8f);
-        canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-        canvas.fill();
-        canvas.clip();
-        ui::setFill(canvas, 0xFFFFFFu);
-        canvas.beginPath();
-        canvas.arc(static_cast<float>(-7 + eyeX), static_cast<float>(-4.8 + eyeY),
-                   3, 0, static_cast<float>(kTau));
-        canvas.arc(static_cast<float>(7 + eyeX), static_cast<float>(-4.8 + eyeY),
-                   3, 0, static_cast<float>(kTau));
-        canvas.fill();
-        ui::setStroke(canvas, 0x000000u);
-        canvas.setLineWidth(1.0f);
-        canvas.beginPath();
-        canvas.ellipse(-7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-        canvas.stroke();
-        canvas.beginPath();
-        canvas.ellipse(7, -4.8f, 3.2f, 6.5f, 0, 0, static_cast<float>(kTau));
-        canvas.stroke();
+        // Shared with the trader, whose eyes are a flower's (mob_art.h).
+        paintFlowerEyes(canvas, eyeX, eyeY);
     }
     canvas.restore();
 
@@ -2634,12 +2615,15 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
             paint(canvas);
             canvas.restore();
         }
-    } else if (sprites_ && sprites_->mobArt(mob.typeIndex) == MobArt::Oracle) {
+    } else if (sprites_ && (sprites_->mobArt(mob.typeIndex) == MobArt::Oracle ||
+                            sprites_->mobArt(mob.typeIndex) == MobArt::Trader)) {
         // The body is drawn UPRIGHT and the facing goes to the eye instead: an
         // oracle turning round is a pupil sliding across its socket, the way a
-        // flower's is, not a disc of tendrils spinning on the spot. So the
-        // gaze is the facing, eased per frame, in world space -- which with no
-        // rotation applied is the art's space too.
+        // flower's is, not a disc of tendrils spinning on the spot -- and the
+        // trader IS a flower, whose eyes are eased toward its facing at the
+        // same per-frame rate a player's are. So the gaze is the facing, eased
+        // per frame, in world space -- which with no rotation applied is the
+        // art's space too.
         sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, 0.0, timeSeconds, false,
                           mob.radius * visualScale, mobGaze(mob));
     } else if (sprites_ && sprites_->mobDrawable(mob.typeIndex)) {

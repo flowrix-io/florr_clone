@@ -536,6 +536,10 @@ struct PetalConfig {
     double price = 0;
 
     bool isAdminPetal = false;
+    /// Whether a trader NPC takes this petal for a coin. On unless petals.json
+    /// says `"tradable": false` -- the basic petal, and the coin itself, which
+    /// would otherwise trade for itself.
+    bool tradable = true;
 
     PetalModifiers modifiers;
 

@@ -522,6 +522,73 @@ private:
     double grainCredit_ = 0;
 };
 
+/// The trader: what the craft panel becomes while the flower stands at a
+/// trader NPC.
+///
+/// The oracle's card in the trader's yellow -- the reference shots lay both
+/// services out on one card -- with one petal in the slot, a Trade button, and
+/// a grid of every stack the account owns at every tier: any petal petals.json
+/// does not mark untradable goes for one coin of its own tier, and the coin
+/// lands in the slot the way loot lands on the ground. One trade a day: while
+/// the account waits, the line under the slot counts the hours down in red and
+/// every stack sits on grey. See menu_trade.cpp.
+class TradePanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    /// The oracle's reference card, two columns wider than its eight for the
+    /// unique and apex columns, and its height; on the forge's left and bottom
+    /// edges, as the oracle's is.
+    static double preferredWidth();
+    static double preferredHeight();
+    static Rect bounds(int viewWidth, int viewHeight);
+
+private:
+    /// Trading: the petal has gone to the server and the slot is showing it
+    /// until the answer comes back.
+    enum class Phase : std::uint8_t { Idle, Trading, Result };
+
+    /// One grain of the landing's burst, in slot-centred coordinates: the
+    /// oracle's grains, thrown the same way.
+    struct Grain {
+        Vec2 position;
+        Vec2 velocity;
+        double lifeSeconds = 0;
+        double maxLifeSeconds = 1;
+        double size = 0;
+        double rotation = 0;
+        std::uint32_t color = 0xFFFFFFu;
+    };
+
+    /// A drop's landing burst, doubled, in `rarity`'s colour.
+    void throwBurst(Rarity rarity);
+
+    ui::Scroller scroll_;
+    /// The petal in the slot: one of it, which is what one trade takes.
+    std::uint16_t stagedPetal_ = kNoPetal;
+    Rarity stagedRarity_ = Rarity::Common;
+
+    Phase phase_ = Phase::Idle;
+    double phaseStarted_ = 0;
+    /// What went to the trader on the click. The slot is emptied at once --
+    /// the petal is the server's now -- so this is drawn while the trade is
+    /// out, and a refusal puts it back.
+    std::uint16_t offeredPetal_ = kNoPetal;
+    Rarity offeredRarity_ = Rarity::Common;
+    /// What came back: the coin, at the offer's tier.
+    std::uint16_t resultPetal_ = kNoPetal;
+    Rarity resultRarity_ = Rarity::Common;
+    /// The landing's random start: where the coin slides in from, and the spin
+    /// it unwinds on the way.
+    Vec2 landFrom_;
+    double landSpin_ = 0;
+    /// Why the trader said no, shown under the slot until it expires.
+    std::string refusal_;
+    double refusalUntil_ = 0;
+
+    std::vector<Grain> grains_;
+};
+
 /// The bestiary: every mob at every tier it can appear at, and what the
 /// account has actually killed.
 class GalleryPanel {
@@ -858,9 +925,12 @@ public:
 
     /// The service of the NPC the player's flower is standing at, or None.
     /// The app measures it every frame; the craft panel reads it to decide
-    /// whether it is the forge or the oracle this frame.
+    /// whether it is the forge, the oracle or the trader this frame.
     void setNearbyNpc(NpcService service) { nearbyNpc_ = service; }
     NpcService nearbyNpc() const { return nearbyNpc_; }
+    /// The craft menu's card for a `w` x `h` view as it stands this frame: the
+    /// forge's, or the oracle's or the trader's while the flower is at one.
+    Rect craftPanelBounds(int w, int h) const;
 
     /// Feeds the debug panel one frame of samples. See DebugPanel::recordFrame
     /// for why this is not done inside render().
@@ -1119,6 +1189,7 @@ private:
     InventoryPanel inventory_;
     CraftingPanel crafting_;
     OraclePanel oracle_;
+    TradePanel trader_;
     TalentsPanel talents_;
     GalleryPanel gallery_;
     ShopPanel shop_;

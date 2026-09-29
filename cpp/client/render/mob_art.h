@@ -25,6 +25,12 @@
 // world renderer exactly as a flower's pupils are -- so it arrives as an
 // attribute (`gaze`) rather than out of the clock.
 //
+// The trader is a flower -- a player's own face, ring and body -- standing in a
+// ring of basic petals, and it is here for the oracle's reason: its eyes are a
+// flower's eyes, moved by where it is looking. They are drawn by the one
+// function every flower's eyes are (paintFlowerEyes), so they move exactly as
+// a player's do.
+//
 // The leech is here for a third reason. Its body is not a row of beads, it is
 // one smooth tube, and the reference draws it by stroking a single polyline
 // through every segment's centre. Our renderer draws one entity at a time and
@@ -51,7 +57,7 @@ namespace flix {
 
 /// Which painter an `image` marker names. `None` is every ordinary mob.
 enum class MobArt : std::uint8_t { None, Rock, Cactus, Sandstorm, Scorpion, Crab, LeechHead,
-                                   LeechBody, Spider, Oracle };
+                                   LeechBody, Spider, Oracle, Trader };
 
 /// How fast a walk cycle runs, in radians of phase per second.
 ///
@@ -84,13 +90,27 @@ struct MobArtAttributes {
     std::uint32_t baseColor = 0xFFFFFFu;
     /// Where the mob's eye is looking, in the art's own frame, as a fraction
     /// of how far its pupil can travel: (1, 0) is hard along +X, which is the
-    /// way every drawing faces. Only the oracle has an eye that reads it. A
-    /// call site with no creature behind it -- a bestiary tile -- leaves the
-    /// default, which is the pose the oracle's reference art is drawn in.
+    /// way every drawing faces. Only the oracle and the trader have eyes that
+    /// read it. A call site with no creature behind it -- a bestiary tile --
+    /// leaves the default, which is the pose the oracle's reference art is
+    /// drawn in.
     Vec2 gaze{1.0, 0.0};
 };
 
 /// Paints `art` about the origin. `None` draws nothing.
 void paintMobArt(Canvas&, MobArt art, const MobArtAttributes&);
+
+/// How far a flower's pupils travel from the middle of their eyes, across and
+/// down: the client eases every flower's eye offset toward its facing's
+/// (cos, sin) scaled by these two (world_view.cpp), and the trader scales its
+/// `gaze` by the same pair, which is what makes its eyes move as a player's do.
+inline constexpr double kFlowerEyeTravelX = 2.0;
+inline constexpr double kFlowerEyeTravelY = 4.4;
+
+/// A flower's two round eyes, in its radius-25 art space: the black sockets,
+/// the white pupils `eyeX`, `eyeY` off the sockets' middles and clipped to
+/// them, and a hairline rim over the pupils' edge. The one drawing of them --
+/// every flower the world renderer draws, and the trader, come through here.
+void paintFlowerEyes(Canvas&, double eyeX, double eyeY);
 
 } // namespace flix

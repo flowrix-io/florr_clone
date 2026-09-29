@@ -216,6 +216,19 @@ and nothing of it is written to the database. The profile carries what is left
 of it as a duration, so the client's countdown never depends on its own clock
 agreeing with the server's.
 
+The trader is the second, built the same way end to end: within reach of one
+the craft key opens `TradePanel` (the oracle's card, in the flower yellow), and
+`ClientMessage::Trade` hands the server one petal of one tier for one
+`kTraderCoinPetal` of the same tier -- refused for a petal whose petals.json
+entry says `"tradable": false` (`PetalConfig::tradable`; the basic petal and
+the coin itself), and refused unless the body stands at a trader. One trade
+starts a day's wait (`kTraderCooldownMillis`), held exactly as the oracle's is
+(`GameServer::traderReadyAt_`) and sent in the profile beside it. The trader
+is drawn by the `$trader` painter: a player's own face -- its eyes drawn by
+the one `paintFlowerEyes` every flower uses, moved by its facing at a
+flower's eye travel -- in a ring of basic petals outlined only on the
+outside.
+
 ## Networking
 
 `shared/net/`. `[u32 length][u8 type][payload]`, little-endian, no type tags

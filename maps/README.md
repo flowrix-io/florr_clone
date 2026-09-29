@@ -619,7 +619,7 @@ An `npc` object stands one NPC in the world, where it is drawn:
 
 | property | meaning |
 | --- | --- |
-| `npc` | **which** NPC: the mobs.json id of a mob that has an `npc` block — `oracle`, `target_dummy` |
+| `npc` | **which** NPC: the mobs.json id of a mob that has an `npc` block — `oracle`, `trader`, `target_dummy` |
 | `rarity` | the tier it stands at: its size, the pool on its plate and the tier the plate names. `common` when left out; spelled like mobs.json's tiers, in any case |
 
 An NPC is a mob's artwork, size and tier standing in the world without being a
@@ -634,6 +634,7 @@ watch the nearest flower. Which side it is on is the mob's business, in its mobs
 | `npc` block | side | what hits it |
 | --- | --- | --- |
 | `{ "service": "oracle" }` | the players' (the default) | nothing — every hit is refused |
+| `{ "service": "trader" }` | the players' | nothing — every hit is refused |
 | `{ "team": "hostile" }` | the hostiles' | every hit a flower lands: it flashes, it is numbered and a dummy counts its DPS — each viewer's own hits only — and it loses nothing. It hits back as its mob does: a flower touching it is bumped and bitten, and a petal striking it pays for the hit out of its own health |
 
 The server keeps one standing on every object here — at start-up, and again on
@@ -647,7 +648,10 @@ What a service does is the mob's business too: `oracle` turns the craft panel
 of any flower within reach of it into a guaranteed craft at a fixed price
 (`oracleCraftCost` in `cpp/shared/game/rarity.h`) — one upgrade per craft,
 and one craft per account every 30 minutes (held in server memory, so a
-restart clears every wait). The same mob is still an
+restart clears every wait). `trader` turns it into the trade panel: one petal
+for one `coin` of the same tier, any petal whose petals.json entry does not say
+`"tradable": false`, one trade per account every 24 hours (held in server
+memory the same way). The same mob is still an
 ordinary enemy to `spawn oracle <rarity>` on the admin console; `spawn_npc
 <mob> [rarity] [players|hostile|neutral]` stands the NPC where the admin is,
 which is how the maze and the arena — which have no map to draw on — get one.
@@ -655,7 +659,8 @@ The console takes ANY mob, not just one with an `npc` block: the side comes from
 the command when it names one, else from the block, else the players' (what an
 empty block means). A map is stricter, and only places mobs that have a block.
 
-`garden.tmj` places one common oracle just east of its door.
+`ocean.tmj` places one common oracle, and `desert.tmj` one common trader on
+the open ground west of its door.
 
 ## The map's own properties
 
