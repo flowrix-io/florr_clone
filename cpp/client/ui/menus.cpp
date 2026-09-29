@@ -434,13 +434,15 @@ void drawPresetSlot(Canvas& canvas, const SpriteCache& sprites, Rect r, const st
                                    [](const Profile::Slot& slot) { return !slot.empty(); });
     if (face == preset.end() || face->petalIndex >= content().petalCount()) return;
     // One icon at the common size, whatever the rarity: a mythic basic's
-    // five-petal clump would bury the name it is sitting on.
+    // five-petal clump would bury the name it is sitting on. Its colours are
+    // still its own tier's, for a petal repainted by rarity.
     const PetalStats stats = content().petalStats(face->petalIndex, Rarity::Common);
     const double scale = std::min(r.w, r.h) / kItemTileDesign * kItemTileIconScale;
     canvas.save();
     canvas.translate(static_cast<float>(r.x + r.w * 0.5), static_cast<float>(r.y + r.h * 0.5));
     canvas.scale(static_cast<float>(scale), static_cast<float>(scale));
-    drawPetalCluster(canvas, sprites, face->petalIndex, stats.size, 1, 0.0, 0.0, 0.0, timeSeconds);
+    drawPetalCluster(canvas, sprites, face->petalIndex, face->rarity, stats.size, 1, 0.0, 0.0,
+                     0.0, timeSeconds);
     canvas.restore();
 }
 

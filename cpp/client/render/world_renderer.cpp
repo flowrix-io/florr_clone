@@ -1976,7 +1976,8 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
     if (sprites_) {
         // The sprite cache falls back to a disc in the petal's own colour when
         // its artwork failed to compile, which is the useful fallback here.
-        sprites_->drawPetal(canvas, entity.typeIndex, 0, 0, diameter, 0, timeSeconds);
+        sprites_->drawPetal(canvas, entity.typeIndex, entity.rarity, 0, 0, diameter, 0,
+                            timeSeconds);
     } else {
         ui::disc(canvas, {0, 0}, diameter * 0.5,
                  config ? static_cast<std::uint32_t>(config->colorRgba >> 8) : 0xFFFFFFu,
@@ -2074,7 +2075,9 @@ void WorldRenderer::drawCutterBlade(Canvas& canvas, std::uint8_t equipFlags,
     const PetalConfig& config = content_->petal(index);
     const double diameter = kPetalArtSize * config.size * petalArtScale(&config);
     const double speed = config.speed > 0 ? config.speed : 1.0;
-    sprites_->drawPetal(canvas, index, 0, 0, diameter,
+    // The flower sends which blade it wears, never its tier, so it is drawn
+    // as a common one.
+    sprites_->drawPetal(canvas, index, Rarity::Common, 0, 0, diameter,
                         std::fmod(timeSeconds * kPetalSpinRate * speed, kTau), timeSeconds);
 }
 
@@ -2181,7 +2184,7 @@ void WorldRenderer::drawFace(Canvas& canvas, std::uint8_t faceFlags, std::uint8_
     if (equipFlags & EquipThirdEye) {
         const std::uint16_t thirdEye = content_ ? content_->petalIndex("third_eye") : kInvalidIndex;
         if (sprites_ && thirdEye != kInvalidIndex && sprites_->petalDrawable(thirdEye)) {
-            sprites_->drawPetal(canvas, thirdEye, 0, -14, 13, 0, timeSeconds);
+            sprites_->drawPetal(canvas, thirdEye, Rarity::Common, 0, -14, 13, 0, timeSeconds);
         } else {
             canvas.save();
             canvas.translate(0, -14);
@@ -2436,7 +2439,7 @@ void WorldRenderer::drawGarbagePile(Canvas& canvas, Vec2 at, double baseSize,
         const PetalConfig& config = content_->petal(index);
         const double size = baseSize * (0.6 + static_cast<double>(petalSeed % 200) / 1000.0) *
                             config.size * petalArtScale(&config);
-        sprites_->drawPetal(canvas, index, x, y, size, rotation, timeSeconds);
+        sprites_->drawPetal(canvas, index, Rarity::Common, x, y, size, rotation, timeSeconds);
     }
 }
 
@@ -2525,8 +2528,8 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         // stem -- points back into the body. An upright petal is what the
         // glitch flower's squares want, so this is per ring.
         const double facing = config.petalRing.followRotation ? angle : 0.0;
-        sprites_->drawPetal(canvas, index, std::cos(angle) * orbit, std::sin(angle) * orbit, size,
-                            facing, timeSeconds);
+        sprites_->drawPetal(canvas, index, mob.rarity, std::cos(angle) * orbit,
+                            std::sin(angle) * orbit, size, facing, timeSeconds);
     }
 }
 
@@ -2980,8 +2983,8 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
                 break;
             }
             if (sprites_ && sprites_->petalDrawable(entity.typeIndex)) {
-                sprites_->drawPetal(canvas, entity.typeIndex, screen.x, screen.y, diameter,
-                                    entity.angle, timeSeconds);
+                sprites_->drawPetal(canvas, entity.typeIndex, entity.rarity, screen.x, screen.y,
+                                    diameter, entity.angle, timeSeconds);
             } else {
                 ui::disc(canvas, screen, std::max(2.0, diameter * 0.5),
                          config ? static_cast<std::uint32_t>(config->colorRgba >> 8)

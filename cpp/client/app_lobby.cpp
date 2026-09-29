@@ -496,7 +496,7 @@ void App::drawTitlePetals(Canvas& canvas, double time) {
     const double artTime = std::floor(time * 1000.0 / 42.0) * 0.042;
     // Oldest first: a new petal lands on top of the ones already flying.
     for (const TitlePetal& petal : titlePetals_) {
-        sprites_.drawPetal(canvas, petal.petal, petal.x + petal.size * 0.5,
+        sprites_.drawPetal(canvas, petal.petal, Rarity::Common, petal.x + petal.size * 0.5,
                            petal.y + petal.size * 0.5, petal.size,
                            petal.rotation * kPi / 180.0, artTime);
     }

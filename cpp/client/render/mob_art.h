@@ -100,6 +100,11 @@ struct MobArtAttributes {
 /// Paints `art` about the origin. `None` draws nothing.
 void paintMobArt(Canvas&, MobArt art, const MobArtAttributes&);
 
+/// The outline every gardn body wears: its own fill at 0.8 HSV value, which
+/// for an opaque colour is the channels scaled. Also what a petal's
+/// `rarityFills` repaint derives its strokes from.
+std::uint32_t outlineOf(std::uint32_t rgb);
+
 /// How far a flower's pupils travel from the middle of their eyes, across and
 /// down: the client eases every flower's eye offset toward its facing's
 /// (cos, sin) scaled by these two (world_view.cpp), and the trader scales its

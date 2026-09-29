@@ -875,6 +875,40 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     return m;
 }
 
+/// `"rarityFills": {"super": "#8AFF69"}` -- see PetalConfig::rarityFills. An
+/// entry naming no tier or no colour is dropped with a warning rather than
+/// guessed at: repainting a petal the wrong colour is worse than not at all.
+std::vector<PetalConfig::RarityFill> parseRarityFills(Ctx& ctx, const Json& src) {
+    std::vector<PetalConfig::RarityFill> fills;
+    if (!src.contains("rarityFills")) return fills;
+    const Json& node = src["rarityFills"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("rarityFills is ") + typeName(node) + "; ignored");
+        return fills;
+    }
+    for (const std::string& key : node.keys()) {
+        int tier = -1;
+        for (int i = 0; i < kRarityCount; ++i) {
+            if (key == kRarityNames[static_cast<std::size_t>(i)]) tier = i;
+        }
+        if (tier < 0) {
+            ctx.warn("rarityFills names an unknown rarity '" + key + "'; ignored");
+            continue;
+        }
+        PetalConfig::RarityFill fill;
+        fill.from = static_cast<Rarity>(tier);
+        fill.fill = node[key].asString();
+        if (!parseColor(fill.fill, fill.fillRgba)) {
+            ctx.warn("rarityFills." + key + " '" + fill.fill + "' is not a colour; ignored");
+            continue;
+        }
+        fills.push_back(std::move(fill));
+    }
+    std::sort(fills.begin(), fills.end(),
+              [](const auto& a, const auto& b) { return a.from < b.from; });
+    return fills;
+}
+
 PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
                        const std::unordered_map<std::string, std::uint16_t>& mobIds) {
     PetalConfig p;
@@ -883,6 +917,7 @@ PetalConfig parsePetal(Ctx& ctx, const std::string& id, const Json& src,
     p.description = ctx.text(src, "description");
     p.image = ctx.text(src, "image");
     p.colorRgba = readColor(ctx, src, "color", p.color);
+    p.rarityFills = parseRarityFills(ctx, src);
 
     // What one costs in the shop at the COMMON tier; shopPrice() runs the
     // rarity ladder up from here. Mandatory, for the reason the mob XP table

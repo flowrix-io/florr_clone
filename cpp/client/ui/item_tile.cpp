@@ -305,8 +305,8 @@ constexpr double kClusterBakeMargin = 1.35;
 constexpr int kTightClusterCount = 5;
 
 void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t petalIndex,
-                      double sizeStat, int count, double cx, double cy, double maxDiameter,
-                      double timeSeconds, bool facesInward) {
+                      Rarity rarity, double sizeStat, int count, double cx, double cy,
+                      double maxDiameter, double timeSeconds, bool facesInward) {
     if (petalIndex == kNoPetal || !sprites.petalDrawable(petalIndex)) return;
 
     // A configured count below one means "not a stack" -- third eye, antennae
@@ -334,7 +334,8 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
 
     const auto paintCluster = [&](Canvas& into, double ox, double oy) {
         if (drawCount == 1) {
-            sprites.drawPetal(into, petalIndex, ox, oy, diameter, shape.tilt, timeSeconds);
+            sprites.drawPetal(into, petalIndex, rarity, ox, oy, diameter, shape.tilt,
+                              timeSeconds);
             return;
         }
         for (int i = 0; i < drawCount; ++i) {
@@ -350,7 +351,7 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
             // stepping back by it lands the origin on the ring place.
             const double backX = (origin.x * std::cos(turn) - origin.y * std::sin(turn)) * diameter;
             const double backY = (origin.x * std::sin(turn) + origin.y * std::cos(turn)) * diameter;
-            sprites.drawPetal(into, petalIndex, ox + std::cos(angle) * ring - backX,
+            sprites.drawPetal(into, petalIndex, rarity, ox + std::cos(angle) * ring - backX,
                               oy + std::sin(angle) * ring - backY, diameter, turn, timeSeconds);
         }
     };
@@ -374,6 +375,9 @@ void drawPetalCluster(Canvas& canvas, const SpriteCache& sprites, std::uint16_t 
         // in its last decimal would bake a new bitmap every frame.
         const auto q = [](double v) { return static_cast<std::uint64_t>(std::lround(v * 16.0)); };
         std::uint64_t variant = petalIndex;
+        // The tier is in the key because a repainted petal (`rarityFills`)
+        // is a different picture at the same size.
+        variant = variant * 1000003u + static_cast<std::uint64_t>(rarity);
         variant = variant * 1000003u + static_cast<std::uint64_t>(drawCount);
         variant = variant * 1000003u + q(diameter);
         variant = variant * 1000003u + q(ring);
@@ -479,8 +483,8 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
         // No cap: gardn's own oversize rule lives inside the cluster, and every
         // petal it measures already fits its plate. The face clip is what
         // catches anything this game later adds that does not.
-        drawPetalCluster(canvas, sprites, tile.petalIndex, stats.size, stats.count, 0.0, 0.0, 0.0,
-                         tile.timeSeconds, facesInward);
+        drawPetalCluster(canvas, sprites, tile.petalIndex, tile.rarity, stats.size, stats.count,
+                         0.0, 0.0, 0.0, tile.timeSeconds, facesInward);
         canvas.restore();
     }
 

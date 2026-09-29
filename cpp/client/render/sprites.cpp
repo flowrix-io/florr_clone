@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 
 #include "client/ui/draw.h"
 #include "shared/game/config.h"
@@ -378,6 +379,74 @@ bool declaresArtwork(const std::string& source) {
     return false;
 }
 
+/// Repaints a document flat, for a petal's `rarityFills`: every `fill` paint
+/// becomes `fill` and every `stroke` paint `stroke`, whether written as an
+/// attribute (`fill="#ffe869"`) or a style declaration (`fill:#ffe869`).
+/// `none` and paint servers (`url(#g)`) are left as they are -- the first is a
+/// side of a shape with no ink on it, the second is not one colour to swap.
+/// `fill-opacity`, `stroke-width` and the rest are different names and are
+/// never touched.
+std::string repaintArtwork(const std::string& source, std::uint32_t fill, std::uint32_t stroke) {
+    const auto hex = [](std::uint32_t rgb) {
+        char out[8];
+        std::snprintf(out, sizeof out, "#%06x", static_cast<unsigned>(rgb & 0xFFFFFFu));
+        return std::string(out);
+    };
+    const std::string paint[2] = {hex(fill), hex(stroke)};
+    const std::string name[2] = {"fill", "stroke"};
+    const auto boundary = [](char c) {
+        return std::isspace(static_cast<unsigned char>(c)) || c == ';' || c == '"' || c == '\'';
+    };
+
+    std::string out;
+    out.reserve(source.size());
+    std::size_t at = 0;
+    while (at < source.size()) {
+        int which = -1;
+        if (at > 0 && boundary(source[at - 1])) {
+            for (int k = 0; k < 2; ++k)
+                if (source.compare(at, name[k].size(), name[k]) == 0) which = k;
+        }
+        if (which < 0) {
+            out.push_back(source[at++]);
+            continue;
+        }
+        std::size_t cursor = at + name[which].size();
+        while (cursor < source.size() && source[cursor] == ' ') ++cursor;
+        const char op = cursor < source.size() ? source[cursor] : '\0';
+        if (op != '=' && op != ':') {
+            out.push_back(source[at++]);
+            continue;
+        }
+        ++cursor;
+        while (cursor < source.size() && source[cursor] == ' ') ++cursor;
+        // An attribute's value runs to its closing quote; a declaration's to
+        // the `;` or the quote that closes the style attribute around it.
+        std::size_t begin = cursor;
+        std::size_t end = cursor;
+        if (op == '=') {
+            const char quote = cursor < source.size() ? source[cursor] : '\0';
+            if (quote != '"' && quote != '\'') {
+                out.push_back(source[at++]);
+                continue;
+            }
+            begin = cursor + 1;
+            end = source.find(quote, begin);
+            if (end == std::string::npos) end = source.size();
+        } else {
+            while (end < source.size() && source[end] != ';' && source[end] != '"' &&
+                   source[end] != '\'')
+                ++end;
+            while (end > begin && source[end - 1] == ' ') --end;
+        }
+        const std::string value = source.substr(begin, end - begin);
+        out.append(source, at, begin - at);
+        out += value == "none" || value.rfind("url(", 0) == 0 ? value : paint[which];
+        at = end;
+    }
+    return out;
+}
+
 } // namespace
 
 std::shared_ptr<SvgDocument> SpriteCache::compileArt(const std::string& source,
@@ -427,9 +496,21 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
         const MobConfig& config = content.mob(static_cast<std::uint16_t>(i));
         compile(config.image, config.colorRgba, "mob " + config.id, mobs_[i]);
     }
+    petalRepaints_.assign(petals_.size(), {});
     for (std::size_t i = 0; i < petals_.size(); ++i) {
         const PetalConfig& config = content.petal(static_cast<std::uint16_t>(i));
         compile(config.image, config.colorRgba, "petal " + config.id, petals_[i]);
+        // One more document per tier that repaints the art. Only a document
+        // can be repainted: a painter or a failed compile keeps its base.
+        if (!petals_[i].document) continue;
+        for (const PetalConfig::RarityFill& fill : config.rarityFills) {
+            const std::uint32_t rgb = rgbOf(fill.fillRgba);
+            Sprite repainted;
+            compile(repaintArtwork(resolveArtwork(config.image), rgb, outlineOf(rgb)),
+                    config.colorRgba,
+                    "petal " + config.id + " (" + rarityName(fill.from) + ")", repainted);
+            if (repainted.document) petalRepaints_[i].push_back({fill.from, std::move(repainted)});
+        }
     }
 
     return !mobs_.empty() && !petals_.empty();
@@ -549,10 +630,16 @@ Vec2 SpriteCache::petalOrigin(std::uint16_t index) const {
             -(doc.viewBoxY() + doc.viewBoxHeight() * 0.5) / side};
 }
 
-void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, double x, double y,
-                            double diameter, double rotation, double timeSeconds) const {
+void SpriteCache::drawPetal(Canvas& canvas, std::uint16_t index, Rarity rarity, double x,
+                            double y, double diameter, double rotation,
+                            double timeSeconds) const {
     if (index >= petals_.size()) return;
-    draw(canvas, petals_[index], x, y, diameter, rotation, timeSeconds, false, 0.0);
+    // The highest repaint at or below this tier; they are stored ascending.
+    const Sprite* sprite = &petals_[index];
+    for (const PetalRepaint& repaint : petalRepaints_[index]) {
+        if (repaint.from <= rarity) sprite = &repaint.sprite;
+    }
+    draw(canvas, *sprite, x, y, diameter, rotation, timeSeconds, false, 0.0);
 }
 
 } // namespace flix

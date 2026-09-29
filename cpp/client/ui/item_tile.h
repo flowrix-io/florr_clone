@@ -92,9 +92,9 @@ inline constexpr double kItemTilePlateShade = 0.8;
 ///
 /// `facesInward` turns each icon of a stack to point at the cluster's centre
 /// instead of away from it, as the world draws a `clumpFacesInward` clump.
-void drawPetalCluster(Canvas&, const SpriteCache&, std::uint16_t petalIndex, double sizeStat,
-                      int count, double cx, double cy, double maxDiameter, double timeSeconds,
-                      bool facesInward = false);
+void drawPetalCluster(Canvas&, const SpriteCache&, std::uint16_t petalIndex, Rarity rarity,
+                      double sizeStat, int count, double cx, double cy, double maxDiameter,
+                      double timeSeconds, bool facesInward = false);
 
 /// What ONE icon of a petal measures inside a tile's 60-unit cell, and the
 /// tilt it is drawn at.

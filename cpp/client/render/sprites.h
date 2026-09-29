@@ -31,6 +31,7 @@
 #include "canvas.h"
 #include "client/render/mob_art.h"
 #include "shared/core/types.h"
+#include "shared/game/rarity.h"
 #include "svg.h"
 
 namespace flix {
@@ -70,8 +71,12 @@ public:
     /// world renderer asks so it can feed a painted eye the gaze it eases.
     MobArt mobArt(std::uint16_t index) const;
 
-    void drawPetal(Canvas&, std::uint16_t index, double x, double y, double diameter,
-                   double rotation, double timeSeconds) const;
+    /// Draws petal `index` as its `rarity` looks: the same artwork at every
+    /// tier unless petals.json repaints it from one up (`rarityFills`). A call
+    /// site with no tier behind it -- the title screen's drift, a flower's
+    /// cutter -- passes Common.
+    void drawPetal(Canvas&, std::uint16_t index, Rarity rarity, double x, double y,
+                   double diameter, double rotation, double timeSeconds) const;
 
     /// True when the sprite compiled; false when the fallback disc is used.
     bool mobDrawable(std::uint16_t index) const;
@@ -129,8 +134,16 @@ private:
     /// Parses one optional document, recording a warning instead of failing.
     std::shared_ptr<SvgDocument> compileArt(const std::string& source, const std::string& label);
 
+    /// A petal's artwork repainted from tier `from` up; see drawPetal.
+    struct PetalRepaint {
+        Rarity from = Rarity::Common;
+        Sprite sprite;
+    };
+
     std::vector<Sprite> mobs_;
     std::vector<Sprite> petals_;
+    /// Per petal, ascending by `from`. Empty for almost every petal.
+    std::vector<std::vector<PetalRepaint>> petalRepaints_;
     /// Where tile artwork is staged, from build().
     std::string dataDir_ = "data";
     /// Tile artwork by file name, filled on demand. A name that failed is kept

@@ -151,3 +151,39 @@ TEST(the_procedural_markers_name_painters_this_build_has) {
     CHECK(mobArtFor("<svg/>") == MobArt::None);
     CHECK(mobArtFor("") == MobArt::None);
 }
+
+TEST(a_super_square_is_repainted_green_with_a_derived_outline) {
+    // petals.json repaints the square from super up (`rarityFills`): one fill
+    // colour named, the outline worked out from it by the rule every gardn
+    // body's outline follows. Below super it is the yellow it always was.
+    const ContentRegistry& content = shippedContent();
+    CHECK(content.loaded());
+    const std::uint16_t square = content.petalIndex("square");
+    CHECK(square != kInvalidIndex);
+    SpriteCache sprites;
+    sprites.build(content, "data");
+
+    // At 64 px the 32-unit document is doubled: the stroke runs down x = 4,
+    // 6 px wide, and the middle of the box is all fill.
+    const auto pixelsAt = [&](Rarity rarity) {
+        Canvas canvas = Canvas::createVirtual(64, 64);
+        sprites.drawPetal(canvas, square, rarity, 32, 32, 64, 0, 0);
+        const std::vector<std::uint8_t> image = canvas.getImageData(0, 0, 64, 64);
+        const auto rgb = [&](int x, int y) {
+            const std::size_t at = (static_cast<std::size_t>(y) * 64 + x) * 4;
+            return (std::uint32_t{image[at]} << 16) | (std::uint32_t{image[at + 1]} << 8) |
+                   image[at + 2];
+        };
+        return std::pair<std::uint32_t, std::uint32_t>{rgb(32, 32), rgb(4, 32)};
+    };
+
+    const auto ultra = pixelsAt(Rarity::Ultra);
+    CHECK(ultra.first == 0xFFE869u);
+    CHECK(ultra.second == 0xCFBC55u);
+    for (const Rarity tier : {Rarity::Super, Rarity::Unique, Rarity::Apex}) {
+        const auto repainted = pixelsAt(tier);
+        CHECK(repainted.first == 0x8AFF69u);
+        CHECK(repainted.second == outlineOf(0x8AFF69u));
+    }
+    CHECK(outlineOf(0x8AFF69u) == 0x6ECC54u);
+}

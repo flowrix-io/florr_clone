@@ -520,6 +520,20 @@ struct PetalConfig {
     Rgba colorRgba = kOpaqueWhite;
     std::string image;
 
+    /// The artwork repainted from a tier up: every fill in `image` becomes
+    /// `fill`, and every stroke the outline the client derives from it, so
+    /// petals.json names one colour rather than a second drawing. Written
+    /// `"rarityFills": {"super": "#8AFF69"}`; the highest entry at or below
+    /// a petal's tier wins, and a tier below every entry keeps `image` as it
+    /// is. Sorted ascending by `from` at load. Art only -- the server never
+    /// reads it.
+    struct RarityFill {
+        Rarity from = Rarity::Common;
+        std::string fill;
+        Rgba fillRgba = kOpaqueWhite;
+    };
+    std::vector<RarityFill> rarityFills;
+
     double damage = 0;
     double health = 0;
     double size = 1;            ///< diameter in "size units"; see petalStats()

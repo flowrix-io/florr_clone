@@ -10,6 +10,8 @@
 
 namespace flix {
 
+std::uint32_t outlineOf(std::uint32_t rgb) { return ui::shade(rgb, 0.8); }
+
 namespace {
 
 /// gardn's seeded PRNG, transcribed from `Helpers/Math.cc`.
@@ -61,10 +63,6 @@ void roundStrokes(Canvas& canvas, double width) {
     canvas.setLineCap("round");
     canvas.setLineJoin("round");
 }
-
-/// The outline every gardn body wears: its own fill at 0.8 HSV value, which
-/// for an opaque colour is the channels scaled.
-std::uint32_t outlineOf(std::uint32_t rgb) { return ui::shade(rgb, 0.8); }
 
 // ---------------------------------------------------------------------------
 // The painters
