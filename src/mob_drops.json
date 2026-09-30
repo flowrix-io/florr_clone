@@ -1242,5 +1242,34 @@
         "maxQuantity": 1
       }
     ]
+  },
+  "bumble_bee": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "honey",
+        "rarity": "common",
+        "probability": 0.95,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "pollen",
+        "rarity": "common",
+        "probability": 0.68,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "wax",
+        "rarity": "common",
+        "probability": 0.87,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
   }
 }
