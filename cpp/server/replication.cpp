@@ -54,6 +54,41 @@ double replicatedAngle(World& world, Entity e, const Transform& transform) {
     return transform.angle;
 }
 
+/// Whose a record is, from the VIEWER's side: SpawnForeign when a player other
+/// than the viewer owns it, plus SpawnIsPet on a shot a pet fired. Zero for
+/// anything no player owns and for everything of the viewer's own.
+///
+/// A petal names its flower and a pet its owner. A shot names both the body
+/// that fired it and the player it credits, which differ exactly when a pet
+/// fired it -- and it can outlive either, so a shot is judged by its own
+/// side first: a wild mob's is never on the players' team.
+///
+/// The viewer is matched by connection as well as by body, because a
+/// splitter's parked half is not `viewer` and is still the viewer's own.
+std::uint8_t ownershipFlags(World& world, Entity e, Entity viewer,
+                            net::ConnectionId viewerOwner) {
+    Entity player = NULL_ENTITY;
+    std::uint8_t flags = 0;
+    if (const PetalInstance* instance = world.tryGet<PetalInstance>(e)) {
+        player = instance->owner;
+    } else if (const Pet* pet = world.tryGet<Pet>(e)) {
+        player = pet->owner;
+    } else if (const Projectile* shot = world.tryGet<Projectile>(e)) {
+        const Faction* side = world.tryGet<Faction>(e);
+        if (side == nullptr || side->team != Team::Players) return 0;
+        player = shot->creditTo;
+        if (shot->owner != shot->creditTo) flags |= net::SpawnIsPet;
+    } else {
+        return 0;
+    }
+    if (player == viewer) return flags;
+    const PlayerAccount* account = world.tryGet<PlayerAccount>(player);
+    if (account != nullptr && viewerOwner != 0 && account->connection == viewerOwner) {
+        return flags;
+    }
+    return flags | net::SpawnForeign;
+}
+
 } // namespace
 
 std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
@@ -375,6 +410,7 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
 
         std::uint8_t flags = info.spawnFlags;
         if (candidate.entity == viewer) flags |= net::SpawnIsSelf;
+        flags |= ownershipFlags(world, candidate.entity, viewer, viewerOwner);
         // Decided here rather than beside the field itself: `flags` is written
         // near the top of the record and the health fraction near the bottom,
         // and the flag is what tells the reader how many bytes the latter is.

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 41;
+inline constexpr std::uint16_t kProtocolVersion = 42;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -451,7 +451,10 @@ enum class EntityKind : std::uint8_t {
 enum SpawnFlags : std::uint8_t {
     SpawnHasName    = 1 << 0,   ///< a player name follows
     SpawnIsSelf     = 1 << 1,   ///< this is the viewer's own body
-    SpawnIsPet      = 1 << 2,   ///< a summoned ally, drawn with an owner tint
+    /// A summoned ally, drawn with an owner tint. Also set on a Projectile
+    /// record a pet fired, so the client can file the shot with its shooter
+    /// rather than with the petals. (Projectiles since version 42.)
+    SpawnIsPet      = 1 << 2,
     /// This record's health fraction is an f32 rather than a u16. See
     /// healthFieldIsWide(): it is the pool that decides, not the kind.
     SpawnHealthWide = 1 << 3,
@@ -472,6 +475,14 @@ enum SpawnFlags : std::uint8_t {
     /// Sized from the replicated radius, which grows with its tier, and drawn
     /// on the ground under everything that moves.
     SpawnLoosePetal = 1 << 5,
+    /// Somebody else's: a flower's petal, a pet, or a shot either one fired,
+    /// belonging to a player who is not the viewer. Worked out per VIEWER,
+    /// like SpawnIsSelf, and by connection as well as by body -- a splitter's
+    /// parked half is the viewer's own, and so is everything it owns. Never
+    /// set on a wild mob's things; a mob's ring seed is not a flower's petal.
+    /// It is what Settings' Hide Other Petals and Hide Other Pets read, with
+    /// SpawnIsPet telling the two apart. (Version 42.)
+    SpawnForeign    = 1 << 6,
 };
 
 // ---------------------------------------------------------------------------

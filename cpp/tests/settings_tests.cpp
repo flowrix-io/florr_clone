@@ -187,3 +187,31 @@ TEST(the_touch_control_choice_survives_the_settings_file_and_an_unmade_one_does_
 
     std::remove(path.c_str());
 }
+
+TEST(the_hide_other_petals_and_pets_switches_survive_the_settings_file) {
+    const std::string path = tempPath("hide_others.cfg");
+
+    // Off until the player turns them on: a fresh client draws everybody's.
+    ClientSettings fresh;
+    CHECK(!fresh.render.hideOtherPetals);
+    CHECK(!fresh.render.hideOtherPets);
+
+    // Each on its own, so a file that swapped the two keys would fail here.
+    ClientSettings petals;
+    petals.render.hideOtherPetals = true;
+    CHECK(petals.save(path));
+    ClientSettings petalsBack;
+    CHECK(petalsBack.load(path));
+    CHECK(petalsBack.render.hideOtherPetals);
+    CHECK(!petalsBack.render.hideOtherPets);
+
+    ClientSettings pets;
+    pets.render.hideOtherPets = true;
+    CHECK(pets.save(path));
+    ClientSettings petsBack;
+    CHECK(petsBack.load(path));
+    CHECK(!petsBack.render.hideOtherPetals);
+    CHECK(petsBack.render.hideOtherPets);
+
+    std::remove(path.c_str());
+}

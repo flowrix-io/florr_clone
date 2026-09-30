@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "client/interpolation.h"
+#include "client/render/world_renderer.h"
 #include "client/world_view.h"
 #include "server/replication.h"
 #include "server/systems/petals.h"
@@ -1080,4 +1081,159 @@ TEST(a_clump_grain_is_replicated_at_its_own_facing_not_the_clump_bearing) {
     f.world.get<PetalInstance>(grain).facingAngle = 0.5 + kTau / 3.0;
     f.tick(client, 2, 1033.0);
     CHECK_NEAR(client.entities().at(id).targetAngle, 0.5 + kTau / 3.0, 1e-3);
+}
+
+namespace {
+
+/// Something a flower or a pet owns, replicated the way the petal and pet
+/// systems replicate theirs. Only what ownershipFlags reads is filled in.
+Entity addOwnedPetal(Fixture& f, Entity owner, Vec2 at) {
+    const Entity petal = f.world.create();
+    PetalInstance instance;
+    instance.owner = owner;
+    f.world.add<PetalInstance>(petal, instance);
+    f.world.add<Transform>(petal, Transform{at, 0.0});
+    f.world.add<Body>(petal, Body{10.0, 1.0});
+    f.world.add<NetId>(petal, NetId{f.ids.next()});
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Petal;
+    f.world.add<Replicated>(petal, replicated);
+    return petal;
+}
+
+Entity addPet(Fixture& f, Entity owner, Vec2 at) {
+    const Entity pet = f.addMob(at);
+    f.world.add<Pet>(pet, Pet{owner, 0});
+    f.world.add<Faction>(pet, Faction{Team::Players, false});
+    f.world.get<Replicated>(pet).spawnFlags = net::SpawnIsPet;
+    return pet;
+}
+
+Entity addShot(Fixture& f, Entity shooter, Entity creditTo, Team team, Vec2 at) {
+    const Entity shot = f.world.create();
+    f.world.add<ProjectileTag>(shot);
+    f.world.add<Transform>(shot, Transform{at, 0.0});
+    f.world.add<Body>(shot, Body{5.0, 1.0});
+    f.world.add<Faction>(shot, Faction{team, false});
+    Projectile projectile;
+    projectile.owner = shooter;
+    projectile.creditTo = creditTo;
+    f.world.add<Projectile>(shot, projectile);
+    f.world.add<NetId>(shot, NetId{f.ids.next()});
+    Replicated replicated;
+    replicated.kind = net::EntityKind::Projectile;
+    f.world.add<Replicated>(shot, replicated);
+    return shot;
+}
+
+std::uint8_t flagsOf(const WorldView& client, World& world, Entity e) {
+    return client.entities().at(netIdOf(world, e)).spawnFlags;
+}
+
+bool foreign(const WorldView& client, World& world, Entity e) {
+    return (flagsOf(client, world, e) & net::SpawnForeign) != 0;
+}
+
+bool petFlagged(const WorldView& client, World& world, Entity e) {
+    return (flagsOf(client, world, e) & net::SpawnIsPet) != 0;
+}
+
+} // namespace
+
+TEST(another_players_petals_pets_and_shots_are_marked_as_theirs) {
+    Fixture f;
+    WorldView client;
+    const Entity alice = f.addPlayer("alice", {1100, 1000});
+    f.world.get<PlayerAccount>(alice).connection = 2;
+
+    const Entity herPetal = addOwnedPetal(f, alice, {1120, 1000});
+    const Entity myPetal = addOwnedPetal(f, f.viewer, {1020, 1000});
+    const Entity herPet = addPet(f, alice, {1100, 1060});
+    const Entity myPet = addPet(f, f.viewer, {1000, 1060});
+    const Entity herShot = addShot(f, alice, alice, Team::Players, {1150, 1000});
+    const Entity herPetsShot = addShot(f, herPet, alice, Team::Players, {1150, 1040});
+    const Entity myPetsShot = addShot(f, myPet, f.viewer, Team::Players, {1050, 1040});
+    const Entity wild = f.addMob({900, 1000});
+    const Entity wildShot = addShot(f, wild, wild, Team::Hostiles, {950, 1000});
+    f.tick(client, 1, 1000.0);
+
+    // Hers, each filed under the switch that hides it: a pet's shot goes with
+    // the pets, a flower's with the petals.
+    CHECK(foreign(client, f.world, herPetal));
+    CHECK(!petFlagged(client, f.world, herPetal));
+    CHECK(foreign(client, f.world, herPet));
+    CHECK(petFlagged(client, f.world, herPet));
+    CHECK(foreign(client, f.world, herShot));
+    CHECK(!petFlagged(client, f.world, herShot));
+    CHECK(foreign(client, f.world, herPetsShot));
+    CHECK(petFlagged(client, f.world, herPetsShot));
+
+    // Mine, and nobody's: never flagged, so no switch can hide them.
+    CHECK(!foreign(client, f.world, myPetal));
+    CHECK(!foreign(client, f.world, myPet));
+    CHECK(!foreign(client, f.world, myPetsShot));
+    CHECK(petFlagged(client, f.world, myPetsShot));
+    CHECK(!foreign(client, f.world, alice));
+    CHECK(!foreign(client, f.world, wild));
+    CHECK(!foreign(client, f.world, wildShot));
+
+    // And the renderer reads the flags the way the two switches say.
+    WorldRenderer renderer;
+    const auto hidden = [&](Entity e) {
+        return renderer.hiddenByOptions(client.entities().at(netIdOf(f.world, e)));
+    };
+    CHECK(!hidden(herPetal) && !hidden(herPet));
+
+    renderer.options.hideOtherPetals = true;
+    CHECK(hidden(herPetal));
+    CHECK(hidden(herShot));
+    CHECK(!hidden(herPet));
+    CHECK(!hidden(herPetsShot));
+    CHECK(!hidden(myPetal));
+
+    renderer.options.hideOtherPetals = false;
+    renderer.options.hideOtherPets = true;
+    CHECK(hidden(herPet));
+    CHECK(hidden(herPetsShot));
+    CHECK(!hidden(herPetal));
+    CHECK(!hidden(myPet));
+    CHECK(!hidden(myPetsShot));
+    CHECK(!hidden(alice));
+    CHECK(!hidden(wild));
+}
+
+TEST(a_splitter_halfs_petals_and_pets_are_the_viewers_own) {
+    // The parked half is a second body on the viewer's connection. It is not
+    // `viewer`, and what it owns must still never read as somebody else's.
+    Fixture f;
+    WorldView client;
+    const Entity parked = f.addPlayer("bob", {1100, 1000});
+    CHECK_EQ(f.world.get<PlayerAccount>(parked).connection,
+             f.world.get<PlayerAccount>(f.viewer).connection);
+
+    const Entity petal = addOwnedPetal(f, parked, {1120, 1000});
+    const Entity pet = addPet(f, parked, {1100, 1060});
+    const Entity shot = addShot(f, parked, parked, Team::Players, {1150, 1000});
+    f.tick(client, 1, 1000.0);
+
+    CHECK(!foreign(client, f.world, petal));
+    CHECK(!foreign(client, f.world, pet));
+    CHECK(!foreign(client, f.world, shot));
+}
+
+TEST(a_pets_shot_still_files_with_the_pets_after_the_pet_is_gone) {
+    // A volley outlives the body that fired it. The player it credits is what
+    // makes it somebody else's, and the shooter's handle alone -- dead or not
+    // -- is what makes it a pet's.
+    Fixture f;
+    WorldView client;
+    const Entity alice = f.addPlayer("alice", {1100, 1000});
+    f.world.get<PlayerAccount>(alice).connection = 2;
+    const Entity pet = addPet(f, alice, {1100, 1060});
+    const Entity shot = addShot(f, pet, alice, Team::Players, {1150, 1040});
+    f.world.destroy(pet);
+    f.tick(client, 1, 1000.0);
+
+    CHECK(foreign(client, f.world, shot));
+    CHECK(petFlagged(client, f.world, shot));
 }

@@ -221,8 +221,19 @@ public:
         /// Tints every spawn zone with the tier that spawns in it. Held down
         /// rather than toggled: the browser build shows it while ALT is down.
         bool rarityGlow = false;
+        /// Leaves out every other player's petals and the shots they fire,
+        /// and every other player's pets and theirs. The server marks what is
+        /// somebody else's (net::SpawnForeign); these only decide whether to
+        /// draw it. Hidden things still collide and still hurt -- this is a
+        /// view of the world, not a change to it.
+        bool hideOtherPetals = false;
+        bool hideOtherPets = false;
     };
     Options options;
+
+    /// Whether `options` leaves this entity out of the picture: its body, its
+    /// plate, its hitbox, its shimmer and the numbers hits on it throw.
+    bool hiddenByOptions(const RemoteEntity& entity) const;
 
     /// Cap on live effects. A crowded fight can generate hundreds of damage
     /// numbers a second, and past a point they are noise that costs frame time.

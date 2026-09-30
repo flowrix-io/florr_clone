@@ -545,10 +545,23 @@ Rect intersection(Rect a, Rect b) {
 
 } // namespace
 
+bool WorldRenderer::hiddenByOptions(const RemoteEntity& entity) const {
+    if ((entity.spawnFlags & net::SpawnForeign) == 0) return false;
+    // A pet, or a shot one fired: the pet switch answers for both, so hiding
+    // the pets does not leave their volleys flying out of nothing.
+    if ((entity.spawnFlags & net::SpawnIsPet) != 0) return options.hideOtherPets;
+    return options.hideOtherPetals;
+}
+
 void WorldRenderer::ingestEvents(WorldView& view) {
     const auto isPlayer = [&view](std::uint32_t netId) {
         const auto it = view.entities().find(netId);
         return it != view.entities().end() && it->second.kind == net::EntityKind::Player;
+    };
+    // A number thrown off a body that is not drawn would hang over nothing.
+    const auto isHidden = [this, &view](std::uint32_t netId) {
+        const auto it = view.entities().find(netId);
+        return it != view.entities().end() && hiddenByOptions(it->second);
     };
     // The dummy exists to be hit at, so it reports what it is being hit for --
     // by YOU. The same ten-second window the browser build's server kept, but
@@ -653,7 +666,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 if ((event.flag & net::DamageByViewer) != 0 && isTargetDummy(event.netId)) {
                     dummyDamage_[event.netId].emplace_back(nowSeconds_, event.amount);
                 }
-                if (!options.damageNumbers) break;
+                if (!options.damageNumbers || isHidden(event.netId)) break;
                 // A flower's own damage is never throttled: you must see every
                 // hit you take. A mob's is, because a full ring lands eight
                 // hits in one tick and eight stacked numbers read as noise.
@@ -910,7 +923,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
             continue;
         }
 
-        if (entity.kind != net::EntityKind::Petal) continue;
+        if (entity.kind != net::EntityKind::Petal || hiddenByOptions(entity)) continue;
         if (randomUnit() >= chance) continue;
         pushSparkle(entity.position, entity.rarity, kSparkleCount, 0.5, 0.5, 2000.0, 1000.0, 1.0,
                     2.0, kSparkleLifeSeconds, kPetalSparkleStyle);
@@ -1543,7 +1556,7 @@ void WorldRenderer::prepareGlitchAtlas(const EntityMap& entities, const Camera& 
                                   drawFlowerBody(target, *flower, timeSeconds);
                               }});
         } else if (entity.kind == net::EntityKind::Mob || entity.kind == net::EntityKind::Npc) {
-            if (!onScreen(at, entity.radius)) continue;
+            if (hiddenByOptions(entity) || !onScreen(at, entity.radius)) continue;
             // The fields drawEntity fills that the pose and painter read.
             MobDraw mob;
             mob.netId = entity.netId;
@@ -3625,6 +3638,13 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         // shake -- the obvious `owner.position - owner.targetPosition`
         // fixup subtracts a value that stair-steps at the snapshot rate.
         Vec2 at = entity.isSelf() ? selfDrawn : entity.position;
+        if (hiddenByOptions(entity)) {
+            // A pet drawn before the switch went on keeps the shadow it was
+            // last drawn in; dropping it stops that pet's death animation
+            // playing where nothing had been drawn for a while.
+            if (entity.kind == net::EntityKind::Mob) mobShadows_.erase(entity.netId);
+            return;
+        }
         if (!onScreen(at, entity.radius)) return;
 
         if (entity.kind == net::EntityKind::Drop) ++timing_.itemCount;

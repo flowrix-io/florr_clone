@@ -645,6 +645,8 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "healthBars") render.healthBars = number != 0;
         else if (key == "damageNumbers") render.damageNumbers = number != 0;
         else if (key == "hitboxes") render.hitboxes = number != 0;
+        else if (key == "hideOtherPetals") render.hideOtherPetals = number != 0;
+        else if (key == "hideOtherPets") render.hideOtherPets = number != 0;
         else if (key == "chat") showChat = number != 0;
         else if (key == "menuBar") showMenuBar = number != 0;
         else if (key == "stats") showStats = number != 0;
@@ -693,6 +695,8 @@ bool ClientSettings::save(const std::string& path) const {
          << "healthBars " << (render.healthBars ? 1 : 0) << '\n'
          << "damageNumbers " << (render.damageNumbers ? 1 : 0) << '\n'
          << "hitboxes " << (render.hitboxes ? 1 : 0) << '\n'
+         << "hideOtherPetals " << (render.hideOtherPetals ? 1 : 0) << '\n'
+         << "hideOtherPets " << (render.hideOtherPets ? 1 : 0) << '\n'
          << "chat " << (showChat ? 1 : 0) << '\n'
          << "menuBar " << (showMenuBar ? 1 : 0) << '\n'
          << "stats " << (showStats ? 1 : 0) << '\n'

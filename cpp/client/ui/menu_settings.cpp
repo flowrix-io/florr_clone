@@ -22,8 +22,9 @@
 //           settings.useMouseControls, Enable Debug Menu button ->
 //           settings.showDebugButton, Request Mobile ->
 //           settings.requestMobile, which is what App puts the on-screen
-//           stick and its two buttons up from. These are read elsewhere and
-//           persisted with the rest of ClientSettings.
+//           stick and its two buttons up from, Hide Other Players' Petals
+//           and Pets -> settings.render.hideOtherPetals/hideOtherPets. These
+//           are read elsewhere and persisted with the rest of ClientSettings.
 //   local   every other switch and the mob-framerate slider. The rows are
 //           drawn because the reference draws them -- the row set is the
 //           panel's shape, not a claim about this client -- but a value
@@ -152,6 +153,8 @@ enum Toggle : int {
     kClassicLoadoutBar,
     kUseMouseControls,
     kRequestMobile,
+    kHideOtherPetals,
+    kHideOtherPets,
     kToggleCount,
 };
 
@@ -272,6 +275,8 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kClassicLoadoutBar: return &settings.classicLoadoutBar;
         case kUseMouseControls: return &settings.useMouseControls;
         case kRequestMobile: return &settings.requestMobile;
+        case kHideOtherPetals: return &settings.render.hideOtherPetals;
+        case kHideOtherPets: return &settings.render.hideOtherPets;
         // Everything else lands in the panel's own copy, because ClientSettings
         // has no field for it: nothing outside this file could read one, and
         // nothing would write it to disk. A row moves up here the moment a
@@ -822,6 +827,8 @@ bool SettingsPanel::render(MenuContext& ctx) {
         case Tab::Graphics: {
             p.checkbox(kClassicLoadoutBar, "Classic Loadout Bar (smaller slots, wider gaps)");
             p.checkbox(kShowHitboxes, "Show Hitboxes");
+            p.checkbox(kHideOtherPetals, "Hide Other Players' Petals");
+            p.checkbox(kHideOtherPets, "Hide Other Players' Pets");
             p.checkbox(kShowStats, "Show Performance Stats");
             p.checkbox(kDynamicSkybox, "Dynamic Skybox");
             p.checkbox(kMobDeathAnimation, "Mob Death Animation");
