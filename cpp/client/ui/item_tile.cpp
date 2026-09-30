@@ -203,7 +203,8 @@ constexpr GardnIcon kGardnIcon[] = {
     {"coral",              31,   10,  0,      1, 0.969},   // art fills 97% of its box
     {"golden_leaf",            38.25,   10,  0,      -1,     1},
     {"coin",              23,   10,  0,       0,     1},
-    {"wax",              33,   10,  0,       -0.1,     1}
+    {"wax",              33,   10,  0,       -0.1,     1},
+    {"talisman",              26.5,   10,  0,       1,     0.969}
 };
 
 /// How one petal is laid out inside a tile, in design units.
