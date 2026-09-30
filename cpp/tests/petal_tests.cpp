@@ -60,6 +60,7 @@ const char* const kPetalsJson = R"JSON({
   "capacitor":{"name":"Capacitor","damage":0,"health":null,"size":1.25,"cooldown":2500,"count":1,"color":"#000000"},
   "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "pearl":    {"name":"Pearl","damage":20,"health":50,"size":1.25,"cooldown":4000,"count":1,"color":"#FFFFFF"},
+  "wax":      {"name":"Wax","damage":0,"health":1000,"size":1,"cooldown":30000,"count":1,"color":"#FFFF00"},
   "cotton":   {"name":"Cotton","damage":0,"health":2,"size":1,"cooldown":1500,"count":1,"defendOnly":true,"color":"#FFFFFF"},
   "bone":     {"name":"Bone","damage":14,"health":10,"size":1,"cooldown":1500,"count":1,"petalArmor":10,"color":"#FFFFFF"},
   "vessel":   {"name":"Vessel","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"baseMaxMana":100,"color":"#42E3F5"},
@@ -3412,4 +3413,168 @@ TEST(a_spawned_bone_wears_its_armor_and_a_spawned_cotton_soaks) {
     CHECK(rig.world.get<PetalInstance>(cotton).soaksOwnerDamage);
     CHECK(!rig.world.get<PetalInstance>(bone).soaksOwnerDamage);
     CHECK(!rig.world.get<PetalInstance>(basic).soaksOwnerDamage);
+}
+
+// ---------------------------------------------------------------------------
+// Loose petals (wax)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Ticks enough to serve wax's thirty-second equip reload, which is longer
+/// than settleEquips waits by default.
+constexpr int kWaxEquipTicks = 1000;
+
+/// The flower's one loose petal, or NULL_ENTITY.
+Entity loosePetalOf(Rig& rig) {
+    for (const Entity e : rig.petals()) {
+        if (rig.world.has<LoosePetal>(e)) return e;
+    }
+    return NULL_ENTITY;
+}
+
+} // namespace
+
+TEST(wax_is_thirty_units_across_at_common_and_thirty_more_every_tier) {
+    if (!contentLoaded()) return;
+    const std::uint16_t wax = petalId("wax");
+    for (int tier = 0; tier < kRarityCount; ++tier) {
+        const PetalStats stats =
+            fixture().registry.petalStats(wax, static_cast<Rarity>(tier));
+        CHECK_NEAR(stats.radius, 30.0 * (tier + 1), 1e-12);
+    }
+    CHECK_NEAR(fixture().registry.petalStats(wax, Rarity::Apex).radius, 300.0, 1e-12);
+    // Every other petal keeps the radius its size gives it.
+    CHECK_NEAR(fixture().registry.petalStats(petalId("basic"), Rarity::Apex).radius, 20.0, 1e-12);
+    CHECK(petalIsLooseBody(fixture().registry.petal(wax)));
+    CHECK(!petalIsLooseBody(fixture().registry.petal(petalId("pearl"))));
+
+    // The body it is spawned with is that radius -- and a quarter of a
+    // flower's mass, the same at every tier, so a big slab is no harder to
+    // push than a small one.
+    Rig rig;
+    rig.equip(0, "wax", Rarity::Legendary);
+    rig.settleEquips(kWaxEquipTicks);
+    const Entity slab = loosePetalOf(rig);
+    CHECK(slab != NULL_ENTITY);
+    if (slab == NULL_ENTITY) return;
+    CHECK_NEAR(rig.world.get<Body>(slab).radius, 150.0, 1e-12);
+    CHECK_NEAR(rig.world.get<Body>(slab).mass, kLoosePetalMass, 1e-12);
+    CHECK_NEAR(kLoosePetalMass, 0.25, 1e-12);
+    CHECK(rig.world.get<Replicated>(slab).spawnFlags & net::SpawnLoosePetal);
+    CHECK(!(rig.world.get<Replicated>(slab).spawnFlags & net::SpawnRingPetal));
+}
+
+TEST(wax_is_put_down_behind_the_flower_and_takes_no_place_on_the_ring) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wax");
+    rig.equip(1, "basic");
+    rig.freezeRing();
+    rig.settleEquips(kWaxEquipTicks);
+    rig.settleRing();
+
+    // Behind the flower's heading (east, at angle 0), clear of its body and
+    // its own by the gap.
+    const Entity slab = loosePetalOf(rig);
+    CHECK(slab != NULL_ENTITY);
+    if (slab == NULL_ENTITY) return;
+    const Vec2 flower = rig.position(rig.player);
+    CHECK_NEAR(rig.position(slab).x,
+               flower.x - (kPlayerBaseRadius + 30.0 + kLoosePetalSpawnGap), 1e-9);
+    CHECK_NEAR(rig.position(slab).y, flower.y, 1e-9);
+
+    // The basic and the anchor split the ring between them, as if the wax
+    // were not equipped at all: half a turn apart, on the ring's radius.
+    const Entity basic = rig.petals(1).front();
+    const Entity anchor = rig.petals(Rig::kAnchorSlot).front();
+    CHECK_NEAR(angularGap(rig.angleOf(basic), rig.angleOf(anchor)), kPi, 1e-6);
+    CHECK_NEAR(rig.radiusOf(basic), rig.ring().radius, 1e-6);
+
+    // Attacking throws the ring out and leaves the slab where it lies; no
+    // spring, no orbit, no attraction.
+    const Vec2 laid = rig.position(slab);
+    rig.setFlags(net::InputAttack);
+    rig.tick(30);
+    CHECK_NEAR(rig.position(slab).x, laid.x, 1e-12);
+    CHECK_NEAR(rig.position(slab).y, laid.y, 1e-12);
+
+    // And the flower walking away from it leaves it standing there.
+    rig.setFlags(0);
+    rig.withMovement();
+    rig.setMove(0.0);
+    rig.tick(20);
+    CHECK(rig.position(rig.player).x > flower.x + 100.0);
+    CHECK_NEAR(rig.position(slab).x, laid.x, 1e-12);
+    CHECK_NEAR(rig.position(slab).y, laid.y, 1e-12);
+}
+
+TEST(a_wax_stays_however_far_its_flower_goes_and_follows_it_across_realms) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wax");
+    rig.settleEquips(kWaxEquipTicks);
+    const Entity slab = loosePetalOf(rig);
+    CHECK(slab != NULL_ENTITY);
+    if (slab == NULL_ENTITY) return;
+
+    // Far off the screen -- a whole map away -- it is neither taken back nor
+    // moved, and the slot does not reload: it is still out there.
+    const Vec2 laid = rig.position(slab);
+    rig.world.get<Transform>(rig.player).position = laid + Vec2{20000.0, 15000.0};
+    rig.tick(50);
+    CHECK(rig.world.isAlive(slab));
+    CHECK_NEAR(rig.position(slab).x, laid.x, 1e-12);
+    CHECK_NEAR(rig.position(slab).y, laid.y, 1e-12);
+    CHECK(!rig.slot(0).broken);
+
+    // Stranded in another realm from its flower -- which is what a teleporter
+    // or joining the maze leaves it -- it is the SAME slab put down behind the
+    // flower on its side, with no reload.
+    Transform& flower = rig.world.get<Transform>(rig.player);
+    flower.realm = Realm::Maze;
+    flower.angle = kPi * 0.5;
+    const Vec2 arrived = flower.position;
+    rig.tick();
+    CHECK(rig.world.isAlive(slab));
+    CHECK(!rig.slot(0).broken);
+    CHECK(rig.world.get<Transform>(slab).realm == Realm::Maze);
+    CHECK_NEAR(rig.position(slab).x, arrived.x, 1e-9);
+    CHECK_NEAR(rig.position(slab).y,
+               arrived.y - (kPlayerBaseRadius + 30.0 + kLoosePetalSpawnGap), 1e-9);
+}
+
+TEST(each_wax_lands_at_its_own_random_rotation_and_keeps_it) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "wax");
+    rig.equip(1, "wax");
+    rig.settleEquips(kWaxEquipTicks);
+    std::vector<Entity> slabs;
+    for (const Entity e : rig.petals()) {
+        if (rig.world.has<LoosePetal>(e)) slabs.push_back(e);
+    }
+    CHECK_EQ(slabs.size(), std::size_t(2));
+    if (slabs.size() != 2) return;
+
+    std::vector<double> angles;
+    for (const Entity slab : slabs) {
+        const double angle = rig.world.get<Transform>(slab).angle;
+        // What the client is sent to draw it at is the instance's facing.
+        CHECK_NEAR(rig.world.get<PetalInstance>(slab).facingAngle, angle, 1e-12);
+        CHECK(angle >= 0.0 && angle < kTau);
+        angles.push_back(angle);
+    }
+    // Two rolls, not one angle for every slab -- and not the 0 every other
+    // petal is born at.
+    CHECK(std::fabs(angles[0] - angles[1]) > 1e-6);
+    CHECK(std::fabs(angles[0]) > 1e-6 && std::fabs(angles[1]) > 1e-6);
+
+    // Kept: nothing turns a slab once it is down, attacking or not.
+    rig.setFlags(net::InputAttack);
+    rig.tick(30);
+    for (std::size_t i = 0; i < slabs.size(); ++i) {
+        CHECK_NEAR(rig.world.get<Transform>(slabs[i]).angle, angles[i], 1e-12);
+        CHECK_NEAR(rig.world.get<PetalInstance>(slabs[i]).facingAngle, angles[i], 1e-12);
+    }
 }

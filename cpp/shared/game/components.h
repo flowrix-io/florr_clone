@@ -959,6 +959,15 @@ struct PetalInstance {
     double contactMillis = 0;
 };
 
+/// A petal that is a body on the ground rather than a place on the ring --
+/// wax. See petalIsLooseBody() in config.h for what that buys.
+///
+/// A tag on the petal, beside PetalInstance, so that the movement pass can
+/// find the solid ones without a registry and the combat pass can let a mob's
+/// bite through to them. It is fixed for the entity's life: a petal is loose
+/// from the moment it spawns until it is destroyed.
+struct LoosePetal {};
+
 struct Projectile {
     Entity owner = NULL_ENTITY;
     /// The player credited with any kill, which is not the owner when the
@@ -1182,6 +1191,7 @@ FLIX_COMPONENT(flix::Spawner);
 FLIX_COMPONENT(flix::MobPetalRing);
 FLIX_COMPONENT(flix::MobRingPetal);
 FLIX_COMPONENT(flix::PetalInstance);
+FLIX_COMPONENT(flix::LoosePetal);
 FLIX_COMPONENT(flix::Projectile);
 FLIX_COMPONENT(flix::Lifetime);
 FLIX_COMPONENT(flix::DropItem);

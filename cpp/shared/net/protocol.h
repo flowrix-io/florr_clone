@@ -465,6 +465,13 @@ enum SpawnFlags : std::uint8_t {
     /// have already spawned the owner to ask what kind it is, and a spawn
     /// record has to decode on its own.
     SpawnRingPetal  = 1 << 4,
+    /// A Petal record that is a loose body on the ground -- wax -- rather
+    /// than a place on its flower's ring. It is smoothed in the WORLD, not in
+    /// its owner's frame: it stands still while the flower walks away, and
+    /// anchoring it to the drawn owner would drag it along by the easing gap.
+    /// Sized from the replicated radius, which grows with its tier, and drawn
+    /// on the ground under everything that moves.
+    SpawnLoosePetal = 1 << 5,
 };
 
 // ---------------------------------------------------------------------------

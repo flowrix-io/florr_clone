@@ -2152,7 +2152,9 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
     // out at exactly kPetalArtSize * size * visual_scale -- but it is left
     // keyed on the flag rather than applied to everything, because the three
     // `noPhysics` petals carry no body and would be sized from a default.
-    const double diameter = entity.isRingPetal()
+    // A loose petal is sized the same way, for the same reason: its body grows
+    // with its tier (30 a step, to 300 at apex) and `size` does not.
+    const double diameter = entity.isRingPetal() || entity.isLoosePetal()
                                 ? 2.0 * entity.radius * petalArtScale(config) * zoom
                                 : kPetalArtSize * artSize * zoom;
     if (diameter <= 0.5) return;
@@ -2171,6 +2173,10 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
         // snapshot-old one, exactly as the anchoring does.
         const Vec2 out = entity.ownerOffset;
         rotation = out.lengthSq() > 0.0 ? out.angle() : entity.angle;
+    } else if (entity.isLoosePetal()) {
+        // Lying on the ground, not turning with any ring: held at the angle
+        // the server put it down at.
+        rotation = entity.angle;
     } else if (config && config->hasFixedDirection) {
         rotation = config->fixedDirection;
     } else if (config && config->clumpFacesInward &&
@@ -2542,8 +2548,9 @@ void WorldRenderer::drawHitbox(Canvas& canvas, const RemoteEntity& entity, const
         // A flower's petal collides at 10 units per size unit whatever its
         // artwork does; a mob's ring seed collides at the radius the server
         // gave it, which is scaled by the mob it grew on.
-        radius = entity.isRingPetal() ? entity.radius * zoom
-                                      : kPetalHitSize * content_->petal(entity.typeIndex).size * zoom;
+        radius = entity.isRingPetal() || entity.isLoosePetal()
+                     ? entity.radius * zoom
+                     : kPetalHitSize * content_->petal(entity.typeIndex).size * zoom;
     } else if (entity.kind == net::EntityKind::Mob || entity.kind == net::EntityKind::Npc) {
         // A mob's circle is its COLLISION size, drawn in its own tier colour:
         // visual_scale moves the artwork and never the body. An NPC is a
@@ -3602,6 +3609,14 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     const auto isHole = [this](std::uint16_t typeIndex) {
         return content_ != nullptr && content_->mob(typeIndex).hole;
     };
+    // A loose petal lies on the ground like an NPC stands on it, so it goes
+    // down in the NPC's layer: under the mobs, the flowers and every ring
+    // petal swinging past. In the petal layer an apex wax -- 600 across --
+    // would be painted over whichever of its owner's petals the map order
+    // happened to put first.
+    const auto layerOf = [](const RemoteEntity& entity) {
+        return entity.isLoosePetal() ? net::EntityKind::Npc : entity.kind;
+    };
     const auto drawLive = [&](const RemoteEntity& entity) {
         // Every entity draws at its own interpolated position, petals
         // included: WorldView has already anchored each ring to the
@@ -3657,7 +3672,7 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
         }
         for (const auto& entry : entities) {
             const RemoteEntity& entity = entry.second;
-            if (entity.kind != kind) continue;
+            if (layerOf(entity) != kind) continue;
             if (mobs && isHole(entity.typeIndex)) continue;
             drawLive(entity);
         }

@@ -324,6 +324,24 @@ inline constexpr double kPearlMaxDistance = 1000.0;
 /// reads as the petal teleporting.
 inline constexpr double kPearlRecallGlideMillis = 300.0;
 
+/// Wax: a LOOSE petal (see petalIsLooseBody in config.h). It is 30 units in
+/// radius at common and every tier adds another 30, so an apex one is 300 --
+/// the only petal whose body grows with its rarity.
+inline constexpr double kWaxRadiusPerTier = 30.0;
+
+/// How far behind the flower's heading a loose petal is put down, past the
+/// flower's edge and its own. Behind rather than ahead, so a flower on the
+/// move is never stopped dead by the slab it just laid, and a fleeing one
+/// leaves it between itself and whatever is chasing it.
+inline constexpr double kLoosePetalSpawnGap = 10.0;
+
+/// What a loose petal weighs when something shoves it: a quarter of a flower,
+/// at every tier. A shove is split by mass, so a flower pushes one at 80% of
+/// its walking speed however big the slab has grown -- the user's call: wax is
+/// meant to be pushed around, and one that grew heavier with its size (gardn's
+/// `1 + radius / flower radius` put an apex slab at 16 flowers) was a wall.
+inline constexpr double kLoosePetalMass = 0.25;
+
 /// A claw's bonus lands while its victim is still ABOVE this fraction of its
 /// health: an opening strike, not a finisher.
 inline constexpr double kClawCritHealthFraction = 0.8;
@@ -468,6 +486,21 @@ inline constexpr double kMobCollisionBuffer = 5.0;
 /// the cap a mob deep in a pile is fired across the map in one tick.
 inline constexpr double kMobSeparationMaxPushPerPair = 10.0;
 inline constexpr double kMobSeparationPushHeadroom = 3.0;
+
+/// A loose petal is SOFT, the way two mobs leaning on each other are: a body
+/// pressed into one is eased back out by this fraction of the overlap per
+/// tick rather than snapped flush against it -- the half the separation pass
+/// above takes -- and never by more in a tick than a pair of mobs is ever
+/// separated by. So a flower pushing one at full speed sinks in about 10
+/// units and settles there, and once it lets go the overlap halves every tick.
+inline constexpr double kLoosePetalContactStiffness = 0.5;
+inline constexpr double kLoosePetalMaxPushPerTick = 2.0 * kMobSeparationMaxPushPerPair;
+
+/// How much of an `overlap` one tick of soft contact takes back.
+inline constexpr double loosePetalContactPush(double overlap) {
+    const double push = overlap * kLoosePetalContactStiffness;
+    return push < kLoosePetalMaxPushPerTick ? push : kLoosePetalMaxPushPerTick;
+}
 
 // -- projectiles as bodies (the arras.io model) ------------------------------
 //

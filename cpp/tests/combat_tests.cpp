@@ -3151,3 +3151,37 @@ TEST(a_mob_biting_a_flower_bites_its_cotton_first) {
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
     CHECK_NEAR(a.health(cotton), 15.0, 1e-9);
 }
+
+TEST(a_mob_bites_a_loose_petal_on_its_own_interval_and_the_petal_swings_at_nothing) {
+    Arena arena;
+    const Entity owner = arena.player({-1000, 0});
+    // The movement pass leaves a mob flush against a loose petal, never
+    // overlapping it, so the wax is put exactly at the sum of the two radii.
+    const Entity mob = arena.mob({0, 0}, 100.0);
+    arena.world.add<ContactDamage>(mob, ContactDamage{7.0, 500.0});
+    const Entity wax = arena.actor({50.0, 0}, 30.0, 1000.0, Team::Players, kLoosePetalMass);
+    arena.world.add<PetalTag>(wax);
+    PetalInstance instance;
+    instance.owner = owner;
+    arena.world.add<PetalInstance>(wax, instance);
+    arena.world.add<LoosePetal>(wax);
+
+    // One bite. Had the wax swung as a ring petal does -- a zero-damage swing,
+    // its default knockback making it a hit -- it would also have paid the
+    // mob's 7 back as recoil (986 here), and shoved the mob.
+    arena.step(1000.0);
+    CHECK_NEAR(arena.health(wax), 993.0, 1e-9);
+    CHECK_NEAR(arena.health(mob), 100.0, 1e-9);
+    CHECK(!arena.world.has<Knockback>(mob));
+
+    // Paced by the mob's own contact interval, not every tick of contact.
+    arena.step(1040.0);
+    CHECK_NEAR(arena.health(wax), 993.0, 1e-9);
+    arena.step(1500.0);
+    CHECK_NEAR(arena.health(wax), 986.0, 1e-9);
+
+    // Clear of it -- past the flush slack -- the mob bites nothing.
+    arena.world.get<Transform>(wax).position = {52.0, 0};
+    arena.step(2100.0);
+    CHECK_NEAR(arena.health(wax), 986.0, 1e-9);
+}

@@ -486,6 +486,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
                       CommandBuffer& commands, const Terrain* terrain, EventQueue* events) {
     bindTo(world);
     events_ = events;
+    terrain_ = terrain;
     // A snapshot of handles, not a live query: everything this system does --
     // spawning a petal, breaking one, firing a volley -- is structural, and
     // none of it may happen while a query holds column pointers. Taking the
@@ -517,6 +518,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
         // Before the slot pass, because retiring a pet puts the petal that
         // hatched it back on cooldown and the slot pass is what serves that.
         retireDistantPets(world, registry, player, nowMillis);
+        carryLoosePetalsAcrossRealms(world, player);
         reconcileSlots(world, registry, player, nowMillis);
         const Aggregate aggregate = recomputeModifiers(world, registry, player);
         tickArmorStacks(world, player, aggregate, dt);
@@ -539,6 +541,7 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
     // queue is cleared once the snapshot has carried it, and a stray strike
     // from a later system or a test must not write into it afterwards.
     events_ = nullptr;
+    terrain_ = nullptr;
 }
 
 void PetalSystem::foldModifiers(World& world, const ContentRegistry& registry) {
@@ -1003,17 +1006,32 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     const Faction* ownerFaction = world.tryGet<Faction>(player);
     const Faction faction = ownerFaction ? *ownerFaction : Faction{Team::Players, false};
 
+    // A loose petal is not flown out to anywhere: it is put down where it will
+    // stay, behind the flower and clear of it, so that it neither lands on the
+    // flower -- which it would then shove -- nor in the path it is walking.
+    const bool loose = petalIsLooseBody(config);
+    const Vec2 position =
+        loose ? loosePetalRestPoint(world, player, *ownerTransform, stats.radius) : origin;
+    // And it lands at a random rotation, which it keeps: nothing turns a
+    // slab once it is down, so every wax on the ground sits at its own angle.
+    // Rolled only for a loose petal, so no other petal's spawn draws from the
+    // stream.
+    const double restAngle = loose ? rng_.angle() : 0.0;
+
     const Entity petal = world.create();
     world.add<PetalTag>(petal);
     // Born ON the flower and flown out over the spawn glide below, which is
     // what makes a reload read as the petal coming back out rather than
-    // reappearing on the ring. In the flower's own space, of course.
-    world.add<Transform>(petal, Transform{origin, 0.0, ownerTransform->realm});
+    // reappearing on the ring -- except a loose petal, born where it was put
+    // down above. In the flower's own space, of course.
+    world.add<Transform>(petal, Transform{position, restAngle, ownerTransform->realm});
     // Deliberately no Motion and no Knockback: the ring dictates a petal's
     // position every tick, so integrating or pushing it would be overwritten,
-    // and the movement system would be doing work it cannot keep.
+    // and the movement system would be doing work it cannot keep. A loose
+    // petal has none either: it moves only when something shoves it, and the
+    // movement pass resolves that as a displacement (see LoosePetal).
     if (!config.noPhysics) {
-        world.add<Body>(petal, Body{stats.radius, 1.0});
+        world.add<Body>(petal, Body{stats.radius, loose ? kLoosePetalMass : 1.0});
         world.add<ContactDamage>(petal,
                                  ContactDamage{stats.damage,
                                                std::max(0.0, stats.damageIntervalMillis)});
@@ -1040,6 +1058,9 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     // the ring. Its cooldown begins only after an actual shot.
     instance.nextProjectileMillis = config.projectile.present ? nowMillis : 0.0;
     instance.spawnedAtMillis = nowMillis;
+    // What the client is sent to draw it at (replicatedAngle), and for a loose
+    // petal nothing ever rewrites it: placePetals skips one.
+    instance.facingAngle = restAngle;
     // The fly-out. A first-order approach for this window instead of the
     // spring, so a petal that starts on top of the flower does not get
     // slingshotted past its orbit point on the way out.
@@ -1054,6 +1075,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.charges = chargesFor(config);
     instance.soaksOwnerDamage = soaksOwnerDamage(config);
     world.add<PetalInstance>(petal, instance);
+    if (loose) world.add<LoosePetal>(petal);
 
     world.add<PetalEffect>(petal, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
                                               stats.knockback, stats.slowFactor,
@@ -1063,6 +1085,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     replicated.kind = net::EntityKind::Petal;
     replicated.typeIndex = configIndex;
     replicated.rarity = rarity;
+    if (loose) replicated.spawnFlags = net::SpawnLoosePetal;
     world.add<Replicated>(petal, replicated);
     assignNetId(world, petal);
 
@@ -1500,8 +1523,9 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // A noPhysics petal -- the cutters, third eye, antennae, observer -- is
         // worn on the flower, not carried on the ring, so it leaves no gap in
         // it. Any other count of zero still occupies one place, as the
-        // reference's `stats.count || 1` does.
-        if (config.noPhysics) continue;
+        // reference's `stats.count || 1` does. A loose petal is not on the
+        // ring at all, so it leaves no gap in it either.
+        if (config.noPhysics || petalIsLooseBody(config)) continue;
         const int count = std::max(1, registry.petalStats(slot.configIndex, slot.rarity).count);
         occupied += config.clumped ? 1 : count;
     }
@@ -1516,6 +1540,9 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // wide, and nothing outside it was ever spawned.
         if (!instance || !transform || instance->slot >= kLoadoutActiveSlots) continue;
         const PetalConfig& config = registry.petal(instance->configIndex);
+        // Loose: its place is wherever it was last shoved to, which is the
+        // movement pass's to decide. No orbit, no spring, no attraction.
+        if (petalIsLooseBody(config)) continue;
         const int subCount = std::max<int>(1, instance->subCount);
 
         // A clumped slot's grains all sit on its one ring place and fan out
@@ -2805,6 +2832,45 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
                             reloadScaleOf(world, player), nowMillis);
         }
         slotState.pets.resize(kept);
+    }
+}
+
+Vec2 PetalSystem::loosePetalRestPoint(World& world, Entity player, const Transform& owner,
+                                      double radius) const {
+    const Body* ownerBody = world.tryGet<Body>(player);
+    const double ownerRadius = ownerBody != nullptr ? ownerBody->radius : kPlayerBaseRadius;
+    Vec2 position =
+        owner.position - Vec2::fromAngle(owner.angle, ownerRadius + radius + kLoosePetalSpawnGap);
+    // Walls win, as they do for every body. A flower backed into one gets its
+    // slab put down beside the wall instead, and shoves it out of the way on
+    // the next tick if it is in the way.
+    if (terrain_ != nullptr) {
+        position = terrain_->resolveCircle(position, radius, owner.realm);
+        position = terrain_->clampInside(position, radius, owner.realm);
+    }
+    return position;
+}
+
+void PetalSystem::carryLoosePetalsAcrossRealms(World& world, Entity player) {
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    const Transform* ownerTransform = world.tryGet<Transform>(player);
+    if (loadout == nullptr || ownerTransform == nullptr) return;
+    // Distance is deliberately NOT a reason to touch it: a wax stays wherever
+    // it was left on its map, however far its flower walks (the user's rule).
+    // Only a slab its flower can never get back to is moved -- one in another
+    // realm, or at a coordinate that is not a place at all.
+    for (const Entity petal : loadout->spawned) {
+        if (!world.has<LoosePetal>(petal) || world.has<Dead>(petal)) continue;
+        Transform* transform = world.tryGet<Transform>(petal);
+        if (transform == nullptr) continue;
+        const bool stranded = transform->realm != ownerTransform->realm ||
+                              !std::isfinite(transform->position.x) ||
+                              !std::isfinite(transform->position.y);
+        if (!stranded) continue;
+        const Body* body = world.tryGet<Body>(petal);
+        transform->realm = ownerTransform->realm;
+        transform->position =
+            loosePetalRestPoint(world, player, *ownerTransform, body != nullptr ? body->radius : 0.0);
     }
 }
 

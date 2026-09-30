@@ -224,6 +224,8 @@ private:
         Query<PlayerTag, Transform> playerPositions;
         /// The NPCs a flower cannot walk through.
         Query<NpcTag, Transform, Body> npcBodies;
+        /// The petals that are solid bodies on the ground -- wax.
+        Query<LoosePetal, Transform, Body> looseBodies;
     };
 
     /// One NPC's body, flattened out of the ECS once per player pass: a handful
@@ -231,6 +233,18 @@ private:
     struct NpcDisc {
         Vec2 position;
         double radius = 0;
+        Realm realm = Realm::Overworld;
+    };
+
+    /// One loose petal, flattened out of the ECS for the passes that shove it.
+    /// Unlike an NpcDisc it MOVES during the pass -- every flower or mob that
+    /// pushes it leaves it somewhere new for the next one -- so the position
+    /// is worked on here and written back to the Transform once at the end.
+    struct LooseDisc {
+        Entity entity = NULL_ENTITY;
+        Vec2 position;
+        double radius = 0;
+        double mass = 1;
         Realm realm = Realm::Overworld;
     };
 
@@ -276,6 +290,22 @@ private:
     /// solid to flowers -- the one thing that collides with them -- and they
     /// do not give way: the flower is moved, the NPC stays on its mark.
     void pushOutOfNpcs(const Terrain& terrain, Transform& transform, double radius) const;
+    /// Rebuilds npcDiscs_. NPCs do not move between the two movement phases
+    /// of one tick, but either phase may be the first to run in a test.
+    void collectNpcDiscs();
+    /// Rebuilds looseDiscs_ from the live transforms, and writes it back.
+    void collectLooseDiscs();
+    void storeLooseDiscs(World& world) const;
+    /// A flower walking into a loose petal: half the overlap is taken back
+    /// this tick (softLooseContact in movement.cpp), the petal giving way by
+    /// the flower's mass over both and no further than the walls let it, and
+    /// the flower by the rest. Soft like a mob, not flush like an NPC.
+    void shoveLooseBodies(const Terrain& terrain, Transform& transform, const Body& body);
+    /// The loose petals against everything the world phase moved, just as
+    /// softly: mobs (by mass, a stationary one never giving way), NPCs (which
+    /// never do), and each other (by mass). Runs after separation, so it sees
+    /// the mobs where they finally stand this tick.
+    void collideLooseBodies(World& world, const Terrain& terrain);
     void moveMobs(World& world, const Terrain& terrain, double nowMillis, double dt);
     void moveProjectiles(World& world, const Terrain& terrain, double dt);
 
@@ -324,6 +354,8 @@ private:
     std::vector<SeekTarget> seekTargets_;
     /// Rebuilt at the top of every player pass. See pushOutOfNpcs().
     std::vector<NpcDisc> npcDiscs_;
+    /// Rebuilt at the top of each pass that shoves loose petals.
+    std::vector<LooseDisc> looseDiscs_;
     bool seekTargetsReady_ = false;
 
     /// Separation scratch, reused every tick so a steady state allocates

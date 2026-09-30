@@ -124,6 +124,10 @@ struct RemoteEntity {
     /// A Petal record that is a seat on a MOB's ring rather than one of a
     /// flower's own: drawn turned outward and sized from `radius`.
     bool isRingPetal() const { return (spawnFlags & net::SpawnRingPetal) != 0; }
+    /// A Petal record that is a loose body on the ground (wax): smoothed in
+    /// the world rather than in its owner's frame, sized from `radius`, and
+    /// drawn on the ground layer.
+    bool isLoosePetal() const { return (spawnFlags & net::SpawnLoosePetal) != 0; }
     bool dead() const { return (state & net::StateDead) != 0; }
 };
 

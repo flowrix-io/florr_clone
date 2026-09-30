@@ -143,6 +143,32 @@ Vec2 velocityAfterStep(Vec2 attempted, const StepOutcome& out, double dt, double
     return sanitizeMovementVelocity(result / envScale);
 }
 
+/// One tick of SOFT contact between a loose petal and something pressed into
+/// it: `push` of the overlap is taken back this tick (loosePetalContactPush),
+/// the slab giving way by `slabShare` of it and the other body the rest.
+///
+/// `out` runs from the slab to the other body. The slab moves first and is
+/// STEPPED, so a wall stops it, and whatever of its share the wall refused is
+/// handed to the other body -- a slab pinned against a wall pushes back with
+/// everything it has. The other body is stepped too, at `otherWallRadius`
+/// (a mob's point hull, a flower's own radius), unless it does not move at
+/// all -- an NPC, a mob that cannot walk -- in which case the slab takes it
+/// all by being given a share of 1.
+void softLooseContact(const Terrain& terrain, Realm realm, Vec2& slab, double slabRadius,
+                      double slabShare, Vec2& other, double otherWallRadius, bool otherMoves,
+                      Vec2 out, double push) {
+    if (!(push > 0.0)) return;
+    const Vec2 before = slab;
+    stepCollide(terrain, realm, slab, out * (-push * slabShare), slabRadius, 1.0, true, true);
+    if (!otherMoves) return;
+    const Vec2 moved = before - slab;
+    const double taken = std::max(0.0, moved.x * out.x + moved.y * out.y);
+    const double rest = push - taken;
+    if (rest > 0.0) {
+        stepCollide(terrain, realm, other, out * rest, otherWallRadius, 1.0, true, true);
+    }
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -231,7 +257,7 @@ StepOutcome stepCollide(const Terrain& terrain, Realm realm, Vec2& position, Vec
 MovementSystem::Queries::Queries(World& world)
     : players(world), mobs(world), projectiles(world),
       mobTargets(world), npcTargets(world), mobBodies(world), playerPositions(world),
-      npcBodies(world) {
+      npcBodies(world), looseBodies(world) {
     // A body marked Dead is still in the world so later systems can see it die,
     // but a corpse must not keep walking.
     players.without<Dead>();
@@ -239,6 +265,9 @@ MovementSystem::Queries::Queries(World& world)
     projectiles.without<Dead>();
     mobTargets.without<Dead>();
     mobBodies.without<Dead>();
+    // A broken wax is gone from the moment it breaks: nothing walks into it
+    // for the rest of the tick while it waits for the reaper.
+    looseBodies.without<Dead>();
     // playerPositions deliberately keeps corpses: a dead flower is about to
     // respawn where it stands, and letting the mobs around it coast for those
     // few ticks is the artefact the LOD gate exists to avoid.
@@ -281,14 +310,48 @@ void MovementSystem::runWorldPhase(World& world, const Terrain& terrain,
     // mob-vs-mob overlap in its combat phase for the same reason. A pass run
     // before the movers would have its work undone the same tick.
     separateMobs(world, terrain);
+    // And the loose petals after that, off the separation pass's own grid,
+    // so what they are solid against is where the mobs finally stand.
+    collideLooseBodies(world, terrain);
 }
 
-void MovementSystem::movePlayers(World& world, const Terrain& terrain,
-                                 double nowMillis, double dt) {
+void MovementSystem::collectNpcDiscs() {
     npcDiscs_.clear();
     queries_->npcBodies.each([&](Entity, NpcTag&, Transform& transform, Body& body) {
         npcDiscs_.push_back({transform.position, body.radius, transform.realm});
     });
+}
+
+void MovementSystem::collectLooseDiscs() {
+    looseDiscs_.clear();
+    queries_->looseBodies.each([&](Entity e, LoosePetal&, Transform& transform, Body& body) {
+        // A degenerate coordinate would put a NaN into every flower and mob it
+        // shoved; the petal pass retires a wax that has one.
+        const Vec2 p = transform.position;
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) return;
+        if (std::fabs(p.x) > kMaxSaneWorldCoord || std::fabs(p.y) > kMaxSaneWorldCoord) return;
+        LooseDisc disc;
+        disc.entity = e;
+        disc.position = p;
+        disc.radius = sanitizeCollisionRadius(body.radius);
+        disc.mass = body.mass > 1e-6 ? body.mass : 1.0;
+        disc.realm = transform.realm;
+        looseDiscs_.push_back(disc);
+    });
+}
+
+void MovementSystem::storeLooseDiscs(World& world) const {
+    for (const LooseDisc& disc : looseDiscs_) {
+        if (Transform* transform = world.tryGet<Transform>(disc.entity)) {
+            transform->position = disc.position;
+        }
+    }
+}
+
+void MovementSystem::movePlayers(World& world, const Terrain& terrain,
+                                 double nowMillis, double dt) {
+    collectNpcDiscs();
+    collectLooseDiscs();
 
     queries_->players.each([&](Entity e, PlayerTag&, Transform& transform, Motion& motion,
                                Body& body, PlayerInput& input) {
@@ -342,6 +405,9 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         // enough that without it, diagonal seams are passable.
         stepCollide(terrain, transform.realm, transform.position, velocity, body.radius, dt, true,
                     true);
+        // Loose petals before NPCs: a wax gives way and an NPC does not, so an
+        // NPC is the last word on where the flower may stand, as a wall is.
+        if (!looseDiscs_.empty()) shoveLooseBodies(terrain, transform, body);
         if (!npcDiscs_.empty()) pushOutOfNpcs(terrain, transform, body.radius);
         // TypeScript's stepPlayerMovement returns the friction-integrated
         // velocity unchanged when wall resolution alters the position. Keeping
@@ -350,6 +416,112 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         // displacement changes both acceleration and the wall trajectory.
         motion.velocity = velocity;
     });
+    storeLooseDiscs(world);
+}
+
+void MovementSystem::shoveLooseBodies(const Terrain& terrain, Transform& transform,
+                                      const Body& body) {
+    const double radius = sanitizeCollisionRadius(body.radius);
+    const double mass = body.mass > 1e-6 ? body.mass : 1.0;
+    for (LooseDisc& disc : looseDiscs_) {
+        if (disc.realm != transform.realm) continue;
+        const double reach = disc.radius + radius;
+        const Vec2 offset = transform.position - disc.position;
+        const double gapSq = offset.lengthSq();
+        if (gapSq >= reach * reach) continue;
+        const double gap = std::sqrt(gapSq);
+        // Along the line between the centres, so a flower pressing on a slab
+        // off-centre slides round it as it shoves. Dead centre has no line.
+        const Vec2 out = gap > 1e-9 ? offset * (1.0 / gap) : Vec2{1.0, 0.0};
+        // The slab's share of the push is the flower's mass over both.
+        softLooseContact(terrain, transform.realm, disc.position, disc.radius,
+                         mass / (mass + disc.mass), transform.position, radius, true, out,
+                         loosePetalContactPush(reach - gap));
+    }
+}
+
+void MovementSystem::collideLooseBodies(World& world, const Terrain& terrain) {
+    collectLooseDiscs();
+    if (looseDiscs_.empty()) return;
+    collectNpcDiscs();
+    const ContentRegistry& registry = content();
+
+    // How far separation may have carried a mob from where it filed it in
+    // separationGrid_: the most one mob's summed push is ever allowed.
+    constexpr double kFiledDrift = kMobSeparationMaxPushPerPair * kMobSeparationPushHeadroom;
+
+    for (LooseDisc& disc : looseDiscs_) {
+        // Mobs. The separation set is exactly the mobs worth colliding this
+        // tick -- awake, finite, not flagged no_mob_collision (an ant hole is
+        // a hole in the ground, and a slab slides over it as a mob does) --
+        // so the slab meets the mobs the way they meet each other.
+        separationGrid_.query(disc.realm, disc.position, disc.radius + kFiledDrift,
+                              separationCandidates_);
+        for (const Entity mob : separationCandidates_) {
+            const std::uint32_t index = entityIndex(mob);
+            const std::uint32_t slot =
+                index < separationSlot_.size() ? separationSlot_[index] : kNoSeparationEntry;
+            if (slot == kNoSeparationEntry) continue;
+            const SeparationEntry& entry = separationSet_[slot];
+            if (entry.entity != mob || entry.noCollision) continue;
+            Transform* transform = world.tryGet<Transform>(mob);
+            if (transform == nullptr) continue;
+
+            const double reach = disc.radius + entry.radius;
+            const Vec2 offset = transform->position - disc.position;
+            const double gapSq = offset.lengthSq();
+            if (gapSq >= reach * reach) continue;
+            const double gap = std::sqrt(gapSq);
+            const Vec2 out = gap > 1e-9 ? offset * (1.0 / gap) : Vec2{-1.0, 0.0};
+
+            // A mob that cannot walk -- a nest, a rock, a cactus -- is never
+            // moved by anything, and a slab shoved into one is eased round it.
+            // Everything else gives way by mass. A mob meets walls as a point,
+            // as it does everywhere else.
+            const bool anchored = anchoredAgainstKnockback(world, registry, mob);
+            const Body* body = world.tryGet<Body>(mob);
+            const double mobMass = body != nullptr && body->mass > 1e-6 ? body->mass : 1.0;
+            softLooseContact(terrain, disc.realm, disc.position, disc.radius,
+                             anchored ? 1.0 : mobMass / (mobMass + disc.mass),
+                             transform->position, kMobWallRadius, !anchored, out,
+                             loosePetalContactPush(reach - gap));
+        }
+
+        // NPCs never give way, to a flower or to anything else.
+        for (NpcDisc& npc : npcDiscs_) {
+            if (npc.realm != disc.realm) continue;
+            const double reach = npc.radius + disc.radius;
+            const Vec2 offset = npc.position - disc.position;
+            const double gapSq = offset.lengthSq();
+            if (gapSq >= reach * reach) continue;
+            const double gap = std::sqrt(gapSq);
+            const Vec2 out = gap > 1e-9 ? offset * (1.0 / gap) : Vec2{-1.0, 0.0};
+            softLooseContact(terrain, disc.realm, disc.position, disc.radius, 1.0, npc.position,
+                             npc.radius, false, out, loosePetalContactPush(reach - gap));
+        }
+    }
+
+    // Slab against slab, by mass. A handful at most -- one per wax slot per
+    // flower on screen -- so every pair is simply tested.
+    for (std::size_t i = 0; i < looseDiscs_.size(); ++i) {
+        for (std::size_t j = i + 1; j < looseDiscs_.size(); ++j) {
+            LooseDisc& a = looseDiscs_[i];
+            LooseDisc& b = looseDiscs_[j];
+            if (a.realm != b.realm) continue;
+            const double reach = a.radius + b.radius;
+            const Vec2 offset = b.position - a.position;
+            const double gapSq = offset.lengthSq();
+            if (gapSq >= reach * reach) continue;
+            const double gap = std::sqrt(gapSq);
+            // Two slabs laid on the same spot -- two wax slots coming off one
+            // reload -- have no line between them; split them sideways.
+            const Vec2 out = gap > 1e-9 ? offset * (1.0 / gap) : Vec2{0.0, 1.0};
+            softLooseContact(terrain, a.realm, a.position, a.radius, b.mass / (a.mass + b.mass),
+                             b.position, b.radius, true, out, loosePetalContactPush(reach - gap));
+        }
+    }
+
+    storeLooseDiscs(world);
 }
 
 void MovementSystem::pushOutOfNpcs(const Terrain& terrain, Transform& transform,

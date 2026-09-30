@@ -4499,6 +4499,11 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
     everything.each([&](Entity other, Transform& at) {
         if (other == entity) return;
         if (at.realm != from) return;
+        // Except a loose petal: put down HERE it would land on the flower and
+        // have to be shoved off it. The petal pass finds it in the old realm on
+        // its next run and puts it down behind the flower instead
+        // (PetalSystem::carryLoosePetalsAcrossRealms).
+        if (world_.has<LoosePetal>(other)) return;
         Entity owner = NULL_ENTITY;
         if (const PetalInstance* petal = world_.tryGet<PetalInstance>(other)) owner = petal->owner;
         else if (const Pet* pet = world_.tryGet<Pet>(other)) owner = pet->owner;

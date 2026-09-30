@@ -474,10 +474,15 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         if (e.kind != net::EntityKind::Petal) continue;
 
         const auto owner = entities_.find(e.ownerNetId);
-        if (owner == entities_.end()) {
+        if (owner == entities_.end() || e.isLoosePetal()) {
             // No owner on screen: nothing to anchor to, so smooth the absolute
             // position and let the ring fend for itself. Happens for the frame
             // or two before an owner's spawn record arrives.
+            //
+            // A loose petal takes this branch always. It is on no ring: it
+            // stands where it was put while its flower walks off, and in the
+            // flower's frame that is an offset changing every snapshot, which
+            // eased there would drag the slab after the flower by the lag.
             if (e.needsSnap) {
                 e.position = e.targetPosition;
                 e.needsSnap = false;

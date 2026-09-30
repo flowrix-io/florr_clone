@@ -82,6 +82,17 @@ struct Fixture {
         return e;
     }
 
+    /// A loose petal as the petal system puts one down: solid, on the ground,
+    /// with the mass its radius buys and no Motion of its own.
+    Entity spawnLoose(Vec2 at, double radius) {
+        const Entity e = world.create();
+        world.add<PetalTag>(e);
+        world.add<LoosePetal>(e);
+        world.add<Transform>(e, Transform{at, 0});
+        world.add<Body>(e, Body{radius, kLoosePetalMass});
+        return e;
+    }
+
     void drive(Entity e, double angle, double strength) {
         PlayerInput& input = world.get<PlayerInput>(e);
         input.current.moveAngle = angle;
@@ -1062,4 +1073,169 @@ TEST(the_containment_guard_holds_on_every_authored_map) {
     }
     CHECK(compared > 1000);
     CHECK(guarded > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Loose petals (wax)
+// ---------------------------------------------------------------------------
+
+/// How far a flower walking at full speed sinks into a loose petal once it
+/// has settled into pushing it: each tick it walks kPlayerMaxSpeed * dt in,
+/// and the soft contact takes back kLoosePetalContactStiffness of the overlap.
+constexpr double kPushSink =
+    kPlayerMaxSpeed * net::kTickSeconds * (1.0 - kLoosePetalContactStiffness) /
+    kLoosePetalContactStiffness;
+
+TEST(a_flower_leans_a_little_way_into_a_loose_petal_and_shoves_it) {
+    Fixture fx;
+    const Entity player = fx.spawnPlayer({3000, 3000});
+    const Entity wax = fx.spawnLoose({3100, 3000}, 30.0);
+    const double reach = 30.0 + kPlayerBaseRadius;
+    CHECK_NEAR(kPushSink, 10.0, 1e-9);
+
+    fx.drive(player, 0.0, 1.0);
+    double waxAtHalfway = 0;
+    for (int i = 0; i < 100; ++i) {
+        fx.step(1);
+        // Soft, not a wall and not a ghost: the flower sinks in no further
+        // than the settled push takes it, however long it keeps pressing.
+        CHECK(distance(fx.positionOf(player), fx.positionOf(wax)) >= reach - kPushSink - 0.5);
+        if (i == 49) waxAtHalfway = fx.positionOf(wax).x;
+    }
+    // ...and it does sink in, the way a flower leans into a mob.
+    CHECK_NEAR(distance(fx.positionOf(player), fx.positionOf(wax)), reach - kPushSink, 0.5);
+    // Shoved the way it was pushed, and only that way.
+    CHECK(fx.positionOf(wax).x > 3100.0 + 100.0);
+    CHECK_NEAR(fx.positionOf(wax).y, 3000.0, 1e-6);
+
+    // At full speed the pair moves at the slab's share of the push: the
+    // flower's mass over both, which is 1 / 1.25 -- 80% of walking speed.
+    const double share = 1.0 / (1.0 + kLoosePetalMass);
+    CHECK_NEAR(share, 0.8, 1e-12);
+    CHECK_NEAR(fx.positionOf(wax).x - waxAtHalfway, kPlayerMaxSpeed * share * 50.0 *
+                                                        net::kTickSeconds,
+               3.0);
+
+    // A flower walking free for the same time gets further: pushing costs it
+    // a little speed, not most of it.
+    Fixture free;
+    const Entity unburdened = free.spawnPlayer({3000, 3000});
+    free.drive(unburdened, 0.0, 1.0);
+    free.step(100);
+    const double lead = free.positionOf(unburdened).x - fx.positionOf(player).x;
+    CHECK(lead > 100.0);
+    CHECK(lead < 400.0);
+
+    // Let go of, it stays exactly where it was left: a slab does not slide,
+    // and does not follow the flower that pushed it. (The flower coasts into
+    // it for a few ticks while it turns round, so "left" is once it is clear.)
+    fx.drive(player, kPi, 1.0);
+    for (int i = 0; i < 40 && distance(fx.positionOf(player), fx.positionOf(wax)) <= reach + 1.0;
+         ++i) {
+        fx.step(1);
+    }
+    CHECK(distance(fx.positionOf(player), fx.positionOf(wax)) > reach + 1.0);
+    const Vec2 left = fx.positionOf(wax);
+    fx.step(40);
+    CHECK_NEAR(fx.positionOf(wax).x, left.x, 1e-9);
+    CHECK_NEAR(fx.positionOf(wax).y, left.y, 1e-9);
+}
+
+TEST(a_loose_petal_shoved_into_a_wall_stops_there_and_so_does_the_flower) {
+    Fixture fx;
+    fx.wallColumn(10);
+    const Entity wax = fx.spawnLoose({kWallWest - 120.0, 5000}, 30.0);
+    const Entity player = fx.spawnPlayer({kWallWest - 200.0, 5000});
+    const double reach = 30.0 + kPlayerBaseRadius;
+
+    fx.drive(player, 0.0, 1.0);
+    for (int i = 0; i < 120; ++i) {
+        fx.step(1);
+        CHECK(fx.positionOf(wax).x <= kWallWest - 30.0 + 1e-6);
+        CHECK(!fx.terrain.blocked(fx.positionOf(wax), Realm::Overworld));
+        CHECK(distance(fx.positionOf(player), fx.positionOf(wax)) >= reach - kPushSink - 0.5);
+    }
+    // Pinned against the face, with the flower leaning into it as far as a
+    // settled push goes and no further: the wall hands the slab's share of
+    // every push back to the flower.
+    CHECK_NEAR(fx.positionOf(wax).x, kWallWest - 30.0, 1.0);
+    CHECK_NEAR(fx.positionOf(player).x, fx.positionOf(wax).x - (reach - kPushSink), 1.0);
+}
+
+TEST(a_mob_and_a_loose_petal_are_eased_apart_by_mass) {
+    // The mob side of the pass rides on the separation set, which reads each
+    // mob's config, so this one needs content.
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    if (!error.empty()) return;
+    const std::uint16_t ladybug = content().mobIndex("ladybug");
+    const std::uint16_t rock = content().mobIndex("rock");
+
+    // Overlapping by ten: half of it is taken back this tick, the slab giving
+    // way by the mob's mass over both and the mob by the rest.
+    Fixture fx;
+    const Entity wax = fx.spawnLoose({5000, 5000}, 30.0);
+    const Entity mob = fx.spawnMob({5040, 5000}, 20.0, 4.0);
+    fx.world.add<MobType>(mob, MobType{ladybug, Rarity::Common, 1.0});
+    fx.step(1);
+    const double waxShare = 4.0 / (4.0 + kLoosePetalMass);
+    CHECK_NEAR(fx.positionOf(wax).x, 5000.0 - 5.0 * waxShare, 1e-6);
+    CHECK_NEAR(fx.positionOf(mob).x, 5040.0 + 5.0 * (1.0 - waxShare), 1e-6);
+    CHECK_NEAR(distance(fx.positionOf(wax), fx.positionOf(mob)), 45.0, 1e-6);
+    // Left alone, they settle exactly touching.
+    fx.step(30);
+    CHECK_NEAR(distance(fx.positionOf(wax), fx.positionOf(mob)), 50.0, 1e-4);
+
+    // A mob that cannot walk never gives way: the slab is eased round it.
+    Fixture still;
+    const Entity slab = still.spawnLoose({5000, 5000}, 30.0);
+    const Entity boulder = still.spawnMob({5040, 5000}, 20.0, 4.0);
+    still.world.add<MobType>(boulder, MobType{rock, Rarity::Common, 1.0});
+    still.step(1);
+    CHECK_NEAR(still.positionOf(boulder).x, 5040.0, 1e-9);
+    CHECK_NEAR(still.positionOf(slab).x, 4995.0, 1e-6);
+    still.step(30);
+    CHECK_NEAR(still.positionOf(boulder).x, 5040.0, 1e-9);
+    CHECK_NEAR(still.positionOf(slab).x, 4990.0, 1e-4);
+}
+
+TEST(an_npc_never_gives_way_to_a_loose_petal_and_two_slabs_split_evenly) {
+    Fixture fx;
+    const auto npcAt = [](Fixture& f, Vec2 at, double radius) {
+        const Entity npc = f.world.create();
+        f.world.add<NpcTag>(npc);
+        f.world.add<Transform>(npc, Transform{at, 0});
+        f.world.add<Body>(npc, Body{radius, 1.0});
+        return npc;
+    };
+    const Entity npc = npcAt(fx, {5000, 5000}, 40.0);
+    const Entity wax = fx.spawnLoose({5060, 5000}, 30.0);
+    fx.step(1);
+    CHECK_NEAR(fx.positionOf(npc).x, 5000.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(wax).x, 5065.0, 1e-6);
+    fx.step(30);
+    CHECK_NEAR(fx.positionOf(npc).x, 5000.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(wax).x, 5070.0, 1e-4);
+
+    // However deep the overlap, one tick takes back no more than a pair of
+    // mobs is ever separated by: a slab put down 60 deep comes out over
+    // several ticks, not in one jump.
+    Fixture deep;
+    npcAt(deep, {5000, 5000}, 40.0);
+    const Entity buried = deep.spawnLoose({5010, 5000}, 30.0);
+    deep.step(1);
+    CHECK_NEAR(deep.positionOf(buried).x, 5010.0 + kLoosePetalMaxPushPerTick, 1e-6);
+
+    // Two slabs overlapping by twenty: each gives way by the OTHER's mass
+    // over both -- and every slab weighs the same whatever its size, so they
+    // split it evenly.
+    Fixture pair;
+    const Entity small = pair.spawnLoose({5000, 5000}, 30.0);
+    const Entity big = pair.spawnLoose({5070, 5000}, 60.0);
+    pair.step(1);
+    CHECK_NEAR(pair.positionOf(small).x, 4995.0, 1e-6);
+    CHECK_NEAR(pair.positionOf(big).x, 5075.0, 1e-6);
+    pair.step(30);
+    CHECK_NEAR(pair.positionOf(small).x, 4990.0, 1e-4);
+    CHECK_NEAR(pair.positionOf(big).x, 5080.0, 1e-4);
 }

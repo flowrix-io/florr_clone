@@ -1516,7 +1516,7 @@
         "count": 1
     },
     "coin": {
-        "name": "coin",
+        "name": "Coin",
         "damage": 15,
         "health": 10,
         "size": 1,
@@ -1527,5 +1527,18 @@
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16 16)scale(1.10345)\"><circle r=\"14.5\" fill=\"#f5bf39\"/><circle r=\"11.5\" fill=\"#c69b2e\"/><path d=\"M-1.055-7.723v2.094q-1.58.359-2.65 1.358-1.667 1.56-1.667 4.277 0 2.687 1.637 4.257Q-2.65 5.3-1.055 5.652v2.135h2.112v-1.96c.71-.02 1.396-.106 2.07-.26.775-.176 1.857-.436 2.58-.79L5.179-.628h-3.66L.331 1.312h2.297l.264 2.185c-.535.205-1.198.234-1.802.234q-1.658.001-2.564-.973-.905-.97-.904-2.752-.001-1.801.934-2.766.941-.97 2.67-.97.934.001 1.86.264c.624.175 1.116.442 1.743.799L4.565-5.06c-.607-.275-.858-.418-1.548-.559q-.935-.195-1.96-.21v-1.894z\" fill=\"#ffe783\"/></g></svg>",
         "tradable": false
+    },
+    "wax": {
+        "name": "Wax",
+        "damage": 0,
+        "health": 1000,
+        "size": 1,
+        "cooldown": 30000,
+        "price": 65,
+        "description": "Don't ask where it came from.",
+        "color": "#ffff00",
+        "count": 1,
+        "visual_scale": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><path d=\"m30.546 16-7.273 12.597H8.727L1.454 16 8.728 3.403h14.546Z\" fill=\"#f7cf2f\" stroke=\"#c8a826\" stroke-width=\"2.909\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
     }
 }

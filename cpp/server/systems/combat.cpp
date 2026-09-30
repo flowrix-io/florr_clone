@@ -1688,6 +1688,11 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
     queries_->petals.each([&](Entity e, PetalInstance& petal, Transform& transform, Body& body) {
         const PetalConfig& config = content.petal(petal.configIndex);
         if (config.noPhysics) return;   // a pure modifier has no body to hit with
+        // A loose petal is something mobs run into, not something that swings
+        // at them. Left in, wax's default knockback would make it a "zero
+        // swing" against every mob pressed flush against it -- shoving it and
+        // paying the mob's bite as recoil on every tick of contact.
+        if (world.has<LoosePetal>(e)) return;
 
         const PetalStats stats = content.petalStats(petal.configIndex, petal.rarity);
         const bool inert = stats.damage <= 0.0 && stats.critDamage <= 0.0 &&
@@ -1769,7 +1774,17 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // body melee the ring as well would charge the exchange twice.
             // A MOB's ring seed is not a PetalInstance and is deliberately
             // not covered by this: it is a body, and bodies collide.
-            if (!source.isPetal && world.has<PetalInstance>(victim)) continue;
+            //
+            // A LOOSE petal is the exception, because it swings at nothing
+            // (gatherPetals leaves it out) and so has no hit block of its own
+            // to bleed in: a mob's body bites it instead, at the mob's contact
+            // damage and on the mob's own contact interval. That is the only
+            // thing that ever wears a wax down.
+            const bool looseVictim = world.has<LoosePetal>(victim);
+            if (!source.isPetal && world.has<PetalInstance>(victim) &&
+                !(looseVictim && (source.isMobBody || source.isMobRing || source.isNpcBody))) {
+                continue;
+            }
 
             if (source.isPetal && world.has<PlayerTag>(victim)) {
                 // Flower vs flower is a wholly separate collision in the
@@ -1795,8 +1810,12 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // was put back out against the NPC's skin before this pass ran,
             // so touching is measured with kNpcTouchSlack on top. Either way
             // round -- the NPC's bite and the flower's body slam alike.
+            // A mob and a loose petal get the slack too: the movement pass
+            // eases them apart, and a pair that has stopped pressing settles
+            // against each other's skin rather than inside it.
             const bool flushPair = (source.isNpcBody && world.has<PlayerTag>(victim)) ||
-                                   (source.isPlayerBody && world.has<NpcTag>(victim));
+                                   (source.isPlayerBody && world.has<NpcTag>(victim)) ||
+                                   (looseVictim && !source.isPetal);
 
             const Vec2 offset = transform->position - source.position;
             const double reach = source.radius + body->radius +

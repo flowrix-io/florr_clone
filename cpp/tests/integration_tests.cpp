@@ -1467,3 +1467,51 @@ TEST(a_loadout_edit_keeps_the_xp_earned_since_the_last_save) {
     CHECK(saved != nullptr);
     if (saved != nullptr) CHECK_NEAR(saved->totalXp, earned, 1e-9);
 }
+
+TEST(a_wax_is_put_down_through_the_real_server_loop_and_arrives_loose) {
+    // No bots: a bot standing on the join point would walk into the slab.
+    Harness h("wax-loop", {}, flix::testsupport::dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginNew(h, client, "chandler", "long-enough-password"));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag> players{world};
+    players.each([&](Entity e, PlayerTag&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    // Nothing on the map gets to end the test early by killing the flower
+    // while its wax serves the thirty-second equip reload.
+    world.get<Health>(player).invulnerableUntilMillis = 1e18;
+    LoadoutSlot& slot = world.get<Loadout>(player).slots[0];
+    slot.configIndex = content().petalIndex(kWaxPetalId);
+    slot.rarity = Rarity::Rare;
+
+    Entity wax = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<LoosePetal> loose{world};
+        loose.each([&](Entity e, LoosePetal&) { wax = e; });
+        return wax != NULL_ENTITY;
+    }, 1000));
+    if (wax == NULL_ENTITY) return;
+    CHECK_NEAR(world.get<Body>(wax).radius, 90.0, 1e-9);
+    CHECK_EQ(world.get<PetalInstance>(wax).owner, player);
+
+    // On the wire it is a loose petal at its full radius, which is what the
+    // client sizes, layers and smooths it by.
+    const RemoteEntity* seen = nullptr;
+    CHECK(h.stepUntil({&client}, [&] {
+        for (const auto& entry : client.view().entities()) {
+            if (entry.second.kind == net::EntityKind::Petal && entry.second.isLoosePetal()) {
+                seen = &entry.second;
+            }
+        }
+        return seen != nullptr;
+    }, 20));
+    if (seen == nullptr) return;
+    CHECK(!seen->isRingPetal());
+    CHECK_NEAR(seen->radius, 90.0, 0.01);
+}

@@ -407,6 +407,17 @@ private:
     /// ahead, they vanish, the slot reloads and hatches a fresh pair.
     void retireDistantPets(World& world, const ContentRegistry& registry, Entity player,
                            double nowMillis);
+    /// A loose petal is NOT retired for being far away: it stays where it was
+    /// left for as long as it lasts. The one exception is a slab stranded in
+    /// another realm from its flower -- after a teleporter, or joining the
+    /// arena or the maze -- which is put down behind the flower again, on its
+    /// side. Left there it would be unreachable for good, and its slot, still
+    /// full, would never lay another.
+    void carryLoosePetalsAcrossRealms(World& world, Entity player);
+    /// Where a loose petal of `radius` is put down: behind the flower's
+    /// heading, clear of its body, and outside the walls.
+    Vec2 loosePetalRestPoint(World& world, Entity player, const Transform& owner,
+                             double radius) const;
     /// Put the petal that hatches `mobIndex` back on its reload, if one is
     /// equipped and not already reloading. `reloadScale` is the owner's Reload
     /// talent: the slot state and loadout arrive here as references rather than
@@ -490,6 +501,11 @@ private:
     /// This tick's event queue, installed by run(). Null outside a tick and in
     /// a test that does not care about the wire.
     EventQueue* events_ = nullptr;
+    /// This tick's terrain, installed by run() for loosePetalRestPoint: a
+    /// loose petal is put down on the ground beside its flower, and has to be
+    /// put down OUTSIDE the walls. Null outside a tick and in a test with no
+    /// map, where the ground is open everywhere.
+    const Terrain* terrain_ = nullptr;
 
     /// Wild mobs, rebuilt once at the top of the tick. Its own grid rather
     /// than the server's: the reference's attraction reads the enemy grid as

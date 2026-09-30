@@ -859,6 +859,24 @@ inline bool petalIsClickToUse(const PetalConfig& config) {
     return config.id == kSplitterPetalId;
 }
 
+/// The petal that is put down on the ground instead of carried, by id.
+inline constexpr const char* kWaxPetalId = "wax";
+
+/// Whether this petal is a LOOSE BODY rather than a place on the ring.
+///
+/// A loose petal is spawned beside its flower and left there: it takes no
+/// place on the ring, is never sprung toward an orbit point or bent toward a
+/// mob, and swings at nothing. It is a BODY -- flowers, mobs, NPCs and other
+/// loose petals cannot pass through it, though like two mobs they can lean a
+/// little way into it and are eased back out (kLoosePetalContactStiffness) --
+/// and it gives way to whatever pushes it, by mass (kLoosePetalMass). Mobs
+/// that touch it bite it, which is the only thing that wears its health down.
+///
+/// By id for the reason petalIsClickToUse is: the server, the wire and the
+/// client's renderer all have to agree about it, and petals.json is shared
+/// verbatim with the frozen browser build.
+inline bool petalIsLooseBody(const PetalConfig& config) { return config.id == kWaxPetalId; }
+
 // ---------------------------------------------------------------------------
 // ContentRegistry
 // ---------------------------------------------------------------------------
