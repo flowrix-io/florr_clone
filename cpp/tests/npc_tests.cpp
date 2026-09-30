@@ -1366,6 +1366,10 @@ TEST(the_shipped_trader_stands_in_the_desert_and_takes_all_but_the_marked_petals
     CHECK_EQ(config.image, std::string("$trader"));
     CHECK(config.noEggDrop);
     CHECK(!content().mobStats(trader, Rarity::Common).ambient);
+    // It wanders about its point on the oracle's leashed cruise rather than
+    // standing on it.
+    CHECK(config.beeFlight);
+    CHECK(content().mobStats(trader, Rarity::Common).speed > 0.0);
 
     // What it hands back exists and is marked untradable -- or it would take
     // its own coins back one for one -- and so is the basic petal. A petal
@@ -1533,9 +1537,10 @@ TEST(the_trader_serves_only_a_flower_standing_at_it) {
     const Entity trader = npcWearing(world, "trader");
     if (player == NULL_ENTITY || trader == NULL_ENTITY) { CHECK(false); removeDataDir(dir); return; }
     const double radius = world.get<Body>(trader).radius;
-    const Vec2 at = world.get<Transform>(trader).position;
 
-    // Just past the reach and its slack, from the trader's skin: refused...
+    // Just past the reach and its slack, from the trader's skin, wherever it
+    // has cruised to: refused...
+    Vec2 at = world.get<Transform>(trader).position;
     world.get<Transform>(player).position =
         Vec2{at.x + radius + kNpcServiceReach + kNpcServiceSlack + 40.0, at.y};
     h.step(1, {&client});
@@ -1544,16 +1549,15 @@ TEST(the_trader_serves_only_a_flower_standing_at_it) {
     CHECK(!outcome.success);
     CHECK(outcome.reason.find("far") != std::string::npos);
 
-    // ...and just inside, served. The trader stands still, so its position
-    // read once is where it still is.
+    // ...and just inside, served. It has flown on while the refusal came
+    // back, so "at the trader" is looked up again.
+    at = world.get<Transform>(trader).position;
     world.get<Transform>(player).position =
         Vec2{at.x + radius + kNpcServiceReach + kNpcServiceSlack - 40.0, at.y};
     h.step(1, {&client});
     client.requestTrade(rose, Rarity::Common);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(outcome.success);
-    CHECK_NEAR(world.get<Transform>(trader).position.x, at.x, 1e-9);
-    CHECK_NEAR(world.get<Transform>(trader).position.y, at.y, 1e-9);
     removeDataDir(dir);
 }
 

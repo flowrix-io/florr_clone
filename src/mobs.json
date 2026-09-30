@@ -2063,6 +2063,7 @@
         "image": "$trader",
         "ai_type": "passive",
         "range": 100,
+        "bee_ai": "idle",
         "npc": {
             "service": "trader"
         },

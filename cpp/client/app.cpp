@@ -1244,10 +1244,10 @@ void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
         // count. There is no world behind this screen to report on, and
         // substituting live-looking zeroes would claim there is.
         lines = {
-            {"Pos: --, --", 0xFFD700u},
-            {"Ping: -- | In: 0 B/s | Out: 0 B/s", 0xA78BFAu},
-            {"Players: 0", 0x4ECDC4u},
-            {"Mobs: 0", 0xFF6B6Bu},
+            // {"Pos: --, --", 0xFFD700u},
+            // {"Ping: -- | In: 0 B/s | Out: 0 B/s", 0xA78BFAu},
+            // {"Players: 0", 0x4ECDC4u},
+            // {"Mobs: 0", 0xFF6B6Bu},
             {"FPS: " + std::to_string(framesPerSecond_) + " | Memory: 0.00 MB", 0x00FF00u},
         };
     } else {
