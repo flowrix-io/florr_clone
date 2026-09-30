@@ -948,6 +948,61 @@ TEST(a_web_that_catches_nothing_is_not_laid) {
     CHECK(fine.minRarity == Rarity::Common);
 }
 
+TEST(the_shipped_bumble_bee_drops_pollen_and_out_cruises_a_bee) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t bumble = r.mobIndex("bumble_bee");
+    const DropProjectileSpec& drop = r.mob(bumble).dropProjectile;
+    CHECK(drop.present);
+    CHECK_EQ(drop.petalIndex, r.petalIndex("bumble_bee_pollen"));
+    // Its own petal, kept out of loot and the shop like every mob's ammunition.
+    CHECK(r.petal(drop.petalIndex).isAdminPetal);
+    CHECK_NEAR(drop.lifetimeMillis, 3000.0, 1e-9);
+    CHECK(!r.mob(r.mobIndex("bee")).dropProjectile.present);
+    // In flower top speeds, like `speed`; a bee states none.
+    CHECK(r.mobStats(bumble, Rarity::Common).cruiseSpeed > 0.0);
+    CHECK_EQ(r.mobStats(r.mobIndex("bee"), Rarity::Common).cruiseSpeed, 0.0);
+}
+
+TEST(a_drop_with_nothing_to_drop_is_not_dropped) {
+    ContentRegistry r;
+    std::string error;
+    Synthetic files;
+    files.mobs = R"JSON({
+      "ghost": {"name": "Ghost", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "passive", "groups": ["garden"],
+        "dropProjectile": {"petalType": "nope"}},
+      "brief": {"name": "Brief", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "passive", "groups": ["garden"],
+        "dropProjectile": {"petalType": "p", "lifetimeMs": 0}},
+      "odd": {"name": "Odd", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "passive", "groups": ["garden"], "dropProjectile": 3},
+      "fine": {"name": "Fine", "health": 3, "damage": 1, "size": 1, "speed": 0.2,
+        "cooldown": 1, "range": 1, "description": "", "color": "#fff", "image": "<svg/>",
+        "ai_type": "passive", "groups": ["garden"], "cruiseSpeed": 0.5,
+        "dropProjectile": {"petalType": "p"}}
+    })JSON";
+    files.petals = R"JSON({"p": {"name": "P", "health": 3, "damage": 1, "size": 1,
+        "cooldown": 1, "count": 1, "description": "", "color": "#fff", "image": "<svg/>"}})JSON";
+    CHECK(loadSynthetic(r, files, error));
+    CHECK(!r.mob(r.mobIndex("ghost")).dropProjectile.present);
+    CHECK(warned(r, "dropProjectile petalType 'nope'"));
+    CHECK(!r.mob(r.mobIndex("brief")).dropProjectile.present);
+    CHECK(!r.mob(r.mobIndex("odd")).dropProjectile.present);
+    CHECK(warned(r, "dropProjectile is"));
+    // Everything but the petal defaults to the bumble bee's pollen.
+    const DropProjectileSpec& fine = r.mob(r.mobIndex("fine")).dropProjectile;
+    CHECK(fine.present);
+    CHECK_EQ(fine.petalIndex, r.petalIndex("p"));
+    CHECK_NEAR(fine.intervalMillis, 1000.0, 1e-9);
+    CHECK_NEAR(fine.lifetimeMillis, 3000.0, 1e-9);
+    // The cruise is stated in flower top speeds and converted like `speed`.
+    CHECK_NEAR(r.mobStats(r.mobIndex("fine"), Rarity::Common).cruiseSpeed, 0.5 * kPlayerMaxSpeed,
+               1e-9);
+}
+
 TEST(synthetic_dirty_values_are_sanitised) {
     Synthetic files;
     files.mobs = R"JSON({

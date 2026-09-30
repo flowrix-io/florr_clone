@@ -841,12 +841,14 @@ struct Npc {
     /// still, and only while no flower is inside kNpcWatchRange -- with one
     /// there, it looks at the nearest. One that cruises looks where it goes.
     double nextGlanceMillis = 0;
-    /// Whether it cruises about its home the way a bee does, and at what
-    /// authored speed (units a second): its mob's `bee_ai` and `speed`,
-    /// resolved at spawn. An NPC whose mob does not fly like a bee stands
-    /// still -- a target dummy that wandered off would not be one.
+    /// Whether it cruises about its home the way a bee does, and on what
+    /// thrust and under what ceiling (units a second): its mob's `bee_ai`,
+    /// `speed` and `cruiseSpeed`, resolved at spawn through beeCruiseDrive().
+    /// An NPC whose mob does not fly like a bee stands still -- a target dummy
+    /// that wandered off would not be one.
     bool cruises = false;
     double speed = 0;
+    double cruiseCeiling = 0;
     BeeCruise cruise;
 };
 
@@ -1115,6 +1117,12 @@ struct WebClock {
     double nextMillis = 0;
 };
 
+/// When a mob with a `dropProjectile` drops its next one. See
+/// DropProjectileSpec; its own component for the reason WebClock is.
+struct DropClock {
+    double nextMillis = 0;
+};
+
 // ---------------------------------------------------------------------------
 // Networking
 // ---------------------------------------------------------------------------
@@ -1199,5 +1207,6 @@ FLIX_COMPONENT(flix::GroundEffect);
 FLIX_COMPONENT(flix::LightningBurst);
 FLIX_COMPONENT(flix::LightningClock);
 FLIX_COMPONENT(flix::WebClock);
+FLIX_COMPONENT(flix::DropClock);
 FLIX_COMPONENT(flix::NetId);
 FLIX_COMPONENT(flix::Replicated);

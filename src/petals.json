@@ -506,7 +506,7 @@
         "cameraZoom": 0.98
     },
     "observer": {
-        "name": "Observer",
+        "name": "Mecha Antennae",
         "damage": 0,
         "health": null,
         "size": 1,
@@ -554,6 +554,19 @@
         "defendOnly": true,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ffe763\" stroke-width=\"4\" stroke=\"#cfbb50\"/>\n</svg>",
         "isAdminPetal": false
+    },
+    "bumble_bee_pollen": {
+        "name": "Bumble Bee Pollen",
+        "damage": 10,
+        "health": 10,
+        "size": 0.5,
+        "cooldown": 1000,
+        "price": 10,
+        "description": "Left behind by a bumble bee. Don't step in it",
+        "color": "#000000",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 32 32\" fill=\"none\">\n<circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#ffe763\" stroke-width=\"4\" stroke=\"#cfbb50\"/>\n</svg>",
+        "isAdminPetal": true
     },
     "powder": {
         "name": "Powder",

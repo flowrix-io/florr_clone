@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "server/systems/mob_ai.h"
+#include "server/systems/movement.h"
 
 // The hold below is sized against the CLIENT's facing ease, so the test that
 // guards it reads that rate from the client rather than restating it.
@@ -2210,6 +2211,68 @@ TEST(a_cruise_is_flown_at_the_bees_rate_whatever_the_mob_is_authored_at) {
     CHECK(bee.fastest <= cruiseCeiling("bee") + 1e-9);
 }
 
+TEST(a_stated_cruise_speed_sets_both_the_thrust_and_the_ceiling) {
+    // Unstated is the shared rule, untouched: the authored speed pushes under
+    // the flat ceiling.
+    const BeeCruiseDrive shared = beeCruiseDrive(120.0, 0.0);
+    CHECK_NEAR(shared.thrust, 120.0, 1e-12);
+    CHECK_NEAR(shared.ceiling, kBeeCruiseSpeed, 1e-12);
+    // A bee's own 30 u/s settles exactly at kBeeCruiseSpeed, so its pulse
+    // dips it to half. Stated, the thrust is the one whose PULSED dip still
+    // settles at the ceiling, whatever the authored speed.
+    CHECK_NEAR(30.0 * kBeeCruiseTerminalPerSpeed, kBeeCruiseSpeed, 1e-9);
+    const BeeCruiseDrive stated = beeCruiseDrive(600.0, 180.0);
+    CHECK_NEAR(stated.ceiling, 180.0, 1e-12);
+    CHECK_NEAR(stated.thrust * kBeeCruiseTerminalPerSpeed * kBeePulseScale, 180.0, 1e-9);
+    // No idle move outruns a flower, a stated cruise included.
+    CHECK_NEAR(beeCruiseDrive(30.0, 10000.0).ceiling, kMaxWanderSpeed, 1e-12);
+}
+
+TEST(a_bumble_bee_cruises_faster_than_a_bee) {
+    CHECK(contentReady());
+    const MobStats stats = content().mobStats(content().mobIndex("bumble_bee"), Rarity::Common);
+    CHECK(stats.cruiseSpeed > kBeeCruiseSpeed);
+    const DriftSpeeds bumble = driftSpeeds("bumble_bee");
+    const DriftSpeeds bee = driftSpeeds("bee");
+    CHECK(bumble.fastest > 1.5 * bee.fastest);
+    // Up to its own stated cruise and no further.
+    CHECK(bumble.fastest > 0.95 * stats.cruiseSpeed);
+    CHECK(bumble.fastest <= stats.cruiseSpeed + 1e-9);
+}
+
+namespace {
+
+/// The slowest and fastest a cruise flies between its first second and its
+/// first heading re-pick, stepped at the server's own rate.
+DriftSpeeds cruiseBetweenRepicks(BeeCruiseDrive drive) {
+    Rng rng{7};
+    BeeCruise cruise;
+    cruise.headingPickedMillis = 0.0;
+    DriftSpeeds out;
+    for (double now = 0.0; now < kBeeHeadingMillis - net::kTickMillis; now += net::kTickMillis) {
+        const double speed =
+            stepBeeCruise(cruise, drive.thrust, drive.ceiling, now, net::kTickSeconds, rng)
+                .length();
+        if (now < 1000.0) continue;
+        out.slowest = std::min(out.slowest, speed);
+        out.fastest = std::max(out.fastest, speed);
+    }
+    return out;
+}
+
+} // namespace
+
+TEST(a_stated_cruise_holds_its_speed_where_a_bees_pulses) {
+    // A bee sags to half its cruise for a third of every beat.
+    const DriftSpeeds bee = cruiseBetweenRepicks(beeCruiseDrive(30.0, 0.0));
+    CHECK(bee.fastest > 0.95 * kBeeCruiseSpeed);
+    CHECK(bee.slowest < 0.6 * bee.fastest);
+    // A stated cruise does not: the same beat at twice the speed was a lurch.
+    const DriftSpeeds steady = cruiseBetweenRepicks(beeCruiseDrive(600.0, 180.0));
+    CHECK(steady.fastest <= 180.0 + 1e-9);
+    CHECK(steady.slowest > 0.98 * 180.0);
+}
+
 TEST(a_cruising_stinger_still_drops_everything_for_a_flower) {
     CHECK(contentReady());
     // The flag is on the PASSIVE machine only. A hornet that cruised past a
@@ -2767,4 +2830,88 @@ TEST(a_mob_without_a_web_block_lays_nothing) {
     sim.spawnMob("soldier_ant", kOrigin);
     sim.tickIntent(60);
     CHECK_EQ(websIn(sim.world).size(), std::size_t(0));
+}
+
+// ---------------------------------------------------------------------------
+// Dropped projectiles
+// ---------------------------------------------------------------------------
+
+TEST(a_bumble_bee_drops_still_pollen_at_its_tail_once_a_second) {
+    CHECK(contentReady());
+    const DropProjectileSpec& spec = content().mob(content().mobIndex("bumble_bee")).dropProjectile;
+    CHECK(spec.present);
+    CHECK_EQ(spec.petalIndex, content().petalIndex("bumble_bee_pollen"));
+    CHECK_NEAR(spec.lifetimeMillis, 3000.0, 1e-9);
+
+    Sim sim;
+    const Entity bee = sim.spawnMob("bumble_bee", kOrigin);
+    // Due the tick it first thinks, as a web is.
+    sim.tickIntent();
+    CHECK_EQ(shotCount(sim), 1);
+    const Entity pollen = firstShot(sim);
+    if (pollen == NULL_ENTITY) return;
+
+    const Projectile& shot = sim.world.get<Projectile>(pollen);
+    const PetalStats ammo = content().petalStats(spec.petalIndex, Rarity::Common);
+    CHECK_EQ(shot.petalConfigIndex, spec.petalIndex);
+    CHECK(shot.rarity == Rarity::Common);
+    CHECK_EQ(shot.owner, bee);
+    CHECK_NEAR(shot.damage, ammo.damage, 1e-9);
+    // The petal as a ring wears it, grown with the body that dropped it.
+    const double beeRadius = sim.world.get<Body>(bee).radius;
+    CHECK_NEAR(sim.world.get<Body>(pollen).radius, ammo.radius * beeRadius / kMobBaseRadius, 1e-9);
+    // Born still, and ended by its lifetime alone.
+    CHECK(sim.velocityOf(pollen).lengthSq() == 0.0);
+    CHECK_NEAR(sim.world.get<Lifetime>(pollen).remainingSeconds, 3.0, 1e-9);
+    CHECK(sim.world.get<Faction>(pollen).team == Team::Hostiles);
+    CHECK(sim.world.get<Replicated>(pollen).kind == net::EntityKind::Projectile);
+    // Out of the tail: a body radius from where the bee stood, behind where
+    // it is going.
+    const Vec2 back = sim.positionOf(pollen) - kOrigin;
+    const Vec2 going = sim.velocityOf(bee);
+    CHECK_NEAR(back.length(), beeRadius, 1e-9);
+    CHECK(going.lengthSq() > 0.0);
+    CHECK(back.x * going.x + back.y * going.y < 0.0);
+
+    // Two and a half seconds on: one at 1 s and one at 2 s, and no more.
+    sim.tickIntent(75);
+    CHECK_EQ(shotCount(sim), 3);
+}
+
+TEST(dropped_pollen_lies_where_it_fell_for_three_seconds_then_goes) {
+    CHECK(contentReady());
+    Sim sim;
+    MovementSystem movement;
+    sim.spawnMob("bumble_bee", kOrigin);
+    sim.tickIntent();
+    const Entity pollen = firstShot(sim);
+    CHECK(pollen != NULL_ENTITY);
+    if (pollen == NULL_ENTITY) return;
+    const Vec2 fell = sim.positionOf(pollen);
+
+    // The real mover, which is what spends a shot. A tick short of three
+    // seconds it is still there, and has not moved.
+    const int ticksInThreeSeconds = static_cast<int>(std::lround(3.0 / sim.dt));
+    const auto move = [&](int ticks) {
+        for (int i = 0; i < ticks; ++i) {
+            movement.run(sim.world, sim.terrain, sim.now, sim.dt);
+            sim.now += net::kTickMillis;
+        }
+    };
+    move(ticksInThreeSeconds - 1);
+    CHECK(sim.world.isAlive(pollen));
+    CHECK(!sim.world.has<Dead>(pollen));
+    CHECK(distance(sim.positionOf(pollen), fell) < 1e-9);
+    // Past it -- the mover's one tick of slack included -- it is spent.
+    move(3);
+    CHECK(sim.world.has<Dead>(pollen));
+}
+
+TEST(a_mob_without_a_drop_block_drops_nothing) {
+    CHECK(contentReady());
+    CHECK(!content().mob(content().mobIndex("bee")).dropProjectile.present);
+    Sim sim;
+    sim.spawnMob("bee", kOrigin);
+    sim.tickIntent(60);
+    CHECK_EQ(shotCount(sim), 0);
 }

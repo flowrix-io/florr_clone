@@ -160,6 +160,9 @@ struct VolleyShot {
     bool identified = false;
     /// Whether touching the shot glitches a flower; see Projectile.
     bool glitchInfecting = false;
+    /// How long the shot lasts, when that is not its range restated as a
+    /// flight time: a dropped shot never moves, so only this can end it.
+    double lifetimeSeconds = 0;
 };
 
 /// The same archetype a petal's shot is built with -- a mob's projectile is
@@ -197,8 +200,10 @@ void spawnShot(World& world, const VolleyShot& shot) {
 
     // Distance is the authority on range; the lifetime is the same limit
     // expressed in time, so a shot that never hits anything still dies on
-    // schedule even if nothing decrements the distance.
-    world.add<Lifetime>(e, Lifetime{shot.distance / shot.speed});
+    // schedule even if nothing decrements the distance. A dropped shot has no
+    // flight to restate and states its lifetime outright.
+    world.add<Lifetime>(e, Lifetime{shot.lifetimeSeconds > 0.0 ? shot.lifetimeSeconds
+                                                               : shot.distance / shot.speed});
 
     Replicated replicated;
     replicated.kind = net::EntityKind::Projectile;
@@ -358,6 +363,7 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         // shoot, and off a target they cruise and weave rather than hopping
         // like something that walks -- but they close on a flower straight.
         drive.beeFlight = config.beeFlight;
+        drive.cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
         drive.beeChaseWeave = config.beeChaseWeave;
         drive.gardnMotion = config.gardnMotion;
         drive.shoots = config.projectile.present &&
@@ -381,6 +387,7 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
             drive.shoots && config.stingerShooter && !config.hideRotation;
         drive.laysWeb = config.web.present &&
                         rarityIndex(rarity) >= rarityIndex(config.web.minRarity);
+        drive.dropsProjectile = config.dropProjectile.present;
         drive.valid = true;
     }
     return drive;
@@ -418,6 +425,10 @@ void MobAiSystem::equipBehaviour(World& world, Entity self, const Drive& drive, 
     if (drive.laysWeb && !world.has<WebClock>(self)) {
         world.add<WebClock>(self, WebClock{nowMillis});
     }
+    // Due at once too, as a web is.
+    if (drive.dropsProjectile && !world.has<DropClock>(self)) {
+        world.add<DropClock>(self, DropClock{nowMillis});
+    }
 }
 
 void MobAiSystem::layWeb(World& world, Entity self, double nowMillis,
@@ -454,6 +465,64 @@ void MobAiSystem::layWeb(World& world, Entity self, double nowMillis,
     web.netId = web.identified ? allocateNetId() : 0;
     ++stats_.webs;
     commands.defer([web](World& deferred) { spawnWeb(deferred, web); });
+}
+
+void MobAiSystem::dropProjectile(World& world, Entity self, double nowMillis,
+                                 CommandBuffer& commands) {
+    DropClock* clock = world.tryGet<DropClock>(self);
+    if (clock == nullptr || nowMillis < clock->nextMillis) return;
+    const MobType* type = world.tryGet<MobType>(self);
+    const Transform* transform = world.tryGet<Transform>(self);
+    const Body* body = world.tryGet<Body>(self);
+    if (type == nullptr || transform == nullptr || body == nullptr) return;
+    const ContentRegistry& registry = content();
+    const MobConfig& config = registry.mob(type->configIndex);
+    const DropProjectileSpec& spec = config.dropProjectile;
+    if (!spec.present) return;
+
+    // Stepped from the deadline, as a web's clock is.
+    clock->nextMillis += spec.intervalMillis;
+    if (clock->nextMillis <= nowMillis) clock->nextMillis = nowMillis + spec.intervalMillis;
+
+    // Graded at the DROPPER's tier, as a volley's ammunition is.
+    const PetalStats ammo = registry.petalStats(spec.petalIndex, type->rarity);
+    // The petal as it looks on a flower's ring, grown with the body that
+    // dropped it -- not fireVolley's calibre ladder, which is a THROWN shot's
+    // size and would make the pollen a third of the petal it is.
+    const double ownerScale = std::max(0.05, body->radius / kMobBaseRadius);
+
+    // Out of the tail: behind where the mob is going, or behind where it
+    // faces when it is not going anywhere.
+    const Motion* motion = world.tryGet<Motion>(self);
+    const double heading = motion != nullptr && motion->velocity.lengthSq() > kDirectionEpsilonSq
+                               ? motion->velocity.angle()
+                               : transform->angle;
+
+    VolleyShot shot;
+    shot.from = transform->position - Vec2::fromAngle(heading, body->radius);
+    shot.angle = wrapAngle(heading);
+    shot.realm = transform->realm;
+    shot.radius = std::max(1.0, ammo.radius * ownerScale);
+    // Born still and never pushed (combat does not shove a shot), so the
+    // range is never spent and only the lifetime below ends it.
+    shot.speed = 0.0;
+    shot.distance = kWorldSize;
+    shot.lifetimeSeconds = spec.lifetimeMillis / 1000.0;
+    shot.damage = ammo.damage;
+    shot.health = ammo.breakable && ammo.health > 0.0 ? ammo.health : kProjectileDefaultHealth;
+    shot.owner = self;
+    // A pet's drop answers to its player, exactly as its volley does.
+    const Pet* pet = world.tryGet<Pet>(self);
+    shot.creditTo = pet != nullptr ? pet->owner : self;
+    const Faction* own = world.tryGet<Faction>(self);
+    shot.faction = own != nullptr ? *own : Faction{Team::Hostiles, false};
+    shot.petalIndex = spec.petalIndex;
+    shot.rarity = type->rarity;
+    shot.glitchInfecting = config.glitchInfecting;
+    shot.identified = static_cast<bool>(allocateNetId);
+    shot.netId = shot.identified ? allocateNetId() : 0;
+    ++stats_.drops;
+    commands.defer([shot](World& deferred) { spawnShot(deferred, shot); });
 }
 
 // ---------------------------------------------------------------------------
@@ -909,7 +978,10 @@ void MobAiSystem::driftPassive(World& world, Entity self, Motion& motion, MobAi&
         // clock in the drift machine, the phase in the Wobble.
         BeeCruise cruise{ai.wanderAngle, passive->stateStartMillis, passive->velocity,
                          wobble->phase};
-        passive->velocity = stepBeeCruise(cruise, speed, nowMillis, dt, rng_);
+        // The slow scales the thrust, which for an unstated cruise is
+        // exactly `speed` above.
+        passive->velocity = stepBeeCruise(cruise, drive.cruise.thrust * slow,
+                                          drive.cruise.ceiling, nowMillis, dt, rng_);
         ai.wanderAngle = cruise.heading;
         passive->stateStartMillis = cruise.headingPickedMillis;
         motion.velocity = passive->velocity;
@@ -965,7 +1037,14 @@ void MobAiSystem::driftPassive(World& world, Entity self, Motion& motion, MobAi&
     motion.velocity = passive->velocity;
 }
 
-Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double nowMillis, double dt, Rng& rng) {
+BeeCruiseDrive beeCruiseDrive(double speed, double cruiseSpeed) {
+    if (!(cruiseSpeed > 0.0)) return BeeCruiseDrive{speed, kBeeCruiseSpeed};
+    const double ceiling = std::min(cruiseSpeed, kMaxWanderSpeed);
+    return BeeCruiseDrive{ceiling / (kBeeCruiseTerminalPerSpeed * kBeePulseScale), ceiling};
+}
+
+Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double ceiling, double nowMillis, double dt,
+                   Rng& rng) {
     const double accel = speed * kPassiveAccelScale;
     // The heading sways at 1.5 rad/s scaled by sin(2t) -- which integrates to
     // the +-0.75 rad weave of the flight line -- around a base heading
@@ -986,7 +1065,7 @@ Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double nowMillis, double dt,
     const Vec2 push = Vec2::fromAngle(cruise.heading, magnitude);
     // The hop's ceiling, and the cruise's own tighter one under it; see
     // kBeeCruiseSpeed. Friction is per TICK, as it is for the hop.
-    const double limit = std::min(kMaxWanderSpeed, kBeeCruiseSpeed);
+    const double limit = std::min(kMaxWanderSpeed, ceiling);
     cruise.velocity = (cruise.velocity * (1.0 - kPassiveFriction) + push).clampedLength(limit);
     return cruise.velocity;
 }
@@ -1730,6 +1809,10 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
         if (drive.laysWeb && !world.has<WebClock>(self)) {
             world.add<WebClock>(self, WebClock{nowMillis});
         }
+        // And a summoned bumble bee drops its pollen on its owner's side.
+        if (drive.dropsProjectile && !world.has<DropClock>(self)) {
+            world.add<DropClock>(self, DropClock{nowMillis});
+        }
 
         Transform* transform = world.tryGet<Transform>(self);
         Motion* motion = world.tryGet<Motion>(self);
@@ -1744,6 +1827,7 @@ void MobAiSystem::steerPets(World& world, const Terrain& terrain, const SpatialG
         steerPet(world, terrain, grid, self, *transform, *motion, *body, *kind, *ai, owner,
                  ownerAlive, drive, nowMillis, dt, commands);
         if (drive.laysWeb) layWeb(world, self, nowMillis, commands);
+        if (drive.dropsProjectile) dropProjectile(world, self, nowMillis, commands);
     }
 }
 
@@ -2186,6 +2270,7 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
         steerMob(world, terrain, grid, self, *transform, *motion, *body, *kind, *ai, drive,
                  nowMillis, dt, commands);
         if (drive.laysWeb) layWeb(world, self, nowMillis, commands);
+        if (drive.dropsProjectile) dropProjectile(world, self, nowMillis, commands);
     }
 
     steerPets(world, terrain, grid, nowMillis, dt, commands);

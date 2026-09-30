@@ -229,16 +229,43 @@ inline constexpr double kBeePulseScale = 0.5;
 /// at 30 u/s, cruises at exactly this.
 inline constexpr double kBeeCruiseSpeed = 90.0;
 
+/// Where a cruise's thrust settles, per unit of the speed it is driven with:
+/// the pulse-free push (speed x kPassiveAccelScale x kBeeCruiseAccelScale a
+/// tick) over the per-tick friction. A bee driven at its authored 30 u/s
+/// settles at exactly kBeeCruiseSpeed.
+inline constexpr double kBeeCruiseTerminalPerSpeed =
+    kPassiveAccelScale * kBeeCruiseAccelScale / kPassiveFriction;
+
+/// What a cruiser flies on: the speed its thrust is driven with, and the
+/// ceiling that clamps it.
+struct BeeCruiseDrive {
+    double thrust = 0;
+    double ceiling = kBeeCruiseSpeed;
+};
+
+/// Resolves a cruiser's drive from its authored `speed` and its stated
+/// `cruiseSpeed` (both units a second; zero when unstated). Unstated is every
+/// cruiser's shared rule: the authored speed pushes, under the flat
+/// kBeeCruiseSpeed. Stated, the cruise flies STEADILY at that speed -- capped
+/// at a flower's top speed like any idle move -- on a thrust whose pulsed dip
+/// still settles at the ceiling, so the beat never shows. The beat kept at a
+/// stated speed (thrust settling exactly at the ceiling) was a 2:1 surge and
+/// sag every one and a half seconds, and at twice a bee's speed it read as
+/// the mob lurching rather than cruising.
+BeeCruiseDrive beeCruiseDrive(double speed, double cruiseSpeed);
+
 /// One fixed step of the bee cruise, for any cruiser: the base heading is
 /// re-picked every kBeeHeadingMillis, swings on the weave, and is pushed along
 /// with a pulsed thrust against per-tick friction under the cruise's ceiling.
-/// `speed` is the authored speed in units a second; the cruiser's size plays
-/// no part. Returns the new velocity, which is also left in the cruise.
+/// `speed` and `ceiling` are a BeeCruiseDrive's, in units a second; the
+/// cruiser's size plays no part. Returns the new velocity, which is also left
+/// in the cruise.
 ///
 /// The ONE implementation: a bee's idle drift (MobAiSystem::driftPassive)
 /// and an NPC's cruise (NpcSystem) both step through here, so an oracle and a
 /// bee cannot come to fly differently.
-Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double nowMillis, double dt, Rng& rng);
+Vec2 stepBeeCruise(BeeCruise& cruise, double speed, double ceiling, double nowMillis, double dt,
+                   Rng& rng);
 
 // -- walking to a point ------------------------------------------------------
 //
@@ -609,6 +636,7 @@ public:
         std::uint64_t spawnRequests = 0; ///< escorts asked of the spawn hook
         std::uint64_t promotions = 0;    ///< segments promoted to chain heads
         std::uint64_t webs = 0;          ///< webs laid
+        std::uint64_t drops = 0;         ///< projectiles dropped behind a mob
     };
     const Stats& stats() const { return stats_; }
 
@@ -633,6 +661,8 @@ private:
         bool reversed = false;
         /// Cruises with a sinusoidal sway instead of hopping.
         bool beeFlight = false;
+        /// The cruise's thrust and ceiling. See beeCruiseDrive().
+        BeeCruiseDrive cruise;
         /// Flies that sway about its bearing while chasing, too.
         bool beeChaseWeave = false;
         /// Carries its velocity under gardn's friction and hops gardn's
@@ -650,6 +680,8 @@ private:
         /// Leaves a web behind it on a clock: the config has a web and this
         /// tier is at or above its `minRarity`. See WebSpec.
         bool laysWeb = false;
+        /// Drops a petal behind it on a clock. See DropProjectileSpec.
+        bool dropsProjectile = false;
         bool valid = false;
     };
 
@@ -671,6 +703,11 @@ private:
     /// the mob has steered, from both the wild and the pet pass, so it lays
     /// from where this tick's movement decision was made.
     void layWeb(World& world, Entity self, double nowMillis, CommandBuffer& commands);
+
+    /// Drops the mob's `dropProjectile` petal at its tail when its DropClock
+    /// is due: a shot born at a standstill that lies where it fell for the
+    /// spec's lifetime. Called beside layWeb, for the same reasons.
+    void dropProjectile(World& world, Entity self, double nowMillis, CommandBuffer& commands);
 
     /// Whether this mob runs its brain on this tick.
     ///

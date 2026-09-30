@@ -2068,5 +2068,42 @@
             "service": "trader"
         },
         "noEggDrop": true
+    },
+    "bumble_bee": {
+        "name": "Bumble Bee",
+        "damage": 20,
+        "health": 25,
+        "size": 1,
+        "speed": 2,
+        "cooldown": 2000,
+        "xp": {
+            "common": 1,
+            "uncommon": 3,
+            "rare": 30,
+            "epic": 270,
+            "legendary": 1400,
+            "mythic": 32000,
+            "ultra": 150000,
+            "super": 1200000,
+            "unique": 6800000
+        },
+        "visual_scale": 1.2907,
+        "visualOffsetX": 0.1615,
+        "description": "GOTTA RUN.",
+        "color": "#ebe834",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><defs><clipPath id=\"a\"><ellipse rx=\"30\" ry=\"25\" fill=\"none\" stroke=\"#cfab50\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></clipPath></defs><g transform=\"translate(13.42 16)scale(.4129)\"><ellipse rx=\"30\" ry=\"25\" fill=\"#ffd363\"/><g fill=\"#333\" clip-path=\"url(#a)\"><path d=\"M10-25h10v50H10zm-20 0H0v50h-10zm-20 0h10v50h-10z\"/></g><ellipse rx=\"30\" ry=\"25\" fill=\"none\" stroke=\"#cfab50\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M25-5q10 0 15-10\" fill=\"none\" stroke=\"#333\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"40\" cy=\"-15\" r=\"5\" fill=\"#333\"/><path d=\"M25 5q10 0 15 10\" fill=\"none\" stroke=\"#333\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"40\" cy=\"15\" r=\"5\" fill=\"#333\"/></g></svg>",
+        "ai_type": "passive",
+        "bee_ai": "always",
+        "cruiseSpeed": 0.6,
+        "dropProjectile": {
+            "petalType": "bumble_bee_pollen",
+            "intervalMs": 1000,
+            "lifetimeMs": 3000
+        },
+        "range": 100,
+        "groups": {
+            "garden": 0.27
+        },
+        "noEggDrop": true
     }
 }

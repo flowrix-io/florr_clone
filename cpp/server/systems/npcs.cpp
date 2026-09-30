@@ -98,7 +98,9 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     // Flies like its mob does when its mob flies like a bee, starting off on
     // a heading and a weave of its own.
     npc.cruises = config.beeFlight && stats.speed > 0.0;
-    npc.speed = stats.speed;
+    const BeeCruiseDrive cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
+    npc.speed = cruise.thrust;
+    npc.cruiseCeiling = cruise.ceiling;
     npc.cruise.heading = rng_.angle();
     npc.cruise.headingPickedMillis = nowMillis;
     npc.cruise.phase = rng_.angle();
@@ -139,7 +141,8 @@ void NpcSystem::run(World& world, const Terrain& terrain, const ContentRegistry&
             // The fixed step, as the mob half of the tick is: the cruise's
             // friction is stated per tick.
             const Vec2 velocity =
-                stepBeeCruise(npc.cruise, npc.speed, nowMillis, net::kTickSeconds, rng_);
+                stepBeeCruise(npc.cruise, npc.speed, npc.cruiseCeiling, nowMillis,
+                              net::kTickSeconds, rng_);
             // Against walls as a point, and stepped as a mob's move is, so a
             // point cannot plunge through a thin wall in one go.
             const Vec2 from = transform.position;

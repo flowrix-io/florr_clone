@@ -192,6 +192,22 @@ struct WebSpec {
     Rarity minRarity = Rarity::Common;
 };
 
+/// A petal a mob DROPS behind it on a clock (`dropProjectile`): a real
+/// projectile, built like any volley's shot and graded at the dropper's tier,
+/// that is born at a standstill and lies where it fell until `lifetimeMs` runs
+/// out or something breaks it. The bumble bee's pollen trail.
+///
+/// Not a `projectile` block with no speed: that block is an aimed WEAPON --
+/// the standoff, the stinger wind-up and the pets' prey hunt all key off it --
+/// and a trail is laid whether or not anything is there to aim at.
+struct DropProjectileSpec {
+    bool present = false;
+    std::string petalId;
+    std::uint16_t petalIndex = kInvalidIndex;
+    double intervalMillis = 0;
+    double lifetimeMillis = 0;
+};
+
 /// A ring of petals a mob carries, as a flower does.
 struct PetalRingSpec {
     bool present = false;
@@ -407,6 +423,13 @@ struct MobConfig {
     /// `"idle"` is the stingers, which cruise like bees but close straight.
     bool beeChaseWeave = false;
 
+    /// How fast the bee cruise flies, in the same flower-top-speed units as
+    /// `speed` (`cruiseSpeed`). Zero -- unstated, and every mob but the bumble
+    /// bee -- is the flat kBeeCruiseSpeed every cruiser shares, pulse and all.
+    /// A stated one sets the cruise's thrust as well as its ceiling, and flies
+    /// steadily at that speed with no pulse; see beeCruiseDrive().
+    double cruiseSpeed = 0;
+
     /// Moves the way gardn's walkers do (`gardn_ai`): one velocity carried
     /// between ticks under gardn's per-tick friction, so a pursuit accelerates
     /// into its speed and swings wide on a turn instead of snapping to it; an
@@ -498,6 +521,7 @@ struct MobConfig {
     PeriodicSpawnSpec periodicSpawn;
     LightningSpec lightning;
     WebSpec web;
+    DropProjectileSpec dropProjectile;
 
     /// Poison the mob's touch applies. Stored per second, converted from the
     /// per-millisecond figure the JSON uses.
@@ -761,6 +785,9 @@ struct MobStats {
     /// `speed` makes an idle bee cross the screen. A slow scales `speed`, so a
     /// chase that bypasses it has to re-derive the same ratio.
     double chaseSpeed = 0;
+    /// The stated bee cruise, world units per second; zero when the config
+    /// states none. See MobConfig::cruiseSpeed.
+    double cruiseSpeed = 0;
     bool playerSpeedChaser = false;
     double xp = 1;
     double aggroRange = 0;

@@ -1412,14 +1412,24 @@ TEST(every_body_a_dense_map_places_stands_on_open_ground) {
     // Drops last: they are scattered off a corpse and pushed back out of
     // whatever they landed in, and on a dense map that push is the only thing
     // between a drop and a wall nobody can reach into.
+    //
+    // The push is the NEXT tick's (maintainDrops), so a drop from a kill on
+    // the tick that just ran is still where the scatter threw it. Those are
+    // the drops present now; they are judged one tick on, once every one of
+    // them has had its push -- and the ones that tick makes are not counted.
+    std::vector<Entity> scattered;
+    Query<DropTag, Transform> loot{world};
+    loot.each([&](Entity e, DropTag&, Transform& transform) {
+        if (transform.realm == Realm::Overworld) scattered.push_back(e);
+    });
+    h.step(1, {&client});
     int drops = 0;
     int dropsInWall = 0;
-    Query<DropTag, Transform> loot{world};
-    loot.each([&](Entity, DropTag&, Transform& transform) {
-        if (transform.realm != Realm::Overworld) return;
+    for (const Entity e : scattered) {
+        if (!world.isAlive(e) || !world.has<DropTag>(e)) continue;
         ++drops;
-        if (terrain.blocked(transform.position, Realm::Overworld)) ++dropsInWall;
-    });
+        if (terrain.blocked(world.get<Transform>(e).position, Realm::Overworld)) ++dropsInWall;
+    }
     CHECK_EQ(dropsInWall, 0);
     (void)drops;   // a pass with no kills in it is legitimate
 

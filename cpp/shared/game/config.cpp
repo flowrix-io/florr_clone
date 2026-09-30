@@ -512,6 +512,27 @@ WebSpec parseWeb(Ctx& ctx, const Json& owner) {
     return spec;
 }
 
+DropProjectileSpec parseDropProjectile(Ctx& ctx, const Json& owner,
+                                       const std::unordered_map<std::string, std::uint16_t>& petalIds) {
+    DropProjectileSpec spec;
+    if (!owner.contains("dropProjectile")) return spec;
+    const Json& node = owner["dropProjectile"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("dropProjectile is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    spec.petalId = ctx.text(node, "petalType");
+    spec.petalIndex = ctx.link(petalIds, spec.petalId, "dropProjectile petalType");
+    // Defaults are the bumble bee's pollen: one a second, each lying three.
+    spec.intervalMillis = ctx.range(node, "intervalMs", 1000.0, kMinSpawnIntervalMillis,
+                                    kMaxDurationMillis);
+    spec.lifetimeMillis = ctx.range(node, "lifetimeMs", 3000.0, 0.0, kMaxDurationMillis);
+    // Nothing to drop, or a drop that is gone the tick it lands, is refused
+    // here so the AI never lays one.
+    spec.present = spec.petalIndex != kInvalidIndex && spec.lifetimeMillis > 0.0;
+    return spec;
+}
+
 RadiationSpec parseRadiation(Ctx& ctx, const Json& owner) {
     RadiationSpec spec;
     if (!owner.contains("radiation")) return spec;
@@ -784,6 +805,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
             ctx.warn("bee_ai '" + bee + "' is neither \"idle\" nor \"always\"; the mob hops");
         }
     }
+    m.cruiseSpeed = ctx.speed(src, "cruiseSpeed");
     m.gardnMotion = ctx.boolean(src, "gardn_ai");
 
     // Three rules the reference states by NAME rather than in the JSON. They
@@ -861,6 +883,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
     m.lightning = parseLightning(ctx, src);
     m.web = parseWeb(ctx, src);
+    m.dropProjectile = parseDropProjectile(ctx, src, petalIds);
 
     // The JSON states poison as damage per millisecond; the simulation thinks
     // in seconds, and converting once here keeps that unit out of every
@@ -1478,6 +1501,7 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
         c.id == "baby_ant" || c.id == "soldier_fire_ant" ||
         c.id == "worker_fire_ant" || c.id == "baby_fire_ant";
     s.chaseSpeed = s.playerSpeedChaser ? kPlayerMaxSpeed : s.speed;
+    s.cruiseSpeed = c.cruiseSpeed * kMobSpeedUnitsPerSecond;
     s.xp = c.xp[t];
     // `range` is what a COMMON mob notices, and every tier notices further on
     // the same body-size ladder its body grows on -- the ladder a shooter's
