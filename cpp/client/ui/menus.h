@@ -136,7 +136,7 @@ inline constexpr int kLoadoutBarSlots = kLoadoutBarPrimary + kLoadoutBarSecondar
 inline constexpr int kLoadoutTrashSlot = kLoadoutBarSlots;
 
 /// The link the Discord button opens.
-inline constexpr const char* kDiscordInvite = "https://discord.gg/e23DMCR7DV";
+inline constexpr const char* kDiscordInvite = "https://discord.gg/SvAYCGsmAg";
 
 /// Slots in the icon strip: ten across the top-left corner, four down the
 /// bottom-left one. Two of the top ten open no panel -- Discord is a link and
