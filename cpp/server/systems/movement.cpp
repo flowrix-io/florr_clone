@@ -916,6 +916,9 @@ void MovementSystem::buildSeparationSet(World& world) {
         if (const MobType* type = world.tryGet<MobType>(e)) {
             entry.noCollision = registry.mob(type->configIndex).noMobCollision;
         }
+        if (const HoleTether* tether = world.tryGet<HoleTether>(e)) {
+            if (tether->emerging) entry.emergingFrom = tether->hole;
+        }
 
         const std::uint32_t index = entityIndex(e);
         if (index >= separationSlot_.size()) {
@@ -960,7 +963,15 @@ void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
             const Vec2 toOther = other.position - self.position;
             const double distance = toOther.length();
             const double minDistance = self.radius + other.radius + kMobCollisionBuffer;
-            if (!(distance < minDistance && distance > 0.0)) continue;
+            if (!(distance < minDistance)) continue;
+            // A child still climbing out of the parent it was spawned inside
+            // passes through it, both ways round, until the two are apart.
+            if (self.emergingFrom == other.entity) {
+                self.insideParent = true;
+                continue;
+            }
+            if (other.emergingFrom == self.entity) continue;
+            if (!(distance > 0.0)) continue;
 
             const double push = std::min((minDistance - distance) * 0.5, kMobSeparationMaxPushPerPair);
             self.push -= toOther * (push / distance);
@@ -971,6 +982,12 @@ void MovementSystem::separateMobs(World& world, const Terrain& terrain) {
     // otherwise be moved by every neighbour at once.
     const double cap = kMobSeparationMaxPushPerPair * kMobSeparationPushHeadroom;
     for (const SeparationEntry& entry : separationSet_) {
+        // Out of its parent: from here on the two collide like any pair.
+        if (entry.emergingFrom != NULL_ENTITY && !entry.insideParent) {
+            if (HoleTether* tether = world.tryGet<HoleTether>(entry.entity)) {
+                tether->emerging = false;
+            }
+        }
         if (entry.push.x == 0.0 && entry.push.y == 0.0) continue;
         Transform* transform = world.tryGet<Transform>(entry.entity);
         if (!transform) continue;

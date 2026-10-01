@@ -120,6 +120,11 @@ struct NestWaves {
     /// is recomputed from current health on every drop -- it is the nest's
     /// phase, for anything reporting on a hole.
     std::uint16_t nextWave = 0;
+    /// The nest's damage ledger as it stood when it was last weighed, so the
+    /// player who landed THIS tick's hit can be told apart from everyone who
+    /// has ever chipped at it. A neutral mob the wave sends out turns straight
+    /// on that player rather than waiting to be hit itself.
+    std::vector<Bounty::Share> ledgerSeen;
     /// Live escorts from previous waves, pruned as they die. Holding handles
     /// rather than a count is what makes the brood survive a mob dying: a stale
     /// counter would leak the slot forever.
@@ -190,12 +195,13 @@ inline constexpr double kLatentWakeMargin = 700.0;
 /// its own area whatever this is, and the rest of that population is latent.
 inline constexpr int kMaxLiveMobs = 900;
 
-/// Escorts stand off their nest by this much plus up to another body radius,
-/// on a bearing of their own. The gap is the only difference the reference
-/// draws between the guard a hole opens with and the waves it sends afterwards
-/// (src/server/enemySpawner.ts:955, src/server.ts:1639).
-inline constexpr double kInitialEscortGap = 30.0;
-inline constexpr double kWaveEscortGap = 10.0;
+/// Every escort -- a hole's or a server's guard and waves, a queen's soldiers
+/// -- comes up out of the CENTRE of whatever spawned it, this far off it on a
+/// bearing of its own. Never zero: separation has no line between two mobs on
+/// the same point, and a pair stacked exactly would chase the same flower as
+/// one body for good. The child passes through its parent until it is clear
+/// of it (HoleTether::emerging), so a queen is not shoved by her own brood.
+inline constexpr double kEscortSpawnScatter = 1.0;
 
 /// No spawn lands closer than this to ANY player, not just the one whose view
 /// of the band made it fill. Two players standing together would otherwise

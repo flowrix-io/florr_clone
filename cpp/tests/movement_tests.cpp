@@ -615,6 +615,41 @@ TEST(separation_cannot_shove_a_mob_into_a_wall) {
     CHECK(fx.positionOf(a).x - fx.positionOf(b).x > 20.0);
 }
 
+TEST(a_child_climbs_out_of_its_parent_without_shoving_it) {
+    // Escorts are spawned in the middle of whatever spawned them. A queen is
+    // an ordinary colliding mob, so without the pass-through every soldier she
+    // lays would shove her half a body aside.
+    std::string error;
+    CHECK(loadContent(testsupport::dataDir(), error));
+    if (!error.empty()) return;
+
+    Fixture fx;
+    const Vec2 home{5000, 5000};
+    const Entity queen = fx.spawnMob(home, 60.0);
+    const Entity soldier = fx.spawnMob(home + Vec2{1.0, 0.0}, 30.0);
+    fx.world.add<MobType>(queen, MobType{content().mobIndex("queen_ant"), Rarity::Rare, 1.0});
+    fx.world.add<MobType>(soldier,
+                          MobType{content().mobIndex("soldier_ant"), Rarity::Uncommon, 1.0});
+    fx.world.add<HoleTether>(soldier, HoleTether{queen, home, false, true});
+
+    // Right on top of each other, and neither gives way.
+    fx.step(5);
+    CHECK_NEAR(distance(fx.positionOf(queen), home), 0.0, 1e-9);
+    CHECK_NEAR(distance(fx.positionOf(soldier), home + Vec2{1.0, 0.0}), 0.0, 1e-9);
+    CHECK(fx.world.get<HoleTether>(soldier).emerging);
+
+    // Clear of her once, and it has emerged for good.
+    fx.world.get<Transform>(soldier).position = home + Vec2{200.0, 0.0};
+    fx.step(1);
+    CHECK(!fx.world.get<HoleTether>(soldier).emerging);
+
+    // From then on the pair collide like any other.
+    fx.world.get<Transform>(soldier).position = home + Vec2{50.0, 0.0};
+    fx.step(1);
+    CHECK(fx.positionOf(queen).x < home.x);
+    CHECK(fx.positionOf(soldier).x > home.x + 50.0);
+}
+
 TEST(movement_does_not_apply_the_ai_owned_mob_slow_twice) {
     Fixture fx;
     const Entity mob = fx.spawnMob({5000, 5000});

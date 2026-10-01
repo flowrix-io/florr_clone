@@ -62,15 +62,62 @@ bool harmlessOnContact(const MobConfig& config) {
     return config.id == "item_spawner";
 }
 
-/// Where an escort placed AROUND its nest stands: a bearing of its own,
-/// between `gap` and `gap + anchorRadius` units clear of the nest's body.
+/// Where an escort appears: the centre of whatever spawned it, a hair off on a
+/// bearing of its own. A hole's ants climb out of its mouth, a server's
+/// glitches out of its middle and a queen's soldiers out of her body, rather
+/// than materialising in a ring around the parent.
+Vec2 escortSpawnPoint(Vec2 anchor, Rng& rng) {
+    return anchor + Vec2::fromAngle(rng.angle(), kEscortSpawnScatter);
+}
+
+/// A NEUTRAL child comes out already on `attacker`. Hostile ones find their
+/// own target and passive ones never take one, so only neutral is handed it.
+void provokeIfNeutral(World& world, Entity child, Entity attacker) {
+    if (attacker == NULL_ENTITY) return;
+    MobAi* brain = world.tryGet<MobAi>(child);
+    if (brain != nullptr && brain->kind == AiKind::Neutral) brain->target = attacker;
+}
+
+/// Whether `e` is still somebody a mob can be sent after, in `realm`.
+bool attackerUsable(World& world, Entity e, Realm realm) {
+    if (!world.isAlive(e) || world.has<Dead>(e)) return false;
+    const Health* health = world.tryGet<Health>(e);
+    if (health != nullptr && !health->alive()) return false;
+    const Transform* at = world.tryGet<Transform>(e);
+    return at != nullptr && at->realm == realm;
+}
+
+/// The player who hit the nest since `seen` was taken: whoever's share of its
+/// ledger grew the most, in the nest's own realm and still standing. `seen`
+/// is brought up to date either way.
 ///
-/// Never past the leash, however big the nest: the ring's depth grows with the
-/// body, and an ultra server's would otherwise put a glitch out where its
-/// tether turns it round the moment it first thinks.
-Vec2 escortRingPoint(Vec2 anchor, double anchorRadius, double gap, Rng& rng) {
-    const double depth = std::min(anchorRadius, kSummonRetreatRadius - gap);
-    return anchor + Vec2::fromAngle(rng.angle(), anchorRadius + gap + rng.unit() * depth);
+/// The ledger rather than the health bar, because the ledger is the only place
+/// combat says WHO a hit came from -- petal, pet and projectile all credit the
+/// flower behind them there.
+Entity freshestAttacker(World& world, const Bounty* bounty, Realm realm,
+                        std::vector<Bounty::Share>& seen) {
+    if (bounty == nullptr) {
+        seen.clear();
+        return NULL_ENTITY;
+    }
+    Entity best = NULL_ENTITY;
+    double bestGrowth = 0.0;
+    for (const Bounty::Share& share : bounty->contributors) {
+        double before = 0.0;
+        for (const Bounty::Share& old : seen) {
+            if (old.player == share.player) {
+                before = old.damage;
+                break;
+            }
+        }
+        const double growth = share.damage - before;
+        if (!(growth > bestGrowth)) continue;
+        if (!attackerUsable(world, share.player, realm)) continue;
+        best = share.player;
+        bestGrowth = growth;
+    }
+    seen.assign(bounty->contributors.begin(), bounty->contributors.end());
+    return best;
 }
 
 /// How far a coordinate may sit from a flower and still BE that flower.
@@ -538,9 +585,8 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     }
     if (depth < kMaxNestDepth) {
         for (const std::uint16_t child : config.initialSpawns) {
-            spawnEscort(world, terrain, content, child, rarity,
-                        escortRingPoint(at, radius, kInitialEscortGap, rng), realm, e, nowMillis,
-                        rng, depth + 1);
+            spawnEscort(world, terrain, content, child, rarity, escortSpawnPoint(at, rng), realm,
+                        e, nowMillis, rng, depth + 1);
         }
     }
 
@@ -628,7 +674,9 @@ Entity SpawnSystem::spawnEscort(World& world, const Terrain& terrain, const Cont
     // it points into.
     Vec2 home = at;
     if (const Transform* anchor = world.tryGet<Transform>(parent)) home = anchor->position;
-    world.add<HoleTether>(child, HoleTether{parent, home, false});
+    // Emerging: it was put down in the middle of its parent, and the two must
+    // not shove each other apart while it climbs out.
+    world.add<HoleTether>(child, HoleTether{parent, home, false, true});
     return child;
 }
 
@@ -894,6 +942,13 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
         }
         spawner->children.resize(live);
 
+        // Weighed every tick, not only when a child is due, so "the last
+        // player to hit it" means the last one and not the biggest hitter
+        // over a whole interval.
+        const Entity hitter = freshestAttacker(world, world.tryGet<Bounty>(nest),
+                                               transform->realm, spawner->ledgerSeen);
+        if (hitter != NULL_ENTITY) spawner->lastAttacker = hitter;
+
         if (nowMillis < spawner->nextSpawnMillis) continue;
         spawner->nextSpawnMillis = nowMillis + std::max(1.0, spawner->intervalMillis);
         if (static_cast<int>(live) >= spawner->maxAlive) continue;
@@ -905,17 +960,18 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
         const double lifetimeMillis = spawner->childLifetimeMillis;
         const Vec2 anchor = transform->position;
         const Realm nestRealm = transform->realm;
-        const double facing = transform->angle;
-        const Body* body = world.tryGet<Body>(nest);
-        const double anchorRadius = body != nullptr ? body->radius : kMobBaseRadius;
+        const Entity attacker =
+            attackerUsable(world, spawner->lastAttacker, nestRealm) ? spawner->lastAttacker
+                                                                    : NULL_ENTITY;
 
-        // Out of the queen's abdomen: one body radius directly behind her,
-        // never on a bearing of its own. Soldiers trailing her is the whole
-        // read of the fight, and a random ring puts them in front of her.
-        const Vec2 at = anchor - Vec2::fromAngle(facing, anchorRadius);
-        const Entity child = spawnEscort(world, terrain, content, childIndex, childRarity, at,
-                                         nestRealm, nest, nowMillis, rng, 1);
+        // Out of the middle of her, like every other escort. gardn lays a
+        // queen's soldier one body radius behind her; this game's rule is that
+        // anything a mob spawns comes up out of its centre.
+        const Entity child = spawnEscort(world, terrain, content, childIndex, childRarity,
+                                         escortSpawnPoint(anchor, rng), nestRealm, nest,
+                                         nowMillis, rng, 1);
         if (child == NULL_ENTITY) continue;
+        provokeIfNeutral(world, child, attacker);
         if (lifetimeMillis > 0.0) {
             world.add<Lifetime>(child, Lifetime{lifetimeMillis / 1000.0});
         }
@@ -943,6 +999,10 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
         const double current = health->current;
         const double previous = waves->previousHealth;
         waves->previousHealth = current;
+        // Weighed every tick, band or no band, so a share's growth is always
+        // this tick's hit and never a heal or a refused swing banked earlier.
+        const Entity attacker = freshestAttacker(world, world.tryGet<Bounty>(nest),
+                                                 transform->realm, waves->ledgerSeen);
         if (current >= previous) continue;
 
         const MobConfig& config = content.mob(waves->mobIndex);
@@ -957,8 +1017,6 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
         const Rarity nestRarity = type->rarity;
         const Vec2 anchor = transform->position;
         const Realm nestRealm = transform->realm;
-        const Body* body = world.tryGet<Body>(nest);
-        const double anchorRadius = body != nullptr ? body->radius : kMobBaseRadius;
 
         // Both ends are clamped into the list. An overkill drives `current` far
         // negative, and an unclamped end index turns the loop below into
@@ -976,9 +1034,10 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
             for (const std::uint16_t member : config.spawnWaves[static_cast<std::size_t>(index)]) {
                 const Entity child =
                     spawnEscort(world, terrain, content, member, nestRarity,
-                                escortRingPoint(anchor, anchorRadius, kWaveEscortGap, rng),
-                                nestRealm, nest, nowMillis, rng, 1);
+                                escortSpawnPoint(anchor, rng), nestRealm, nest, nowMillis, rng, 1);
                 if (child == NULL_ENTITY) break;   // the global cap, nothing else
+                // Already angry with whoever dug into the nest this tick.
+                provokeIfNeutral(world, child, attacker);
                 if (NestWaves* again = world.tryGet<NestWaves>(nest)) {
                     again->children.push_back(child);
                 }

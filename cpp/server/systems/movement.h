@@ -270,6 +270,11 @@ private:
         Entity chainHead = NULL_ENTITY;
         /// The config's `no_mob_collision`: neither pushes nor is pushed.
         bool noCollision = false;
+        /// The parent this mob is still climbing out of (HoleTether::emerging),
+        /// NULL_ENTITY once it is clear. The pair does not push each other.
+        Entity emergingFrom = NULL_ENTITY;
+        /// Found still overlapping that parent on this pass.
+        bool insideParent = false;
         /// Accumulated push, applied after every pair has been evaluated.
         Vec2 push;
     };

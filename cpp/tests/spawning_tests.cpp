@@ -2002,6 +2002,140 @@ TEST(a_nest_sends_its_waves_as_it_is_worn_down_and_holds_at_the_last) {
     CHECK(escortCount() > 0);
 }
 
+TEST(every_nest_sends_its_escorts_up_out_of_its_centre) {
+    // A hole and a server alike: the opening guard and the waves both.
+    for (const char* id : {"ant_hole", "fire_ant_hole", "server"}) {
+        Sim sim;
+        const std::uint16_t type = shipped().mobIndex(id);
+        const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                                 Rarity::Legendary, kCentre, Realm::Overworld,
+                                                 0.0, sim.rng);
+        const Vec2 mouth = sim.world.get<Transform>(nest).position;
+
+        // The opening guard: everything in the world but the nest is one of them.
+        int guard = 0;
+        Query<MobTag, Transform> mobs{sim.world};
+        mobs.each([&](Entity e, MobTag&, Transform& t) {
+            if (e == nest) return;
+            ++guard;
+            CHECK(distance(t.position, mouth) <= kEscortSpawnScatter + 1e-9);
+        });
+        CHECK_EQ(guard, static_cast<int>(shipped().mob(type).initialSpawns.size()));
+
+        // And a wave, which is what a player digging into it actually watches.
+        sim.world.get<Health>(nest).current = sim.world.get<Health>(nest).max * 0.5;
+        sim.tick({kCentre});
+        const std::vector<Entity> wave = sim.world.get<NestWaves>(nest).children;
+        CHECK(!wave.empty());
+        for (const Entity escort : wave) {
+            const double gap = distance(sim.world.get<Transform>(escort).position, mouth);
+            CHECK(gap <= kEscortSpawnScatter + 1e-9);
+            // Off dead centre, or two of them would never separate.
+            CHECK(gap > 0.0);
+            // And free to climb out of it without the two shoving each other.
+            CHECK(sim.world.get<HoleTether>(escort).emerging);
+        }
+    }
+}
+
+TEST(a_queen_lays_her_soldiers_out_of_her_centre) {
+    Sim sim;
+    const Entity queen = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(),
+                                              shipped().mobIndex("queen_ant"), Rarity::Rare,
+                                              kCentre, Realm::Overworld, 0.0, sim.rng);
+    // Due on the tick she appears.
+    sim.tick({kCentre});
+    const std::vector<Entity> brood = sim.world.get<Spawner>(queen).children;
+    CHECK_EQ(brood.size(), std::size_t(1));
+    for (const Entity soldier : brood) {
+        const double gap = distance(sim.world.get<Transform>(soldier).position,
+                                    sim.world.get<Transform>(queen).position);
+        CHECK(gap <= kEscortSpawnScatter + 1e-9);
+        CHECK(sim.world.get<HoleTether>(soldier).emerging);
+    }
+}
+
+TEST(a_holes_neutral_ants_come_up_after_whoever_hit_it) {
+    Sim sim;
+    const std::uint16_t hole = shipped().mobIndex("ant_hole");
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), hole,
+                                             Rarity::Common, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    const auto flower = [&](Vec2 at) {
+        const Entity e = sim.world.create();
+        sim.world.add<Transform>(e, Transform{at, 0.0, Realm::Overworld});
+        sim.world.add<Health>(e, Health{100.0, 100.0, 0.0, 0.0});
+        return e;
+    };
+    // The one standing closest is NOT the one who hit it this time: an old
+    // chip from `bystander` is already on the ledger, and weighed, before
+    // `digger` lands the blow that crosses the bands.
+    const Entity bystander = flower(kCentre + Vec2{40.0, 0.0});
+    const Entity digger = flower(kCentre + Vec2{200.0, 0.0});
+    sim.world.get<Bounty>(nest).credit(bystander, 500.0);
+    sim.tick({kCentre});
+    CHECK(sim.world.get<NestWaves>(nest).children.empty());
+
+    // The opening guard is nobody's: it was there before anyone hit anything.
+    Query<MobTag, MobAi> guard{sim.world};
+    guard.each([&](Entity, MobTag&, MobAi& ai) { CHECK_EQ(ai.target, NULL_ENTITY); });
+
+    sim.world.get<Bounty>(nest).credit(digger, 100.0);
+    sim.world.get<Health>(nest).current = sim.world.get<Health>(nest).max * 0.5;
+    sim.tick({kCentre});
+
+    int neutral = 0;
+    for (const Entity ant : sim.world.get<NestWaves>(nest).children) {
+        const MobAi& ai = sim.world.get<MobAi>(ant);
+        if (ai.kind == AiKind::Neutral) {
+            ++neutral;
+            CHECK_EQ(ai.target, digger);
+        } else {
+            // Hostile ants pick their own; passive ones never take one.
+            CHECK_EQ(ai.target, NULL_ENTITY);
+        }
+    }
+    CHECK(neutral > 0);
+
+    // Damage nobody is credited for -- no hitter on the ledger this tick --
+    // sends ants that are angry with no one.
+    for (const Entity ant : std::vector<Entity>(sim.world.get<NestWaves>(nest).children)) {
+        sim.world.destroy(ant);
+    }
+    sim.world.get<Health>(nest).current = sim.world.get<Health>(nest).max * 0.1;
+    sim.tick({kCentre});
+    CHECK(!sim.world.get<NestWaves>(nest).children.empty());
+    for (const Entity ant : sim.world.get<NestWaves>(nest).children) {
+        CHECK_EQ(sim.world.get<MobAi>(ant).target, NULL_ENTITY);
+    }
+}
+
+TEST(a_spawners_neutral_child_comes_out_after_whoever_last_hit_it) {
+    Sim sim;
+    const Entity queen = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(),
+                                              shipped().mobIndex("queen_ant"), Rarity::Rare,
+                                              kCentre, Realm::Overworld, 0.0, sim.rng);
+    // The shipped queen lays hostile soldiers, which find their own target. A
+    // NEUTRAL child is what the rule is about, so this one lays workers.
+    sim.world.get<Spawner>(queen).childConfigIndex = shipped().mobIndex("worker_ant");
+    const Entity hitter = sim.world.create();
+    sim.world.add<Transform>(hitter, Transform{kCentre + Vec2{150.0, 0.0}, 0.0, Realm::Overworld});
+    sim.world.add<Health>(hitter, Health{100.0, 100.0, 0.0, 0.0});
+    const auto brood = [&] { return sim.world.get<Spawner>(queen).children; };
+
+    // Nobody has touched her: the first worker is angry with no one.
+    sim.tick({kCentre});
+    CHECK_EQ(brood().size(), std::size_t(1));
+    CHECK_EQ(sim.world.get<MobAi>(brood().front()).target, NULL_ENTITY);
+
+    // Hit once, then left alone for the rest of an interval: a timer has no
+    // hit of its own to answer, so the next worker answers the last one.
+    sim.world.get<Bounty>(queen).credit(hitter, 50.0);
+    for (int i = 0; i < 100 && brood().size() < 2; ++i) sim.tick({kCentre});
+    CHECK_EQ(brood().size(), std::size_t(2));
+    CHECK_EQ(sim.world.get<MobAi>(brood().back()).target, hitter);
+}
+
 TEST(a_periodic_nest_holds_its_escort_cap_and_expires_them) {
     Sim sim;
     const std::uint16_t queen = shipped().mobIndex("queen_ant");

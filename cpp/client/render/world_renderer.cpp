@@ -3618,9 +3618,13 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     // A hole in the ground goes down before every other mob, so the ants it
     // lets out stand on it rather than under it. gardn draws its holes in a
     // pass of their own ahead of the mob pass for exactly this; within each
-    // pass the order stays the map's.
+    // pass the order stays the map's. A nest that sends waves -- a server --
+    // goes down with them: its escorts come up out of its centre, and the
+    // map's order would otherwise bury about half of them under its body.
     const auto isHole = [this](std::uint16_t typeIndex) {
-        return content_ != nullptr && content_->mob(typeIndex).hole;
+        if (content_ == nullptr) return false;
+        const MobConfig& mob = content_->mob(typeIndex);
+        return mob.hole || !mob.spawnWaves.empty();
     };
     // A loose petal lies on the ground like an NPC stands on it, so it goes
     // down in the NPC's layer: under the mobs, the flowers and every ring

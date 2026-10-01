@@ -728,6 +728,12 @@ struct HoleTether {
     /// been cleared yet.
     Vec2 home;
     bool returning = false;
+    /// Still climbing out of its parent. A child is spawned at the parent's
+    /// centre, and until the two no longer overlap they do not push each
+    /// other -- otherwise every soldier a queen lays would shove her half a
+    /// body aside. Cleared by the separation pass the first time it finds the
+    /// pair apart, and never set again.
+    bool emerging = false;
 };
 
 /// A mob summoned by a player, which fights for them and does not drop loot.
@@ -861,6 +867,11 @@ struct Spawner {
     double childLifetimeMillis = 0;
     int maxAlive = 5;
     std::vector<Entity> children;
+    /// The spawner's damage ledger as it stood last tick, and the player whose
+    /// share grew most recently. A neutral child comes out already on that
+    /// player: a timer has no hit of its own to answer, so it answers the last.
+    std::vector<Bounty::Share> ledgerSeen;
+    Entity lastAttacker = NULL_ENTITY;
 };
 
 // ---------------------------------------------------------------------------
