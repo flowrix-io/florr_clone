@@ -1614,13 +1614,18 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // extended pearl.
         const double extension =
             config.defendOnly ? std::min(ring->extension, 1.0) : ring->extension;
+        // A defendOnly petal stays in its place on the ring. Attraction would
+        // pull it out to whip around a mob, which is the swing it never makes.
+        // With a radius of zero, a petal that is already latched lets go of
+        // its mob the same way it would if the mob moved out of range.
+        const double petalAttraction = config.defendOnly ? 0.0 : attractionRadius;
         if (config.noPhysics || config.hasFixedDirection) {
             transform->position = orbit;
         } else if (!(throwsFromOrbit(config) &&
                      flyThrownPetal(*instance, *transform, committed, angle, pearlLeash,
                                     extension > 1.0, nowMillis, dt))) {
             stepPetalPhysics(world, registry, *instance, *transform, centre, orbit, angle,
-                             attractionRadius, aggregate.spinScale, nowMillis, dt);
+                             petalAttraction, aggregate.spinScale, nowMillis, dt);
         }
 
         // A petal that collides with the world is pushed back out of it, in

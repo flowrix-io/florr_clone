@@ -699,6 +699,36 @@ TEST(an_attracted_petal_is_projected_inside_the_body_the_hit_test_uses) {
     CHECK(gap > bodyRadius * 0.5);
 }
 
+TEST(a_defend_only_petal_is_never_attracted) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "cotton");
+    rig.freezeRing();
+    rig.settleRing();
+
+    const Entity petal = rig.petals(0).front();
+    // The test means nothing for a petal that skips the spring step entirely.
+    const PetalConfig& config = fixture().registry.petal(petalId("cotton"));
+    CHECK(config.defendOnly);
+    CHECK(!config.noPhysics && !config.hasFixedDirection);
+
+    // The same mob 20 units off the orbit point that draws a basic petal in
+    // the test above. That is well inside the base 30-unit attraction radius.
+    const Vec2 orbit = rig.world.get<Transform>(petal).position;
+    const Entity mob = rig.world.create();
+    rig.world.add<MobTag>(mob);
+    rig.world.add<MobType>(mob, MobType{fixture().registry.mobIndex("brute"), Rarity::Common, 1.0});
+    rig.world.add<Transform>(mob, Transform{orbit + Vec2{20.0, 0.0}, 0.0});
+    rig.world.add<Body>(mob, Body{10.0, 1.0});
+    rig.world.add<Health>(mob, Health{500.0, 500.0, 0.0, 0.0});
+    rig.world.add<Faction>(mob, Faction{Team::Hostiles, false});
+
+    rig.tick(60);
+
+    CHECK(rig.world.get<PetalInstance>(petal).attractedTo == NULL_ENTITY);
+    CHECK_NEAR((rig.world.get<Transform>(petal).position - orbit).length(), 0.0, 1e-3);
+}
+
 // ---------------------------------------------------------------------------
 // Lightning
 // ---------------------------------------------------------------------------
