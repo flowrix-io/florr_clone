@@ -215,6 +215,10 @@ struct ClientSettings {
     /// Shows the grey bug button in the top strip, which is the only way into
     /// the debug panel. Off by default, exactly as `debugMenuEnabled` is.
     bool showDebugButton = false;
+    /// Asks the leaderboard to rank admin accounts too, which the server
+    /// otherwise leaves off. Off by default; the browser keeps the same flag
+    /// in `localStorage.showAdminsOnLeaderboard`.
+    bool showAdminsOnLeaderboard = false;
     /// How many changelog releases the player had already seen the last time
     /// they opened the panel. The browser keeps the same number in
     /// `localStorage.lastSeenChangelogCount`, and shakes the strip's changelog

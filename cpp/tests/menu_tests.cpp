@@ -809,6 +809,38 @@ TEST(the_leaderboard_ranks_accounts_by_lifetime_xp) {
     CHECK(client.leaderboard()[0].level > client.leaderboard()[1].level);
 }
 
+TEST(admins_rank_on_the_leaderboard_only_when_asked_for) {
+    Harness h("board-admins", [](const std::string& path) {
+        seedAccount(path, "player", "password7", 0, 10);
+        seedAccount(path, "staff", "password7", 0, 900000);
+        Database db;
+        std::string error;
+        db.load(path, error);
+        if (Account* staff = db.findUser("staff")) staff->admin = true;
+        db.markDirty();
+        db.save();
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("player", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+
+    // Off by default: the admin outranks everyone and still is not shown.
+    client.requestLeaderboard();
+    CHECK(h.stepUntil({&client}, [&] { return !client.leaderboardPending(); }, 200));
+    CHECK_EQ(client.leaderboard().size(), static_cast<std::size_t>(1));
+    CHECK_EQ(client.leaderboard()[0].name, std::string("player"));
+
+    // The settings switch: asked for by a non-admin, and honoured, as the
+    // browser server honours ?includeAdmins=true for any caller.
+    client.requestLeaderboard(true);
+    CHECK(h.stepUntil({&client}, [&] { return !client.leaderboardPending(); }, 200));
+    CHECK_EQ(client.leaderboard().size(), static_cast<std::size_t>(2));
+    CHECK_EQ(client.leaderboard()[0].name, std::string("staff"));
+}
+
 TEST(killing_a_mob_credits_the_ledger_and_pays_its_stars) {
     Harness h("kill-credit");
     if (!h.ready) { CHECK(false); return; }

@@ -503,10 +503,11 @@ void NetClient::deleteSkin(const std::string& id) {
     send(w);
 }
 
-void NetClient::requestLeaderboard() {
+void NetClient::requestLeaderboard(bool includeAdmins) {
     leaderboardPending_ = true;
     ByteWriter w;
     beginMessage(w, net::ClientMessage::RequestLeaderboard);
+    w.boolean(includeAdmins);
     send(w);
 }
 

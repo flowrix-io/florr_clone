@@ -23,8 +23,10 @@
 //           settings.showDebugButton, Request Mobile ->
 //           settings.requestMobile, which is what App puts the on-screen
 //           stick and its two buttons up from, Hide Other Players' Petals
-//           and Pets -> settings.render.hideOtherPetals/hideOtherPets. These
-//           are read elsewhere and persisted with the rest of ClientSettings.
+//           and Pets -> settings.render.hideOtherPetals/hideOtherPets, Show
+//           Admins on Leaderboard -> settings.showAdminsOnLeaderboard, which
+//           the leaderboard panel sends with its request. These are read
+//           elsewhere and persisted with the rest of ClientSettings.
 //   local   every other switch and the mob-framerate slider. The rows are
 //           drawn because the reference draws them -- the row set is the
 //           panel's shape, not a claim about this client -- but a value
@@ -277,6 +279,7 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kRequestMobile: return &settings.requestMobile;
         case kHideOtherPetals: return &settings.render.hideOtherPetals;
         case kHideOtherPets: return &settings.render.hideOtherPets;
+        case kShowAdminsOnLeaderboard: return &settings.showAdminsOnLeaderboard;
         // Everything else lands in the panel's own copy, because ClientSettings
         // has no field for it: nothing outside this file could read one, and
         // nothing would write it to disk. A row moves up here the moment a

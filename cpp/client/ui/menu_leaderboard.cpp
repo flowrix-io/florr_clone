@@ -108,7 +108,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
     // whole account table to answer, and the board does not move that fast.
     if (!requested_) {
         requested_ = true;
-        ctx.net.requestLeaderboard();
+        ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard);
     }
 
     const std::vector<LeaderboardRow>& rows = ctx.net.leaderboard();
@@ -149,7 +149,7 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
         if (closeRect.contains(mouse)) {
             closing = true;
         } else if (refreshRect.contains(mouse)) {
-            ctx.net.requestLeaderboard();
+            ctx.net.requestLeaderboard(ctx.settings.showAdminsOnLeaderboard);
         } else if (scrollable && bar.contains(mouse)) {
             drag.active = true;
             drag.anchorY = mouse.y;

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 42;
+inline constexpr std::uint16_t kProtocolVersion = 43;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -86,7 +86,9 @@ enum class ClientMessage : std::uint8_t {
                         ///< full-price catalogue purchase; it is a claim about
                         ///< the card, never about the price.
     SetSkin,            ///< u32 renderFlags
-    RequestLeaderboard, ///< (empty)
+    RequestLeaderboard, ///< bool includeAdmins -- the browser's
+                        ///< `?includeAdmins=true`, which it sends from the
+                        ///< "Show Admins on Leaderboard" switch for anyone.
     RedeemCode,         ///< str code -- a star code, checked server-side
     PublishSkin,        ///< str name, u8 shapeCount, { SkinShape }*  (skin_format.h)
     EquipSkin,          ///< str skinId -- empty takes the current skin off

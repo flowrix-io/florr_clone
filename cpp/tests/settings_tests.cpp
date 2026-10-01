@@ -215,3 +215,20 @@ TEST(the_hide_other_petals_and_pets_switches_survive_the_settings_file) {
 
     std::remove(path.c_str());
 }
+
+TEST(the_show_admins_on_leaderboard_switch_survives_the_settings_file) {
+    const std::string path = tempPath("admins_on_board.cfg");
+
+    // Off until the player turns it on, as the browser's localStorage flag is.
+    ClientSettings fresh;
+    CHECK(!fresh.showAdminsOnLeaderboard);
+
+    ClientSettings on;
+    on.showAdminsOnLeaderboard = true;
+    CHECK(on.save(path));
+    ClientSettings back;
+    CHECK(back.load(path));
+    CHECK(back.showAdminsOnLeaderboard);
+
+    std::remove(path.c_str());
+}

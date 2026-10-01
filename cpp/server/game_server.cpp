@@ -1055,7 +1055,9 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::BuyPetal:      handleBuyPetal(*session, connection, reader); break;
         case net::ClientMessage::RedeemCode:    handleRedeemCode(*session, connection, reader); break;
         case net::ClientMessage::SetSkin:       handleSetSkin(*session, connection, reader); break;
-        case net::ClientMessage::RequestLeaderboard: handleLeaderboard(*session, connection); break;
+        case net::ClientMessage::RequestLeaderboard:
+            handleLeaderboard(*session, connection, reader);
+            break;
         case net::ClientMessage::RequestNotifications: handleNotifications(connection, reader); break;
         case net::ClientMessage::GuildCreate:   handleGuildCreate(*session, connection, reader); break;
         case net::ClientMessage::GuildInvite:   handleGuildInvite(*session, connection, reader); break;
@@ -2893,7 +2895,10 @@ void GameServer::handleDeleteSkin(Session& session, net::Connection& connection,
                                    : "Took down \"" + name + "\" by " + author + ".");
 }
 
-void GameServer::handleLeaderboard(const Session& session, net::Connection& connection) {
+void GameServer::handleLeaderboard(const Session& session, net::Connection& connection,
+                                   ByteReader& reader) {
+    const bool includeAdmins = reader.boolean();
+    if (!reader.ok()) return;
     // Ranked over ACCOUNTS, not over the players currently online: the board is
     // a record of progress, and a top player who logged off has not lost it.
     struct Row {
@@ -2905,10 +2910,11 @@ void GameServer::handleLeaderboard(const Session& session, net::Connection& conn
     for (const std::string& username : database_.usernames()) {
         const Account* account = database_.findUser(username);
         if (account == nullptr) continue;
-        // Staff are off the board. The browser build's getLeaderboard() takes
-        // includeAdmins and the client only ever passes false, so an admin
-        // account would rank here and nowhere in the reference.
-        if (account->admin) continue;
+        // Staff are off the board unless the asker ticked "Show Admins on
+        // Leaderboard". The browser's getLeaderboard(limit, includeAdmins)
+        // honours that for any caller, not only an admin: it reveals names
+        // and XP, which the board shows for everyone else anyway.
+        if (account->admin && !includeAdmins) continue;
         const PlayerRecord* record = database_.findProgress(account->id);
         rows.push_back({&account->username, record ? record->totalXp : 0.0});
     }

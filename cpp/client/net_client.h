@@ -400,7 +400,9 @@ public:
     /// and the server's answer is the persistence, not the confirmation.
     void equipSkin(const std::string& id);
     void deleteSkin(const std::string& id);
-    void requestLeaderboard();
+    /// `includeAdmins` is the "Show Admins on Leaderboard" switch: without it
+    /// the server leaves admin accounts off the board.
+    void requestLeaderboard(bool includeAdmins = false);
     /// Asks for one page of the global notification feed, newest first.
     /// `beforeMillis` of 0 asks for the newest page; anything else pages back
     /// past the oldest entry already held, as the browser's `?before=` does.
