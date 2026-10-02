@@ -290,6 +290,9 @@ private:
     /// The chat input slot, shared by the title screen and the game so the two
     /// cannot drift apart.
     void drawChatField(Canvas&, Rect box, double time);
+    /// The run drawChatField paints the draft as, scrolled to keep the caret in
+    /// the box. The pointer is tracked against the same one.
+    ui::TextRun chatFieldRun(Rect box) const;
     void drawConnectionState(Canvas&, double time);
     void drawSessionReplaced(Canvas&, double time);
     /// The red strip across the top of a live game whose socket has dropped.

@@ -1,13 +1,19 @@
 #include "test.h"
 
+#include "client/ui/text.h"
 #include "client/ui/text_input.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <string>
 
 using flix::ui::editText;
+using flix::ui::followCaret;
 using flix::ui::TextEditFrame;
 using flix::ui::TextEditOptions;
 using flix::ui::TextEditResult;
+using flix::ui::TextFieldState;
 using flix::ui::TextSelection;
 using flix::ui::utf8Next;
 using flix::ui::utf8Prev;
@@ -533,14 +539,138 @@ TEST(shift_down_selects_across_lines) {
     CHECK_EQ(selection.of(value), std::string("one\n"));
 }
 
-TEST(up_and_down_do_nothing_in_a_single_line_field) {
-    std::string value = "abc";
+TEST(up_and_down_go_to_the_ends_of_a_single_line_field) {
+    // What a browser's <input> does: there is no line to move to, so the
+    // caret goes to that end of the value.
+    std::string value = "abcd";
     TextSelection selection;
+    selection.collapse(2);
+    TextEditFrame up;
+    up.up = true;
+    editText(up, value, selection, {});
+    CHECK_EQ(selection.caret, std::size_t{0});
+    CHECK(selection.empty());
+
+    TextEditFrame down;
+    down.down = true;
+    editText(down, value, selection, {});
+    CHECK_EQ(selection.caret, value.size());
+    CHECK(selection.empty());
+
+    // Shift extends to the end like any other caret move.
     selection.collapse(1);
+    TextEditFrame shiftUp = up;
+    shiftUp.shift = true;
+    editText(shiftUp, value, selection, {});
+    CHECK_EQ(selection.of(value), std::string("a"));
+}
+
+TEST(up_on_the_first_line_and_down_on_the_last_go_to_the_ends) {
+    TextEditOptions options;
+    options.multiline = true;
+    std::string value = "abcd\nef";
+    TextSelection selection;
+    selection.collapse(2);                  // "ab|cd", the first line
+
+    TextEditFrame up;
+    up.up = true;
+    editText(up, value, selection, options);
+    CHECK_EQ(selection.caret, std::size_t{0});
+
+    selection.collapse(6);                  // "e|f", the last line
+    TextEditFrame down;
+    down.down = true;
+    editText(down, value, selection, options);
+    CHECK_EQ(selection.caret, value.size());
+}
+
+TEST(up_and_down_can_be_left_to_the_fields_owner) {
+    // The chat line hands its arrows to the command list while that is open.
+    TextEditOptions options;
+    options.upDown = false;
+    std::string value = "/adm";
+    TextSelection selection;
+    selection.collapse(2);
     TextEditFrame frame;
     frame.up = true;
-    editText(frame, value, selection, {});
-    CHECK_EQ(selection.caret, std::size_t{1});
+    editText(frame, value, selection, options);
+    CHECK_EQ(selection.caret, std::size_t{2});
+    frame.up = false;
+    frame.down = true;
+    editText(frame, value, selection, options);
+    CHECK_EQ(selection.caret, std::size_t{2});
+}
+
+// --- scrolling ---------------------------------------------------------------
+
+namespace {
+
+/// followCaret measures, and `measure` answers 0 with no typeface loaded --
+/// every check below would pass with the view never moving.
+bool fontsLoaded() {
+    static const bool ok = [] {
+        std::string error;
+        const bool loaded = flix::ui::Fonts::init(std::string(FLIX_TEST_DATA_DIR), error);
+        if (!loaded) std::printf("  fonts did not load: %s\n", error.c_str());
+        return loaded;
+    }();
+    return ok;
+}
+
+constexpr double kScrollSize = 14.0;
+
+double widthOf(const std::string& text) { return flix::ui::measure(text, kScrollSize, false); }
+
+} // namespace
+
+TEST(the_view_only_moves_when_the_caret_would_leave_it) {
+    CHECK(fontsLoaded());
+    const std::string value = "the quick brown fox jumps over the lazy dog";
+    const double span = widthOf("the quick brown");
+    TextFieldState state;
+
+    // At the end: the tail is in view, the caret on the right edge.
+    state.selection.collapse(value.size());
+    const double atEnd = followCaret(state, value, kScrollSize, false, span);
+    CHECK(std::fabs(atEnd - (widthOf(value) - span)) < 1e-6);
+
+    // Back a few characters, still inside the view: nothing moves. The old
+    // stateless scroll slid the text under a caret glued to the right edge.
+    state.selection.collapse(value.size() - 4);
+    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), atEnd);
+
+    // Past the left edge: the view follows, just far enough.
+    state.selection.collapse(4);
+    CHECK(std::fabs(followCaret(state, value, kScrollSize, false, span) - widthOf("the ")) < 1e-6);
+
+    // Home: back to the start.
+    state.selection.collapse(0);
+    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), 0.0);
+}
+
+TEST(the_view_settles_and_pulls_back_when_the_value_shrinks) {
+    CHECK(fontsLoaded());
+    std::string value = "the quick brown fox jumps over the lazy dog";
+    const double span = widthOf("the quick brown");
+    TextFieldState state;
+    state.selection.collapse(value.size());
+    const double first = followCaret(state, value, kScrollSize, false, span);
+    // The hit test and the paint both ask in one frame; the second answer must
+    // be the first, or a click lands on a glyph other than the one under it.
+    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), first);
+
+    // The value erased down under a view scrolled for the long one: the tail
+    // comes back to the right edge rather than leaving blank space past it
+    // while text is hidden off the left.
+    value = "the quick brown fox";
+    state.selection.collapse(value.size());
+    CHECK(first > widthOf(value) - span);
+    CHECK(std::fabs(followCaret(state, value, kScrollSize, false, span) -
+                    (widthOf(value) - span)) < 1e-6);
+
+    // One that fits outright is not scrolled at all.
+    value = "the";
+    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), 0.0);
 }
 
 TEST(utf8_steps_clamp_at_both_ends) {

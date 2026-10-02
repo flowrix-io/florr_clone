@@ -287,12 +287,15 @@ double fieldTextSize(Rect r, const TextFieldStyle& style) {
 
 } // namespace
 
-TextRun textFieldRun(Rect r, const std::string& value, const TextFieldStyle& style) {
+TextRun textFieldRun(Rect r, const std::string& value, const TextFieldStyle& style,
+                     const TextFieldState* state) {
     TextRun run;
     run.text = value;
-    run.originX = r.x + style.padding;
     run.size = fieldTextSize(r, style);
     run.bold = style.bold;
+    run.originX = r.x + style.padding -
+                  (state ? followCaret(*state, value, run.size, run.bold, r.w - style.padding * 2)
+                         : 0.0);
     return run;
 }
 
@@ -339,16 +342,30 @@ void textField(Canvas& canvas, Rect r, const std::string& value, const std::stri
     // painter is being told about -- a masked one keeps its old behaviour,
     // since a selection over a row of bullets is not a thing worth painting.
     const bool selectable = state && !masked;
+
+    // Scrolled to keep the caret in the box while focused. A field with no
+    // caret of its own has it implicitly at the end and follows that; an
+    // unfocused one shows its start, as an <input> does once it is blurred.
+    TextFieldState atEnd;
+    atEnd.selection.collapse(shown.size());
+    const TextFieldState* follow = !focused ? nullptr : selectable ? state : &atEnd;
+    const TextRun run = textFieldRun(r, shown, style, follow);
+
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(static_cast<float>(r.x + style.padding * 0.5), static_cast<float>(r.y),
+                static_cast<float>(r.w - style.padding), static_cast<float>(r.h));
+    canvas.clip();
+
     if (selectable && focused) {
-        selectionHighlight(canvas, textFieldRun(r, value, style), state->selection,
+        selectionHighlight(canvas, run, state->selection,
                            Rect{r.x + style.padding * 0.5, r.y + 6.0,
                                 r.w - style.padding, std::max(2.0, r.h - 12.0)});
     }
 
     ts.fill = style.textFill;
-    text(canvas, shown, r.x + style.padding, r.y + r.h * 0.5, ts);
+    text(canvas, shown, run.originX, r.y + r.h * 0.5, ts);
 
-    if (!focused) return;
     // `Math.floor(Date.now() / 500) % 2 === 0`, to the millisecond: phasing the
     // blink on the epoch rather than on the caller's frame clock is what keeps
     // two clients -- and a client and the browser -- pulsing in step, instead
@@ -357,19 +374,23 @@ void textField(Canvas& canvas, Rect r, const std::string& value, const std::stri
     // half a pixel off the glyph it follows.
     // A field with a caret of its own blinks on THAT instead, so the bar stays
     // solid while it is being typed at rather than winking out mid-word.
-    if (selectable) {
-        if (!caretVisible(*state, timeSeconds)) return;
-    } else {
+    bool blinkOn = false;
+    if (focused && selectable) {
+        blinkOn = caretVisible(*state, timeSeconds);
+    } else if (focused) {
         const auto epochMillis = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-        if ((epochMillis / 500) % 2 != 0) return;
+        blinkOn = (epochMillis / 500) % 2 == 0;
     }
-    const double caretX =
-        selectable ? xOfIndex(textFieldRun(r, value, style), state->selection.caret)
-                   : r.x + style.padding + textWidth(canvas, shown, textSize, style.bold);
-    setFill(canvas, style.caret);
-    canvas.fillRect(static_cast<float>(caretX), static_cast<float>(r.y + 10), 2.0f,
-                    static_cast<float>(std::max(2.0, r.h - 20.0)));
+    if (blinkOn) {
+        const double caretX =
+            selectable ? xOfIndex(run, state->selection.caret)
+                       : run.originX + textWidth(canvas, shown, textSize, style.bold);
+        setFill(canvas, style.caret);
+        canvas.fillRect(static_cast<float>(caretX), static_cast<float>(r.y + 10), 2.0f,
+                        static_cast<float>(std::max(2.0, r.h - 20.0)));
+    }
+    canvas.restore();
 }
 
 } // namespace flix::ui

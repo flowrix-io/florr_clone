@@ -199,28 +199,31 @@ TextEditResult editText(const TextEditFrame& frame, std::string& value, TextSele
     if (frame.home) moveTo(options.multiline ? lineStart(value, selection.caret) : 0);
     if (frame.end) moveTo(options.multiline ? lineEnd(value, selection.caret) : value.size());
 
-    const bool up = options.multiline && frame.up;
-    const bool down = options.multiline && frame.down;
+    const bool up = options.upDown && frame.up;
+    const bool down = options.upDown && frame.down;
     if (up != down) {
-        // The column is counted in CHARACTERS, not bytes: a line above with a
-        // multi-byte character in it would otherwise pull the caret sideways.
         const std::size_t start = lineStart(value, selection.caret);
-        std::size_t column = 0;
-        for (std::size_t i = start; i < selection.caret; i = utf8Next(value, i)) ++column;
-
-        std::size_t row = start;
-        if (up) {
-            if (start > 0) row = lineStart(value, start - 1);
+        const std::size_t stop = lineEnd(value, selection.caret);
+        if (!options.multiline || (up && start == 0) || (down && stop == value.size())) {
+            // No line to move to -- a single-line field, or the first or last
+            // line of a multiline one -- so the caret goes to that end of the
+            // value, which is what an <input> and a <textarea> both do.
+            moveTo(up ? 0 : value.size());
         } else {
-            const std::size_t stop = lineEnd(value, selection.caret);
-            if (stop < value.size()) row = stop + 1;
+            // The column is counted in CHARACTERS, not bytes: a line above with
+            // a multi-byte character in it would otherwise pull the caret
+            // sideways.
+            std::size_t column = 0;
+            for (std::size_t i = start; i < selection.caret; i = utf8Next(value, i)) ++column;
+
+            const std::size_t row = up ? lineStart(value, start - 1) : stop + 1;
+            // Past the end of a shorter line the caret parks at that line's
+            // end, which is what every editor does.
+            const std::size_t rowEnd = lineEnd(value, row);
+            std::size_t at = row;
+            for (std::size_t i = 0; i < column && at < rowEnd; ++i) at = utf8Next(value, at);
+            moveTo(at);
         }
-        // Past the end of a shorter line the caret parks at that line's end,
-        // which is what every editor does.
-        const std::size_t stop = lineEnd(value, row);
-        std::size_t at = row;
-        for (std::size_t i = 0; i < column && at < stop; ++i) at = utf8Next(value, at);
-        moveTo(at);
     }
 
     out.caretMoved = selection.caret != before.caret || selection.anchor != before.anchor;
@@ -323,6 +326,21 @@ bool caretVisible(const TextFieldState& state, double timeSeconds) {
     return std::fmod(std::max(0.0, timeSeconds - state.caretSeconds), 1.0) < 0.5;
 }
 
+double followCaret(const TextFieldState& state, const std::string& value, double size, bool bold,
+                   double span) {
+    span = std::max(1.0, span);
+    const double toCaret =
+        measure(value.substr(0, std::min(state.selection.caret, value.size())), size, bold);
+    double scroll = state.scrollX;
+    if (toCaret - scroll > span) scroll = toCaret - span;
+    if (toCaret < scroll) scroll = toCaret;
+    // A value that shrank -- an erase, a clear, a shorter one swapped in --
+    // pulls the view back so its tail sits at the right edge again.
+    scroll = std::max(0.0, std::min(scroll, measure(value, size, bold) - span));
+    state.scrollX = scroll;
+    return scroll;
+}
+
 bool editText(Window& window, std::string& value, TextFieldState& state, double timeSeconds,
               const TextEditOptions& options) {
     const bool ctrl = window.ctrlHeld();
@@ -342,14 +360,16 @@ bool editText(Window& window, std::string& value, TextFieldState& state, double 
     frame.copy = ctrl && window.keyPressed(Key::C);
     frame.cut = ctrl && window.keyPressed(Key::X);
     frame.selectAll = ctrl && window.keyPressed(Key::A);
-    frame.backspace = window.keyPressed(Key::Backspace);
-    frame.erase = window.keyPressed(Key::Delete);
-    frame.left = window.keyPressed(Key::Left);
-    frame.right = window.keyPressed(Key::Right);
-    frame.up = window.keyPressed(Key::Up);
-    frame.down = window.keyPressed(Key::Down);
-    frame.home = window.keyPressed(Key::Home);
-    frame.end = window.keyPressed(Key::End);
+    // keyTyped, not keyPressed: a held arrow has to keep walking the caret,
+    // and keyPressed sees a held key once.
+    frame.backspace = window.keyTyped(Key::Backspace);
+    frame.erase = window.keyTyped(Key::Delete);
+    frame.left = window.keyTyped(Key::Left);
+    frame.right = window.keyTyped(Key::Right);
+    frame.up = window.keyTyped(Key::Up);
+    frame.down = window.keyTyped(Key::Down);
+    frame.home = window.keyTyped(Key::Home);
+    frame.end = window.keyTyped(Key::End);
     frame.enter = window.keyPressed(Key::Enter);
 
     const TextEditResult result = editText(frame, value, state.selection, options);

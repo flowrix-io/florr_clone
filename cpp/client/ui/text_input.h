@@ -38,6 +38,11 @@ struct TextEditOptions {
     /// a submit. Also what turns Home/End into the line's ends and makes
     /// Up/Down move between lines.
     bool multiline = false;
+    /// Whether Up/Down move the caret: to the value's start and end in a
+    /// single-line field, as a browser's <input> does, and between lines in a
+    /// multiline one. Off while the field's owner spends them on something
+    /// else -- the chat line, while its command list is open.
+    bool upDown = true;
     /// Whether the field will put its own contents on the clipboard. Off for
     /// the password boxes: pasting INTO a masked field is fine, reading one
     /// back out is the thing a mask exists to stop.
@@ -156,6 +161,11 @@ struct TextFieldState {
     /// The previous press, for double- and triple-click.
     double lastClickSeconds = -10;
     int clickStreak = 0;
+    /// How far a single-line field's text is pushed left, as followCaret last
+    /// left it. Mutable because it is the VIEW's memory, not the value's: the
+    /// run functions that lay a field out take its state const, and both the
+    /// hit test and the paint lay it out.
+    mutable double scrollX = 0;
 
     /// Takes the caret, with everything selected -- what tabbing or clicking a
     /// button that focuses a field should do.
@@ -167,6 +177,18 @@ struct TextFieldState {
 
 /// True while the caret should be painted.
 bool caretVisible(const TextFieldState&, double timeSeconds);
+
+/// How far a single-line field's text is pushed left to keep its caret inside
+/// a view `span` wide; a field's run puts it in `originX` as `- scroll`.
+///
+/// The view moves only when the caret would leave it. Every field used to take
+/// `max(0, toCaret - span)` fresh each frame instead, which glues the caret to
+/// the right edge: walking it back through a long value slid the text under a
+/// caret that never moved. Nor is there blank space past the end while text is
+/// hidden off the left. Remembered in `state.scrollX`, and settled -- the hit
+/// test and the paint can both ask in one frame and get the same answer.
+double followCaret(const TextFieldState&, const std::string& value, double size, bool bold,
+                   double span);
 
 /// Where this frame's text fields are.
 ///

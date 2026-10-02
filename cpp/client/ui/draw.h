@@ -164,8 +164,10 @@ void selectionHighlight(Canvas&, const TextRun&, const TextSelection&, Rect band
                         std::uint32_t colour = kSelection, double alpha = 0.45);
 
 /// The run `textField` paints for these bounds, so a caller can hit-test it
-/// with `indexAtX` and get the same answer the paint gave.
-TextRun textFieldRun(Rect r, const std::string& value, const TextFieldStyle& style = {});
+/// with `indexAtX` and get the same answer the paint gave. A field's `state`
+/// scrolls it to keep the caret in the box; pass the same one `textField` gets.
+TextRun textFieldRun(Rect r, const std::string& value, const TextFieldStyle& style = {},
+                     const TextFieldState* state = nullptr);
 
 /// `state` carries the caret and the selection. Passing none keeps the field's
 /// old behaviour -- caret at the end, nothing selected -- which is what a

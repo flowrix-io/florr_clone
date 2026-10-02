@@ -334,7 +334,7 @@ struct Window::Impl {
   // Accumulating rather than overwriting is what lets a press and its release
   // arrive on the same frame, exactly as they do natively when both come out
   // of a single drain.
-  std::array<bool, kKeyCount> pendingPressed{}, pendingReleased{};
+  std::array<bool, kKeyCount> pendingPressed{}, pendingReleased{}, pendingTypedKeys{};
   std::array<bool, kButtonCount> pendingDownEdge{}, pendingUpEdge{};
   float pendingWheel = 0;
   std::string pendingTyped;
@@ -347,6 +347,7 @@ struct Window::Impl {
     takeSoftKeyboardEdits();
     pressed = pendingPressed;
     released = pendingReleased;
+    typedKeys = pendingTypedKeys;
     mouseDownEdge = pendingDownEdge;
     mouseUpEdge = pendingUpEdge;
     wheel = pendingWheel;
@@ -355,6 +356,7 @@ struct Window::Impl {
 
     pendingPressed.fill(false);
     pendingReleased.fill(false);
+    pendingTypedKeys.fill(false);
     pendingDownEdge.fill(false);
     pendingUpEdge.fill(false);
     pendingWheel = 0;
@@ -418,7 +420,7 @@ struct Window::Impl {
   double uiScale = 1.0;
   bool shouldClose = false;
 
-  std::array<bool, kKeyCount> down{}, pressed{}, released{};
+  std::array<bool, kKeyCount> down{}, pressed{}, released{}, typedKeys{};
   std::array<bool, kButtonCount> mouseHeld{}, mouseDownEdge{}, mouseUpEdge{};
   float mouseX = 0, mouseY = 0, wheel = 0;
   std::string typed;
@@ -873,6 +875,7 @@ struct Window::Impl {
       // the two erase keys, which a field has to see repeat on.
       if (!event->repeat) impl->pendingPressed[i] = true;
       else if (key == Key::Backspace || key == Key::Delete) impl->pendingPressed[i] = true;
+      impl->pendingTypedKeys[i] = true;
       impl->down[i] = true;
     }
 
@@ -968,6 +971,7 @@ struct Window::Impl {
   void clearEdges() {
     pressed.fill(false);
     released.fill(false);
+    typedKeys.fill(false);
     mouseDownEdge.fill(false);
     mouseUpEdge.fill(false);
     wheel = 0;
@@ -1162,6 +1166,7 @@ bool Window::pump() {
         const std::size_t i = static_cast<std::size_t>(k);
         if (i < kKeyCount) {
           if (!event.key.repeat) impl_->pressed[i] = true;
+          impl_->typedKeys[i] = true;
           impl_->down[i] = true;
         }
         // The two erase keys are the ones a text field must see repeat on:
@@ -1367,6 +1372,10 @@ bool Window::keyPressed(Key k) const {
 bool Window::keyReleased(Key k) const {
   const std::size_t i = static_cast<std::size_t>(k);
   return i < kKeyCount && impl_->released[i];
+}
+bool Window::keyTyped(Key k) const {
+  const std::size_t i = static_cast<std::size_t>(k);
+  return i < kKeyCount && impl_->typedKeys[i];
 }
 bool Window::mouseDown(MouseButton b) const {
   const std::size_t i = static_cast<std::size_t>(b);

@@ -179,6 +179,11 @@ public:
     bool keyDown(Key k) const;
     bool keyPressed(Key k) const;    ///< went down this frame
     bool keyReleased(Key k) const;   ///< came up this frame
+    /// Went down this frame OR was auto-repeated by a held key -- what a text
+    /// field's caret and erase keys read, since holding an arrow has to keep
+    /// walking the caret. Game logic stays on keyPressed, where a held key is
+    /// one press.
+    bool keyTyped(Key k) const;
 
     bool mouseDown(MouseButton b) const;
     bool mousePressed(MouseButton b) const;

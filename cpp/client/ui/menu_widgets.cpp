@@ -69,11 +69,7 @@ constexpr double kFieldTextSize = 13.0;
 /// characters in half and pinned the view to the tail -- fine while the caret
 /// could only ever be at the end, wrong the moment it can be dragged.
 double fieldScroll(Rect r, const std::string& value, const TextFieldState& state) {
-    const double span = std::max(1.0, r.w - kFieldInset * 2);
-    const double toCaret =
-        measure(value.substr(0, std::min(state.selection.caret, value.size())), kFieldTextSize,
-                false);
-    return std::max(0.0, toCaret - span);
+    return followCaret(state, value, kFieldTextSize, false, r.w - kFieldInset * 2);
 }
 
 } // namespace

@@ -256,9 +256,7 @@ TextRun codeRun(Rect box, const std::string& code, const ui::TextFieldState& sta
     TextRun run;
     run.text = code;
     run.size = 16.0;
-    const double toCaret =
-        measure(code.substr(0, std::min(state.selection.caret, code.size())), run.size, false);
-    run.originX = box.x + 8.0 - std::max(0.0, toCaret - (box.w - 16.0));
+    run.originX = box.x + 8.0 - ui::followCaret(state, code, run.size, false, box.w - 16.0);
     return run;
 }
 

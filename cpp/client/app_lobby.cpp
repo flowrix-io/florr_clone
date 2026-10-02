@@ -233,8 +233,8 @@ void App::updateLobby(double dt) {
     } else if (nameField_.focused) {
         editText(playerName_, 20, nameField_);
         ui::trackTextMouse(window_, nameField_, nameBox_,
-                           ui::textFieldRun(nameBox_, playerName_, nameFieldStyle()), playerName_,
-                           timeSeconds_);
+                           ui::textFieldRun(nameBox_, playerName_, nameFieldStyle(), &nameField_),
+                           playerName_, timeSeconds_);
         // Enter starts the game only from here, which is the one place the
         // reference accepts it: with nothing focused, Enter opens chat.
         if (window_.keyPressed(Key::Enter)) {

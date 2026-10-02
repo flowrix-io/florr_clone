@@ -273,8 +273,8 @@ void App::updateLogin(double dt) {
     if (focusedField_ == 0 || (advancedOpen_ && focusedField_ == serverField)) {
         const Rect box = focusedField_ == 0 ? layout.username : layout.serverIp;
         std::string& value = focusedField_ == 0 ? usernameField_ : serverField_;
-        ui::trackTextMouse(window_, authField_, box, ui::textFieldRun(box, value), value,
-                           timeSeconds_);
+        ui::trackTextMouse(window_, authField_, box, ui::textFieldRun(box, value, {}, &authField_),
+                           value, timeSeconds_);
     }
 
     // Enter submits only while a field has the caret: the browser's form is a
@@ -522,8 +522,10 @@ void App::drawLogin(Canvas& canvas, double time) {
     // its own 0.8-value outline, radius 3, 4px slack / 5px focused, 18px text.
     const TextFieldStyle authField;
     const int serverField = registering_ ? 3 : 2;
-    textField(canvas, layout.username,
-              usernameField_, "Username", focusedField_ == 0, false, time, authField);
+    // The two unmasked fields are handed the caret they share, so the bar and
+    // the highlight are drawn where editing puts them rather than at the end.
+    textField(canvas, layout.username, usernameField_, "Username", focusedField_ == 0, false,
+              time, authField, focusedField_ == 0 ? &authField_ : nullptr);
     textField(canvas, layout.password,
               passwordField_, "Password", focusedField_ == 1, true, time, authField);
     if (registering_) {
@@ -532,7 +534,8 @@ void App::drawLogin(Canvas& canvas, double time) {
     }
     if (advancedOpen_) {
         textField(canvas, layout.serverIp, serverField_, "Server IP",
-                  focusedField_ == serverField, false, time, authField);
+                  focusedField_ == serverField, false, time, authField,
+                  focusedField_ == serverField ? &authField_ : nullptr);
     }
 
     ButtonStyle advancedStyle;

@@ -424,9 +424,7 @@ TextRun endpointRun(Rect box, const std::string& value, const ui::TextFieldState
     TextRun run;
     run.text = value;
     run.size = 13.0;
-    const double toCaret =
-        measure(value.substr(0, std::min(state.selection.caret, value.size())), run.size, false);
-    run.originX = box.x + 8.0 - std::max(0.0, toCaret - (box.w - 20.0));
+    run.originX = box.x + 8.0 - ui::followCaret(state, value, run.size, false, box.w - 20.0);
     return run;
 }
 

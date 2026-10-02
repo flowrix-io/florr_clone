@@ -446,7 +446,7 @@ bool App::scrollChat() {
     // through it. Tested against where the finger LANDED, as every list's drag
     // is, and never claims the wheel: a finger has none to give the zoom.
     const TouchPan& pan = window_.touchPan();
-    const bool suggestingNow = chatOpen_ && !chatDraft_.empty() && chatDraft_[0] == '/';
+    const bool suggestingNow = chatOpen_ && chatSuggestion_ >= 0;
     if (pan.active && menus_.settings().showChat && chatColumn_.w > 0 && !suggestingNow) {
         const Vec2 origin{pan.originX, pan.originY};
         if (chatColumn_.contains(origin) && !menus_.capturesMouse(origin)) {
@@ -476,7 +476,7 @@ bool App::scrollChat() {
     // The command list is a picker the arrow keys move through, not a
     // transcript -- but it is drawn in this column, and a wheel over it must
     // still not reach the zoom behind it.
-    const bool suggesting = chatOpen_ && !chatDraft_.empty() && chatDraft_[0] == '/';
+    const bool suggesting = chatOpen_ && chatSuggestion_ >= 0;
     if (!suggesting) {
         // Positive is a scroll up, which shows OLDER lines -- and older is
         // further off the bottom, which is what the offset counts. The ceiling
@@ -488,7 +488,12 @@ bool App::scrollChat() {
 
 void App::editChatLine() {
     const std::string before = chatDraft_;
-    editText(chatDraft_, 180, chatField_);
+    ui::TextEditOptions typing;
+    typing.maxBytes = 180;
+    // The open command list takes Up/Down for its rows, as the reference's
+    // keydown handler preventDefaults them; with it closed they move the caret.
+    typing.upDown = chatSuggestion_ < 0;
+    ui::editText(window_, chatDraft_, chatField_, timeSeconds_, typing);
     // A press anywhere outside the chat -- a panel, the world, the strip --
     // closes the line, which is what clicking away from a focused input does
     // everywhere else. The draft is KEPT: reopening with Enter picks it back
@@ -502,11 +507,8 @@ void App::editChatLine() {
     // Against the box the last frame painted: input runs before the draw, and
     // the field does not move between the two.
     if (chatBox_.w > 0) {
-        ui::TextRun run;
-        run.text = chatDraft_;
-        run.originX = chatBox_.x + 6.0;
-        run.size = kChatFieldTextSize;
-        ui::trackTextMouse(window_, chatField_, chatBox_, run, chatDraft_, timeSeconds_);
+        ui::trackTextMouse(window_, chatField_, chatBox_, chatFieldRun(chatBox_), chatDraft_,
+                           timeSeconds_);
         // The chat line is open or it is not; a press outside must not blur it
         // into a state where it takes keys but shows no caret.
         chatField_.focused = true;
@@ -533,6 +535,9 @@ void App::editChatLine() {
             if (window_.keyPressed(Key::Tab) || window_.keyPressed(Key::Enter)) {
                 const ChatCommand* chosen = matches[static_cast<std::size_t>(chatSuggestion_)];
                 chatDraft_ = std::string(chosen->command) + " ";
+                // Setting an <input>'s value puts its caret at the end; left
+                // where it was, the next keystroke lands inside the command.
+                chatField_.focusAtEnd(chatDraft_, timeSeconds_);
                 chatSuggestion_ = -1;
                 return;
             }
@@ -679,8 +684,11 @@ void App::drawChat(Canvas& canvas, double time) {
     chatColumn_ = column;
 
     // A leading slash swaps the transcript for the command list -- the
-    // reference hides one element and shows the other in the same slot.
-    const bool suggesting = chatOpen_ && !chatDraft_.empty() && chatDraft_[0] == '/';
+    // reference hides one element and shows the other in the same slot. Up
+    // exactly while it has a row to highlight, which is the state the arrow
+    // keys read: Escape, a completion and a filter with no matches all put the
+    // transcript back until the next keystroke, as the reference's do.
+    const bool suggesting = chatOpen_ && chatSuggestion_ >= 0;
     if (suggesting) {
         const std::vector<const ChatCommand*> matches = matchChatCommands(chatDraft_, net_.isSkinAdmin());
         if (!matches.empty()) {
@@ -935,10 +943,14 @@ void App::drawChatField(Canvas& canvas, Rect box, double time) {
     const bool empty = chatDraft_.empty();
     line.fill = empty ? 0x757575u : kPaper;
 
-    ui::TextRun run;
-    run.text = chatDraft_;
-    run.originX = box.x + 6.0;
-    run.size = kChatFieldTextSize;
+    const ui::TextRun run = chatFieldRun(box);
+    // A 180-byte draft is several boxes wide; the slot clips it, as the
+    // <input> it stands in for does.
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(static_cast<float>(box.x + 2.0), static_cast<float>(box.y),
+                static_cast<float>(box.w - 4.0), static_cast<float>(box.h));
+    canvas.clip();
     if (chatOpen_) {
         // A pale wash: the slot is a dark translucent plate, and the blue one
         // the light fields use disappears into it.
@@ -949,12 +961,22 @@ void App::drawChatField(Canvas& canvas, Rect box, double time) {
     text(canvas, empty ? "Press Enter to chat..." : chatDraft_, run.originX,
          box.y + box.h * 0.5, line);
 
-    if (!chatOpen_) return;
-    if (!caretVisible(chatField_, time)) return;
-    const double caretX = xOfIndex(run, chatField_.selection.caret);
-    setFill(canvas, kPaper);
-    canvas.fillRect(static_cast<float>(caretX), static_cast<float>(box.y + 4.0), 1.0f,
-                    static_cast<float>(box.h - 8.0));
+    if (chatOpen_ && caretVisible(chatField_, time)) {
+        const double caretX = xOfIndex(run, chatField_.selection.caret);
+        setFill(canvas, kPaper);
+        canvas.fillRect(static_cast<float>(caretX), static_cast<float>(box.y + 4.0), 1.0f,
+                        static_cast<float>(box.h - 8.0));
+    }
+    canvas.restore();
+}
+
+ui::TextRun App::chatFieldRun(Rect box) const {
+    ui::TextRun run;
+    run.text = chatDraft_;
+    run.size = kChatFieldTextSize;
+    run.originX = box.x + 6.0 - ui::followCaret(chatField_, chatDraft_, run.size, false,
+                                                box.w - 12.0);
+    return run;
 }
 
 } // namespace flix
