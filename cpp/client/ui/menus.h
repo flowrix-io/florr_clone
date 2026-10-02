@@ -66,6 +66,9 @@ enum class MenuId : std::uint8_t {
     Notifications,
     Guild,
     Debug,
+    /// The admin database editor. Opened by `/admin db` and nothing else: it
+    /// is on no strip button and its key is unbound and not rebindable.
+    AdminDb,
     Count,
 };
 
@@ -923,6 +926,20 @@ private:
                           const char* unit);
 };
 
+/// The admin database editor: accounts and the raw tables, as trees to read
+/// and edit. Only ever opened by the server's answer to `/admin db`, which a
+/// database-flagged admin gets and nobody else does; the server checks every
+/// request again. Its state lives in menu_admin_db.cpp, at file scope, as the
+/// guild panel's dialog does.
+class AdminDbPanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static double preferredWidth();
+    static double preferredHeight();
+    static Rect bounds(int viewWidth, int viewHeight);
+};
+
 // ---------------------------------------------------------------------------
 // The system
 // ---------------------------------------------------------------------------
@@ -1304,6 +1321,7 @@ private:
     NotificationsPanel notifications_;
     GuildPanel guild_;
     DebugPanel debug_;
+    AdminDbPanel adminDb_;
 };
 
 /// The label and hotkey shown on the menu bar.

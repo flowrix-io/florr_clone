@@ -27,6 +27,7 @@
 #include "shared/game/map_elements.h"
 #include "shared/game/spatial.h"
 #include "shared/game/terrain.h"
+#include "shared/net/admin_db.h"
 #include "shared/net/transport.h"
 
 namespace flix {
@@ -243,6 +244,35 @@ private:
     void handleLeaderboard(const Session&, net::Connection&, ByteReader&);
     void handleNotifications(net::Connection&, ByteReader&);
     void handleUsePetal(Session&, ByteReader&);
+
+    // -- the admin database editor (server/admin_db.cpp) --------------------
+    //
+    // The panel `/admin db` opens. Every op is refused unless the DATABASE
+    // flags the session's account as an admin: a temporary grant reaches the
+    // console, not this, because the editor reaches further than the console
+    // -- passwords, deletions, any record. The admin flag itself is the one
+    // thing it never writes, for anyone (see admin_db.cpp).
+
+    void handleAdminDb(Session&, net::Connection&, ByteReader&);
+    /// Tells a client to open the editor, on `username` when one is named.
+    void sendAdminDbOpen(net::Connection&, const std::string& username);
+    void sendAdminDbResult(net::Connection&, bool ok, net::AdminDbScope, const std::string& key,
+                           bool gone, const std::string& message);
+    /// One node of an account's document or of a table, or false when the
+    /// document or the path no longer exists.
+    bool sendAdminDbAccount(net::Connection&, const std::string& username,
+                            const net::AdminDbPath&);
+    bool sendAdminDbTable(net::Connection&, const std::string& table, const net::AdminDbPath&);
+    std::uint8_t adminDbAccountFlags(const Account&) const;
+    void adminDbList(net::Connection&, const std::string& search, std::uint32_t offset);
+    void adminDbEdit(Session&, net::Connection&, ByteReader&, bool remove);
+    void adminDbAccountAction(Session&, net::Connection&, net::AdminDbOp, ByteReader&);
+    /// Pushes an edited account onto its live sessions: the body's XP and
+    /// level, everything applyAccountToSession copies, and a fresh profile. See admin_db.cpp for why the body has to be written.
+    void adminDbRefreshLive(const std::string& userId);
+    /// Signs out every live connection on `userId`, telling each why. Returns
+    /// how many there were.
+    int adminDbSignOutConnections(const std::string& userId, const std::string& reason);
 
     // -- the splitter ------------------------------------------------------
     //

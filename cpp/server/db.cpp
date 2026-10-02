@@ -509,6 +509,23 @@ Json& Database::rawTable(const std::string& key) {
     return table;
 }
 
+std::vector<std::string> Database::storedTableNames() const {
+    std::vector<std::string> names;
+    for (const std::string& key : otherTop_.keys()) {
+        if (key == "ipSalt") continue;
+        const Json& table = otherTop_[key];
+        if (table.isObject() || table.isArray()) names.push_back(key);
+    }
+    return names;
+}
+
+Json playerRecordJson(const PlayerRecord& record) { return playerToJson(record); }
+PlayerRecord parsePlayerRecord(const Json& value) { return playerFromJson(value); }
+Json accountRecordJson(const Account& account) { return accountToJson(account); }
+Account parseAccountRecord(const Json& value, const std::string& storedKey) {
+    return accountFromJson(value, storedKey);
+}
+
 Json Database::toJson() const {
     Json players = Json::object();
     for (const std::string& userId : players_.keys()) {

@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 43;
+inline constexpr std::uint16_t kProtocolVersion = 44;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -143,6 +143,11 @@ enum class ClientMessage : std::uint8_t {
                         ///< mark `"tradable": false`. Found and reached exactly
                         ///< as OracleCraft's oracle is: the server looks for
                         ///< the trader itself. (Version 41.)
+    AdminDb,            ///< u8 AdminDbOp, then that op's payload -- the admin
+                        ///< database editor (shared/net/admin_db.h). Refused,
+                        ///< silently, for anyone the database does not flag
+                        ///< as an admin: a temporary grant does not open it.
+                        ///< (Version 44.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -277,6 +282,9 @@ enum class ServerMessage : std::uint8_t {
                         ///< the trade panel lands the coin, and a result any
                         ///< other panel could read might land in that one.
                         ///< (Version 41.)
+    AdminDb,            ///< u8 AdminDbReply, then that reply's payload -- the
+                        ///< database editor's answers (shared/net/admin_db.h).
+                        ///< Sent to full admins only. (Version 44.)
 };
 
 // ---------------------------------------------------------------------------

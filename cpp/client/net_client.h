@@ -17,6 +17,7 @@
 #include "shared/game/skin_format.h"
 #include "shared/game/skills.h"
 #include "shared/game/terrain.h"
+#include "shared/net/admin_db.h"
 #include "shared/net/protocol.h"
 #include "shared/net/transport.h"
 
@@ -225,6 +226,62 @@ struct PasswordOutcome {
     std::string message;
 };
 
+/// One row of the database editor's account list.
+struct AdminDbAccountRow {
+    std::string username;
+    std::uint16_t level = 0;
+    std::uint8_t flags = 0;   ///< net::AdminDbAccountFlags
+};
+
+/// One of the database's editable top-level tables.
+struct AdminDbTableRow {
+    std::string name;
+    bool isArray = false;
+    std::uint32_t entries = 0;
+};
+
+/// What the admin database editor knows: the account list it last asked for,
+/// the tables, the ONE document it has open, and how the last edit went.
+///
+/// Kept here rather than in the panel because the answers arrive whether or
+/// not the panel is drawing, and because `/admin db` has to open the panel
+/// from a chat line. The server sends none of it to anyone the database does
+/// not flag as an admin, so for everybody else this stays empty.
+struct AdminDbState {
+    /// Raised by the server's answer to `/admin db`. The menu system opens the
+    /// panel once and clears it, as a guild invitation does.
+    bool openRequested = false;
+    /// The account `/admin db <name>` named. The panel opens it and clears it.
+    std::string openUsername;
+
+    /// The query the rows below answer, and how many accounts matched it --
+    /// more than `accounts` holds until every page has been asked for.
+    std::string listSearch;
+    std::uint32_t listTotal = 0;
+    std::vector<AdminDbAccountRow> accounts;
+    bool listPending = false;
+
+    std::vector<AdminDbTableRow> tables;
+
+    /// The open document. `root` is meaningful once `loaded`.
+    bool documentOpen = false;
+    net::AdminDbScope scope = net::AdminDbScope::Account;
+    std::string key;
+    std::uint8_t flags = 0;
+    bool loaded = false;
+    net::AdminDbNode root;
+    /// Paths asked for and not answered yet, so their rows can say so.
+    std::vector<net::AdminDbPath> fetching;
+
+    /// The last edit's or action's answer. `resultSeq` moves on every one, so
+    /// the panel can tell a new answer from the one it is already showing.
+    bool resultOk = true;
+    std::string resultMessage;
+    std::uint32_t resultSeq = 0;
+    /// Moves when a document was deleted, so the list can be asked again.
+    std::uint32_t goneSeq = 0;
+};
+
 struct ChatLine {
     net::ChatChannel channel = net::ChatChannel::Global;
     std::string author;
@@ -416,6 +473,32 @@ public:
     void requestGuildLeave();
     void requestGuildSquadAll();
     void requestGuildInviteToSquad(const std::string& username);
+
+    // -- the admin database editor -------------------------------------------
+    //
+    // Requests, all of them: the server re-checks the account's admin flag on
+    // every one and answers into adminDb(). Nothing here is applied locally
+    // first -- what the panel shows is what the server says it stored.
+
+    /// One page of accounts whose names contain `search`. Offset 0 starts a
+    /// new list; any other offset asks for the page after the rows held.
+    void adminDbList(const std::string& search, std::uint32_t offset);
+    void adminDbTables();
+    /// Makes this the open document and asks for it. Whatever was open is
+    /// dropped at once, so a slow answer cannot paint the old one under the
+    /// new name.
+    void adminDbOpen(net::AdminDbScope, const std::string& key);
+    void adminDbClose();
+    /// One node of the open document: what opening an unloaded row asks for.
+    void adminDbFetch(const net::AdminDbPath&);
+    /// `json` is the new value as JSON text, which the server parses.
+    void adminDbSet(const net::AdminDbPath&, const std::string& json);
+    void adminDbRemove(const net::AdminDbPath&);
+    void adminDbSetPassword(const std::string& username, const std::string& password);
+    void adminDbSignOut(const std::string& username);
+    void adminDbDeleteAccount(const std::string& username);
+    AdminDbState& adminDb() { return adminDb_; }
+    const AdminDbState& adminDb() const { return adminDb_; }
 
     // -- state -------------------------------------------------------------
     WorldView& view() { return view_; }
@@ -675,6 +758,10 @@ private:
     void handleSkinCatalog(ByteReader&);
     void handleSkinPublished(ByteReader&);
     void handleSkinDeleted(ByteReader&);
+    void handleAdminDb(ByteReader&);
+    /// Starts an AdminDb request with its op and, for the document ops, the
+    /// open document's scope and key.
+    void beginAdminDb(ByteWriter&, net::AdminDbOp);
 
     /// Rebuilds one realm's collision shapes from this client's own copy of
     /// its map, right after the wire's grid for that realm was installed.
@@ -748,6 +835,7 @@ private:
     double traderReadyAtMillis_ = 0;
     ShopOutcome shopOutcome_;
     PasswordOutcome passwordOutcome_;
+    AdminDbState adminDb_;
 
     double pingMillis_ = 0;
     /// The last ten round trips and their mean. Ten is the reference's window.

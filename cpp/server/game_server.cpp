@@ -1073,6 +1073,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::EquipSkin:     handleEquipSkin(*session, connection, reader); break;
         case net::ClientMessage::DeleteSkin:    handleDeleteSkin(*session, connection, reader); break;
         case net::ClientMessage::Logout:        handleLogout(*session); break;
+        case net::ClientMessage::AdminDb:       handleAdminDb(*session, connection, reader); break;
         default:
             break;
     }

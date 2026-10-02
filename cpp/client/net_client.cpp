@@ -1,6 +1,7 @@
 #include "client/net_client.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <iterator>
@@ -77,6 +78,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::SaveLoadoutPreset:   return "saveLoadoutPreset";
         case net::ClientMessage::LoadLoadoutPreset:   return "loadLoadoutPreset";
         case net::ClientMessage::Trade:               return "trade";
+        case net::ClientMessage::AdminDb:             return "adminDb";
     }
     return "unknown";
 }
@@ -113,6 +115,7 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::SessionReplaced:     return "sessionReplaced";
         case net::ServerMessage::ChatHistory:         return "chatHistory";
         case net::ServerMessage::TradeResult:         return "tradeResult";
+        case net::ServerMessage::AdminDb:             return "adminDb";
     }
     return "unknown";
 }
@@ -299,6 +302,7 @@ void NetClient::forgetAccount() {
     traderReadyAtMillis_ = 0;
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
+    adminDb_ = AdminDbState{};
     view_.clear();
     chatBubbles_.clear();
     dead_ = false;
@@ -573,6 +577,226 @@ void NetClient::requestGuildInviteToSquad(const std::string& username) {
     send(w);
 }
 
+// ---------------------------------------------------------------------------
+// The admin database editor
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Account documents are filed by name, which the server matches whatever the
+/// case -- so `/admin db BOB` must still recognise the answer about "bob".
+bool sameAdminDbKey(net::AdminDbScope scope, const std::string& a, const std::string& b) {
+    if (scope != net::AdminDbScope::Account) return a == b;
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void NetClient::beginAdminDb(ByteWriter& w, net::AdminDbOp op) {
+    beginMessage(w, net::ClientMessage::AdminDb);
+    w.u8(static_cast<std::uint8_t>(op));
+}
+
+void NetClient::adminDbList(const std::string& search, std::uint32_t offset) {
+    // A new query replaces the rows at once, so a list that took a moment to
+    // answer never shows one query's rows under another's search box.
+    if (offset == 0 || search != adminDb_.listSearch) {
+        adminDb_.accounts.clear();
+        adminDb_.listTotal = 0;
+        offset = 0;
+    }
+    adminDb_.listSearch = search;
+    adminDb_.listPending = true;
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::List);
+    w.str(search);
+    w.u32(offset);
+    send(w);
+}
+
+void NetClient::adminDbTables() {
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::Tables);
+    send(w);
+}
+
+void NetClient::adminDbOpen(net::AdminDbScope scope, const std::string& key) {
+    adminDb_.documentOpen = true;
+    adminDb_.scope = scope;
+    adminDb_.key = key;
+    adminDb_.flags = 0;
+    adminDb_.loaded = false;
+    adminDb_.root = net::AdminDbNode{};
+    adminDb_.fetching.clear();
+    adminDbFetch({});
+}
+
+void NetClient::adminDbClose() {
+    adminDb_.documentOpen = false;
+    adminDb_.loaded = false;
+    adminDb_.root = net::AdminDbNode{};
+    adminDb_.fetching.clear();
+}
+
+void NetClient::adminDbFetch(const net::AdminDbPath& path) {
+    if (!adminDb_.documentOpen) return;
+    adminDb_.fetching.push_back(path);
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::Fetch);
+    w.u8(static_cast<std::uint8_t>(adminDb_.scope));
+    w.str(adminDb_.key);
+    net::writeAdminDbPath(w, path);
+    send(w);
+}
+
+void NetClient::adminDbSet(const net::AdminDbPath& path, const std::string& json) {
+    if (!adminDb_.documentOpen) return;
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::Set);
+    w.u8(static_cast<std::uint8_t>(adminDb_.scope));
+    w.str(adminDb_.key);
+    net::writeAdminDbPath(w, path);
+    w.str(json);
+    send(w);
+}
+
+void NetClient::adminDbRemove(const net::AdminDbPath& path) {
+    if (!adminDb_.documentOpen) return;
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::Remove);
+    w.u8(static_cast<std::uint8_t>(adminDb_.scope));
+    w.str(adminDb_.key);
+    net::writeAdminDbPath(w, path);
+    send(w);
+}
+
+void NetClient::adminDbSetPassword(const std::string& username, const std::string& password) {
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::SetPassword);
+    w.str(username);
+    w.str(password);
+    send(w);
+}
+
+void NetClient::adminDbSignOut(const std::string& username) {
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::SignOut);
+    w.str(username);
+    send(w);
+}
+
+void NetClient::adminDbDeleteAccount(const std::string& username) {
+    ByteWriter w;
+    beginAdminDb(w, net::AdminDbOp::DeleteAccount);
+    w.str(username);
+    send(w);
+}
+
+void NetClient::handleAdminDb(ByteReader& reader) {
+    AdminDbState& db = adminDb_;
+    switch (static_cast<net::AdminDbReply>(reader.u8())) {
+        case net::AdminDbReply::Open: {
+            const std::string username = reader.str();
+            if (!reader.ok()) return;
+            db.openRequested = true;
+            db.openUsername = username;
+            return;
+        }
+        case net::AdminDbReply::Accounts: {
+            const std::string search = reader.str();
+            const std::uint32_t offset = reader.u32();
+            const std::uint32_t total = reader.u32();
+            const std::uint16_t count = reader.u16();
+            std::vector<AdminDbAccountRow> rows;
+            rows.reserve(count);
+            for (std::uint16_t i = 0; i < count; ++i) {
+                AdminDbAccountRow row;
+                row.username = reader.str();
+                row.level = reader.u16();
+                row.flags = reader.u8();
+                rows.push_back(std::move(row));
+            }
+            if (!reader.ok()) return;
+            // An answer to a query the box no longer holds is dropped: typing
+            // fires a query per pause, and they need not come back in order.
+            if (search != db.listSearch) return;
+            if (offset == 0) db.accounts.clear();
+            else if (offset != db.accounts.size()) return;
+            db.accounts.insert(db.accounts.end(), std::make_move_iterator(rows.begin()),
+                               std::make_move_iterator(rows.end()));
+            db.listTotal = total;
+            db.listPending = false;
+            return;
+        }
+        case net::AdminDbReply::Tables: {
+            const std::uint16_t count = reader.u16();
+            std::vector<AdminDbTableRow> tables;
+            tables.reserve(count);
+            for (std::uint16_t i = 0; i < count; ++i) {
+                AdminDbTableRow row;
+                row.name = reader.str();
+                row.isArray = reader.boolean();
+                row.entries = reader.u32();
+                tables.push_back(std::move(row));
+            }
+            if (!reader.ok()) return;
+            db.tables = std::move(tables);
+            return;
+        }
+        case net::AdminDbReply::Node: {
+            const auto scope = static_cast<net::AdminDbScope>(reader.u8());
+            const std::string key = reader.str();
+            const net::AdminDbPath path = net::readAdminDbPath(reader);
+            const std::uint8_t flags = reader.u8();
+            net::AdminDbNode node;
+            if (!net::readAdminDbNode(reader, node) || !reader.ok()) return;
+            if (!db.documentOpen || scope != db.scope || !sameAdminDbKey(scope, key, db.key)) {
+                return;
+            }
+            db.fetching.erase(std::remove(db.fetching.begin(), db.fetching.end(), path),
+                              db.fetching.end());
+            if (path.empty()) {
+                db.root = std::move(node);
+                db.loaded = true;
+                // The server's spelling, so later requests and the heading use
+                // the name the account was registered with.
+                db.key = key;
+                db.flags = flags;
+            } else if (net::AdminDbNode* target = db.root.find(path)) {
+                *target = std::move(node);
+            }
+            return;
+        }
+        case net::AdminDbReply::Result: {
+            const bool ok = reader.boolean();
+            const auto scope = static_cast<net::AdminDbScope>(reader.u8());
+            const std::string key = reader.str();
+            const bool gone = reader.boolean();
+            const std::string message = reader.str();
+            if (!reader.ok()) return;
+            db.resultOk = ok;
+            db.resultMessage = message;
+            ++db.resultSeq;
+            // A refused fetch is the only answer a pending row will ever get.
+            if (!ok) db.fetching.clear();
+            if (gone) {
+                ++db.goneSeq;
+                if (db.documentOpen && scope == db.scope && sameAdminDbKey(scope, key, db.key)) {
+                    adminDbClose();
+                }
+            }
+            return;
+        }
+    }
+}
+
 void NetClient::requestRespawn() {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::Respawn);
@@ -647,6 +871,7 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::TradeResult:   handleTradeResult(reader); break;
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
+        case net::ServerMessage::AdminDb:       handleAdminDb(reader); break;
         default:
             // An unknown id means the server is newer than this build. The
             // frame is already fully buffered, so skipping it is safe and

@@ -777,7 +777,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
                     "name&gt; &lt;username&gt;, restart [&lt;N&gt;(s|m|h)|cancel|status], "
-                    "backup_db [list], update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
+                    "backup_db [list], db [username] (open the database editor; full admins "
+                    "only), update [now|&lt;N&gt;(s|m|h)|status|cancel] (backs up "
                     "DB first, then installs latest build + restarts), change-maze "
                     "[next|garden|desert|ocean|&lt;dayNumber&gt;]";
         }
@@ -1975,6 +1976,20 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                               "been revoked.</span>");
         }
         out("Revoked temporary admin from " + target.name + " (" + grantId + ").");
+        return;
+    }
+
+    if (verb == "db" || verb == "database" || verb == "db_editor") {
+        // The database flag, as grant_admin checks it: the editor resets
+        // passwords and deletes accounts, which a console lent for one life
+        // must not reach.
+        if (!session.admin) {
+            out("Only a full admin can open the database editor.");
+            return;
+        }
+        sendAdminDbOpen(connection, words.size() >= 2 ? words[1] : std::string());
+        out(words.size() >= 2 ? "Opened the database editor on " + words[1] + "."
+                              : std::string("Opened the database editor."));
         return;
     }
 

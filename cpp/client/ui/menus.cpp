@@ -74,6 +74,7 @@ const std::array<MenuMeta, kMenuCount> kMenus = {{
     {"Notifications", Key::Unknown},
     {"Guild", Key::Unknown},
     {"Debug", Key::J},
+    {"Database", Key::Unknown},
 }};
 
 /// Every rebindable action, indexed by ControlAction, in the browser's
@@ -781,6 +782,7 @@ void MenuSystem::toggle(MenuId id) {
         case MenuId::Notifications: notifications_.reset(); break;
         case MenuId::Guild:       guild_.reset(); break;
         case MenuId::Debug:       debug_.reset(); break;
+        case MenuId::AdminDb:     adminDb_.reset(); break;
         default: break;
     }
 }
@@ -1016,6 +1018,9 @@ Rect NotificationsPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h);
 }
 Rect GuildPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h); }
+Rect AdminDbPanel::bounds(int w, int h) {
+    return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
+}
 
 Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
     switch (id) {
@@ -1031,6 +1036,7 @@ Rect MenuSystem::panelBounds(MenuId id, int viewWidth, int viewHeight) {
         case MenuId::Notifications: return NotificationsPanel::bounds(viewWidth, viewHeight);
         case MenuId::Guild:         return GuildPanel::bounds(viewWidth, viewHeight);
         case MenuId::Debug:         return DebugPanel::bounds(viewWidth, viewHeight);
+        case MenuId::AdminDb:       return AdminDbPanel::bounds(viewWidth, viewHeight);
         default:                    return listPanel(380.0, viewWidth, viewHeight);
     }
 }
@@ -2433,6 +2439,13 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         close();
         return;
     }
+    // The same for the database editor and the account's admin standing: a
+    // flag taken away while the card is up takes the card with it, rather
+    // than leaving a panel whose every request the server now ignores.
+    if (drawn_ == MenuId::AdminDb && !net.isSkinAdmin()) {
+        close();
+        return;
+    }
     // Everything a panel paints is selectable text unless the widget painting
     // it says otherwise -- the buttons, chips, tiles, fields and tooltips all
     // turn this back off around their own labels.
@@ -2457,6 +2470,7 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
         case MenuId::Notifications: keepOpen = notifications_.render(ctx); break;
         case MenuId::Guild:       keepOpen = guild_.render(ctx); break;
         case MenuId::Debug:       keepOpen = debug_.render(ctx); break;
+        case MenuId::AdminDb:     keepOpen = adminDb_.render(ctx); break;
         default: break;
     }
     // Latched before the closing-card check below: the Log Out button closes
@@ -2500,6 +2514,12 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     if (net.guildInvite().justArrived) {
         net.guildInvite().justArrived = false;
         if (open_ != MenuId::Guild) toggle(MenuId::Guild);
+    }
+    // `/admin db` is answered with an Open, which raises the editor the same
+    // way: once per answer, over whatever was open.
+    if (net.adminDb().openRequested) {
+        net.adminDb().openRequested = false;
+        if (open_ != MenuId::AdminDb) toggle(MenuId::AdminDb);
     }
 
     // The badge needs a feed to count, and the panel only fetches one when it

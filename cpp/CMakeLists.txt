@@ -92,6 +92,7 @@ add_library(flix_shared STATIC
   shared/core/process_stats.cpp
   shared/net/transport.cpp
   shared/net/web_channel.cpp
+  shared/net/admin_db.cpp
   shared/game/rarity.cpp
   shared/game/config.cpp
   shared/game/skin_format.cpp
@@ -106,6 +107,7 @@ target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 add_library(flix_server STATIC
   server/game_server.cpp
   server/account_limits.cpp
+  server/admin_db.cpp
   server/bot_ai.cpp
   server/auto_update.cpp
   server/chat_commands.cpp
@@ -159,6 +161,7 @@ add_library(flix_client STATIC
   client/ui/menu_trade.cpp
   client/ui/menu_gallery.cpp
   client/ui/menu_guild.cpp
+  client/ui/menu_admin_db.cpp
   client/ui/menu_talents.cpp
   client/ui/menu_shop.cpp
   client/ui/menu_skins.cpp

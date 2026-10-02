@@ -513,6 +513,12 @@ public:
     /// caller marks the database dirty.
     Json& rawTable(const std::string& key);
 
+    /// The unmodelled top-level tables that hold an object or an array, in
+    /// file order -- what the admin editor lists. `ipSalt` is left out: it is
+    /// a secret, not a table, and the address hashes stay unlinkable only for
+    /// as long as nobody can read it.
+    std::vector<std::string> storedTableNames() const;
+
 private:
     void reset();
     bool parseRoot(const Json& root, std::string& errorOut);
@@ -549,5 +555,21 @@ private:
     int passwordCost_ = crypto::kBcryptDefaultCost;
     ClockFn clock_ = nullptr;
 };
+
+// -- one row as JSON ---------------------------------------------------------
+//
+// The conversions load() and save() use, exposed for the admin database editor
+// (server/admin_db.cpp). An edit is applied to a row's JSON and then read back
+// through the SAME parse a load does, so what the editor leaves in memory is
+// exactly what the next restart would read off disk: a value the parse would
+// drop or clamp is dropped or clamped now, where the admin can see it, rather
+// than surviving in memory until the first restart quietly loses it.
+
+Json playerRecordJson(const PlayerRecord&);
+PlayerRecord parsePlayerRecord(const Json&);
+Json accountRecordJson(const Account&);
+/// `storedKey` is the name the row is filed under, which the parse falls back
+/// to when the JSON carries no username of its own.
+Account parseAccountRecord(const Json&, const std::string& storedKey);
 
 } // namespace flix
