@@ -105,6 +105,7 @@ struct Health {
     /// the networking layer can derive StateHurt without a second lookup.
     double flashUntilMillis = 0;
     /// Damage is refused entirely before this time -- respawn protection.
+    /// Infinity is the admin console's `god`, which never runs out.
     double invulnerableUntilMillis = 0;
 
     double fraction() const { return max > 0 ? clamp(current / max, 0.0, 1.0) : 0.0; }

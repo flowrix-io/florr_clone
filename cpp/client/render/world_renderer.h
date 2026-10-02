@@ -176,6 +176,13 @@ public:
     /// a second, panel-only copy of each skin is exactly how the two drift.
     void drawFlowerBody(Canvas&, const RemoteEntity&, double timeSeconds) const;
 
+    /// A corpse's body in the same art space: dead eyes, the default colour,
+    /// no skin, wearing `equipFlags`. `mouth` is the face's curve control --
+    /// 15 smiles, 5 frowns. Public for the death card's flower and the HUD
+    /// avatar of a dead flower, which are the corpse drawn somewhere else.
+    void drawDeadFlower(Canvas&, std::uint8_t equipFlags, double mouth,
+                        double timeSeconds) const;
+
     /// What every flower on screen has been heard saying, borrowed from
     /// NetClient. Optional: without it -- a tool, a test, a preview -- nobody
     /// speaks and no bubble is drawn.

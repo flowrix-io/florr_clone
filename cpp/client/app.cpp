@@ -44,15 +44,18 @@ using namespace flix::ui;
 
 namespace {
 
-/// How far the world is dimmed while the player is dead.
+/// The wash over the world while the death card is up: a mid grey rather than
+/// black, so it mutes the colour as much as it darkens.
 ///
-/// `~/gardn` paints `0x20000000` here -- black at 32 of 255 -- and this build
-/// deliberately does not: at 12.5% the world barely moved, and against a HUD
-/// that stays at full brightness there was nothing to tell you the game had
-/// stopped being yours. This is the browser build's old death scrim by
-/// strength, over the world ALONE by placement. Turning it back down to
-/// gardn's number is a one-line change; it is not a parity bug.
-constexpr double kDeathDimAlpha = 0.65;
+/// Fitted to death_ui_screenshot.png, against two colours at once: this grey
+/// at this strength takes the garden's grass (30,167,97) to (52,115,82) and
+/// its walls' 151 grey to 107, where the screenshot has (59,123,78) and 104.
+/// A black dim can match one of the two but not both -- dark enough for the
+/// walls, it leaves the grass saturated. Not gardn's `0x20000000` (black at
+/// 12.5%), and not the browser build's black at 0.65 either; neither is a
+/// parity bug to restore.
+constexpr std::uint32_t kDeathWashColor = 0x464646u;
+constexpr double kDeathWashAlpha = 0.54;
 
 /// JavaScript's `toFixed(2)`, for the stats overlay's frame time.
 std::string twoDecimals(double value) {
@@ -574,7 +577,7 @@ void App::frame(double dt) {
         }
     }
 
-    // The death card eases in from below and back out again, the way the
+    // The death card eases in from above and back out again, the way the
     // reference's container animation does: a fifth of the remaining distance
     // per 60Hz frame. Advanced here rather than in updateDead, because the
     // frames it slides back OUT on are frames the player is alive for.
@@ -587,6 +590,13 @@ void App::frame(double dt) {
         // requested frame happens to catch it.
         if (!inWorld || config_.screenshotAfterFrames > 0) deathCardSlide_ = target;
         else deathCardSlide_ += (target - deathCardSlide_) * (1.0 - std::pow(0.8, dt * 60.0));
+
+        // The low-health vignette eases more slowly -- a tenth of the way per
+        // 60Hz frame -- so a bite deepens it and a heal lifts it rather than
+        // either one switching it. Snapped on the same terms as the card.
+        const double dark = lowHealthTarget();
+        if (!inWorld || config_.screenshotAfterFrames > 0) lowHealthVignette_ = dark;
+        else lowHealthVignette_ += (dark - lowHealthVignette_) * (1.0 - std::pow(0.9, dt * 60.0));
     }
 
     switch (screen_) {
@@ -659,6 +669,7 @@ void App::frame(double dt) {
     canvasPhaseMark_ = canvasOpsEmitted();
 #endif
     if (inWorld) {
+        tallyRunLoot();
         renderer_.ingestEvents(net_.view());
         renderer_.update(dt);
         // Bubbles expire on the frame clock, like every other timed visual
@@ -681,9 +692,22 @@ void App::frame(double dt) {
         // goes between `render_game()` and its game UI window, so the HUD, the
         // minimap, the loadout bar and the card itself all stay at full
         // brightness over it; this sits in the same seam, at this build's own
-        // depth (see kDeathDimAlpha). Switched, not faded -- in the reference
-        // it appears on the frame `alive()` goes false.
-        if (screen_ == Screen::Dead) scrim(canvas, kDeathDimAlpha);
+        // tone (see kDeathWashColor). Switched on, not faded -- in the reference
+        // it appears on the frame `alive()` goes false. Close takes it away
+        // with the card, though, fading in step with the slide: the dim is the
+        // death screen as much as the card is, and leaving it up behind a
+        // dismissed card left Close only half done.
+        if (screen_ == Screen::Dead) {
+            const double dim = deathCardVisible_ ? 1.0 : deathCardSlide_;
+            if (dim > 0.01) {
+                setFill(canvas, kDeathWashColor, kDeathWashAlpha * dim);
+                canvas.fillRect(0, 0, static_cast<float>(canvas.width()),
+                                static_cast<float>(canvas.height()));
+            }
+        }
+        // In the same seam and over the wash: the screenshot's corners are
+        // near black, which they could not be with a grey wash on top.
+        drawLowHealthVignette(canvas);
         markPhaseOps(OpPhase::World);
         drawHud(canvas, timeSeconds_);
         markPhaseOps(OpPhase::Hud);
@@ -703,7 +727,10 @@ void App::frame(double dt) {
         menus_.render(canvas, window_, net_, sprites_, renderer_, timeSeconds_, dt, [&] {
             // The slide, not the flag: the card keeps painting on its way back
             // down after a yggdrasil has put the body on its feet.
-            if (deathCardSlide_ > 0.01) drawDeathCard(canvas, timeSeconds_);
+            if (deathCardSlide_ > 0.01) {
+                drawDeathCard(canvas, timeSeconds_);
+                drawRunLoot(canvas, timeSeconds_);
+            }
         });
         if (connectionLost()) drawDisconnectBanner(canvas);
         // Ping and the rest live here and nowhere else: the reference has no

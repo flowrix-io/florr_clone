@@ -386,7 +386,14 @@ void App::drawHudFlower(Canvas& canvas, std::uint32_t netId, double centreX, dou
     canvas.save();
     canvas.translate(static_cast<float>(centreX), static_cast<float>(centreY));
     const auto found = net_.view().entities().find(netId);
-    if (found != net_.view().entities().end()) {
+    if (found != net_.view().entities().end() && found->second.dead()) {
+        // A dead flower's avatar is its corpse: dead eyes and a frown, turned
+        // the way the body lies, as the death screen this was measured from
+        // shows it.
+        canvas.rotate(static_cast<float>(found->second.angle));
+        canvas.scale(static_cast<float>(radius / 25.0), static_cast<float>(radius / 25.0));
+        renderer_.drawDeadFlower(canvas, found->second.equipFlags, 5.0, time);
+    } else if (found != net_.view().entities().end()) {
         // The world's own painter, not a HUD-local copy of it: the avatar
         // wears the flower's colour, face, antennae and skin because it IS
         // that flower, drawn small. Its art space is radius 25.
@@ -598,6 +605,103 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
     }
 
     canvas.restore();
+}
+
+namespace {
+
+/// The low-health vignette's shape, measured off death_ui_screenshot.png --
+/// which was taken at zero health, so this is the vignette at full strength.
+///
+/// It is elliptical, fitted to the screen: `r` is 1 at the middle of every
+/// edge and sqrt 2 in the corners, so a wide window darkens its sides no
+/// further in than a tall one does. Nothing inside r = 0.8; from there black
+/// rises 1.45 per unit of r, which is 0.29 at the edges' middles and 0.87 in
+/// the corners -- what the screenshot's grass and walls both read.
+constexpr double kVignetteInner = 0.8;
+constexpr double kVignetteSlope = 1.45;
+/// Health, as a fraction, below which the edges start to darken; the
+/// vignette is at full strength at zero.
+constexpr double kLowHealthStart = 0.5;
+#ifdef __EMSCRIPTEN__
+/// The browser's bitmap is baked at this fraction of the design size and
+/// stretched: a falloff this gentle has nothing a bilinear stretch can lose.
+constexpr int kVignetteBitmapDivisor = 4;
+#endif
+
+/// The falloff as one alpha byte per pixel of a `width` x `height` surface.
+///
+/// Per pixel rather than in rings: cpp_canvas has no gradient, and rings of
+/// flat black leave a light hairline wherever two of them meet -- each one's
+/// anti-aliased edge covers the shared pixel only partly, and two partial
+/// coverages darken it less than either ring does. In the dark corners that
+/// read as a set of contour lines.
+void bakeVignette(std::vector<std::uint8_t>& mask, int width, int height) {
+    mask.assign(static_cast<std::size_t>(width) * height, 0);
+    const double cx = width * 0.5;
+    const double cy = height * 0.5;
+    for (int y = 0; y < height; ++y) {
+        const double ny = (y + 0.5 - cy) / cy;
+        for (int x = 0; x < width; ++x) {
+            const double nx = (x + 0.5 - cx) / cx;
+            const double r = std::sqrt(nx * nx + ny * ny);
+            const double a = clamp(kVignetteSlope * (r - kVignetteInner), 0.0, 1.0);
+            mask[static_cast<std::size_t>(y) * width + x] =
+                static_cast<std::uint8_t>(std::lround(a * 255.0));
+        }
+    }
+}
+
+} // namespace
+
+double App::lowHealthTarget() const {
+    // Dead is zero health, which is the screenshot's own full-strength state.
+    // It is not the death card's: Close leaves it, since the flower is still
+    // at zero.
+    if (screen_ == Screen::Dead) return 1.0;
+    if (screen_ != Screen::Playing || !net_.selfPlaced()) return 0.0;
+    const SelfState& self = net_.view().self();
+    // No max yet is no snapshot yet, not an empty bar.
+    if (self.maxHealth <= 0) return 0.0;
+    const double fraction = clamp(self.health / self.maxHealth, 0.0, 1.0);
+    return clamp(1.0 - fraction / kLowHealthStart, 0.0, 1.0);
+}
+
+void App::drawLowHealthVignette(Canvas& canvas) {
+    if (lowHealthVignette_ <= 0.01) return;
+#ifdef __EMSCRIPTEN__
+    // One bitmap, stretched over the frame by the browser -- a single GPU draw
+    // a frame, and baked again only when the viewport changes shape.
+    const int width = std::max(1, canvas.width() / kVignetteBitmapDivisor);
+    const int height = std::max(1, canvas.height() / kVignetteBitmapDivisor);
+    if (!vignetteBitmap_ || width != vignetteWidth_ || height != vignetteHeight_) {
+        bakeVignette(vignetteMask_, width, height);
+        std::vector<std::uint8_t> rgba(vignetteMask_.size() * 4, 0);
+        for (std::size_t i = 0; i < vignetteMask_.size(); ++i) rgba[i * 4 + 3] = vignetteMask_[i];
+        vignetteBitmap_ = std::make_unique<Canvas>(Canvas::createVirtual(width, height));
+        vignetteBitmap_->putImageData(rgba, width, height, 0, 0);
+        vignetteWidth_ = width;
+        vignetteHeight_ = height;
+    }
+    canvas.setGlobalAlpha(static_cast<float>(lowHealthVignette_));
+    canvas.drawCanvas(*vignetteBitmap_, 0, 0, static_cast<float>(canvas.width()),
+                      static_cast<float>(canvas.height()));
+    canvas.setGlobalAlpha(1.0f);
+#else
+    // Straight onto the device pixels, at their own resolution: a stretched
+    // bitmap costs a filtered sample per pixel here, and darkenDevice is the
+    // one-to-one integer path built for exactly this -- about what the death
+    // wash's flat fillRect costs.
+    const int width = canvas.pixelWidth();
+    const int height = canvas.pixelHeight();
+    if (width != vignetteWidth_ || height != vignetteHeight_) {
+        bakeVignette(vignetteMask_, width, height);
+        vignetteWidth_ = width;
+        vignetteHeight_ = height;
+    }
+    canvas.setGlobalAlpha(static_cast<float>(lowHealthVignette_));
+    canvas.darkenDevice(vignetteMask_.data(), width, height, 0, 0);
+    canvas.setGlobalAlpha(1.0f);
+#endif
 }
 
 } // namespace flix

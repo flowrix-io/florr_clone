@@ -1252,6 +1252,64 @@ void Canvas::blitDevice(const std::uint8_t* rgba,int iw,int ih,int dx,int dy) {
     }
   }
 }
+void Canvas::darkenDevice(const std::uint8_t* mask,int mw,int mh,int dx,int dy) {
+  if (!mask || mw<=0 || mh<=0 || state_.alpha<=0) return;
+  const int x0=std::max(0,dx), x1=std::min(width_,dx+mw);
+  const int y0=std::max(0,dy), y1=std::min(height_,dy+mh);
+  if (x0>=x1||y0>=y1) return;
+  const bool clipped=state_.clip!=nullptr;
+  const float alpha=state_.alpha;
+  // What survives of a pixel under each mask value, in 0..255, folded with
+  // the global alpha once rather than per pixel.
+  std::array<std::uint16_t,256> keep{};
+  for (int m=0;m<256;++m) keep[m]=static_cast<std::uint16_t>(255-std::lround(m*alpha));
+  // Rows are independent, so a whole screen of them is split across the
+  // fill's own band threads the way a big path is.
+  const auto rows=[&](int ya,int yb) {
+  for (int y=ya;y<yb;++y) {
+    const std::uint8_t* src=mask+static_cast<std::size_t>(y-dy)*mw+(x0-dx);
+    Color* dst=pixels_.data()+static_cast<std::size_t>(y)*width_+x0;
+    for (int x=x0;x<x1;) {
+      // A vignette's mask is empty over most of the middle of the screen, so
+      // empty runs are stepped over eight bytes at a time.
+      if (x+8<=x1) {
+        std::uint64_t word;
+        std::memcpy(&word,src,8);
+        if (word==0) { x+=8; src+=8; dst+=8; continue; }
+      }
+      const unsigned m=*src;
+      if (m!=0) {
+        if (clipped || dst->a!=255) {
+          float a=m*(1.f/255.f)*alpha;
+          if (clipped) a*=clipAt(x,y);
+          blend(*dst,Color{0,0,0,255},a);
+        } else {
+          // Two channels per multiply: c * k / 255, rounded, without the
+          // divide, on r|b and on g with the alpha byte riding along and then
+          // put back.
+          const std::uint32_t k=keep[m];
+          std::uint32_t p;
+          std::memcpy(&p,dst,4);
+          std::uint32_t rb=(p&0x00FF00FFu)*k+0x00800080u;
+          rb=((rb+((rb>>8)&0x00FF00FFu))>>8)&0x00FF00FFu;
+          std::uint32_t g=((p>>8)&0xFFu)*k+0x80u;
+          g=((g+(g>>8))>>8)&0xFFu;
+          p=(p&0xFF000000u)|rb|(g<<8);
+          std::memcpy(dst,&p,4);
+        }
+      }
+      ++x; ++src; ++dst;
+    }
+  }
+  };
+  BandPool& pool=BandPool::instance();
+  const int height=y1-y0;
+  const int bands=std::min(pool.maxBands(),std::max(1,height/kMinBandRows));
+  if (bands<=1 || static_cast<long long>(height)*(x1-x0)<kMinThreadedArea) { rows(y0,y1); return; }
+  pool.run(bands,[&](int band) {
+    rows(y0+height*band/bands,y0+height*(band+1)/bands);
+  });
+}
 #endif
 // The css() string is only ever read by the browser context, so building it on
 // the native path was one heap allocation per colour change per frame.

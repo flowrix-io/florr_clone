@@ -91,6 +91,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin teleport_bots", "Teleport every bot only: /admin teleport_bots <x> <y>", true},
     {"/admin tpbots", "Teleport every bot only (shorthand)", true},
     {"/admin corrupt", "Toggle corruption (fights players anywhere): /admin corrupt <player> [on|off|toggle]", true},
+    {"/admin god", "Make yourself invulnerable: /admin god [on|off|toggle]", true},
     {"/admin generate_code", "Generate a star code", true},
     {"/admin gen_code", "Generate a star code (shorthand)", true},
     {"/admin list_codes", "List all generated codes", true},

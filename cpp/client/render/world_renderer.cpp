@@ -2112,10 +2112,17 @@ void WorldRenderer::drawCorpse(Canvas& canvas, const RemoteEntity& entity, const
     // A corpse lies where it fell: rotated to its facing, at a fixed radius 25
     // whatever the flower's size multiplier was, and with no skin, no status
     // tint, no plate and no petals.
+    // It frowns: the HUD avatar and the death card draw this same body, and
+    // the death screen they were measured from frowns on all of them.
     canvas.rotate(static_cast<float>(entity.angle));
     canvas.scale(static_cast<float>(zoom), static_cast<float>(zoom));
-    drawFace(canvas, FaceDeadEyes, entity.equipFlags, 0, 0, 15.0, timeSeconds);
+    drawDeadFlower(canvas, entity.equipFlags, 5.0, timeSeconds);
     canvas.restore();
+}
+
+void WorldRenderer::drawDeadFlower(Canvas& canvas, std::uint8_t equipFlags, double mouth,
+                                   double timeSeconds) const {
+    drawFace(canvas, FaceDeadEyes, equipFlags, 0, 0, mouth, timeSeconds);
 }
 
 void WorldRenderer::drawPetalGlow(Canvas& canvas, double radius, std::uint32_t rgb, int bands,

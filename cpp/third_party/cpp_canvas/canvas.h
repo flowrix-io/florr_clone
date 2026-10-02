@@ -187,6 +187,14 @@ public:
     // what makes this the narrow one worth having.
     void blitDevice(const std::uint8_t* rgba, int imageWidth, int imageHeight, int deviceX,
                     int deviceY);
+    // Black, source-over, through a one-byte-per-pixel coverage mask: the same
+    // one-to-one, transform-free contract as blitDevice, for a whole-screen
+    // effect whose only colour is black -- a vignette. Every pixel it touches
+    // just keeps (1 - mask * globalAlpha) of itself, which is integer work
+    // over an opaque frame; blitDevice's general float blend costs several
+    // times that, and over half a screen that is most of a frame.
+    void darkenDevice(const std::uint8_t* mask, int maskWidth, int maskHeight, int deviceX,
+                      int deviceY);
 #endif
 
     void clear(Color color = Color{255, 255, 255}); void clearRect(float x, float y, float width, float height);

@@ -10,15 +10,20 @@
 // Death is the other half. The card is a screen of its own (Screen::Dead)
 // rather than a dialog, because everything under it keeps running: the world
 // dims but still draws, the HUD and the panels stay at full brightness, and
-// Close leaves the player dead with the card gone.
+// Close leaves the player dead with the card gone -- its dim and its Enter
+// shortcut with it.
 
 #include "client/app.h"
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cmath>
+#include <string>
+#include <vector>
 
 #include "client/ui/draw.h"
+#include "client/ui/item_tile.h"
 #include "client/ui/menu_style.h"
 #include "shared/game/constants.h"
 
@@ -30,63 +35,134 @@ namespace {
 
 /// The death card's geometry, so the paint and the hit test cannot drift.
 ///
-/// The reference's `make_death_main_screen` is a centred VContainer with a
-/// 10px inner gap over five children: a 25px line, a 30px line, an empty
-/// 100-tall spacer, a 145x40 button and a 14px line. The container is centred
-/// on the screen, so every row's position follows from that stack -- there is
-/// no hand-placed pixel in here to drift from it.
+/// Laid out to death_ui_screenshot.png, which is 1:1 with design units (its
+/// loadout slots are this build's 70 across). Everything hangs off the dead
+/// flower, and the flower sits on the screen's centre -- exactly over the
+/// corpse the camera is pinned to -- so each row is an offset from it rather
+/// than a place in a stack. Text rows are given by the middle of their glyphs,
+/// which is where ui::text centres a line.
 struct DeathCard {
-    Vec2 killedBy;      ///< centre of "You were killed by"
+    Vec2 destroyedBy;   ///< centre of "You were destroyed by:"
     Vec2 killer;        ///< centre of the killer's name
+    Vec2 flower;        ///< centre of the dead flower
     Rect continueBox;
     Rect closeBox;
-    Vec2 hint;          ///< centre of "(or press ENTER to continue)"
 };
 
-constexpr double kDeathKilledBySize = 25.0;
-constexpr double kDeathKillerSize = 30.0;
-constexpr double kDeathHintSize = 14.0;
-constexpr double kDeathGap = 10.0;
-constexpr double kDeathSpacer = 100.0;
-constexpr double kDeathButtonWidth = 145.0;
-constexpr double kDeathButtonHeight = 40.0;
-constexpr double kDeathButtonTextSize = 28.0;
-/// Close is not in the reference's stack -- it is this build's own row, added
-/// under Continue. Deliberately not a second gardn button: it wears the
-/// crafting panel's chip in its greyed-out state, so the pair reads as one
-/// primary action with a quiet secondary under it rather than as two choices.
-/// Proportioned off Continue at the ratio the browser build's own Close had to
-/// its Continue (0.7 by 0.75).
-constexpr double kDeathCloseWidth = 100.0;
-constexpr double kDeathCloseHeight = 30.0;
+constexpr double kDeathDestroyedBySize = 18.0;
+constexpr double kDeathDestroyedByY = -118.5;
+constexpr double kDeathKillerSize = 24.0;
+constexpr double kDeathKillerY = -89.0;
 
-/// `slide` is the container's animation: 1 is home and 0 parks the whole stack
-/// 60% of a screen below it, which is the reference's animate hook --
-/// `translate(0, (animation - 1) * height * 0.6)`.
+/// The dead flower, at this times its 25-unit art: its yellow is 35 across
+/// the radius in the screenshot, and the art's is 23.5.
+constexpr double kDeathFlowerScale = 1.49;
+/// Turned a little anticlockwise, as the reference's DeadFlowerIcon turns it.
+constexpr double kDeathFlowerTilt = -0.2;
+/// A frown: the face's curve control, where the living flower's 15 smiles.
+constexpr double kDeathFlowerMouth = 5.0;
+/// The loadout round it, in the flower's art units. The reference's ellipse
+/// shape -- wider than tall, the top half behind the body and the bottom half
+/// in front -- at the size and phase the screenshot measures: 44 by 29 rather
+/// than gardn's 40 by 25, with the first petal 0.96 radians round, low on the
+/// right.
+constexpr double kDeathRingX = 44.0;
+constexpr double kDeathRingY = 29.0;
+constexpr double kDeathRingPhase = 0.96;
+
+/// Continue is a gardn button: a 132x40 box under a 6-unit rim at 0.8 of its
+/// fill, which button() derives. Close is the same button, smaller and grey.
+constexpr double kDeathContinueY = 95.0;
+constexpr double kDeathContinueWidth = 132.0;
+constexpr double kDeathContinueHeight = 40.0;
+constexpr double kDeathContinueRim = 6.0;
+constexpr double kDeathContinueRadius = 4.0;
+constexpr double kDeathContinueTextSize = 24.0;
+constexpr std::uint32_t kDeathContinueFill = 0x62CE49u;
+constexpr double kDeathCloseY = 140.0;
+constexpr double kDeathCloseWidth = 68.0;
+constexpr double kDeathCloseHeight = 24.0;
+constexpr double kDeathCloseRim = 4.0;
+constexpr double kDeathCloseRadius = 3.0;
+constexpr double kDeathCloseTextSize = 16.0;
+constexpr std::uint32_t kDeathCloseFill = 0x666666u;
+
+/// How far the card reaches below the flower: Close's box and half its rim.
+constexpr double kDeathCardBelow = kDeathCloseY + kDeathCloseHeight * 0.5 + kDeathCloseRim * 0.5;
+
+/// How far past the top edge the parked card's last row sits. The card stops
+/// being painted at a slide of 0.01, still 1% short of parked, and that 1%
+/// must not bring Close's rim back onto the screen.
+constexpr double kDeathParkClearance = 16.0;
+
+/// `slide` is the container's animation: 1 is home and 0 parks the whole card
+/// above the screen, which is the reference's animate hook --
+/// `translate(0, (animation - 1) * height * 0.6)` -- with one change: 60% of a
+/// screen is only a floor. At 1080 units tall it leaves Close hanging off the
+/// top edge for the last frames of the slide out, so the card is lifted as far
+/// as it takes to clear the edge whenever that is more.
 DeathCard deathCardLayout(double width, double height, double slide) {
-    const std::array<double, 6> rows{kDeathKilledBySize, kDeathKillerSize, kDeathSpacer,
-                                     kDeathButtonHeight, kDeathCloseHeight, kDeathHintSize};
-    double stack = kDeathGap * static_cast<double>(rows.size() - 1);
-    for (const double row : rows) stack += row;
-
-    const double centreX = width * 0.5;
-    double top = height * 0.5 - stack * 0.5 + (slide - 1.0) * height * 0.6;
-    std::array<double, 6> centres{};
-    for (std::size_t i = 0; i < rows.size(); ++i) {
-        centres[i] = top + rows[i] * 0.5;
-        top += rows[i] + kDeathGap;
-    }
+    const double park =
+        std::max(height * 0.6, height * 0.5 + kDeathCardBelow + kDeathParkClearance);
+    const Vec2 flower{width * 0.5, height * 0.5 + (slide - 1.0) * park};
 
     DeathCard card;
-    card.killedBy = {centreX, centres[0]};
-    card.killer = {centreX, centres[1]};
-    card.continueBox = {centreX - kDeathButtonWidth * 0.5,
-                        centres[3] - kDeathButtonHeight * 0.5, kDeathButtonWidth,
-                        kDeathButtonHeight};
-    card.closeBox = {centreX - kDeathCloseWidth * 0.5, centres[4] - kDeathCloseHeight * 0.5,
-                     kDeathCloseWidth, kDeathCloseHeight};
-    card.hint = {centreX, centres[5]};
+    card.flower = flower;
+    card.destroyedBy = {flower.x, flower.y + kDeathDestroyedByY};
+    card.killer = {flower.x, flower.y + kDeathKillerY};
+    card.continueBox = {flower.x - kDeathContinueWidth * 0.5,
+                        flower.y + kDeathContinueY - kDeathContinueHeight * 0.5,
+                        kDeathContinueWidth, kDeathContinueHeight};
+    card.closeBox = {flower.x - kDeathCloseWidth * 0.5,
+                     flower.y + kDeathCloseY - kDeathCloseHeight * 0.5, kDeathCloseWidth,
+                     kDeathCloseHeight};
     return card;
+}
+
+/// The reference's DeadFlowerIcon: the corpse's face with the active row of
+/// the loadout laid round it. One icon per slot, whatever the petal's count,
+/// at the size a tile draws it. Equipment -- a zero-count petal, the antennae
+/// or a third eye -- is not a seat in the ring: it is worn, as on the corpse.
+void drawDeathFlower(Canvas& canvas, const WorldRenderer& renderer, const SpriteCache& sprites,
+                     const std::vector<Profile::Slot>& loadout, Vec2 centre, double time) {
+    struct Seat {
+        std::uint16_t petal;
+        Rarity rarity;
+    };
+    std::vector<Seat> ring;
+    std::uint8_t equipFlags = EquipNone;
+    const std::size_t active =
+        std::min(loadout.size(), static_cast<std::size_t>(kLoadoutActiveSlots));
+    for (std::size_t i = 0; i < active; ++i) {
+        const Profile::Slot& slot = loadout[i];
+        if (slot.empty() || slot.petalIndex >= content().petalCount()) continue;
+        const PetalConfig& config = content().petal(slot.petalIndex);
+        if (config.count > 0 && !config.hidden) ring.push_back({slot.petalIndex, slot.rarity});
+        equipFlags |= config.equipFlags;
+    }
+
+    canvas.save();
+    canvas.translate(static_cast<float>(centre.x), static_cast<float>(centre.y));
+    canvas.scale(static_cast<float>(kDeathFlowerScale), static_cast<float>(kDeathFlowerScale));
+    const auto paintSeats = [&](bool front) {
+        for (std::size_t i = 0; i < ring.size(); ++i) {
+            const double angle =
+                kTau * static_cast<double>(i) / static_cast<double>(ring.size()) +
+                kDeathRingPhase;
+            const double y = std::sin(angle) * kDeathRingY;
+            if ((y > 0.0) != front) continue;
+            const PetalStats stats = content().petalStats(ring[i].petal, ring[i].rarity);
+            drawPetalCluster(canvas, sprites, ring[i].petal, ring[i].rarity, stats.size, 1,
+                             std::cos(angle) * kDeathRingX, y, 0.0, time);
+        }
+    };
+    paintSeats(false);
+    canvas.save();
+    canvas.rotate(static_cast<float>(kDeathFlowerTilt));
+    renderer.drawDeadFlower(canvas, equipFlags, kDeathFlowerMouth, time);
+    canvas.restore();
+    paintSeats(true);
+    canvas.restore();
 }
 
 } // namespace
@@ -279,16 +355,31 @@ void App::updateDead(double dt) {
     // scrolling. There is no camera zoom to lose the wheel to here, so nothing
     // hangs on the answer.
     scrollChat();
-    // ENTER is the Continue button by another name, and is gated on being
-    // dead rather than on where the card has slid to. The reference takes the
-    // key on the same condition, though it spends it on an immediate respawn:
-    // there the title screen IS the respawn screen, and here Continue is the
-    // way back to it.
-    if (window_.keyPressed(Key::Enter)) {
+    // Chat swallows the keyboard while it is open, as it does in the living
+    // game: a line being typed when the body went down is sent by Enter, not
+    // spent on Continue. Not returned from -- a click on Continue or Close
+    // closes the line AND presses the button, which is one click, not two.
+    const bool chatting = chatOpen_ && !menus_.wantsText();
+    if (chatting) {
+        editChatLine();
+    } else if (pressedChatBox() ||
+               (!deathCardVisible_ && window_.keyPressed(Key::Enter))) {
+        // With the card closed, Enter is chat's again: the slot under the
+        // dimmed world still says "Press Enter to chat...".
+        chatOpen_ = true;
+    }
+    if (!deathCardVisible_) return;
+
+    // ENTER is the Continue button by another name, but only while the card
+    // that offers it is up -- Close takes the shortcut away with the button.
+    // Gated on the flag rather than on where the card has slid to, so it works
+    // from the frame of death. The reference spends the key on an immediate
+    // respawn: there the title screen IS the respawn screen, and here
+    // Continue is the way back to it.
+    if (!chatting && window_.keyPressed(Key::Enter)) {
         leaveToTitle();
         return;
     }
-    if (!deathCardVisible_) return;
 
     // The reference acts on the press, not the release, so the card is gone by
     // the time the button comes back up and a pressed state is never seen.
@@ -298,15 +389,15 @@ void App::updateDead(double dt) {
     // The tutorial box is painted over the death card and swallows the click.
     if (tutorial_.capturesMouse(mouse)) return;
     // The ANIMATED boxes, not the resting ones: a button is only where it is
-    // painted, and during the slide-in that is on its way up the screen.
+    // painted, and during the slide-in that is on its way down the screen.
     const DeathCard card = deathCardLayout(window_.width(), window_.height(), deathCardSlide_);
     if (hit(card.continueBox, mouse)) {
         leaveToTitle();
         return;
     }
-    // Close only takes the card away -- it slides back down the way it came.
-    // The player stays dead, and the dimmed world, the HUD and the minimap
-    // keep drawing behind where it was.
+    // Close takes the card away -- it slides back up the way it came -- and
+    // the world's dim fades out with it. The player stays dead, and the HUD
+    // and the minimap keep drawing behind where it was.
     if (hit(card.closeBox, mouse)) deathCardVisible_ = false;
 }
 
@@ -315,48 +406,155 @@ void App::updateDead(double dt) {
 // ---------------------------------------------------------------------------
 
 void App::drawDeathCard(Canvas& canvas, double time) {
-    (void)time;   // static: the card's only variable is which button is hovered
     // No scrim of its own. The death dim is a wash over the WORLD alone,
     // painted long before this -- see the call in frame() -- and the card is
     // one of the things that stays at full brightness over it.
     const DeathCard card = deathCardLayout(canvas.width(), canvas.height(), deathCardSlide_);
     const Vec2 mouse{window_.mouseX(), window_.mouseY()};
 
-    // Plain white text with its ordinary 0.12-of-size outline, at the
-    // reference's two sizes. Nothing here is bold or coloured: the card says
-    // what killed you, it does not shout about it.
+    // Bold white with the ordinary 0.12-of-size outline. No hint line under
+    // the buttons: ENTER still continues while the card is up, it just is not
+    // written down any more.
     TextStyle line;
     line.align = Align::Centre;
-    line.size = kDeathKilledBySize;
-    text(canvas, "You were killed by", card.killedBy.x, card.killedBy.y, line);
+    line.bold = true;
+    line.size = kDeathDestroyedBySize;
+    text(canvas, "You were destroyed by:", card.destroyedBy.x, card.destroyedBy.y, line);
 
     line.size = kDeathKillerSize;
     const std::string killer = net_.killerName().empty()
-        ? "a mysterious entity"
+        ? "A mysterious entity"
         : net_.killerName();
     text(canvas, killer, card.killer.x, card.killer.y, line);
 
-    const bool over = hit(card.continueBox, mouse);
+    drawDeathFlower(canvas, renderer_, sprites_, net_.profile().loadout, card.flower, time);
+
+    const bool pressing = window_.mouseDown(MouseButton::Left);
+    const bool overContinue = hit(card.continueBox, mouse);
     ButtonStyle continueStyle;
-    continueStyle.fill = kAccent;
-    continueStyle.outlineWidth = 5.0;
-    continueStyle.radius = 3.0;
-    continueStyle.textSize = kDeathButtonTextSize;
-    continueStyle.textStrokeWidth = kDeathButtonTextSize * kTextStrokeRatio;
-    button(canvas, card.continueBox, "Continue", over,
-           over && window_.mouseDown(MouseButton::Left), continueStyle);
+    continueStyle.fill = kDeathContinueFill;
+    continueStyle.outlineWidth = kDeathContinueRim;
+    continueStyle.radius = kDeathContinueRadius;
+    continueStyle.textSize = kDeathContinueTextSize;
+    continueStyle.textStrokeWidth = kDeathContinueTextSize * kTextStrokeRatio;
+    button(canvas, card.continueBox, "Continue", overContinue, overContinue && pressing,
+           continueStyle);
 
-    // The crafting panel's chip, in the greyed-out state `chip` draws for a
-    // disabled control: 0x8A8A8A over 0x5A5A5A at 0.45. It still answers a
-    // click -- the grey is about weight, not about being dead -- but nothing
-    // here brightens under the cursor, which is what keeps Continue reading as
-    // the button the card is actually asking for.
-    ChipStyle closeStyle;
-    closeStyle.enabled = false;
-    chip(canvas, card.closeBox, "Close", hit(card.closeBox, mouse), closeStyle);
+    const bool overClose = hit(card.closeBox, mouse);
+    ButtonStyle closeStyle;
+    closeStyle.fill = kDeathCloseFill;
+    closeStyle.outlineWidth = kDeathCloseRim;
+    closeStyle.radius = kDeathCloseRadius;
+    closeStyle.textSize = kDeathCloseTextSize;
+    closeStyle.textStrokeWidth = kDeathCloseTextSize * kTextStrokeRatio;
+    button(canvas, card.closeBox, "Close", overClose, overClose && pressing, closeStyle);
+}
 
-    line.size = kDeathHintSize;
-    text(canvas, "(or press ENTER to continue)", card.hint.x, card.hint.y, line);
+void App::tallyRunLoot() {
+    const std::uint32_t self = net_.view().self().netId;
+    if (self == 0) return;
+    for (const ViewEvent& event : net_.view().events()) {
+        // Somebody else's pickup is not the viewer's loot, and a drop pays out
+        // one copy to each eligible flower -- so only the viewer's own cue
+        // counts, and each one is exactly one item.
+        if (event.kind != net::EventKind::PickedUp || event.otherNetId != self) continue;
+        const auto petal = static_cast<std::uint16_t>(event.amount);
+        if (petal >= content().petalCount()) continue;
+        const Rarity rarity = clampRarity(static_cast<int>(event.flag));
+        const auto found = std::find_if(runLoot_.begin(), runLoot_.end(), [&](const RunLoot& l) {
+            return l.petalIndex == petal && l.rarity == rarity;
+        });
+        if (found == runLoot_.end()) {
+            runLoot_.push_back({petal, rarity, 1});
+        } else if (found->count < UINT32_MAX) {
+            ++found->count;
+        }
+    }
+}
+
+namespace {
+
+/// The "Collected this run" panel, measured off the same screenshot as the
+/// card: a 4-wide grid of 50-unit tiles on a 60 pitch, 30 in from either side
+/// of a panel black at 0.55, its corner where the minimap's is. A short last
+/// row is centred, as the screenshot centres its two.
+constexpr int kRunLootColumns = 4;
+constexpr double kRunLootTile = 50.0;
+constexpr double kRunLootPitch = 60.0;
+constexpr double kRunLootSide = 30.0;
+constexpr double kRunLootMargin = 10.0;
+constexpr double kRunLootTitleY = 33.0;   ///< middle of the title, from the panel top
+constexpr double kRunLootTitleSize = 24.0;
+constexpr double kRunLootGridY = 65.0;    ///< top of the first row, from the panel top
+constexpr double kRunLootBottom = 20.0;
+constexpr double kRunLootRadius = 6.0;
+constexpr double kRunLootShade = 0.55;
+/// The panel stops growing before it reaches the loadout bar. Rows past that
+/// are dropped from the end, which is the commonest tier.
+constexpr double kRunLootFloor = 260.0;
+
+} // namespace
+
+void App::drawRunLoot(Canvas& canvas, double time) {
+    if (runLoot_.empty()) return;
+
+    // Rarest first, then by name -- the screenshot's order.
+    std::vector<RunLoot> shown = runLoot_;
+    std::sort(shown.begin(), shown.end(), [](const RunLoot& a, const RunLoot& b) {
+        if (a.rarity != b.rarity) return rarityIndex(a.rarity) > rarityIndex(b.rarity);
+        const std::string& an = content().petal(a.petalIndex).name;
+        const std::string& bn = content().petal(b.petalIndex).name;
+        if (an != bn) return an < bn;
+        return a.petalIndex < b.petalIndex;
+    });
+
+    const double width = kRunLootSide * 2.0 + kRunLootTile * kRunLootColumns +
+                         (kRunLootPitch - kRunLootTile) * (kRunLootColumns - 1);
+    const double left = canvas.width() - kRunLootMargin - width;
+    const double top = kRunLootMargin;
+    const int fitRows = std::max(
+        1, static_cast<int>((canvas.height() - kRunLootFloor - top - kRunLootGridY +
+                             (kRunLootPitch - kRunLootTile)) / kRunLootPitch));
+    const int wantRows = (static_cast<int>(shown.size()) + kRunLootColumns - 1) / kRunLootColumns;
+    const int rows = std::min(wantRows, fitRows);
+    shown.resize(std::min(shown.size(), static_cast<std::size_t>(rows * kRunLootColumns)));
+    const double height = kRunLootGridY + rows * kRunLootPitch -
+                          (kRunLootPitch - kRunLootTile) + kRunLootBottom;
+
+    // Fades with the card's slide, so it leaves with it on Close.
+    canvas.setGlobalAlpha(static_cast<float>(std::clamp(deathCardSlide_, 0.0, 1.0)));
+    setFill(canvas, 0x000000u, kRunLootShade);
+    canvas.beginPath();
+    canvas.roundRect(static_cast<float>(left), static_cast<float>(top),
+                     static_cast<float>(width), static_cast<float>(height),
+                     static_cast<float>(kRunLootRadius));
+    canvas.fill();
+
+    TextStyle title;
+    title.size = kRunLootTitleSize;
+    title.bold = true;
+    title.align = Align::Centre;
+    text(canvas, "Collected this run", left + width * 0.5, top + kRunLootTitleY, title);
+
+    for (int row = 0; row < rows; ++row) {
+        const int first = row * kRunLootColumns;
+        const int inRow = std::min(kRunLootColumns, static_cast<int>(shown.size()) - first);
+        const double rowWidth = kRunLootTile * inRow + (kRunLootPitch - kRunLootTile) * (inRow - 1);
+        const double rowLeft = left + (width - rowWidth) * 0.5;
+        const double rowTop = top + kRunLootGridY + row * kRunLootPitch;
+        for (int i = 0; i < inRow; ++i) {
+            const RunLoot& loot = shown[static_cast<std::size_t>(first + i)];
+            ItemTile tile;
+            tile.petalIndex = loot.petalIndex;
+            tile.rarity = loot.rarity;
+            if (loot.count > 1) tile.badge = "x" + stackCountText(loot.count);
+            tile.timeSeconds = time;
+            drawItemTile(canvas, sprites_,
+                         Rect{rowLeft + i * kRunLootPitch, rowTop, kRunLootTile, kRunLootTile},
+                         tile);
+        }
+    }
+    canvas.setGlobalAlpha(1.0f);
 }
 
 void App::drawDisconnectBanner(Canvas& canvas) {

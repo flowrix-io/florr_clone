@@ -222,6 +222,11 @@ private:
     /// Steps and draws the petals drifting over that texture.
     void drawTitlePetals(Canvas&, double time);
     void drawHud(Canvas&, double time);
+    /// The edges of the screen going dark as the flower runs out of health.
+    /// Over the world and under the HUD, like the death wash.
+    void drawLowHealthVignette(Canvas&);
+    /// How dark that vignette should be this frame, 0 to 1, before easing.
+    double lowHealthTarget() const;
     /// The screen-top health bars a super, unique or apex mob in view gets,
     /// one under the other, name above each. Ultras are not bosses: they wear
     /// the ordinary bar under the body like every other mob.
@@ -276,6 +281,11 @@ private:
     /// rebakes anything.
     const Canvas* minimapStatic(bool rarityGlow);
     void drawDeathCard(Canvas&, double time);
+    /// The "Collected this run" panel the death card puts over the minimap.
+    void drawRunLoot(Canvas&, double time);
+    /// Counts this frame's pickups by the viewer's own flower into runLoot_.
+    /// Before the renderer drains the events, which it does every frame.
+    void tallyRunLoot();
     void drawChat(Canvas&, double time);
     /// The chat input slot, shared by the title screen and the game so the two
     /// cannot drift apart.
@@ -592,13 +602,24 @@ private:
     /// Whether the card is up. Raised when the server says the body is gone,
     /// and lowered by Close, by a yggdrasil putting the body back, or by
     /// leaving for the title screen. Close is the only one of the three that
-    /// leaves the player dead: the card slides away and the dimmed world, the
-    /// HUD and the minimap keep drawing.
+    /// leaves the player dead: the card slides away, the world's dim fades out
+    /// with it, and the HUD and the minimap keep drawing.
     bool deathCardVisible_ = true;
-    /// How far the card has slid up into place, 0 to 1. The reference's
-    /// container animation, which translates the whole stack up from 60% of a
-    /// screen below and eases it back down again when the card goes away.
+    /// How far the card has slid down into place, 0 to 1. The reference's
+    /// container animation, which translates the whole stack down from above
+    /// the screen and eases it back up again when the card goes away.
     double deathCardSlide_ = 0.0;
+    /// Everything the flower has picked up since it joined, one entry per
+    /// petal and tier, for the death card's "Collected this run" panel.
+    /// Counted off the PickedUp cues -- each of the viewer's own is one item
+    /// into the inventory -- and emptied by the next join, not by dying: it is
+    /// the dead run the panel reports on.
+    struct RunLoot {
+        std::uint16_t petalIndex = 0;
+        Rarity rarity = Rarity::Common;
+        std::uint32_t count = 0;
+    };
+    std::vector<RunLoot> runLoot_;
 
     // -- HUD -----------------------------------------------------------------
     /// When invulnerability last ended, in app seconds; negative before the
@@ -606,6 +627,17 @@ private:
     /// back to green over half a second from here.
     double invulEndedAt_ = -1;
     bool wasInvulnerable_ = false;
+    /// The low-health vignette's strength, eased toward lowHealthTarget() so a
+    /// single hit or heal fades it rather than switching it.
+    double lowHealthVignette_ = 0.0;
+    /// Its falloff, one alpha byte per pixel, baked once per surface size --
+    /// the shape never changes, only how strongly it is laid on. Native lays
+    /// it straight onto the device pixels (Canvas::darkenDevice); the browser
+    /// gets it as one small bitmap to stretch (vignetteBitmap_).
+    std::vector<std::uint8_t> vignetteMask_;
+    int vignetteWidth_ = 0;
+    int vignetteHeight_ = 0;
+    std::unique_ptr<Canvas> vignetteBitmap_;
 
 
     /// The minimap's baked static layer and the map it was baked for, once

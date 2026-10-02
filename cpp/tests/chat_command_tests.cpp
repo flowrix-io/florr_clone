@@ -1402,3 +1402,69 @@ TEST(a_squad_outside_the_garden_can_invite_someone_with_no_body_yet) {
     CHECK(say(h, digger, "/squad-invite gardener"));
     CHECK(sawText(digger, "gardener is in Garden, and the squad is in Desert."));
 }
+
+TEST(god_makes_the_admin_invulnerable_until_turned_off) {
+    Harness h("cmd-god", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;   // bots own no connection
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    CHECK(say(h, client, "/admin god on"));
+    CHECK(sawText(client, "You are now invulnerable."));
+    CHECK(std::isinf(world.get<Health>(body).invulnerableUntilMillis));
+
+    // A mob that bites hard, pinned onto the flower every tick so the contact
+    // never breaks. Too tough for the flower's own body damage to kill.
+    const Vec2 at = world.get<Transform>(body).position;
+    adminSpawnAt(client, "starfish", "uncommon", at);
+    Entity mob = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, MobType, Transform> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type, Transform& where) {
+            if (mob != NULL_ENTITY) return;
+            if (type.configIndex != content().mobIndex("starfish")) return;
+            if (distance(where.position, at) > 400.0) return;
+            mob = e;
+        });
+        return mob != NULL_ENTITY;
+    }, 120));
+    if (mob == NULL_ENTITY) { CHECK(false); return; }
+    world.get<Health>(mob).max = 1e9;
+    world.get<Health>(mob).current = 1e9;
+    world.get<ContactDamage>(mob).amount = 50.0;
+    const auto pin = [&] {
+        if (!world.isAlive(mob) || !world.isAlive(body)) return;
+        world.get<Transform>(mob).position = world.get<Transform>(body).position;
+    };
+
+    const double full = world.get<Health>(body).max;
+    for (int i = 0; i < 150; ++i) {
+        pin();
+        h.step(1, {&client});
+    }
+    CHECK(world.isAlive(body));
+    CHECK_EQ(world.get<Health>(body).current, full);
+
+    // The same bite, the moment the protection comes off -- which is what
+    // shows the mob was ever able to hurt anyone.
+    CHECK(say(h, client, "/admin god off"));
+    CHECK(sawText(client, "You are no longer invulnerable."));
+    CHECK(h.stepUntil({&client}, [&] {
+        pin();
+        return !world.isAlive(body) || world.get<Health>(body).current < full;
+    }, 240));
+}

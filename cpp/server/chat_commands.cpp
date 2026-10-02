@@ -768,7 +768,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "(move every bot only), give &lt;playerId/username&gt; &lt;itemType&gt; "
                     "&lt;rarity&gt; [amount], set_skin &lt;playerId/username&gt; "
                     "&lt;skin|none&gt;, corrupt &lt;playerId/username&gt; [on|off|toggle] "
-                    "(corrupted flowers fight players anywhere, not just in PVP), grant_admin "
+                    "(corrupted flowers fight players anywhere, not just in PVP), god "
+                    "[on|off|toggle] (make yourself invulnerable), grant_admin "
                     "&lt;playerId/username&gt; (lend the admin console until they respawn), "
                     "revoke_admin &lt;playerId/username&gt;, list_admins, mute "
                     "&lt;playerId/username&gt; (bar an account from chat, persists across "
@@ -1769,6 +1770,46 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                                ? static_cast<std::uint64_t>(target.session->connection)
                                : static_cast<std::uint64_t>(target.entity)) +
             ")");
+        return;
+    }
+
+    if (verb == "god" || verb == "invulnerable") {
+        if (words.size() > 2) {
+            out("Usage: god [on|off|toggle]  (default: toggle)");
+            return;
+        }
+        const std::string mode = words.size() == 2 ? lowerCase(words[1]) : "toggle";
+        if (mode != "on" && mode != "off" && mode != "toggle") {
+            out("Unknown mode \"" + mode + "\". Use on, off or toggle.");
+            return;
+        }
+        Health* health = session.playing() && !world_.has<Dead>(session.entity)
+                             ? world_.tryGet<Health>(session.entity)
+                             : nullptr;
+        if (health == nullptr) {
+            out("You have no living flower to make invulnerable. Join the game first.");
+            return;
+        }
+        // Respawn protection that never ends. Every hit in the game asks
+        // canHit() first, so a deadline at infinity refuses all of them --
+        // poison, sponge repayments and PvP included -- and replication shows
+        // the same pale invulnerable health bar the respawn window does.
+        //
+        // It belongs to the BODY: a new flower (leaving to the title screen
+        // and joining again) starts mortal, the way a temporary admin grant
+        // ends on respawn.
+        const bool on = mode == "toggle" ? !std::isinf(health->invulnerableUntilMillis)
+                                         : mode == "on";
+        const double until = on ? std::numeric_limits<double>::infinity() : 0.0;
+        // Both halves of a split flower: protecting only the steered one would
+        // leave the parked half to die and hand control back across it.
+        for (const Entity body : {session.entity, session.splitOther}) {
+            if (Health* bodyHealth = world_.tryGet<Health>(body)) {
+                bodyHealth->invulnerableUntilMillis = until;
+            }
+        }
+        out(on ? "You are now invulnerable. Use god off to undo it."
+               : "You are no longer invulnerable.");
         return;
     }
 
