@@ -1324,9 +1324,9 @@ TEST(the_minion_cap_never_raises_a_minion) {
 }
 
 TEST(a_biome_keeps_only_its_first_unique_and_its_first_apex) {
-    // However two got there -- here an operator's spawns while both clocks
-    // stand ready, which is the one moment the console may place either tier
-    // and does not charge the clock for it -- the one that appeared LATER is
+    // However two got there -- here spawnMob called while both clocks stand
+    // ready, which is the one moment the console may place either tier (and
+    // spawnMob itself charges nothing) -- the one that appeared LATER is
     // despawned on the next population pass, per tier: one unique and one
     // apex may stand together.
     WorldMaps maps;
@@ -1470,8 +1470,35 @@ TEST(a_unique_or_apex_asked_for_during_its_cooldown_never_appears) {
     CHECK_EQ(animalsOfRarity(world.sim.world, Rarity::Unique).size(), std::size_t(1));
     CHECK_EQ(mobsOfRarity(world.sim.world, Rarity::Apex), 0);
     CHECK_EQ(announcedAbove(Rarity::Super), 1);
-    // Let in, but not charged: only the clock's own upgrade starts it again.
+    // Let in, but not charged by spawnMob: the clock's own upgrade, and the
+    // console through chargeBossClock, are what start it again.
     CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, world.sim.now);
+}
+
+TEST(charging_a_clock_restarts_only_that_tier_in_that_biome) {
+    // What the console calls after placing an admin's boss: that tier's
+    // clock starts a whole cooldown over from now, as the band's own upgrade
+    // would, and the other tier's clock is left where it was. Nothing for a
+    // tier no clock owns, nor for a realm that keeps no clock.
+    SuperBand world;
+    world.deal();
+    SpawnSystem::BiomeBossClock& clock = onlyClock(world.sim);
+    clock.uniqueReadyMillis = 0.0;
+    clock.apexReadyMillis = 0.0;
+    const double now = world.sim.now;
+
+    world.sim.spawner.chargeBossClock(Rarity::Super, Realm::Overworld, now);
+    world.sim.spawner.chargeBossClock(Rarity::Unique, Realm::Arena, now);
+    CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, 0.0);
+    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, 0.0);
+
+    world.sim.spawner.chargeBossClock(Rarity::Unique, Realm::Overworld, now);
+    CHECK_EQ(onlyClock(world.sim).uniqueReadyMillis, now + kUniqueSpawnCooldownMillis);
+    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, 0.0);
+    CHECK(world.sim.spawner.bossCooldownLeft(Rarity::Unique, Realm::Overworld, now) > 0.0);
+
+    world.sim.spawner.chargeBossClock(Rarity::Apex, Realm::Overworld, now);
+    CHECK_EQ(onlyClock(world.sim).apexReadyMillis, now + kApexSpawnCooldownMillis);
 }
 
 TEST(a_biome_with_no_clock_refuses_no_unique) {

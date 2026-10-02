@@ -1248,6 +1248,20 @@ double SpawnSystem::bossCooldownLeft(Rarity rarity, Realm realm, double nowMilli
     return std::max(0.0, ready - nowMillis);
 }
 
+void SpawnSystem::chargeBossClock(Rarity rarity, Realm realm, double nowMillis) {
+    restartBossClock(realmBiome_[realmIndex(realm)], rarity, nowMillis);
+}
+
+void SpawnSystem::restartBossClock(std::uint16_t slot, Rarity rarity, double nowMillis) {
+    if (slot >= bossClocks_.size()) return;
+    BiomeBossClock& clock = bossClocks_[slot];
+    if (rarity == Rarity::Apex) {
+        clock.apexReadyMillis = nowMillis + kApexSpawnCooldownMillis;
+    } else if (rarity == Rarity::Unique) {
+        clock.uniqueReadyMillis = nowMillis + kUniqueSpawnCooldownMillis;
+    }
+}
+
 std::uint32_t SpawnSystem::biomeKey(Realm realm) const {
     const std::uint16_t slot = realmBiome_[realmIndex(realm)];
     // Past every clock slot, so a map-less realm never matches a biome.
@@ -1516,11 +1530,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // the slot back to the band and rolls it afresh on a later pass, and a
     // clock spent on a spawn that never happened would be a whole cooldown
     // with no boss in it.
-    if (upgraded && zone.biome < bossClocks_.size()) {
-        BiomeBossClock& clock = bossClocks_[zone.biome];
-        if (rarity == Rarity::Apex) clock.apexReadyMillis = nowMillis + kApexSpawnCooldownMillis;
-        else clock.uniqueReadyMillis = nowMillis + kUniqueSpawnCooldownMillis;
-    }
+    if (upgraded) restartBossClock(zone.biome, rarity, nowMillis);
     // Counted straight away, so the rest of this pass spaces itself against
     // what it has just placed rather than against the last census alone --
     // in the band's realm, or crowdedAt() would never see it.

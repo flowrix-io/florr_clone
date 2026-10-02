@@ -338,12 +338,14 @@ inline constexpr Rarity kAnnouncedRarity = Rarity::Super;
 /// nobody is killing anything in spawns no supers to upgrade.
 ///
 /// A mob placed any other way -- a console spawn, a nest's escorts -- is not a
-/// band's super and is neither upgraded nor charged to a clock. It is still
-/// HELD to the clock, though: a unique or apex that would appear in a biome
-/// while that biome's clock for its tier is cooling down is refused outright,
-/// before it is an entity (SpawnSystem::bossCooldownLeft, asked in
-/// spawnMobAt). The clock's own upgrade only asks while it is ready, so the
-/// rule never stands in its way.
+/// band's super and is never upgraded. It is still HELD to the clock, though:
+/// a unique or apex that would appear in a biome while that biome's clock for
+/// its tier is cooling down is refused outright, before it is an entity
+/// (SpawnSystem::bossCooldownLeft, asked in spawnMobAt). The clock's own
+/// upgrade only asks while it is ready, so the rule never stands in its way.
+/// spawnMob itself charges nothing; the operator's console, alone among the
+/// other paths, spends the clock for a boss it places (chargeBossClock), so an
+/// admin's unique counts as that biome's unique for the next cooldown.
 ///
 /// A biome holds at most ONE live unique and ONE live apex, however they got
 /// there. A clock whose tier is already standing in its biome does not roll
@@ -563,6 +565,12 @@ public:
     /// spawnMobAt refuses.
     double bossCooldownLeft(Rarity rarity, Realm realm, double nowMillis) const;
 
+    /// Starts `realm`'s biome clock for `rarity` over from `nowMillis`, exactly
+    /// as the clock's own upgrade does once the boss it made is standing. For
+    /// the console: an admin's unique or apex spends the clock a wild one
+    /// would have. Nothing for any other tier or for a realm with no clock.
+    void chargeBossClock(Rarity rarity, Realm realm, double nowMillis);
+
     /// Seeds the stream the boss clocks are scattered and rolled from. Theirs
     /// alone, so an upgrade roll never moves what the world's own stream hands
     /// every other spawn.
@@ -709,6 +717,9 @@ private:
     /// evenly spaced in a random order from a random phase, so no two biomes
     /// come ready together and none is ready the moment the server starts.
     void scatterBossClocks(double nowMillis);
+    /// Restarts clock `slot`'s `rarity` cooldown from `nowMillis`; a slot past
+    /// the list, or a tier no clock owns, is left alone.
+    void restartBossClock(std::uint16_t slot, Rarity rarity, double nowMillis);
 
     /// What a band's SUPER comes out as: the same super, or a unique or an
     /// apex when its biome's clock for that tier is ready, the biome has none

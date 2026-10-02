@@ -15,6 +15,7 @@
 #include "server_harness.h"
 #include "server/bot_identity.h"
 #include "server/db.h"
+#include "server/systems/spawning.h"
 #include "shared/game/terrain.h"
 
 using namespace flix;
@@ -331,6 +332,47 @@ TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
     CHECK(say(h, client, "/admin spawn bee super"));
     CHECK(sawText(client, "Spawned super bee"));
     CHECK(liveOfRarity(Rarity::Super) > supers);
+}
+
+TEST(a_unique_from_the_console_restarts_its_biome_clock) {
+    // An admin's unique spends the biome's clock just as a wild one does: let
+    // in while the clock is ready, and then the next one there waits a whole
+    // cooldown. Per tier, so the apex clock is still ready afterwards.
+    Harness h("cmd-spawn-charge", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    const auto liveOfRarity = [&](Rarity rarity) {
+        int count = 0;
+        Query<MobTag, MobType> mobs{h.server.world()};
+        mobs.each([&](Entity, MobTag&, MobType& type) { count += type.rarity == rarity ? 1 : 0; });
+        return count;
+    };
+
+    // Every clock is dealt within one cooldown of the first spawner pass, so
+    // one apex cooldown on, all of them stand ready.
+    h.clock += kApexSpawnCooldownMillis;
+    h.step(1, {&client});
+
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
+    CHECK_EQ(liveOfRarity(Rarity::Unique), 1);
+
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "unique clock is cooling down"));
+    CHECK_EQ(liveOfRarity(Rarity::Unique), 1);
+
+    CHECK(say(h, client, "/admin spawn bee apex"));
+    CHECK(sawText(client, "Spawned apex bee"));
+    CHECK_EQ(liveOfRarity(Rarity::Apex), 1);
+    CHECK(say(h, client, "/admin spawn bee apex"));
+    CHECK(sawText(client, "apex clock is cooling down"));
 }
 
 TEST(spawn_with_a_bad_mob_type_spawns_nothing) {

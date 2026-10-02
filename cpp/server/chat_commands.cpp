@@ -1514,6 +1514,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                     clockWaitLabel(cooling) + "; see boss_timers)");
                 return;
             }
+            bool placedAny = false;
             for (int i = 0; i < count; ++i) {
                 Vec2 at{x, y};
                 if (!stack && count > 1) {
@@ -1532,9 +1533,17 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 // expired. In the server the two agree; in any harness driving
                 // tick() on a clock of its own they do not, and an operator's
                 // spawn was being recycled by the very next census.
-                spawning_->spawnMob(world_, *terrain_, content(), mobIndex, rarity, at,
-                                    spawnRealm, clockMillis_, rng_);
+                if (spawning_->spawnMob(world_, *terrain_, content(), mobIndex, rarity, at,
+                                        spawnRealm, clockMillis_, rng_) != NULL_ENTITY) {
+                    placedAny = true;
+                }
             }
+            // An admin's unique or apex spends the biome's clock just as a
+            // wild one does, so the next one there -- wild or typed -- waits a
+            // full cooldown. Charged once, after the whole batch: charging on
+            // the first would have spawnMob refuse the rest of `amount`, and
+            // the extras of a batch are the population pass's to cull anyway.
+            if (placedAny) spawning_->chargeBossClock(standing, spawnRealm, clockMillis_);
         }
         out("Spawned " + (count > 1 ? std::to_string(count) + "x " : std::string()) + words[2] +
             " " + words[1] + where +
