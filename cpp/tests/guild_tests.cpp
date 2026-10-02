@@ -154,11 +154,13 @@ TEST(a_guild_is_created_named_and_pushed_back_to_its_leader) {
 
     client.requestGuildCreate("alpha");
     CHECK(h.stepUntil({&client}, [&] { return client.guild().joined; }, 200));
+    CHECK_EQ(client.guild().tag, std::string("ALPHA"));
+    // No display name was given, so the card is headed with the tag.
     CHECK_EQ(client.guild().name, std::string("ALPHA"));
     CHECK_EQ(client.guild().leader, std::string("leader"));
     CHECK_EQ(client.guild().members.size(), static_cast<std::size_t>(1));
     // The leader is online, so their own roster says so.
-    CHECK_EQ(client.guild().online.size(), static_cast<std::size_t>(1));
+    CHECK_EQ(client.guild().onlineCount(), static_cast<std::size_t>(1));
 
     // A second guild under the same name is refused, and the first survives.
     NetClient other;
@@ -186,6 +188,8 @@ TEST(an_invitation_reaches_the_invitee_and_joins_them_on_accept) {
     CHECK(h.stepUntil({&boss, &recruit}, [&] { return recruit.guildInvite().waiting; }, 200));
     CHECK_EQ(recruit.guildInvite().guildName, std::string("ALPHA"));
     CHECK_EQ(recruit.guildInvite().fromUsername, std::string("leader"));
+    // Created with no display name, so the invitation names it by its tag.
+    CHECK_EQ(recruit.guildInvite().displayName, std::string("ALPHA"));
     // The arrival flag is what force-opens the panel, and it is raised once.
     CHECK(recruit.guildInvite().justArrived);
 
@@ -297,4 +301,127 @@ TEST(a_guild_is_written_to_the_database_in_the_browser_builds_own_shape) {
     CHECK(guilds.contains("ALPHA"));
     CHECK_EQ(guilds["ALPHA"]["leaderUsername"].asString(), std::string("leader"));
     CHECK_EQ(guilds["ALPHA"]["memberUsernames"].size(), static_cast<std::size_t>(1));
+}
+
+namespace {
+
+const GuildState::Member* rosterEntry(const NetClient& client, const std::string& name) {
+    for (const GuildState::Member& member : client.guild().members) {
+        if (member.name == name) return &member;
+    }
+    return nullptr;
+}
+
+/// `leader` founds ALPHA and `member` joins it.
+bool foundAndJoin(Harness& h, NetClient& boss, NetClient& member) {
+    boss.requestGuildCreate("ALPHA", "Alpha Squad");
+    if (!h.stepUntil({&boss, &member}, [&] { return boss.guild().joined; }, 200)) return false;
+    boss.requestGuildInvite("member");
+    if (!h.stepUntil({&boss, &member}, [&] { return member.guildInvite().waiting; }, 200)) {
+        return false;
+    }
+    member.requestGuildAccept();
+    return h.stepUntil({&boss, &member}, [&] { return member.guild().joined; }, 200);
+}
+
+} // namespace
+
+TEST(a_guild_carries_a_display_name_and_only_its_leader_edits_it) {
+    Harness h("guild-edit", [](const std::string& path) {
+        seedUser(path, "leader", "password7");
+        seedUser(path, "member", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient member;
+    CHECK(loginAs(h, boss, "leader", "password7"));
+    CHECK(loginAs(h, member, "member", "password7"));
+    CHECK(foundAndJoin(h, boss, member));
+    // The tag is the key and the name is free text: both reach every member.
+    CHECK_EQ(member.guild().tag, std::string("ALPHA"));
+    CHECK_EQ(member.guild().name, std::string("Alpha Squad"));
+    CHECK(member.guild().description.empty());
+
+    // A member's edit changes nothing.
+    member.requestGuildEdit("Hijacked", "not yours");
+    CHECK(!h.stepUntil({&boss, &member}, [&] { return boss.guild().name == "Hijacked"; }, 40));
+
+    boss.requestGuildEdit("  Alpha Company ", "Weekly raids, all welcome");
+    CHECK(h.stepUntil({&boss, &member},
+                      [&] { return member.guild().description == "Weekly raids, all welcome"; },
+                      200));
+    // Trimmed, as every other name the server stores is.
+    CHECK_EQ(member.guild().name, std::string("Alpha Company"));
+
+    // Over the limits: refused whole, so the stored pair survives.
+    boss.requestGuildEdit("Alpha Company", std::string(121, 'x'));
+    boss.requestGuildEdit(std::string(21, 'n'), "short");
+    CHECK(!h.stepUntil({&boss, &member}, [&] {
+        return boss.guild().description.size() == 121 || boss.guild().description == "short";
+    }, 40));
+
+    h.clock += 40000.0;
+    h.step(1, {&boss, &member});
+    Database db;
+    std::string error;
+    CHECK(db.load(h.dbPath, error));
+    const Json& guild = db.storedTable("guilds")["ALPHA"];
+    CHECK_EQ(guild["name"].asString(), std::string("ALPHA"));
+    CHECK_EQ(guild["displayName"].asString(), std::string("Alpha Company"));
+    CHECK_EQ(guild["description"].asString(), std::string("Weekly raids, all welcome"));
+}
+
+TEST(the_guild_roster_places_members_in_their_biome_and_drops_them_on_disconnect) {
+    Harness h("guild-presence", [](const std::string& path) {
+        seedUser(path, "leader", "password7");
+        seedUser(path, "member", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient member;
+    CHECK(loginAs(h, boss, "leader", "password7"));
+    CHECK(loginAs(h, member, "member", "password7"));
+    CHECK(foundAndJoin(h, boss, member));
+
+    // Signed in but on the title screen: online, and nowhere.
+    const GuildState::Member* seen = rosterEntry(boss, "member");
+    CHECK(seen != nullptr && seen->online && seen->location.empty());
+
+    member.joinGame(1920, 1080);
+    CHECK(h.stepUntil({&boss, &member}, [&] {
+        const GuildState::Member* entry = rosterEntry(boss, "member");
+        return entry != nullptr && !entry->location.empty();
+    }, 200));
+
+    // Gone without a word to the guild: the roster still notices.
+    member.disconnect();
+    CHECK(h.stepUntil({&boss}, [&] {
+        const GuildState::Member* entry = rosterEntry(boss, "member");
+        return entry != nullptr && !entry->online && entry->location.empty();
+    }, 200));
+}
+
+TEST(guild_chat_commands_take_a_display_name_and_a_description) {
+    Harness h("guild-chat-name", [](const std::string& path) {
+        seedUser(path, "leader", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "leader", "password7"));
+    client.sendChat("/guild-create beta2 Beta Team");
+    CHECK(h.stepUntil({&client}, [&] { return client.guild().joined; }, 200));
+    CHECK_EQ(client.guild().tag, std::string("BETA2"));
+    CHECK_EQ(client.guild().name, std::string("Beta Team"));
+
+    client.sendChat("/guild-description Hello <there>");
+    CHECK(h.stepUntil({&client},
+                      [&] { return client.guild().description == "Hello <there>"; }, 200));
+    client.sendChat("/guild-rename Renamed");
+    CHECK(h.stepUntil({&client}, [&] { return client.guild().name == "Renamed"; }, 200));
+    // A bare description command clears it.
+    client.sendChat("/guild-description");
+    CHECK(h.stepUntil({&client}, [&] { return client.guild().description.empty(); }, 200));
 }

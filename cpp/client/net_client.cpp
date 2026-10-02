@@ -72,6 +72,7 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::GuildLeave:          return "guildLeave";
         case net::ClientMessage::GuildSquadAll:       return "guildSquadAll";
         case net::ClientMessage::GuildInviteToSquad:  return "guildInviteToSquad";
+        case net::ClientMessage::GuildEdit:           return "guildEdit";
         case net::ClientMessage::ChangePassword:      return "changePassword";
         case net::ClientMessage::OracleCraft:         return "oracleCraft";
         case net::ClientMessage::SwapLoadoutRows:     return "swapLoadoutRows";
@@ -525,10 +526,19 @@ void NetClient::requestNotifications(int limit, double beforeMillis) {
     send(w);
 }
 
-void NetClient::requestGuildCreate(const std::string& name) {
+void NetClient::requestGuildCreate(const std::string& tag, const std::string& displayName) {
     ByteWriter w;
     beginMessage(w, net::ClientMessage::GuildCreate);
-    w.str(name);
+    w.str(tag);
+    w.str(displayName);
+    send(w);
+}
+
+void NetClient::requestGuildEdit(const std::string& displayName, const std::string& description) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::GuildEdit);
+    w.str(displayName);
+    w.str(description);
     send(w);
 }
 
@@ -1175,14 +1185,17 @@ void NetClient::handleGuildUpdate(ByteReader& reader) {
     GuildState next;
     next.joined = reader.boolean();
     if (next.joined) {
+        next.tag = reader.str();
         next.name = reader.str();
+        next.description = reader.str();
         next.leader = reader.str();
         const std::uint16_t count = reader.u16();
         next.members.reserve(count);
         for (std::uint16_t i = 0; i < count; ++i) {
-            std::string member = reader.str();
-            const bool online = reader.boolean();
-            if (online) next.online.push_back(member);
+            GuildState::Member member;
+            member.name = reader.str();
+            member.online = reader.boolean();
+            member.location = reader.str();
             next.members.push_back(std::move(member));
         }
     }
@@ -1197,6 +1210,7 @@ void NetClient::handleGuildInviteReceived(ByteReader& reader) {
     GuildInvite invite;
     invite.guildName = reader.str();
     invite.fromUsername = reader.str();
+    invite.displayName = reader.str();
     if (!reader.ok()) return;
     invite.waiting = true;
     invite.justArrived = true;

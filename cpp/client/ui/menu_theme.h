@@ -70,7 +70,10 @@ inline constexpr PanelSkin kSettingsSkin{0xAAAAAAu, 0x888888u, 0x888888u};
 inline constexpr PanelSkin kDebugSkin = kSettingsSkin;
 inline constexpr PanelSkin kChangelogSkin{0x49C46Fu, 0x4CAF50u, 0x4CAF50u};
 inline constexpr PanelSkin kNotificationsSkin{0x4A90E2u, 0x357ABDu, 0x357ABDu};
-inline constexpr PanelSkin kGuildSkin{0x27DADEu, 0x1FB3B0u, 0x1FB3B0u};
+/// The guild card is the mythic cyan, its frame -- which is also the roster
+/// band and the description box -- that cyan at 0.81, and the scroll thumb one
+/// step darker again.
+inline constexpr PanelSkin kGuildSkin{0x1FDBDEu, 0x19B1B4u, 0x148E90u};
 /// The database editor: a slate no player-facing panel wears, because it is not
 /// one -- an admin should never mistake it for the settings card beside it.
 inline constexpr PanelSkin kAdminDbSkin{0x55606Bu, 0x434C55u, 0x7A8794u};

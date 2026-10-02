@@ -1,5 +1,6 @@
 #pragma once
-// The two string operations every name comparison on the server needs.
+// The string operations every name comparison -- and every line repeated into
+// chat -- on the server needs.
 //
 // Shared rather than duplicated per translation unit because the rule they
 // encode is a rule, not a convenience: names are compared case-insensitively
@@ -46,6 +47,25 @@ inline std::vector<std::string> splitWords(const std::string& s) {
         at = end;
     }
     return words;
+}
+
+/// Chat content is markup, so a '<' in a line would open a tag and take the
+/// rest of the line with it -- which is exactly what happens in the browser,
+/// where `Usage: teleport <playerId/username> <x> <y>` renders as "Usage:
+/// teleport" and nothing else. Anything a player typed that the server repeats
+/// into chat -- a guild's name or description, the admin console's own output
+/// -- goes through this so the same words reach the screen instead of being
+/// swallowed.
+inline std::string escapedMarkup(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (char c : text) {
+        if (c == '&') out += "&amp;";
+        else if (c == '<') out += "&lt;";
+        else if (c == '>') out += "&gt;";
+        else out += c;
+    }
+    return out;
 }
 
 } // namespace flix

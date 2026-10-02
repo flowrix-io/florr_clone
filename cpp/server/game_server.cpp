@@ -589,6 +589,9 @@ void GameServer::tick(double nowMillis) {
     // schedule.
     serviceAutoUpdate();
     serviceScheduledRestart(nowMillis);
+    // Above the idle gate too: a member logging out of the title screen
+    // changes every guildmate's roster whether or not anybody is playing.
+    serviceGuildPresence(nowMillis);
     markTickPhase("sessions");
 
     // Housekeeping, ABOVE the idle gate: an account registered by somebody
@@ -1060,6 +1063,7 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
             break;
         case net::ClientMessage::RequestNotifications: handleNotifications(connection, reader); break;
         case net::ClientMessage::GuildCreate:   handleGuildCreate(*session, connection, reader); break;
+        case net::ClientMessage::GuildEdit:     handleGuildEdit(*session, connection, reader); break;
         case net::ClientMessage::GuildInvite:   handleGuildInvite(*session, connection, reader); break;
         case net::ClientMessage::GuildAccept:   handleGuildAccept(*session, connection); break;
         case net::ClientMessage::GuildDecline:  handleGuildDecline(*session, connection); break;
@@ -3069,21 +3073,76 @@ void GameServer::sendChatTo(net::Connection& connection, net::ChatChannel channe
     connection.send(w);
 }
 
-void GameServer::sendGuildRoster(net::Connection& connection, const Json& guild) {
+ByteWriter GameServer::guildRosterMessage(const Json& guild) {
     const Json& members = guild["memberUsernames"];
+
+    // Everyone signed in, by lower-cased name, once per message rather than
+    // once per member: sessionForUser is a walk of every session, and a full
+    // guild asked it two hundred times.
+    std::unordered_map<std::string, const Session*> signedIn;
+    for (const auto& [id, session] : sessions_) {
+        if (session.authenticated()) signedIn[lowerCase(session.username)] = &session;
+    }
 
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::GuildUpdate));
     w.boolean(true);
     w.str(guild["name"].asString());
+    w.str(guildDisplayName(guild));
+    w.str(guild["description"].asString());
     w.str(guild["leaderUsername"].asString());
     w.u16(static_cast<std::uint16_t>(members.size()));
     for (std::size_t i = 0; i < members.size(); ++i) {
         const std::string member = members[i].asString();
+        const auto found = signedIn.find(lowerCase(member));
+        const Session* session = found != signedIn.end() ? found->second : nullptr;
         w.str(member);
-        w.boolean(sessionForUser(member) != nullptr);
+        w.boolean(session != nullptr);
+        w.str(session != nullptr ? guildLocation(*session) : std::string());
     }
-    connection.send(w);
+    return w;
+}
+
+std::string GameServer::guildLocation(const Session& session) const {
+    return biomeLabel(biomeOfEntity(session.entity));
+}
+
+void GameServer::serviceGuildPresence(double nowMillis) {
+    // Once a second: a roster that names the biome a member is in is allowed
+    // to be a second behind them, and a walk of every session every tick to
+    // find out nobody moved is not worth having.
+    constexpr double kIntervalMillis = 1000.0;
+    if (nowMillis < nextGuildPresenceMillis_) return;
+    nextGuildPresenceMillis_ = nowMillis + kIntervalMillis;
+
+    std::unordered_map<std::string, std::string> now;
+    for (const auto& [id, session] : sessions_) {
+        if (!session.authenticated() || session.username.empty()) continue;
+        now[lowerCase(session.username)] = guildLocation(session);
+    }
+
+    std::vector<std::string> moved;
+    for (const auto& [name, location] : now) {
+        const auto was = guildPresence_.find(name);
+        if (was == guildPresence_.end() || was->second != location) moved.push_back(name);
+    }
+    for (const auto& [name, location] : guildPresence_) {
+        if (now.find(name) == now.end()) moved.push_back(name);
+    }
+    guildPresence_ = std::move(now);
+    if (moved.empty()) return;
+
+    // One roster per guild however many of its members moved.
+    std::vector<std::string> guildNames;
+    for (const std::string& name : moved) {
+        const std::string guild = guildNameForUser(name);
+        if (guild.empty()) continue;
+        if (std::find(guildNames.begin(), guildNames.end(), guild) == guildNames.end()) {
+            guildNames.push_back(guild);
+        }
+    }
+    const Json& guilds = database_.storedTable("guilds");
+    for (const std::string& guild : guildNames) broadcastGuildRoster(guilds[guild]);
 }
 
 void GameServer::sendNoGuild(net::Connection& connection) {
@@ -3094,13 +3153,15 @@ void GameServer::sendNoGuild(net::Connection& connection) {
 }
 
 void GameServer::broadcastGuildRoster(const Json& guild) {
-    // Rebuilt per member rather than sent once: the online flags are the same
-    // for everyone, but the roster is only sent to people in the guild, and
-    // there is no room concept here to address them as a group.
+    // Addressed member by member -- the roster is only sent to people in the
+    // guild, and there is no room concept here to address them as a group --
+    // but built once, since it says the same thing to every one of them.
     const Json& members = guild["memberUsernames"];
+    if (members.size() == 0) return;
+    const ByteWriter message = guildRosterMessage(guild);
     for (std::size_t i = 0; i < members.size(); ++i) {
         if (net::Connection* peer = connectionForUser(members[i].asString())) {
-            sendGuildRoster(*peer, guild);
+            peer->send(message);
         }
     }
 }
@@ -3118,23 +3179,33 @@ void GameServer::sendGuildState(const Session& session, net::Connection& connect
 
 void GameServer::handleGuildCreate(Session& session, net::Connection& connection,
                                    ByteReader& reader) {
-    const std::string raw = reader.str();
+    const std::string tag = reader.str();
+    const std::string displayName = reader.str();
     if (!reader.ok() || !session.authenticated()) return;
-    guildCreate(session, connection, raw);
+    guildCreate(session, connection, tag, displayName);
 }
 
 void GameServer::guildCreate(Session& session, net::Connection& connection,
-                             const std::string& raw) {
+                             const std::string& raw, const std::string& rawDisplayName) {
     if (!session.authenticated()) return;
 
     const std::string name = normalizeGuildName(raw);
     if (name.empty()) {
-        sendNotice(connection, net::NoticeSeverity::Warning, "Guild name cannot be empty.");
+        sendNotice(connection, net::NoticeSeverity::Warning, "Guild tag cannot be empty.");
         return;
     }
     if (!validGuildName(name)) {
         sendNotice(connection, net::NoticeSeverity::Warning,
-                   "Guild name must be exactly 5 alphanumeric characters (A–Z, 0–9).");
+                   "Guild tag must be exactly 5 alphanumeric characters (A–Z, 0–9).");
+        return;
+    }
+    // No display name is the tag: the card always has something to say.
+    const std::string displayName =
+        trimmed(rawDisplayName).empty() ? name : trimmed(rawDisplayName);
+    if (!validGuildDisplayName(displayName)) {
+        sendNotice(connection, net::NoticeSeverity::Warning,
+                   "Guild name must be 1-" + std::to_string(kMaxGuildDisplayName) +
+                       " letters, digits, spaces or punctuation.");
         return;
     }
     if (!guildNameForUser(session.username).empty()) {
@@ -3151,6 +3222,8 @@ void GameServer::guildCreate(Session& session, net::Connection& connection,
 
     Json guild = Json::object();
     guild["name"] = name;
+    guild["displayName"] = displayName;
+    guild["description"] = std::string();
     guild["leaderUsername"] = session.username;
     Json members = Json::array();
     members.push(session.username);
@@ -3159,8 +3232,69 @@ void GameServer::guildCreate(Session& session, net::Connection& connection,
     guilds[name] = std::move(guild);
     database_.markDirty();
 
-    sendNotice(connection, net::NoticeSeverity::Good, "Guild \"" + name + "\" created.");
+    sendNotice(connection, net::NoticeSeverity::Good,
+               "Guild \"" + escapedMarkup(displayName) + "\" [" + name + "] created.");
     broadcastGuildRoster(guilds[name]);
+}
+
+void GameServer::handleGuildEdit(Session& session, net::Connection& connection,
+                                 ByteReader& reader) {
+    const std::string displayName = reader.str();
+    const std::string description = reader.str();
+    if (!reader.ok() || !session.authenticated()) return;
+    guildEdit(session, connection, displayName, description);
+}
+
+void GameServer::guildEdit(Session& session, net::Connection& connection,
+                           const std::optional<std::string>& rawDisplayName,
+                           const std::optional<std::string>& rawDescription) {
+    if (!session.authenticated()) return;
+
+    const std::string guildName = guildNameForUser(session.username);
+    if (guildName.empty()) {
+        sendNotice(connection, net::NoticeSeverity::Warning, "You are not in a guild.");
+        return;
+    }
+    Json& guild = database_.rawTable("guilds")[guildName];
+    if (lowerCase(guild["leaderUsername"].asString()) != lowerCase(session.username)) {
+        sendNotice(connection, net::NoticeSeverity::Warning,
+                   "Only the guild leader can edit the guild.");
+        return;
+    }
+
+    // Both checked before either is written, so a refusal changes nothing.
+    std::string displayName;
+    if (rawDisplayName) {
+        displayName = trimmed(*rawDisplayName);
+        if (!validGuildDisplayName(displayName)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "Guild name must be 1-" + std::to_string(kMaxGuildDisplayName) +
+                           " letters, digits, spaces or punctuation.");
+            return;
+        }
+    }
+    std::string description;
+    if (rawDescription) {
+        description = trimmed(*rawDescription);
+        if (!validGuildDescription(description)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "Guild description must be at most " +
+                           std::to_string(kMaxGuildDescription) +
+                           " letters, digits, spaces or punctuation.");
+            return;
+        }
+    }
+
+    const Json& stored = guild;
+    const bool renamed = rawDisplayName && displayName != guildDisplayName(stored);
+    const bool redescribed = rawDescription && description != stored["description"].asString();
+    if (!renamed && !redescribed) return;
+    if (renamed) guild["displayName"] = displayName;
+    if (redescribed) guild["description"] = description;
+    database_.markDirty();
+
+    sendNotice(connection, net::NoticeSeverity::Good, "Guild updated.");
+    broadcastGuildRoster(guild);
 }
 
 void GameServer::handleGuildInvite(Session& session, net::Connection& connection,
@@ -3228,10 +3362,12 @@ void GameServer::guildInvite(Session& session, net::Connection& connection,
         w.u8(static_cast<std::uint8_t>(net::ServerMessage::GuildInviteReceived));
         w.str(guildName);
         w.str(session.username);
+        w.str(guildDisplayName(guild));
         peer->send(w);
         sendNotice(*peer, net::NoticeSeverity::Info,
-                   "@" + session.username + " has invited you to guild \"" + guildName +
-                       "\". Use /guild-accept or /guild-decline.");
+                   "@" + session.username + " has invited you to guild \"" +
+                       escapedMarkup(guildDisplayName(guild)) + "\" [" + guildName +
+                       "]. Use /guild-accept or /guild-decline.");
     }
 }
 

@@ -108,13 +108,29 @@ struct NotificationEntry {
 /// `joined` false is the browser's `guildUpdate null`: the panel's no-guild
 /// view, not merely "not fetched yet".
 struct GuildState {
+    struct Member {
+        std::string name;
+        bool online = false;
+        /// The biome an online member's body is in, as the spawn picker labels
+        /// it. Empty for anyone offline or without a body just now.
+        std::string location;
+    };
+
     bool joined = false;
+    /// The five-character key, shown in brackets.
+    std::string tag;
+    /// The free-text name the card is headed with. Never empty: the server
+    /// sends the tag for a guild that has none.
     std::string name;
+    std::string description;
     std::string leader;
-    std::vector<std::string> members;
-    /// The subset of `members` currently connected. Kept as names rather than
-    /// as flags on the member list because that is the shape the panel sorts by.
-    std::vector<std::string> online;
+    std::vector<Member> members;
+
+    std::size_t onlineCount() const {
+        std::size_t count = 0;
+        for (const Member& member : members) count += member.online ? 1 : 0;
+        return count;
+    }
 };
 
 /// The player's squad, as the last SquadUpdate described it.
@@ -151,8 +167,11 @@ struct SquadState {
 /// A guild invitation waiting on an answer.
 struct GuildInvite {
     bool waiting = false;
+    /// The tag, which is what an accept is matched against server-side.
     std::string guildName;
     std::string fromUsername;
+    /// The free-text name, for the invite card to head itself with.
+    std::string displayName;
     /// Raised when an invite lands, so the menu system can force the panel
     /// open once and then clear it. Separate from `waiting`, which stays set
     /// for as long as the invite is unanswered.
@@ -465,7 +484,8 @@ public:
     /// past the oldest entry already held, as the browser's `?before=` does.
     void requestNotifications(int limit, double beforeMillis);
 
-    void requestGuildCreate(const std::string& name);
+    void requestGuildCreate(const std::string& tag, const std::string& displayName = {});
+    void requestGuildEdit(const std::string& displayName, const std::string& description);
     void requestGuildInvite(const std::string& username);
     void requestGuildAccept();
     void requestGuildDecline();

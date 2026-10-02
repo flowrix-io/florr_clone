@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 44;
+inline constexpr std::uint16_t kProtocolVersion = 45;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -97,7 +97,10 @@ enum class ClientMessage : std::uint8_t {
                         ///< page). The browser fetches GET /api/notifications;
                         ///< this client has no HTTP, so the same query is an
                         ///< opcode with the same two parameters.
-    GuildCreate,        ///< str name -- 5 alphanumerics, upper-cased server-side
+    GuildCreate,        ///< str tag, str displayName. The tag is the guild's
+                        ///< key -- 5 alphanumerics, upper-cased server-side --
+                        ///< and the display name is free text; an empty one
+                        ///< falls back to the tag. (Version 45.)
     GuildInvite,        ///< str username
     GuildAccept,        ///< (empty) -- answers the one pending invite
     GuildDecline,       ///< (empty)
@@ -148,6 +151,9 @@ enum class ClientMessage : std::uint8_t {
                         ///< silently, for anyone the database does not flag
                         ///< as an admin: a temporary grant does not open it.
                         ///< (Version 44.)
+    GuildEdit,          ///< str displayName, str description -- both replace
+                        ///< what the guild has. Leader only; the tag is the
+                        ///< guild's key and cannot be edited. (Version 45.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -203,10 +209,16 @@ enum class ServerMessage : std::uint8_t {
                         ///<   f64 timestampMillis }*, newest first.
                         ///< `more` is set when the page filled the requested
                         ///< limit, which is the browser's `hasMore`.
-    GuildUpdate,        ///< u8 joined, str name, str leader, u16 memberCount,
-                        ///< { str username, u8 online }*. `joined` 0 is the
-                        ///< browser's `guildUpdate null` and carries no rest.
-    GuildInviteReceived, ///< str guildName, str fromUsername
+    GuildUpdate,        ///< u8 joined, str tag, str displayName, str description,
+                        ///< str leader, u16 memberCount,
+                        ///< { str username, u8 online, str location }*.
+                        ///< `joined` 0 is the browser's `guildUpdate null` and
+                        ///< carries no rest. `location` names the biome an
+                        ///< online member's body is in, and is empty for one
+                        ///< with no body (title screen, death card) and for
+                        ///< every offline member. (Version 45.)
+    GuildInviteReceived, ///< str guildName, str fromUsername, str displayName.
+                        ///< `guildName` is the tag. (Version 45.)
     SquadUpdate,        ///< u8 inSquad, str squadId, u8 isPublic, u8 memberCount,
                         ///< { str account, str name, u32 netId, u8 flags }*.
                         ///< `inSquad` 0 is the browser's `squadUpdate null` and

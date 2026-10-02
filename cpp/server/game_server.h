@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -352,11 +353,13 @@ private:
     //
     // Storage is the database's own `guilds` table, in the browser build's
     // shape: an object keyed by the upper-cased five-character name, each
-    // value carrying {name, leaderUsername, memberUsernames, createdAt}. Held
+    // value carrying {name, leaderUsername, memberUsernames, createdAt}, plus
+    // the optional displayName and description server/guilds.h describes. Held
     // as JSON rather than mirrored into a typed cache because the same file is
     // read by the browser build, and a second copy is a second thing to keep
     // true.
     void handleGuildCreate(Session&, net::Connection&, ByteReader&);
+    void handleGuildEdit(Session&, net::Connection&, ByteReader&);
     void handleGuildInvite(Session&, net::Connection&, ByteReader&);
     void handleGuildAccept(Session&, net::Connection&);
     void handleGuildDecline(Session&, net::Connection&);
@@ -371,7 +374,12 @@ private:
     // panel's binary messages, and the `/guild-create`-style chat commands the
     // reference also accepts. A second implementation of "may this player
     // invite?" would be a second answer to it.
-    void guildCreate(Session&, net::Connection&, const std::string& name);
+    void guildCreate(Session&, net::Connection&, const std::string& tag,
+                     const std::string& displayName);
+    /// Replaces whichever of the two is given. Leader only. `/guild-rename`
+    /// and `/guild-description` each pass one; the panel's GuildEdit both.
+    void guildEdit(Session&, net::Connection&, const std::optional<std::string>& displayName,
+                   const std::optional<std::string>& description);
     void guildInvite(Session&, net::Connection&, const std::string& target);
     void guildKick(Session&, net::Connection&, const std::string& target);
     void guildInviteToSquad(Session&, net::Connection&, const std::string& target);
@@ -610,8 +618,19 @@ private:
     std::string guildNameForUser(const std::string& username) const;
     Session* sessionForUser(const std::string& username);
     net::Connection* connectionForUser(const std::string& username);
-    /// One roster message: the guild as it stands, each member flagged online.
-    void sendGuildRoster(net::Connection&, const Json& guild);
+    /// One roster message: the guild as it stands, each member flagged online
+    /// and placed. Built once per broadcast and sent to every member, since
+    /// what it says is the same for all of them.
+    ByteWriter guildRosterMessage(const Json& guild);
+    /// Where an online member is, for the roster's location column: the biome
+    /// their body stands in, or empty when they have no body.
+    std::string guildLocation(const Session&) const;
+    /// Re-sends the roster of every guild whose members' presence changed since
+    /// the last call: somebody connected, disconnected, or walked into another
+    /// biome. Polled rather than hooked, because a body changes biome in a
+    /// dozen places and a disconnect in several, and none of them should have
+    /// to know a guild is watching.
+    void serviceGuildPresence(double nowMillis);
     /// The no-guild answer, which is the browser's `guildUpdate null`.
     void sendNoGuild(net::Connection&);
     /// Sends `guild` to every one of its members who is connected.
@@ -1078,6 +1097,10 @@ private:
         std::int64_t expiresAtMillis = 0;
     };
     std::unordered_map<std::string, PendingGuildInvite> guildInvites_;
+    /// What serviceGuildPresence last saw: every authenticated account, keyed
+    /// by lower-cased username, mapped to its guildLocation().
+    std::unordered_map<std::string, std::string> guildPresence_;
+    double nextGuildPresenceMillis_ = 0;
 
     SquadRoster squads_;
     /// The flattened form the loot and XP rules read, rebuilt each tick.

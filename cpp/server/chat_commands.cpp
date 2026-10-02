@@ -274,24 +274,6 @@ constexpr const char* kSquadCommands =
     "/squad-find-public, /squad-join &lt;squadId&gt;, /squad-public, /squad-private, "
     "/squad-accept, /squad-decline, /squad-leave, /squad-info";
 
-/// Chat content is markup, so a '<' in an admin command's output would open a
-/// tag and take the rest of the line with it -- which is exactly what happens
-/// in the browser, where `Usage: teleport <playerId/username> <x> <y>` renders
-/// as "Usage: teleport" and nothing else. The admin console sends no markup of
-/// its own, so escaping every line of it is how the same words reach the
-/// screen instead of being swallowed.
-std::string escaped(const std::string& text) {
-    std::string out;
-    out.reserve(text.size());
-    for (char c : text) {
-        if (c == '&') out += "&amp;";
-        else if (c == '<') out += "&lt;";
-        else if (c == '>') out += "&gt;";
-        else out += c;
-    }
-    return out;
-}
-
 /// The four type tags the browser stores against a notification.
 bool validNotificationType(const std::string& type) {
     return type == "super_craft" || type == "unique_craft" || type == "apex_craft" ||
@@ -505,7 +487,26 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     // Routed into the same cores the guild panel's binary messages use, so the
     // two roads cannot disagree about who may do what.
 
-    if (verb == "/guild-create") { guildCreate(session, connection, argument); return true; }
+    if (verb == "/guild-create") {
+        // The tag first, then everything after it as the display name, so
+        // `/guild-create ALPHA Alpha Squad` names the guild in one go
+        // and the old one-word form still makes a guild named after its tag.
+        const std::size_t gap = argument.find_first_of(" \t");
+        const std::string tag = argument.substr(0, gap);
+        const std::string displayName =
+            gap == std::string::npos ? std::string() : trimmed(argument.substr(gap));
+        guildCreate(session, connection, tag, displayName);
+        return true;
+    }
+    if (verb == "/guild-rename") {
+        guildEdit(session, connection, argument, std::nullopt);
+        return true;
+    }
+    if (verb == "/guild-description") {
+        // A bare `/guild-description` clears it.
+        guildEdit(session, connection, std::nullopt, argument);
+        return true;
+    }
     if (verb == "/guild-invite") { guildInvite(session, connection, argument); return true; }
     if (verb == "/guild-kick")   { guildKick(session, connection, argument); return true; }
     if (verb == "/guild-accept") { handleGuildAccept(session, connection); return true; }
@@ -537,9 +538,12 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                 lines += " <span style=\"color: #ffd54f;\">(Leader)</span>";
             }
         }
-        out("<span style=\"color: #ffb74d;\">Guild \"" + guildName + "\" (" +
-            std::to_string(members.size()) + "/" + std::to_string(kMaxGuildSize) + "):<br/>" +
-            lines + "</span>");
+        const std::string description = guild["description"].asString();
+        out("<span style=\"color: #ffb74d;\">Guild \"" + escapedMarkup(guildDisplayName(guild)) +
+            "\" [" + guildName + "] (" + std::to_string(members.size()) + "/" +
+            std::to_string(kMaxGuildSize) + "):<br/>" +
+            (description.empty() ? std::string() : escapedMarkup(description) + "<br/>") + lines +
+            "</span>");
         return true;
     }
 
@@ -553,7 +557,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         for (const std::string& key : guilds.keys()) {
             const Json& guild = guilds[key];
             if (!lines.empty()) lines += "<br/>";
-            lines += "\"" + key + "\" \xE2\x80\x94 " +
+            lines += "[" + key + "] " + escapedMarkup(guildDisplayName(guild)) + " \xE2\x80\x94 " +
                      std::to_string(guild["memberUsernames"].size()) + "/" +
                      std::to_string(kMaxGuildSize) + " \xE2\x80\x94 leader @" +
                      guild["leaderUsername"].asString();
@@ -565,8 +569,9 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
     // Any other /guild-* line: the reference normalises it to `/guild <word>`,
     // matches no subcommand, and answers with the list of the ones it has.
     if (verb.rfind("/guild", 0) == 0) {
-        out("Guild commands: /guild-create &lt;name&gt;, /guild-invite &lt;username&gt;, "
+        out("Guild commands: /guild-create &lt;tag&gt; [name], /guild-invite &lt;username&gt;, "
             "/guild-accept, /guild-decline, /guild-leave, /guild-kick &lt;username&gt;, "
+            "/guild-rename &lt;name&gt;, /guild-description [text], "
             "/guild-info, /guild-squad, /guild-list");
         return true;
     }
@@ -735,11 +740,14 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         help += "/s &lt;message&gt; - Send a message to your squad<br/>";
         help += "<br/><b>Guild commands (up to " + std::to_string(kMaxGuildSize) +
                 " members, persistent):</b><br/>";
-        help += "/guild-create &lt;name&gt; - Create a new guild (5-char alphanumeric ID)<br/>";
+        help += "/guild-create &lt;tag&gt; [name] - Create a new guild (5-char alphanumeric "
+                "tag, optional display name)<br/>";
         help += "/guild-invite &lt;username&gt; - Invite a player (leader only)<br/>";
         help += "/guild-accept / /guild-decline - Respond to a guild invite<br/>";
         help += "/guild-leave - Leave your guild<br/>";
         help += "/guild-kick &lt;username&gt; - Kick a member (leader only)<br/>";
+        help += "/guild-rename &lt;name&gt; - Rename the guild (leader only)<br/>";
+        help += "/guild-description [text] - Set or clear the description (leader only)<br/>";
         help += "/guild-info - Show guild info<br/>";
         help += "/guild-squad - Invite online guildmates into a squad<br/>";
         help += "/guild-list - List all guilds<br/>";
@@ -1050,7 +1058,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     // Escaped: the console's own output is plain text, and an unescaped
     // "<x>" in a usage line would be read as a tag and swallow the rest of
     // it (which is what it does in the browser).
-    const auto out = [&](const std::string& text) { sendSystem(connection, escaped(text)); };
+    const auto out = [&](const std::string& text) { sendSystem(connection, escapedMarkup(text)); };
 
     const std::vector<std::string> words = splitWords(command);
     if (words.empty()) return;
@@ -2227,7 +2235,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         out("Guilds (" + std::to_string(guilds.keys().size()) + "):");
         for (const std::string& key : guilds.keys()) {
             const Json& guild = guilds[key];
-            out("  \"" + key + "\" \xE2\x80\x94 " +
+            out("  [" + key + "] " + guildDisplayName(guild) + " \xE2\x80\x94 " +
                 std::to_string(guild["memberUsernames"].size()) + "/" +
                 std::to_string(kMaxGuildSize) + " \xE2\x80\x94 leader @" +
                 guild["leaderUsername"].asString());
@@ -2248,9 +2256,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
         const Json& guild = guilds[name];
         const Json& members = guild["memberUsernames"];
-        out("\"" + name + "\" \xE2\x80\x94 leader @" + guild["leaderUsername"].asString() +
-            " \xE2\x80\x94 " + std::to_string(members.size()) + "/" +
-            std::to_string(kMaxGuildSize));
+        out("[" + name + "] " + guildDisplayName(guild) + " \xE2\x80\x94 leader @" +
+            guild["leaderUsername"].asString() + " \xE2\x80\x94 " +
+            std::to_string(members.size()) + "/" + std::to_string(kMaxGuildSize));
+        if (!guild["description"].asString().empty()) {
+            out("Description: " + guild["description"].asString());
+        }
         std::string list;
         for (std::size_t i = 0; i < members.size(); ++i) {
             if (i > 0) list += ", ";

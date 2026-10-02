@@ -1017,7 +1017,6 @@ Rect ChangelogPanel::bounds(int w, int h) {
 Rect NotificationsPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h);
 }
-Rect GuildPanel::bounds(int w, int h) { return cornerPanel(preferredWidth(), 500.0, kMenuCornerY, w, h); }
 Rect AdminDbPanel::bounds(int w, int h) {
     return cornerPanel(preferredWidth(), preferredHeight(), kMenuCornerY, w, h);
 }

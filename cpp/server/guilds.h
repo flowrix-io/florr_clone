@@ -8,6 +8,12 @@
 // than mirrored into a typed cache because the same file is read by the
 // browser build, and a second copy is a second thing to keep true.
 //
+// Two optional fields ride beside those: `displayName`, the free-text name the
+// panel heads the card with, and `description`. The five-character `name` is
+// the guild's TAG -- its key, and what hangs under a nameplate in brackets. A
+// record written before either field existed has neither, which reads as a
+// display name equal to the tag and no description.
+//
 // Shared between the guild message handlers and the chat commands that reach
 // the same records (`/guild-info`, `/guild-list`, `/admin guild_force_join`).
 
@@ -40,6 +46,38 @@ inline bool validGuildName(const std::string& name) {
         if (!std::isupper(byte) && !std::isdigit(byte)) return false;
     }
     return true;
+}
+
+inline constexpr std::size_t kMaxGuildDisplayName = 20;
+inline constexpr std::size_t kMaxGuildDescription = 120;
+
+/// Printable ASCII and nothing else. The panel's prompts take only that, and
+/// holding the server to it keeps a control character or a glyph the client's
+/// one font cannot draw out of a card every member sees.
+inline bool printableAscii(const std::string& s) {
+    for (const char c : s) {
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte > 0x7E) return false;
+    }
+    return true;
+}
+
+/// One to kMaxGuildDisplayName printable characters, already trimmed.
+inline bool validGuildDisplayName(const std::string& name) {
+    return !name.empty() && name.size() <= kMaxGuildDisplayName && printableAscii(name);
+}
+
+/// Up to kMaxGuildDescription printable characters. Empty is allowed: it is
+/// how a leader clears one.
+inline bool validGuildDescription(const std::string& description) {
+    return description.size() <= kMaxGuildDescription && printableAscii(description);
+}
+
+/// What the card is headed with: the display name, or the tag for a guild that
+/// has none.
+inline std::string guildDisplayName(const Json& guild) {
+    const std::string name = guild["displayName"].asString();
+    return name.empty() ? guild["name"].asString() : name;
 }
 
 /// Position of `username` in a guild's member array, or -1.
