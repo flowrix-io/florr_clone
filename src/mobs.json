@@ -200,6 +200,9 @@
                 "worker_ant"
             ],
             [
+                "queen_ant"
+            ],
+            [
                 "baby_ant",
                 "worker_ant",
                 "soldier_ant"
@@ -219,8 +222,7 @@
             ],
             [
                 "soldier_ant",
-                "soldier_ant",
-                "queen_ant"
+                "soldier_ant"
             ]
         ]
     },
