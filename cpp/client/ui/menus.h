@@ -951,7 +951,8 @@ public:
     bool handleKeys(Window&);
 
     /// True while the client is in a game, which is the only time the exit
-    /// button is offered.
+    /// button is offered -- and the only time the changelog and Discord
+    /// buttons are not.
     ///
     /// The screen owns the loadout bar's slide: the browser builds a fresh
     /// `CanvasLoadoutBar` per screen, so crossing between them replays the
@@ -960,6 +961,9 @@ public:
         if (inGame == inGame_) return;
         inGame_ = inGame;
         loadoutSlide_ = 0.0;
+        // Its button is gone in game, so a changelog still open from the title
+        // screen would be a card with nothing on screen that opened it.
+        if (inGame_ && open_ == MenuId::Changelog) close();
     }
     /// Set when the exit button was clicked. The app reads and clears it --
     /// leaving a game is the app's business, not a menu's.
@@ -1020,7 +1024,7 @@ public:
     /// rather than the strips reserving, because only the HUD knows which of
     /// its pieces can move.
     ///
-    /// The top row is nine buttons wide in game, so `reservedTop()` is most of
+    /// The top row is eight buttons wide in game, so `reservedTop()` is most of
     /// the screen: the browser build clears it by dropping BELOW the row, not
     /// by moving right. `stripBottom()` is the y to use for that.
     double reservedTop() const;

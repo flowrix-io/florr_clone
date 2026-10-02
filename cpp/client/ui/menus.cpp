@@ -1111,6 +1111,10 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
     for (int i = 0; i < kStripSlotCount; ++i) {
         const StripSlot& slot = strip()[static_cast<std::size_t>(i)];
         if (slot.action == StripAction::Exit) visible[static_cast<std::size_t>(i)] = inGame_;
+        // What changed and where to talk about it are read before a run, not
+        // during one: both belong to the title screen only.
+        else if (slot.action == StripAction::Discord || slot.menu == MenuId::Changelog)
+            visible[static_cast<std::size_t>(i)] = !inGame_;
         else if (slot.menu == MenuId::Debug)
             visible[static_cast<std::size_t>(i)] = settings_.showDebugButton;
         else visible[static_cast<std::size_t>(i)] = true;
