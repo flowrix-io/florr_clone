@@ -273,8 +273,9 @@ void App::updateLogin(double dt) {
     if (focusedField_ == 0 || (advancedOpen_ && focusedField_ == serverField)) {
         const Rect box = focusedField_ == 0 ? layout.username : layout.serverIp;
         std::string& value = focusedField_ == 0 ? usernameField_ : serverField_;
-        ui::trackTextMouse(window_, authField_, box, ui::textFieldRun(box, value, {}, &authField_),
-                           value, timeSeconds_);
+        ui::trackTextMouse(window_, authField_, box,
+                           ui::inputFieldRun(box, value, authField_, ui::InputLook::Auth), value,
+                           timeSeconds_);
     }
 
     // Enter submits only while a field has the caret: the browser's form is a
@@ -518,25 +519,21 @@ void App::drawLogin(Canvas& canvas, double time) {
     heading.strokeWidth = 3;
     text(canvas, registering_ ? "Register" : "Login", centreX, layout.headingY, heading);
 
-    // Every default of TextFieldStyle is already this form's: the green plate,
-    // its own 0.8-value outline, radius 3, 4px slack / 5px focused, 18px text.
-    const TextFieldStyle authField;
     const int serverField = registering_ ? 3 : 2;
-    // The two unmasked fields are handed the caret they share, so the bar and
-    // the highlight are drawn where editing puts them rather than at the end.
-    textField(canvas, layout.username, usernameField_, "Username", focusedField_ == 0, false,
-              time, authField, focusedField_ == 0 ? &authField_ : nullptr);
-    textField(canvas, layout.password,
-              passwordField_, "Password", focusedField_ == 1, true, time, authField);
+    // The four fields share one caret, so only the focused one is handed it:
+    // the bar and the highlight are drawn where editing puts them. The form
+    // keeps the browser build's green plates rather than the standard input.
+    const auto field = [&](Rect box, const std::string& value, const char* placeholder,
+                           int index, bool masked) {
+        inputField(canvas, box, value, placeholder, focusedField_ == index, time,
+                   focusedField_ == index ? &authField_ : nullptr, masked, InputLook::Auth);
+    };
+    field(layout.username, usernameField_, "Username", 0, false);
+    field(layout.password, passwordField_, "Password", 1, true);
     if (registering_) {
-        textField(canvas, layout.confirmation, confirmPasswordField_, "Confirm Password",
-                  focusedField_ == 2, true, time, authField);
+        field(layout.confirmation, confirmPasswordField_, "Confirm Password", 2, true);
     }
-    if (advancedOpen_) {
-        textField(canvas, layout.serverIp, serverField_, "Server IP",
-                  focusedField_ == serverField, false, time, authField,
-                  focusedField_ == serverField ? &authField_ : nullptr);
-    }
+    if (advancedOpen_) field(layout.serverIp, serverField_, "Server IP", serverField, false);
 
     ButtonStyle advancedStyle;
     advancedStyle.fill = 0x7B2FA0u;

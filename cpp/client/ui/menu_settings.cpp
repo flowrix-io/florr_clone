@@ -372,8 +372,8 @@ TextStyle bodyStyle(double size, std::uint32_t fill, std::uint32_t stroke, doubl
     return style;
 }
 
-/// A white inset surface in a grey surround: the key boxes and the server-IP
-/// field. Rounded outside, SHARP inside, as the browser draws it.
+/// A white inset surface in a grey surround: the key boxes. Rounded outside,
+/// SHARP inside, as the browser draws it.
 void insetSurface(Canvas& canvas, Rect r, std::uint32_t surface) {
     fillRound(canvas, r, 3.0, kSurroundFill);
     setFill(canvas, surface);
@@ -384,48 +384,6 @@ void insetSurface(Canvas& canvas, Rect r, std::uint32_t surface) {
 std::uint32_t surfaceColour(bool active, bool hovered) {
     if (active) return kSurfaceActive;
     return hovered ? kSurfaceHover : kSurfaceIdle;
-}
-
-/// One masked box of the change-password form, in the panel's own grey-on-white
-/// rather than the auth form's green plate, so the account block reads as part
-/// of this card.
-///
-/// Painted through ui::textField instead of insetSurface because that is where
-/// masking lives -- and where a field records its box for the on-screen
-/// keyboard, which a hand-rolled plate would have to remember to do.
-void passwordBox(Canvas& canvas, Rect box, const std::string& value, const char* placeholder,
-                 bool focused, bool hovered, double timeSeconds) {
-    TextFieldStyle style;
-    style.fill = surfaceColour(focused, hovered);
-    style.outline = kSurroundFill;
-    style.focusedOutline = kSurroundFill;
-    style.radius = 3.0;
-    style.outlineWidth = 3.0;
-    style.focusedOutlineWidth = 3.0;
-    style.textSize = 13.0;
-    style.textFill = kInk;
-    style.textStrokeWidth = 0.0;
-    style.bold = false;
-    style.caret = kInk;
-    style.padding = 8.0;
-
-    // That outline is CENTRED on the rect it is handed, so the rect is
-    // deflated by half of it and the painted edge lands exactly on `box` --
-    // the same 3px surround inside the same bounds that insetSurface gives the
-    // key boxes and the server-IP field.
-    const double half = style.outlineWidth * 0.5;
-    textField(canvas, Rect{box.x + half, box.y + half, box.w - style.outlineWidth,
-                           box.h - style.outlineWidth},
-              value, placeholder, focused, true, timeSeconds, style);
-}
-
-/// The run the endpoint field paints, scrolled so its caret stays in the box.
-TextRun endpointRun(Rect box, const std::string& value, const ui::TextFieldState& state) {
-    TextRun run;
-    run.text = value;
-    run.size = 13.0;
-    run.originX = box.x + 8.0 - ui::followCaret(state, value, run.size, false, box.w - 20.0);
-    return run;
 }
 
 ButtonStyle gardnStyle(std::uint32_t fill, double textSize) {
@@ -880,32 +838,9 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.cy += 25.0;
 
             const Rect field{contentX, p.cy, contentW, kFieldHeight};
-            insetSurface(canvas, field, surfaceColour(st.ipField.focused, p.over(field)));
-            // Scrolled to keep the caret in view rather than truncated from the
-            // left: the tail of an address is what identifies it, which is
-            // where the caret starts, but the caret can be dragged anywhere now.
-            const TextRun run = endpointRun(field, st.serverIp, st.ipField);
-            canvas.save();
-            canvas.beginPath();
-            canvas.rect(static_cast<float>(field.x + 3.0), static_cast<float>(field.y),
-                        static_cast<float>(field.w - 6.0), static_cast<float>(field.h));
-            canvas.clip();
-            if (st.ipField.focused) {
-                selectionHighlight(canvas, run, st.ipField.selection,
-                                   Rect{field.x + 4.0, field.y + 6.0, field.w - 8.0,
-                                        field.h - 12.0});
-            }
-            TextStyle value = bodyStyle(13.0, kInk, kInk, 0.0);
-            value.bold = false;
-            text(canvas, st.serverIp, run.originX, p.cy + kFieldHeight * 0.5, value);
-            if (st.ipField.focused && caretVisible(st.ipField, ctx.timeSeconds)) {
-                setFill(canvas, kInk);
-                canvas.fillRect(
-                    static_cast<float>(xOfIndex(run, st.ipField.selection.caret)),
-                    static_cast<float>(p.cy + 8.0), 2.0f,
-                    static_cast<float>(kFieldHeight - 16.0));
-            }
-            canvas.restore();
+            inputField(canvas, field, st.serverIp, "", st.ipField.focused, ctx.timeSeconds,
+                       &st.ipField);
+            const TextRun run = inputFieldRun(field, st.serverIp, st.ipField);
             if (p.inView) {
                 trackTextMouse(ctx.window, st.ipField, field, run, st.serverIp, ctx.timeSeconds);
             }
@@ -939,8 +874,11 @@ bool SettingsPanel::render(MenuContext& ctx) {
                 for (int i = 0; i < kPasswordFieldCount; ++i) {
                     const auto at = static_cast<std::size_t>(i);
                     const Rect box{contentX, p.cy, contentW, kFieldHeight};
-                    passwordBox(canvas, box, st.passwords[at], kPasswordCaptions[at],
-                                st.focusedPassword == i, p.over(box), ctx.timeSeconds);
+                    // The three boxes share one caret; only the focused one is
+                    // handed it.
+                    const bool focused = st.focusedPassword == i;
+                    inputField(canvas, box, st.passwords[at], kPasswordCaptions[at], focused,
+                               ctx.timeSeconds, focused ? &st.passwordField : nullptr, true);
                     // On the release, like every other control on this card and
                     // like the auth form's own fields -- and through p.click,
                     // so the same release does not then read as a click on

@@ -111,11 +111,11 @@ inline constexpr double kCloseSize = 29.0;
 inline constexpr double kCellSize = 60.0;
 inline constexpr double kCellGap = 10.0;
 
-/// The dark chrome the toggle, the search field and the TP badge are made of.
+/// The dark chrome the toggle and the TP badge are made of. Text inputs have
+/// their own colours, in client/ui/theme.h.
 inline constexpr std::uint32_t kControlDark = 0x3A3A3Au;
 inline constexpr std::uint32_t kControlMid = 0x666666u;
 inline constexpr std::uint32_t kControlLit = 0xCFCFCFu;
-inline constexpr std::uint32_t kControlField = 0xEEEEEEu;
 
 /// The two anchors the browser build hangs panels off.
 ///

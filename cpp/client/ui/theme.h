@@ -44,12 +44,14 @@ inline constexpr double kHudLayerAlpha = 0.865;
 /// under the corner and the bottom edge still shows faintly through.
 inline constexpr double kOverlayPlateAlpha = 0.9;
 inline constexpr std::uint32_t kShade      = 0x000000u;  ///< modal scrim, at low alpha
-/// The green the browser build's auth form and chat field are made of.
+/// The green the browser build's auth form is made of (InputLook::Auth).
 inline constexpr std::uint32_t kField      = 0x18CE18u;
-/// The wash behind selected text in a FIELD. Painted under the field's own
-/// text, so it has to read on a white inset and on a saturated plate alike;
-/// the fields on dark plates pass `kPaper` instead and get a pale wash rather
-/// than a blue one.
+/// Every other text input, in the inventory search's look (ui::inputField): a
+/// square frame of kInputFrame around a square band of kInputFill.
+inline constexpr std::uint32_t kInputFrame       = 0x3A3A3Au;
+inline constexpr std::uint32_t kInputFill        = 0xEEEEEEu;
+inline constexpr std::uint32_t kInputPlaceholder = 0x8A8A8Au;
+/// The wash behind selected text in a field, under the field's own ink text.
 inline constexpr std::uint32_t kSelection  = 0x3D7DD8u;
 /// The plate behind selected PAGE text -- a panel's labels, a chat line.
 ///

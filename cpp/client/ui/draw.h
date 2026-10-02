@@ -119,62 +119,69 @@ void disc(Canvas&, Vec2 centre, double radius, std::uint32_t fill,
 /// A full-screen scrim behind a modal.
 void scrim(Canvas&, double alpha = 0.45);
 
-/// A text field's box and contents, with a blinking caret when focused.
-/// `masked` renders the value as bullets, for passwords.
-///
-/// `timeSeconds` is the caller's frame clock and the caret does NOT read it:
-/// the browser blinks on `Date.now()`, so the phase is taken from the wall
-/// clock instead. Two clients launched a second apart would otherwise pulse
-/// against each other and against the browser build.
-///
-/// The defaults are the browser build's auth-form input: a saturated green
-/// plate with its own 0.8-value shade as a thick round-joined outline, and a
-/// focused state that widens the outline rather than recolouring it. The
-/// outline is CENTRED on the box, as `ctx.stroke()` draws it there, so the
-/// painted field is `outlineWidth / 2` larger than `r` on every side.
-struct TextFieldStyle {
-    std::uint32_t fill = kField;
-    /// 0xffffffff derives the outline as the fill at 0.8 HSV value, which is
-    /// what `hsvAdjust(color, 0.8)` does for every gardn-style control.
-    std::uint32_t outline = 0xFFFFFFFFu;
-    std::uint32_t focusedOutline = 0xFFFFFFFFu;
-    double fillAlpha = 1.0;
-    double outlineAlpha = 1.0;
-    double radius = 3.0;
-    double outlineWidth = 4.0;
-    double focusedOutlineWidth = 5.0;
-    double textSize = 18.0;
-    std::uint32_t textFill = kPaper;
-    double textStrokeWidth = 2.0;
-    bool bold = false;
-    std::uint32_t caret = kPaper;
-    double padding = 10.0;
-    /// On, because in the reference the field's own plate is what sets the
-    /// join: `drawInput` and the lobby name field both leave `lineJoin =
-    /// 'round'` ambient across the `drawText` that follows, and `drawText`
-    /// deliberately never resets it. Every field in the browser build is
-    /// therefore round-joined.
-    bool roundJoin = true;
+// ---------------------------------------------------------------------------
+// Text inputs
+// ---------------------------------------------------------------------------
+//
+// Every text input in the client is painted here. The standard look is the
+// inventory search's: a square kInputFrame frame kInputFrameWidth wide around
+// a square kInputFill band, ink text, and no corner radius anywhere. The lobby
+// name, the open chat line, the shop's code box and the settings fields each
+// used to carry a plate of their own and read as so many different controls. A
+// new field calls inputField; a field that lays out its own lines calls
+// inputFieldPlate and draws inside the band.
+//
+// Two places keep the browser build's plate instead, as InputLook names them:
+// the auth form, and the chat line while it is closed.
+
+/// Which plate an input sits on. Only the plate and the type differ: the
+/// caret, the selection, the scroll and the hit test are the same code for all
+/// three.
+enum class InputLook : std::uint8_t {
+    Standard,   ///< the inventory search's
+    Auth,       ///< the auth form's saturated green round plate, white 18px text
+    Overlay,    ///< the closed chat line: a dark see-through slot, hairline edge
 };
+
+inline constexpr double kInputFrameWidth = 4.0;
+/// From the band's edge to the first glyph: the browser's `padding: 0 8px`.
+inline constexpr double kInputPadding = 8.0;
+/// The inventory search's type size, and the smallest any input uses.
+inline constexpr double kInputTextSize = 13.0;
+
+/// The band inside the frame. It clips the text, the highlight and the caret.
+Rect inputFieldBand(Rect r);
+
+/// The type size for a field this tall: the inventory search's 13px at its
+/// 33px, and 40% of the height above that, so a 40px login box is not left
+/// holding a 33px box's text.
+double inputTextSize(Rect r);
+
+/// The run inputField paints `value` as, scrolled to keep the caret in the box
+/// while the field is focused (an unfocused one shows its start, as a blurred
+/// <input> does). Hit-test a field through this, with the look it is painted
+/// in, never by measuring the value from the box's edge.
+TextRun inputFieldRun(Rect r, const std::string& value, const TextFieldState& state,
+                      InputLook look = InputLook::Standard);
+
+/// The frame and the band, nothing else, for a field that lays out its own
+/// contents (the skin studio's multiline editor). Returns the band.
+Rect inputFieldPlate(Canvas&, Rect r);
+
+/// One single-line input, with its selection and a blinking caret when
+/// focused. `state` carries the caret, the selection and the scroll; without
+/// one the caret sits at the end. `masked` draws one '*' per byte and keeps
+/// the caret at the end -- a selection over bullets is nothing worth showing.
+/// The placeholder shows while the value is empty, focused or not, as an
+/// <input>'s does.
+void inputField(Canvas&, Rect r, const std::string& value, const std::string& placeholder,
+                bool focused, double timeSeconds, const TextFieldState* state = nullptr,
+                bool masked = false, InputLook look = InputLook::Standard);
 
 /// Paints a field's selection highlight, under the text and inside `band` --
 /// the field's content rect, which is what clips a scrolled selection to the
 /// box. Draws nothing when there is no selection.
-void selectionHighlight(Canvas&, const TextRun&, const TextSelection&, Rect band,
-                        std::uint32_t colour = kSelection, double alpha = 0.45);
-
-/// The run `textField` paints for these bounds, so a caller can hit-test it
-/// with `indexAtX` and get the same answer the paint gave. A field's `state`
-/// scrolls it to keep the caret in the box; pass the same one `textField` gets.
-TextRun textFieldRun(Rect r, const std::string& value, const TextFieldStyle& style = {},
-                     const TextFieldState* state = nullptr);
-
-/// `state` carries the caret and the selection. Passing none keeps the field's
-/// old behaviour -- caret at the end, nothing selected -- which is what a
-/// masked field and a read-only one still want.
-void textField(Canvas&, Rect r, const std::string& value, const std::string& placeholder,
-               bool focused, bool masked, double timeSeconds,
-               const TextFieldStyle& style = {}, const TextFieldState* state = nullptr);
+void selectionHighlight(Canvas&, const TextRun&, const TextSelection&, Rect band);
 
 /// True when `point` is inside `r`. Here so every screen hit-tests the same way.
 inline bool hit(Rect r, Vec2 point) { return r.contains(point); }

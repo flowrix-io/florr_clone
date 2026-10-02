@@ -56,7 +56,7 @@ namespace {
 /// The selection colour: the strip button's purple, which is also the skin's
 /// border. Bright enough to read against the body it sits on.
 constexpr std::uint32_t kAccentPurple = kSkinsSkin.border;
-/// Sunken surfaces -- the shape list, the text editor, a browse card.
+/// Sunken surfaces -- the shape list, a browse card.
 constexpr std::uint32_t kWell = hsvScale(kSkinsSkin.fill, 0.66);
 /// One row on a sunken surface.
 constexpr std::uint32_t kRowFill = hsvScale(kSkinsSkin.fill, 1.12);
@@ -171,6 +171,15 @@ void clipRect(Canvas& canvas, Rect r) {
 void clipRound(Canvas& canvas, Rect r, double radius) {
     roundPath(canvas, r, radius);
     canvas.clip();
+}
+
+/// The text editor's lines, which its paint and its pointer must agree on: a
+/// standard input's band, the field padding in, the first line's middle a
+/// half-line below a 6px top margin.
+constexpr double kEditorLineHeight = kInputTextSize * 1.5;
+double editorTextX(Rect editor) { return inputFieldBand(editor).x + kInputPadding; }
+double editorFirstLine(Rect editor) {
+    return inputFieldBand(editor).y + 6.0 + kEditorLineHeight * 0.5;
 }
 
 /// Panel text: white, outlined so it reads over the card and over the board,
@@ -911,14 +920,13 @@ void Studio::drawProps(Canvas& canvas, Rect r) {
 }
 
 void Studio::drawTextEditor(Canvas& canvas, Rect r, double timeSeconds) {
-    inlaid(canvas, r, kWell, kSkinsSkin.border, 2.0, 6.0);
-
+    // The standard input, laid out a line at a time.
+    const Rect band = inputFieldPlate(canvas, r);
     canvas.save();
-    clipRound(canvas, {r.x + 3, r.y + 3, r.w - 6, r.h - 6}, 5.0);
-    constexpr double fontPx = 12.5;
-    constexpr double lineH = fontPx * 1.5;
-    TextStyle body = label(fontPx);
-    body.bold = false;
+    clipRect(canvas, band);
+    TextStyle body;
+    body.size = kInputTextSize;
+    body.fill = kInk;
     body.strokeWidth = 0;
 
     const TextSelection& sel = textField.selection;
@@ -927,11 +935,11 @@ void Studio::drawTextEditor(Canvas& canvas, Rect r, double timeSeconds) {
     for (std::size_t i = 0; i <= textBuffer.size(); ++i) {
         if (i != textBuffer.size() && textBuffer[i] != '\n') continue;
         const std::string line = textBuffer.substr(lineStart, i - lineStart);
-        const double baseY = r.y + 10.0 + lineH * (lineIndex + 0.5);
+        const double baseY = editorFirstLine(r) + kEditorLineHeight * lineIndex;
         TextRun run;
         run.text = line;
-        run.originX = r.x + 10.0;
-        run.size = fontPx;
+        run.originX = editorTextX(r);
+        run.size = kInputTextSize;
 
         // One highlight per line, cut to the part of that line the selection
         // actually covers -- a multi-line selection is a stack of these.
@@ -940,16 +948,17 @@ void Studio::drawTextEditor(Canvas& canvas, Rect r, double timeSeconds) {
             onLine.anchor = sel.begin() > lineStart ? sel.begin() - lineStart : 0;
             onLine.caret = std::min(sel.end(), i) - lineStart;
             selectionHighlight(canvas, run, onLine,
-                               Rect{r.x + 4.0, baseY - lineH * 0.5, r.w - 8.0, lineH}, kPaper,
-                               0.30);
+                               Rect{band.x, baseY - kEditorLineHeight * 0.5, band.w,
+                                    kEditorLineHeight});
         }
-        if (baseY < r.bottom()) ui::text(canvas, line, run.originX, baseY, body);
+        if (baseY < band.bottom()) ui::text(canvas, line, run.originX, baseY, body);
 
         if (sel.caret >= lineStart && sel.caret <= i && caretVisible(textField, timeSeconds)) {
             const double caretX = xOfIndex(run, sel.caret - lineStart);
-            setFill(canvas, kPaper);
-            canvas.fillRect(static_cast<float>(caretX), static_cast<float>(baseY - fontPx * 0.6),
-                            1.0f, static_cast<float>(fontPx * 1.2));
+            setFill(canvas, kInk);
+            canvas.fillRect(static_cast<float>(caretX),
+                            static_cast<float>(baseY - kInputTextSize * 0.6), 1.0f,
+                            static_cast<float>(kInputTextSize * 1.2));
         }
         lineStart = i + 1;
         ++lineIndex;
@@ -1564,13 +1573,10 @@ bool Studio::handleInput(MenuContext& ctx) {
         if (editText(ctx.window, textBuffer, textField, ctx.timeSeconds, typing)) {
             applyTextBuffer();
         }
-        // The editor's own lines: 10 in from its left edge, the first centred
-        // a line-height and a half down, which is what drawTextEditor paints.
-        constexpr double fontPx = 12.5;
-        constexpr double lineH = fontPx * 1.5;
+        // Against the lines drawTextEditor paints.
         const Rect editor = layout.right;
-        trackTextMouseMultiline(ctx.window, textField, editor, textBuffer, editor.x + 10.0,
-                                editor.y + 10.0 + lineH * 0.5, lineH, fontPx, false,
+        trackTextMouseMultiline(ctx.window, textField, editor, textBuffer, editorTextX(editor),
+                                editorFirstLine(editor), kEditorLineHeight, kInputTextSize, false,
                                 ctx.timeSeconds);
         if (ctx.window.keyPressed(Key::Escape)) textMode = false;
     }

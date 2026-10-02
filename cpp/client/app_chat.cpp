@@ -49,10 +49,10 @@ constexpr double kChatColumnDown = 65.0;      ///< bottom of the column, from th
 constexpr double kChatLineHeight = 16.0;
 /// A message div's `margin: 2px 0`; adjacent siblings collapse to one gap.
 constexpr double kChatMessageGap = 2.0;
-constexpr double kChatFieldUp = 44.0;         ///< top of the input, from the bottom edge
-constexpr double kChatFieldHeight = 20.0;
-/// The size a browser gives an unstyled <input>, which is what the field is.
-constexpr double kChatFieldTextSize = 13.333;
+/// Top of the input, from the bottom edge. The bottom stays 24 up; the field is
+/// the standard input, whose 4px frame needs 28 to hold 13px text.
+constexpr double kChatFieldUp = 52.0;
+constexpr double kChatFieldHeight = 28.0;
 /// The suggestion list replaces the message column; these are its own metrics.
 constexpr double kChatSuggestionRowHeight = 23.0;   // 4px padding, a 15px line, 4px
 constexpr double kChatSuggestionSize = 13.0;
@@ -507,7 +507,8 @@ void App::editChatLine() {
     // Against the box the last frame painted: input runs before the draw, and
     // the field does not move between the two.
     if (chatBox_.w > 0) {
-        ui::trackTextMouse(window_, chatField_, chatBox_, chatFieldRun(chatBox_), chatDraft_,
+        ui::trackTextMouse(window_, chatField_, chatBox_,
+                           ui::inputFieldRun(chatBox_, chatDraft_, chatField_), chatDraft_,
                            timeSeconds_);
         // The chat line is open or it is not; a press outside must not blur it
         // into a state where it takes keys but shows no caret.
@@ -910,73 +911,14 @@ void App::drawChat(Canvas& canvas, double time) {
 
 void App::drawChatField(Canvas& canvas, Rect box, double time) {
     chatBox_ = box;
-    // A closed slot answers for no keystrokes, so nothing hit-tests it and it
-    // would never reach the keyboard regions -- which is exactly the tap that
-    // has to raise the keyboard, because it is the tap that opens the line.
-    // While it IS open, trackTextMouse records it like every other field.
-    if (!chatOpen_) ui::TextFieldRegions::instance().record(box);
-    // A dark translucent slot with a hairline white edge -- the reference's
-    // chat input, which is the one control in the game that is not drawn in the
-    // chunky plate style everything else uses.
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(box.x), static_cast<float>(box.y),
-                     static_cast<float>(box.w), static_cast<float>(box.h), 3.0f);
-    setFill(canvas, kInk, chatOpen_ ? 0.5 : 0.3);
-    canvas.fill();
-    // Inset by half the line so the edge lands INSIDE the box, as a one-pixel
-    // border does; a centred stroke would make the slot a pixel wider.
-    canvas.beginPath();
-    canvas.roundRect(static_cast<float>(box.x + 0.5), static_cast<float>(box.y + 0.5),
-                     static_cast<float>(box.w - 1.0), static_cast<float>(box.h - 1.0), 2.5f);
-    canvas.save();
-    canvas.setLineWidth(1.0f);
-    setStroke(canvas, kPaper, 0.3);
-    canvas.stroke();
-    canvas.restore();
-
-    TextStyle line;
-    line.size = kChatFieldTextSize;
-    line.align = Align::Left;
-    line.strokeWidth = 0;
-    // The placeholder is a property of the field being EMPTY, not of it being
-    // unfocused: an <input> keeps showing it with the caret sitting in front.
-    const bool empty = chatDraft_.empty();
-    line.fill = empty ? 0x757575u : kPaper;
-
-    const ui::TextRun run = chatFieldRun(box);
-    // A 180-byte draft is several boxes wide; the slot clips it, as the
-    // <input> it stands in for does.
-    canvas.save();
-    canvas.beginPath();
-    canvas.rect(static_cast<float>(box.x + 2.0), static_cast<float>(box.y),
-                static_cast<float>(box.w - 4.0), static_cast<float>(box.h));
-    canvas.clip();
-    if (chatOpen_) {
-        // A pale wash: the slot is a dark translucent plate, and the blue one
-        // the light fields use disappears into it.
-        selectionHighlight(canvas, run, chatField_.selection,
-                           Rect{box.x + 2.0, box.y + 3.0, box.w - 4.0, box.h - 6.0}, kPaper,
-                           0.30);
-    }
-    text(canvas, empty ? "Press Enter to chat..." : chatDraft_, run.originX,
-         box.y + box.h * 0.5, line);
-
-    if (chatOpen_ && caretVisible(chatField_, time)) {
-        const double caretX = xOfIndex(run, chatField_.selection.caret);
-        setFill(canvas, kPaper);
-        canvas.fillRect(static_cast<float>(caretX), static_cast<float>(box.y + 4.0), 1.0f,
-                        static_cast<float>(box.h - 8.0));
-    }
-    canvas.restore();
-}
-
-ui::TextRun App::chatFieldRun(Rect box) const {
-    ui::TextRun run;
-    run.text = chatDraft_;
-    run.size = kChatFieldTextSize;
-    run.originX = box.x + 6.0 - ui::followCaret(chatField_, chatDraft_, run.size, false,
-                                                box.w - 12.0);
-    return run;
+    // The standard input while it is open; closed, the browser build's dark
+    // see-through slot, so it does not sit over the game as a white box.
+    // inputField records the box for the on-screen keyboard either way, which
+    // a closed line needs: the tap that raises the keyboard is the one that
+    // opens it.
+    const ui::InputLook look = chatOpen_ ? ui::InputLook::Standard : ui::InputLook::Overlay;
+    ui::inputField(canvas, box, chatDraft_, "Press Enter to chat...", chatOpen_, time,
+                   &chatField_, false, look);
 }
 
 } // namespace flix

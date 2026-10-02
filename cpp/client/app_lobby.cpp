@@ -103,11 +103,11 @@ bool hitInclusive(Rect r, Vec2 p) {
 }
 
 /// The name field's overflow rule: drop trailing characters until the string
-/// plus an ellipsis fits, then append one. Measured in the same bold 18px face
-/// the field draws in, because a narrower measure would cut too much.
-std::string ellipsised(Canvas& canvas, std::string value, double maxWidth) {
-    if (textWidth(canvas, value, 18.0, true) <= maxWidth) return value;
-    while (!value.empty() && textWidth(canvas, value + "...", 18.0, true) > maxWidth) {
+/// plus an ellipsis fits, then append one. Measured at the `size` the field
+/// draws in, because a narrower measure would cut too much.
+std::string ellipsised(Canvas& canvas, std::string value, double maxWidth, double size) {
+    if (textWidth(canvas, value, size) <= maxWidth) return value;
+    while (!value.empty() && textWidth(canvas, value + "...", size) > maxWidth) {
         // Whole UTF-8 sequences, so a cut never leaves a broken character.
         std::size_t at = value.size() - 1;
         while (at > 0 && (static_cast<unsigned char>(value[at]) & 0xC0) == 0x80) --at;
@@ -179,26 +179,6 @@ std::string titleCaseId(const std::string& id) {
 
 } // namespace
 
-ui::TextFieldStyle App::nameFieldStyle() {
-    // The lobby's own field, and NOT the auth form's: a near-opaque white plate
-    // with a grey edge and a BLACK caret, which is a different control from the
-    // game's green fields rather than a restyling of them.
-    TextFieldStyle style;
-    style.fill = kPaper;
-    style.fillAlpha = 0.9;
-    style.outline = 0xB4B4B4u;
-    style.focusedOutline = 0xB4B4B4u;
-    style.outlineAlpha = 0.8;
-    style.outlineWidth = 4.0;
-    style.focusedOutlineWidth = 4.0;
-    style.radius = 3.0;
-    style.textSize = 18.0;
-    style.textStrokeWidth = 3.0;
-    style.bold = true;
-    style.caret = kInk;
-    return style;
-}
-
 void App::updateLobby(double dt) {
     // The XP gauge eases toward the profile rather than jumping to it: in from
     // empty the first time the screen shows, and on from where it stood when
@@ -233,8 +213,8 @@ void App::updateLobby(double dt) {
     } else if (nameField_.focused) {
         editText(playerName_, 20, nameField_);
         ui::trackTextMouse(window_, nameField_, nameBox_,
-                           ui::textFieldRun(nameBox_, playerName_, nameFieldStyle(), &nameField_),
-                           playerName_, timeSeconds_);
+                           ui::inputFieldRun(nameBox_, playerName_, nameField_), playerName_,
+                           timeSeconds_);
         // Enter starts the game only from here, which is the one place the
         // reference accepts it: with nothing focused, Enter opens chat.
         if (window_.keyPressed(Key::Enter)) {
@@ -640,19 +620,16 @@ void App::drawLobby(Canvas& canvas, double time) {
 
     const LobbyLayout layout = lobbyLayout(canvas.width(), canvas.height());
 
-    // Drawn by hand rather than through ui::textField: this one is a pale
-    // plate with a grey edge and a BLACK caret, which is a different control
-    // from the game's green fields and not a restyling of them.
-    TextFieldStyle nameStyle = nameFieldStyle();
-    nameStyle.fillAlpha = nameField_.focused ? 0.95 : 0.9;
     nameBox_ = layout.name;
     // The raw value while it is being edited, so the caret and the highlight
     // land on the glyphs actually drawn; the ellipsised form once the caret
-    // has gone, which is what keeps a long name inside its plate.
-    textField(canvas, layout.name,
-              nameField_.focused ? playerName_ : ellipsised(canvas, playerName_, 260.0),
-              "This flower is called...", nameField_.focused, false, time, nameStyle,
-              &nameField_);
+    // has gone, which is what keeps a long name inside its box.
+    const double nameSpan = inputFieldBand(layout.name).w - kInputPadding * 2;
+    inputField(canvas, layout.name,
+               nameField_.focused
+                   ? playerName_
+                   : ellipsised(canvas, playerName_, nameSpan, inputTextSize(layout.name)),
+               "This flower is called...", nameField_.focused, time, &nameField_);
 
     ButtonStyle readyStyle;
     readyStyle.fill = 0x1DD129u;

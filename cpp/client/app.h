@@ -290,9 +290,6 @@ private:
     /// The chat input slot, shared by the title screen and the game so the two
     /// cannot drift apart.
     void drawChatField(Canvas&, Rect box, double time);
-    /// The run drawChatField paints the draft as, scrolled to keep the caret in
-    /// the box. The pointer is tracked against the same one.
-    ui::TextRun chatFieldRun(Rect box) const;
     void drawConnectionState(Canvas&, double time);
     void drawSessionReplaced(Canvas&, double time);
     /// The red strip across the top of a live game whose socket has dropped.
@@ -361,8 +358,6 @@ private:
     /// recorded as the panels paint, and its own card goes over them.
     void updateTextSelection(Canvas&);
 
-    /// The lobby name box's plate, shared by its painter and its hit test.
-    static ui::TextFieldStyle nameFieldStyle();
     /// The auth form's field at `index`, or null when there is none there.
     std::string* authValue(int index);
     /// Moves the caret to another auth field, taking its contents whole.

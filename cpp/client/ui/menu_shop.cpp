@@ -140,7 +140,6 @@ constexpr double kControlBorder = 4.0;
 
 constexpr std::uint32_t kCodeBlue = 0x4A90E2u;
 constexpr std::uint32_t kCodeBlueHover = 0x5FA1EDu;
-constexpr std::uint32_t kCodeBlueLit = 0x7EB9F7u;
 constexpr std::uint32_t kGold = 0xFFD700u;
 constexpr std::uint32_t kAlert = 0xE74C3Cu;
 
@@ -248,17 +247,6 @@ struct ShopState {
     std::vector<FallingStar> stars;
     Rng rng;
 };
-
-/// The run the code field paints, scrolled so the caret stays inside the box.
-/// The paint and the hit test both take it from here, or a click would land on
-/// a glyph other than the one under the pointer.
-TextRun codeRun(Rect box, const std::string& code, const ui::TextFieldState& state) {
-    TextRun run;
-    run.text = code;
-    run.size = 16.0;
-    run.originX = box.x + 8.0 - ui::followCaret(state, code, run.size, false, box.w - 16.0);
-    return run;
-}
 
 ShopState& stateFor(const ShopPanel* panel) {
     static std::unordered_map<const ShopPanel*, ShopState> states;
@@ -843,50 +831,9 @@ bool ShopPanel::render(MenuContext& ctx) {
                          codePlate.w - 30.0 - 10.0 - 110.0, 40.0};
         redeemButton = Rect{codeField.right() + 10.0, codeField.y, 110.0, 40.0};
 
-        const bool fieldHover = !modalUp && codeField.contains(mouse);
-        if (fieldHover) cursor = CursorShape::Text;
-        fillRounded(canvas, codeField, 5.0, kPaper, 0.10);
-        strokeRounded(canvas, codeField, 5.0,
-                      state.field.focused ? kPaper : (fieldHover ? kCodeBlueLit : kCodeBlue), 2.0);
-
-        canvas.save();
-        canvas.beginPath();
-        canvas.rect(static_cast<float>(codeField.x + 4.0), static_cast<float>(codeField.y),
-                    static_cast<float>(codeField.w - 8.0), static_cast<float>(codeField.h));
-        canvas.clip();
-        {
-            const TextRun run = codeRun(codeField, state.code, state.field);
-            const bool placeholder = state.code.empty();
-            const std::string shown =
-                placeholder ? (state.field.focused ? std::string() : "Enter code...") : state.code;
-
-            // A pale wash rather than the blue one: this field is a translucent
-            // white inset on a green card, and a blue block on it reads as a
-            // different control rather than as selected text.
-            if (state.field.focused) {
-                selectionHighlight(canvas, run, state.field.selection,
-                                   Rect{codeField.x + 4.0, codeField.y + 6.0, codeField.w - 8.0,
-                                        codeField.h - 12.0},
-                                   kPaper, 0.35);
-            }
-
-            if (placeholder) canvas.setGlobalAlpha(0.45f);
-            text(canvas, shown, run.originX, codeField.y + codeField.h * 0.5,
-                 shopText(16.0, false, kPaper, 0.0));
-            if (placeholder) canvas.setGlobalAlpha(1.0f);
-
-            if (state.field.focused && caretVisible(state.field, ctx.timeSeconds)) {
-                const double caretX = xOfIndex(run, state.field.selection.caret);
-                setStroke(canvas, kPaper);
-                canvas.setLineWidth(1.5f);
-                canvas.beginPath();
-                canvas.moveTo(static_cast<float>(caretX), static_cast<float>(codeField.y + 8.0));
-                canvas.lineTo(static_cast<float>(caretX),
-                              static_cast<float>(codeField.bottom() - 8.0));
-                canvas.stroke();
-            }
-        }
-        canvas.restore();
+        if (!modalUp && codeField.contains(mouse)) cursor = CursorShape::Text;
+        inputField(canvas, codeField, state.code, "Enter code...", state.field.focused,
+                   ctx.timeSeconds, &state.field);
 
         const bool redeemHover = !modalUp && redeemButton.contains(mouse);
         if (redeemHover) cursor = CursorShape::Hand;
@@ -1109,7 +1056,7 @@ bool ShopPanel::render(MenuContext& ctx) {
     // The drag half of the pointer, before the press pass below claims it.
     if (!modalUp) {
         trackTextMouse(ctx.window, state.field, codeField,
-                       codeRun(codeField, state.code, state.field), state.code,
+                       inputFieldRun(codeField, state.code, state.field), state.code,
                        ctx.timeSeconds);
     }
 

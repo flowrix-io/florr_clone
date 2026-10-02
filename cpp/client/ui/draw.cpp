@@ -7,7 +7,6 @@
 #endif
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -266,129 +265,186 @@ void scrim(Canvas& canvas, double alpha) {
 }
 
 void selectionHighlight(Canvas& canvas, const TextRun& run, const TextSelection& selection,
-                        Rect band, std::uint32_t colour, double alpha) {
+                        Rect band) {
     if (selection.empty()) return;
     const double left = std::max(xOfIndex(run, selection.begin()), band.x);
     const double right = std::min(xOfIndex(run, selection.end()), band.right());
     if (right <= left) return;
-    setFill(canvas, colour, alpha);
+    setFill(canvas, kSelection, 0.45);
     canvas.fillRect(static_cast<float>(left), static_cast<float>(band.y),
                     static_cast<float>(right - left), static_cast<float>(band.h));
 }
 
+Rect inputFieldBand(Rect r) {
+    return {r.x + kInputFrameWidth, r.y + kInputFrameWidth, r.w - kInputFrameWidth * 2,
+            r.h - kInputFrameWidth * 2};
+}
+
+double inputTextSize(Rect r) { return std::max(kInputTextSize, r.h * 0.4); }
+
 namespace {
 
-/// A field shorter than its own type scale would otherwise clip its glyphs
-/// against its outline; the browser never hits this because every one of its
-/// fields is 42px tall.
-double fieldTextSize(Rect r, const TextFieldStyle& style) {
-    return std::min(style.textSize, r.h * 0.6);
+/// Where a look lays its text out: the first glyph's x at no scroll, the width
+/// the caret is kept inside, the type size, and the rect everything is clipped
+/// to. The auth and overlay numbers are the browser build's plates, as they
+/// were before the standard look replaced them.
+struct InputLayout {
+    double left;
+    double span;
+    double size;
+    Rect clip;
+};
+
+InputLayout inputLayout(Rect r, InputLook look) {
+    switch (look) {
+        case InputLook::Auth:
+            // 10px in, and never a size the box would clip against its outline.
+            return {r.x + 10.0, r.w - 20.0, std::min(18.0, r.h * 0.6),
+                    Rect{r.x + 5.0, r.y, r.w - 10.0, r.h}};
+        case InputLook::Overlay:
+            // The size a browser gives an unstyled <input>, 6px in.
+            return {r.x + 6.0, r.w - 12.0, 13.333, Rect{r.x + 2.0, r.y, r.w - 4.0, r.h}};
+        case InputLook::Standard:
+            break;
+    }
+    const Rect band = inputFieldBand(r);
+    return {band.x + kInputPadding, band.w - kInputPadding * 2, inputTextSize(r), band};
 }
 
 } // namespace
 
-TextRun textFieldRun(Rect r, const std::string& value, const TextFieldStyle& style,
-                     const TextFieldState* state) {
+TextRun inputFieldRun(Rect r, const std::string& value, const TextFieldState& state,
+                      InputLook look) {
+    const InputLayout layout = inputLayout(r, look);
     TextRun run;
     run.text = value;
-    run.size = fieldTextSize(r, style);
-    run.bold = style.bold;
-    run.originX = r.x + style.padding -
-                  (state ? followCaret(*state, value, run.size, run.bold, r.w - style.padding * 2)
-                         : 0.0);
+    run.size = layout.size;
+    const double scroll =
+        state.focused ? followCaret(state, value, run.size, false, layout.span) : 0.0;
+    run.originX = layout.left - scroll;
     return run;
 }
 
-void textField(Canvas& canvas, Rect r, const std::string& value, const std::string& placeholder,
-               bool focused, bool masked, double timeSeconds,
-               const TextFieldStyle& style, const TextFieldState* state) {
+Rect inputFieldPlate(Canvas& canvas, Rect r) {
+    setFill(canvas, kInputFrame);
+    canvas.fillRect(static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.w),
+                    static_cast<float>(r.h));
+    const Rect band = inputFieldBand(r);
+    setFill(canvas, kInputFill);
+    canvas.fillRect(static_cast<float>(band.x), static_cast<float>(band.y),
+                    static_cast<float>(band.w), static_cast<float>(band.h));
+    return band;
+}
+
+void inputField(Canvas& canvas, Rect r, const std::string& value, const std::string& placeholder,
+                bool focused, double timeSeconds, const TextFieldState* state, bool masked,
+                InputLook look) {
+    // A field's label is its value, not page text: dragging across it selects
+    // inside the field, never the run the page selection would otherwise see.
     TextCaptureScope off(false);
-    // Every field painted through here is a field a finger can tap, focused or
-    // not -- and the unfocused ones are the point: raising the on-screen
-    // keyboard is the job of the touch that FOCUSES a field, so waiting for
-    // one to be focused before recording where it is would be waiting for the
-    // tap that has already happened. See ui::TextFieldRegions.
+    // Every field painted here is one a finger can tap, focused or not -- and
+    // the unfocused ones are the point: raising the on-screen keyboard is the
+    // job of the touch that FOCUSES a field. See ui::TextFieldRegions.
     TextFieldRegions::instance().record(r);
-    const std::uint32_t outlineBase = focused ? style.focusedOutline : style.outline;
-    const std::uint32_t outline =
-        outlineBase == 0xFFFFFFFFu ? hsvScale(style.fill, 0.8) : outlineBase;
-    strokedBox(canvas, r, style.radius, style.fill, style.fillAlpha, outline,
-               focused ? style.focusedOutlineWidth : style.outlineWidth, style.outlineAlpha);
 
-    const double textSize = fieldTextSize(r, style);
-
-    std::string shown = value;
-    if (masked) shown.assign(value.size(), '*');
-
-    TextStyle ts;
-    ts.size = textSize;
-    ts.bold = style.bold;
-    ts.baseline = Baseline::Middle;
-    ts.strokeWidth = style.textStrokeWidth;
-    // Set before the placeholder branch so both strings are outlined alike;
-    // the reference draws them through the same call, under the join its plate
-    // left ambient.
-    ts.roundJoin = style.roundJoin;
-
-    // An empty focused field shows nothing, not the placeholder: the caret is
-    // already saying where the text will go.
-    if (shown.empty() && !focused) {
-        ts.fill = style.textStrokeWidth > 0 ? style.textFill : shade(style.textFill, 0.55);
-        text(canvas, placeholder, r.x + style.padding, r.y + r.h * 0.5, ts);
-        return;
+    // The plate, and the type that goes on it.
+    TextStyle style;
+    style.strokeWidth = 0;
+    std::uint32_t placeholderFill = kInputPlaceholder;
+    std::uint32_t caretFill = kInk;
+    double caretWidth = 1.0;
+    double caretOffset = 1.0;
+    Rect caretBand{};
+    Rect highlightBand{};
+    switch (look) {
+        case InputLook::Standard: {
+            const Rect band = inputFieldPlate(canvas, r);
+            style.fill = kInk;
+            caretBand = highlightBand =
+                Rect{band.x, band.y + 2.0, band.w, std::max(2.0, band.h - 4.0)};
+            break;
+        }
+        case InputLook::Auth:
+            // The outline is CENTRED on the box, as `ctx.stroke()` draws it,
+            // so the plate is half its width larger than `r` on every side --
+            // and it widens rather than recolours when focused.
+            strokedBox(canvas, r, 3.0, kField, 1.0, hsvScale(kField, 0.8), focused ? 5.0 : 4.0,
+                       1.0);
+            style.fill = kPaper;
+            style.strokeWidth = 2.0;
+            // The browser's drawInput leaves `lineJoin = 'round'` ambient
+            // across the drawText that follows.
+            style.roundJoin = true;
+            placeholderFill = kPaper;
+            caretFill = kPaper;
+            caretWidth = 2.0;
+            caretOffset = 0.0;
+            caretBand = Rect{r.x, r.y + 10.0, r.w, std::max(2.0, r.h - 20.0)};
+            highlightBand = Rect{r.x + 5.0, r.y + 6.0, r.w - 10.0, std::max(2.0, r.h - 12.0)};
+            break;
+        case InputLook::Overlay:
+            // Inset by half the line so the edge lands INSIDE the box, as a
+            // one-pixel border does; a centred stroke would make it wider.
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y),
+                             static_cast<float>(r.w), static_cast<float>(r.h), 3.0f);
+            setFill(canvas, kInk, 0.3);
+            canvas.fill();
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(r.x + 0.5), static_cast<float>(r.y + 0.5),
+                             static_cast<float>(r.w - 1.0), static_cast<float>(r.h - 1.0), 2.5f);
+            canvas.save();
+            canvas.setLineWidth(1.0f);
+            setStroke(canvas, kPaper, 0.3);
+            canvas.stroke();
+            canvas.restore();
+            style.fill = kPaper;
+            placeholderFill = 0x757575u;
+            caretFill = kPaper;
+            caretOffset = 0.0;
+            caretBand = Rect{r.x, r.y + 4.0, r.w, std::max(2.0, r.h - 8.0)};
+            highlightBand = Rect{r.x + 2.0, r.y + 3.0, r.w - 4.0, std::max(2.0, r.h - 6.0)};
+            break;
     }
 
-    // The highlight goes under the text, and only on a field whose caret this
-    // painter is being told about -- a masked one keeps its old behaviour,
-    // since a selection over a row of bullets is not a thing worth painting.
-    const bool selectable = state && !masked;
-
-    // Scrolled to keep the caret in the box while focused. A field with no
-    // caret of its own has it implicitly at the end and follows that; an
-    // unfocused one shows its start, as an <input> does once it is blurred.
+    const std::string shown = masked ? std::string(value.size(), '*') : value;
+    // A field with no caret of its own -- a masked one, or a caller that keeps
+    // none -- has it implicitly at the end, and scrolls to keep THAT in view.
     TextFieldState atEnd;
+    atEnd.focused = focused;
     atEnd.selection.collapse(shown.size());
-    const TextFieldState* follow = !focused ? nullptr : selectable ? state : &atEnd;
-    const TextRun run = textFieldRun(r, shown, style, follow);
+    const bool selectable = state != nullptr && !masked;
+    const TextFieldState& live = selectable ? *state : atEnd;
+    const TextRun run = inputFieldRun(r, shown, live, look);
+    const InputLayout layout = inputLayout(r, look);
+    style.size = run.size;
+    const double middle = r.y + r.h * 0.5;
 
     canvas.save();
     canvas.beginPath();
-    canvas.rect(static_cast<float>(r.x + style.padding * 0.5), static_cast<float>(r.y),
-                static_cast<float>(r.w - style.padding), static_cast<float>(r.h));
+    canvas.rect(static_cast<float>(layout.clip.x), static_cast<float>(layout.clip.y),
+                static_cast<float>(layout.clip.w), static_cast<float>(layout.clip.h));
     canvas.clip();
-
-    if (selectable && focused) {
-        selectionHighlight(canvas, run, state->selection,
-                           Rect{r.x + style.padding * 0.5, r.y + 6.0,
-                                r.w - style.padding, std::max(2.0, r.h - 12.0)});
+    if (shown.empty()) {
+        // The auth form's placeholder goes while it has the caret -- the caret
+        // already says where the text will go. An <input>'s stays.
+        if (look != InputLook::Auth || !focused) {
+            style.fill = placeholderFill;
+            text(canvas, placeholder, layout.left, middle, style);
+        }
+    } else {
+        if (focused && selectable) selectionHighlight(canvas, run, live.selection, highlightBand);
+        text(canvas, shown, run.originX, middle, style);
     }
-
-    ts.fill = style.textFill;
-    text(canvas, shown, run.originX, r.y + r.h * 0.5, ts);
-
-    // `Math.floor(Date.now() / 500) % 2 === 0`, to the millisecond: phasing the
-    // blink on the epoch rather than on the caller's frame clock is what keeps
-    // two clients -- and a client and the browser -- pulsing in step, instead
-    // of each starting its cycle wherever its own process happened to launch.
-    // Filled rather than stroked: a stroked line straddles its path and lands
-    // half a pixel off the glyph it follows.
-    // A field with a caret of its own blinks on THAT instead, so the bar stays
+    // A field with a caret of its own phases the blink on it, so the bar stays
     // solid while it is being typed at rather than winking out mid-word.
-    bool blinkOn = false;
-    if (focused && selectable) {
-        blinkOn = caretVisible(*state, timeSeconds);
-    } else if (focused) {
-        const auto epochMillis = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        blinkOn = (epochMillis / 500) % 2 == 0;
-    }
-    if (blinkOn) {
-        const double caretX =
-            selectable ? xOfIndex(run, state->selection.caret)
-                       : run.originX + textWidth(canvas, shown, textSize, style.bold);
-        setFill(canvas, style.caret);
-        canvas.fillRect(static_cast<float>(caretX), static_cast<float>(r.y + 10), 2.0f,
-                        static_cast<float>(std::max(2.0, r.h - 20.0)));
+    const bool blinkOn =
+        state != nullptr ? caretVisible(*state, timeSeconds) : std::fmod(timeSeconds, 1.0) < 0.5;
+    if (focused && blinkOn) {
+        setFill(canvas, caretFill);
+        canvas.fillRect(static_cast<float>(xOfIndex(run, live.selection.caret) + caretOffset),
+                        static_cast<float>(caretBand.y), static_cast<float>(caretWidth),
+                        static_cast<float>(caretBand.h));
     }
     canvas.restore();
 }
