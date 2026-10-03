@@ -146,6 +146,7 @@ add_library(flix_client STATIC
   client/ui/draw.cpp
   client/ui/text.cpp
   client/ui/text_cache.cpp
+  client/ui/text_atlas.cpp
   client/ui/text_input.cpp
   client/ui/text_select.cpp
   client/ui/context_menu.cpp

@@ -174,6 +174,15 @@ public:
     // reading one per cached picture per frame is exactly the kind of crossing
     // the batched op stream exists to avoid.
     std::array<float, 6> currentTransform() const;
+    // True when what is drawn next is composited plainly: source-over, and no
+    // filter or visible shadow. A cached bitmap of a drawing only stands in
+    // for the drawing under these -- a blend mode or a shadow applied to the
+    // bitmap is applied to the composite of its parts, not to each part as it
+    // is drawn. globalAlpha is the one exception worth having, and it is
+    // separate: a cache can bake it into the parts instead (see globalAlpha).
+    bool isPlainComposite() const;
+    // The current globalAlpha.
+    float globalAlpha() const;
 #ifndef __EMSCRIPTEN__
     // Source-over of tightly-packed 8-bit RGBA onto whole DEVICE pixels, one
     // texel to one pixel. It honours the clip and globalAlpha but deliberately
@@ -277,12 +286,21 @@ private:
     int logicalWidth_ = 0, logicalHeight_ = 0;
     Color fill_{0, 0, 0}, stroke_{0, 0, 0}; float lineWidth_ = 1.0f; Path2D currentPath_;
 #ifdef __EMSCRIPTEN__
-    // A mirror of the browser context's own state, so that setting a value it
-    // already holds costs nothing. The UI redraws the same few colours and
-    // stroke styles over and over -- on the title screen, 124 stroked boxes a
-    // frame each set lineCap, lineJoin, lineWidth and strokeStyle to what they
-    // were already set to -- and every one of those is a call out of wasm and
-    // into the browser's state machine.
+    // The drawing state, kept in wasm rather than in the browser context.
+    //
+    // save() and restore() never reach the page unless a clip makes them: a
+    // browser save allocates and copies the context's whole state, and
+    // measured in Chrome a save/restore pair costs about half a microsecond --
+    // more than the circle drawn inside it. So the program's state lives in
+    // `web_`, saved and restored here, and what the page holds is tracked
+    // separately in `applied_`. A setter only writes `web_`; each drawing call
+    // first brings across the fields IT reads that differ (sync()), so a
+    // value set and then restored without being drawn with never crosses, and
+    // a translate/scale/rotate chain crosses as one setTransform.
+    //
+    // A clip is the one thing that cannot be undone by writing values back,
+    // so a clip inside a save() emits a real browser save first (realSave())
+    // and that frame's restore() emits the real restore.
     //
     // Defaults are the context's own defaults, which is what makes the mirror
     // valid from the first call rather than from the first write of each field.
@@ -296,20 +314,57 @@ private:
         float lineWidth = 1, alpha = 1, miterLimit = 10, dashOffset = 0;
         float shadowBlur = 0, shadowOffsetX = 0, shadowOffsetY = 0;
         bool smoothing = true;
-        /// The current transform, mirrored. save()/restore() carry it with the
-        /// rest of the state, which is what makes currentTransform() answerable
-        /// on the browser build -- the page owns the real matrix and will not
-        /// hand it back cheaply. See the MATRIX macro in canvas.cpp.
-        std::array<float, 6> matrix{1, 0, 0, 1, 0, 0};
+        /// The current transform. Composed in double, as the browser composes
+        /// its own, and sent as one setTransform when a drawing call needs it.
+        /// It is also what makes currentTransform() answerable on the browser
+        /// build -- the page owns the real matrix and will not hand it back
+        /// cheaply.
+        std::array<double, 6> matrix{1, 0, 0, 1, 0, 0};
     };
+    struct WebFrame {
+        WebState state;
+        // Whether a clip inside this frame emitted a real browser save, which
+        // its restore() then has to match.
+        bool real = false;
+    };
+    // What the program has set.
     WebState web_;
-    std::vector<WebState> webStack_;
-    // save() is deferred: a save/restore pair whose body only sets values that
-    // were already current has nothing to undo, so neither op is emitted. The
-    // pair is materialised by the first change that would really need
-    // unwinding -- which is what flushSaves() is called before.
-    int pendingSaves_ = 0;
-    void flushSaves();
+    std::vector<WebFrame> webStack_;
+    // What the page's context holds, and what it held at each real save, which
+    // is what a real restore puts back. Mutable because bringing the page up
+    // to date changes neither the drawing state nor what is drawn, and the
+    // const queries (measureText, isPointInStroke) have to do it too.
+    mutable WebState applied_;
+    std::vector<WebState> appliedStack_;
+    // Fields of `web_` that may differ from `applied_`; see sync().
+    mutable unsigned dirty_ = 0;
+    void sync(unsigned fields) const;
+    void realSave();
+
+    // The current path is held here, not streamed to the page as it is built.
+    // At the paint it either becomes one fill/stroke/clip of a retained
+    // Path2D -- when the same geometry was painted before, which is most of a
+    // frame's tiles, plates and bars -- or is sent as it always was:
+    // beginPath, its segments, the paint. See paintCachedPath().
+    enum class PathMode : unsigned char {
+        Empty,      // no segment since beginPath()
+        Deferred,   // segments held here only; the page's path is not this one
+        Sent,       // the page's current path IS this one, segment for segment
+    };
+    mutable PathMode pathMode_ = PathMode::Empty;
+    // The page's own current path may hold something -- a path that was sent
+    // and has not been cleared since. A paint of OUR current path that goes
+    // through the page's has to clear it first.
+    mutable bool pagePathDirty_ = false;
+    mutable int pagePathSegments_ = 0;
+    // The transform the held segments were added under. Each one is fixed in
+    // device space by the transform current when it was ADDED, so held
+    // segments are only ever replayed under this.
+    std::array<double, 6> pathMatrix_{1, 0, 0, 1, 0, 0};
+    void pathSegmentAdded();
+    void sendHeldPath(std::size_t count) const;
+    void preparePagePath() const;
+    bool paintCachedPath(int action, bool evenOdd);
 #endif
 #ifndef __EMSCRIPTEN__
     // The software framebuffer does not exist in an Emscripten object. This

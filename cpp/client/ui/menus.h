@@ -333,6 +333,11 @@ struct ProfilingStats {
     /// Bitmaps the art cache holds, and what they occupy.
     std::size_t bakedEntries = 0;
     std::size_t bakedBytes = 0;
+    /// Text runs the atlas holds, and how many it baked this frame. A screen
+    /// that keeps baking is one whose text never repeats a key -- a zoom, a
+    /// working set bigger than the atlas -- and is drawing it live.
+    std::size_t textRuns = 0;
+    int textBaked = 0;
     /// Ops by kind of call, indexed by canvas op code. See canvasOpName().
     std::array<int, kCanvasOpCodes> byType{};
 };

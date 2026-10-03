@@ -63,7 +63,8 @@ double textWidth(Canvas&, const std::string& s, double size, bool bold = false);
 /// throws that cache away and re-rasterizes every letter on screen. Measured
 /// on the title screen, that was ~6,000 of the frame's ~8,700 canvas
 /// operations. The web build hands the run to the page's own text engine
-/// instead, which is what the reference client did; the native build keeps the
+/// instead, which is what the reference client did -- and copies the runs it
+/// draws often out of a baked atlas (text_atlas.h); the native build keeps the
 /// outlines, having no other text engine to hand it to.
 ///
 /// `fillFirst` puts the fill under the outline instead of over it -- the

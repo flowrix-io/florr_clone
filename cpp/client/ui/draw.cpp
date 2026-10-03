@@ -2,13 +2,14 @@
 
 #include "client/ui/text.h"
 #include "client/ui/text_select.h"
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+#include "client/ui/text_atlas.h"
+#else
 #include "client/ui/text_cache.h"
 #endif
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 namespace flix::ui {
 
@@ -42,17 +43,6 @@ double baselineY(double y, double size, Baseline baseline, bool bold) {
         default: return y + (ascent(size, bold) + descent(size, bold)) * 0.5;
     }
 }
-
-#ifdef __EMSCRIPTEN__
-/// The CSS font shorthand for a run. `Ubuntu` is the face the page loads and
-/// the same one `data/Ubuntu-*.ttf` supplies to `measure()`, so a layout
-/// measured against the outlines still fits what the browser draws.
-std::string fontSpec(double size, bool bold) {
-    char buf[64];
-    std::snprintf(buf, sizeof buf, "%s%.3fpx Ubuntu, sans-serif", bold ? "bold " : "", size);
-    return buf;
-}
-#endif
 
 /// The rounded box every gardn-style control is built from: fill the path,
 /// then stroke it CENTRED, exactly as `drawGardnButton` does. The stroke sits
@@ -95,32 +85,14 @@ void paintRun(Canvas& canvas, const std::string& s, double penX, double baseline
         style.strokeWidth < 0 ? style.size * kTextStrokeRatio : style.strokeWidth;
 
 #ifdef __EMSCRIPTEN__
-    // The pen is already resolved, so the run is anchored the same way on both
-    // builds: the browser is told to put the pen exactly where the outline
-    // path would have started it, not to do the alignment itself.
-    canvas.setFont(fontSpec(style.size, style.bold));
-    canvas.setTextAlign("left");
-    canvas.setTextBaseline("alphabetic");
-
-    const auto strokePass = [&] {
-        if (strokeWidth <= 0) return;
-        // Scoped exactly as the outline path is: leaking a join and a cap out
-        // of a text call silently restyles whatever shape is stroked next,
-        // which is a bug that only ever shows up several draw calls away from
-        // its cause. The fill colour still leaks, as it always has.
-        canvas.save();
-        canvas.setLineJoin(style.roundJoin ? "round" : "miter");
-        canvas.setLineCap("butt");
-        canvas.setLineWidth(static_cast<float>(strokeWidth));
-        setStroke(canvas, style.stroke, strokeAlpha);
-        canvas.strokeText(s, static_cast<float>(penX), static_cast<float>(baseline));
-        canvas.restore();
-    };
-    const auto fillPass = [&] {
-        setFill(canvas, style.fill, fillAlpha);
-        canvas.fillText(s, static_cast<float>(penX), static_cast<float>(baseline));
-    };
-    if (fillFirst) { fillPass(); strokePass(); } else { strokePass(); fillPass(); }
+    // The atlas takes the run when it holds a bake of it; everything else --
+    // a miss, a fade, a skewed transform -- goes to the page's text engine,
+    // which is what the atlas bakes with.
+    if (paintRunFromAtlas(canvas, s, penX, baseline, style, strokeWidth, strokeAlpha, fillAlpha,
+                          fillFirst)) {
+        return;
+    }
+    paintRunLive(canvas, s, penX, baseline, style, strokeWidth, strokeAlpha, fillAlpha, fillFirst);
 #else
     // The raster cache is the native build's answer to the glyph cache the
     // comment on this function's declaration describes. It takes the run when

@@ -31,6 +31,9 @@
 #include "client/interpolation.h"
 #include "client/ui/draw.h"
 #include "client/ui/text.h"
+#ifdef __EMSCRIPTEN__
+#include "client/ui/text_atlas.h"
+#endif
 #include "client/ui/text_input.h"
 #include "client/ui/touch_scroll.h"
 #include "client/web/reload.h"
@@ -506,6 +509,11 @@ void App::frame(double dt) {
     profiling_.menuStrip = menuStripOps_;
     profiling_.menuPanel = menuPanelOps_;
     artCacheStats(profiling_.bakedEntries, profiling_.bakedBytes);
+    {
+        const ui::TextAtlasStats atlas = ui::textAtlasStats();
+        profiling_.textRuns = atlas.runs;
+        profiling_.textBaked = atlas.bakedLastFrame;
+    }
     menus_.setProfiling(&profiling_);
 #endif
 
@@ -516,6 +524,11 @@ void App::frame(double dt) {
     // costs nothing on the frames where nothing moved.
     window_.setRenderScale(menus_.settings().renderScale);
 
+#ifdef __EMSCRIPTEN__
+    // Before anything is drawn: the text atlas may only be drawn into while
+    // nothing this frame has read from it yet. See text_atlas.h.
+    ui::prepareTextAtlas();
+#endif
     Canvas& canvas = window_.canvas();
     // The frame's base transform: design units -> canvas pixels. Every draw
     // call below is in design units, and this is the only place that knows

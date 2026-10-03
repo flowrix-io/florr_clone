@@ -2318,6 +2318,9 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
     row("  baked bitmaps",
         std::to_string(p->bakedEntries) + " / " + std::to_string(p->bakedBytes >> 20) + " MB",
         0x60A5FAu);
+    row("  text atlas",
+        std::to_string(p->textRuns) + " runs, " + std::to_string(p->textBaked) + " baked",
+        0x60A5FAu);
     cy += 6.0;
 
     row("World", ops(p->world), 0xFACC15u);

@@ -65,7 +65,7 @@ EM_JS(int, c2d_create, (const char* element, int width, int height, int virtualC
   if (virtualCanvas) surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
   else { const id = UTF8ToString(element); surface = document.getElementById(id) || Object.assign(document.createElement('canvas'), {id}); if (!surface.parentNode) document.body.appendChild(surface); }
   surface.width = width; surface.height = height;
-  Module.cppCanvasContexts.push({surface, ctx: surface.getContext('2d')});
+  Module.cppCanvasContexts.push({surface, ctx: surface.getContext('2d',{desynchronized:1})});
   return Module.cppCanvasContexts.length - 1;
 });
 EM_JS(void, c2d_destroy, (int id), { if (Module.cppCanvasContexts) Module.cppCanvasContexts[id] = null; });
@@ -73,7 +73,7 @@ EM_JS(void, c2d_present, (int id, const char* target), {
   const item = Module.cppCanvasContexts[id], name = UTF8ToString(target);
   let canvas = document.getElementById(name);
   if (!canvas) { canvas = document.createElement('canvas'); canvas.id = name; document.body.appendChild(canvas); }
-  canvas.width = item.surface.width; canvas.height = item.surface.height; canvas.getContext('2d').drawImage(item.surface, 0, 0);
+  canvas.width = item.surface.width; canvas.height = item.surface.height; canvas.getContext('2d',{desynchronized:1}).drawImage(item.surface, 0, 0);
 });
 // The drawing calls do not cross into the page one at a time. Each one used
 // to be its own c2d_op -- ten arguments widened to doubles and a UTF8ToString
@@ -157,7 +157,7 @@ EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,do
   if (scratch === undefined) {
     const pixels=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+iw*ih*4)),iw,ih);
     scratch = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(iw,ih) : document.createElement('canvas');
-    scratch.width=iw; scratch.height=ih; scratch.getContext('2d').putImageData(pixels,0,0);
+    scratch.width=iw; scratch.height=ih; scratch.getContext('2d',{desynchronized:1}).putImageData(pixels,0,0);
     if (key) {
       // Bounded, oldest-first: a Map iterates in insertion order, and a client
       // that draws thousands of distinct bitmaps must not grow the page's
@@ -1072,7 +1072,10 @@ Canvas::Canvas(Canvas&& other) noexcept
   other.contextId_ = -1;
 #ifdef __EMSCRIPTEN__
   web_ = std::move(other.web_); webStack_ = std::move(other.webStack_);
-  pendingSaves_ = other.pendingSaves_; other.pendingSaves_ = 0;
+  applied_ = std::move(other.applied_); appliedStack_ = std::move(other.appliedStack_);
+  dirty_ = other.dirty_; other.dirty_ = 0;
+  pathMode_ = other.pathMode_; pagePathDirty_ = other.pagePathDirty_;
+  pagePathSegments_ = other.pagePathSegments_; pathMatrix_ = other.pathMatrix_;
 #else
   pixels_ = std::move(other.pixels_);
   state_ = std::move(other.state_); stack_ = std::move(other.stack_);
@@ -1091,7 +1094,10 @@ Canvas& Canvas::operator=(Canvas&& other) noexcept {
   logicalWidth_=other.logicalWidth_; logicalHeight_=other.logicalHeight_;
 #ifdef __EMSCRIPTEN__
   web_=std::move(other.web_); webStack_=std::move(other.webStack_);
-  pendingSaves_=other.pendingSaves_; other.pendingSaves_=0;
+  applied_=std::move(other.applied_); appliedStack_=std::move(other.appliedStack_);
+  dirty_=other.dirty_; other.dirty_=0;
+  pathMode_=other.pathMode_; pagePathDirty_=other.pagePathDirty_;
+  pagePathSegments_=other.pagePathSegments_; pathMatrix_=other.pathMatrix_;
 #else
   pixels_=std::move(other.pixels_);
   state_=std::move(other.state_); stack_=std::move(other.stack_);
@@ -1126,32 +1132,286 @@ static std::string css(Color c) {
   return std::string(buf, c.a == 255 ? 7 : 9);
 }
 #ifdef __EMSCRIPTEN__
-// Materialises the saves that were deferred. The snapshot pushed here is the
-// state as it was when save() was called: flushing happens BEFORE the change
-// that forced it, and nothing between the save and that change altered a thing
-// -- that is exactly the condition under which the save was safe to defer.
-void Canvas::flushSaves() {
-  while (pendingSaves_ > 0) { --pendingSaves_; webStack_.push_back(web_); OP(0,0,0,0,0,0,0,0,0,""); }
+namespace {
+// The fields of Canvas::WebState, one bit each, for Canvas::dirty_.
+enum : unsigned {
+  kTransformBit = 1u << 0, kFillBit = 1u << 1, kStrokeBit = 1u << 2, kAlphaBit = 1u << 3,
+  kCompositeBit = 1u << 4, kFilterBit = 1u << 5, kShadowBit = 1u << 6, kLineWidthBit = 1u << 7,
+  kLineCapBit = 1u << 8, kLineJoinBit = 1u << 9, kMiterBit = 1u << 10, kDashBit = 1u << 11,
+  kDashOffsetBit = 1u << 12, kFontBit = 1u << 13, kTextAlignBit = 1u << 14,
+  kTextBaselineBit = 1u << 15, kDirectionBit = 1u << 16, kSmoothingBit = 1u << 17,
+  kSmoothingQualityBit = 1u << 18,
+  kAllStateBits = (1u << 19) - 1,
+};
+// What each kind of call reads, which is all a call brings across before it
+// is issued. Everything that paints pixels reads the compositing fields; the
+// transform is read by every call that takes coordinates, path segments
+// included -- a segment is fixed in device space by the transform current
+// when it is ADDED, not when the path is filled.
+constexpr unsigned kPaintBits = kTransformBit | kAlphaBit | kCompositeBit | kFilterBit | kShadowBit;
+constexpr unsigned kFillBits = kPaintBits | kFillBit;
+constexpr unsigned kStrokeBits = kPaintBits | kStrokeBit | kLineWidthBit | kLineCapBit |
+                                 kLineJoinBit | kMiterBit | kDashBit | kDashOffsetBit;
+constexpr unsigned kTextBits = kFontBit | kTextAlignBit | kTextBaselineBit | kDirectionBit;
+constexpr unsigned kImageBits = kPaintBits | kSmoothingBit | kSmoothingQualityBit;
+} // namespace
+
+// Brings the page's context up to date with the fields in `need` -- only
+// those, and only where they differ. A field is compared only while its bit
+// is in dirty_, so a frame of draws that changes nothing costs one test each.
+void Canvas::sync(unsigned need) const {
+  const unsigned todo = dirty_ & need;
+  if (todo == 0) return;
+  dirty_ &= ~todo;
+  const WebState& w = web_;
+  WebState& a = applied_;
+  if ((todo & kTransformBit) && w.matrix != a.matrix) {
+    const auto& m = w.matrix;
+    // A non-finite transform is one the browser ignores, so the page keeps
+    // the matrix it had and the field stays owed.
+    if (std::isfinite(m[0]) && std::isfinite(m[1]) && std::isfinite(m[2]) &&
+        std::isfinite(m[3]) && std::isfinite(m[4]) && std::isfinite(m[5])) {
+      a.matrix = m;
+      OP(7,static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
+         static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
+    } else {
+      dirty_ |= kTransformBit;
+    }
+  }
+  if ((todo & kFillBit) && w.fill != a.fill) { a.fill = w.fill; OP(9,0,0,0,0,0,0,0,0,a.fill.c_str()); }
+  if ((todo & kStrokeBit) && w.stroke != a.stroke) { a.stroke = w.stroke; OP(10,0,0,0,0,0,0,0,0,a.stroke.c_str()); }
+  if ((todo & kAlphaBit) && w.alpha != a.alpha) { a.alpha = w.alpha; OP(11,a.alpha,0,0,0,0,0,0,0,""); }
+  if ((todo & kCompositeBit) && w.composite != a.composite) { a.composite = w.composite; OP(12,0,0,0,0,0,0,0,0,a.composite.c_str()); }
+  if ((todo & kFilterBit) && w.filter != a.filter) { a.filter = w.filter; OP(13,0,0,0,0,0,0,0,0,a.filter.c_str()); }
+  if ((todo & kShadowBit) &&
+      (w.shadowColour != a.shadowColour || w.shadowBlur != a.shadowBlur ||
+       w.shadowOffsetX != a.shadowOffsetX || w.shadowOffsetY != a.shadowOffsetY)) {
+    a.shadowColour = w.shadowColour; a.shadowBlur = w.shadowBlur;
+    a.shadowOffsetX = w.shadowOffsetX; a.shadowOffsetY = w.shadowOffsetY;
+    OP(19,a.shadowBlur,a.shadowOffsetX,a.shadowOffsetY,0,0,0,0,0,a.shadowColour.c_str());
+  }
+  if ((todo & kLineWidthBit) && w.lineWidth != a.lineWidth) { a.lineWidth = w.lineWidth; OP(14,a.lineWidth,0,0,0,0,0,0,0,""); }
+  if ((todo & kLineCapBit) && w.lineCap != a.lineCap) { a.lineCap = w.lineCap; OP(15,0,0,0,0,0,0,0,0,a.lineCap.c_str()); }
+  if ((todo & kLineJoinBit) && w.lineJoin != a.lineJoin) { a.lineJoin = w.lineJoin; OP(16,0,0,0,0,0,0,0,0,a.lineJoin.c_str()); }
+  if ((todo & kMiterBit) && w.miterLimit != a.miterLimit) { a.miterLimit = w.miterLimit; OP(17,a.miterLimit,0,0,0,0,0,0,0,""); }
+  if ((todo & kDashBit) && w.dash != a.dash) {
+    // Not an op: setLineDash takes an array, so it goes over directly, after
+    // everything queued ahead of it.
+    a.dash = w.dash;
+    canvasFlushOps();
+    c2d_dash(contextId_, a.dash.data(), static_cast<int>(a.dash.size()));
+  }
+  if ((todo & kDashOffsetBit) && w.dashOffset != a.dashOffset) { a.dashOffset = w.dashOffset; OP(18,a.dashOffset,0,0,0,0,0,0,0,""); }
+  if ((todo & kFontBit) && w.font != a.font) { a.font = w.font; OP(20,0,0,0,0,0,0,0,0,a.font.c_str()); }
+  if ((todo & kTextAlignBit) && w.textAlign != a.textAlign) { a.textAlign = w.textAlign; OP(21,0,0,0,0,0,0,0,0,a.textAlign.c_str()); }
+  if ((todo & kTextBaselineBit) && w.textBaseline != a.textBaseline) { a.textBaseline = w.textBaseline; OP(22,0,0,0,0,0,0,0,0,a.textBaseline.c_str()); }
+  if ((todo & kDirectionBit) && w.direction != a.direction) { a.direction = w.direction; OP(23,0,0,0,0,0,0,0,0,a.direction.c_str()); }
+  if ((todo & kSmoothingBit) && w.smoothing != a.smoothing) { a.smoothing = w.smoothing; OP(24,a.smoothing?1.f:0.f,0,0,0,0,0,0,0,""); }
+  if ((todo & kSmoothingQualityBit) && w.smoothingQuality != a.smoothingQuality) { a.smoothingQuality = w.smoothingQuality; OP(25,0,0,0,0,0,0,0,0,a.smoothingQuality.c_str()); }
 }
-// Setting a value the context already holds is a no-op in the browser, so it
-// is a no-op here too. `MIRROR` is the whole pattern: compare, and on a real
-// change unwind any deferred save before the write that needs unwinding.
-#define MIRROR(field, value) \
-  do { if (web_.field == (value)) return; flushSaves(); web_.field = (value); } while (0)
+// The real browser save a clip needs, for the innermost frame, once. Taken
+// at the clip rather than at the save() because most frames never clip, and
+// the snapshot is of what the page holds at this moment -- which is exactly
+// what the browser will put back when the matching restore() emits its own.
+void Canvas::realSave() {
+  if (webStack_.empty() || webStack_.back().real) return;
+  webStack_.back().real = true;
+  appliedStack_.push_back(applied_);
+  OP(0,0,0,0,0,0,0,0,0,"");
+}
+namespace {
+bool pathAlreadySent(const Path2D& path);   // the retained-path cache, further down
+
+/// A held segment, as the call that adds it to the page's current path.
+void emitSegment(int context, const Path2D::Segment& g) {
+  const float* v = g.v;
+  const float ccw = g.counterClockwise ? 1.f : 0.f;
+  switch (g.command) {
+    case Path2D::Command::Move:      pushOp(context,35,v[0],v[1],0,0,0,0,0,0,""); break;
+    case Path2D::Command::Line:      pushOp(context,36,v[0],v[1],0,0,0,0,0,0,""); break;
+    case Path2D::Command::Quadratic: pushOp(context,37,v[0],v[1],v[2],v[3],0,0,0,0,""); break;
+    case Path2D::Command::Bezier:    pushOp(context,38,v[0],v[1],v[2],v[3],v[4],v[5],0,0,""); break;
+    case Path2D::Command::Arc:       pushOp(context,39,v[0],v[1],v[2],v[3],v[4],ccw,0,0,""); break;
+    case Path2D::Command::ArcTo:     pushOp(context,40,v[0],v[1],v[2],v[3],v[4],0,0,0,""); break;
+    case Path2D::Command::Ellipse:   pushOp(context,41,v[0],v[1],v[2],v[3],v[4],v[5],v[6],ccw,""); break;
+    case Path2D::Command::Rect:      pushOp(context,42,v[0],v[1],v[2],v[3],0,0,0,0,""); break;
+    case Path2D::Command::RoundRect: pushOp(context,43,v[0],v[1],v[2],v[3],v[4],0,0,0,""); break;
+    case Path2D::Command::Close:     pushOp(context,34,0,0,0,0,0,0,0,0,""); break;
+  }
+}
+
+// Current paths whose exact geometry has been painted before, kept as
+// retained Path2Ds the page holds. Measured in a game frame, 75-85% of the
+// shapes a frame builds -- tile plates, faces, bars, mob parts, under their
+// own transforms -- repeat geometry from the same frame or the one before,
+// and painting one out of a retained path costs the page a single call where
+// beginPath, the segments and the paint cost three or more: about a third
+// less page-thread time for a rounded rect, and no more GPU time.
+constexpr std::size_t kMaxCachedShapes = 1024;
+constexpr std::size_t kMaxCachedShapeSegments = 64;
+// Geometry is only kept on its SECOND sighting, so the shapes that never
+// repeat -- the shimmer grains, a health bar mid-drain -- cost a slot in this
+// table rather than a Path2D on the page.
+constexpr std::size_t kShapeSightings = 4096;
+
+struct ShapeCache {
+  std::array<std::uint64_t, kShapeSightings> sighted{};
+  std::unordered_map<std::uint64_t, std::unique_ptr<Path2D>> paths;
+};
+
+ShapeCache& shapeCache() {
+  static ShapeCache cache;
+  return cache;
+}
+
+std::uint64_t shapeHash(const Path2D& path) {
+  std::uint64_t h = 1469598103934665603ull;
+  const auto mix = [&h](std::uint32_t value) { h ^= value; h *= 1099511628211ull; };
+  for (const Path2D::Segment& g : path.segments()) {
+    mix(static_cast<std::uint32_t>(g.command) | (g.counterClockwise ? 0x100u : 0u));
+    for (const float f : g.v) { std::uint32_t bits; std::memcpy(&bits, &f, sizeof bits); mix(bits); }
+  }
+  return h | 1;   // never 0, which is what an unused sighting slot holds
+}
+
+bool sameShape(const Path2D& a, const Path2D& b) {
+  const auto& x = a.segments();
+  const auto& y = b.segments();
+  if (x.size() != y.size()) return false;
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    if (x[i].command != y[i].command || x[i].counterClockwise != y[i].counterClockwise ||
+        std::memcmp(x[i].v, y[i].v, sizeof x[i].v) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool worthCaching(const Path2D& path) {
+  const auto& segments = path.segments();
+  if (segments.empty() || segments.size() > kMaxCachedShapeSegments) return false;
+  // A lone circle or ellipse stays on the page's own path. Measured, Chrome
+  // draws one built afresh faster on the GPU than the same circle out of a
+  // retained Path2D (~15% more GPU time), and the page-thread saving is small.
+  int curves = 0, others = 0;
+  for (const Path2D::Segment& g : segments) {
+    if (g.command == Path2D::Command::Arc || g.command == Path2D::Command::Ellipse) ++curves;
+    else if (g.command != Path2D::Command::Move && g.command != Path2D::Command::Close) ++others;
+  }
+  return !(curves == 1 && others == 0);
+}
+
+/// The retained copy of this geometry, or null on its first sighting.
+const Path2D* cachedShape(const Path2D& path) {
+  ShapeCache& cache = shapeCache();
+  const std::uint64_t h = shapeHash(path);
+  if (const auto found = cache.paths.find(h); found != cache.paths.end()) {
+    return sameShape(*found->second, path) ? found->second.get() : nullptr;
+  }
+  std::uint64_t& slot = cache.sighted[h & (kShapeSightings - 1)];
+  if (slot != h) { slot = h; return nullptr; }
+  // Dropped whole when full. The page's copies are not: they are named in
+  // the retained-path cache, whose own bound evicts them in time.
+  if (cache.paths.size() >= kMaxCachedShapes) cache.paths.clear();
+  return cache.paths.emplace(h, std::make_unique<Path2D>(path)).first->second.get();
+}
+} // namespace
+
+void Canvas::pathSegmentAdded() {
+  const Path2D& path = currentPath_;
+  switch (pathMode_) {
+    case PathMode::Empty:
+      pathMatrix_ = web_.matrix;
+      pathMode_ = PathMode::Deferred;
+      return;
+    case PathMode::Deferred:
+      if (web_.matrix == pathMatrix_) return;
+      // The transform moved while the path was being built. What is held goes
+      // over under the transform it was added under, and from here the path
+      // is sent as it is built, the way every path used to be.
+      sendHeldPath(path.segments().size() - 1);
+      break;
+    case PathMode::Sent:
+      break;
+  }
+  sync(kTransformBit);
+  emitSegment(contextId_, path.segments().back());
+  ++pagePathSegments_;
+  pagePathDirty_ = true;
+}
+
+void Canvas::sendHeldPath(std::size_t count) const {
+  OP(33,0,0,0,0,0,0,0,0,"");
+  const auto& m = pathMatrix_;
+  if (applied_.matrix != m && std::isfinite(m[0]) && std::isfinite(m[1]) && std::isfinite(m[2]) &&
+      std::isfinite(m[3]) && std::isfinite(m[4]) && std::isfinite(m[5])) {
+    applied_.matrix = m;
+    OP(7,static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
+       static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5]),0,0,"");
+  }
+  // The page may now hold a transform the program is not at.
+  dirty_ |= kTransformBit;
+  const Path2D& path = currentPath_;
+  for (std::size_t i = 0; i < count; ++i) emitSegment(contextId_, path.segments()[i]);
+  pagePathSegments_ = static_cast<int>(count);
+  pagePathDirty_ = count > 0;
+  pathMode_ = PathMode::Sent;
+}
+
+// Puts our current path in the page's, for a paint or a query that is about
+// to use the page's.
+void Canvas::preparePagePath() const {
+  if (pathMode_ == PathMode::Deferred) {
+    sendHeldPath(currentPath_.segments().size());
+  } else if (pathMode_ == PathMode::Empty && pagePathDirty_) {
+    OP(33,0,0,0,0,0,0,0,0,"");
+    pagePathDirty_ = false;
+    pagePathSegments_ = 0;
+  }
+}
+
+// action: 0 fill, 1 stroke, 2 clip. Paints the held path out of a retained
+// copy when it can, and says so. Only under the transform it was built in:
+// a retained path is mapped by the transform current at the PAINT, where the
+// segments it stands for were each mapped when they were added.
+bool Canvas::paintCachedPath(int action, bool evenOdd) {
+  if (pathMode_ != PathMode::Deferred || web_.matrix != pathMatrix_) return false;
+  const Path2D& path = currentPath_;
+  if (!worthCaching(path)) return false;
+  const Path2D* cached = cachedShape(path);
+  if (!cached) return false;
+  const std::int32_t key = static_cast<std::int32_t>(cached->cacheKey());
+  if (pathAlreadySent(*cached)) {
+    pushRef(contextId_, 50, key, static_cast<float>(action), evenOdd ? 1.f : 0.f, 0,0,0,0,0,0);
+  } else {
+    pushPath(contextId_, key, *cached, action, evenOdd);
+  }
+  return true;
+}
+
+// A setter only records the value; the drawing call that reads it sends it.
+#define STATE(bit, field, value) \
+  do { if (web_.field != (value)) { web_.field = (value); dirty_ |= (bit); } } while (0)
+#define SYNC(bits) sync(bits)
 // Which state holds the current transform. The browser owns the real one, but
 // the client has to be able to ASK what it is -- a cache that bakes a picture
 // at device resolution has to know how many device pixels a user unit is, and
 // the frame's base scale is not the answer when the caller is inside a
 // transform of its own. Mirrored on both builds so there is one answer.
 #define MATRIX web_.matrix
+#define TRANSFORM_CHANGED() (dirty_ |= kTransformBit)
+using MatrixScalar = double;
 #else
-#define MIRROR(field, value) do { } while (0)
+#define STATE(bit, field, value) do { } while (0)
+#define SYNC(bits) do { } while (0)
 #define MATRIX state_.matrix
+#define TRANSFORM_CHANGED() ((void)0)
+using MatrixScalar = float;
 #endif
 
 void Canvas::save() {
 #ifdef __EMSCRIPTEN__
-  ++pendingSaves_;
+  webStack_.push_back(WebFrame{web_, false});
 #else
   OP(0,0,0,0,0,0,0,0,0,"");
   stack_.push_back(state_);
@@ -1159,10 +1419,17 @@ void Canvas::save() {
 }
 void Canvas::restore() {
 #ifdef __EMSCRIPTEN__
-  // A save that never had to be materialised has nothing to restore.
-  if (pendingSaves_ > 0) { --pendingSaves_; return; }
-  if (!webStack_.empty()) { web_ = std::move(webStack_.back()); webStack_.pop_back(); }
-  OP(1,0,0,0,0,0,0,0,0,"");
+  if (webStack_.empty()) return;
+  WebFrame& frame = webStack_.back();
+  if (frame.real) {
+    OP(1,0,0,0,0,0,0,0,0,"");
+    applied_ = std::move(appliedStack_.back());
+    appliedStack_.pop_back();
+  }
+  web_ = std::move(frame.state);
+  webStack_.pop_back();
+  // Anything may differ now; sync() compares before it sends.
+  dirty_ = kAllStateBits;
 #else
   OP(1,0,0,0,0,0,0,0,0,"");
   if (!stack_.empty()) { state_=std::move(stack_.back()); stack_.pop_back(); fill_=state_.fill; stroke_=state_.stroke; lineWidth_=state_.lineWidth; }
@@ -1170,65 +1437,70 @@ void Canvas::restore() {
 }
 void Canvas::reset() {
 #ifdef __EMSCRIPTEN__
-  // reset() empties the context's own save stack, so the mirror drops both its
-  // stack and its deferred saves rather than trying to reconcile them, and
-  // returns to the defaults reset() leaves behind.
-  pendingSaves_ = 0; webStack_.clear(); web_ = WebState{};
+  // reset() empties the context's own save stack and returns every field to
+  // its default, so the mirror does the same on both sides of it.
+  webStack_.clear(); appliedStack_.clear();
+  web_ = WebState{}; applied_ = WebState{}; dirty_ = 0;
+  // ...and empties the page's current path, which ours mirrors.
+  currentPath_ = Path2D{}; pathMode_ = PathMode::Empty;
+  pagePathDirty_ = false; pagePathSegments_ = 0;
 #endif
   OP(2,0,0,0,0,0,0,0,0,""); resetTransform();
 #ifndef __EMSCRIPTEN__
   state_=State{}; stack_.clear();
 #endif
 }
-// The transform is part of what restore() unwinds, so a deferred save has to be
-// materialised before one is applied. There is no redundancy to eliminate here
-// -- a transform is a composition, not an assignment.
 void Canvas::scale(float a,float b) {
-#ifdef __EMSCRIPTEN__
-  flushSaves();
-#endif
-  OP(3,a,b,0,0,0,0,0,0,"");
   { auto& m=MATRIX; m[0]*=a; m[1]*=a; m[2]*=b; m[3]*=b; }
+  TRANSFORM_CHANGED();
 }
 void Canvas::rotate(float a) {
-#ifdef __EMSCRIPTEN__
-  flushSaves();
-#endif
-  OP(4,a,0,0,0,0,0,0,0,"");
-  { auto& m=MATRIX; const float c=std::cos(a), s=std::sin(a), m0=m[0],m1=m[1],m2=m[2],m3=m[3];
+  { auto& m=MATRIX; const MatrixScalar c=std::cos(static_cast<MatrixScalar>(a)), s=std::sin(static_cast<MatrixScalar>(a));
+    const MatrixScalar m0=m[0],m1=m[1],m2=m[2],m3=m[3];
     m[0]=m0*c+m2*s; m[1]=m1*c+m3*s; m[2]=m2*c-m0*s; m[3]=m3*c-m1*s; }
+  TRANSFORM_CHANGED();
 }
 void Canvas::translate(float a,float b) {
-#ifdef __EMSCRIPTEN__
-  flushSaves();
-#endif
-  OP(5,a,b,0,0,0,0,0,0,"");
   { auto& m=MATRIX; m[4]+=m[0]*a+m[2]*b; m[5]+=m[1]*a+m[3]*b; }
+  TRANSFORM_CHANGED();
 }
 void Canvas::transform(float a,float b,float c,float d,float e,float f) {
-#ifdef __EMSCRIPTEN__
-  flushSaves();
-#endif
-  OP(6,a,b,c,d,e,f,0,0,"");
   { const auto m=MATRIX; auto& o=MATRIX;
     o[0]=m[0]*a+m[2]*b; o[1]=m[1]*a+m[3]*b; o[2]=m[0]*c+m[2]*d; o[3]=m[1]*c+m[3]*d;
     o[4]=m[0]*e+m[2]*f+m[4]; o[5]=m[1]*e+m[3]*f+m[5]; }
+  TRANSFORM_CHANGED();
 }
 void Canvas::setTransform(float a,float b,float c,float d,float e,float f) {
-#ifdef __EMSCRIPTEN__
-  flushSaves();
-#endif
-  OP(7,a,b,c,d,e,f,0,0,"");
   MATRIX={a,b,c,d,e,f};
+  TRANSFORM_CHANGED();
 }
 void Canvas::resetTransform() {
-#ifdef __EMSCRIPTEN__
-  flushSaves();
-#endif
-  OP(8,0,0,0,0,0,0,0,0,"");
   MATRIX={1,0,0,1,0,0};
+  TRANSFORM_CHANGED();
 }
-std::array<float,6> Canvas::currentTransform() const { return MATRIX; }
+bool Canvas::isPlainComposite() const {
+#ifdef __EMSCRIPTEN__
+  // A shadow shows only when its colour has alpha and it is blurred or moved.
+  const bool shadowless = web_.shadowColour.size() == 9 && web_.shadowColour.compare(7, 2, "00") == 0;
+  const bool shadowStill = web_.shadowBlur == 0 && web_.shadowOffsetX == 0 && web_.shadowOffsetY == 0;
+  return web_.composite == "source-over" && web_.filter == "none" && (shadowless || shadowStill);
+#else
+  // The software backend has no blend modes, filters or shadows.
+  return true;
+#endif
+}
+float Canvas::globalAlpha() const {
+#ifdef __EMSCRIPTEN__
+  return web_.alpha;
+#else
+  return state_.alpha;
+#endif
+}
+std::array<float,6> Canvas::currentTransform() const {
+  const auto& m=MATRIX;
+  return {static_cast<float>(m[0]),static_cast<float>(m[1]),static_cast<float>(m[2]),
+          static_cast<float>(m[3]),static_cast<float>(m[4]),static_cast<float>(m[5])};
+}
 #ifndef __EMSCRIPTEN__
 void Canvas::blitDevice(const std::uint8_t* rgba,int iw,int ih,int dx,int dy) {
   if (!rgba || iw<=0 || ih<=0 || state_.alpha<=0) return;
@@ -1327,45 +1599,43 @@ void Canvas::setStrokeStyle(Color c){stroke_=c;
   state_.stroke=c;
 #endif
 }
-void Canvas::setFillStyle(const std::string&s){MIRROR(fill,s);OP(9,0,0,0,0,0,0,0,0,s.c_str());}
-void Canvas::setStrokeStyle(const std::string&s){MIRROR(stroke,s);OP(10,0,0,0,0,0,0,0,0,s.c_str());}
-void Canvas::setGlobalAlpha(float a){MIRROR(alpha,a);OP(11,a,0,0,0,0,0,0,0,"");
+void Canvas::setFillStyle(const std::string&s){STATE(kFillBit,fill,s);}
+void Canvas::setStrokeStyle(const std::string&s){STATE(kStrokeBit,stroke,s);}
+void Canvas::setGlobalAlpha(float a){STATE(kAlphaBit,alpha,a);
 #ifndef __EMSCRIPTEN__
   state_.alpha=std::clamp(a,0.f,1.f);
 #endif
 }
-void Canvas::setGlobalCompositeOperation(const std::string&s){MIRROR(composite,s);OP(12,0,0,0,0,0,0,0,0,s.c_str());}
-void Canvas::setFilter(const std::string&s){MIRROR(filter,s);OP(13,0,0,0,0,0,0,0,0,s.c_str());}
-void Canvas::setLineWidth(float a){lineWidth_=std::max(0.f,a);MIRROR(lineWidth,lineWidth_);OP(14,lineWidth_,0,0,0,0,0,0,0,"");
+void Canvas::setGlobalCompositeOperation(const std::string&s){STATE(kCompositeBit,composite,s);}
+void Canvas::setFilter(const std::string&s){STATE(kFilterBit,filter,s);}
+void Canvas::setLineWidth(float a){lineWidth_=std::max(0.f,a);STATE(kLineWidthBit,lineWidth,lineWidth_);
 #ifndef __EMSCRIPTEN__
   state_.lineWidth=lineWidth_;
 #endif
 }
-void Canvas::setLineCap(const std::string&s){MIRROR(lineCap,s);OP(15,0,0,0,0,0,0,0,0,s.c_str());
+void Canvas::setLineCap(const std::string&s){STATE(kLineCapBit,lineCap,s);
 #ifndef __EMSCRIPTEN__
   state_.lineCap = s=="round"?1 : s=="square"?2 : 0;
 #endif
 }
-void Canvas::setLineJoin(const std::string&s){MIRROR(lineJoin,s);OP(16,0,0,0,0,0,0,0,0,s.c_str());
+void Canvas::setLineJoin(const std::string&s){STATE(kLineJoinBit,lineJoin,s);
 #ifndef __EMSCRIPTEN__
   state_.lineJoin = s=="round"?1 : s=="bevel"?2 : 0;
 #endif
 }
-void Canvas::setMiterLimit(float a){MIRROR(miterLimit,a);OP(17,a,0,0,0,0,0,0,0,"");
+void Canvas::setMiterLimit(float a){STATE(kMiterBit,miterLimit,a);
 #ifndef __EMSCRIPTEN__
   state_.miterLimit=std::max(1.f,a);
 #endif
 }
 void Canvas::setLineDash(const std::vector<float>&v) {
 #ifdef __EMSCRIPTEN__
-  MIRROR(dash,v);
-  canvasFlushOps();
-  c2d_dash(contextId_, v.data(), static_cast<int>(v.size()));
+  STATE(kDashBit,dash,v);
 #else
   state_.dash=v;
 #endif
 }
-void Canvas::setLineDashOffset(float a){MIRROR(dashOffset,a);OP(18,a,0,0,0,0,0,0,0,"");
+void Canvas::setLineDashOffset(float a){STATE(kDashOffsetBit,dashOffset,a);
 #ifndef __EMSCRIPTEN__
   state_.dashOffset=a;
 #endif
@@ -1374,14 +1644,13 @@ void Canvas::setShadow(Color c,float a,float b,float d){
 #ifdef __EMSCRIPTEN__
   const std::string s=css(c);
   if (web_.shadowColour==s && web_.shadowBlur==a && web_.shadowOffsetX==b && web_.shadowOffsetY==d) return;
-  flushSaves();
   web_.shadowColour=s; web_.shadowBlur=a; web_.shadowOffsetX=b; web_.shadowOffsetY=d;
-  OP(19,a,b,d,0,0,0,0,0,s.c_str());
+  dirty_ |= kShadowBit;
 #else
   (void)c;(void)a;(void)b;(void)d;
 #endif
 }
-void Canvas::setFont(const std::string&s){MIRROR(font,s);OP(20,0,0,0,0,0,0,0,0,s.c_str());
+void Canvas::setFont(const std::string&s){STATE(kFontBit,font,s);
 #ifndef __EMSCRIPTEN__
   for (size_t i=0;i<s.size();++i) if (std::isdigit(static_cast<unsigned char>(s[i]))) { state_.fontSize=std::max(1.f,std::strtof(s.c_str()+i,nullptr)); break; }
   std::string f=s; for (char& c : f) c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -1390,19 +1659,19 @@ void Canvas::setFont(const std::string&s){MIRROR(font,s);OP(20,0,0,0,0,0,0,0,0,s
                     : f.find("serif")!=std::string::npos||f.find("times")!=std::string::npos||f.find("georgia")!=std::string::npos ? 1 : 0;
 #endif
 }
-void Canvas::setTextAlign(const std::string&s){MIRROR(textAlign,s);OP(21,0,0,0,0,0,0,0,0,s.c_str());
+void Canvas::setTextAlign(const std::string&s){STATE(kTextAlignBit,textAlign,s);
 #ifndef __EMSCRIPTEN__
   state_.textAlign = (s=="center")?1 : (s=="right"||s=="end")?2 : 0;
 #endif
 }
-void Canvas::setTextBaseline(const std::string&s){MIRROR(textBaseline,s);OP(22,0,0,0,0,0,0,0,0,s.c_str());
+void Canvas::setTextBaseline(const std::string&s){STATE(kTextBaselineBit,textBaseline,s);
 #ifndef __EMSCRIPTEN__
   state_.textBaseline = (s=="top"||s=="hanging")?0 : (s=="middle")?1 : (s=="bottom"||s=="ideographic")?2 : 3;
 #endif
 }
-void Canvas::setDirection(const std::string&s){MIRROR(direction,s);OP(23,0,0,0,0,0,0,0,0,s.c_str());}
-void Canvas::setImageSmoothingEnabled(bool a){MIRROR(smoothing,a);OP(24,a,0,0,0,0,0,0,0,"");}
-void Canvas::setImageSmoothingQuality(const std::string&s){MIRROR(smoothingQuality,s);OP(25,0,0,0,0,0,0,0,0,s.c_str());}
+void Canvas::setDirection(const std::string&s){STATE(kDirectionBit,direction,s);}
+void Canvas::setImageSmoothingEnabled(bool a){STATE(kSmoothingBit,smoothing,a);}
+void Canvas::setImageSmoothingQuality(const std::string&s){STATE(kSmoothingQualityBit,smoothingQuality,s);}
 void Canvas::clear(Color c) {
 #ifdef __EMSCRIPTEN__
   save(); resetTransform(); setFillStyle(c); fillRect(0,0,width_,height_); restore();
@@ -1411,6 +1680,9 @@ void Canvas::clear(Color c) {
 #endif
 }
 void Canvas::clearRect(float a,float b,float c,float d) {
+  // The transform and the clip, and nothing else: clearRect ignores alpha,
+  // compositing, shadows and filters.
+  SYNC(kTransformBit);
   OP(30,a,b,c,d,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   Path2D box; box.rect(a,b,c,d);
@@ -1437,26 +1709,61 @@ void Canvas::clearRect(float a,float b,float c,float d) {
 #endif
 }
 void Canvas::fillRect(float a,float b,float c,float d) {
+  SYNC(kFillBits);
   OP(31,a,b,c,d,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   Path2D box; box.rect(a,b,c,d); fillDevice(box,false,state_.fill);
 #endif
 }
 void Canvas::strokeRect(float a,float b,float c,float d) {
+  SYNC(kStrokeBits);
   OP(32,a,b,c,d,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   Path2D box; box.rect(a,b,c,d); strokeDevice(box);
 #endif
 }
-void Canvas::beginPath(){currentPath_=Path2D{};OP(33,0,0,0,0,0,0,0,0,"");} void Canvas::closePath(){currentPath_.closePath();OP(34,0,0,0,0,0,0,0,0,"");} void Canvas::moveTo(float a,float b){currentPath_.moveTo(a,b);OP(35,a,b,0,0,0,0,0,0,"");} void Canvas::lineTo(float a,float b){currentPath_.lineTo(a,b);OP(36,a,b,0,0,0,0,0,0,"");}
-void Canvas::quadraticCurveTo(float a,float b,float c,float d){currentPath_.quadraticCurveTo(a,b,c,d);OP(37,a,b,c,d,0,0,0,0,"");} void Canvas::bezierCurveTo(float a,float b,float c,float d,float e,float f){currentPath_.bezierCurveTo(a,b,c,d,e,f);OP(38,a,b,c,d,e,f,0,0,"");} void Canvas::arc(float a,float b,float c,float d,float e,bool f){currentPath_.arc(a,b,c,d,e,f);OP(39,a,b,c,d,e,f,0,0,"");} void Canvas::arcTo(float a,float b,float c,float d,float e){currentPath_.arcTo(a,b,c,d,e);OP(40,a,b,c,d,e,0,0,0,"");} void Canvas::ellipse(float a,float b,float c,float d,float e,float f,float g,bool h){currentPath_.ellipse(a,b,c,d,e,f,g,h);OP(41,a,b,c,d,e,f,g,h,"");} void Canvas::rect(float a,float b,float c,float d){currentPath_.rect(a,b,c,d);OP(42,a,b,c,d,0,0,0,0,"");} void Canvas::roundRect(float a,float b,float c,float d,float e){currentPath_.roundRect(a,b,c,d,e);OP(43,a,b,c,d,e,0,0,0,"");}
+#ifdef __EMSCRIPTEN__
+// A segment is only recorded here; pathSegmentAdded() decides when it reaches
+// the page. See the PathMode comment in canvas.h.
+#define SEGMENT() pathSegmentAdded()
+#else
+#define SEGMENT() ((void)0)
+#endif
+void Canvas::beginPath(){
+  currentPath_=Path2D{};
+#ifdef __EMSCRIPTEN__
+  // The page's path is left as it is: whatever is painted next either names a
+  // retained path or clears it first. Except a big one, which the page would
+  // otherwise re-map through every transform change until something clears it.
+  if (pathMode_==PathMode::Sent && pagePathSegments_>32) { OP(33,0,0,0,0,0,0,0,0,""); pagePathDirty_=false; pagePathSegments_=0; }
+  pathMode_=PathMode::Empty;
+#else
+  OP(33,0,0,0,0,0,0,0,0,"");
+#endif
+}
+void Canvas::closePath(){currentPath_.closePath();SEGMENT();} void Canvas::moveTo(float a,float b){currentPath_.moveTo(a,b);SEGMENT();} void Canvas::lineTo(float a,float b){currentPath_.lineTo(a,b);SEGMENT();}
+void Canvas::quadraticCurveTo(float a,float b,float c,float d){currentPath_.quadraticCurveTo(a,b,c,d);SEGMENT();} void Canvas::bezierCurveTo(float a,float b,float c,float d,float e,float f){currentPath_.bezierCurveTo(a,b,c,d,e,f);SEGMENT();} void Canvas::arc(float a,float b,float c,float d,float e,bool f){currentPath_.arc(a,b,c,d,e,f);SEGMENT();} void Canvas::arcTo(float a,float b,float c,float d,float e){currentPath_.arcTo(a,b,c,d,e);SEGMENT();} void Canvas::ellipse(float a,float b,float c,float d,float e,float f,float g,bool h){currentPath_.ellipse(a,b,c,d,e,f,g,h);SEGMENT();} void Canvas::rect(float a,float b,float c,float d){currentPath_.rect(a,b,c,d);SEGMENT();} void Canvas::roundRect(float a,float b,float c,float d,float e){currentPath_.roundRect(a,b,c,d,e);SEGMENT();}
 void Canvas::fill(const std::string&s){
+#ifdef __EMSCRIPTEN__
+  sync(kFillBits);
+  if (paintCachedPath(0, s=="evenodd")) return;
+  preparePagePath();
+  sync(kFillBits);
+#endif
   OP(44,0,0,0,0,0,0,0,0,s.c_str());
 #ifndef __EMSCRIPTEN__
   fillDevice(currentPath_, s=="evenodd", state_.fill);
 #endif
 }
 void Canvas::stroke() {
+#ifdef __EMSCRIPTEN__
+  sync(kStrokeBits);
+  if (paintCachedPath(1, false)) return;
+  preparePagePath();
+  // The line width is in the units of the transform current NOW, so the
+  // transform goes back to it after the held segments were sent under theirs.
+  sync(kStrokeBits);
+#endif
   OP(45,0,0,0,0,0,0,0,0,"");
 #ifndef __EMSCRIPTEN__
   strokeDevice(currentPath_);
@@ -1464,9 +1771,13 @@ void Canvas::stroke() {
 }
 void Canvas::clip(const std::string&s){
 #ifdef __EMSCRIPTEN__
-  // The clip region is save/restore state, so a deferred save has to exist
-  // before one is narrowed.
-  flushSaves();
+  // The clip region is the one piece of state that cannot be put back by
+  // writing values, so a clip inside a save() needs the real thing.
+  realSave();
+  sync(kTransformBit);
+  if (paintCachedPath(2, s=="evenodd")) return;
+  preparePagePath();
+  sync(kTransformBit);
 #endif
   OP(46,0,0,0,0,0,0,0,0,s.c_str());
 #ifndef __EMSCRIPTEN__
@@ -1537,6 +1848,7 @@ static void emitPath(int contextId, const Path2D& path, int action, bool evenOdd
 #endif
 void Canvas::fill(const Path2D&p,const std::string&s) {
 #ifdef __EMSCRIPTEN__
+  sync(kFillBits);
   emitPath(contextId_, p, 0, s=="evenodd");
 #else
   fillDevice(p, s=="evenodd", state_.fill);
@@ -1544,6 +1856,7 @@ void Canvas::fill(const Path2D&p,const std::string&s) {
 }
 void Canvas::stroke(const Path2D&p) {
 #ifdef __EMSCRIPTEN__
+  sync(kStrokeBits);
   emitPath(contextId_, p, 1, false);
 #else
   strokeDevice(p);
@@ -1551,7 +1864,8 @@ void Canvas::stroke(const Path2D&p) {
 }
 void Canvas::clip(const Path2D&p,const std::string&s) {
 #ifdef __EMSCRIPTEN__
-  flushSaves();
+  realSave();
+  sync(kTransformBit);
   emitPath(contextId_, p, 2, s=="evenodd");
 #else
   flatten(p, state_.matrix, matrixScale(state_.matrix), gFlat);
@@ -1586,6 +1900,8 @@ void Canvas::clip(const Path2D&p,const std::string&s) {
 }
 bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 #ifdef __EMSCRIPTEN__
+  // The page answers about ITS path, so ours has to be there.
+  preparePagePath();
   canvasFlushOps();
   return c2d_hit(contextId_,a,b,0,s.c_str());
 #else
@@ -1607,6 +1923,8 @@ bool Canvas::isPointInPath(float a,float b,const std::string&s)const {
 }
 bool Canvas::isPointInStroke(float a,float b)const {
 #ifdef __EMSCRIPTEN__
+  preparePagePath();
+  sync(kStrokeBits);
   canvasFlushOps();
   return c2d_hit(contextId_,a,b,1,"");
 #else
@@ -1615,6 +1933,7 @@ bool Canvas::isPointInStroke(float a,float b)const {
 }
 void Canvas::fillText(const std::string&s,float a,float b,float c){
 #ifdef __EMSCRIPTEN__
+  sync(kFillBits|kTextBits);
   pushText(contextId_,47,c,a,b,s);
 #else
   glyphs(s,a,b,c,state_.fill);
@@ -1622,6 +1941,7 @@ void Canvas::fillText(const std::string&s,float a,float b,float c){
 }
 void Canvas::strokeText(const std::string&s,float a,float b,float c){
 #ifdef __EMSCRIPTEN__
+  sync(kStrokeBits|kTextBits);
   pushText(contextId_,48,c,a,b,s);
 #else
   glyphs(s,a,b,c,state_.stroke);
@@ -1629,6 +1949,7 @@ void Canvas::strokeText(const std::string&s,float a,float b,float c){
 }
 float Canvas::measureText(const std::string&s)const {
 #ifdef __EMSCRIPTEN__
+  sync(kFontBit|kDirectionBit);
   canvasFlushOps();
   return c2d_measure(contextId_,s.c_str());
 #else
@@ -1638,6 +1959,7 @@ float Canvas::measureText(const std::string&s)const {
 }
 void Canvas::drawCanvas(const Canvas&s,float a,float b) {
 #ifdef __EMSCRIPTEN__
+  sync(kImageBits);
   pushRef(contextId_,51,s.contextId_,a,b,0,0,0,0,0,0);
 #else
   drawCanvas(s, a, b, static_cast<float>(s.width_), static_cast<float>(s.height_));
@@ -1645,6 +1967,7 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b) {
 }
 void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
+  sync(kImageBits);
   pushRef(contextId_,51,s.contextId_,a,b,c,d,1,0,0,0);
 #else
   if (c <= 0 || d <= 0) return;
@@ -1669,6 +1992,7 @@ void Canvas::drawCanvas(const Canvas&s,float a,float b,float c,float d) {
 }
 void Canvas::drawCanvas(const Canvas&s,float sx,float sy,float sw,float sh,float a,float b,float c,float d) {
 #ifdef __EMSCRIPTEN__
+  sync(kImageBits);
   pushRef(contextId_,52,s.contextId_,sx,sy,sw,sh,a,b,c,d);
 #else
   blitRegion(s,sx,sy,sw,sh,a,b,c,d,nullptr);
@@ -1745,6 +2069,9 @@ void Canvas::drawImage(const ImageLevel* levels,int levelCount,float dx,float dy
 }
 void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,float dw,float dh,float alpha,std::uint32_t cacheKey) {
 #ifdef __EMSCRIPTEN__
+  // Drawn directly rather than queued, so the state it reads has to be
+  // queued and then flushed ahead of it.
+  sync(kImageBits);
   canvasFlushOps();
   c2d_image(contextId_,static_cast<int>(cacheKey),rgba,iw,ih,dx,dy,dw,dh,alpha);
 #else
