@@ -1,18 +1,24 @@
-# florr.io clone
+# flowrix ![florr](src/splitter_small.svg)
 
-A browser-based multiplayer survival game inspired by [florr.io](https://florr.io).
+[florr.io](https://florr.io) clone
+
+[Public Server](https://florrclone.cryodome.com)
+
+[Discord](https://discord.com/invite/SvAYCGsmAg)
 
 > **License notice:** As of October 2026 this project is licensed under the
 > [GNU Affero General Public License v3.0 or later](LICENSE) (previously GPL v3
 > or later, and before that ISC), because it contains code adapted from
-> [gardn](https://github.com/maxnest0x0/gardn), which is AGPL-licensed.
+> [gardn](https://github.com/trigonal-bacon/gardn), which is AGPL-licensed.
 > If you distribute this software or a modified version of it, or run a
 > modified version as a network service, you must do so under the same license
 > and make the corresponding source code available to its users.
 
+![Title Screen](img/title_screen.png)
+
 ## Quick start
 
-Requires Node.js 22+
+Requires Node.js 22+, Emscripten, Make and CMake
 
 ```bash
 npm install
@@ -43,6 +49,8 @@ The same page with the module translated to JavaScript. It is bigger (~8.5MB)
 and slower, and the build takes several minutes, so it is built only when
 asked for.
 
+## If the game is blocked at your school, try using [https://florrclone.cryodome.com:3000](https://florrclone.cryodome.com:3000), click advanced options and continue to site.
+
 ## Scripts
 
 | Script | Purpose |
@@ -57,117 +65,7 @@ asked for.
 | `npm run dev:server` | Run server under `ts-node-dev` |
 | `npm run svg2skin -- art.svg` | Convert an SVG into custom-skin commands |
 
-### Biomes
-
-The world is divided into biomes (ocean, desert, jungle, etc.) with their own mobs, rarities, and scaling. The maps are authored in [Tiled](https://www.mapeditor.org) and live in `maps/`, listed by `maps/maps.json` with their tile palette in `maps/tileset.tsj` and one SVG per tile in `maps/tiles/`. There is no build step: the engine reads the `.tmj` files directly. See [`maps/README.md`](maps/README.md).
-
-### Custom skins from SVG
-
-Player-made skins are a short list of canvas primitives (see `src/skin_format.ts`),
-typed into **Skin Studio ▸ Create ▸ Text**. To start from artwork instead:
-
-```bash
-npm run svg2skin -- logo.svg                    # prints the command lines
-npm run svg2skin -- logo.svg --max-shapes 16 --hole-fill '#ffe763'
-```
-
-Or open `SvgToSkin.html` for drag-and-drop with a live preview of the skin on a
-flower. Both use the same converter, which flattens transforms, turns paths into
-polygons/curves, fits the drawing to the flower body, and drops the smallest
-shapes when the artwork exceeds the 128-shape limit.
-
-### Rarities
-
-`common`, `uncommon`, `rare`, `epic`, `legendary`, `mythic`, `ultra`, `super`, `unique` and `apex`.
-
-## Features
-
-- **Multiplayer** via raw WebSockets, with cross-server portals for transferring between server instances(server transfer disabled in default map)
-- **Biome system** with per-biome mob pools, spawners, and scaling
-- **Petal crafting** across the rarity ladder
-- **Guilds & squads**, chat, and a leaderboard
-- **PvP arena** with dedicated spawner and rendering
-- **Bots** for populating servers
-- **Daily streak** rewards and a tutorial flow for new players
-- **Tiled maps** (`maps/*.tmj`, listed by `maps/maps.json`) for the world's art layers, doors and
-  teleporters. Collision is the collision shapes each tile carries in Tiled's Tile Collision
-  Editor, placed per cell from every layer marked `has_collision`, and cancelled where a layer
-  marked `negate_collision` decks over it (that is the bridge) — so a flower walks up to the
-  edge of the drawn stone, not to the cell boundary, and crosses the river on planks. A spawn band carries a `difficulty` number
-  rather than a rarity: 0 is fully common, 100 ultra, 200 super, 300 unique. **A spawn band is
-  the only thing that makes a mob** — ground no band covers grows nothing, ever, and a map with
-  no band on it is empty and says `NO SPAWN BANDS` on its load line. A nest's escorts and a
-  centipede's segments follow their parent over a band's edge, and the PVP arena and the daily
-  maze are generated realms with their own spawner. See `maps/README.md`
-- **SVG → skin converter** (`SvgToSkin.html`, `scripts/svg-to-skin.js`) for turning artwork into custom-skin commands
-- **Persistence** via custom JSON database
-- **HTTPS** support (drop `cert.crt` / `cert.key` at the project root). If that
-  certificate is a localhost one and has expired, the server generates a fresh
-  short-lived `dev-cert.crt` at boot so `npm start` always serves a live
-  certificate; a real certificate for a real hostname is never touched.
-- **WebTransport (HTTP/3)** alongside WebSocket — the client probes
-  `/transport-info` and picks one automatically, falling back to WebSocket
-  whenever QUIC is unavailable. Each connection logs which it chose and why.
-
-## Chat commands
-
-Players:
-
-- `/help` — list available commands
-- `/list_all`, `/list_common`, `/list_uncommon`, `/list_rare`, `/list_epic`, `/list_legendary`, `/list_mythic`, `/list_ultra`, `/list_super`, `/list_unique` — list mobs of the given rarity
-
-Chat accepts limited inline HTML: `<b>`, `<i>`, `<u>`, `<span style="color:…">`, `<blink>`.
-
-## Admin
-
-Flag a user as admin by setting `"admin": true` on their record in `dist/inventory.json` (or the SQLite row). Admins can run server commands from chat with `/admin <cmd>` or `/cmd <cmd>`. Non-admins attempting admin commands get "Command does not exist". All admin invocations are logged server-side.
-
-### Server console / admin commands
-
-Typed on the server's stdin, or via `/admin` in chat:
-
-- `save` / `save <playerId>` — persist player progress
-- `list-players`, `list-sockets` — enumerate connections
-- `spawn <mobType> <rarity> [x y]` — spawn a mob (e.g. `spawn hornet legendary 1000 2000`)
-- `set_max_enemies <n>` — cap concurrent enemy count
-
-Mob types include: `bee`, `hornet`, `mantis`, `ladybug`, `soldier_ant`, `leafbug`, `bush`, `target_dummy`, `item_spawner`. See `src/mobs.ts` for the current list.
-
-## Project layout
-
-```
-src/
-  server.ts, server/        # server entry + managers (players, enemies, guilds, squads, bots, cross-server)
-  game.ts, player.ts        # client game loop and player state
-  graphics/                 # rendering (flower, enemies, panels, minimap, effects)
-  petals.ts, petal_action/  # petal configs and per-petal behaviors
-  mobs.ts, enemy.ts         # mob definitions and AI
-  inventory.ts, shop.ts     # inventory, crafting, shop
-  chat.ts, guildMenu.ts     # chat and guild UI
-  map_data.ts               # biome/map loading
-  database.ts               # JSON persistence
-  ws_client.ts, ws_server.ts, signaling.ts  # networking
-cpp/                        # native physics module (built with make)
-assembly/                   # AssemblyScript sources
-assets/                     # images and SVGs
-scripts/                    # build helpers (e.g. compressbundle.js, svg-to-skin.js)
-maps/                       # the world maps, in Tiled format (see maps/README.md)
-MapEditor.html              # the retired map editor; Tiled replaced it
-SvgToSkin.html              # standalone SVG → skin command converter
-```
-
-## Stack
-
-TypeScript, Canvas 2D, Socket.IO + `ws`, Express, `better-sqlite3`, Webpack
-
-## Set up production server
-
-Make sure you have PM2 installed
-Paste update_aws.sh contents into terminal
-
-## Update production server
-
-Run "/admin update" in server chat
+## Like the game? Star the github repository!
 
 ## License
 
