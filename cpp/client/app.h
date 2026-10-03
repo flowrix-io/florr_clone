@@ -168,6 +168,12 @@ private:
 
     void drawLogin(Canvas&, double time);
     void drawLobby(Canvas&, double time);
+    /// What the lobby becomes between Ready and the server's answer: the
+    /// connecting screen's layout with "Loading..." under the title.
+    void drawLoading(Canvas&, double time);
+    /// The title with one status line under it -- the connecting screen and
+    /// the loading screen, which differ only in the line.
+    void drawTitleStatus(Canvas&, const std::string& status);
     /// The lobby's name field, Ready button and the two-row spawn picker,
     /// laid out once so the interaction pass and the draw pass cannot
     /// disagree about where they are. `tabs` is one rectangle per entry of
@@ -377,7 +383,10 @@ private:
 
     /// Joins with this client's viewport, biome and flower name. One place, so
     /// the auto-login path and the Ready button cannot send different things.
+    /// Does nothing while a join is already waiting for its answer.
     void startGame();
+    /// Off the lobby and into the world, on the frame the join is answered.
+    void enterGame();
 
     /// Ends the session and goes back to the auth form: the server revokes the
     /// token, the client forgets the account, and the stored token on disk
@@ -576,6 +585,9 @@ private:
     /// between runs beside the session token, which is where the browser build
     /// keeps it too (localStorage, not the account).
     std::string playerName_;
+    /// When the join now waiting for its answer went out, which is what the
+    /// loading screen's give-up is measured from. See NetClient::joinPending.
+    double joinStartedSeconds_ = 0;
 
     /// Scripted-login progress. A screenshot or smoke run has no one to type,
     /// so it registers, and falls back to logging in when the name is taken.

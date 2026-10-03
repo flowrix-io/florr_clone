@@ -280,13 +280,19 @@ const Canvas* App::minimapStatic(bool rarityGlow) {
             run.rect(static_cast<float>(corner.x), static_cast<float>(corner.y), side, side);
             return;
         }
+        // No closePath() after the ring. A fill closes every subpath on its
+        // own, in the browser and in the software rasteriser alike, so it adds
+        // nothing to the picture -- but Chrome's closePath costs time in
+        // proportion to the whole path built so far, and ten thousand of them
+        // in one run made this bake quadratic: a full second of frozen frame
+        // (at 4x CPU throttle) on the first frame of every game, measured
+        // 2026-10-03.
         const std::vector<Vec2>& ring = *solid.ring;
         for (std::size_t i = 0; i < ring.size(); ++i) {
             const Vec2 point = toBox(ring[i] + solid.origin);
             if (i == 0) run.moveTo(static_cast<float>(point.x), static_cast<float>(point.y));
             else run.lineTo(static_cast<float>(point.x), static_cast<float>(point.y));
         }
-        run.closePath();
     });
     fillRun();
 

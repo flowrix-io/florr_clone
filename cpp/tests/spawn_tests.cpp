@@ -467,6 +467,33 @@ TEST(a_player_joins_on_the_beginner_ground) {
     CHECK(h.server.world().get<Transform>(body).realm == Realm::Overworld);
 }
 
+TEST(a_join_is_pending_until_answered_and_never_outlives_its_connection) {
+    // What the loading screen stands on: joinPending() is true from the
+    // moment Ready goes out until the server answers, and a join cut off by a
+    // drop must not bring the loading screen back up on the next login.
+    Harness h("spawn-pending");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginNew(h, client, "patient", "password7"));
+    CHECK(!client.joinPending());
+    client.joinGame(1280, 720);
+    CHECK(client.joinPending());
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    CHECK(!client.joinPending());
+
+    NetClient dropped;
+    CHECK(loginNew(h, dropped, "dropped", "password7"));
+    dropped.joinGame(1280, 720);
+    CHECK(dropped.joinPending());
+    dropped.disconnect();
+    CHECK(!dropped.joinPending());
+    CHECK(connectClient(h, dropped));
+    dropped.requestLogin("dropped", "password7");
+    CHECK(h.stepUntil({&dropped}, [&] { return dropped.status() == NetClient::Status::LoggedIn; }));
+    CHECK(!dropped.joinPending());
+}
+
 TEST(the_live_server_grows_what_the_ground_under_each_mob_declares) {
     // The real GameServer, the real garden.tmj, a real client joining through
     // the real door -- and every mob the population controller puts around that

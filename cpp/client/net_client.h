@@ -415,6 +415,15 @@ public:
     /// `playerName` is the flower's nameplate; empty spawns as "Unnamed".
     void joinGame(int viewportWidth, int viewportHeight,
                   const std::string& spawnChoice = {}, const std::string& playerName = {});
+    /// True from joinGame() until the server answers it: with JoinAccepted,
+    /// or with the Bad notice that is its only way of saying no. Only ever
+    /// true while logged in -- a dropped socket takes the join with it, and a
+    /// login that follows starts with none.
+    bool joinPending() const { return joinPending_ && status_ == Status::LoggedIn; }
+    /// Stops waiting for a join answer that is not coming. A JoinAccepted that
+    /// arrives afterwards still puts the client in the game: the server has
+    /// placed the body by then, and that is the truth either way.
+    void cancelJoin() { joinPending_ = false; }
     void leaveGame();
     void sendInput(const net::InputFrame&);
     void sendChat(const std::string& text);
@@ -876,6 +885,8 @@ private:
 
     bool dead_ = false;
     std::string killerName_;
+    /// See joinPending().
+    bool joinPending_ = false;
 
     /// Chat is capped so a long session cannot grow without bound; the oldest
     /// lines scroll off, which is what the panel shows anyway.

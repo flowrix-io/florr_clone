@@ -768,6 +768,12 @@ void App::frame(double dt) {
             // is up, and there is nothing logged in yet for a panel to show.
             menus_.renderStripOnly(canvas, window_, timeSeconds_);
         }
+        else if (screen_ == Screen::Lobby && net_.joinPending()) {
+            // Ready has gone out. Nothing on the lobby can be used until the
+            // server answers (updateLobby), so none of it is shown -- the
+            // panels and the strip included; they are back with the world.
+            drawLoading(canvas, timeSeconds_);
+        }
         else if (screen_ == Screen::Lobby) {
             drawLobby(canvas, timeSeconds_);
             // The same menus, on the title screen. The panels read the account

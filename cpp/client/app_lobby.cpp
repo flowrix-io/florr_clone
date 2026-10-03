@@ -88,6 +88,12 @@ constexpr double kTitleXpTextShare = 0.4;
 constexpr double kTitleXpFadeBelow = 0.05;
 constexpr double kTitleXpEasePerFrame = 0.05;
 
+/// How long the loading screen waits for the server to answer Ready before it
+/// gives up and puts the lobby back. A join is answered within a tick; this
+/// is for the one that went missing, so a player is never left looking at
+/// "Loading..." with no way off it.
+constexpr double kJoinTimeoutSeconds = 10.0;
+
 /// The daily-login card's body; its border is the same colour at 0.7 value.
 constexpr std::uint32_t kStreakPanel = 0x66FFFFu;
 /// How long its star wobbles after a fresh claim.
@@ -193,6 +199,24 @@ void App::updateLobby(double dt) {
         }
         const double ease = 1.0 - std::pow(1.0 - kTitleXpEasePerFrame, dt * 60.0);
         titleXpShown_ += (levelFraction(progress) - titleXpShown_) * ease;
+    }
+
+    // The join has been answered: into the world.
+    if (net_.status() == NetClient::Status::Playing) {
+        enterGame();
+        return;
+    }
+    // Ready has gone out and the server has not answered it. The loading
+    // screen stands in for the lobby until it does (see frame()), and nothing
+    // on the lobby may be pressed through it: a second Ready would be a second
+    // join, and a click on the picker would change where one already sent is
+    // going.
+    if (net_.joinPending()) {
+        if (timeSeconds_ - joinStartedSeconds_ > kJoinTimeoutSeconds) {
+            net_.cancelJoin();
+            net_.addSystemMessage("The server did not answer. Press Ready to try again.");
+        }
+        return;
     }
 
     if (config_.autoJoin && !config_.autoUsername.empty() &&
@@ -304,33 +328,39 @@ void App::updateLobby(double dt) {
             if (hitInclusive(layout.ready, mouse)) startGame();
         }
     }
+}
 
-    if (net_.status() == NetClient::Status::Playing) {
-        net_.view().snapAll();
-        // The join's spawn point: the first snapshot has not placed the body
-        // yet, and the view's own self position is still zero.
-        camera_.snapTo(net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival());
-        beginSceneWipe(true);
-        // --dead is the only route a scripted run has to the death card: being
-        // killed for real is not something `--frames` can arrange.
-        screen_ = config_.autoDead ? Screen::Dead : Screen::Playing;
-        deathCardVisible_ = true;
-        runLoot_.clear();
-        // The browser starts the tutorial a second after the game's socket
-        // authenticates, which is this moment: Game builds the Tutorial, and
-        // reaching the world is what a Game exists for.
-        //
-        // A scripted login is not a player, and the card would cover a quarter
-        // of every other capture -- which is precisely why the browser's own
-        // harness writes `tutorial_completed` before those joins and clears it
-        // for the one shot that wants the card. --tutorial is that shot.
-        if (config_.autoTutorial || config_.autoUsername.empty()) {
-            tutorial_.beginGame(menus_.settings(), timeSeconds_, config_.autoTutorial);
-        }
+void App::enterGame() {
+    net_.view().snapAll();
+    // The join's spawn point: the first snapshot has not placed the body
+    // yet, and the view's own self position is still zero.
+    camera_.snapTo(net_.selfPlaced() ? net_.view().selfDrawnPosition() : net_.arrival());
+    // What it photographs is the loading screen, the last frame drawn, and it
+    // holds that up until the body arrives -- see wipeReadyToReveal().
+    beginSceneWipe(true);
+    // --dead is the only route a scripted run has to the death card: being
+    // killed for real is not something `--frames` can arrange.
+    screen_ = config_.autoDead ? Screen::Dead : Screen::Playing;
+    deathCardVisible_ = true;
+    runLoot_.clear();
+    // The browser starts the tutorial a second after the game's socket
+    // authenticates, which is this moment: Game builds the Tutorial, and
+    // reaching the world is what a Game exists for.
+    //
+    // A scripted login is not a player, and the card would cover a quarter
+    // of every other capture -- which is precisely why the browser's own
+    // harness writes `tutorial_completed` before those joins and clears it
+    // for the one shot that wants the card. --tutorial is that shot.
+    if (config_.autoTutorial || config_.autoUsername.empty()) {
+        tutorial_.beginGame(menus_.settings(), timeSeconds_, config_.autoTutorial);
     }
 }
 
 void App::startGame() {
+    // One join in flight at a time. Ready cannot be pressed through the
+    // loading screen, but Enter in the name field and the scripted join --
+    // which asks again every frame until it is in -- both come through here.
+    if (net_.joinPending()) return;
     // A scripted --spawn overrides the picker for this join only. It is
     // deliberately NOT written back to the settings: the file is the player's,
     // and a screenshot run that left "maze" in it would send their next
@@ -338,6 +368,20 @@ void App::startGame() {
     const std::string& where =
         config_.autoSpawn.empty() ? menus_.settings().spawnChoice : config_.autoSpawn;
     net_.joinGame(window_.width(), window_.height(), where, playerName_);
+    joinStartedSeconds_ = timeSeconds_;
+    // The lobby is about to give way to the loading screen, which has no
+    // field: a caret left in the name box would keep a phone's keyboard up
+    // over it (publishKeyboardRegions).
+    nameField_.blur();
+}
+
+void App::drawLoading(Canvas& canvas, double time) {
+    // The connecting screen's layout -- the title and one static line under
+    // it -- over the live backdrop. Drawn every frame the join is out, so the
+    // page keeps moving while the server answers; the scene wipe then holds a
+    // still of it while the world builds underneath.
+    drawTitleStatus(canvas, "Loading...");
+    (void)time;
 }
 
 // ---------------------------------------------------------------------------

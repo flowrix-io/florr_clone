@@ -332,6 +332,7 @@ void NetClient::joinGame(int viewportWidth, int viewportHeight, const std::strin
     w.str(spawnChoice);
     w.str(playerName);
     send(w);
+    joinPending_ = true;
 }
 
 void NetClient::leaveGame() {
@@ -957,6 +958,9 @@ void NetClient::handleAuthResult(ByteReader& reader) {
         sessionToken_ = token;
         profile_.username = username;
         status_ = Status::LoggedIn;
+        // A new session has asked for nothing yet. A join sent before a drop
+        // went with the connection it was sent on.
+        joinPending_ = false;
     } else if (result == net::AuthStatus::SessionExpired) {
         // The stored token is no longer usable; drop it so the UI falls back
         // to the login form instead of retrying it forever.
@@ -1265,6 +1269,8 @@ void NetClient::handleJoinAccepted(ByteReader& reader) {
     const Vec2 spawn = reader.position();
     reader.u32();   // tick, informational
     const std::int64_t mazeDay = reader.i64();
+    // Answered, whether or not what follows is usable.
+    joinPending_ = false;
 
     // The map the body was put in: which realm it is, how big it is, and its
     // coarse grid. All three travel together because the server is the one that
@@ -1467,11 +1473,15 @@ void NetClient::handleChatHistory(ByteReader& reader) {
 
 void NetClient::handleNotice(ByteReader& reader) {
     // The reference has no toast layer: a server announcement is a System line
-    // in the transcript and nothing else, so the severity byte is read to keep
-    // the frame aligned and then dropped.
-    reader.u8();
+    // in the transcript and nothing else, whatever its severity.
+    const auto severity = static_cast<net::NoticeSeverity>(reader.u8());
     std::string text = reader.str();
     if (!reader.ok()) return;
+    // The one thing the severity does decide: a Bad notice while a join is
+    // waiting is that join refused -- it is the only answer other than
+    // JoinAccepted the server gives one (GameServer::handleJoin) -- and the
+    // loading screen has to come down to the lobby, where this line is shown.
+    if (severity == net::NoticeSeverity::Bad) joinPending_ = false;
     addSystemMessage(text);
 }
 

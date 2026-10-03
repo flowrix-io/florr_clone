@@ -415,6 +415,11 @@ void App::drawConnectionState(Canvas& canvas, double time) {
         return;
     }
 
+    drawTitleStatus(canvas, "Connecting...");
+    (void)time;
+}
+
+void App::drawTitleStatus(Canvas& canvas, const std::string& status) {
     // The reference's connecting screen is the title with one static line
     // under it -- deliberately not an animated ellipsis, which reads as a
     // progress bar for something that has no progress to report.
@@ -428,12 +433,13 @@ void App::drawConnectionState(Canvas& canvas, double time) {
     // Half the title's point size and a heavier outline than it: the line
     // under the heading is a status, not a second heading
     // (src/title_screen/index.ts:1264-1265).
+    TextStyle style;
     style.size = 24.0;
+    style.align = Align::Centre;
     style.bold = true;
     style.strokeWidth = 4.0;
-    text(canvas, "Connecting...", canvas.width() * 0.5, canvas.height() * 0.5, style);
+    text(canvas, status, canvas.width() * 0.5, canvas.height() * 0.5, style);
     if (statsVisible()) drawStatsCounters(canvas, true);
-    (void)time;
 }
 
 void App::updateSessionReplaced() {
