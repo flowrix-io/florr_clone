@@ -671,7 +671,7 @@ int GameServer::botMapTierCeiling() const {
             best = std::max(best, tierValueForDifficulty(element.difficulty));
         }
     }
-    botMapCeiling_ = clamp(static_cast<int>(std::floor(best)), 0, kRarityCount - 1);
+    botMapCeiling_ = clamp(static_cast<int>(std::floor(best)), 0, kLadderRarityCount - 1);
     return botMapCeiling_;
 }
 

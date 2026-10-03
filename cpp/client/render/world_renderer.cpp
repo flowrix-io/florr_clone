@@ -426,10 +426,10 @@ std::string formatCompact(double value) {
     return std::to_string(static_cast<long long>(std::llround(value)));
 }
 
-/// The four tiers that shimmer in the browser build.
+/// The four tiers that shimmer in the browser build, and universal above them.
 bool sparklingRarity(Rarity rarity) {
     return rarity == Rarity::Ultra || rarity == Rarity::Super || rarity == Rarity::Unique ||
-           rarity == Rarity::Apex;
+           rarity == Rarity::Apex || rarity == Rarity::Universal;
 }
 
 /// Jitter for a particle burst. Deliberately not reproducible across clients:

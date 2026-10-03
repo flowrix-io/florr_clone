@@ -347,7 +347,7 @@ bool SpawnSystem::permanentFixtureExists(World& world, std::uint16_t mobIndex, R
 Rarity SpawnSystem::rollRarity(const MobConfig& config, double difficulty, double luck,
                                Rng& rng) {
     const Rarity rolled = rollSpawnRarity(difficulty, luck, rng);
-    return clampRarity(std::max(rarityIndex(rolled), rarityIndex(config.minRarity)));
+    return clampLadderRarity(std::max(rarityIndex(rolled), rarityIndex(config.minRarity)));
 }
 
 double SpawnSystem::difficultyAt(Realm realm, Vec2 at) const {
@@ -437,10 +437,12 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     if (mobIndex >= content.mobCount()) return NULL_ENTITY;
 
     const MobConfig& config = content.mob(mobIndex);
-    // A mob does not exist below its min_rarity, whoever asked for it. Enforced
+    // A mob does not exist below its min_rarity, whoever asked for it -- nor
+    // above apex: universal is a petal tier, and a console `spawn bee
+    // universal` or a nest's offset past the top comes out an apex. Enforced
     // here rather than at each call site so a nest, a script and the ambient
     // roll cannot disagree about it.
-    rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
+    rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
 
     // A wild unique or apex is its biome's clock's to hand out, and nobody
     // else's. One asked for any other way while that clock is still cooling
@@ -965,7 +967,7 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
         // Read everything out before spawning: `spawner` points into an
         // archetype column and does not survive a create().
         const std::uint16_t childIndex = spawner->childConfigIndex;
-        const Rarity childRarity = clampRarity(rarityIndex(type->rarity) + spawner->rarityOffset);
+        const Rarity childRarity = clampLadderRarity(rarityIndex(type->rarity) + spawner->rarityOffset);
         const double lifetimeMillis = spawner->childLifetimeMillis;
         const Vec2 anchor = transform->position;
         const Realm nestRealm = transform->realm;
@@ -1557,7 +1559,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // floor wins, exactly as it does on every other spawn path. Read the tier
     // AFTER the floor, because that is the tier that decides whether this is a
     // record or an event.
-    rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(content.mob(type).minRarity)));
+    rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(content.mob(type).minRarity)));
 
     // A super may come out a unique or an apex instead, if its biome's clock
     // for that tier has run down. After the type roll, which is safe because a

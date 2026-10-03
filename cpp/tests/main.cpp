@@ -426,17 +426,22 @@ TEST(rarity_steps_clamp_at_both_ends) {
     CHECK_EQ(upgradeRarity(Rarity::Common), Rarity::Uncommon);
     CHECK_EQ(downgradeRarity(Rarity::Apex), Rarity::Unique);
     CHECK_EQ(clampRarity(-5), Rarity::Common);
-    CHECK_EQ(clampRarity(999), Rarity::Apex);
+    // Any tier, universal included; the ladder clamp stops at apex.
+    CHECK_EQ(clampRarity(999), Rarity::Universal);
+    CHECK_EQ(clampLadderRarity(999), Rarity::Apex);
+    CHECK_EQ(clampLadderRarity(-5), Rarity::Common);
 }
 
 TEST(rarity_scaling_is_monotonic) {
-    for (int i = 1; i < kRarityCount; ++i) {
+    for (int i = 1; i < kLadderRarityCount; ++i) {
         CHECK(kMobHealthScale[i] > kMobHealthScale[i - 1]);
         CHECK(kMobDamageScale[i] > kMobDamageScale[i - 1]);
         CHECK(kMobSizeScale[i] > kMobSizeScale[i - 1]);
         CHECK(petalStatScale(static_cast<Rarity>(i)) > petalStatScale(static_cast<Rarity>(i - 1)));
         CHECK(petalHealScale(static_cast<Rarity>(i)) > petalHealScale(static_cast<Rarity>(i - 1)));
     }
+    // Above the ladder only health and damage climb.
+    CHECK(petalStrengthScale(Rarity::Universal) > petalStrengthScale(Rarity::Apex));
     // Healing softens above mythic instead of continuing to triple.
     const double mythic = petalHealScale(Rarity::Mythic);
     CHECK_NEAR(petalHealScale(Rarity::Ultra) / mythic, std::sqrt(3.0), 1e-9);
@@ -444,6 +449,55 @@ TEST(rarity_scaling_is_monotonic) {
     // Modifiers stay linear, 1x to 4x across common..unique.
     CHECK_NEAR(petalModifierScale(Rarity::Common), 1.0, 1e-9);
     CHECK_NEAR(petalModifierScale(Rarity::Unique), 4.0, 1e-9);
+}
+
+TEST(universal_sits_above_the_ladder_and_nothing_climbs_to_it) {
+    CHECK_EQ(rarityIndex(Rarity::Universal), kLadderRarityCount);
+    CHECK_EQ(kRarityCount, kLadderRarityCount + 1);
+    CHECK(parseRarity("universal") == Rarity::Universal);
+    CHECK_EQ(std::string(rarityLabel(Rarity::Universal)), std::string("Universal"));
+    CHECK_EQ(rarityColor(Rarity::Universal), 0x555555u);
+
+    // Read off the wire or out of a save it is itself; out of arithmetic -- a
+    // nest's offset, a spawn roll -- it is an apex.
+    CHECK(clampRarity(rarityIndex(Rarity::Universal)) == Rarity::Universal);
+    CHECK(clampLadderRarity(rarityIndex(Rarity::Universal)) == Rarity::Apex);
+    CHECK(ladderRarity(Rarity::Universal) == Rarity::Apex);
+    CHECK(ladderRarity(Rarity::Unique) == Rarity::Unique);
+
+    // Nothing upgrades into it, and nothing crafts out of it or of apex.
+    CHECK(upgradeRarity(Rarity::Unique) == Rarity::Apex);
+    CHECK(upgradeRarity(Rarity::Apex) == Rarity::Apex);
+    CHECK(upgradeRarity(Rarity::Universal) == Rarity::Universal);
+    CHECK(downgradeRarity(Rarity::Universal) == Rarity::Apex);
+    CHECK(craftsOutOf(Rarity::Unique));
+    CHECK(!craftsOutOf(Rarity::Apex));
+    CHECK(!craftsOutOf(Rarity::Universal));
+    CHECK_EQ(oracleCraftCost(Rarity::Universal), 0);
+    CHECK_NEAR(dropUpgradeChance(Rarity::Apex), 0.0, 1e-12);
+
+    // sqrt(2) on health and damage, and apex on every other curve.
+    CHECK_NEAR(petalStrengthScale(Rarity::Universal) / petalStrengthScale(Rarity::Apex),
+               std::sqrt(2.0), 1e-12);
+    for (int i = 0; i < kLadderRarityCount; ++i) {
+        const Rarity r = static_cast<Rarity>(i);
+        CHECK_NEAR(petalStrengthScale(r), petalStatScale(r), 1e-9);
+    }
+    const auto same = [](double universal, double apex) {
+        return std::fabs(universal - apex) <= std::fabs(apex) * 1e-12;
+    };
+    CHECK(same(petalStatScale(Rarity::Universal), petalStatScale(Rarity::Apex)));
+    CHECK(same(petalHealScale(Rarity::Universal), petalHealScale(Rarity::Apex)));
+    CHECK(same(petalManaScale(Rarity::Universal), petalManaScale(Rarity::Apex)));
+    CHECK(same(petalZoomScale(Rarity::Universal), petalZoomScale(Rarity::Apex)));
+    CHECK(same(petalModifierScale(Rarity::Universal), petalModifierScale(Rarity::Apex)));
+    CHECK(same(petalEvasionScale(0.03, Rarity::Universal), petalEvasionScale(0.03, Rarity::Apex)));
+    CHECK(same(petalAggroRangeScale(0.75, Rarity::Universal),
+               petalAggroRangeScale(0.75, Rarity::Apex)));
+    CHECK(same(antennaeVisionRangeScale(Rarity::Universal), antennaeVisionRangeScale(Rarity::Apex)));
+    CHECK_NEAR(stallPower(Rarity::Universal, Rarity::Apex), 1.0, 1e-12);
+    CHECK_NEAR(reflectionScale(Rarity::Universal, Rarity::Apex), 1.0, 1e-12);
+    CHECK_NEAR(reflectionScale(Rarity::Apex, Rarity::Universal), 1.0, 1e-12);
 }
 
 TEST(craft_and_drop_odds_stay_in_range) {

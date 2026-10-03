@@ -2190,10 +2190,10 @@ TEST(a_burs_strip_rides_the_plain_three_times_ladder) {
     if (f.burr == kInvalidIndex) return;
 
     // The figures the design states, tier by tier.
-    static const double kExpected[kRarityCount] = {
+    static const double kExpected[kLadderRarityCount] = {
         1.5, 4.5, 13.5, 40.5, 121.5, 364.5, 1093.5, 3280.5, 9841.5, 29524.5,
     };
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         const PetalStats s = f.registry.petalStats(f.burr, clampRarity(t));
         CHECK_NEAR(s.armorReduction, kExpected[t], kExpected[t] * 1e-9);
     }
@@ -2205,10 +2205,10 @@ TEST(mob_armor_triples_per_tier_and_flattens_above_ultra) {
     if (f.grunt == kInvalidIndex) return;
 
     // `grunt` states no armour, so it wears the default 1 at common.
-    static const double kExpected[kRarityCount] = {
+    static const double kExpected[kLadderRarityCount] = {
         1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 729.0, 729.0, 729.0,
     };
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         CHECK_NEAR(f.registry.mobStats(f.grunt, clampRarity(t)).armor, kExpected[t], 1e-9);
     }
 }
@@ -2330,10 +2330,10 @@ TEST(a_roots_stack_rides_the_plain_three_times_ladder) {
     // Matched to mob damage, which is the same 3x ladder all the way up: what
     // a stack absorbs has to keep pace with what a mob of the tier hits for,
     // or root is immunity at one end and dead weight at the other.
-    static const double kExpected[kRarityCount] = {
+    static const double kExpected[kLadderRarityCount] = {
         12.0, 36.0, 108.0, 324.0, 972.0, 2916.0, 8748.0, 26244.0, 78732.0, 236196.0,
     };
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         const PetalStats s = f.registry.petalStats(f.taproot, clampRarity(t));
         CHECK_NEAR(s.armorPerStack, kExpected[t], kExpected[t] * 1e-9);
     }
@@ -2776,10 +2776,10 @@ TEST(a_bones_armor_rides_the_mob_armor_ladder) {
 
     // "Just like regular entity armour": the same 3x steps a mob's climbs, and
     // the same flattening above ultra.
-    static const double kExpected[kRarityCount] = {
+    static const double kExpected[kLadderRarityCount] = {
         10.0, 30.0, 90.0, 270.0, 810.0, 2430.0, 7290.0, 7290.0, 7290.0, 7290.0,
     };
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         const PetalStats s = f.registry.petalStats(f.boney, clampRarity(t));
         CHECK_NEAR(s.petalArmor, kExpected[t], 1e-9);
         CHECK_NEAR(s.petalArmor, 10.0 * kMobArmorScale[static_cast<std::size_t>(t)], 1e-9);

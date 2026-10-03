@@ -81,8 +81,9 @@ inline constexpr double kNeutralSpawnLuck = 1.0;
 /// stand.
 inline constexpr double kTierValuePerLuckPoint = 0.01;
 
-/// The highest tier value: apex.
-inline constexpr double kMaxTierValue = static_cast<double>(kRarityCount - 1);
+/// The highest tier value: apex, the top of the ladder. Universal is never
+/// spawned.
+inline constexpr double kMaxTierValue = static_cast<double>(kLadderRarityCount - 1);
 
 // ---------------------------------------------------------------------------
 // The random band
@@ -115,7 +116,7 @@ constexpr bool isRandomDifficulty(double difficulty) { return difficulty < 0.0; 
 /// above are zero here for the same reason they are zero there: a boss is an
 /// event a band asks for by difficulty, never something random ground hands
 /// out.
-inline constexpr std::array<double, kRarityCount> kNaturalRaritySpread = {{
+inline constexpr std::array<double, kLadderRarityCount> kNaturalRaritySpread = {{
     0.40,  // common
     0.30,  // uncommon
     0.15,  // rare
@@ -261,8 +262,8 @@ struct TierMix {
 inline TierMix tierMixForTierValue(double tier) {
     const double clamped = clamp(tier, 0.0, kMaxTierValue);
     const int lower = static_cast<int>(std::floor(clamped));
-    if (lower >= kRarityCount - 1) return TierMix{Rarity::Apex, Rarity::Apex, 0.0};
-    return TierMix{clampRarity(lower), clampRarity(lower + 1),
+    if (lower >= kLadderRarityCount - 1) return TierMix{Rarity::Apex, Rarity::Apex, 0.0};
+    return TierMix{clampLadderRarity(lower), clampLadderRarity(lower + 1),
                    clamped - static_cast<double>(lower)};
 }
 
@@ -302,7 +303,7 @@ inline Rarity rollNaturalRarity(double luck, Rng& rng) {
         if (roll < 0.0) break;
     }
     if (rng.chance(luckTierDrift(luck))) ++index;
-    return clampRarity(index);
+    return clampLadderRarity(index);
 }
 
 /// THE spawn roll: the rarity a mob appearing on difficulty-`difficulty` ground

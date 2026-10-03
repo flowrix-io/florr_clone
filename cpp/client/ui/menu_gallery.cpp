@@ -87,9 +87,10 @@ constexpr double kIconCap = 48.0;
 
 /// Apex mobs exist, but nothing in the world spawns one and no item is ever
 /// graded apex, so the tenth tier is left out of both the grid and the drop
-/// table's columns.
-constexpr int kTierColumns = kRarityCount - 1;
-constexpr int kDropTiers = kRarityCount - 1;
+/// table's columns -- and universal, which no mob is and nothing drops,
+/// with it.
+constexpr int kTierColumns = kLadderRarityCount - 1;
+constexpr int kDropTiers = kLadderRarityCount - 1;
 
 constexpr double kGridWidth = kTierColumns * kCell + (kTierColumns - 1) * kGridGap;
 constexpr double kCardWidth = kGridWidth + kPad * 2.0 + kScrollbarWidth + 4.0 + kGridSlack;

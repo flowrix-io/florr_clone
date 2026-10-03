@@ -182,8 +182,10 @@ bool ensureShippedContent() {
 
 TEST(the_oracle_charges_the_stated_price_for_every_tier) {
     // The design's own numbers, tier by tier -- "unusual" is this game's
-    // uncommon. Apex costs nothing because nothing crafts out of it.
-    const int expected[] = {7, 11, 19, 34, 65, 128, 253, 506, 1012, 0};
+    // uncommon. Apex and universal cost nothing because nothing crafts out of
+    // either.
+    const int expected[] = {7, 11, 19, 34, 65, 128, 253, 506, 1012, 0, 0};
+    static_assert(sizeof(expected) / sizeof(expected[0]) == kRarityCount);
     for (int i = 0; i < kRarityCount; ++i) {
         CHECK_EQ(oracleCraftCost(static_cast<Rarity>(i)), expected[i]);
     }
@@ -371,7 +373,7 @@ TEST(the_shipped_jungle_stands_its_target_dummies) {
     // One plot per tier, common to apex. Whatever the count becomes, zero is
     // the bug: a whole layer dropped on the class of its objects.
     CHECK(dummies > 0);
-    CHECK_EQ(dummies, kRarityCount);
+    CHECK_EQ(dummies, kLadderRarityCount);
 }
 
 TEST(the_shipped_garden_has_an_oracle_on_open_ground) {
@@ -1072,6 +1074,7 @@ TEST(the_oracle_refuses_a_short_stack_and_apex_and_neither_starts_the_wait) {
         seedStack(path, "seer", "petal_rose", Rarity::Common, 6);
         seedStack(path, "seer", "petal_rose", Rarity::Uncommon, 11);
         seedStack(path, "seer", "petal_rose", Rarity::Apex, 3000);
+        seedStack(path, "seer", "petal_rose", Rarity::Universal, 3000);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
     const std::uint16_t rose = content().petalIndex("rose");
@@ -1093,10 +1096,16 @@ TEST(the_oracle_refuses_a_short_stack_and_apex_and_neither_starts_the_wait) {
     client.requestOracleCraft(rose, Rarity::Apex);
     CHECK(awaitOracle(h, client, outcome));
     CHECK(!outcome.success);
+    // Nor out of universal, which is only ever given.
+    standBeside(h, client, "oracle");
+    client.requestOracleCraft(rose, Rarity::Universal);
+    CHECK(awaitOracle(h, client, outcome));
+    CHECK(!outcome.success);
 
     h.step(5, {&client});
     CHECK_EQ(client.profile().stackCount(rose, Rarity::Common), 6u);
     CHECK_EQ(client.profile().stackCount(rose, Rarity::Apex), 3000u);
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Universal), 3000u);
     CHECK_EQ(client.oracleCooldownRemainingMillis(), 0.0);
 
     // A refusal is not a craft: the wait has not started, and a craft the
@@ -1459,6 +1468,7 @@ TEST(the_trader_refuses_what_it_does_not_take_and_a_refusal_starts_no_wait) {
         seedStack(path, "merchant", "petal_basic", Rarity::Common, 3);
         seedStack(path, "merchant", "petal_coin", Rarity::Rare, 2);
         seedStack(path, "merchant", "petal_rose", Rarity::Apex, 1);
+        seedStack(path, "merchant", "petal_rose", Rarity::Universal, 1);
     }, dir, 0);
     if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
     const std::uint16_t rose = content().petalIndex("rose");
@@ -1490,8 +1500,17 @@ TEST(the_trader_refuses_what_it_does_not_take_and_a_refusal_starts_no_wait) {
     client.requestTrade(rose, Rarity::Epic);
     CHECK(awaitTrade(h, client, outcome));
     CHECK(!outcome.success);
+    // A tradable petal at universal: a universal coin would be a universal
+    // nobody gave.
+    standBeside(h, client, "trader");
+    client.requestTrade(rose, Rarity::Universal);
+    CHECK(awaitTrade(h, client, outcome));
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.receivedIndex, kNoPetal);
 
     h.step(5, {&client});
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Universal), 1u);
+    CHECK_EQ(client.profile().stackCount(coin, Rarity::Universal), 0u);
     CHECK_EQ(client.profile().stackCount(basic, Rarity::Common), basics);
     CHECK_EQ(client.profile().stackCount(coin, Rarity::Rare), 2u);
     CHECK_EQ(client.traderCooldownRemainingMillis(), 0.0);

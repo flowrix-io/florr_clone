@@ -2905,6 +2905,32 @@ TEST(a_pet_climbs_the_petal_ladder_not_the_mob_one) {
           config.health * petalStatScale(Rarity::Unique) * 100.0);
 }
 
+TEST(a_universal_egg_hatches_the_apex_squad_with_sqrt2_its_strength) {
+    if (!contentLoaded()) return;
+    const ContentRegistry& content = fixture().registry;
+    const MobConfig& config = content.mob(content.mobIndex("critter"));
+    // An apex egg hatches three squads' worth at unique, the top a pet
+    // reaches. A universal egg hatches exactly that squad, and its sqrt(2) on
+    // health and damage is carried onto the pets -- they ARE the egg's damage.
+    for (const Rarity rarity : {Rarity::Apex, Rarity::Universal}) {
+        Rig rig;
+        rig.equip(0, "summoner", rarity);
+        CHECK(rig.tickUntil([&] { return rig.petCount() == 6; }));
+        rig.tick(5);
+        CHECK_EQ(rig.petCount(), std::size_t(6));
+        const double strength = petalStatScale(Rarity::Unique) *
+                                (rarity == Rarity::Universal ? std::sqrt(2.0) : 1.0);
+        Query<Pet> pets{rig.world};
+        for (const Entity pet : pets.collect()) {
+            CHECK(rig.world.get<MobType>(pet).rarity == Rarity::Unique);
+            const double health = rig.world.get<Health>(pet).max;
+            const double damage = rig.world.get<ContactDamage>(pet).amount;
+            CHECK_NEAR(health, config.health * strength, config.health * strength * 1e-12);
+            CHECK_NEAR(damage, config.damage * strength, config.damage * strength * 1e-12);
+        }
+    }
+}
+
 TEST(the_pet_health_talent_multiplies_pets_and_nothing_else) {
     if (!contentLoaded()) return;
     const MobConfig& critter = fixture().registry.mob(fixture().registry.mobIndex("critter"));
@@ -3468,12 +3494,14 @@ Entity loosePetalOf(Rig& rig) {
 TEST(wax_is_thirty_units_across_at_common_and_thirty_more_every_tier) {
     if (!contentLoaded()) return;
     const std::uint16_t wax = petalId("wax");
-    for (int tier = 0; tier < kRarityCount; ++tier) {
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
         const PetalStats stats =
             fixture().registry.petalStats(wax, static_cast<Rarity>(tier));
         CHECK_NEAR(stats.radius, 30.0 * (tier + 1), 1e-12);
     }
     CHECK_NEAR(fixture().registry.petalStats(wax, Rarity::Apex).radius, 300.0, 1e-12);
+    // Universal is apex-sized: only its health and damage are above apex.
+    CHECK_NEAR(fixture().registry.petalStats(wax, Rarity::Universal).radius, 300.0, 1e-12);
     // Every other petal keeps the radius its size gives it.
     CHECK_NEAR(fixture().registry.petalStats(petalId("basic"), Rarity::Apex).radius, 20.0, 1e-12);
     CHECK(petalIsLooseBody(fixture().registry.petal(wax)));

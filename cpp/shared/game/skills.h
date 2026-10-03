@@ -59,15 +59,16 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
 };
 
 /// How many tiers each branch has. Three of them stop short of the full
-/// ladder: Reload tops out at unique, with no apex tier to buy.
+/// ladder: Reload tops out at unique, with no apex tier to buy. None reaches
+/// past the ladder: universal is a petal tier, not a talent one.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
-    kRarityCount, kRarityCount, kRarityCount, 4, kRarityCount, rarityIndex(Rarity::Unique) + 1, 2,
-    kRarityCount,
+    kLadderRarityCount, kLadderRarityCount, kLadderRarityCount, 4, kLadderRarityCount,
+    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
 /// are a long-term goal rather than an afternoon's levelling.
-inline constexpr std::array<int, kRarityCount> kTierCost = {
+inline constexpr std::array<int, kLadderRarityCount> kTierCost = {
     1, 2, 3, 5, 8, 12, 18, 25, 26, 30,
 };
 
@@ -95,12 +96,12 @@ inline std::array<double, 2> secondChanceEffect(int tier) {
 
 /// Applied to the player's own numbers: max health and body damage.
 /// A gentle curve -- these compound with level and with petal modifiers.
-inline constexpr std::array<double, kRarityCount> kStatSkillScale = {
+inline constexpr std::array<double, kLadderRarityCount> kStatSkillScale = {
     1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
 };
 
 /// Applied to petal EFFECTS: healing output. Steeper than the stat curve.
-inline constexpr std::array<double, kRarityCount> kEffectSkillScale = {
+inline constexpr std::array<double, kLadderRarityCount> kEffectSkillScale = {
     1.0, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.8,
 };
 
@@ -108,12 +109,12 @@ inline constexpr std::array<double, kRarityCount> kEffectSkillScale = {
 /// and its summons (Pet Health). One table for the tooltip and the server, so
 /// the percentage a tier advertises is the percentage it grants. The effect
 /// curve's shape through unique, and 4.5x at apex.
-inline constexpr std::array<double, kRarityCount> kHealthSkillScale = {
+inline constexpr std::array<double, kLadderRarityCount> kHealthSkillScale = {
     1.0, 1.1, 1.2, 1.35, 1.6, 2.0, 2.6, 3.3, 4.0, 4.5,
 };
 
 /// Applied to absorbed-petal XP. Geometric, so apex lands on exactly 8x.
-inline constexpr std::array<double, kRarityCount> kAbsorbSkillScale = {
+inline constexpr std::array<double, kLadderRarityCount> kAbsorbSkillScale = {
     1.0, 1.26, 1.59, 2.0, 2.52, 3.17, 4.0, 5.04, 6.35, 8.0,
 };
 
@@ -122,15 +123,15 @@ inline constexpr std::array<double, kRarityCount> kAbsorbSkillScale = {
 /// Geometric like the absorb curve, so every step is worth the same proportion
 /// of the last. The branch stops at unique (0.292); the apex entry is there
 /// only because every table spans the ladder, and no tree can reach it.
-inline constexpr std::array<double, kRarityCount> kReloadSkillScale = {
+inline constexpr std::array<double, kLadderRarityCount> kReloadSkillScale = {
     1.0, 0.857, 0.735, 0.630, 0.540, 0.463, 0.397, 0.340, 0.292, 0.25,
 };
 
 /// `tier` is a rarity index, or -1 for a branch never touched. Out-of-range
 /// tiers read as neutral rather than clamping, because the only way to get one
 /// is a corrupt record, and a corrupt record must not grant a bonus.
-inline double scaleAt(const std::array<double, kRarityCount>& table, int tier) {
-    return (tier >= 0 && tier < kRarityCount) ? table[static_cast<std::size_t>(tier)] : 1.0;
+inline double scaleAt(const std::array<double, kLadderRarityCount>& table, int tier) {
+    return (tier >= 0 && tier < kLadderRarityCount) ? table[static_cast<std::size_t>(tier)] : 1.0;
 }
 
 /// One account's tree.
@@ -149,7 +150,7 @@ struct SkillSet {
     int spent() const {
         int total = 0;
         for (int s = 0; s < kSkillCount; ++s) {
-            for (int t = 0; t <= tier[static_cast<std::size_t>(s)] && t < kRarityCount; ++t) {
+            for (int t = 0; t <= tier[static_cast<std::size_t>(s)] && t < kLadderRarityCount; ++t) {
                 total += kTierCost[static_cast<std::size_t>(t)];
             }
         }
@@ -189,7 +190,7 @@ inline SkillId skillFromKey(const std::string& key) {
 
 inline int skillTierCount(SkillId id) {
     const std::size_t i = static_cast<std::size_t>(id);
-    return i < kSkillTiers.size() ? kSkillTiers[i] : kRarityCount;
+    return i < kSkillTiers.size() ? kSkillTiers[i] : kLadderRarityCount;
 }
 
 } // namespace flix

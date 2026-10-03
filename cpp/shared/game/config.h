@@ -560,7 +560,8 @@ struct MobConfig {
 
     /// XP awarded per tier, from the mob's mandatory `xp` table in mobs.json.
     /// Common through unique are written there; apex is derived as 3x unique.
-    std::array<double, kRarityCount> xp{};
+    /// One per ladder rung: no mob is universal.
+    std::array<double, kLadderRarityCount> xp{};
 };
 
 // ---------------------------------------------------------------------------

@@ -213,6 +213,27 @@ TEST(give_writes_the_petal_into_the_account) {
     CHECK(sawText(client, "Gave 3x legendary rose"));
 }
 
+TEST(give_hands_out_a_universal_petal) {
+    Harness h("cmd-give-universal", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    const std::uint16_t rose = content().petalIndex("rose");
+    CHECK(rose != kInvalidIndex);
+
+    // The one way a universal petal comes into the game.
+    client.sendChat("/admin give boss rose universal 2");
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.profile().stackCount(rose, Rarity::Universal) == 2u;
+    }, 200));
+    CHECK(sawText(client, "Gave 2x universal rose"));
+}
+
 TEST(give_rejects_an_unknown_petal_and_an_unknown_rarity) {
     Harness h("cmd-give-bad", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

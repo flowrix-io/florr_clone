@@ -619,6 +619,18 @@ TEST(a_direct_spawn_below_min_rarity_is_raised_to_it) {
     CHECK_EQ(sim.world.get<MobType>(high).rarity, Rarity::Legendary);
 }
 
+TEST(a_mob_asked_for_at_universal_spawns_an_apex) {
+    // Universal is a petal tier. An operator's `spawn bee universal`, or a
+    // nest offset past the top, comes out at the top of the ladder.
+    Sim sim;
+    const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(),
+                                          shipped().mobIndex("bee"), Rarity::Universal, kCentre,
+                                          Realm::Overworld, 0.0, sim.rng);
+    CHECK(e != NULL_ENTITY);
+    if (e == NULL_ENTITY) return;
+    CHECK_EQ(sim.world.get<MobType>(e).rarity, Rarity::Apex);
+}
+
 TEST(a_spawned_mob_wears_its_tiers_armor) {
     Sim sim;
     const std::uint16_t leafbug = shipped().mobIndex("leafbug");
@@ -2531,7 +2543,7 @@ TEST(chaff_is_flat_two_tiers_below_the_mob) {
     // through finishDropRarity instead would let a rare mob's floor lift
     // them all back to uncommon, which is exactly the inflation the graded
     // row exists to hold back.
-    for (int tier = 0; tier < kRarityCount; ++tier) {
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
         const Rarity mob = clampRarity(tier);
         CHECK_EQ(rarityIndex(LootSystem::chaffDropRarity(mob)), std::max(0, tier - 2));
     }
@@ -4562,7 +4574,7 @@ TEST(a_neverambient_mob_never_comes_from_a_group_roll_however_hard_the_ground) {
     SpawnSystem spawner;
     Rng rng(5150);
     for (std::size_t group = 0; group < content.mobGroupCount(); ++group) {
-        for (int tier = 0; tier < kRarityCount; ++tier) {
+        for (int tier = 0; tier < kLadderRarityCount; ++tier) {
             for (int i = 0; i < 200; ++i) {
                 const std::uint16_t rolled = spawner.chooseGroupMob(
                     content, static_cast<std::uint16_t>(group), clampRarity(tier), rng);

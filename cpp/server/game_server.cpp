@@ -2015,7 +2015,7 @@ void GameServer::handleCraft(Session& session, net::Connection& connection, Byte
     // short rather than narrowed into a number that might not be.
     const bool valid = count >= kCraftBatch &&
                        count <= static_cast<std::uint32_t>(kMaxStackCount) &&
-                       rarity != Rarity::Apex && petalIndex < content().petalCount();
+                       craftsOutOf(rarity) && petalIndex < content().petalCount();
     if (!valid || !takeFromInventory(record, petalIndex, rarity, static_cast<int>(count))) {
         w.boolean(false);
         w.u16(petalIndex);
@@ -2140,8 +2140,8 @@ void GameServer::handleOracleCraft(Session& session, net::Connection& connection
     }
 
     // One upgrade, no roll, nothing returned: the price is the whole
-    // transaction. Apex costs zero because nothing crafts out of it, which is
-    // what refuses it here.
+    // transaction. Apex and universal cost zero because nothing crafts out of
+    // either, which is what refuses them here.
     const int cost = oracleCraftCost(rarity);
     if (cost <= 0 || petalIndex >= content().petalCount()) {
         refuse("The oracle cannot craft that.");
@@ -2222,11 +2222,12 @@ void GameServer::handleTrade(Session& session, net::Connection& connection, Byte
         return;
     }
 
-    // The petals.json flag is the whole rule: every tier of a tradable petal
-    // is taken, apex included, and the coin itself is marked untradable.
+    // The petals.json flag is the whole rule: every LADDER tier of a tradable
+    // petal is taken, apex included, and the coin itself is marked untradable.
+    // Never universal: a universal coin would be a universal nobody gave.
     const std::uint16_t coin = content().petalIndex(kTraderCoinPetal);
     if (petalIndex >= content().petalCount() || !content().petal(petalIndex).tradable ||
-        coin == kInvalidIndex) {
+        rarity == Rarity::Universal || coin == kInvalidIndex) {
         refuse("The trader will not take that.");
         return;
     }

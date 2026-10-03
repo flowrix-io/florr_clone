@@ -389,7 +389,7 @@ TEST(no_idle_mover_travels_faster_for_being_bigger) {
         const bool head = std::string(id) == "centipede";
         const double common = pathOf(id, Rarity::Common, head);
         CHECK(common > 50.0);            // it really did move
-        for (int t = 0; t < kRarityCount; ++t) {
+        for (int t = 0; t < kLadderRarityCount; ++t) {
             CHECK_NEAR(pathOf(id, clampRarity(t), head), common, 1e-6);
         }
     }
@@ -422,7 +422,7 @@ TEST(a_gardn_mob_hops_gardns_stride_whatever_its_speed_or_size) {
     // Nor does size: a beetle, half as wide again, and every tier up to an
     // apex hop exactly what a common ladybug does.
     CHECK_NEAR(pathOf("beetle"), ladybug, 1e-6);
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         CHECK_NEAR(pathOf("ladybug", clampRarity(t)), ladybug, 1e-6);
     }
 }
@@ -2014,7 +2014,7 @@ TEST(a_mantis_fires_its_authored_gap_at_every_tier_including_the_biggest) {
     // a burst the player cannot see at all.
     //
     // The whole ladder, because the top of it is where that goes wrong.
-    for (int tier = rarityIndex(Rarity::Common); tier < kRarityCount; ++tier) {
+    for (int tier = rarityIndex(Rarity::Common); tier < kLadderRarityCount; ++tier) {
         const Rarity rarity = static_cast<Rarity>(tier);
         Sim sim;
         const Entity mob = sim.spawnMob("mantis", kOrigin, rarity);
@@ -2516,7 +2516,7 @@ TEST(every_mobs_aggro_range_grows_with_its_body) {
     for (std::size_t i = 0; i < content().mobCount(); ++i) {
         const auto index = static_cast<std::uint16_t>(i);
         const MobStats common = content().mobStats(index, Rarity::Common);
-        for (int tier = 0; tier < kRarityCount; ++tier) {
+        for (int tier = 0; tier < kLadderRarityCount; ++tier) {
             const MobStats s = content().mobStats(index, static_cast<Rarity>(tier));
             CHECK_NEAR(s.aggroRange * common.radius, common.aggroRange * s.radius,
                        std::fabs(s.aggroRange * common.radius) * 1e-9);
@@ -2525,7 +2525,7 @@ TEST(every_mobs_aggro_range_grows_with_its_body) {
     // A ladybug is neutral from rare up, apex included: there is no tier at
     // which it goes back to hunting on its own.
     const std::uint16_t ladybug = content().mobIndex("ladybug");
-    for (int tier = rarityIndex(Rarity::Rare); tier < kRarityCount; ++tier) {
+    for (int tier = rarityIndex(Rarity::Rare); tier < kLadderRarityCount; ++tier) {
         CHECK(content().mobStats(ladybug, static_cast<Rarity>(tier)).ai == AiKind::Neutral);
     }
 }
@@ -2810,7 +2810,7 @@ TEST(only_a_legendary_spider_or_above_lays_webs) {
     CHECK(contentReady());
     const WebSpec& spec = content().mob(content().mobIndex("spider")).web;
     CHECK(spec.minRarity == Rarity::Legendary);
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         const Rarity rarity = clampRarity(t);
         Sim sim;
         sim.spawnMob("spider", kOrigin, rarity);

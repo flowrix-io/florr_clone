@@ -446,10 +446,13 @@ private:
     /// predecessor instead of joining it.
     void recallPetsOfType(World& world, PetalSlotState& state, std::uint16_t mobIndex);
     /// Put `count` summons of `mobIndex` on the field around `at`, filed under
-    /// `slot`. Stops short at the per-player entity cap.
+    /// `slot`. Stops short at the per-player entity cap. `strength` multiplies
+    /// their health and damage on top of `rarity`'s: strengthBoost() of the
+    /// petal that hatched them, so a universal egg's squad -- the apex squad
+    /// -- is sqrt(2) times as strong.
     void summonPets(World& world, const ContentRegistry& registry, Entity player,
                     std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count, Vec2 at,
-                    PetalSlotState& state);
+                    PetalSlotState& state, double strength);
 
     /// The flower petal opening on the mob it touched: it is spent, and either
     /// the flower is corrupted or a squad of glitch flowers lands on the mob.

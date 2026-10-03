@@ -55,7 +55,7 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     const MobConfig& config = content.mob(mobIndex);
     // The mob's own size ladder and floor, exactly as a wild one of the same
     // tier would have: an NPC and its enemy twin are the same creature.
-    rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
+    rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
     const MobStats stats = content.mobStats(mobIndex, rarity);
     const double radius = stats.radius > 0.0 ? stats.radius : kMobBaseRadius;
 

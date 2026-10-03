@@ -84,8 +84,9 @@ constexpr double kGrainAlpha = 0.6;
 constexpr double kFramesPerSecond = 60.0;
 constexpr double kGrainScale = kSlotCardSlot / kItemTileDesign;
 
+/// Never a universal column: no card -- forge, oracle or trader -- takes one.
 std::size_t tierColumns(bool withApex) {
-    return withApex ? static_cast<std::size_t>(kRarityCount)
+    return withApex ? static_cast<std::size_t>(kLadderRarityCount)
                     : static_cast<std::size_t>(Rarity::Unique) + 1;
 }
 

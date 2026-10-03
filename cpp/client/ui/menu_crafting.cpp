@@ -137,7 +137,7 @@ void CraftingPanel::reset() {
 void CraftingPanel::stage(const Profile& profile, std::uint16_t petalIndex, Rarity rarity,
                           bool wholeStack) {
     const int possible = ownedCount(profile, petalIndex, rarity) / kBatch;
-    if (possible <= 0 || rarity == Rarity::Apex) return;
+    if (possible <= 0 || !craftsOutOf(rarity)) return;
 
     if (stagedPetal_ != petalIndex || stagedRarity_ != rarity) {
         stagedPetal_ = petalIndex;

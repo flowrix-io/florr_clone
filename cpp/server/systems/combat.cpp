@@ -1603,7 +1603,7 @@ void CombatSystem::gatherAuras(World& world, const ContentRegistry& content) {
             bestDamage = std::max(bestDamage, content.petalStats(raindrop, slot.rarity).damage);
             bestRadius = std::max(bestRadius,
                                   kRaindropAuraBaseRadius +
-                                      rarityIndex(slot.rarity) * kRaindropAuraRadiusPerRarity);
+                                      ladderIndex(slot.rarity) * kRaindropAuraRadiusPerRarity);
         }
         if (bestRadius <= 0.0 || bestDamage <= 0.0) return;
 

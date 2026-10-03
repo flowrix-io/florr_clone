@@ -946,7 +946,7 @@ TEST(the_shipped_mobs_reach_a_flower_touching_them_at_every_tier) {
     for (const char* id : {"firefly", "magic_firefly"}) {
         const std::uint16_t index = registry.mobIndex(id);
         CHECK(index != kInvalidIndex);
-        for (int tier = 0; tier < kRarityCount; ++tier) {
+        for (int tier = 0; tier < kLadderRarityCount; ++tier) {
             const Rarity rarity = clampRarity(tier);
             const MobStats stats = registry.mobStats(index, rarity);
 

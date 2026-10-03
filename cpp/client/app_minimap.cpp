@@ -43,7 +43,7 @@ constexpr double kMinimapPadding = 10.0;
 /// and not the item palette: it ends violet and cyan where kRarityColors ends
 /// white and magenta, and a band read against the wrong one names the wrong
 /// tier.
-constexpr std::array<std::uint32_t, kRarityCount> kMinimapSpawnColors = {
+constexpr std::array<std::uint32_t, kLadderRarityCount> kMinimapSpawnColors = {
     0x7EEF6Du,  // common
     0xFFE65Du,  // uncommon
     0x4D52E3u,  // rare

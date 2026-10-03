@@ -49,8 +49,10 @@ bool DropTables::load(const ContentRegistry& content, const std::string& path, s
                 return false;
             }
 
+            // Ladder tiers only: nothing drops universal, so a table naming
+            // it is refused like any other unknown tier.
             int rarityOffset = -1;
-            for (int i = 0; i < kRarityCount; ++i) {
+            for (int i = 0; i < kLadderRarityCount; ++i) {
                 if (rarity == kRarityNames[static_cast<std::size_t>(i)]) {
                     rarityOffset = i;
                     break;

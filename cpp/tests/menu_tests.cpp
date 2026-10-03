@@ -272,6 +272,13 @@ TEST(shop_prices_climb_by_tier_and_top_tiers_are_not_for_sale) {
     CHECK(shopSellsRarity(Rarity::Super));
     CHECK(!shopSellsRarity(Rarity::Unique));
     CHECK(!shopSellsRarity(Rarity::Apex));
+    CHECK(!shopSellsRarity(Rarity::Universal));
+    // Nor does any rotation ever put one on a card.
+    for (std::int64_t rotation = 0; rotation < 500; ++rotation) {
+        for (const ShopOffer& offer : shopOffers(rotation)) {
+            CHECK(offer.rarity != Rarity::Universal);
+        }
+    }
 }
 
 TEST(the_store_rotates_hourly_and_both_sides_derive_the_same_ten_cards) {
@@ -621,6 +628,37 @@ TEST(a_stack_badge_stays_short_however_deep_the_stack) {
     CHECK_EQ(ui::stackCountText(65540), std::string("65.5K"));
     CHECK_EQ(ui::stackCountText(static_cast<std::uint64_t>(kMaxStackCount)), std::string("2.1B"));
     CHECK_EQ(ui::stackCountText(4294967295u), std::string("4.2B"));
+}
+
+TEST(the_forge_refuses_a_universal_stack_and_keeps_every_petal) {
+    Harness h("craft-universal", [](const std::string& path) {
+        seedAccount(path, "smith", "password7", 0, 0);
+        seedStack(path, "smith", "petal_rose", Rarity::Universal, 50);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    const std::uint16_t rose = content().petalIndex("rose");
+    if (rose == kInvalidIndex) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("smith", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Universal) == 50u;
+    }));
+
+    // A client that asks anyway -- the panel never stages one -- is refused
+    // whole: nothing taken, nothing made.
+    client.requestCraft(rose, Rarity::Universal, 50);
+    CHECK(h.stepUntil({&client}, [&] { return client.craftOutcome().pending; }, 200));
+    const CraftOutcome outcome = client.craftOutcome();
+    client.craftOutcome().pending = false;
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.crafted, 0);
+
+    h.step(10, {&client});
+    CHECK_EQ(client.profile().stackCount(rose, Rarity::Universal), 50u);
 }
 
 TEST(a_super_craft_is_announced_in_chat_and_written_to_the_feed) {

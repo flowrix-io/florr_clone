@@ -47,8 +47,10 @@ struct LootAwarded {};
 // ---------------------------------------------------------------------------
 
 /// TypeScript rarity-specific item expiry, in seconds.
+/// Universal is apex's: nothing drops one, but a drop is an item and an item
+/// can be any tier.
 inline constexpr std::array<double, kRarityCount> kDropLifetimeByRarity = {
-    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0, 120.0, 300.0, 600.0,
+    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0, 120.0, 300.0, 600.0, 600.0,
 };
 
 /// Collision radius a drop is given. It has no Motion and nothing pushes it;

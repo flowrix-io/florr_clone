@@ -1401,7 +1401,7 @@ TEST(a_dandelion_sheds_a_seed_through_the_real_server_loop) {
     // spawned rather than assumed common, so the budget cannot silently go
     // short if the spawner hands this test a graded one.
     const std::size_t tier = static_cast<std::size_t>(
-        clamp(rarityIndex(world.get<MobType>(dandelion).rarity), 0, kRarityCount - 1));
+        ladderIndex(clampRarity(rarityIndex(world.get<MobType>(dandelion).rarity))));
     const double tierScale = kMobSizeScale[tier] / kProjectileReachReferenceScale;
     const double flightMillis = spec.shotSpeed > 0.0
                                     ? 1000.0 * spec.shotDistance * tierScale / spec.shotSpeed

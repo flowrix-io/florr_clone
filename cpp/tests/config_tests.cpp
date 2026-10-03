@@ -347,7 +347,7 @@ TEST(mob_stats_scale_across_rarities) {
     CHECK_NEAR(common.aggroRange, 100.0, 1e-9);
     CHECK(common.spawnable());
 
-    for (int tier = 0; tier < kRarityCount; ++tier) {
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
         const MobStats s = r.mobStats(bee, static_cast<Rarity>(tier));
         const std::size_t t = static_cast<std::size_t>(tier);
         CHECK_NEAR(s.health, 35.0 * kMobHealthScale[t], std::fabs(s.health) * 1e-9);
@@ -390,8 +390,8 @@ TEST(petal_stats_scale_across_rarities) {
     for (int tier = 0; tier < kRarityCount; ++tier) {
         const Rarity rarity = static_cast<Rarity>(tier);
         const PetalStats s = r.petalStats(basic, rarity);
-        CHECK_NEAR(s.damage, 10.0 * petalStatScale(rarity), std::fabs(s.damage) * 1e-9);
-        CHECK_NEAR(s.health, 10.0 * petalStatScale(rarity), std::fabs(s.health) * 1e-9);
+        CHECK_NEAR(s.damage, 10.0 * petalStrengthScale(rarity), std::fabs(s.damage) * 1e-9);
+        CHECK_NEAR(s.health, 10.0 * petalStrengthScale(rarity), std::fabs(s.health) * 1e-9);
         CHECK_NEAR(s.reloadMillis, 1200.0, 1e-9);   // reload is flat across tiers
         CHECK(s.breakable);
     }
@@ -403,6 +403,90 @@ TEST(petal_stats_scale_across_rarities) {
     CHECK_NEAR(r.petalStats(rose, Rarity::Apex).heal, 10.0 * petalHealScale(Rarity::Apex), 1e-6);
     CHECK(r.petalStats(rose, Rarity::Apex).heal < 10.0 * petalStatScale(Rarity::Apex));
     CHECK(r.petal(rose).defendOnly);
+}
+
+TEST(a_universal_petal_is_an_apex_one_with_sqrt2_its_health_and_damage) {
+    const ContentRegistry& r = shipped().registry;
+    const double root2 = std::sqrt(2.0);
+    const auto near = [](double universal, double expected) {
+        return std::fabs(universal - expected) <= std::max(1e-9, std::fabs(expected) * 1e-12);
+    };
+    // Every shipped petal, so a new per-rarity table that forgets universal --
+    // and silently reads it as zero -- fails here rather than in a fight.
+    for (std::uint16_t i = 0; i < r.petalCount(); ++i) {
+        const std::string& id = r.petal(i).id;
+        const PetalStats u = r.petalStats(i, Rarity::Universal);
+        const PetalStats a = r.petalStats(i, Rarity::Apex);
+
+        // Health and damage, and the damage riders: sqrt(2) times apex. The
+        // two petals that override the ladder with a flat figure keep it.
+        const bool flatBody = id == "yggdrasil";
+        const bool flatHealth = flatBody || id == "lightning";
+        if (!near(u.damage, flatBody ? a.damage : a.damage * root2)) {
+            std::printf("    %s universal damage %g, apex %g\n", id.c_str(), u.damage, a.damage);
+            CHECK(false);
+        }
+        if (!near(u.health, flatHealth ? a.health : a.health * root2)) {
+            std::printf("    %s universal health %g, apex %g\n", id.c_str(), u.health, a.health);
+            CHECK(false);
+        }
+        CHECK(near(u.bodyDamage, a.bodyDamage * root2));
+        CHECK(near(u.critDamage, a.critDamage * root2));
+        CHECK(near(u.poisonPerSecond, a.poisonPerSecond * root2));
+
+        // Everything else is apex's, exactly.
+        const bool sameRest =
+            near(u.armorReduction, a.armorReduction) && near(u.armorPerStack, a.armorPerStack) &&
+            near(u.petalArmor, a.petalArmor) && near(u.lifesteal, a.lifesteal) &&
+            near(u.reloadMillis, a.reloadMillis) &&
+            near(u.poisonDurationMillis, a.poisonDurationMillis) &&
+            near(u.noHealDurationMillis, a.noHealDurationMillis) && near(u.heal, a.heal) &&
+            near(u.passiveHealPerSecond, a.passiveHealPerSecond) && near(u.maxMana, a.maxMana) &&
+            near(u.mana, a.mana) && near(u.passiveManaPerSecond, a.passiveManaPerSecond) &&
+            near(u.requiredMana, a.requiredMana) && near(u.knockback, a.knockback) &&
+            near(u.shield, a.shield) && near(u.slowFactor, a.slowFactor) &&
+            near(u.slowDurationMillis, a.slowDurationMillis) && near(u.webRadius, a.webRadius) &&
+            near(u.spongeDamageDurationMillis, a.spongeDamageDurationMillis) &&
+            near(u.attractionForce, a.attractionForce) && near(u.radius, a.radius) &&
+            u.count == a.count && near(u.cameraZoom, a.cameraZoom) &&
+            near(u.modifiers.maxHealth, a.modifiers.maxHealth) &&
+            near(u.modifiers.speed, a.modifiers.speed) &&
+            near(u.modifiers.range, a.modifiers.range) &&
+            near(u.modifiers.rotationSpeed, a.modifiers.rotationSpeed) &&
+            near(u.modifiers.playerRadius, a.modifiers.playerRadius) &&
+            near(u.modifiers.damage, a.modifiers.damage) &&
+            near(u.modifiers.aggroRange, a.modifiers.aggroRange) &&
+            near(u.modifiers.luck, a.modifiers.luck) &&
+            near(u.modifiers.magnetism, a.modifiers.magnetism) &&
+            near(u.modifiers.aggroRadius, a.modifiers.aggroRadius) &&
+            near(u.modifiers.petalAttractionRadius, a.modifiers.petalAttractionRadius) &&
+            near(u.modifiers.poisonArmor, a.modifiers.poisonArmor) &&
+            near(u.modifiers.evasion, a.modifiers.evasion) &&
+            near(u.modifiers.damageReflection, a.modifiers.damageReflection);
+        if (!sameRest) {
+            std::printf("    %s: a universal stat other than health/damage left apex\n",
+                        id.c_str());
+            CHECK(false);
+        }
+    }
+    // Spelled out once on the plainest petal: 10 at common is 196830 at apex.
+    const PetalStats basic = r.petalStats(r.petalIndex("basic"), Rarity::Universal);
+    CHECK_NEAR(basic.damage, 196830.0 * root2, 1e-6);
+    CHECK_NEAR(basic.health, 196830.0 * root2, 1e-6);
+}
+
+TEST(no_mob_is_universal) {
+    // Asked for a universal mob's numbers, the registry answers with apex's:
+    // the mob tables stop at the top of the ladder.
+    const ContentRegistry& r = shipped().registry;
+    for (std::uint16_t i = 0; i < r.mobCount(); ++i) {
+        const MobStats u = r.mobStats(i, Rarity::Universal);
+        const MobStats a = r.mobStats(i, Rarity::Apex);
+        CHECK_NEAR(u.health, a.health, std::fabs(a.health) * 1e-12);
+        CHECK_NEAR(u.damage, a.damage, std::fabs(a.damage) * 1e-12);
+        CHECK_NEAR(u.radius, a.radius, 1e-9);
+        CHECK_NEAR(u.xp, a.xp, 1e-9);
+    }
 }
 
 TEST(player_modifiers_scale_by_kind) {
@@ -439,10 +523,10 @@ TEST(poo_cuts_mob_aggro_range_on_its_balanced_table_and_extrapolates_to_apex) {
     if (poo == kInvalidIndex) return;
 
     // The cut in percent, as it was balanced, to the 0.1 it was written at.
-    static constexpr std::array<double, kRarityCount> kCutPercent = {
+    static constexpr std::array<double, kLadderRarityCount> kCutPercent = {
         25.0, 43.8, 57.8, 68.4, 76.3, 82.2, 86.7, 90.0, 92.5, 94.4,
     };
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         const double scale = r.petalStats(poo, static_cast<Rarity>(t)).modifiers.aggroRange;
         CHECK_NEAR((1.0 - scale) * 100.0, kCutPercent[static_cast<std::size_t>(t)], 0.05);
     }
@@ -457,7 +541,7 @@ TEST(talisman_evasion_steps_three_percent_a_tier_and_the_fly_dodges_nine_in_ten)
     if (talisman == kInvalidIndex || fly == kInvalidIndex) return;
 
     // 3% at common, and another 3% for every tier above it: 30% at apex.
-    for (int t = 0; t < kRarityCount; ++t) {
+    for (int t = 0; t < kLadderRarityCount; ++t) {
         CHECK_NEAR(r.petalStats(talisman, static_cast<Rarity>(t)).modifiers.evasion,
                    0.03 * (t + 1), 1e-12);
     }
@@ -609,7 +693,7 @@ TEST(mob_xp_comes_off_the_mob_and_apex_is_derived) {
     constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
     for (std::uint16_t i = 0; i < r.mobCount(); ++i) {
         const MobConfig& m = r.mob(i);
-        for (int tier = 0; tier < kRarityCount; ++tier) {
+        for (int tier = 0; tier < kLadderRarityCount; ++tier) {
             const double xp = m.xp[static_cast<std::size_t>(tier)];
             CHECK(std::isfinite(xp) && xp >= 0.0);
         }
@@ -1455,6 +1539,6 @@ TEST(a_stinger_clump_splits_its_slots_damage_rather_than_multiplying_it) {
     for (int i = 0; i < kRarityCount; ++i) {
         const Rarity t = static_cast<Rarity>(i);
         const PetalStats s = r.petalStats(stinger, t);
-        CHECK_NEAR(s.damage * s.count, r.petal(stinger).damage * petalStatScale(t), 1e-6);
+        CHECK_NEAR(s.damage * s.count, r.petal(stinger).damage * petalStrengthScale(t), 1e-6);
     }
 }

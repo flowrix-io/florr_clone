@@ -1511,7 +1511,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // outright. Asked here only so the operator is told why nothing
             // appeared -- at the tier the mob would really stand at, its own
             // floor included.
-            const Rarity standing = clampRarity(
+            const Rarity standing = clampLadderRarity(
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
             const double cooling =
                 spawning_->bossCooldownLeft(standing, spawnRealm, clockMillis_);

@@ -135,13 +135,15 @@ int main(int argc, char** argv) {
             return 2;
         }
 
-        for (int i = 0; i < kRarityCount; ++i) {
+        // The ladder only: this is diffed against the TypeScript reference,
+        // which has no universal tier.
+        for (int i = 0; i < kLadderRarityCount; ++i) {
             const Rarity rarity = static_cast<Rarity>(i);
             const std::string prefix = std::string("rarity/") + rarityName(rarity);
             emit(prefix + "/craft-percent", craftSuccessChance(rarity) * 100.0);
             emit(prefix + "/drop-upgrade-percent", dropUpgradeChance(rarity) * 100.0);
             emit(prefix + "/drop-downgrade-fraction", dropDowngradeChance(rarity));
-            for (int j = 0; j < kRarityCount; ++j) {
+            for (int j = 0; j < kLadderRarityCount; ++j) {
                 const Rarity target = static_cast<Rarity>(j);
                 emit(prefix + "/stall/" + rarityName(target), stallPower(rarity, target));
             }
@@ -150,7 +152,7 @@ int main(int argc, char** argv) {
         for (std::size_t i = 0; i < registry.mobCount(); ++i) {
             const auto index = static_cast<std::uint16_t>(i);
             const MobConfig& config = registry.mob(index);
-            for (int tier = 0; tier < kRarityCount; ++tier) {
+            for (int tier = 0; tier < kLadderRarityCount; ++tier) {
                 const Rarity rarity = static_cast<Rarity>(tier);
                 const MobStats stats = registry.mobStats(index, rarity);
                 const std::string prefix = "mob/" + config.id + "/" + rarityName(rarity);
@@ -173,7 +175,7 @@ int main(int argc, char** argv) {
         for (std::size_t i = 0; i < registry.petalCount(); ++i) {
             const auto index = static_cast<std::uint16_t>(i);
             const PetalConfig& config = registry.petal(index);
-            for (int tier = 0; tier < kRarityCount; ++tier) {
+            for (int tier = 0; tier < kLadderRarityCount; ++tier) {
                 const Rarity rarity = static_cast<Rarity>(tier);
                 const PetalStats stats = registry.petalStats(index, rarity);
                 const PetalModifiers& modifiers = stats.modifiers;

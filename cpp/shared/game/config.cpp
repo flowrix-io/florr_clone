@@ -457,7 +457,7 @@ PeriodicSpawnSpec parsePeriodicSpawn(Ctx& ctx, const Json& owner,
     spec.lifetimeMillis = ctx.range(node, "lifetimeMs", 0.0, 0.0, kMaxDurationMillis);
     spec.maxAlive = ctx.integer(node, "maxAlive", 0, 0, 1000);
     spec.rarityOffset = ctx.integer(node, "spawnRarityOffset", 0,
-                                    -(kRarityCount - 1), kRarityCount - 1);
+                                    -(kLadderRarityCount - 1), kLadderRarityCount - 1);
     spec.present = spec.mobIndex != kInvalidIndex && spec.maxAlive > 0;
     return spec;
 }
@@ -689,10 +689,10 @@ void parseMobGroups(Ctx& ctx, MobConfig& m, std::uint16_t mobIndex, const Json& 
 /// step above unique everywhere else in the game, so deriving it keeps an apex
 /// kill from paying the same as a common one without asking every entry to
 /// write the multiplication out.
-std::array<double, kRarityCount> parseXp(Ctx& ctx, const Json& src) {
+std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
     constexpr std::size_t kUnique = static_cast<std::size_t>(Rarity::Unique);
     constexpr std::size_t kApex = static_cast<std::size_t>(Rarity::Apex);
-    std::array<double, kRarityCount> xp{};
+    std::array<double, kLadderRarityCount> xp{};
     xp.fill(1.0);
     xp[kApex] = 3.0;
 
@@ -1498,7 +1498,8 @@ std::uint16_t ContentRegistry::petalIndex(const std::string& id) const {
 
 MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     const MobConfig& c = mob(index);
-    const int tier = clamp(rarityIndex(r), 0, kRarityCount - 1);
+    // No mob is universal; one asked for anyway is an apex.
+    const int tier = ladderIndex(clampRarity(rarityIndex(r)));
     const std::size_t t = static_cast<std::size_t>(tier);
 
     MobStats s;
@@ -1559,15 +1560,19 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
 
 PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     const PetalConfig& c = petal(index);
-    const Rarity tier = clampRarity(rarityIndex(r));
+    // Universal reads everything below at apex, `tier`, except health and
+    // damage, which take `strength` -- apex's times sqrt(2).
+    const Rarity graded = clampRarity(rarityIndex(r));
+    const Rarity tier = ladderRarity(graded);
+    const double strength = petalStrengthScale(graded);
     const double stat = petalStatScale(tier);
     const double heal = petalHealScale(tier);
     const double modifier = petalModifierScale(tier);
     const double mana = petalManaScale(tier);
 
     PetalStats s;
-    s.damage = c.damage * stat;
-    s.health = c.health * stat;
+    s.damage = c.damage * strength;
+    s.health = c.health * strength;
     // The plain 3x ladder, deliberately NOT kMobArmorScale: mob armour flattens
     // above ultra and a bur that flattened with it would be dead weight at the
     // three tiers where a raid actually needs one.
@@ -1582,7 +1587,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // of one tier are as hard to scratch as each other.
     s.petalArmor = c.petalArmor * kMobArmorScale[static_cast<std::size_t>(rarityIndex(tier))];
     // A claw's bonus is damage, so it is on the damage ladder beside `damage`.
-    s.critDamage = c.clawCritDamage * stat;
+    s.critDamage = c.clawCritDamage * strength;
     // A fraction of the damage dealt, and that damage already climbs.
     s.lifesteal = c.lifesteal;
     s.reloadMillis = c.cooldownMillis;
@@ -1606,8 +1611,8 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // mobs a tier of it is meant to fight. Authored at 10, it is worth exactly
     // a basic petal's hit at every tier -- one petal's damage, moved onto the
     // flower's body.
-    s.bodyDamage = c.bodyDamage * stat;
-    s.poisonPerSecond = c.poisonPerSecond * stat;
+    s.bodyDamage = c.bodyDamage * strength;
+    s.poisonPerSecond = c.poisonPerSecond * strength;
     s.poisonDurationMillis = c.poisonDurationMillis;
     // Flat, on purpose: gardn's dandelion locks healing for ten seconds at
     // every tier. See PetalConfig::noHealDurationMillis.
@@ -1629,7 +1634,7 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // overrides in petals.ts, not another copy of the damage multiplier.
     s.knockback = c.knockback;
     if (c.id == "jelly") {
-        static constexpr std::array<double, kRarityCount> kJellyKnockback = {
+        static constexpr std::array<double, kLadderRarityCount> kJellyKnockback = {
             15.0, 50.0, 100.0, 250.0, 500.0,
             1800.0, 10000.0, 25000.0, 50000.0, 100000.0,
         };
@@ -1662,13 +1667,13 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
     // TypeScript.
     s.count = c.count;
     if (c.id == "light" || c.id == "pollen" || c.id == "stinger") {
-        static constexpr std::array<int, kRarityCount> kLightCount = {
+        static constexpr std::array<int, kLadderRarityCount> kLightCount = {
             1, 2, 2, 3, 3, 5, 5, 5, 5, 5,
         };
-        static constexpr std::array<int, kRarityCount> kPollenCount = {
+        static constexpr std::array<int, kLadderRarityCount> kPollenCount = {
             1, 2, 2, 2, 3, 3, 5, 5, 5, 7,
         };
-        static constexpr std::array<int, kRarityCount> kStingerCount = {
+        static constexpr std::array<int, kLadderRarityCount> kStingerCount = {
             1, 1, 1, 1, 1, 3, 5, 5, 5, 7,
         };
         const auto t = static_cast<std::size_t>(rarityIndex(tier));
@@ -1702,45 +1707,45 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
 
     const std::size_t ti = static_cast<std::size_t>(rarityIndex(tier));
     if (c.id == "clover") {
-        static constexpr std::array<double, kRarityCount> values = {
+        static constexpr std::array<double, kLadderRarityCount> values = {
             0.08, 0.12, 0.17, 0.24, 0.35, 0.5, 0.72, 1.04, 1.5, 2.0,
         };
         s.modifiers.luck = values[ti];
     } else if (c.id == "faster") {
-        static constexpr std::array<double, kRarityCount> values = {
+        static constexpr std::array<double, kLadderRarityCount> values = {
             1.1, 1.2, 1.3, 1.4, 1.6, 1.8, 2.1, 2.7, 3.5, 4.5,
         };
         s.modifiers.rotationSpeed = values[ti];
     } else if (c.id == "powder") {
-        static constexpr std::array<double, kRarityCount> values = {
+        static constexpr std::array<double, kLadderRarityCount> values = {
             1.1, 1.1, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8,
         };
         s.modifiers.speed = values[ti];
     } else if (c.id == "soil") {
-        static constexpr std::array<double, kRarityCount> health = {
+        static constexpr std::array<double, kLadderRarityCount> health = {
             1.1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
         };
-        static constexpr std::array<double, kRarityCount> speed = {
+        static constexpr std::array<double, kLadderRarityCount> speed = {
             0.95, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.6,
         };
-        static constexpr std::array<double, kRarityCount> radius = {
+        static constexpr std::array<double, kLadderRarityCount> radius = {
             1.05, 1.05, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8,
         };
         s.modifiers.maxHealth = health[ti];
         s.modifiers.speed = speed[ti];
         s.modifiers.playerRadius = radius[ti];
     } else if (c.id == "air") {
-        static constexpr std::array<double, kRarityCount> values = {
+        static constexpr std::array<double, kLadderRarityCount> values = {
             1.1, 1.2, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0,
         };
         s.modifiers.playerRadius = values[ti];
     } else if (c.id == "lotus") {
         s.modifiers.poisonArmor = 5.0 * stat;
     } else if (c.id == "lentil") {
-        static constexpr std::array<double, kRarityCount> radius = {
+        static constexpr std::array<double, kLadderRarityCount> radius = {
             20, 29, 38, 47, 56, 64, 73, 82, 91, 100,
         };
-        static constexpr std::array<double, kRarityCount> force = {
+        static constexpr std::array<double, kLadderRarityCount> force = {
             2000, 2889, 3778, 4667, 5556, 6444, 7333, 8222, 9111, 10000,
         };
         s.modifiers.petalAttractionRadius = radius[ti];

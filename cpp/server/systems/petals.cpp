@@ -52,7 +52,8 @@ constexpr double kBubblePopDistancePerRarity = 0.6;
 constexpr double kMaxPopTickTravel = kMinSubstepLength * kMaxSubstepCount;
 
 /// An apex egg does not hatch an apex pet. The reference substitutes three
-/// unique ones, which is the top of the ladder a pet can actually reach.
+/// unique ones, which is the top of the ladder a pet can actually reach. A
+/// universal egg hatches the same three, stronger (see summonPets).
 constexpr int kApexPetCount = 3;
 
 /// Live summons one player may hold, counting every slot's squad together.
@@ -1982,7 +1983,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             if (owner != nullptr && motion != nullptr && push.lengthSq() > 0.0) {
                 const double reach =
                     kBubblePopDistance
-                    * (1.0 + rarityIndex(instance->rarity) * kBubblePopDistancePerRarity);
+                    * (1.0 + ladderIndex(instance->rarity) * kBubblePopDistancePerRarity);
                 const Vec2 bearing = push.normalized();
                 // Added to the velocity the flower already has, as the
                 // reference adds it: a pop taken while running carries the run
@@ -2447,7 +2448,7 @@ void PetalSystem::strikeLightning(World& world, Entity player, Vec2 at, double d
     // put on the SAME ladder here rather than landing a common's number on an
     // apex petal.
     const double base =
-        damage > 0.0 ? damage : kLightningFallbackDamage * petalStatScale(rarity);
+        damage > 0.0 ? damage : kLightningFallbackDamage * petalStrengthScale(rarity);
     emitDamageBurst(world, player, at, kLightningRadius, base * scale, true);
     reportLightning(world, player, at, kLightningRadius);
 }
@@ -2528,7 +2529,7 @@ void PetalSystem::healFromBehaviour(World& world, Entity player, double amount, 
     if (amount > 0.0 && CombatSystem::healingBlocked(world, player, nowMillis)) return;
     const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
     const double talent = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
-    const double scaled = amount * std::pow(std::sqrt(3.0), rarityIndex(rarity)) * talent *
+    const double scaled = amount * std::pow(std::sqrt(3.0), ladderIndex(rarity)) * talent *
                           kBehaviourHealScale;
     health->current = std::min(health->max, health->current + scaled);
     // A scripted `heal -1` is self-damage, and it stops one point short of
@@ -2633,7 +2634,7 @@ void PetalSystem::applyRaindropAura(World& world, const ContentRegistry& registr
                               registry.petalStats(slot.configIndex, slot.rarity).damage);
         bestRadius = std::max(bestRadius,
                               kRaindropAuraBaseRadius +
-                                  rarityIndex(slot.rarity) * kRaindropAuraRadiusPerRarity);
+                                  ladderIndex(slot.rarity) * kRaindropAuraRadiusPerRarity);
     }
     if (bestDamage <= 0.0 || bestRadius <= 0.0) return;
 
@@ -2771,7 +2772,7 @@ void PetalSystem::dischargeCapacitors(World& world, const ContentRegistry& regis
         const double charge =
             std::min(instance->contactMillis * kCapacitorChargePerMillis, kCapacitorMaxCharge);
         instance->contactMillis = 0.0;
-        strikeLightning(world, player, at, charge * petalStatScale(rarity), rarity);
+        strikeLightning(world, player, at, charge * petalStrengthScale(rarity), rarity);
     }
 }
 
@@ -2925,7 +2926,7 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
     // in the JSON but no spawn path in the reference reads it, and taking it
     // instead pinned every summon to common: mob stats scale by 3 per tier, so
     // an egg above common was worth nothing.
-    const bool apex = rarity == Rarity::Apex;
+    const bool apex = ladderRarity(rarity) == Rarity::Apex;
     const Rarity petRarity = apex ? Rarity::Unique : rarity;
     const int wanted = std::max(0, config.petCount) * (apex ? kApexPetCount : 1);
     if (wanted <= 0) return;
@@ -2946,7 +2947,7 @@ void PetalSystem::maintainPets(World& world, const ContentRegistry& registry, En
     // one of its members died comes back whole rather than as a mixture.
     recallPetsOfType(world, state, config.petMobIndex);
     summonPets(world, registry, player, slot, config.petMobIndex, petRarity, wanted, ownerPosition,
-               state);
+               state, strengthBoost(rarity));
 }
 
 int PetalSystem::countPetsOfType(World& world, const PetalSlotState& state,
@@ -2997,7 +2998,7 @@ void PetalSystem::recallPetsOfType(World& world, PetalSlotState& state, std::uin
 
 void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Entity player,
                              std::uint8_t slot, std::uint16_t mobIndex, Rarity rarity, int count,
-                             Vec2 at, PetalSlotState& state) {
+                             Vec2 at, PetalSlotState& state, double strength) {
     if (mobIndex == kInvalidIndex || count <= 0) return;
     PetalSlotState::Slot& slotState = state.slots[static_cast<std::size_t>(slot)];
 
@@ -3018,8 +3019,8 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
     // up to unique, the top a pet reaches, so taking it from here is what
     // keeps the two in step rather than a change in what a pet hits for.
     const double ladder = petalStatScale(rarity);
-    mob.health = config.health * ladder * petScale;
-    mob.damage = config.damage * ladder * petScale;
+    mob.health = config.health * ladder * petScale * strength;
+    mob.damage = config.damage * ladder * petScale * strength;
     // The Pet Health talent is the Petal Health talent for the squad: the same
     // curve, and on this pool alone. Read at the hatch, as the petal talent is
     // read when the slot's pool is sized, so a tier bought while the squad is
@@ -3113,12 +3114,14 @@ void PetalSystem::crackFlowerPetal(World& world, const ContentRegistry& registry
     PetalSlotState* state = world.tryGet<PetalSlotState>(player);
     if (state == nullptr) return;
     // Apex is clamped here rather than left to the summon's own apex rule,
-    // which would turn the three this petal promises into nine.
-    const Rarity petRarity = rarity == Rarity::Apex ? Rarity::Unique : rarity;
+    // which would turn the three this petal promises into nine. Universal
+    // with it, its sqrt(2) carried as strength.
+    const Rarity petRarity = ladderRarity(rarity) == Rarity::Apex ? Rarity::Unique : rarity;
     recallPetsOfType(world, *state, mobIndex);
     // At the PETAL, not at the flower: the squad lands on the mob that broke
     // it, which is the whole point of the petal.
-    summonPets(world, registry, player, slot, mobIndex, petRarity, kFlowerPetCount, at, *state);
+    summonPets(world, registry, player, slot, mobIndex, petRarity, kFlowerPetCount, at, *state,
+               strengthBoost(rarity));
 }
 
 } // namespace flix

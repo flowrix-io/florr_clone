@@ -343,9 +343,9 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
     // entries for one corrupt mob.
     if (configIndex >= registry.mobCount()) return Drive{};
 
-    const std::size_t tier = static_cast<std::size_t>(clamp(rarityIndex(rarity), 0, kRarityCount - 1));
-    const std::size_t key = static_cast<std::size_t>(configIndex) * kRarityCount + tier;
-    if (key >= drives_.size()) drives_.resize(registry.mobCount() * kRarityCount);
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
+    const std::size_t key = static_cast<std::size_t>(configIndex) * kLadderRarityCount + tier;
+    if (key >= drives_.size()) drives_.resize(registry.mobCount() * kLadderRarityCount);
 
     Drive& drive = drives_[key];
     if (!drive.valid) {
@@ -800,7 +800,7 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     const double gate = inBurst ? burstInterval : cooldown;
     if (nowMillis - ai.lastProjectileMillis < gate) return;
 
-    const std::size_t tier = static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(type.rarity))));
     const double scaling = kMobSizeScale[tier];
 
     // Ammunition is graded at the SHOOTER's tier rather than at the rarity its
@@ -2002,7 +2002,7 @@ void MobAiSystem::driveSpawners(World& world, const Terrain& terrain, double now
         // soldiers; clamping keeps a hand-edited -9 from wrapping to apex, and
         // no minion is ever above ultra.
         request.rarity =
-            minionRarity(clampRarity(rarityIndex(type.rarity) + nest.rarityOffset));
+            minionRarity(clampLadderRarity(rarityIndex(type.rarity) + nest.rarityOffset));
         const Body* body = world.tryGet<Body>(self);
         const double margin = (body != nullptr ? body->radius : 0.0) + kNestSpawnMargin;
         request.position = terrain.findOpenSpawn(rng_, transform.position, margin, transform.realm);
@@ -2057,7 +2057,7 @@ void MobAiSystem::fireRingPetal(World& world, Entity self, const PetalRingSpec& 
     // no longer cancel, so an apex seed is in the air longer than a common
     // one: that is the honest reading of a longer throw at a stated speed.
     const std::size_t tier =
-        static_cast<std::size_t>(clamp(rarityIndex(type.rarity), 0, kRarityCount - 1));
+        static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(type.rarity))));
     const double tierScale = kMobSizeScale[tier] / kProjectileReachReferenceScale;
     const double speed = spec.shotSpeed > 0.0 ? spec.shotSpeed : kDefaultProjectileSpeed;
     shot.speed = speed;
