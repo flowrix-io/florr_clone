@@ -336,11 +336,14 @@ TEST(mob_stats_scale_across_rarities) {
     const std::uint16_t bee = r.mobIndex("bee");
     CHECK(bee != kInvalidIndex);
 
+    // The body follows the bee's own `size` -- fitted to its artwork, so not
+    // a round number -- up the size ladder.
+    const double size = r.mob(bee).size;
     const MobStats common = r.mobStats(bee, Rarity::Common);
     CHECK_NEAR(common.health, 35.0, 1e-9);                 // config health, 1x
     CHECK_NEAR(common.damage, 50.0, 1e-9);
-    CHECK_NEAR(common.radius, 1.0 * kMobSizeScale[0] * kMobBaseRadius, 1e-9);
-    CHECK_NEAR(common.mass, kMobSizeScale[0] * kMobSizeScale[0], 1e-9);
+    CHECK_NEAR(common.radius, size * kMobSizeScale[0] * kMobBaseRadius, 1e-9);
+    CHECK_NEAR(common.mass, (size * kMobSizeScale[0]) * (size * kMobSizeScale[0]), 1e-9);
     CHECK_NEAR(common.aggroRange, 100.0, 1e-9);
     CHECK(common.spawnable());
 
@@ -349,7 +352,7 @@ TEST(mob_stats_scale_across_rarities) {
         const std::size_t t = static_cast<std::size_t>(tier);
         CHECK_NEAR(s.health, 35.0 * kMobHealthScale[t], std::fabs(s.health) * 1e-9);
         CHECK_NEAR(s.damage, 50.0 * kMobDamageScale[t], std::fabs(s.damage) * 1e-9);
-        CHECK_NEAR(s.radius, kMobSizeScale[t] * kMobBaseRadius, 1e-9);
+        CHECK_NEAR(s.radius, size * kMobSizeScale[t] * kMobBaseRadius, 1e-9);
         // Speed is deliberately flat: a rare bee is tougher, not faster.
         CHECK_NEAR(s.speed, common.speed, 1e-9);
         // Aggro range grows with the body, on the same ladder.

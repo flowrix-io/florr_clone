@@ -6,6 +6,12 @@
 #include <string>
 #include <vector>
 
+// One SVG path `d` attribute, parsed exactly as a <path> in a document is --
+// relative commands resolved, arcs turned into canvas ellipses. For code that
+// draws an authored outline itself rather than through a document: parse it
+// once, keep the Path2D, and fill or stroke it under whatever transform.
+Path2D svgPathData(const std::string& d);
+
 // A small SVG scene compiler. A document is parsed once into a retained tree of
 // baked Path2D geometry; render() evaluates SVG animations at timeSeconds and
 // emits only Canvas/Path2D commands, never asking the browser to render SVG.

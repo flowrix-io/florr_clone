@@ -63,9 +63,14 @@ public:
     ///
     /// `gaze` is where a painted eye looks, in the art's frame -- see
     /// MobArtAttributes::gaze. Only a painter with an eye reads it.
+    ///
+    /// `motion` is the creature's own clock and stride (the world renderer's
+    /// mobMotion). Null -- a bestiary tile -- is a mob standing still whose
+    /// clock is `timeSeconds`.
     void drawMob(Canvas&, std::uint16_t index, double x, double y, double diameter,
                  double rotation, double timeSeconds, bool mirrored = false,
-                 double worldRadius = 0.0, Vec2 gaze = {1.0, 0.0}) const;
+                 double worldRadius = 0.0, Vec2 gaze = {1.0, 0.0},
+                 const MobMotion* motion = nullptr) const;
 
     /// Which painter draws mob `index`, or MobArt::None for a document. The
     /// world renderer asks so it can feed a painted eye the gaze it eases.
@@ -129,7 +134,7 @@ private:
 
     void draw(Canvas&, const Sprite&, double x, double y, double diameter,
               double rotation, double timeSeconds, bool mirrored, double worldRadius,
-              Vec2 gaze = {1.0, 0.0}) const;
+              Vec2 gaze = {1.0, 0.0}, const MobMotion* motion = nullptr) const;
 
     /// Parses one optional document, recording a warning instead of failing.
     std::shared_ptr<SvgDocument> compileArt(const std::string& source, const std::string& label);

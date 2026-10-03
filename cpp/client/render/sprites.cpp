@@ -551,7 +551,7 @@ const SvgDocument* SpriteCache::tileArt(const std::string& file) const {
 
 void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y, double diameter,
                        double rotation, double timeSeconds, bool mirrored,
-                       double worldRadius, Vec2 gaze) const {
+                       double worldRadius, Vec2 gaze, const MobMotion* motion) const {
     if (diameter <= 0.5) return;   // sub-pixel; not worth the transform
 
     if (sprite.art != MobArt::None) {
@@ -566,8 +566,24 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
         if (mirrored) canvas.scale(-1.0f, 1.0f);
         const double fit = (diameter * 0.5) / radius;
         canvas.scale(static_cast<float>(fit), static_cast<float>(fit));
-        paintMobArt(canvas, sprite.art,
-                    {radius, timeSeconds * kMobWalkRadiansPerSecond, sprite.color, gaze});
+        MobArtAttributes attr;
+        attr.radius = radius;
+        attr.animation = timeSeconds * kMobWalkRadiansPerSecond;
+        attr.baseColor = sprite.color;
+        attr.gaze = gaze;
+        if (motion) {
+            attr.clockMs = motion->clockMs;
+            attr.distance = motion->distance;
+            attr.speed = motion->speed;
+            attr.aggro = motion->aggro;
+            attr.aggroMs = motion->aggroMs;
+            attr.seed = motion->seed;
+            attr.health = motion->health;
+            attr.inWorld = true;
+        } else {
+            attr.clockMs = timeSeconds * 1000.0;
+        }
+        paintMobArt(canvas, sprite.art, attr);
         canvas.restore();
         return;
     }
@@ -598,10 +614,10 @@ void SpriteCache::draw(Canvas& canvas, const Sprite& sprite, double x, double y,
 
 void SpriteCache::drawMob(Canvas& canvas, std::uint16_t index, double x, double y, double diameter,
                           double rotation, double timeSeconds, bool mirrored,
-                          double worldRadius, Vec2 gaze) const {
+                          double worldRadius, Vec2 gaze, const MobMotion* motion) const {
     if (index >= mobs_.size()) return;
     draw(canvas, mobs_[index], x, y, diameter, rotation, timeSeconds, mirrored, worldRadius,
-         gaze);
+         gaze, motion);
 }
 
 MobArt SpriteCache::mobArt(std::uint16_t index) const {

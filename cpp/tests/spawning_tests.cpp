@@ -1907,15 +1907,15 @@ TEST(a_shipped_leech_dies_whole_when_its_tail_is_finished) {
 
 TEST(random_size_jitters_the_body_and_nothing_else) {
     Sim sim;
-    // `sandstorm` ships random_size [1, 2].
-    const std::uint16_t sandstorm = shipped().mobIndex("sandstorm");
-    const MobConfig& config = shipped().mob(sandstorm);
+    // `cactus` ships random_size [1, 2] -- gardn's cactus, 30 to 60 across.
+    const std::uint16_t cactus = shipped().mobIndex("cactus");
+    const MobConfig& config = shipped().mob(cactus);
     CHECK(config.randomSizeMax > config.randomSizeMin);
 
-    const MobStats stats = shipped().mobStats(sandstorm, Rarity::Common);
+    const MobStats stats = shipped().mobStats(cactus, Rarity::Common);
     // `random_size` is an ABSOLUTE size range, not a factor, so the reference
     // divides the roll by the config's own nominal `size` before using it as a
-    // multiplier. Sandstorm is size 1.5 with a [1, 2] range, so its bodies come
+    // multiplier. The cactus is size 1.5 with a [1, 2] range, so its bodies come
     // out between 0.667x and 1.333x -- not between 1x and 2x.
     const double lowest = config.randomSizeMin / config.size;
     const double highest = config.randomSizeMax / config.size;
@@ -1925,7 +1925,7 @@ TEST(random_size_jitters_the_body_and_nothing_else) {
     bool sawSmall = false;
     bool sawLarge = false;
     for (int i = 0; i < 200; ++i) {
-        const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), sandstorm,
+        const Entity e = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), cactus,
                                               Rarity::Common, kCentre, Realm::Overworld, 0.0, sim.rng);
         const double jitter = sim.world.get<MobType>(e).sizeJitter;
         CHECK(jitter >= lowest);
@@ -1933,7 +1933,7 @@ TEST(random_size_jitters_the_body_and_nothing_else) {
         CHECK_NEAR(sim.world.get<Body>(e).radius, stats.radius * jitter, 1e-9);
         // Mass is NOT jittered. It is derived from the config size and the
         // rarity step alone (`mass = size * size` in the stat table), so a
-        // sandstorm that rolled a big body is exactly as easy to knock back as
+        // cactus that rolled a big body is exactly as easy to knock back as
         // one that rolled a small one.
         CHECK_NEAR(sim.world.get<Body>(e).mass, stats.mass, 1e-9);
         sawSmall = sawSmall || jitter < 0.8;

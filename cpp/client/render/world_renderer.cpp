@@ -76,6 +76,15 @@ constexpr std::size_t kMaxMobShadows = 1024;
 /// wobble a played-back position carries while a mob stands still.
 constexpr double kMobEyeStepEpsilonSq = 1e-4;
 
+/// The longest frame a mob's motion is advanced by in one step. A frame that
+/// took longer -- the tab was hidden, the window was dragged -- is time the
+/// player did not watch, and a quarter second is already a visible stutter.
+constexpr double kMaxMotionStepMs = 250.0;
+/// Faster than any mob runs, in world units per millisecond: a drawn position
+/// that moved further than this in a frame was snapped, not walked -- a
+/// correction, a realm hop -- and the legs should not race to cover it.
+constexpr double kMaxWalkUnitsPerMs = 3.0;
+
 /// The window the browser build's server averages a dummy's DPS over.
 constexpr double kDpsWindowSeconds = 10.0;
 
@@ -1009,6 +1018,7 @@ void WorldRenderer::update(double dt) {
     // past the cap costs at worst one frame of death animations.
     if (mobShadows_.size() > kMaxMobShadows) mobShadows_.clear();
     if (mobEyes_.size() > kMaxMobShadows) mobEyes_.clear();
+    if (mobPaces_.size() > kMaxMobShadows) mobPaces_.clear();
 }
 
 const MapData* WorldRenderer::mapFor(Realm realm) const {
@@ -2665,6 +2675,50 @@ Vec2 WorldRenderer::mobGaze(const MobDraw& mob) const {
     return state.gaze;
 }
 
+MobMotion WorldRenderer::mobMotion(const MobDraw& mob, double clockSeconds) const {
+    const auto entry = mobPaces_.emplace(mob.netId, MobPace{});
+    MobPace& pace = entry.first->second;
+    if (entry.second) {
+        // First sight: a clock at zero, standing still, and already as worked
+        // up as the mob is -- one that walks on screen mid-chase is not
+        // calming down from nothing.
+        pace.aggro = mob.chasing ? 1.0 : 0.0;
+        pace.lastSeconds = clockSeconds;
+        pace.lastPosition = mob.position;
+        pace.advancedFrame = frame_;
+    } else if (pace.advancedFrame != frame_) {
+        // Once a frame, for the reason mobEye gives: a mob painted twice in
+        // one frame must not walk twice as far.
+        pace.advancedFrame = frame_;
+        const double dtMs = clamp((clockSeconds - pace.lastSeconds) * 1000.0, 0.0,
+                                  kMaxMotionStepMs);
+        if (dtMs > 0.0) {
+            // florr's own bookkeeping, in its order: ease the ground speed
+            // toward what the body covered this frame, then walk the legs on
+            // the eased speed.
+            double target = (mob.position - pace.lastPosition).length() / dtMs;
+            if (target > kMaxWalkUnitsPerMs) target = pace.speed;
+            pace.speed += (target - pace.speed) * easeFraction(kMobSpeedEaseRate, dtMs);
+            pace.distance += pace.speed * dtMs;
+            pace.clockMs += dtMs;
+            pace.aggro += ((mob.chasing ? 1.0 : 0.0) - pace.aggro) *
+                          easeFraction(kMobAggroEaseRate, dtMs);
+            pace.aggroMs += pace.aggro * dtMs;
+        }
+        pace.lastSeconds = clockSeconds;
+        pace.lastPosition = mob.position;
+    }
+    MobMotion motion;
+    motion.clockMs = pace.clockMs;
+    motion.distance = pace.distance;
+    motion.speed = pace.speed;
+    motion.aggro = pace.aggro;
+    motion.aggroMs = pace.aggroMs;
+    motion.seed = mob.netId;
+    motion.health = clamp(mob.healthFraction, 0.0, 1.0);
+    return motion;
+}
+
 const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
     if (!droppablePetals_.empty() || !content_) return droppablePetals_;
     for (std::uint16_t i = 0; i < content_->petalCount(); ++i) {
@@ -2729,7 +2783,8 @@ void WorldRenderer::drawDiggerMob(Canvas& canvas, const MobDraw& mob, double rad
 
 void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, const MobDraw& mob,
                                      double radius, double rotation, bool mirrored,
-                                     Vec2 bodyShift, double timeSeconds) const {
+                                     Vec2 bodyShift, double timeSeconds,
+                                     const MobMotion* motion) const {
     // Only the BODY takes the art offset. The ring is where the server hits
     // from, and moving it with the drawing would draw seeds where none are.
     canvas.save();
@@ -2754,7 +2809,7 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         // IS, not from how big it is being painted.
         const double visualScale = config.visualScale > 0 ? config.visualScale : 1.0;
         sprites_->drawMob(canvas, mob.typeIndex, 0.0, 0.0, radius * 2.0, rotation, timeSeconds,
-                          mirrored, mob.radius * visualScale);
+                          mirrored, mob.radius * visualScale, {1.0, 0.0}, motion);
     }
     canvas.restore();
 
@@ -2871,6 +2926,9 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
     const Vec2 screen = camera.worldToScreen(mob.position);
     const Vec2 art = screen + bodyShift;
     const double visualScale = (config && config->visualScale > 0) ? config->visualScale : 1.0;
+    // The real clock, not the pose's: a florr painter keeps its own tempo and
+    // blends in its own hurry from `aggro`.
+    const MobMotion motion = mobMotion(mob, clockSeconds);
 
     canvas.save();
     if (alpha < 1.0) canvas.setGlobalAlpha(static_cast<float>(alpha));
@@ -2911,7 +2969,7 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         const double radius = diameter * 0.5;
         const auto paint = [&](Canvas& target) {
             drawPetalRingMob(target, *config, mob, radius, rotation, mirrored, bodyShift,
-                             timeSeconds);
+                             timeSeconds, &motion);
         };
         if (id == "glitch_flower") {
             drawGlitched(canvas, screen, glitchFlowerReach(*config, pose), mob.netId, timeSeconds,
@@ -2932,14 +2990,14 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         // per frame, in world space -- which with no rotation applied is the
         // art's space too.
         sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, 0.0, timeSeconds, false,
-                          mob.radius * visualScale, mobGaze(mob));
+                          mob.radius * visualScale, mobGaze(mob), &motion);
     } else if (sprites_ && sprites_->mobDrawable(mob.typeIndex)) {
         // The world radius is handed over beside the drawn one because the mobs
         // drawn by code cut their detail from how big the mob IS. Not the death
         // scale and not the zoom: a rock does not gain facets while it pops,
         // and it does not lose them when the camera pulls back.
         sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, rotation,
-                          timeSeconds, mirrored, mob.radius * visualScale);
+                          timeSeconds, mirrored, mob.radius * visualScale, {1.0, 0.0}, &motion);
     } else {
         // No artwork: the tier colour, which is at least the one fact about a
         // mob worth reading from across the screen.

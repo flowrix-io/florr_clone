@@ -374,7 +374,7 @@ private:
     /// `bodyShift` is the resolved `visualOffsetX/Y`, and moves the body only.
     void drawPetalRingMob(Canvas&, const MobConfig&, const MobDraw&, double radius,
                           double rotation, bool mirrored, Vec2 bodyShift,
-                          double timeSeconds) const;
+                          double timeSeconds, const MobMotion* motion = nullptr) const;
     /// How drawMobBody will pose a mob this frame: its animation clock, drawn
     /// size and fade after any death pop, facing, mirroring and art offset.
     /// False when there is nothing to draw. Shared with the web build's glitch
@@ -411,6 +411,10 @@ private:
     /// across the socket the way a flower's does rather than snapping. Kept
     /// on the MobEye beside the flower-face offset, which it never shares.
     Vec2 mobGaze(const MobDraw& mob) const;
+    /// The mob's clock, the ground it has covered and how worked up it is,
+    /// advanced to `clockSeconds` -- once a frame however often it is asked,
+    /// like mobEye(). What a florr-ported painter animates from.
+    MobMotion mobMotion(const MobDraw& mob, double clockSeconds) const;
     /// The petal types a garbage pile may be built from: the same rule the
     /// server's drop roll uses, so both clients pick the same artwork.
     const std::vector<std::uint16_t>& droppablePetals() const;
@@ -550,6 +554,23 @@ private:
         std::uint64_t easedFrame = 0;
     };
     mutable std::unordered_map<std::uint32_t, MobEye> mobEyes_;
+
+    /// What each mob's painter animates from (MobMotion), keyed by netId and
+    /// advanced once a frame by mobMotion(). florr keeps these numbers on the
+    /// mob object it draws, so they start when this client first draws the
+    /// mob and live as long as it keeps drawing it.
+    struct MobPace {
+        double clockMs = 0;
+        double distance = 0;
+        double speed = 0;
+        double aggro = 0;
+        double aggroMs = 0;
+        /// The frame clock and the drawn position at the last advance.
+        double lastSeconds = 0;
+        Vec2 lastPosition;
+        std::uint64_t advancedFrame = 0;
+    };
+    mutable std::unordered_map<std::uint32_t, MobPace> mobPaces_;
 
     /// Damage landed on each target dummy over the last ten seconds, which is
     /// the window the browser build's server reports DPS over.

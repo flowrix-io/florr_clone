@@ -15,9 +15,17 @@
 // radius every frame, and this is that code, ported: the vertex counts come out
 // of `radius`, the spine and the outline widths do not.
 //
-// The scorpion, the crab and the spider are here for the other reason --
-// their claws and legs move with a walk phase, which a static document cannot
-// do.
+// The crab and the spider are here for the other reason -- their claws and
+// legs move, legs with the ground the body covers and claws on a clock,
+// which a static document cannot do.
+//
+// So is every other bug in the game: gardn's own drawing where gardn has one
+// -- ladybugs, bee, ants, beetle, hornet, centipedes -- and florr's client,
+// ported, where it does not. florr draws all of its mobs in code, with legs
+// that step on how far the body has walked and claws, mandibles and wings
+// that keep a clock of their own. The attributes below carry florr's own
+// numbers for them, and every drawing -- gardn's, florr's, the reference
+// captures' -- is one case of paintMobArt.
 //
 // The oracle is here for the same reason, and one more: its ten tendrils wave,
 // and its EYE looks at something. Where it looks is not a fact about the
@@ -47,6 +55,7 @@
 // function of the attributes it is given, which is what lets the world, the
 // bestiary and a contact sheet all call it and get the same picture.
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -56,8 +65,21 @@
 namespace flix {
 
 /// Which painter an `image` marker names. `None` is every ordinary mob.
-enum class MobArt : std::uint8_t { None, Rock, Cactus, Sandstorm, Scorpion, Crab, LeechHead,
-                                   LeechBody, Spider, Oracle, Trader };
+///
+/// Everything after `Trader` was first ported from florr's own client, and its
+/// marker is florr's name for the mob -- `$ant_worker`, `$ladybug_dark`. Every
+/// one gardn also draws is gardn's drawing now (the scorpion excepted: that
+/// stays florr's); see the notes above paintMobArt.
+enum class MobArt : std::uint8_t {
+    None, Rock, Cactus, Sandstorm, Scorpion, Crab, LeechHead, LeechBody, Spider, Oracle, Trader,
+    Ladybug, LadybugDark, LadybugShiny, Bee,
+    AntBaby, AntWorker, AntSoldier, AntSoldierPet, AntQueen,
+    FireAntBaby, FireAntWorker, FireAntSoldier, FireAntSoldierPet,
+    AntHole, FireAntBurrow, Beetle, BeetleHel, Hornet, Wasp,
+    Centipede, CentipedeBody, CentipedeEvil, CentipedeEvilBody, CentipedeDesert,
+    CentipedeDesertBody, Bubble, BumbleBee, Shell, Starfish, Jellyfish, Dandelion, Fly,
+    Leafbug, LeafbugShiny, Mantis, Bush, Roach, Moth, Firefly, FireflyMagic, Dummy,
+};
 
 /// How fast a walk cycle runs, in radians of phase per second.
 ///
@@ -65,7 +87,17 @@ enum class MobArt : std::uint8_t { None, Rock, Cactus, Sandstorm, Scorpion, Crab
 /// its 60 fps and at rest that is this. The world renderer already runs the
 /// clock at double speed for a mob that has locked on, which is the same idea
 /// as gardn's speed term arriving by a different road.
+///
+/// Legs no longer run on it: see kGaitRadiansPerUnitWalked.
 inline constexpr double kMobWalkRadiansPerSecond = 4.5;
+
+/// How far a leg's gait turns per world unit the body walks, in radians.
+///
+/// florr steps every walker's legs the same way: 0.015 rad per unit of a
+/// counter it advances four units per unit travelled. Legs read
+/// `MobArtAttributes::distance` through this, so they stand still with the
+/// mob and race when it runs.
+inline constexpr double kGaitRadiansPerUnitWalked = 0.015 * 4.0;
 
 /// The painter a mobs.json `image` field selects, or `None`.
 ///
@@ -81,8 +113,10 @@ struct MobArtAttributes {
     /// and the number it derives its detail from -- those are the same number
     /// on purpose, so a rock that grows a tier gains facets rather than scale.
     double radius = 1.0;
-    /// The walk phase, in radians. Drives the scorpion's claws and legs and the
-    /// sandstorm's spin; ignored by the mobs that hold still.
+    /// The walk phase, in radians. Drives what the gardn-era painters move on
+    /// a clock -- the crab's claws, the leech's beak, the sandstorm's spin,
+    /// the oracle's tendrils; ignored by the mobs that hold still and by every
+    /// florr port. Legs read `distance` instead.
     double animation = 0.0;
     /// The mob's own colour, from its config. gardn bakes these into the
     /// painters; here they stay in mobs.json so one file still answers what a
@@ -95,6 +129,75 @@ struct MobArtAttributes {
     /// leaves the default, which is the pose the oracle's reference art is
     /// drawn in.
     Vec2 gaze{1.0, 0.0};
+
+    // --- what florr's painters animate from ---------------------------------
+    //
+    // florr keeps a few numbers on each mob and advances them every frame it
+    // draws one. The ports read the same numbers, so these are florr's, in
+    // florr's units; the world renderer keeps them per mob (MobMotion).
+    // `animation` above is the older walk phase the gardn-era painters read,
+    // and a florr port ignores it.
+
+    /// The mob's own clock, in MILLISECONDS: florr adds every frame's delta
+    /// to it, moving or not, so whatever runs on it -- claws, mandibles,
+    /// wings -- keeps one tempo. Only differences of it mean anything.
+    double clockMs = 0.0;
+    /// How far the mob has walked, in world units: its eased `speed`
+    /// integrated over time. Legs step on this, so a mob standing still has
+    /// still legs and one running flat out races them.
+    double distance = 0.0;
+    /// Ground speed in world units per MILLISECOND, eased the way florr eases
+    /// it: toward the distance the body actually moved over the last frame,
+    /// at 1 - e^(-0.0306 dt).
+    double speed = 0.0;
+    /// 0..1: eased toward 1 while the mob is locked on to a player and back
+    /// toward 0 when it lets go, at 1 - e^(-0.0214 dt). florr blends some
+    /// parts from an idle cycle into a frantic one by it (the scorpion's
+    /// claws snap three times as fast).
+    double aggro = 0.0;
+    /// The clock again, run only as fast as `aggro`: the integral of it over
+    /// time, in milliseconds. A part that turns only while the mob is worked
+    /// up -- a starfish spinning on its chase -- turns by this, and so
+    /// neither jumps when the mob calms down nor unwinds.
+    double aggroMs = 0.0;
+    /// Stable for the life of one mob and different between two: the
+    /// replicated id. florr scatters a few details per mob from its own
+    /// (a ladybug's spots); 0 is a fine answer for a bestiary tile.
+    std::uint32_t seed = 0;
+    /// What is left of the mob's health, 0..1, for a picture that wears its
+    /// damage. 1 off the field.
+    double health = 1.0;
+    /// A creature in the world rather than its picture on a card. florr draws
+    /// a few mobs differently with no entity behind them -- a firefly's lamp
+    /// is lit only in the world, a dandelion's seeds are only part of its
+    /// picture because in the world they are petals of their own.
+    bool inWorld = false;
+};
+
+/// The rates florr eases a mob's ground speed and its locked-on blend at, per
+/// millisecond -- MobArtAttributes::speed and ::aggro, kept by the world
+/// renderer.
+inline constexpr double kMobSpeedEaseRate = 0.030649537425959442;
+inline constexpr double kMobAggroEaseRate = 0.021400496636323946;
+
+/// florr's ease toward a target over a frame of `dtMs`: the fraction of the
+/// remaining distance covered, `1 - e^(-rate * dt)`. florr writes it as
+/// `x -= (target - x) * expm1(-rate * dt)`.
+inline double easeFraction(double ratePerMs, double dtMs) {
+    return -std::expm1(-ratePerMs * dtMs);
+}
+
+/// The per-mob numbers above that only a creature walking through the world
+/// has, gathered once a frame by the world renderer. A call site with no
+/// creature behind it passes none and gets a mob standing still at rest.
+struct MobMotion {
+    double clockMs = 0.0;
+    double distance = 0.0;
+    double speed = 0.0;
+    double aggro = 0.0;
+    double aggroMs = 0.0;
+    std::uint32_t seed = 0;
+    double health = 1.0;
 };
 
 /// Paints `art` about the origin. `None` draws nothing.

@@ -29,12 +29,20 @@
 // HSV(base, 0.8) strokes are; a lighter one is a ring of the art (an ant
 // hole) and the hitbox takes its outside. --outer always takes the outside.
 //
-// The procedural mobs ($rock, $cactus, ...) are ports of gardn, drawn at the
-// collision radius by construction, and are left out unless named. Named,
-// they are the check on the convention: rock, cactus and leech come out at
-// ~1 and ~0. The scorpion does not -- gardn draws its long body 40 units
-// against a radius of 35 -- which is the one shape where "enclose the body"
-// and the reference part ways.
+// The procedural mobs ($rock, $cactus, ...) are left out unless named. gardn
+// and florr both draw some bodies well past the radius they scale by -- a bee
+// runs 1.5 radii -- so they are fitted like any other mob; the game keeps
+// each mob's DRAWN size and moves the hitbox instead: a fit changes `size` by
+// old / new `visual_scale` (and `random_size` with it) and takes the new
+// `visual_scale` and offsets, which leaves the picture where it was. Three
+// are held at 1 on purpose: the centipedes (their feet read as body, and a
+// bigger radius spaces a chain's segments apart), the leech head (one tube
+// radius with segments that cannot be fitted) and the dandelion (its stubs
+// read as body, and its seeds orbit at a multiple of the radius).
+//
+// Each mob is drawn as a creature in the world -- clock running, partway
+// through a stride -- so what is measured is its world body, not its
+// bestiary picture.
 //
 // The offsets are in the units MobConfig::visualOffsetX/Y are: the art's own
 // frame (+X is the way it faces), in multiples of the drawn radius.
@@ -465,8 +473,15 @@ Fit fitMob(const SpriteCache& sprites, Canvas& canvas, std::uint16_t index, cons
     for (int frame = 0; frame < kFrames; ++frame) {
         canvas.clear(Color{0, 0, 0, 0});
         // Rotation 0, unmirrored: the art's own frame, which is the one the
-        // offsets are stated in.
-        sprites.drawMob(canvas, index, kCentre, kCentre, kArtPx, 0.0, frame * kFrameStep);
+        // offsets are stated in. As a creature in the world, clock running
+        // and partway through a stride: a painter draws a mob's world body,
+        // not its bestiary picture (a dandelion's seeds are petals of their
+        // own out there), and its legs swing as it walks.
+        MobMotion motion;
+        motion.clockMs = frame * kFrameStep * 1000.0;
+        motion.distance = frame * 17.0;
+        sprites.drawMob(canvas, index, kCentre, kCentre, kArtPx, 0.0, frame * kFrameStep, false,
+                        0.0, {1.0, 0.0}, &motion);
         FrameFit pose;
         if (!fitFrame(canvas.getImageData(0, 0, kN, kN), options, pose)) continue;
         xs.push_back(pose.outer.x);

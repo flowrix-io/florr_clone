@@ -1709,3 +1709,9 @@ bool SvgDocument::renderFitted(Canvas& canvas, float x, float y, float width, fl
     canvas.restore();
     return true;
 }
+
+Path2D svgPathData(const std::string& d) {
+    Path2D out;
+    svgc::parsePathData(d, out);
+    return out;
+}
