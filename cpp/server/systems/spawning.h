@@ -822,6 +822,9 @@ private:
     std::optional<Query<AmbientMob, Lifetime>> escorts_;
     std::optional<Query<Transform, MobType, Spawner>> spawners_;
     std::optional<Query<Transform, MobType, NestWaves>> waveNests_;
+    std::optional<Query<Transform, Body, MobType, AmbushNest>> ambushNests_;
+    /// The flowers an ambush can be sprung by: standing, not lying there.
+    std::optional<Query<PlayerTag, Transform, Body, Health>> livingFlowers_;
     /// Every mob, ambient or not: the boss census counts what is alive in the
     /// world, and a boss placed by a script is still a boss.
     std::optional<Query<MobTag, Transform, MobType>> allMobs_;

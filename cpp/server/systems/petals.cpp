@@ -564,8 +564,9 @@ void PetalSystem::bindTo(World& world) {
     mobs_ = std::make_unique<Query<MobTag, Transform, Body>>(world);
     // Pets are excluded at the source rather than at each call site: no strike,
     // blast or contact trigger in the reference ever sees a summon, because the
-    // grid it queries does not file them.
-    mobs_->without<Dead, Pet>();
+    // grid it queries does not file them. Nor an intangible mob, which
+    // nothing may touch: a petal bending toward one would chase a ghost.
+    mobs_->without<Dead, Pet, Intangible>();
     npcs_ = std::make_unique<Query<NpcTag, Transform, Body, Faction>>(world);
 }
 

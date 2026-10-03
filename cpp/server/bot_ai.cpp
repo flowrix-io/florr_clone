@@ -56,7 +56,10 @@ const ExcludedMobs& excludedMobs() {
 
 bool excludedMobType(std::uint16_t configIndex) {
     const ExcludedMobs& excluded = excludedMobs();
-    return configIndex == excluded.dummy || configIndex == excluded.spawner;
+    if (configIndex == excluded.dummy || configIndex == excluded.spawner) return true;
+    // Nothing can hit an intangible mob, so it is no target, and nothing bumps
+    // into one, so it is no obstacle either.
+    return configIndex < content().mobCount() && content().mob(configIndex).intangible;
 }
 
 /// Casual phrasings for a boss sighting.

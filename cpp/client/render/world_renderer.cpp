@@ -3007,14 +3007,16 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
                          static_cast<float>(barHeight * 0.5));
         canvas.fill();
 
-        if (mob.npc) {
+        if (mob.npc || (config != nullptr && config->intangible)) {
             // An NPC's plate is a mob's plate with the bar in its invulnerable
             // state: full whatever the wire says -- which is what the server
             // keeps it at anyway -- in the pale yellow a flower's bar turns
             // under respawn protection, the one colour this game already
             // spends on "cannot be hurt". Green sitting at full would read as
             // "not hurt yet", which on a dummy taking a flood of numbers is the
-            // difference between a working dummy and a bug.
+            // difference between a working dummy and a bug. An intangible mob
+            // (the fire ant hole) is the same promise: its brood is what you
+            // fight, not it.
             ui::setFill(canvas, kInvulnHealth);
             canvas.beginPath();
             canvas.roundRect(static_cast<float>(barX), static_cast<float>(barY),

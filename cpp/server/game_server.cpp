@@ -738,8 +738,12 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // its own (CombatSystem::fileShots): nothing else that asks this grid
     // wants a shot, and a flower on a full loadout of gas would otherwise put
     // a thousand of them into every aggro scan and pickup query around it.
+    //
+    // Nor an intangible mob: what nothing may touch is simply not in the grid
+    // anything touches through, so no contact, petal, aura, strike, pet or
+    // bot ever finds it to ask.
     Query<Transform, Body> afterPlayers{world_};
-    afterPlayers.without<ProjectileTag>();
+    afterPlayers.without<ProjectileTag, Intangible>();
     afterPlayers.each([&](Entity e, Transform& transform, Body& body) {
         grid_.insert(e, transform.realm, transform.position, body.radius);
     });
@@ -766,7 +770,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // make a real overlap invisible for one tick.
     grid_.clear();
     Query<Transform, Body> afterMovement{world_};
-    afterMovement.without<ProjectileTag>();
+    afterMovement.without<ProjectileTag, Intangible>();
     afterMovement.each([&](Entity e, Transform& transform, Body& body) {
         grid_.insert(e, transform.realm, transform.position, body.radius);
     });

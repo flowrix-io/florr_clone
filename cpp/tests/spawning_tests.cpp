@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/loot_eligibility.h"
 #include "server/squads.h"
 #include "server/systems/combat.h"
 #include "server/systems/loot.h"
@@ -2030,8 +2031,10 @@ TEST(a_nest_sends_its_waves_as_it_is_worn_down_and_holds_at_the_last) {
 }
 
 TEST(every_nest_sends_its_escorts_up_out_of_its_centre) {
-    // A hole and a server alike: the opening guard and the waves both.
-    for (const char* id : {"ant_hole", "fire_ant_hole", "server"}) {
+    // A hole and a server alike: the opening guard and the waves both. The
+    // fire ant hole has neither -- it is an ambush, and its brood is held to
+    // the same rule in a_fire_ant_hole_waits_for_a_flower_then_sends_its_whole_brood.
+    for (const char* id : {"ant_hole", "server"}) {
         Sim sim;
         const std::uint16_t type = shipped().mobIndex(id);
         const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
@@ -2080,6 +2083,215 @@ TEST(a_queen_lays_her_soldiers_out_of_her_centre) {
         CHECK(gap <= kEscortSpawnScatter + 1e-9);
         CHECK(sim.world.get<HoleTether>(soldier).emerging);
     }
+}
+
+// ---------------------------------------------------------------------------
+// The fire ant hole: an ambush
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// How far from a nest's centre a base-size flower stands when it is `margin`
+/// outside the ambush's trigger gap (negative: inside it).
+double ambushStandOff(World& world, Entity nest, const AmbushSpec& spec, double margin) {
+    return world.get<Body>(nest).radius + kPlayerBaseRadius + spec.triggerDistance + margin;
+}
+
+Entity makeFighter(World& world, Vec2 at) {
+    const Entity flower = makePlayer(world, at);
+    world.add<Faction>(flower, Faction{Team::Players, false});
+    return flower;
+}
+
+} // namespace
+
+TEST(a_fire_ant_hole_waits_for_a_flower_then_sends_its_whole_brood) {
+    Sim sim;
+    const std::uint16_t type = shipped().mobIndex("fire_ant_hole");
+    const AmbushSpec& spec = shipped().mob(type).ambush;
+    CHECK(spec.present);
+    CHECK(spec.count > 0);
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                             Rarity::Legendary, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    CHECK(nest != NULL_ENTITY);
+    // Nothing comes up with it.
+    CHECK_EQ(sim.mobCount(), 1);
+    const Vec2 mouth = sim.world.get<Transform>(nest).position;
+
+    // Just outside the trigger gap, for a good while: still nothing.
+    const Entity flower = makePlayer(
+        sim.world, mouth + Vec2{ambushStandOff(sim.world, nest, spec, 5.0), 0.0});
+    for (int i = 0; i < 30; ++i) sim.tick({kCentre});
+    CHECK_EQ(sim.mobCount(), 1);
+    CHECK(!sim.world.get<AmbushNest>(nest).released);
+
+    // A step inside it: every one of them, at once, and every one a soldier
+    // fire ant climbing out of the middle of the hole.
+    sim.world.get<Transform>(flower).position =
+        mouth + Vec2{ambushStandOff(sim.world, nest, spec, -5.0), 0.0};
+    sim.tick({kCentre});
+    const std::vector<Entity> brood = sim.world.get<AmbushNest>(nest).brood;
+    CHECK_EQ(static_cast<int>(brood.size()), spec.count);
+    CHECK_EQ(sim.mobCount(), 1 + spec.count);
+    for (const Entity ant : brood) {
+        CHECK_EQ(sim.world.get<MobType>(ant).configIndex, shipped().mobIndex("soldier_fire_ant"));
+        const double gap = distance(sim.world.get<Transform>(ant).position, mouth);
+        CHECK(gap <= kEscortSpawnScatter + 1e-9);
+        CHECK(gap > 0.0);
+        CHECK_EQ(sim.world.get<HoleTether>(ant).hole, nest);
+        CHECK(sim.world.get<HoleTether>(ant).emerging);
+    }
+
+    // One burst and no more, however long the flower stands there.
+    for (int i = 0; i < 30; ++i) sim.tick({kCentre});
+    CHECK_EQ(sim.mobCount(), 1 + spec.count);
+}
+
+TEST(a_corpse_at_the_rim_does_not_spring_a_fire_ant_hole) {
+    Sim sim;
+    const std::uint16_t type = shipped().mobIndex("fire_ant_hole");
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                             Rarity::Rare, kCentre, Realm::Overworld, 0.0, sim.rng);
+    const Vec2 mouth = sim.world.get<Transform>(nest).position;
+    const Entity corpse = makePlayer(sim.world, mouth + Vec2{0.0, 1.0});
+    sim.world.add<Dead>(corpse, Dead{NULL_ENTITY});
+    // In another realm at the same numbers is nobody here either.
+    const Entity elsewhere = makePlayer(sim.world, mouth);
+    sim.world.get<Transform>(elsewhere).realm = Realm::Arena;
+    for (int i = 0; i < 10; ++i) sim.tick({kCentre});
+    CHECK_EQ(sim.mobCount(), 1);
+    CHECK(!sim.world.get<AmbushNest>(nest).released);
+}
+
+TEST(a_fire_ant_hole_cannot_be_touched) {
+    Sim sim;
+    const std::uint16_t type = shipped().mobIndex("fire_ant_hole");
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                             Rarity::Legendary, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    CHECK(sim.world.has<Intangible>(nest));
+    // No touch to hurt a flower with, and nothing for another mob to push.
+    CHECK(!sim.world.has<ContactDamage>(nest));
+    CHECK(shipped().mob(type).noMobCollision);
+
+    const Entity flower = makeFighter(sim.world, sim.world.get<Transform>(nest).position);
+    CHECK(!CombatSystem::canHit(sim.world, nest, flower, 0.0));
+}
+
+TEST(a_fire_ant_hole_falls_with_its_last_ant_and_pays_everyone_who_fought) {
+    // Super: the brood is held to ultra, so its ants carry a sliver of the
+    // hole's own health and the forwarded ledger has to be scaled to it.
+    Sim sim;
+    const std::uint16_t type = shipped().mobIndex("fire_ant_hole");
+    const AmbushSpec& spec = shipped().mob(type).ambush;
+    CHECK(spec.count >= 2);
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                             Rarity::Super, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    CHECK(nest != NULL_ENTITY);
+    const Vec2 mouth = sim.world.get<Transform>(nest).position;
+    const Entity helper = makeFighter(sim.world, mouth + Vec2{0.0, 1.0});
+    const Entity finisher = makeFighter(sim.world, mouth + Vec2{1.0, 0.0});
+    sim.tick({kCentre});
+    const std::vector<Entity> brood = sim.world.get<AmbushNest>(nest).brood;
+    CHECK_EQ(static_cast<int>(brood.size()), spec.count);
+    if (brood.size() < 2) return;
+
+    CombatSystem combat;
+    const auto kill = [&](Entity ant, Entity by) {
+        // Exactly what it has, through its armour: the helper's whole
+        // contribution is one ant.
+        const double swing = sim.world.get<Health>(ant).max +
+                             std::max(0.0, CombatSystem::effectiveArmor(sim.world, ant, sim.now));
+        combat.applyDamage(sim.world, ant, by, swing, sim.now);
+        CHECK(sim.world.has<Dead>(ant));
+    };
+
+    kill(brood[0], helper);
+    for (std::size_t i = 1; i + 1 < brood.size(); ++i) {
+        kill(brood[i], finisher);
+        CHECK(!sim.world.has<Dead>(nest));
+    }
+    CHECK(!sim.world.has<Dead>(nest));
+
+    // The last of them takes the hole with it, killed by whoever finished it.
+    kill(brood.back(), finisher);
+    CHECK(sim.world.has<Dead>(nest));
+    CHECK_EQ(sim.world.get<Dead>(nest).killer, finisher);
+    bool recorded = false;
+    for (const CombatSystem::DeathRecord& death : combat.deaths()) {
+        if (death.entity == nest) recorded = true;
+    }
+    CHECK(recorded);
+    // Its health bar never moved: the hole was never hit.
+    CHECK_NEAR(sim.world.get<Health>(nest).current, sim.world.get<Health>(nest).max, 1e-9);
+
+    // The ledger is the brood's fight, scaled to the hole: both flowers clear
+    // the loot floor, the helper with one ant of ten. Unscaled, one ultra ant
+    // is under 1% of a super hole and the helper would get nothing.
+    const Bounty& bounty = sim.world.get<Bounty>(nest);
+    std::vector<Bounty::Share> ranked = bounty.contributors;
+    std::stable_sort(ranked.begin(), ranked.end(),
+                     [](const Bounty::Share& a, const Bounty::Share& b) {
+                         return a.damage > b.damage;
+                     });
+    // The whole brood is worth the whole hole -- a little over, by the armour
+    // each swing had to get through, since the ledger books the swing.
+    double total = 0;
+    for (const Bounty::Share& share : ranked) total += share.damage;
+    CHECK(total >= sim.world.get<Health>(nest).max * (1.0 - 1e-9));
+    CHECK(total <= sim.world.get<Health>(nest).max * 1.05);
+    std::vector<Entity> paid;
+    selectLootRecipients(ranked, lootSlotsForRarity(Rarity::Super), nullptr, paid,
+                         lootDamageFloor(sim.world.get<Health>(nest).max));
+    CHECK(std::find(paid.begin(), paid.end(), helper) != paid.end());
+    CHECK(std::find(paid.begin(), paid.end(), finisher) != paid.end());
+
+    // And the loot pass treats it as the corpse it is: the hole's drops land.
+    // The flowers step back first, or they would pick them up the same tick.
+    sim.world.get<Transform>(helper).position = mouth + Vec2{5000.0, 0.0};
+    sim.world.get<Transform>(finisher).position = mouth + Vec2{-5000.0, 0.0};
+    LootSystem loot;
+    EventQueue events;
+    SpatialGrid grid;
+    rebuildGrid(sim.world, grid);
+    loot.run(sim.world, grid, shipped(), sim.rng, sim.now, net::kTickSeconds, sim.commands,
+             events);
+    sim.commands.flush();
+    CHECK(!liveDrops(sim.world).empty());
+}
+
+TEST(a_fire_ant_hole_whose_brood_vanished_unbeaten_is_armed_again) {
+    Sim sim;
+    const std::uint16_t type = shipped().mobIndex("fire_ant_hole");
+    const AmbushSpec& spec = shipped().mob(type).ambush;
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                             Rarity::Epic, kCentre, Realm::Overworld, 0.0, sim.rng);
+    const Vec2 mouth = sim.world.get<Transform>(nest).position;
+    const Entity flower = makeFighter(sim.world, mouth + Vec2{1.0, 0.0});
+    sim.tick({kCentre});
+    const std::vector<Entity> brood = sim.world.get<AmbushNest>(nest).brood;
+    CHECK_EQ(static_cast<int>(brood.size()), spec.count);
+
+    // One of them dented, then all of them taken away rather than killed.
+    CombatSystem combat;
+    combat.applyDamage(
+        sim.world, brood.front(), flower,
+        1.0 + std::max(0.0, CombatSystem::effectiveArmor(sim.world, brood.front(), sim.now)),
+        sim.now);
+    CHECK(!sim.world.has<Dead>(brood.front()));
+    CHECK(!sim.world.get<Bounty>(nest).contributors.empty());
+    for (const Entity ant : brood) sim.world.destroy(ant);
+    sim.tick({kCentre});
+    CHECK(!sim.world.has<Dead>(nest));
+    CHECK(!sim.world.get<AmbushNest>(nest).released);
+    CHECK(sim.world.get<Bounty>(nest).contributors.empty());
+
+    // Still standing at the rim, so the next pass sends a fresh brood.
+    sim.tick({kCentre});
+    CHECK(sim.world.get<AmbushNest>(nest).released);
+    CHECK_EQ(static_cast<int>(sim.world.get<AmbushNest>(nest).brood.size()), spec.count);
 }
 
 TEST(a_holes_neutral_ants_come_up_after_whoever_hit_it) {

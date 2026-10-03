@@ -257,54 +257,12 @@
         "noEggDrop": true,
         "no_mob_collision": true,
         "hole": true,
-        "initial_spawns": [
-            "baby_fire_ant",
-            "baby_fire_ant",
-            "baby_fire_ant",
-            "worker_fire_ant",
-            "worker_fire_ant",
-            "soldier_fire_ant"
-        ],
-        "spawn_waves": [
-            [
-                "baby_fire_ant"
-            ],
-            [
-                "worker_fire_ant",
-                "baby_fire_ant"
-            ],
-            [
-                "worker_fire_ant",
-                "worker_fire_ant"
-            ],
-            [
-                "soldier_fire_ant",
-                "worker_fire_ant"
-            ],
-            [
-                "baby_fire_ant",
-                "worker_fire_ant",
-                "soldier_fire_ant"
-            ],
-            [
-                "worker_fire_ant",
-                "soldier_fire_ant"
-            ],
-            [
-                "soldier_fire_ant",
-                "worker_fire_ant",
-                "worker_fire_ant"
-            ],
-            [
-                "soldier_fire_ant",
-                "soldier_fire_ant"
-            ],
-            [
-                "soldier_fire_ant",
-                "soldier_fire_ant",
-                "soldier_fire_ant"
-            ]
-        ]
+        "intangible": true,
+        "ambush": {
+            "mobType": "soldier_fire_ant",
+            "count": 30,
+            "triggerDistance": 30
+        }
     },
     "worker_fire_ant": {
         "name": "Worker Fire Ant",

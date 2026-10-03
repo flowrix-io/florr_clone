@@ -573,6 +573,12 @@ private:
     /// Not const-safe against iteration: it adds Dead.
     void mirrorSharedChain(World& world, Entity owner, bool fatal, Entity killer);
 
+    /// `fallen` was one of an ambush nest's brood: when it was the last of
+    /// them standing, the nest dies too, credited to `killer`, and pays out
+    /// off the ledger its brood's swings were forwarded to. No-op for anything
+    /// else. Adds Dead, so not safe against iteration either.
+    void collapseClearedNest(World& world, Entity fallen, Entity killer);
+
     void awardBounty(World& world, Entity victim);
 
     /// Turns a killing blow on a flower into 1 HP plus the talent's own

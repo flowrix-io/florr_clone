@@ -263,7 +263,9 @@ MovementSystem::Queries::Queries(World& world)
     players.without<Dead>();
     mobs.without<Dead>();
     projectiles.without<Dead>();
-    mobTargets.without<Dead>();
+    // A guided shot locking onto an intangible mob would fly through it and
+    // circle it for good.
+    mobTargets.without<Dead, Intangible>();
     mobBodies.without<Dead>();
     // A broken wax is gone from the moment it breaks: nothing walks into it
     // for the rest of the tick while it waits for the reaper.

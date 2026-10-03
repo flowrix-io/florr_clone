@@ -462,6 +462,23 @@ PeriodicSpawnSpec parsePeriodicSpawn(Ctx& ctx, const Json& owner,
     return spec;
 }
 
+AmbushSpec parseAmbush(Ctx& ctx, const Json& owner,
+                       const std::unordered_map<std::string, std::uint16_t>& mobIds) {
+    AmbushSpec spec;
+    if (!owner.contains("ambush")) return spec;
+    const Json& node = owner["ambush"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("ambush is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    spec.mobId = ctx.text(node, "mobType");
+    spec.mobIndex = ctx.link(mobIds, spec.mobId, "ambush mobType");
+    spec.count = ctx.integer(node, "count", 0, 0, 1000);
+    spec.triggerDistance = ctx.range(node, "triggerDistance", 0.0, 0.0, kWorldSize);
+    spec.present = spec.mobIndex != kInvalidIndex && spec.count > 0;
+    return spec;
+}
+
 LightningSpec parseLightning(Ctx& ctx, const Json& owner) {
     LightningSpec spec;
     if (!owner.contains("lightning")) return spec;
@@ -795,6 +812,10 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.reversed = ctx.boolean(src, "reversed");
     m.noMobCollision = ctx.boolean(src, "no_mob_collision");
     m.hole = ctx.boolean(src, "hole");
+    m.intangible = ctx.boolean(src, "intangible");
+    // Untouchable means by other mobs too, whether or not the entry says so
+    // twice.
+    if (m.intangible) m.noMobCollision = true;
     m.stingerShooter = ctx.boolean(src, "stinger");
     {
         const std::string bee = ctx.text(src, "bee_ai");
@@ -881,6 +902,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.projectile = parseProjectile(ctx, src, &petalIds);
     m.petalRing = parsePetalRing(ctx, src, petalIds);
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
+    m.ambush = parseAmbush(ctx, src, mobIds);
     m.lightning = parseLightning(ctx, src);
     m.web = parseWeb(ctx, src);
     m.dropProjectile = parseDropProjectile(ctx, src, petalIds);

@@ -1510,3 +1510,80 @@ TEST(god_makes_the_admin_invulnerable_until_turned_off) {
         return !world.isAlive(body) || world.get<Health>(body).current < full;
     }, 240));
 }
+
+TEST(a_fire_ant_hole_springs_on_a_flower_and_falls_with_its_brood) {
+    // The whole ambush through the shipping loop: the broadphase the hole is
+    // kept out of, the spawner that opens it and the combat that closes it.
+    // The unit tests drive each of those alone; this is the claim about all
+    // three at once.
+    Harness h("cmd-fire-ant-ambush", [](const std::string& path) {
+        seedUser(path, "digger", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "digger", "password7"));
+    client.joinGame(1920, 1080, {}, "Digger");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    // Ten soldiers at once is not the fight under test.
+    CHECK(say(h, client, "/admin god on"));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;   // bots own no connection
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    const std::uint16_t holeType = content().mobIndex("fire_ant_hole");
+    const std::uint16_t antType = content().mobIndex("soldier_fire_ant");
+    const int broodSize = content().mob(holeType).ambush.count;
+    CHECK(broodSize > 0);
+
+    // Down well clear of the flower first.
+    adminSpawnAt(client, "fire_ant_hole", "common", world.get<Transform>(body).position + Vec2{600, 0});
+    Entity hole = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, MobType> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (hole == NULL_ENTITY && type.configIndex == holeType) hole = e;
+        });
+        return hole != NULL_ENTITY;
+    }, 120));
+    if (hole == NULL_ENTITY) { CHECK(false); return; }
+
+    const auto brood = [&] {
+        std::vector<Entity> out;
+        Query<MobTag, MobType, HoleTether> ants{world};
+        ants.without<Dead>();
+        ants.each([&](Entity e, MobTag&, MobType& type, HoleTether& tether) {
+            if (type.configIndex == antType && tether.hole == hole) out.push_back(e);
+        });
+        return out;
+    };
+    h.step(30, {&client});
+    CHECK(brood().empty());
+
+    // Right under the flower: its body sits on the hole and its ring sweeps
+    // through it every tick from here on. Out they come, all of them at once.
+    world.get<Transform>(hole).position = world.get<Transform>(body).position;
+    CHECK(h.stepUntil({&client}, [&] { return !brood().empty(); }, 30));
+    CHECK_EQ(static_cast<int>(brood().size()), broodSize);
+
+    // The ring chews at it for two seconds and it never loses a point -- and
+    // nothing more comes out of it.
+    const double holeMax = world.get<Health>(hole).max;
+    h.step(60, {&client});
+    CHECK(world.isAlive(hole));
+    if (!world.isAlive(hole)) return;
+    CHECK_NEAR(world.get<Health>(hole).current, holeMax, 1e-9);
+    CHECK(static_cast<int>(brood().size()) <= broodSize);
+
+    // Every ant down to its last sliver, so the flower's own body and ring
+    // finish them -- the ordinary kill path -- and the hole goes with the last.
+    for (const Entity ant : brood()) world.get<Health>(ant).current = 0.01;
+    CHECK(h.stepUntil({&client}, [&] { return !world.isAlive(hole); }, 600));
+    CHECK(brood().empty());
+}

@@ -280,6 +280,23 @@ struct PeriodicSpawnSpec {
     int rarityOffset = 0;
 };
 
+/// A nest that keeps its whole brood underground until a flower comes right up
+/// to it, then sends every one of them out at once (`ambush`). The fire ant
+/// hole. Nothing is spawned with the nest and nothing follows the first burst:
+/// the brood IS the fight, and the nest falls with the last of it (see
+/// AmbushNest).
+struct AmbushSpec {
+    bool present = false;
+    std::string mobId;
+    std::uint16_t mobIndex = kInvalidIndex;
+    int count = 0;
+    /// How close a flower has to come to spring it, EDGE to edge: the gap
+    /// between the flower's hitbox and the nest's body. Measured from the edge
+    /// so a legendary hole twice the size still waits for a flower at its rim
+    /// rather than going off the moment one is a body-width from its centre.
+    double triggerDistance = 0;
+};
+
 /// A lingering damage field (uranium).
 struct RadiationSpec {
     bool present = false;
@@ -405,6 +422,12 @@ struct MobConfig {
     /// gardn's `attributes.hole`, and a matter of draw order only (the client
     /// also lays any nest with `spawn_waves` down in that same first pass).
     bool hole = false;
+    /// Nothing in the world touches this mob (`intangible`): no petal, shot,
+    /// body, aura or strike lands on it, it deals no contact damage, it pushes
+    /// nothing and nothing pushes it. It cannot be hurt, so it can only die
+    /// some other way -- the fire ant hole falls with its brood. Implies
+    /// noMobCollision.
+    bool intangible = false;
 
     /// The mob shoots over its TAIL: it keeps its rear on whatever it is
     /// aiming at and holds the volley until it has come round, rather than
@@ -520,6 +543,7 @@ struct MobConfig {
     ProjectileSpec projectile;
     PetalRingSpec petalRing;
     PeriodicSpawnSpec periodicSpawn;
+    AmbushSpec ambush;
     LightningSpec lightning;
     WebSpec web;
     DropProjectileSpec dropProjectile;

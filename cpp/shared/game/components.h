@@ -737,6 +737,35 @@ struct HoleTether {
     bool emerging = false;
 };
 
+/// A mob nothing in the world can touch -- the config's `intangible`.
+///
+/// Kept off every broadphase and every "which mobs are near" walk rather than
+/// refused hit by hit, so a petal does not bend toward it, a shot does not
+/// stop on it, a flower walks straight over it and no new attack path can
+/// forget to ask. combat's canHit() refuses it as well, for anything that
+/// reaches a victim some other way.
+struct Intangible {};
+
+/// A nest with an `ambush`: its brood waits underground until a flower comes
+/// close, then all of it comes out at once.
+///
+/// The nest itself cannot be hurt (it is Intangible), so the brood stands in
+/// for its health: every swing a player lands on one of them is credited to
+/// the nest's ledger as well, scaled so that clearing the whole brood is worth
+/// the nest's full health, and the nest dies -- loot, XP, gallery and all --
+/// on the tick its last defender does (CombatSystem::collapseClearedNest).
+struct AmbushNest {
+    /// The brood is out. A nest whose brood all vanished WITHOUT being killed
+    /// -- recycled, destroyed by an operator -- is re-armed instead of left
+    /// standing as an untouchable stone forever.
+    bool released = false;
+    /// Who came out, pruned of the dead as the spawner walks it.
+    std::vector<Entity> brood;
+    /// The brood's summed max health at release: what a swing on one of them
+    /// is measured against when it is forwarded to the nest's ledger.
+    double broodHealth = 0;
+};
+
 /// A mob summoned by a player, which fights for them and does not drop loot.
 struct Pet {
     Entity owner = NULL_ENTITY;
@@ -1205,6 +1234,8 @@ FLIX_COMPONENT(flix::WanderTarget);
 FLIX_COMPONENT(flix::PassiveMotion);
 FLIX_COMPONENT(flix::Wobble);
 FLIX_COMPONENT(flix::HoleTether);
+FLIX_COMPONENT(flix::Intangible);
+FLIX_COMPONENT(flix::AmbushNest);
 FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::BodySegment);
 FLIX_COMPONENT(flix::Spawner);

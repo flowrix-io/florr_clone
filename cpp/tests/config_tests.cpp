@@ -641,6 +641,19 @@ TEST(cross_references_resolve_to_indices) {
     CHECK(r.mob(r.mobIndex("fire_ant_hole")).hole);
     CHECK(!r.mob(r.mobIndex("soldier_ant")).hole);
 
+    // The fire ant hole is an ambush instead: no guard and no waves, one
+    // burst of soldiers, and nothing can touch the hole itself.
+    const MobConfig& fireHole = r.mob(r.mobIndex("fire_ant_hole"));
+    CHECK(fireHole.initialSpawns.empty());
+    CHECK(fireHole.spawnWaves.empty());
+    CHECK(fireHole.ambush.present);
+    CHECK_EQ(fireHole.ambush.mobIndex, r.mobIndex("soldier_fire_ant"));
+    CHECK(fireHole.ambush.count > 0);
+    CHECK(fireHole.intangible);
+    CHECK(fireHole.noMobCollision);
+    CHECK(!hole.intangible);
+    CHECK(!hole.ambush.present);
+
     const MobConfig& glitchFlower = r.mob(r.mobIndex("glitch_flower"));
     CHECK(glitchFlower.petalRing.present);
     CHECK_EQ(glitchFlower.petalRing.petalIndex, r.petalIndex("glitch"));

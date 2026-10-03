@@ -57,9 +57,10 @@ double rollSizeJitter(const MobConfig& config, Rarity rarity, Rng& rng) {
 ///
 /// Matched by id because the reference states the rule that way -- there is no
 /// JSON field for it, only `enemy.type !== 'item_spawner'` guarding the
-/// contact-damage branch (src/server/playerState.ts:1695).
+/// contact-damage branch (src/server/playerState.ts:1695). An intangible mob is
+/// the other kind: nothing touches it, so it has no touch to hurt with.
 bool harmlessOnContact(const MobConfig& config) {
-    return config.id == "item_spawner";
+    return config.id == "item_spawner" || config.intangible;
 }
 
 /// Where an escort appears: the centre of whatever spawned it, a hair off on a
@@ -255,6 +256,11 @@ void SpawnSystem::bind(World& world) {
     allMobs_.emplace(world);
     allMobs_->without<Dead>();
     playerBodies_.emplace(world);
+    ambushNests_.emplace(world);
+    ambushNests_->without<Dead>();
+    // A corpse lying at a hole's rim is nobody for the brood to come out at.
+    livingFlowers_.emplace(world);
+    livingFlowers_->without<Dead>();
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +495,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<HitCooldowns>(e);
     world.add<Afflictions>(e);
     world.add<MobType>(e, MobType{mobIndex, rarity, jitter});
+    if (config.intangible) world.add<Intangible>(e);
 
     const bool chainHead = config.segmentCount > 0 && config.segmentBodyIndex != kInvalidIndex;
     if (chainHead) {
@@ -563,6 +570,8 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
             waves.previousHealth = stats.health;
             world.add<NestWaves>(e, std::move(waves));
         }
+        // Armed, with nothing out: the brood waits for a flower (runNests).
+        if (config.ambush.present) world.add<AmbushNest>(e);
     }
 
     // Last, because each of these is a create() that can relocate the rows the
@@ -1046,6 +1055,82 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
 
         if (NestWaves* again = world.tryGet<NestWaves>(nest)) {
             again->nextWave = static_cast<std::uint16_t>(std::max(0, lastWave - endBand));
+        }
+    }
+
+    // Ambush nests. Silent until a flower comes right up to one, then the
+    // whole brood at once, and nothing after that. The nest's DEATH is not
+    // decided here: it falls on the tick its last defender does, in combat
+    // (CombatSystem::collapseClearedNest), so all this pass owns is when it
+    // opens and what becomes of one whose brood went away unbeaten.
+    ambushNests_->collect(scratchChildren_);
+    for (const Entity nest : scratchChildren_) {
+        AmbushNest* ambush = world.tryGet<AmbushNest>(nest);
+        const Transform* transform = world.tryGet<Transform>(nest);
+        const Body* body = world.tryGet<Body>(nest);
+        const MobType* type = world.tryGet<MobType>(nest);
+        if (ambush == nullptr || transform == nullptr || body == nullptr || type == nullptr) {
+            continue;
+        }
+
+        if (ambush->released) {
+            std::size_t live = 0;
+            for (const Entity member : ambush->brood) {
+                if (world.isAlive(member) && !world.has<Dead>(member)) {
+                    ambush->brood[live++] = member;
+                }
+            }
+            ambush->brood.resize(live);
+            if (live > 0) continue;
+            // Out, every one of them gone, and the nest still standing: they
+            // were taken away rather than beaten -- recycled with nobody near,
+            // or removed by an operator -- because a brood killed to the last
+            // takes its nest with it before this pass ever runs. Armed again,
+            // on a clean ledger: credit for a fight nobody finished is no
+            // share of the next one.
+            ambush->released = false;
+            ambush->broodHealth = 0;
+            if (Bounty* bounty = world.tryGet<Bounty>(nest)) bounty->contributors.clear();
+            continue;
+        }
+
+        const AmbushSpec& spec = content.mob(type->configIndex).ambush;
+        if (!spec.present) continue;
+        // Read out before the first create() below, which relocates every row
+        // these point into.
+        const Vec2 mouth = transform->position;
+        const Realm nestRealm = transform->realm;
+        const Rarity nestRarity = type->rarity;
+        const double rim = body->radius + spec.triggerDistance;
+
+        // Edge to edge, so a flower grown huge by its petals springs it from
+        // as far off as it LOOKS, and a big hole waits for a flower at its rim.
+        Entity intruder = NULL_ENTITY;
+        livingFlowers_->each([&](Entity flower, PlayerTag&, Transform& at, Body& flowerBody,
+                                 Health& health) {
+            if (intruder != NULL_ENTITY || at.realm != nestRealm || !health.alive()) return;
+            const double reach = rim + flowerBody.radius;
+            if (distanceSq(at.position, mouth) <= reach * reach) intruder = flower;
+        });
+        if (intruder == NULL_ENTITY) continue;
+
+        double broodHealth = 0;
+        for (int i = 0; i < spec.count; ++i) {
+            const Entity child =
+                spawnEscort(world, terrain, content, spec.mobIndex, nestRarity,
+                            escortSpawnPoint(mouth, rng), nestRealm, nest, nowMillis, rng, 1);
+            if (child == NULL_ENTITY) break;   // the global cap, nothing else
+            // A hostile brood finds the flower on its own; a neutral one is
+            // told who walked up.
+            provokeIfNeutral(world, child, intruder);
+            if (const Health* health = world.tryGet<Health>(child)) broodHealth += health->max;
+            if (AmbushNest* again = world.tryGet<AmbushNest>(nest)) again->brood.push_back(child);
+        }
+        // Released even when the cap let nothing out: the empty brood re-arms
+        // it on the next pass, which is the retry.
+        if (AmbushNest* again = world.tryGet<AmbushNest>(nest)) {
+            again->released = true;
+            again->broodHealth = broodHealth;
         }
     }
 }

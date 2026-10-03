@@ -239,7 +239,29 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     Bounty* bounty = world.tryGet<Bounty>(victim);
     if (bounty == nullptr) return;
     const Entity credited = CombatSystem::creditedPlayer(world, source);
-    if (credited != NULL_ENTITY) bounty->credit(credited, amount);
+    if (credited == NULL_ENTITY) return;
+    bounty->credit(credited, amount);
+
+    // A swing on an ambush nest's brood is a swing on the nest: the nest itself
+    // cannot be hit, and its ledger is what decides who it pays out to when it
+    // falls with the last of them. Scaled so the whole brood is worth the
+    // nest's full health -- the ledger's 1% loot floor is a share of THAT, and
+    // a super hole's ultra-capped ants would otherwise never reach it.
+    //
+    // A nest that fell earlier this tick still takes the credit, as any corpse
+    // does: its drops are not rolled until the loot pass.
+    const HoleTether* tether = world.tryGet<HoleTether>(victim);
+    if (tether == nullptr) return;
+    const Entity nest = tether->hole;
+    if (!world.isAlive(nest)) return;
+    const AmbushNest* ambush = world.tryGet<AmbushNest>(nest);
+    const Health* nestHealth = world.tryGet<Health>(nest);
+    Bounty* nestBounty = world.tryGet<Bounty>(nest);
+    if (ambush == nullptr || nestHealth == nullptr || nestBounty == nullptr ||
+        !(ambush->broodHealth > 0.0)) {
+        return;
+    }
+    nestBounty->credit(credited, amount * nestHealth->max / ambush->broodHealth);
 }
 
 /// Which segment of a shared-health chain holds the pool: the one at the FRONT
@@ -433,6 +455,9 @@ bool CombatSystem::canHit(const World& world, Entity victim, Entity source, doub
     // it again would mark it Dead a second time and pay its bounty twice.
     if (health->current <= 0.0) return false;
     if (nowMillis < health->invulnerableUntilMillis) return false;
+    // Kept out of every broadphase already; this is for whatever reaches a
+    // victim some other way.
+    if (world.has<Intangible>(victim)) return false;
     // The players' own NPCs are not something anybody hits: their own side
     // cannot, and nothing on the other side is meant to be fighting them --
     // a mob wandering through the oracle is not an attack on it. An NPC on any
@@ -787,6 +812,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         // Died message the server sends is the whole of the consequence.
         if (!world.has<PlayerTag>(victim)) awardBounty(world, victim);
         mirrorSharedChain(world, victim, true, killer);
+        collapseClearedNest(world, victim, killer);
         return result;
     }
     mirrorSharedChain(world, victim, false, NULL_ENTITY);
@@ -838,6 +864,28 @@ void CombatSystem::mirrorSharedChain(World& world, Entity owner, bool fatal, Ent
         world.add<Dead>(segment, Dead{killer});
         deaths_.push_back({segment, killer, false});
     }
+}
+
+void CombatSystem::collapseClearedNest(World& world, Entity fallen, Entity killer) {
+    const HoleTether* tether = world.tryGet<HoleTether>(fallen);
+    if (tether == nullptr) return;
+    const Entity nest = tether->hole;
+    if (!world.isAlive(nest) || world.has<Dead>(nest)) return;
+    const AmbushNest* ambush = world.tryGet<AmbushNest>(nest);
+    if (ambush == nullptr || !ambush->released) return;
+    for (const Entity member : ambush->brood) {
+        if (member != fallen && world.isAlive(member) && !world.has<Dead>(member)) return;
+    }
+
+    // The last of them, so the nest goes with it: the same death any kill is
+    // -- marked, recorded and paid off its ledger -- with the one who finished
+    // the brood as the one who finished the nest. Its ledger holds every swing
+    // its brood took (creditSwing), which is what the drops and the XP rank.
+    //
+    // `ambush` dangles from here on: adding Dead relocates the nest's row.
+    world.add<Dead>(nest, Dead{killer});
+    deaths_.push_back({nest, killer, false});
+    awardBounty(world, nest);
 }
 
 void CombatSystem::awardBounty(World& world, Entity victim) {
