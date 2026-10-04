@@ -3115,6 +3115,112 @@ TEST(the_petal_health_talent_leaves_pets_alone) {
 }
 
 // ---------------------------------------------------------------------------
+// Duplicator
+// ---------------------------------------------------------------------------
+
+/// Gives the rig's flower the tree a Duplicator node needs -- mythic
+/// Absorption -- and the node itself: tier 0 Duplicator, 1 Triplicator.
+void buyDuplicator(Rig& rig, int tier) {
+    SkillSet& skills = rig.world.ensure<PlayerSkillTree>(rig.player).skills;
+    skills.set(kDuplicatorParent, rarityIndex(kDuplicatorRequirement));
+    skills.set(SkillId::Duplicator, tier);
+}
+
+TEST(duplicator_adds_one_copy_to_a_clump_and_triplicator_two) {
+    if (!contentLoaded()) return;
+    for (int tier = 0; tier < 2; ++tier) {
+        Rig rig;
+        buyDuplicator(rig, tier);
+        rig.equip(0, "sandy");
+        rig.equip(1, "basic");
+        rig.settleEquips();
+
+        const int expected = 4 + kDuplicatorExtraCopies[static_cast<std::size_t>(tier)];
+        const std::vector<Entity> grains = rig.petals(0);
+        CHECK_EQ(grains.size(), static_cast<std::size_t>(expected));
+        // Every grain knows the clump it belongs to is the bigger one, which is
+        // what fans them evenly round its centre.
+        for (const Entity grain : grains) {
+            CHECK_EQ(int(rig.world.get<PetalInstance>(grain).subCount), expected);
+        }
+        // A single petal is not a clump, and is left alone.
+        CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+    }
+}
+
+TEST(duplicator_without_mythic_absorption_adds_nothing) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    buyDuplicator(rig, 1);
+    rig.world.get<PlayerSkillTree>(rig.player)
+        .skills.set(kDuplicatorParent, rarityIndex(kDuplicatorRequirement) - 1);
+    rig.equip(0, "sandy");
+    rig.settleEquips();
+    CHECK_EQ(rig.petals(0).size(), std::size_t(4));
+}
+
+TEST(a_duplicated_unclumped_petal_takes_a_ring_place_per_copy) {
+    if (!contentLoaded()) return;
+    // Uncommon pollen fields two, unclumped, so Duplicator makes it three
+    // ring places -- with the anchor, the ring is quartered.
+    Rig rig;
+    buyDuplicator(rig, 0);
+    rig.equip(0, "pollen", Rarity::Uncommon);
+    rig.freezeRing();
+    rig.settleEquips();
+    rig.settleRing();
+
+    const std::vector<Entity> pollen = rig.petals(0);
+    CHECK_EQ(pollen.size(), std::size_t(3));
+    const double wedge = kTau / 4.0;
+    const double spin = rig.ring().spin;
+    for (const Entity petal : rig.petals()) {
+        const PetalInstance& instance = rig.world.get<PetalInstance>(petal);
+        const int ordinal = instance.slot == 0 ? instance.subIndex : 3;
+        CHECK_NEAR(angularGap(rig.angleOf(petal), spin + wedge * ordinal), 0.0, 1e-6);
+    }
+}
+
+TEST(buying_or_resetting_duplicator_rebuilds_the_slots_it_resizes) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.world.add<PlayerSkillTree>(rig.player);
+    rig.equip(0, "pollen", Rarity::Uncommon);   // two copies, one shared pool
+    rig.equip(1, "sandy");                      // four copies, each its own
+    rig.equip(2, "basic");
+    rig.settleEquips();
+    CHECK_EQ(rig.petals(0).size(), std::size_t(2));
+    CHECK_EQ(rig.petals(1).size(), std::size_t(4));
+    const Entity basic = rig.petals(2).front();
+
+    // Bought mid-life, under slots whose petal never changed. The shared pool
+    // must come back whole -- not with the new copy charged as one just lost --
+    // and the clump must grow a fifth grain on a timer sized for five.
+    buyDuplicator(rig, 0);
+    rig.settleEquips();
+    const std::vector<Entity> pollen = rig.petals(0);
+    CHECK_EQ(pollen.size(), std::size_t(3));
+    const double pool = fixture().registry.petalStats(petalId("pollen"), Rarity::Uncommon).health;
+    for (const Entity petal : pollen) {
+        CHECK_NEAR(rig.world.get<Health>(petal).max, pool, 1e-9);
+        CHECK_NEAR(rig.healthOf(petal), pool, 1e-9);
+    }
+    CHECK_EQ(rig.petals(1).size(), std::size_t(5));
+    // A slot the talent does not resize keeps the petal it had.
+    CHECK(rig.petals(2).front() == basic);
+
+    // And back: a reset must take the extra grain away, not leave it orbiting
+    // past the end of a clump that no longer counts it.
+    rig.world.get<PlayerSkillTree>(rig.player).skills.clear();
+    rig.settleEquips();
+    CHECK_EQ(rig.petals(0).size(), std::size_t(2));
+    CHECK_EQ(rig.petals(1).size(), std::size_t(4));
+    for (const Entity grain : rig.petals(1)) {
+        CHECK(rig.world.get<PetalInstance>(grain).subIndex < 4);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 

@@ -30,6 +30,7 @@
 #include "client/app_internal.h"
 #include "client/interpolation.h"
 #include "client/ui/draw.h"
+#include "client/ui/item_tile.h"
 #include "client/ui/text.h"
 #ifdef __EMSCRIPTEN__
 #include "client/ui/text_atlas.h"
@@ -143,6 +144,11 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // the wire for nobody else. Bound once -- the view owns the state and
     // outlives every frame that reads it.
     renderer_.setSelfState(&net_.view().self());
+    // The viewer's talents, so every item tile -- bar, inventory, drop, shop
+    // -- shows the copies the viewer's Duplicator would give a stack. Bound
+    // once for the same reason: each new profile is moved into the same
+    // object, so the address holds.
+    ui::setViewerSkills(&net_.profile().skills);
     // NetClient keeps this object alive for the entire connection and replaces
     // its grid with the server's authoritative one when a game is joined.
     renderer_.setTerrain(&net_.terrain());

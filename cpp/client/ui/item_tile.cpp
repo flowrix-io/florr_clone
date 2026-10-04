@@ -291,7 +291,12 @@ double smootherStep(double t) {
     return t * t * t * (t * (6.0 * t - 15.0) + 10.0);
 }
 
+/// See setViewerSkills.
+const SkillSet* viewerSkills = nullptr;
+
 } // namespace
+
+void setViewerSkills(const SkillSet* skills) { viewerSkills = skills; }
 
 PetalIconMetric petalIconMetric(std::uint16_t petalIndex, double sizeStat) {
     const ClusterShape shape = clusterShape(petalIndex, sizeStat, 1);
@@ -472,20 +477,23 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
 
     if (filled) {
         const PetalStats stats = content().petalStats(tile.petalIndex, tile.rarity);
+        const int copies = petalCopies(stats.count, viewerSkills);
         canvas.save();
         canvas.translate(0.0f, static_cast<float>(-kItemTileIconRise));
         canvas.scale(static_cast<float>(kItemTileIconScale),
                      static_cast<float>(kItemTileIconScale));
         // A clump the world draws pointing inward is drawn that way here too
         // -- all but the mythic stinger, whose three outward triangles close
-        // up into one bigger triangle and are kept that way on purpose.
+        // up into one bigger triangle and are kept that way on purpose. Keyed
+        // on the three rather than on the tier: a Duplicator's fourth stinger
+        // breaks the triangle, and four outward points read as a star.
         const PetalConfig& config = content().petal(tile.petalIndex);
         const bool facesInward = config.clumpFacesInward &&
-                                 !(config.id == "stinger" && tile.rarity == Rarity::Mythic);
+                                 !(config.id == "stinger" && copies == 3);
         // No cap: gardn's own oversize rule lives inside the cluster, and every
         // petal it measures already fits its plate. The face clip is what
         // catches anything this game later adds that does not.
-        drawPetalCluster(canvas, sprites, tile.petalIndex, tile.rarity, stats.size, stats.count,
+        drawPetalCluster(canvas, sprites, tile.petalIndex, tile.rarity, stats.size, copies,
                          0.0, 0.0, 0.0, tile.timeSeconds, facesInward);
         canvas.restore();
     }

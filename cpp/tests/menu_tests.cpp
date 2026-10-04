@@ -207,6 +207,86 @@ TEST(second_chance_stays_locked_until_flower_health_is_rare) {
     CHECK(!client.profile().skills.secondChanceUnlocked());
 }
 
+TEST(duplicator_is_priced_on_its_own_and_hangs_off_mythic_absorption) {
+    SkillSet skills;
+    CHECK(!skills.prerequisiteMet(SkillId::Duplicator));
+    skills.set(SkillId::Absorbing, rarityIndex(Rarity::Legendary));
+    CHECK(!skills.prerequisiteMet(SkillId::Duplicator));
+    skills.set(SkillId::Absorbing, rarityIndex(Rarity::Mythic));
+    CHECK(skills.prerequisiteMet(SkillId::Duplicator));
+    // Second Chance's fork is still its own: Absorption does not open it.
+    CHECK(!skills.secondChanceUnlocked());
+
+    // Duplicator 15, Triplicator 20 -- not the ladder's 1 and 2 -- and the
+    // refund total counts them at the same price the purchase charged.
+    const int absorption = skills.spent();
+    skills.set(SkillId::Duplicator, 0);
+    CHECK_EQ(skills.spent() - absorption, 15);
+    skills.set(SkillId::Duplicator, 1);
+    CHECK_EQ(skills.spent() - absorption, 15 + 20);
+    CHECK_EQ(std::string(skillTierLabel(SkillId::Duplicator, 0)), std::string("Duplicator"));
+    CHECK_EQ(std::string(skillTierLabel(SkillId::Duplicator, 1)), std::string("Triplicator"));
+}
+
+TEST(duplicator_adds_copies_only_to_petals_that_already_have_two) {
+    SkillSet skills;
+    skills.set(SkillId::Absorbing, rarityIndex(Rarity::Mythic));
+    CHECK_EQ(skills.petalCopies(4), 4);
+    skills.set(SkillId::Duplicator, 0);
+    CHECK_EQ(skills.petalCopies(0), 0);
+    CHECK_EQ(skills.petalCopies(1), 1);
+    CHECK_EQ(skills.petalCopies(2), 3);
+    CHECK_EQ(skills.petalCopies(4), 5);
+    // Triplicator replaces Duplicator's one copy with two; it does not stack.
+    skills.set(SkillId::Duplicator, 1);
+    CHECK_EQ(skills.petalCopies(1), 1);
+    CHECK_EQ(skills.petalCopies(4), 6);
+    CHECK_EQ(skills.petalCopies(kMaxPetalCopies - 1), kMaxPetalCopies);
+
+    // A record holding the branch without the mythic tier under it grants
+    // nothing, exactly as the panel shows the node locked.
+    skills.set(SkillId::Absorbing, rarityIndex(Rarity::Legendary));
+    CHECK_EQ(skills.petalCopies(4), 4);
+}
+
+TEST(duplicator_and_triplicator_are_bought_over_the_wire_after_mythic_absorption) {
+    Harness h("talent-duplicator", [](const std::string& path) {
+        seedAccount(path, "copycat", "password7", 0, 1e15);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("copycat", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [](const Profile& p) { return p.level > 100; }));
+
+    // Refused below mythic Absorption, however many points are in hand.
+    client.requestUpgradeSkill(SkillId::Duplicator, 0);
+    h.step(20, {&client});
+    CHECK_EQ(client.profile().skills.level(SkillId::Duplicator), -1);
+
+    for (int tier = 0; tier <= rarityIndex(Rarity::Mythic); ++tier) {
+        client.requestUpgradeSkill(SkillId::Absorbing, tier);
+        CHECK(awaitProfile(h, client, [tier](const Profile& p) {
+            return p.skills.level(SkillId::Absorbing) == tier;
+        }));
+    }
+
+    const int before = client.profile().talentPoints();
+    client.requestUpgradeSkill(SkillId::Duplicator, 0);
+    CHECK(awaitProfile(h, client, [](const Profile& p) {
+        return p.skills.level(SkillId::Duplicator) == 0;
+    }));
+    CHECK_EQ(client.profile().talentPoints(), before - 15);
+
+    client.requestUpgradeSkill(SkillId::Duplicator, 1);
+    CHECK(awaitProfile(h, client, [](const Profile& p) {
+        return p.skills.level(SkillId::Duplicator) == 1;
+    }));
+    CHECK_EQ(client.profile().talentPoints(), before - 15 - 20);
+}
+
 TEST(resetting_talents_hands_every_point_back) {
     Harness h("talent-reset");
     if (!h.ready) { CHECK(false); return; }
@@ -971,6 +1051,7 @@ TEST(a_talent_tree_round_trips_through_the_database) {
         record.skills.set(SkillId::Absorbing, rarityIndex(Rarity::Common));
         record.skills.set(SkillId::Reload, rarityIndex(Rarity::Unique));
         record.skills.set(SkillId::PetHealth, rarityIndex(Rarity::Legendary));
+        record.skills.set(SkillId::Duplicator, 1);
         db.markDirty();
         CHECK(db.save());
     }
@@ -992,6 +1073,8 @@ TEST(a_talent_tree_round_trips_through_the_database) {
             // spell correctly for a saved account to keep it.
             CHECK_EQ(record->skills.level(SkillId::PetHealth), rarityIndex(Rarity::Legendary));
             CHECK_NEAR(record->skills.healthScale(SkillId::PetHealth), 1.6, 1e-12);
+            // Triplicator, stored as the Duplicator branch's second tier.
+            CHECK_EQ(record->skills.level(SkillId::Duplicator), 1);
             CHECK_EQ(record->skills.level(SkillId::Damage), -1);
         }
     }

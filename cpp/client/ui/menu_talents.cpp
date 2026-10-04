@@ -3,9 +3,10 @@
 // Seven branches fan out from the flower, one per stat, each a chain of tiers
 // on the rarity ladder. A branch walks outward in equal steps and turns a
 // little more with each step past the third, which is what keeps ten nodes
-// evenly spaced instead of crossing their neighbours. Second Chance is not a
-// branch of its own: it forks off Flower Health at the tier it needs, and says
-// so by growing out of that node.
+// evenly spaced instead of crossing their neighbours. Second Chance and
+// Duplicator are not branches of their own: each forks off its parent at the
+// tier it needs -- rare Flower Health, mythic Absorption -- and says so by
+// growing out of that node.
 //
 // The fan is laid out in fixed pixels and is deliberately far larger than the
 // card -- most of it starts off the edge. Dragging spins the whole tree about
@@ -142,6 +143,34 @@ constexpr std::array<const char*, 2> kSecondChanceEffects = {
     "1.5s invulnerability at 1 HP (30s cd)",
 };
 
+/// How a fork leaves its parent's node: `turn` off the parent's heading for the
+/// first step, then `bend` more for each step after it.
+///
+/// Per fork, because the two parents sit in very different places. Rare Flower
+/// Health is still on the straight part of its branch, and Second Chance can
+/// strike off to the outside of the curve. Mythic Absorption is the FARTHEST
+/// node on its branch, 488 out: striking outward from there puts Triplicator
+/// near 700, past anything a spin can bring onto the card, which no other node
+/// on the tree is. Following the branch's own curve instead keeps both tiers
+/// inside 500 and every other node at least 87 away -- measured across the
+/// whole fan, which is the only way to tell where there is room.
+struct ForkShape {
+    SkillId skill;
+    double turn;
+    double bend;
+};
+constexpr std::array<ForkShape, 2> kForkShapes = {{
+    {SkillId::SecondChance, -kPi / 3.0, 0.0},
+    {SkillId::Duplicator, kPi / 12.0, kPi / 6.0},
+}};
+
+ForkShape forkShape(SkillId skill) {
+    for (const ForkShape& shape : kForkShapes) {
+        if (shape.skill == skill) return shape;
+    }
+    return {skill, 0.0, 0.0};
+}
+
 /// Body damage is never surfaced to the client, so the panel quotes the same
 /// fixed base the browser falls back to rather than inventing a level curve.
 constexpr double kDisplayBodyDamage = 25.0;
@@ -215,10 +244,10 @@ Vec2 avatarEye(const WorldView& view) {
     return {self.eyeX != 0.0 ? self.eyeX : 2.0, self.eyeY};
 }
 
-/// The branches that grow out of the flower, in fan order: every skill but
-/// Second Chance, which forks off Flower Health instead. Pet Health is last, so
-/// it opens up-left beside Damage and the older branches keep their order.
-constexpr std::array<SkillId, kSkillCount - 1> kTrunks = {
+/// The branches that grow out of the flower, in fan order: every skill but the
+/// forks, which grow out of another branch instead. Pet Health is last, so it
+/// opens up-left beside Damage and the older branches keep their order.
+constexpr std::array<SkillId, kSkillCount - kSkillForks.size()> kTrunks = {
     SkillId::Damage,    SkillId::PetalHealth, SkillId::PlayerHealth, SkillId::Healing,
     SkillId::Absorbing, SkillId::Reload,      SkillId::PetHealth,
 };
@@ -233,6 +262,9 @@ std::string effectLine(SkillId skill, int tier) {
     if (skill == SkillId::SecondChance) {
         const auto at = static_cast<std::size_t>(tier);
         return at < kSecondChanceEffects.size() ? kSecondChanceEffects[at] : std::string{};
+    }
+    if (skill == SkillId::Duplicator) {
+        return tier == 0 ? "+1 copy on petals with 2+ copies" : "+2 copies on petals with 2+ copies";
     }
     char buffer[48];
     if (skill == SkillId::Absorbing) {
@@ -282,10 +314,11 @@ void roundedCross(Canvas& canvas, Vec2 at, double extent, double thickness) {
     canvas.fill();
 }
 
-void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
+void drawIcon(Canvas& canvas, SkillId id, int tier, Vec2 at, double size) {
     // `size` is the glyph's FULL extent, not a radius and not a font size, so
     // every branch's mark occupies the same square of the node however it is
-    // built. Everything below is a fraction of it.
+    // built. Everything below is a fraction of it. `tier` matters only to a
+    // branch whose tiers wear different marks.
     const double half = size * 0.5;
 
     canvas.save();
@@ -487,6 +520,44 @@ void drawIcon(Canvas& canvas, SkillId id, Vec2 at, double size) {
             canvas.fill();
             break;
         }
+        case SkillId::Duplicator: {
+            if (tier == 0) {        // two circles splitting apart
+                // Overlapping by a sliver, so the pair still shares a pinched
+                // neck: a cell caught mid-division, not two coins side by side.
+                // The arcs outside each half say which way they are going.
+                // Wider than the glyph square: two discs in a row are short,
+                // and kept inside it they read a size smaller than every other
+                // mark on the tree. The node has the room either side.
+                const double r = half * 0.48;
+                const double apart = half * 0.44;
+                for (const double side : {-1.0, 1.0}) {
+                    canvas.fillCircle(static_cast<float>(at.x + side * apart),
+                                      static_cast<float>(at.y), static_cast<float>(r));
+                }
+                canvas.setLineWidth(static_cast<float>(size * 0.08));
+                for (const double side : {-1.0, 1.0}) {
+                    const double facing = side < 0.0 ? kPi : 0.0;
+                    canvas.beginPath();
+                    canvas.arc(static_cast<float>(at.x + side * apart), static_cast<float>(at.y),
+                               static_cast<float>(r + half * 0.22), static_cast<float>(facing - 0.6),
+                               static_cast<float>(facing + 0.6), false);
+                    canvas.stroke();
+                }
+            } else {                // three circles
+                // Point-up triangle, lowered by half the difference between
+                // its top and bottom reach so the three sit centred in the node.
+                const double r = half * 0.46;
+                const double spoke = half * 0.64;
+                const double lift = (spoke - spoke * 0.5) * 0.5;
+                for (int i = 0; i < 3; ++i) {
+                    const Vec2 c = at + Vec2::fromAngle(-kPi * 0.5 + kTau * i / 3.0, spoke) +
+                                   Vec2{0.0, lift};
+                    canvas.fillCircle(static_cast<float>(c.x), static_cast<float>(c.y),
+                                      static_cast<float>(r));
+                }
+            }
+            break;
+        }
         default: break;
     }
     canvas.restore();
@@ -571,7 +642,7 @@ void TalentsPanel::layout() {
     // the panel can move without relaying the whole fan out.
     nodes_.clear();
 
-    // Every main branch's node positions, so the sub-branch can fork off one.
+    // Every main branch's node positions, so the sub-branches can fork off them.
     // Indexed by SkillId rather than by place in the fan, which is what the
     // fork looks its parent up by.
     std::vector<std::vector<Vec2>> trunkPoints(kSkillCount);
@@ -601,16 +672,20 @@ void TalentsPanel::layout() {
         }
     }
 
-    const auto parent = static_cast<std::size_t>(kSecondChanceParent);
-    // The fork hangs off the node that unlocks it -- the rare one -- so the
-    // prerequisite is legible as a shape and not only as tooltip text.
-    const int forkTier = rarityIndex(kSecondChanceRequirement);
-    if (forkTier >= 0 && forkTier < static_cast<int>(trunkPoints[parent].size())) {
+    // Each fork hangs off the node that unlocks it -- rare Flower Health,
+    // mythic Absorption -- so the prerequisite is legible as a shape and not
+    // only as tooltip text.
+    for (const SkillFork& fork : kSkillForks) {
+        const auto parent = static_cast<std::size_t>(fork.parent);
+        const int forkTier = rarityIndex(fork.requirement);
+        if (forkTier < 0 || forkTier >= static_cast<int>(trunkPoints[parent].size())) continue;
+        const ForkShape shape = forkShape(fork.child);
         Vec2 cursor = trunkPoints[parent][static_cast<std::size_t>(forkTier)];
-        double heading = trunkAngles[parent][static_cast<std::size_t>(forkTier)] - kPi / 3.0;
-        for (int tier = 0; tier < skillTierCount(SkillId::SecondChance); ++tier) {
+        double heading = trunkAngles[parent][static_cast<std::size_t>(forkTier)] + shape.turn;
+        for (int tier = 0; tier < skillTierCount(fork.child); ++tier) {
+            if (tier > 0) heading += shape.bend;
             cursor += Vec2::fromAngle(heading, kBaseStep);
-            nodes_.push_back({SkillId::SecondChance, tier, cursor, {}});
+            nodes_.push_back({fork.child, tier, cursor, {}});
         }
     }
 
@@ -707,17 +782,16 @@ bool TalentsPanel::render(MenuContext& ctx) {
     canvas.setLineCap("round");
     for (std::size_t i = 0; i < nodes_.size(); ++i) {
         const Node& node = nodes_[i];
-        const bool prereqMet =
-            node.skill != SkillId::SecondChance || skills.secondChanceUnlocked();
+        const bool prereqMet = skills.prerequisiteMet(node.skill);
         const bool unlocked = prereqMet && node.tier <= skills.level(node.skill);
 
         Vec2 from = centre;
         if (node.tier > 0) {
             from = nodes_[i - 1].screen;
-        } else if (node.skill == SkillId::SecondChance) {
-            const int forkTier = rarityIndex(kSecondChanceRequirement);
+        } else if (const SkillFork* fork = skillFork(node.skill)) {
+            const int forkTier = rarityIndex(fork->requirement);
             for (const Node& candidate : nodes_) {
-                if (candidate.skill == kSecondChanceParent && candidate.tier == forkTier) {
+                if (candidate.skill == fork->parent && candidate.tier == forkTier) {
                     from = candidate.screen;
                     break;
                 }
@@ -744,10 +818,9 @@ bool TalentsPanel::render(MenuContext& ctx) {
     // --- nodes -------------------------------------------------------------
     for (std::size_t i = 0; i < nodes_.size(); ++i) {
         const Node& node = nodes_[i];
-        const bool prereqMet =
-            node.skill != SkillId::SecondChance || skills.secondChanceUnlocked();
+        const bool prereqMet = skills.prerequisiteMet(node.skill);
         const bool unlocked = prereqMet && node.tier <= skills.level(node.skill);
-        const int cost = kTierCost[static_cast<std::size_t>(node.tier)];
+        const int cost = skillTierCost(node.skill, node.tier);
         const bool available =
             prereqMet && node.tier == skills.level(node.skill) + 1 && points >= cost;
 
@@ -767,7 +840,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
         if (static_cast<int>(i) == hovered && (unlocked || available)) {
             disc(canvas, node.screen, kNodeRadius - kNodeRim, kPaper, kPaper, 0.0, 0.2);
         }
-        drawIcon(canvas, node.skill, node.screen, kIconExtent);
+        drawIcon(canvas, node.skill, node.tier, node.screen, kIconExtent);
 
         // Only on a tier still to be bought. A price over an owned node is a
         // number with nothing to do: the point of the label is what a click
@@ -866,24 +939,23 @@ bool TalentsPanel::render(MenuContext& ctx) {
     // --- tooltip -----------------------------------------------------------
     if (hovered >= 0) {
         const Node& node = nodes_[static_cast<std::size_t>(hovered)];
-        const auto skillAt = static_cast<std::size_t>(node.skill);
         const Rarity rarity = clampRarity(node.tier);
-        const bool prereqMet =
-            node.skill != SkillId::SecondChance || skills.secondChanceUnlocked();
+        const bool prereqMet = skills.prerequisiteMet(node.skill);
         const bool unlocked = prereqMet && node.tier <= skills.level(node.skill);
-        const int cost = kTierCost[static_cast<std::size_t>(node.tier)];
+        const int cost = skillTierCost(node.skill, node.tier);
         const bool nextTier = node.tier == skills.level(node.skill) + 1;
         const bool available = prereqMet && nextTier && points >= cost;
 
         std::vector<TooltipLine> lines;
-        lines.push_back({kSkillLabels[skillAt], 20.0, kPaper});
+        lines.push_back({skillTierLabel(node.skill, node.tier), 20.0, kPaper});
         lines.push_back({rarityLabel(rarity), 14.0, rarityColor(rarity)});
         lines.push_back({effectLine(node.skill, node.tier), 12.0, kPaper, 10.0});
         lines.push_back({"Cost: " + std::to_string(cost) + " TP", 12.0, kPaper});
 
         if (!prereqMet) {
-            lines.push_back({std::string("Requires ") + rarityName(kSecondChanceRequirement) + " " +
-                                 kSkillLabels[static_cast<std::size_t>(kSecondChanceParent)],
+            const SkillFork& fork = *skillFork(node.skill);
+            lines.push_back({std::string("Requires ") + rarityName(fork.requirement) + " " +
+                                 kSkillLabels[static_cast<std::size_t>(fork.parent)],
                              12.0, kCostRed});
         } else if (unlocked) {
             lines.push_back({"Unlocked", 12.0, kStatGreen});

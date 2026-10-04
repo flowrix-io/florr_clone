@@ -69,6 +69,12 @@ struct PetalSlotState {
         /// you a fresh one instead of the previous occupant's health bar.
         std::uint16_t configIndex = kNoPetal;
         Rarity rarity = Rarity::Common;
+        /// And how many instances it was built for. The petal and tier alone
+        /// do not fix that: Duplicator adds copies, and buying or resetting it
+        /// changes the count under a slot whose petal never moved. A rebuild is
+        /// the only safe answer -- the per-grain timers are sized to the count,
+        /// and a shared pool would charge every new copy as one just lost.
+        int count = 0;
 
         /// How much of the slot is still standing, 1.0 for untouched. Derived
         /// each tick from whichever of the two health models the slot uses, so

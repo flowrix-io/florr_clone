@@ -28,6 +28,11 @@ enum class SkillId : std::uint8_t {
     /// profile both carry a branch by this index, so a new branch goes on the
     /// end where it cannot renumber one an older build already knows.
     PetHealth,
+    /// Two tiers under one id: Duplicator, then Triplicator. One branch rather
+    /// than two because the second REPLACES the first -- a tier that is bought
+    /// in order and supersedes the one below is exactly what a tier already is,
+    /// and the refund, the wire and the "bought in order" rule come with it.
+    Duplicator,
     Count,
 };
 
@@ -38,12 +43,12 @@ inline constexpr int kSkillCount = static_cast<int>(SkillId::Count);
 /// branch out from under an account.
 inline constexpr std::array<const char*, kSkillCount> kSkillKeys = {
     "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "reload",
-    "secondChance", "petHealth",
+    "secondChance", "petHealth", "duplicator",
 };
 
 inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
     "Damage", "Petal Health", "Flower Health", "Healing", "Absorption", "Reload", "Second Chance",
-    "Pet Health",
+    "Pet Health", "Duplicator",
 };
 
 /// One line of what the branch actually does, shown in its tooltip.
@@ -56,6 +61,7 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
     "Shortens every petal cooldown.",
     "Survive a killing blow at 1 HP.",
     "Multiplies the health of every pet you summon.",
+    "Adds copies to petals that already have two or more.",
 };
 
 /// How many tiers each branch has. Three of them stop short of the full
@@ -63,7 +69,7 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
 /// past the ladder: universal is a petal tier, not a talent one.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
     kLadderRarityCount, kLadderRarityCount, kLadderRarityCount, 4, kLadderRarityCount,
-    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount,
+    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -72,10 +78,70 @@ inline constexpr std::array<int, kLadderRarityCount> kTierCost = {
     1, 2, 3, 5, 8, 12, 18, 25, 26, 30,
 };
 
+/// The Duplicator branch is priced on its own: Duplicator 15, Triplicator 20.
+/// It sits past a mythic tier, so the ladder's own 1 and 2 would make the
+/// strongest node on the tree the cheapest one.
+inline constexpr std::array<int, 2> kDuplicatorTierCost = {15, 20};
+
+/// What a tier costs, on the branch it belongs to. Every caller that prices a
+/// tier -- the purchase, the refund total, the panel -- asks this rather than
+/// indexing kTierCost, so a branch with its own prices cannot be charged at
+/// one rate and refunded at another.
+inline int skillTierCost(SkillId id, int tier) {
+    if (tier < 0) return 0;
+    const std::size_t t = static_cast<std::size_t>(tier);
+    if (id == SkillId::Duplicator) return t < kDuplicatorTierCost.size() ? kDuplicatorTierCost[t] : 0;
+    return t < kTierCost.size() ? kTierCost[t] : 0;
+}
+
 /// Second Chance forks off Flower Health and stays locked until that branch
 /// reaches rare.
 inline constexpr SkillId kSecondChanceParent = SkillId::PlayerHealth;
 inline constexpr Rarity kSecondChanceRequirement = Rarity::Rare;
+
+/// Duplicator forks off Absorption at mythic.
+inline constexpr SkillId kDuplicatorParent = SkillId::Absorbing;
+inline constexpr Rarity kDuplicatorRequirement = Rarity::Mythic;
+
+/// A branch that grows out of another branch's node rather than out of the
+/// flower, and stays locked until that parent reaches `requirement`.
+struct SkillFork {
+    SkillId child;
+    SkillId parent;
+    Rarity requirement;
+};
+
+inline constexpr std::array<SkillFork, 2> kSkillForks = {{
+    {SkillId::SecondChance, kSecondChanceParent, kSecondChanceRequirement},
+    {SkillId::Duplicator, kDuplicatorParent, kDuplicatorRequirement},
+}};
+
+/// The fork `id` hangs off, or nullptr for a branch that grows from the flower.
+inline const SkillFork* skillFork(SkillId id) {
+    for (const SkillFork& fork : kSkillForks) {
+        if (fork.child == id) return &fork;
+    }
+    return nullptr;
+}
+
+/// What a node is called. Duplicator's second tier has a name of its own; every
+/// other tier is its branch's label.
+inline const char* skillTierLabel(SkillId id, int tier) {
+    if (id == SkillId::Duplicator && tier == 1) return "Triplicator";
+    const std::size_t i = static_cast<std::size_t>(id);
+    return i < kSkillLabels.size() ? kSkillLabels[i] : "";
+}
+
+/// Copies Duplicator (+1) and Triplicator (+2) add to a petal. The second tier
+/// replaces the first rather than stacking on it.
+inline constexpr std::array<int, 2> kDuplicatorExtraCopies = {1, 2};
+/// The fewest copies a petal must already field to be duplicated. A single
+/// petal is left alone: the talent multiplies clumps, it does not turn a rose
+/// into two roses.
+inline constexpr int kDuplicatorMinCopies = 2;
+/// The most petals one slot may field: the config loader's cap on `count`,
+/// which the petal system's per-slot bitmask is sized to.
+inline constexpr int kMaxPetalCopies = 64;
 
 /// What a Second Chance tier buys: the killing blow leaves the flower at 1 HP
 /// with this much invulnerability, then locks the talent out for the cooldown.
@@ -151,7 +217,7 @@ struct SkillSet {
         int total = 0;
         for (int s = 0; s < kSkillCount; ++s) {
             for (int t = 0; t <= tier[static_cast<std::size_t>(s)] && t < kLadderRarityCount; ++t) {
-                total += kTierCost[static_cast<std::size_t>(t)];
+                total += skillTierCost(static_cast<SkillId>(s), t);
             }
         }
         return total;
@@ -166,11 +232,37 @@ struct SkillSet {
     /// is the one scale a caller must not clamp UP to 1.0 on a missing tree.
     double reloadScale() const { return scaleAt(kReloadSkillScale, level(SkillId::Reload)); }
 
+    /// True when `id` may be bought: always for a branch off the flower, and
+    /// for a fork once its parent has reached the tier it hangs off.
+    bool prerequisiteMet(SkillId id) const {
+        const SkillFork* fork = skillFork(id);
+        return fork == nullptr || level(fork->parent) >= rarityIndex(fork->requirement);
+    }
+
     /// True when Second Chance's prerequisite is satisfied.
-    bool secondChanceUnlocked() const {
-        return level(kSecondChanceParent) >= rarityIndex(kSecondChanceRequirement);
+    bool secondChanceUnlocked() const { return prerequisiteMet(SkillId::SecondChance); }
+
+    /// How many petals a slot fields once Duplicator has had its say, given
+    /// the `copies` its petal and tier field on their own. Gated on the fork's
+    /// prerequisite as well as the tier, so a record that holds the branch
+    /// without the mythic Absorption under it grants nothing.
+    int petalCopies(int copies) const {
+        const int t = level(SkillId::Duplicator);
+        if (copies < kDuplicatorMinCopies || t < 0 ||
+            t >= static_cast<int>(kDuplicatorExtraCopies.size()) ||
+            !prerequisiteMet(SkillId::Duplicator)) {
+            return copies;
+        }
+        const int boosted = copies + kDuplicatorExtraCopies[static_cast<std::size_t>(t)];
+        return boosted < kMaxPetalCopies ? boosted : kMaxPetalCopies;
     }
 };
+
+/// A slot's copy count for a flower that may or may not carry a tree. Bots and
+/// test rigs without one field the petal's own count.
+inline int petalCopies(int copies, const SkillSet* skills) {
+    return skills != nullptr ? skills->petalCopies(copies) : copies;
+}
 
 /// Points available: one per level, less what the tree already holds. Clamped
 /// at zero so a rebalance that raises a tier cost can never mint negative TP.

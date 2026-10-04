@@ -425,6 +425,11 @@ constexpr ChangelogEntry kChangelog[] = {
       "Fire ant hole now pops instead of acting like regular ant hole",
       "Queen ants always spawn from ant hole now"
       }
+    },
+    {"October 4, 2026",
+      {
+      "Added Duplicator and Triplicator talents after Mythic Absorption"
+      }
     }
 };
 

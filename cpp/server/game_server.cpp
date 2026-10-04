@@ -2767,14 +2767,16 @@ void GameServer::handleUpgradeSkill(Session& session, net::Connection& connectio
         sendNotice(connection, net::NoticeSeverity::Warning, "Talents are bought in order.");
         return;
     }
-    if (id == SkillId::SecondChance && !skills.secondChanceUnlocked()) {
+    if (!skills.prerequisiteMet(id)) {
+        const SkillFork& fork = *skillFork(id);
         sendNotice(connection, net::NoticeSeverity::Warning,
-                   std::string("Second Chance needs ") + rarityLabel(kSecondChanceRequirement) +
-                       " " + kSkillLabels[static_cast<std::size_t>(kSecondChanceParent)] + ".");
+                   std::string(skillTierLabel(id, tier)) + " needs " +
+                       rarityLabel(fork.requirement) + " " +
+                       kSkillLabels[static_cast<std::size_t>(fork.parent)] + ".");
         return;
     }
 
-    const int cost = kTierCost[static_cast<std::size_t>(tier)];
+    const int cost = skillTierCost(id, tier);
     if (points < cost) {
         sendNotice(connection, net::NoticeSeverity::Warning,
                    "Not enough talent points (need " + std::to_string(cost) + ").");

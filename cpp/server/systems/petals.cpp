@@ -694,6 +694,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
     const double petalHealthScale =
         tree ? tree->skills.healthScale(SkillId::PetalHealth) : 1.0;
     const double reloadScale = tree ? tree->skills.reloadScale() : 1.0;
+    const SkillSet* skills = tree ? &tree->skills : nullptr;
 
     // What every sponge on the bar is still holding. One figure for the whole
     // flower, because the stored hits are the FLOWER's -- combat defers a hit
@@ -767,16 +768,18 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // rare stinger under the epic talent would hold 24.3 rather than 24,
         // and survive the fourth 6-damage hit that ought to break it.
         stats.health = std::round(stats.health * petalHealthScale);
-        const int count = std::max(0, stats.count);
+        const int count = petalCopies(std::max(0, stats.count), skills);
         const double reload = reloadMillisFor(stats, reloadScale);
 
-        if (slotState.configIndex != slot.configIndex || slotState.rarity != slot.rarity) {
+        if (slotState.configIndex != slot.configIndex || slotState.rarity != slot.rarity ||
+            slotState.count != count) {
             destroySlotPetals(world, loadout, slotId);
             recallPets(world, slotState);
             live.clear();
             slotState = PetalSlotState::Slot{};
             slotState.configIndex = slot.configIndex;
             slotState.rarity = slot.rarity;
+            slotState.count = count;
             // `clumped` alone is enough: a four-grain clump of sand is four
             // petals that break and reload one at a time, not one health bar
             // shared four ways. `independentHealth` is the second, rarer way
@@ -1536,6 +1539,9 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     // Counted from the LOADOUT rather than from the live petals: a broken slot
     // keeps its share of the circle, so its gap stays open instead of making
     // the rest of the ring lurch round to close it.
+    // Duplicator's extra copies take their ring places like any other copy.
+    const PlayerSkillTree* tree = world.tryGet<PlayerSkillTree>(player);
+    const SkillSet* skills = tree ? &tree->skills : nullptr;
     std::array<int, kLoadoutActiveSlots> ordinal{};
     int occupied = 0;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
@@ -1549,7 +1555,8 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // reference's `stats.count || 1` does. A loose petal is not on the
         // ring at all, so it leaves no gap in it either.
         if (config.noPhysics || petalIsLooseBody(config)) continue;
-        const int count = std::max(1, registry.petalStats(slot.configIndex, slot.rarity).count);
+        const int count = std::max(
+            1, petalCopies(registry.petalStats(slot.configIndex, slot.rarity).count, skills));
         occupied += config.clumped ? 1 : count;
     }
     // A bar of nothing but worn petals leaves the ring empty, but anything

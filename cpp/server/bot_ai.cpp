@@ -697,6 +697,8 @@ double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
     // A defendOnly petal (rose) never flies out on attack, so its radius is
     // capped at the neutral orbit however far the ring is thrown.
     const double defendOnlyBase = neutralRadius * std::min(petalExtension, 1.0) * rangeScale;
+    const PlayerSkillTree* tree = world_.tryGet<PlayerSkillTree>(bot.entity);
+    const SkillSet* skills = tree ? &tree->skills : nullptr;
 
     double farthest = 0;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
@@ -712,7 +714,9 @@ double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
                         (config.range > 0.0 ? config.range : 1.0);
         // A clumped petal's grains fan out around their shared ring place, and
         // one of them points outward on every revolution.
-        if (config.clumped && stats.count > 1) {
+        // The copies the ring actually fields, Duplicator's included.
+        const int copies = petalCopies(stats.count, skills);
+        if (config.clumped && copies > 1) {
             const double spacing = stats.radius * config.clumpSpacing;
             if (config.clumpOutsideRing) {
                 // The centre sits one spacing out and the first grain points
@@ -720,8 +724,8 @@ double GameServer::botPetalReach(const Bot& bot, double petalExtension) const {
                 // nearest the outward bearing.
                 const double hub = radius + spacing;
                 double far = 0;
-                for (int k = 0; k < stats.count; ++k) {
-                    const double turn = kPi + kTau * k / stats.count;
+                for (int k = 0; k < copies; ++k) {
+                    const double turn = kPi + kTau * k / copies;
                     far = std::max(far, std::hypot(hub + spacing * std::cos(turn),
                                                    spacing * std::sin(turn)));
                 }

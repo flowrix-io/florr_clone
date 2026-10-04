@@ -27,6 +27,7 @@
 #include "shared/core/types.h"
 #include "shared/game/components.h"
 #include "shared/game/rarity.h"
+#include "shared/game/skills.h"
 
 namespace flix::ui {
 
@@ -172,6 +173,15 @@ struct ItemTile {
 /// Draws `tile` centred in `rect`, scaled from the 60x60 design cell to the
 /// shorter of the rect's sides.
 void drawItemTile(Canvas&, const SpriteCache&, Rect rect, const ItemTile& tile);
+
+/// The viewer's talent tree, which every item tile draws its stack by: a petal
+/// shows the copies this flower would field, Duplicator's extra ones included,
+/// on every surface that draws a tile -- the bar, the inventory, a drop, the
+/// shop, a crafting slot. One setting rather than a field each caller fills
+/// in, so no surface can be the one that forgot. The App binds it once to the
+/// profile NetClient keeps; unbound (a tool, a test) a tile draws the petal's
+/// own count.
+void setViewerSkills(const SkillSet* skills);
 
 /// A stack count as a badge prints it: exact up to four digits, then cut to
 /// K/M/B -- "12.3K", "456K", "2.1B" -- so a stack of billions still fits on
