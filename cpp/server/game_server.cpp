@@ -2421,14 +2421,19 @@ void GameServer::handleTitanForge(Session& session, net::Connection& connection,
     }
     giveToInventory(record, petalIndex, Rarity::Universal, 1);
     database_.markDirty();
-    std::printf("[TITAN] %s forged a universal %s\n", session.username.c_str(),
-                content().petal(petalIndex).id.c_str());
+    const bool tracked = tracksUniversals(session.userId);
+    std::printf("[TITAN] %s forged a universal %s%s\n", session.username.c_str(),
+                content().petal(petalIndex).id.c_str(), tracked ? "" : " (admin, untracked)");
 
     // The forger's account is now the one place a universal of it may be,
-    // and the titan remembers it there.
-    takeUniversals(petalIndex, session.userId);
-    universalHolders_[petalIndex] = HolderMemo{session.username, clockMillis_};
-    announceRareCraft(session, petalIndex, Rarity::Universal);
+    // and the titan remembers it there. An admin's is outside the rule: the
+    // player who holds the real one keeps it, the titan still names them,
+    // and nobody is told "The Universal" changed hands.
+    if (tracked) {
+        takeUniversals(petalIndex, session.userId);
+        universalHolders_[petalIndex] = HolderMemo{session.username, clockMillis_};
+        announceRareCraft(session, petalIndex, Rarity::Universal);
+    }
 
     reply(true, "");
     sendProfile(session, connection);
@@ -2460,6 +2465,14 @@ void GameServer::handleTitanHolder(Session& session, net::Connection& connection
     connection.send(w);
 }
 
+bool GameServer::tracksUniversals(const std::string& userId) const {
+    // The account's flag, not the session's: the sweeps below reach offline
+    // accounts, and a temporary admin grant is lent to a connection, not
+    // to the petals an account owns.
+    const Account* account = database_.findUserById(userId);
+    return account == nullptr || !account->admin;
+}
+
 std::string GameServer::universalHolderName(std::uint16_t petalIndex) {
     const auto memo = universalHolders_.find(petalIndex);
     if (memo != universalHolders_.end() &&
@@ -2473,7 +2486,7 @@ std::string GameServer::universalHolderName(std::uint16_t petalIndex) {
         const PlayerRecord* record = database_.findProgress(userId);
         if (record == nullptr || !holdsUniversal(*record, petalIndex)) continue;
         const Account* account = std::as_const(database_).findUserById(userId);
-        if (account == nullptr) continue;
+        if (account == nullptr || account->admin) continue;
         holder = account->username;
         break;
     }
@@ -2493,7 +2506,10 @@ int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keep
     for (const std::string& userId : database_.playerIds()) {
         if (userId == keeperId) continue;
         const PlayerRecord* record = database_.findProgress(userId);
-        if (record != nullptr && holdsUniversal(*record, petalIndex)) holders.push_back(userId);
+        if (record != nullptr && holdsUniversal(*record, petalIndex) &&
+            tracksUniversals(userId)) {
+            holders.push_back(userId);
+        }
     }
 
     std::int64_t taken = 0;

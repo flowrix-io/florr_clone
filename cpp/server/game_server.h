@@ -233,16 +233,22 @@ private:
     /// session's body is alive and standing at one, as the oracle's craft is.
     void handleTrade(Session&, net::Connection&, ByteReader&);
     /// kTitanForgeCost apex petals for one universal at a titan, standing at
-    /// one as the oracle's craft is; then takeUniversals for everyone else.
+    /// one as the oracle's craft is; then takeUniversals for everyone else,
+    /// unless the forger is an admin (see tracksUniversals).
     void handleTitanForge(Session&, net::Connection&, ByteReader&);
     /// Who holds `petalIndex` at universal, for the titan to name.
     void handleTitanHolder(Session&, net::Connection&, ByteReader&);
-    /// The username of an account holding `petalIndex` at universal, or empty:
-    /// the memo while it is fresh, else a sweep of every account.
+    /// Whether the one-of-each rule sees this account's universals: every
+    /// account but a database admin's. An admin's are neither named by the
+    /// titan nor taken by another player's forge, and an admin's forge takes
+    /// nobody's and is not announced.
+    bool tracksUniversals(const std::string& userId) const;
+    /// The username of a tracked account holding `petalIndex` at universal,
+    /// or empty: the memo while it is fresh, else a sweep of every account.
     std::string universalHolderName(std::uint16_t petalIndex);
-    /// Takes every universal `petalIndex` from every account but `keeperId`,
-    /// bag and loadout, refunding kTitanForgeRefund apex for each, and tells
-    /// the live ones. Returns how many universals were taken.
+    /// Takes every universal `petalIndex` from every tracked account but
+    /// `keeperId`, bag and loadout, refunding kTitanForgeRefund apex for each,
+    /// and tells the live ones. Returns how many universals were taken.
     int takeUniversals(std::uint16_t petalIndex, const std::string& keeperId);
     void handleRespawn(Session&);
     void handlePing(net::Connection&, ByteReader&);

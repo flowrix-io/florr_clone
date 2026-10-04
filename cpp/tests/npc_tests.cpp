@@ -2354,6 +2354,92 @@ TEST(the_titan_names_whoever_holds_a_petal_at_universal) {
     removeDataDir(dir);
 }
 
+TEST(an_admins_universals_are_outside_the_one_of_each_rule) {
+    const std::string dir = titanWorld("titan-admin");
+    Harness h("titan-admin", [](const std::string& path) {
+        // The admin holds a rose in the bag, wears a basic, and has the apex
+        // to forge a wing.
+        seedAccount(path, "boss", true);
+        seedStack(path, "boss", "petal_rose", Rarity::Universal, 1);
+        seedWorn(path, "boss", 0, "basic", Rarity::Universal);
+        seedStack(path, "boss", "petal_wing", Rarity::Apex, 5);
+        // A player about to forge a rose, and one holding the wing.
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_rose", Rarity::Apex, 5);
+        seedAccount(path, "keeper");
+        seedStack(path, "keeper", "petal_wing", Rarity::Universal, 1);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t basic = content().petalIndex("basic");
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t wing = content().petalIndex("wing");
+
+    NetClient smith;
+    NetClient boss;
+    CHECK(joinAs(h, smith, "smith"));
+    CHECK(joinAs(h, boss, "boss"));
+    const std::vector<NetClient*> both{&smith, &boss};
+    h.step(3, both);
+    standAtTitan(h, both, "smith");
+
+    const auto ask = [&](std::uint16_t petal) -> std::string {
+        smith.forgetTitanHolder(petal);
+        h.step(4, both);
+        smith.requestTitanHolder(petal);
+        if (!h.stepUntil(both, [&] { return smith.titanHolder(petal) != nullptr; }, 30)) {
+            return "<no answer>";
+        }
+        return *smith.titanHolder(petal);
+    };
+    // The admin's, bagged or worn, are nobody's as far as the titan knows.
+    CHECK_EQ(ask(rose), std::string());
+    CHECK_EQ(ask(basic), std::string());
+    CHECK_EQ(ask(wing), std::string("keeper"));
+
+    // A player's forge leaves the admin's rose where it is: nothing taken,
+    // nothing refunded, no notice -- and is still announced as ever.
+    TitanForgeOutcome outcome;
+    smith.requestTitanForge(rose);
+    CHECK(awaitForge(h, both, smith, outcome));
+    CHECK(outcome.success);
+    CHECK_EQ(ask(rose), std::string("smith"));
+    CHECK(h.stepUntil(both, [&] { return chatSays(smith, "Universal Rose has been forged by"); },
+                      30));
+    CHECK(awaitProfile(h, boss, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Universal) == 1u &&
+               p.stackCount(rose, Rarity::Apex) == 0u;
+    }));
+    CHECK(!chatSays(boss, "Another player forged"));
+
+    // The admin's own forge takes nobody's wing, leaves the titan naming
+    // the player who holds it, and is not announced.
+    standAtTitan(h, both, "boss");
+    boss.requestTitanForge(wing);
+    CHECK(awaitForge(h, both, boss, outcome));
+    CHECK(outcome.success);
+    CHECK(awaitProfile(h, boss, [&](const Profile& p) {
+        return p.stackCount(wing, Rarity::Universal) == 1u &&
+               p.stackCount(wing, Rarity::Apex) == 0u;
+    }));
+    h.step(10, both);
+    CHECK(!chatSays(smith, "Universal Wing has been forged by"));
+    CHECK(!chatSays(boss, "Universal Wing has been forged by"));
+    standAtTitan(h, both, "smith");
+    CHECK_EQ(ask(wing), std::string("keeper"));
+    const Database& db = h.server.database();
+    const Account* keeper = db.findUser("keeper");
+    CHECK(keeper != nullptr);
+    if (keeper != nullptr) {
+        const PlayerRecord* record = db.findProgress(keeper->id);
+        CHECK(record != nullptr);
+        if (record != nullptr) {
+            CHECK_EQ(record->itemCount(Rarity::Universal, "petal_wing"), 1);
+            CHECK_EQ(record->itemCount(Rarity::Apex, "petal_wing"), 0);
+        }
+    }
+    removeDataDir(dir);
+}
+
 TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowers) {
     const std::string dir = titanWorld("titan-ring");
     Harness h("titan-ring", [](const std::string& path) { seedAccount(path, "boss", true); },
