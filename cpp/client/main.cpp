@@ -64,7 +64,13 @@ void usage(const char* program) {
         "  --mobile           force the touch controls up, whatever the\n"
         "                     settings file and the device say\n"
         "  --chat <line>      seed a transcript line (repeatable); markup is\n"
-        "                     parsed exactly as a server line's would be\n",
+        "                     parsed exactly as a server line's would be\n"
+        "  --chat-as <channel> <author> <line>\n"
+        "                     the same on a channel: local, global, squad,\n"
+        "                     guild, whisper, whisper-sent or system; author -\n"
+        "                     for none\n"
+        "  --chat-open        start with the chat line open\n"
+        "  --chat-draft <t>   ...holding this draft\n",
         program);
 }
 
@@ -119,6 +125,29 @@ int main(int argc, char** argv) {
         else if (arg == "--stats") config.showStats = true;
         else if (arg == "--mobile") config.forceTouchControls = true;
         else if (arg == "--chat") config.seedChat.push_back(next("--chat"));
+        else if (arg == "--chat-as") {
+            const std::string channel = next("--chat-as");
+            flix::AppConfig::ChannelLine line;
+            if (channel == "local") line.channel = flix::net::ChatChannel::Local;
+            else if (channel == "global") line.channel = flix::net::ChatChannel::Global;
+            else if (channel == "squad") line.channel = flix::net::ChatChannel::Squad;
+            else if (channel == "guild") line.channel = flix::net::ChatChannel::Guild;
+            else if (channel == "whisper") line.channel = flix::net::ChatChannel::Whisper;
+            else if (channel == "whisper-sent") line.channel = flix::net::ChatChannel::WhisperSent;
+            else if (channel != "system") {
+                std::fprintf(stderr, "unknown chat channel: %s\n", channel.c_str());
+                return 2;
+            }
+            line.author = next("--chat-as");
+            if (line.author == "-") line.author.clear();
+            line.text = next("--chat-as");
+            config.seedChannelChat.push_back(std::move(line));
+        }
+        else if (arg == "--chat-open") config.autoChatOpen = true;
+        else if (arg == "--chat-draft") {
+            config.autoChatOpen = true;
+            config.autoChatDraft = next("--chat-draft");
+        }
         else if (arg == "--user") config.autoUsername = next("--user");
         else if (arg == "--password") config.autoPassword = next("--password");
         else if (arg == "--help" || arg == "-h") { usage(argv[0]); return 0; }

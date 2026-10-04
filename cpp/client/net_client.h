@@ -320,9 +320,10 @@ struct ChatLine {
     /// voice. What the bubble over a speaker's head is anchored to.
     std::uint32_t speakerNetId = 0;
     double receivedAtMillis = 0;
-    /// Unix milliseconds, for the "[3:04:05 PM]" stamp the transcript prints.
-    /// Separate from `receivedAtMillis`, which is monotonic uptime and so
-    /// cannot be turned into a wall-clock time of day.
+    /// When the line was said, in Unix milliseconds -- a backlog line's is the
+    /// server's, from before this client connected. Separate from
+    /// `receivedAtMillis`, which is monotonic uptime and so cannot be turned
+    /// into a wall-clock time of day. The transcript no longer prints it.
     std::int64_t wallClockMillis = 0;
 };
 
@@ -605,6 +606,9 @@ public:
     /// back through the box needs to know a line ARRIVED, not that the vector
     /// grew.
     std::uint64_t chatSequence() const { return chatSeq_; }
+    /// Who the latest whisper was from or to, which is who the chat box's
+    /// Whisper channel answers. Empty until one has passed either way.
+    const std::string& whisperPartner() const { return whisperPartner_; }
     /// The same lines, as the world-anchored bubbles over the flowers that
     /// said them. Aged by ageChatBubbles(), drawn by the world renderer.
     const ChatBubbles& chatBubbles() const { return chatBubbles_; }
@@ -629,8 +633,9 @@ public:
     void addSystemMessage(const std::string& text);
     /// The same, under a chosen sender. The studio reports its own failures as
     /// lines from "Skins", exactly as the reference does, so the author is not
-    /// always "System".
-    void addLocalChat(const std::string& author, const std::string& text);
+    /// always "System". A screenshot run seeds other channels through it.
+    void addLocalChat(const std::string& author, const std::string& text,
+                      net::ChatChannel channel = net::ChatChannel::System);
 
     /// Round-trip time in milliseconds, from the last Ping/Pong exchange.
     double pingMillis() const { return pingMillis_; }
@@ -858,6 +863,7 @@ private:
     /// up through the drop already holds every line of it; only forgetting the
     /// account -- which empties the transcript -- makes room for another.
     bool chatBackfilled_ = false;
+    std::string whisperPartner_;
     ChatBubbles chatBubbles_;
     DailyStreak dailyStreak_;
 

@@ -91,7 +91,14 @@ public:
     Window& operator=(const Window&) = delete;
 
     // Creates the window. Returns false with `errorOut` set on failure.
-    bool open(int width, int height, const std::string& title, std::string& errorOut);
+    //
+    // `visible = false` makes a window that never reaches the screen: it is
+    // created hidden, the process stays out of the Dock and never takes focus,
+    // and present() uploads nothing. Everything else -- the canvas, its
+    // scales, the event queue -- works as it does for a shown one, which is
+    // what a run that only renders frames to a file wants.
+    bool open(int width, int height, const std::string& title, std::string& errorOut,
+              bool visible = true);
     void close();
     bool isOpen() const { return open_; }
 

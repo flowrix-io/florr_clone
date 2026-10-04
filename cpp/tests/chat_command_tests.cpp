@@ -66,6 +66,15 @@ bool sawText(const NetClient& client, const std::string& needle) {
     return transcript(client).find(needle) != std::string::npos;
 }
 
+/// The newest line whose text is exactly `text`, or null. For the tests that
+/// care which channel carried a line and who it was signed by.
+const ChatLine* lineReading(const NetClient& client, const std::string& text) {
+    for (auto it = client.chat().rbegin(); it != client.chat().rend(); ++it) {
+        if (it->text == text) return &*it;
+    }
+    return nullptr;
+}
+
 /// Sends `text` and steps until the transcript grows, so a test does not have
 /// to guess how many ticks a reply takes.
 bool say(Harness& h, NetClient& client, const std::string& text, int maxTicks = 120) {
@@ -763,6 +772,11 @@ TEST(a_squad_forms_talks_and_disbands) {
     CHECK(say(h, mate, "/squad-accept"));
     h.step(3, {&lead, &mate});
     CHECK(sawText(lead, "mate has joined the squad."));
+    // The squad's own notice: on its channel, signed by nobody, so the chat
+    // box files it under Squad and colours it as the squad's.
+    const ChatLine* joined = lineReading(lead, "mate has joined the squad.");
+    CHECK(joined != nullptr && joined->channel == net::ChatChannel::Squad &&
+          joined->author.empty());
     CHECK(lead.squad().members.size() == 2);
     CHECK(mate.squad().members.size() == 2);
     CHECK(mate.squad().id == lead.squad().id);
@@ -776,6 +790,9 @@ TEST(a_squad_forms_talks_and_disbands) {
     CHECK(h.stepUntil({&lead, &mate}, [&] { return mate.chat().size() > before; }));
     CHECK(sawText(mate, "regroup"));
     CHECK(sawText(lead, "regroup"));
+    // Signed with the speaker alone; the channel is what tags it "[Squad]".
+    const ChatLine* said = lineReading(mate, "regroup");
+    CHECK(said != nullptr && said->channel == net::ChatChannel::Squad && said->author == "lead");
 
     // The leader leaving promotes the next member and tells them both things.
     CHECK(say(h, lead, "/squad-leave"));
@@ -1390,6 +1407,153 @@ TEST(guild_commands_reach_the_same_logic_as_the_guild_panel) {
     CHECK(h.stepUntil({&leader, &member},
                       [&] { return member.chat().size() > before; }, 120));
     CHECK(sawText(member, "meeting at the lake"));
+    const ChatLine* said = lineReading(member, "meeting at the lake");
+    CHECK(said != nullptr && said->channel == net::ChatChannel::Guild &&
+          said->author == "leader");
+    // The guild's own notice, like the squad's, is on its channel unsigned.
+    const ChatLine* joined = lineReading(leader, "member has joined the guild.");
+    CHECK(joined != nullptr && joined->channel == net::ChatChannel::Guild &&
+          joined->author.empty());
+}
+
+TEST(a_whisper_reaches_one_player_and_echoes_to_the_sender) {
+    Harness h("cmd-whisper", [](const std::string& path) {
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bob", "password7");
+        seedUser(path, "carol", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    NetClient bob;
+    NetClient carol;
+    CHECK(loginAs(h, alice, "alice", "password7"));
+    CHECK(loginAs(h, bob, "bob", "password7"));
+    CHECK(loginAs(h, carol, "carol", "password7"));
+
+    const std::size_t carolBefore = carol.chat().size();
+    const std::size_t bobBefore = bob.chat().size();
+    // Typed in the wrong case: the copies carry the account's own spelling.
+    alice.sendChat("/w BOB meet me by the oak");
+    CHECK(h.stepUntil({&alice, &bob, &carol},
+                      [&] { return bob.chat().size() > bobBefore; }, 120));
+    h.step(3, {&alice, &bob, &carol});
+
+    // Each copy names the OTHER party, on the channel that says which way it
+    // went, and both sides now answer the right person.
+    const ChatLine* received = lineReading(bob, "meet me by the oak");
+    CHECK(received != nullptr && received->channel == net::ChatChannel::Whisper &&
+          received->author == "alice");
+    const ChatLine* echoed = lineReading(alice, "meet me by the oak");
+    CHECK(echoed != nullptr && echoed->channel == net::ChatChannel::WhisperSent &&
+          echoed->author == "bob");
+    CHECK_EQ(bob.whisperPartner(), std::string("alice"));
+    CHECK_EQ(alice.whisperPartner(), std::string("bob"));
+    // Nobody else hears it.
+    CHECK_EQ(carol.chat().size(), carolBefore);
+    CHECK(!sawText(carol, "meet me by the oak"));
+
+    CHECK(say(h, alice, "/w nobody hello"));
+    CHECK(sawText(alice, "No player named nobody is online."));
+    CHECK(say(h, alice, "/w alice hello"));
+    CHECK(sawText(alice, "You cannot whisper to yourself."));
+    CHECK(say(h, alice, "/w bob"));
+    CHECK(sawText(alice, "Usage: /w"));
+}
+
+TEST(a_local_line_reaches_only_the_players_who_can_see_the_speaker) {
+    Harness h("cmd-local", [](const std::string& path) {
+        seedUser(path, "alice", "password7");
+        seedUser(path, "bob", "password7");
+        seedUser(path, "carol", "password7");
+        seedUser(path, "dave", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice;
+    NetClient bob;
+    NetClient carol;
+    NetClient dave;   // stays on the title screen
+    CHECK(loginAs(h, alice, "alice", "password7"));
+    CHECK(loginAs(h, bob, "bob", "password7"));
+    CHECK(loginAs(h, carol, "carol", "password7"));
+    CHECK(loginAs(h, dave, "dave", "password7"));
+    alice.joinGame(1280, 720, "garden", "alice");
+    bob.joinGame(1280, 720, "garden", "bob");
+    carol.joinGame(1280, 720, "garden", "carol");
+    CHECK(h.stepUntil({&alice, &bob, &carol, &dave}, [&] {
+        return alice.status() == NetClient::Status::Playing &&
+               bob.status() == NetClient::Status::Playing &&
+               carol.status() == NetClient::Status::Playing;
+    }, 300));
+
+    // Bob a step from Alice, well inside her 1280x720 screen and she inside
+    // his; Carol in the same realm but several screens away. Placed on open
+    // ground, so the next movement substep has no wall to shove them out of.
+    World& world = h.server.world();
+    const Terrain& terrain = h.server.terrain();
+    Entity aliceBody = NULL_ENTITY;
+    Entity bobBody = NULL_ENTITY;
+    Entity carolBody = NULL_ENTITY;
+    Query<PlayerTag, Transform, PlayerAccount> flowers{world};
+    flowers.each([&](Entity e, PlayerTag&, Transform&, PlayerAccount& account) {
+        if (account.username == "alice") aliceBody = e;
+        if (account.username == "bob") bobBody = e;
+        if (account.username == "carol") carolBody = e;
+    });
+    CHECK(aliceBody != NULL_ENTITY && bobBody != NULL_ENTITY && carolBody != NULL_ENTITY);
+    if (aliceBody == NULL_ENTITY || bobBody == NULL_ENTITY || carolBody == NULL_ENTITY) return;
+    const Transform from = world.get<Transform>(aliceBody);
+    const auto placeNear = [&](Entity body, Vec2 target) {
+        int tx = 0;
+        int ty = 0;
+        CHECK(terrain.nearestOpenTile(target, tx, ty, from.realm));
+        Transform& transform = world.get<Transform>(body);
+        transform.position = Terrain::tileCenter(tx, ty);
+        transform.realm = from.realm;
+    };
+    placeNear(bobBody, {from.position.x + 150.0, from.position.y});
+    placeNear(carolBody, {from.position.x + 4000.0, from.position.y});
+    h.step(3, {&alice, &bob, &carol, &dave});
+    const Vec2 here = world.get<Transform>(aliceBody).position;
+    const Vec2 near = world.get<Transform>(bobBody).position;
+    const Vec2 far = world.get<Transform>(carolBody).position;
+    CHECK(std::abs(near.x - here.x) < 500.0 && std::abs(near.y - here.y) < 300.0);
+    CHECK(std::abs(far.x - here.x) > 1500.0 || std::abs(far.y - here.y) > 1000.0);
+
+    const std::size_t carolBefore = carol.chat().size();
+    const std::size_t daveBefore = dave.chat().size();
+    const std::size_t bobBefore = bob.chat().size();
+    alice.sendChat("/l hello neighbours");
+    CHECK(h.stepUntil({&alice, &bob, &carol, &dave},
+                      [&] { return bob.chat().size() > bobBefore; }, 120));
+    h.step(3, {&alice, &bob, &carol, &dave});
+
+    const ChatLine* heard = lineReading(bob, "hello neighbours");
+    CHECK(heard != nullptr && heard->channel == net::ChatChannel::Local &&
+          heard->author == "alice" && heard->speakerNetId != 0);
+    // The speaker sees her own line, as anyone does in a box they typed in.
+    const ChatLine* own = lineReading(alice, "hello neighbours");
+    CHECK(own != nullptr && own->channel == net::ChatChannel::Local);
+    // Out of sight is out of earshot, and so is the title screen.
+    CHECK_EQ(carol.chat().size(), carolBefore);
+    CHECK_EQ(dave.chat().size(), daveBefore);
+
+    // With no flower there is nothing to be near, and the server says so
+    // rather than dropping the line silently.
+    CHECK(say(h, dave, "/l anyone here?"));
+    CHECK(sawText(dave, "not in the world"));
+    CHECK(!sawText(bob, "anyone here?"));
+
+    // Global still reaches everyone, near, far and on the title screen.
+    const std::size_t carolGlobal = carol.chat().size();
+    alice.sendChat("hello everyone");
+    CHECK(h.stepUntil({&alice, &bob, &carol, &dave},
+                      [&] { return carol.chat().size() > carolGlobal; }, 120));
+    h.step(3, {&alice, &bob, &carol, &dave});
+    const ChatLine* global = lineReading(dave, "hello everyone");
+    CHECK(global != nullptr && global->channel == net::ChatChannel::Global);
+    CHECK(lineReading(carol, "hello everyone") != nullptr);
 }
 
 TEST(delete_guests_keeps_a_guest_that_actually_played) {

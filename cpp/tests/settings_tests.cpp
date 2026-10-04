@@ -232,3 +232,29 @@ TEST(the_show_admins_on_leaderboard_switch_survives_the_settings_file) {
 
     std::remove(path.c_str());
 }
+
+TEST(the_chat_channel_filters_survive_the_settings_file) {
+    const std::string path = tempPath("chat_channels.cfg");
+
+    // Every channel shown until the player unticks one.
+    ClientSettings fresh;
+    CHECK_EQ(static_cast<int>(fresh.chatChannels), 0x1F);
+
+    // Global, Guild and Whisper unticked.
+    ClientSettings some;
+    some.chatChannels = 0x05;
+    CHECK(some.save(path));
+    ClientSettings back;
+    CHECK(back.load(path));
+    CHECK_EQ(static_cast<int>(back.chatChannels), 0x05);
+
+    // All four off is a choice too, and must not read back as "unset".
+    ClientSettings none;
+    none.chatChannels = 0;
+    CHECK(none.save(path));
+    ClientSettings backNone;
+    CHECK(backNone.load(path));
+    CHECK_EQ(static_cast<int>(backNone.chatChannels), 0);
+
+    std::remove(path.c_str());
+}

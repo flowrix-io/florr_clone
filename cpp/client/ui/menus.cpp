@@ -646,6 +646,7 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "hideOtherPetals") render.hideOtherPetals = number != 0;
         else if (key == "hideOtherPets") render.hideOtherPets = number != 0;
         else if (key == "chat") showChat = number != 0;
+        else if (key == "chatChannels") chatChannels = static_cast<std::uint8_t>(number & 0x1F);
         else if (key == "menuBar") showMenuBar = number != 0;
         else if (key == "stats") showStats = number != 0;
         else if (key == "debugButton") showDebugButton = number != 0;
@@ -697,6 +698,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "hideOtherPetals " << (render.hideOtherPetals ? 1 : 0) << '\n'
          << "hideOtherPets " << (render.hideOtherPets ? 1 : 0) << '\n'
          << "chat " << (showChat ? 1 : 0) << '\n'
+         << "chatChannels " << static_cast<int>(chatChannels) << '\n'
          << "menuBar " << (showMenuBar ? 1 : 0) << '\n'
          << "stats " << (showStats ? 1 : 0) << '\n'
          << "debugButton " << (showDebugButton ? 1 : 0) << '\n'

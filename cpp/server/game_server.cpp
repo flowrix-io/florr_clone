@@ -1828,13 +1828,36 @@ void GameServer::handleChat(Session& session, net::Connection& connection, ByteR
         if (handleChatCommand(session, connection, text)) return;
     }
 
+    // A line with no slash is said to everyone. Local is "/l", which the
+    // command dispatch hands back to sayInPublic.
+    sayInPublic(session, connection, net::ChatChannel::Global, text);
+}
+
+void GameServer::sayInPublic(Session& session, net::Connection& connection,
+                             net::ChatChannel channel, const std::string& text) {
+    // The body the line is said FROM, so every client can float it over that
+    // flower. Zero while the speaker is on the title screen or dead -- there
+    // is nothing in the world to anchor a bubble to then, and a Global line
+    // is still printed in the transcript.
+    std::uint32_t speakerNetId = 0;
+    if (session.playing()) {
+        if (const NetId* id = world_.tryGet<NetId>(session.entity)) speakerNetId = id->value;
+    }
+    // Local is measured from the flower, and there is none to measure from.
+    // Refused before anything is billed: nothing was said.
+    if (channel == net::ChatChannel::Local && speakerNetId == 0) {
+        sendSystem(connection, "Local chat reaches the players who can see you, and you are "
+                               "not in the world. Switch to Global to be heard from here.");
+        return;
+    }
+
     if (!spend(session.chatAllowance)) {
         sendNotice(connection, net::NoticeSeverity::Warning, "You are sending messages too quickly.");
         return;
     }
 
-    // Everything from here is broadcast to other players, which is exactly
-    // what a mute blocks.
+    // Everything from here reaches other players, which is exactly what a
+    // mute blocks.
     const Account* account = database_.findUser(session.username);
     if (account != nullptr && account->muted) {
         sendSystem(connection, "<span style=\"color: #ff8866;\">You are muted and cannot "
@@ -1842,21 +1865,53 @@ void GameServer::handleChat(Session& session, net::Connection& connection, ByteR
         return;
     }
 
-    // The body the line is said FROM, so every client can float it over that
-    // flower. Zero while the speaker is on the title screen or dead -- there
-    // is nothing in the world to anchor a bubble to then, and the line is
-    // still printed in the transcript.
-    std::uint32_t speakerNetId = 0;
-    if (session.playing()) {
-        if (const NetId* id = world_.tryGet<NetId>(session.entity)) speakerNetId = id->value;
+    if (channel == net::ChatChannel::Local) {
+        sendLocalChat(session, text, speakerNetId);
+    } else {
+        broadcastChat(net::ChatChannel::Global, session.username, text, speakerNetId);
     }
-    broadcastChat(net::ChatChannel::Global, session.username, text, speakerNetId);
 
     // Somebody saying "super" or "unique" rallies every bot onto the best boss
     // in the world, exactly as the reference's chat handler does. Only those
     // two words: an ultra is a high-tier mob to fight, never a raid to call.
     // No-ops when no qualifying boss exists.
     if (mentionsRaidTier(text)) triggerBotRaid(clockMillis_);
+}
+
+void GameServer::sendLocalChat(const Session& speaker, const std::string& text,
+                               std::uint32_t speakerNetId) {
+    const Transform* from = world_.tryGet<Transform>(speaker.entity);
+    if (from == nullptr) return;
+    // Seen at all is enough, not seen whole: a flower half off the edge of a
+    // screen is still one its player can see talking.
+    const Body* body = world_.tryGet<Body>(speaker.entity);
+    const double margin = body != nullptr ? body->radius : 0.0;
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::Chat));
+    w.u8(static_cast<std::uint8_t>(net::ChatChannel::Local));
+    w.str(speaker.username);
+    w.str(text);
+    w.u32(speakerNetId);
+    for (const auto& [id, listener] : sessions_) {
+        if (!listener.authenticated() || !listener.playing()) continue;
+        // The speaker hears themselves whatever their own box says.
+        if (&listener != &speaker) {
+            const Transform* at = world_.tryGet<Transform>(listener.entity);
+            if (at == nullptr || at->realm != from->realm) continue;
+            // The listener's own screen, as the client reported it, centred
+            // on the body it is watching from -- the box replication streams
+            // and the speech bubble is drawn inside.
+            Vec2 viewport{kViewportWidth, kViewportHeight};
+            if (const PlayerLocation* location = world_.tryGet<PlayerLocation>(listener.entity)) {
+                viewport = location->viewport;
+            }
+            const double dx = std::abs(from->position.x - at->position.x);
+            const double dy = std::abs(from->position.y - at->position.y);
+            if (dx > viewport.x * 0.5 + margin || dy > viewport.y * 0.5 + margin) continue;
+        }
+        if (net::Connection* peer = listener_.find(listener.connection)) peer->send(w);
+    }
 }
 
 void GameServer::handleSetLoadout(Session& session, ByteReader& reader) {
@@ -3616,14 +3671,7 @@ void GameServer::handleGuildAccept(Session& session, net::Connection& connection
     guildInvites_.erase(invite);
     database_.markDirty();
 
-    const std::string author = "[Guild " + guildName + "]";
-    const Json& members = guild["memberUsernames"];
-    for (std::size_t i = 0; i < members.size(); ++i) {
-        if (net::Connection* peer = connectionForUser(members[i].asString())) {
-            sendChatTo(*peer, net::ChatChannel::System, author,
-                       session.username + " has joined the guild.");
-        }
-    }
+    sendGuildSystem(guild, session.username + " has joined the guild.");
     broadcastGuildRoster(guild);
 }
 
@@ -3669,18 +3717,8 @@ void GameServer::handleGuildLeave(Session& session, net::Connection& connection)
     }
     database_.markDirty();
 
-    const std::string author = "[Guild " + guildName + "]";
-    const Json& members = guild["memberUsernames"];
-    for (std::size_t i = 0; i < members.size(); ++i) {
-        net::Connection* peer = connectionForUser(members[i].asString());
-        if (peer == nullptr) continue;
-        sendChatTo(*peer, net::ChatChannel::System, author,
-                   session.username + " has left the guild.");
-        if (!promoted.empty()) {
-            sendChatTo(*peer, net::ChatChannel::System, author,
-                       promoted + " is now the guild leader.");
-        }
-    }
+    sendGuildSystem(guild, session.username + " has left the guild.");
+    if (!promoted.empty()) sendGuildSystem(guild, promoted + " is now the guild leader.");
     broadcastGuildRoster(guild);
 }
 
@@ -3725,14 +3763,7 @@ void GameServer::guildKick(Session& session, net::Connection& connection,
     members.items().erase(members.items().begin() + at);
     database_.markDirty();
 
-    const std::string author = "[Guild " + guildName + "]";
-    const Json& remaining = guild["memberUsernames"];
-    for (std::size_t i = 0; i < remaining.size(); ++i) {
-        if (net::Connection* peer = connectionForUser(remaining[i].asString())) {
-            sendChatTo(*peer, net::ChatChannel::System, author,
-                       member + " was kicked from the guild by " + session.username + ".");
-        }
-    }
+    sendGuildSystem(guild, member + " was kicked from the guild by " + session.username + ".");
     if (net::Connection* peer = connectionForUser(member)) {
         sendNoGuild(*peer);
         sendNotice(*peer, net::NoticeSeverity::Bad,
@@ -4058,12 +4089,22 @@ void GameServer::broadcastSquadUpdate(const Squad& squad) {
 }
 
 void GameServer::sendSquadSystem(const Squad& squad, const std::string& text) {
-    // Signed "[Squad]" rather than "System", which is what tells a member
-    // whether a line was said to the world or to the four of them.
+    // On the Squad channel rather than System, which is what tells a member
+    // whether a line was said to the world or to the four of them. No author:
+    // it is the server's notice, and the client colours it as the squad's.
     for (const SquadMemberId& member : squad.members) {
         if (net::Connection* peer = squadConnection(member)) {
-            sendChatTo(*peer, net::ChatChannel::Squad, "[Squad]",
-                       "<span style=\"color: #4fc3f7;\">" + text + "</span>");
+            sendChatTo(*peer, net::ChatChannel::Squad, "", text);
+        }
+    }
+}
+
+void GameServer::sendGuildSystem(const Json& guild, const std::string& text) {
+    // The squad's notice, for a guild: on its own channel, with no author.
+    const Json& members = guild["memberUsernames"];
+    for (std::size_t i = 0; i < members.size(); ++i) {
+        if (net::Connection* peer = connectionForUser(members[i].asString())) {
+            sendChatTo(*peer, net::ChatChannel::Guild, "", text);
         }
     }
 }

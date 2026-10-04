@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 47;
+inline constexpr std::uint16_t kProtocolVersion = 48;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -372,7 +372,18 @@ enum class AuthStatus : std::uint8_t {
     ServerError,
 };
 
-enum class ChatChannel : std::uint8_t { Global = 0, System = 1, Squad = 2 };
+/// Who a chat line was said to, which is what the transcript tags it with and
+/// what its channel filters sort it by. A line on Squad, Guild or a whisper
+/// channel with no author is the server's own notice to that group.
+enum class ChatChannel : std::uint8_t {
+    Global = 0,        ///< everyone on the server
+    System = 1,        ///< the server answering, or announcing to, everyone
+    Squad = 2,
+    Guild = 3,
+    Whisper = 4,       ///< to this player alone; `author` is who sent it
+    WhisperSent = 5,   ///< the sender's copy of one; `author` is who it went to
+    Local = 6,         ///< the players whose screens show the speaker's flower
+};
 enum class NoticeSeverity : std::uint8_t { Info = 0, Good = 1, Warning = 2, Bad = 3 };
 
 // ---------------------------------------------------------------------------

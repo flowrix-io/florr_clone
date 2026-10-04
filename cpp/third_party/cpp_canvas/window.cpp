@@ -400,6 +400,8 @@ struct Window::Impl {
   SDL_Texture* texture = nullptr;
   std::vector<std::uint8_t> rgba;
   Uint64 startCounter = 0, lastFrameCounter = 0;
+  // Opened with visible = false: nothing is ever uploaded or presented.
+  bool hidden = false;
 #endif
   std::unique_ptr<Canvas> canvas;
   // The window as the OS sees it, in points.
@@ -983,12 +985,13 @@ struct Window::Impl {
 Window::Window() : impl_(std::make_unique<Impl>()) {}
 Window::~Window() { close(); }
 
-bool Window::open(int width, int height, const std::string& title, std::string& errorOut) {
+bool Window::open(int width, int height, const std::string& title, std::string& errorOut,
+                  bool visible) {
 #ifdef __EMSCRIPTEN__
   // width/height are the native window's opening size; in a page the element
   // is already laid out by CSS and its size is the answer. The title belongs
-  // to the document, which the shell page owns.
-  (void)width; (void)height; (void)title;
+  // to the document, which the shell page owns, and so does whether it shows.
+  (void)width; (void)height; (void)title; (void)visible;
   close();
 
   impl_->refreshGeometry();
@@ -1030,6 +1033,12 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
   return true;
 #else
   close();
+  impl_->hidden = !visible;
+  // A hidden window is not enough on its own on macOS: the process would
+  // still be made a foreground app, gain a Dock icon and take focus from
+  // whatever the person was doing. A background app gets none of that. Read
+  // by SDL_Init, so it has to be set first.
+  SDL_SetHint(SDL_HINT_MAC_BACKGROUND_APP, visible ? "0" : "1");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { errorOut = SDL_GetError(); return false; }
 
   // SDL turns a finger into a mouse of its own by default. This window mirrors
@@ -1045,8 +1054,8 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
   // what uiScale() and the design space are for.
   impl_->window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                    width, height,
-                                   SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE |
-                                       SDL_WINDOW_ALLOW_HIGHDPI);
+                                   (visible ? SDL_WINDOW_SHOWN : SDL_WINDOW_HIDDEN) |
+                                       SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   if (!impl_->window) { errorOut = SDL_GetError(); SDL_Quit(); return false; }
 
   // The canvas is stretched to the drawable whenever renderScale() < 1, and
@@ -1297,6 +1306,9 @@ void Window::present() {
   // should reach the OS.
   impl_->applyCursor();
   if (!impl_->canvas || !impl_->texture) return;
+  // Nobody can see it, and a GPU presenting into a window that is not on
+  // screen is free to stall the frame until it is.
+  if (impl_->hidden) return;
 
   // getImageData is the Canvas API's only pixel accessor, and it already
   // composites onto opaque; taking the whole surface once per frame is one

@@ -286,6 +286,7 @@ void NetClient::forgetAccount() {
     profile_ = Profile{};
     chat_.clear();
     chatBackfilled_ = false;
+    whisperPartner_.clear();
     dailyStreak_ = DailyStreak{};
     skinCatalog_.clear();
     equippedSkinId_.clear();
@@ -1403,12 +1404,19 @@ void NetClient::pushChat(net::ChatChannel channel, std::string author, std::stri
     // the bubble says what the transcript says. A bubble is one pill of one
     // colour, so the styling is dropped rather than honoured -- but a line
     // whose tags were left in it would show them as literal angle brackets.
-    if (channel == net::ChatChannel::Global) {
+    if (channel == net::ChatChannel::Global || channel == net::ChatChannel::Local) {
         std::string spoken = ui::markupPlainText(line.text);
         // A bubble is one pill on one row; a hard break inside it would
         // otherwise draw as a missing glyph in the middle of the line.
         std::replace(spoken.begin(), spoken.end(), '\n', ' ');
         chatBubbles_.add(speakerNetId, std::move(spoken));
+    }
+
+    // Both copies of a whisper name the other party, so whichever way the
+    // last one went, its author is who a reply goes to.
+    if ((channel == net::ChatChannel::Whisper || channel == net::ChatChannel::WhisperSent) &&
+        !line.author.empty()) {
+        whisperPartner_ = line.author;
     }
 
     chat_.push_back(std::move(line));
@@ -1423,8 +1431,9 @@ void NetClient::addSystemMessage(const std::string& text) {
     pushChat(net::ChatChannel::System, "System", text);
 }
 
-void NetClient::addLocalChat(const std::string& author, const std::string& text) {
-    pushChat(net::ChatChannel::System, author, text);
+void NetClient::addLocalChat(const std::string& author, const std::string& text,
+                             net::ChatChannel channel) {
+    pushChat(channel, author, text);
 }
 
 const CustomSkin* NetClient::findSkin(const std::string& id) const {

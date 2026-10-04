@@ -64,7 +64,8 @@ struct AppConfig {
 
     /// Render this many frames, write the last one to `screenshotPath`, and
     /// exit. For testing what the client actually draws without needing a
-    /// display, a window server, or screen-recording permission.
+    /// display, a window server, or screen-recording permission. A run with a
+    /// `screenshotPath` never puts a window on screen -- see App::start.
     int screenshotAfterFrames = 0;
     std::string screenshotPath;
     /// Log in and join automatically, so a screenshot run reaches the game
@@ -114,6 +115,18 @@ struct AppConfig {
     /// line in it. Delivered exactly as a server line would be, markup and
     /// all, so what is photographed is the real parse and the real layout.
     std::vector<std::string> seedChat;
+    /// The same, on a chosen channel and under a chosen sender, so the
+    /// channel tags and colours can be photographed too.
+    struct ChannelLine {
+        net::ChatChannel channel = net::ChatChannel::System;
+        std::string author;
+        std::string text;
+    };
+    std::vector<ChannelLine> seedChannelChat;
+    /// Start with the chat line open, holding this draft -- the open box is
+    /// otherwise out of a screenshot run's reach.
+    bool autoChatOpen = false;
+    std::string autoChatDraft;
 
     /// Makes this account an admin, for a build that can do that locally.
     ///
@@ -293,6 +306,9 @@ private:
     /// Before the renderer drains the events, which it does every frame.
     void tallyRunLoot();
     void drawChat(Canvas&, double time);
+    /// The channel strip over the open chat: a tab per channel, its checkbox
+    /// filtering the transcript and its name choosing where Enter sends.
+    void drawChatTabs(Canvas&, double bottom);
     /// The chat input slot, shared by the title screen and the game so the two
     /// cannot drift apart.
     void drawChatField(Canvas&, Rect box, double time);
@@ -368,6 +384,10 @@ private:
     std::string* authValue(int index);
     /// Moves the caret to another auth field, taking its contents whole.
     void focusAuthField(int index);
+    /// Sends one line through the chosen channel: as typed on Local, or as the
+    /// channel's command elsewhere. A line that is already a command goes as
+    /// typed whatever the channel.
+    void sendChatLine(const std::string& line);
     /// One frame of chat editing: typing, the slash-command list's keys, and
     /// send or cancel. Shared by the lobby and the game so the box behaves
     /// identically on both.
@@ -607,6 +627,14 @@ private:
     /// box back at the bottom -- which is what the reference's
     /// `scrollTop = scrollHeight` on every message does.
     std::uint64_t chatSeenSeq_ = 0;
+    /// The channel strip as last painted -- each whole tab, and the checkbox
+    /// inside it -- for the input pass, which runs before the draw. Empty
+    /// while the strip is not up.
+    std::array<Rect, 5> chatTabs_{};
+    std::array<Rect, 5> chatTabChecks_{};
+    /// The tab Enter sends to, in strip order: Local, Global, Squad, Guild,
+    /// Whisper.
+    int chatSendTab_ = 0;
 
     // -- death ---------------------------------------------------------------
     /// Whether the card is up. Raised when the server says the body is gone,

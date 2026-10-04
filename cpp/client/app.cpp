@@ -112,7 +112,15 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     }
 
 
-    if (!window_.open(config.windowWidth, config.windowHeight, "florr", errorOut)) return false;
+    // A run that writes its frame to a file is a test, and a window flashing
+    // up over whatever the person is doing for each one is all it would add.
+    // Hidden, the real cursor cannot steer the flower or land a scripted
+    // click somewhere else either. A bare --frames run stays visible: it is
+    // the frame-cost benchmark, and presenting is part of the cost.
+    const bool showWindow = config.screenshotPath.empty();
+    if (!window_.open(config.windowWidth, config.windowHeight, "florr", errorOut, showWindow)) {
+        return false;
+    }
     // Everything below draws in design units, not pixels. Set before the
     // first frame, because the camera's viewport and every panel's layout are
     // read straight off window_.width()/height().
@@ -243,6 +251,14 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // No author: these stand in for the server's own announcements, which are
     // the lines that carry markup.
     for (const std::string& line : config.seedChat) net_.addLocalChat({}, line);
+    for (const AppConfig::ChannelLine& line : config.seedChannelChat) {
+        net_.addLocalChat(line.author, line.text, line.channel);
+    }
+    if (config.autoChatOpen) {
+        chatOpen_ = true;
+        chatDraft_ = config.autoChatDraft;
+        chatField_.focusAtEnd(chatDraft_, 0.0);
+    }
 
     screen_ = Screen::Connecting;
     running_ = true;
@@ -621,6 +637,11 @@ void App::frame(double dt) {
         case Screen::Disconnected: break;
         case Screen::Replaced:     updateSessionReplaced(); break;
     }
+    // The chat's channel strip has been read for this frame's presses; the
+    // draw puts it back only if it paints it again. A frame that hides the
+    // chat must not leave its tabs live under whatever covers them.
+    chatTabs_.fill(Rect{});
+    chatTabChecks_.fill(Rect{});
 
     // One heartbeat a second while the socket is up, as the reference's own
     // interval does. It is what makes the ping readout a number.

@@ -210,6 +210,10 @@ struct ClientSettings {
     /// a non-Retina panel would ask for.
     double renderScale = 1.0;
     bool showChat = true;
+    /// Which of the chat box's channel tabs its transcript shows, one bit per
+    /// tab in strip order: Local, Global, Squad, Guild, Whisper. All on by
+    /// default. The server's own lines belong to no tab and always show.
+    std::uint8_t chatChannels = 0x1F;
     bool showMenuBar = true;
     /// The frame/ping/position readout in the bottom-right corner. Off by
     /// default, and the browser build keeps the same flag in

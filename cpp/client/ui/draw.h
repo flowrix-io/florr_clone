@@ -130,16 +130,26 @@ void scrim(Canvas&, double alpha = 0.45);
 // new field calls inputField; a field that lays out its own lines calls
 // inputFieldPlate and draws inside the band.
 //
-// Two places keep the browser build's plate instead, as InputLook names them:
-// the auth form, and the chat line while it is closed.
+// Three places keep a plate of their own instead, as InputLook names them:
+// the auth form, and the chat line, open and closed.
 
 /// Which plate an input sits on. Only the plate and the type differ: the
 /// caret, the selection, the scroll and the hit test are the same code for all
-/// three.
+/// of them.
 enum class InputLook : std::uint8_t {
     Standard,   ///< the inventory search's
     Auth,       ///< the auth form's saturated green round plate, white 18px text
     Overlay,    ///< the closed chat line: a dark see-through slot, hairline edge
+    Chat,       ///< the open chat line: white, a 3px black rounded edge, ink text
+};
+
+/// A tag painted at the head of a field, in its own colour and outlined like
+/// any label -- the open chat line's "[Local]". The value, the caret and the
+/// hit test all start after it. Only InputLook::Chat lays one out; the other
+/// looks ignore it.
+struct InputPrefix {
+    std::string text;
+    std::uint32_t fill = kPaper;
 };
 
 inline constexpr double kInputFrameWidth = 4.0;
@@ -161,7 +171,13 @@ double inputTextSize(Rect r);
 /// <input> does). Hit-test a field through this, with the look it is painted
 /// in, never by measuring the value from the box's edge.
 TextRun inputFieldRun(Rect r, const std::string& value, const TextFieldState& state,
-                      InputLook look = InputLook::Standard);
+                      InputLook look = InputLook::Standard,
+                      const InputPrefix* prefix = nullptr);
+
+/// Where a field's prefix sits, as a press target: from the box's left edge
+/// to halfway into the gap after the tag, the box's full height. Empty for a
+/// look that lays no prefix out.
+Rect inputPrefixBounds(Rect r, InputLook look, const InputPrefix* prefix);
 
 /// The frame and the band, nothing else, for a field that lays out its own
 /// contents (the skin studio's multiline editor). Returns the band.
@@ -175,7 +191,8 @@ Rect inputFieldPlate(Canvas&, Rect r);
 /// <input>'s does.
 void inputField(Canvas&, Rect r, const std::string& value, const std::string& placeholder,
                 bool focused, double timeSeconds, const TextFieldState* state = nullptr,
-                bool masked = false, InputLook look = InputLook::Standard);
+                bool masked = false, InputLook look = InputLook::Standard,
+                const InputPrefix* prefix = nullptr);
 
 /// Paints a field's selection highlight, under the text and inside `band` --
 /// the field's content rect, which is what clips a scrolled selection to the

@@ -428,8 +428,11 @@ private:
     /// leadership or visibility change -- and after a member spawns or
     /// despawns, because the wire ids in it belong to bodies.
     void broadcastSquadUpdate(const Squad&);
-    /// The squad's own "[Squad]" system line, to every human member.
+    /// The squad's own notice, on its channel with no author, to every human
+    /// member.
     void sendSquadSystem(const Squad&, const std::string& text);
+    /// The same for a guild record: to every member signed in.
+    void sendGuildSystem(const Json& guild, const std::string& text);
     /// Resolves an invite target: a signed-in player first, then a bot by
     /// nameplate, exactly as the reference resolves it.
     bool resolveSquadTarget(const std::string& name, SquadMemberId& out);
@@ -615,11 +618,19 @@ private:
     /// bubble over anybody.
     void broadcastChat(net::ChatChannel, const std::string& author, const std::string& text,
                        std::uint32_t speakerNetId = 0);
-    /// One chat line to one connection, under a chosen author. The guild's own
-    /// announcements are signed "[Guild NAME]" rather than "System", which a
-    /// Notice -- whose author is always System -- cannot express.
+    /// One chat line to one connection, under a chosen author -- a channel's
+    /// own notice, unsigned, or a line said to a group -- which a Notice,
+    /// whose author is always System, cannot express.
     void sendChatTo(net::Connection&, net::ChatChannel, const std::string& author,
                     const std::string& text);
+    /// A player's line said in public: to everyone on Global, or on Local to
+    /// the players whose screens hold the speaker's flower. Billed to the chat
+    /// allowance and barred by a mute, as anything said to another player is.
+    void sayInPublic(Session&, net::Connection&, net::ChatChannel, const std::string& text);
+    /// A Local line, to every player in the speaker's realm whose viewport has
+    /// the speaker's flower on it, the speaker included.
+    void sendLocalChat(const Session& speaker, const std::string& text,
+                       std::uint32_t speakerNetId);
     /// The backlog broadcastChat keeps, as one ChatHistory message. Sent once
     /// per authentication, which is the moment broadcastChat starts including
     /// this connection -- so the backlog and the live stream meet exactly.

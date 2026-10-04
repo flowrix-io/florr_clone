@@ -410,10 +410,10 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         const Json& members = guild["memberUsernames"];
         for (std::size_t i = 0; i < members.size(); ++i) {
             if (net::Connection* peer = connectionForUser(members[i].asString())) {
-                // The reference's own signature: "[Guild NAME] @username", so
-                // the guild tag and the speaker both read off the sender line.
-                sendChatTo(*peer, net::ChatChannel::System,
-                           "[Guild " + guildName + "] @" + session.username, argument);
+                // Signed with the speaker alone: the channel is what tags the
+                // line "[Guild]" in the transcript, and a member can only ever
+                // be in the one guild.
+                sendChatTo(*peer, net::ChatChannel::Guild, session.username, argument);
             }
         }
         return true;
@@ -431,16 +431,59 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("You are not in a squad.");
             return true;
         }
-        // The reference's own signature: "[Squad] @username" over the line, and
-        // the flower's nameplate in yellow inside it, so a squad line says both
-        // who typed it and which flower on the screen that is.
-        const std::string body = "[<span style=\"color: yellow;\">" +
-                                 squadDisplayName(squadIdOf(session)) + "</span>] " + argument;
+        // Signed with the speaker alone, as a guild line is: the channel is
+        // what tags it "[Squad]".
         for (const SquadMemberId& member : squad->members) {
             if (net::Connection* peer = squadConnection(member)) {
-                sendChatTo(*peer, net::ChatChannel::Squad, "[Squad] @" + session.username, body);
+                sendChatTo(*peer, net::ChatChannel::Squad, session.username, argument);
             }
         }
+        return true;
+    }
+
+    if (verb == "/l" || verb == "/local") {
+        // Speech, not a question: the public line's own path bills it and
+        // checks the mute.
+        if (argument.empty()) return true;
+        sayInPublic(session, connection, net::ChatChannel::Local, argument);
+        return true;
+    }
+
+    if (verb == "/w" || verb == "/whisper") {
+        const std::vector<std::string> words = splitWords(argument);
+        const std::string message =
+            words.empty() ? std::string() : argumentOf(argument);
+        if (words.empty() || message.empty()) {
+            out("Usage: /w &lt;player&gt; &lt;message&gt;");
+            return true;
+        }
+        const Account* account = database_.findUser(session.username);
+        if (account != nullptr && account->muted) {
+            out(kMutedNotice);
+            return true;
+        }
+        const Session* target = sessionForUser(words[0]);
+        net::Connection* peer = target != nullptr ? listener_.find(target->connection) : nullptr;
+        if (peer == nullptr) {
+            out("No player named " + words[0] + " is online.");
+            return true;
+        }
+        if (target == &session) {
+            out("You cannot whisper to yourself.");
+            return true;
+        }
+        // Billed as a line said to another player, which is what it is: the
+        // command budget alone would let one player bury another in whispers.
+        if (!spend(session.chatAllowance)) {
+            sendNotice(connection, net::NoticeSeverity::Warning,
+                       "You are sending messages too quickly.");
+            return true;
+        }
+        // Each side's copy names the OTHER party, so either one can answer by
+        // whispering to whoever their latest line names. The name is the
+        // account's own spelling, not what was typed.
+        sendChatTo(*peer, net::ChatChannel::Whisper, session.username, message);
+        sendChatTo(connection, net::ChatChannel::WhisperSent, target->username, message);
         return true;
     }
 
@@ -2330,14 +2373,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
 
         out("Force-joined " + canonical + " into guild \"" + guildName + "\".");
 
-        const std::string author = "[Guild " + guildName + "]";
-        const Json& members = guilds[guildName]["memberUsernames"];
-        for (std::size_t i = 0; i < members.size(); ++i) {
-            if (net::Connection* peer = connectionForUser(members[i].asString())) {
-                sendChatTo(*peer, net::ChatChannel::System, author,
-                           canonical + " was added to the guild by an admin.");
-            }
-        }
+        sendGuildSystem(guilds[guildName], canonical + " was added to the guild by an admin.");
         if (net::Connection* peer = connectionForUser(canonical)) {
             sendSystem(*peer, "<span style=\"color: #ffb74d;\">You were added to guild \"" +
                                   guildName + "\" by an admin.</span>");

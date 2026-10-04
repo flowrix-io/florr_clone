@@ -265,8 +265,27 @@ struct InputLayout {
     Rect clip;
 };
 
-InputLayout inputLayout(Rect r, InputLook look) {
+/// The open chat line's type: the transcript's size, ink on white.
+constexpr double kChatInputSize = 14.0;
+/// Its edge, which is CENTRED on the box as a stroke is -- half of it lies
+/// outside `r`.
+constexpr double kChatInputEdge = 3.0;
+constexpr double kChatInputRadius = 4.0;
+/// From the box's edge to the prefix, and from the prefix to the value.
+constexpr double kChatPrefixInset = 6.5;
+constexpr double kChatPrefixGap = 7.0;
+
+InputLayout inputLayout(Rect r, InputLook look, const InputPrefix* prefix) {
     switch (look) {
+        case InputLook::Chat: {
+            double left = r.x + kChatPrefixInset;
+            if (prefix != nullptr && !prefix->text.empty()) {
+                left += measure(prefix->text, kChatInputSize) + kChatPrefixGap;
+            }
+            const double inner = kChatInputEdge * 0.5;
+            return {left, std::max(0.0, r.right() - kChatPrefixInset - left), kChatInputSize,
+                    Rect{r.x + inner, r.y + inner, r.w - inner * 2, r.h - inner * 2}};
+        }
         case InputLook::Auth:
             // 10px in, and never a size the box would clip against its outline.
             return {r.x + 10.0, r.w - 20.0, std::min(18.0, r.h * 0.6),
@@ -284,8 +303,8 @@ InputLayout inputLayout(Rect r, InputLook look) {
 } // namespace
 
 TextRun inputFieldRun(Rect r, const std::string& value, const TextFieldState& state,
-                      InputLook look) {
-    const InputLayout layout = inputLayout(r, look);
+                      InputLook look, const InputPrefix* prefix) {
+    const InputLayout layout = inputLayout(r, look, prefix);
     TextRun run;
     run.text = value;
     run.size = layout.size;
@@ -293,6 +312,13 @@ TextRun inputFieldRun(Rect r, const std::string& value, const TextFieldState& st
         state.focused ? followCaret(state, value, run.size, layout.span) : 0.0;
     run.originX = layout.left - scroll;
     return run;
+}
+
+Rect inputPrefixBounds(Rect r, InputLook look, const InputPrefix* prefix) {
+    if (look != InputLook::Chat || prefix == nullptr || prefix->text.empty()) return {};
+    const double right =
+        r.x + kChatPrefixInset + measure(prefix->text, kChatInputSize) + kChatPrefixGap * 0.5;
+    return {r.x, r.y, right - r.x, r.h};
 }
 
 Rect inputFieldPlate(Canvas& canvas, Rect r) {
@@ -308,7 +334,9 @@ Rect inputFieldPlate(Canvas& canvas, Rect r) {
 
 void inputField(Canvas& canvas, Rect r, const std::string& value, const std::string& placeholder,
                 bool focused, double timeSeconds, const TextFieldState* state, bool masked,
-                InputLook look) {
+                InputLook look, const InputPrefix* prefix) {
+    // Only the chat line lays a prefix out; inputLayout ignores it elsewhere.
+    if (look != InputLook::Chat) prefix = nullptr;
     // A field's label is its value, not page text: dragging across it selects
     // inside the field, never the run the page selection would otherwise see.
     TextCaptureScope off(false);
@@ -374,6 +402,24 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
             caretBand = Rect{r.x, r.y + 4.0, r.w, std::max(2.0, r.h - 8.0)};
             highlightBand = Rect{r.x + 2.0, r.y + 3.0, r.w - 4.0, std::max(2.0, r.h - 6.0)};
             break;
+        case InputLook::Chat:
+            canvas.beginPath();
+            canvas.roundRect(static_cast<float>(r.x), static_cast<float>(r.y),
+                             static_cast<float>(r.w), static_cast<float>(r.h),
+                             static_cast<float>(kChatInputRadius));
+            setFill(canvas, kPaper);
+            canvas.fill();
+            canvas.save();
+            canvas.setLineWidth(static_cast<float>(kChatInputEdge));
+            setStroke(canvas, 0x000000u);
+            canvas.stroke();
+            canvas.restore();
+            style.fill = 0x000000u;
+            caretFill = 0x000000u;
+            caretOffset = 0.0;
+            caretBand = Rect{r.x, r.y + 4.0, r.w, std::max(2.0, r.h - 8.0)};
+            highlightBand = Rect{r.x + 2.0, r.y + 3.0, r.w - 4.0, std::max(2.0, r.h - 6.0)};
+            break;
     }
 
     const std::string shown = masked ? std::string(value.size(), '*') : value;
@@ -384,15 +430,33 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
     atEnd.selection.collapse(shown.size());
     const bool selectable = state != nullptr && !masked;
     const TextFieldState& live = selectable ? *state : atEnd;
-    const TextRun run = inputFieldRun(r, shown, live, look);
-    const InputLayout layout = inputLayout(r, look);
+    const TextRun run = inputFieldRun(r, shown, live, look, prefix);
+    const InputLayout layout = inputLayout(r, look, prefix);
     style.size = run.size;
-    const double middle = r.y + r.h * 0.5;
+    // The chat line's type sits a pixel under the box's centre line, which is
+    // where centring its capitals rather than its em box puts them.
+    const double middle = r.y + r.h * 0.5 + (look == InputLook::Chat ? 1.0 : 0.0);
 
+    // Outside the clip below, which starts where the value does: the value
+    // scrolls under the prefix's end rather than over it.
+    if (prefix != nullptr && !prefix->text.empty()) {
+        TextStyle tag;
+        tag.size = layout.size;
+        tag.fill = prefix->fill;
+        text(canvas, prefix->text, r.x + kChatPrefixInset, middle, tag);
+    }
+
+    Rect clipBox = layout.clip;
+    if (prefix != nullptr && !prefix->text.empty()) {
+        // Room for the caret at the very start of the value, and no more.
+        const double from = layout.left - 2.0;
+        clipBox.w -= from - clipBox.x;
+        clipBox.x = from;
+    }
     canvas.save();
     canvas.beginPath();
-    canvas.rect(static_cast<float>(layout.clip.x), static_cast<float>(layout.clip.y),
-                static_cast<float>(layout.clip.w), static_cast<float>(layout.clip.h));
+    canvas.rect(static_cast<float>(clipBox.x), static_cast<float>(clipBox.y),
+                static_cast<float>(clipBox.w), static_cast<float>(clipBox.h));
     canvas.clip();
     if (shown.empty()) {
         // The auth form's placeholder goes while it has the caret -- the caret
