@@ -2033,8 +2033,9 @@ TEST(the_shipped_titan_stands_in_the_jungle_wearing_a_universal_ring) {
     CHECK(config.npc.team == Team::Players);
     CHECK_EQ(config.image, std::string("$titan"));
     CHECK(config.noEggDrop);
-    // It stands: a forge that wandered off would not be one.
-    CHECK(!config.beeFlight);
+    // It cruises about its point on the oracle's leashed flight.
+    CHECK(config.beeFlight);
+    CHECK(content().mobStats(titan, Rarity::Universal).speed > 0.0);
     // A full bar of universals, every one a petal this build has.
     CHECK(config.npc.wearsPetals());
     CHECK_EQ(config.npc.petals.size(), static_cast<std::size_t>(kLoadoutActiveSlots));
@@ -2060,18 +2061,21 @@ TEST(the_shipped_titan_stands_in_the_jungle_wearing_a_universal_ring) {
         CHECK(site.realm == jungle);
         // Universal on its plate, as florr's titan is the top tier on its.
         CHECK(site.rarity == Rarity::Universal);
-        // On open ground, body AND ring: nothing pushes it off its point, and
-        // the ring never sweeps through a wall.
+        // On open ground, body AND ring, as far as its cruise takes it -- the
+        // leash and the curve back past it, the bound the oracle's cruise is
+        // held to: it meets walls with its centre only, so its body and ring
+        // would sweep through any wall closer than that.
         const double radius = content().mobStats(titan, site.rarity).radius;
         const double ringReach = radius + kPetalOrbitRestRadius - kPlayerBaseRadius + 20.0;
-        const Vec2 placed = terrain.resolveCircle(site.position, ringReach, site.realm);
+        const double cruiseReach = ringReach + kNpcLeashRadius + 200.0;
+        const Vec2 placed = terrain.resolveCircle(site.position, cruiseReach, site.realm);
         CHECK_NEAR(placed.x, site.position.x, 1e-6);
         CHECK_NEAR(placed.y, site.position.y, 1e-6);
         // Clear of every target dummy, whose hits would otherwise be the
         // titan's on everybody's screen.
         for (const NpcSystem::Site& other : npcs.sites()) {
             if (other.mobIndex == titan || other.realm != site.realm) continue;
-            CHECK(distance(other.position, site.position) > ringReach + 200.0);
+            CHECK(distance(other.position, site.position) > cruiseReach + 200.0);
         }
     }
     CHECK_EQ(titans, 1);
@@ -2362,6 +2366,10 @@ TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowe
     CHECK(titan != NULL_ENTITY);
     if (titan == NULL_ENTITY) { removeDataDir(dir); return; }
     const double radius = world.get<Body>(titan).radius;
+    // It cruises, as the oracle does -- and is held still here, so the ring
+    // is measured about a centre that stays put.
+    CHECK(world.get<Npc>(titan).cruises);
+    world.get<Npc>(titan).cruises = false;
 
     // Ten petals out, every one the titan's, universal, on the players' side,
     // and orbiting forty past its edge -- a flower's rest radius past its own.

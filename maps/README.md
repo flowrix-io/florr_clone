@@ -664,10 +664,11 @@ the command when it names one, else from the block, else the players' (what an
 empty block means). A map is stricter, and only places mobs that have a block.
 
 `ocean.tmj` places one common oracle, `desert.tmj` one common trader on
-the open ground west of its door, and `jungle.tmj` one universal titan on the
-open ground south-east of its hut, clear of the target dummies — it is a
-thousand units across, and its ring orbits forty past its edge, so it needs
-the room.
+the open ground west of its door, and `jungle.tmj` one universal titan out in
+its far south-east, clear of the target dummies. The titan needs the room: it
+is a thousand units across, its ring orbits forty past its edge, and it
+cruises about its point as the oracle does — meeting walls with its centre
+only — so give it a clear circle of about a thousand units round its point.
 
 ## The map's own properties
 

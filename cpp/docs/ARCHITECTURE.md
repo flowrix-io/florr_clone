@@ -247,7 +247,8 @@ the very passes a flower's goes through (`ringNpcs_` beside `players_`) --
 everything player-only in them is read as optional, and `recomputeModifiers`
 stops short of the flower's level-sized body for it. Its petals carry its
 players' Faction, so they hit mobs, never flowers, and credit nobody: a mob only
-the titan hit pays no XP and drops nothing. Its body bites mobs too. It stands
+the titan hit pays no XP and drops nothing. Its body bites mobs too, and it
+cruises about its point on the oracle's leashed flight (`bee_ai`). It stands
 at universal on its plate (an NPC alone may; its stats read apex) and is drawn
 by the `$titan` painter: a grey cog round a flower's face set to a scowl, its
 glints moved by its facing as a flower's pupils are.

@@ -2020,7 +2020,7 @@
         "damage": 20,
         "health": 1000,
         "size": 0.58,
-        "speed": 0,
+        "speed": 0.15,
         "cooldown": 2000,
         "xp": {
             "common": 3,
@@ -2038,6 +2038,7 @@
         "image": "$titan",
         "ai_type": "passive",
         "range": 100,
+        "bee_ai": "idle",
         "npc": {
             "service": "titan",
             "petals": ["basic", "rock", "wing", "bone", "pearl", "basic", "rock", "wing", "bone", "pearl"],
