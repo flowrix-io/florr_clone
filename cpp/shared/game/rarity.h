@@ -160,10 +160,12 @@ inline constexpr std::array<double, kLadderRarityCount> kMobArmorScale = {
     1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 729.0, 729.0, 729.0,
 };
 
-/// Mob body size per tier. Grows far more slowly than health so a mythic is
-/// intimidating without filling the screen.
+/// Mob body size per tier. Common through ultra are florr's multipliers over
+/// a common (1, 1.1, 1.3, 1.6, 3, 5, 10) on this ladder's 1.5 base; florr's
+/// tiers above ultra have no published figure, so super, unique and apex keep
+/// their earlier values.
 inline constexpr std::array<double, kLadderRarityCount> kMobSizeScale = {
-    1.5, 1.65, 1.95, 2.58, 4.5, 7.5, 10.5, 16.777216, 26.8435456, 42.949673,
+    1.5, 1.65, 1.95, 2.4, 4.5, 7.5, 15.0, 16.777216, 26.8435456, 42.949673,
 };
 
 /// A pull-down on kMobSizeScale for a mob that must not grow like a wild one:

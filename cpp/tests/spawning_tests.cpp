@@ -1919,7 +1919,7 @@ TEST(a_shipped_leech_dies_whole_when_its_tail_is_finished) {
 
 TEST(random_size_jitters_the_body_and_nothing_else) {
     Sim sim;
-    // `cactus` ships random_size [1, 2] -- gardn's cactus, 30 to 60 across.
+    // `cactus` ships random_size [1.3333, 2] -- florr's cactus, radius 40 to 60.
     const std::uint16_t cactus = shipped().mobIndex("cactus");
     const MobConfig& config = shipped().mob(cactus);
     CHECK(config.randomSizeMax > config.randomSizeMin);
@@ -1927,12 +1927,12 @@ TEST(random_size_jitters_the_body_and_nothing_else) {
     const MobStats stats = shipped().mobStats(cactus, Rarity::Common);
     // `random_size` is an ABSOLUTE size range, not a factor, so the reference
     // divides the roll by the config's own nominal `size` before using it as a
-    // multiplier. The cactus is size 1.5 with a [1, 2] range, so its bodies come
-    // out between 0.667x and 1.333x -- not between 1x and 2x.
+    // multiplier. The cactus is size 1.6667 with a [1.3333, 2] range, so its
+    // bodies come out between 0.8x and 1.2x -- not between 1.33x and 2x.
     const double lowest = config.randomSizeMin / config.size;
     const double highest = config.randomSizeMax / config.size;
-    CHECK_NEAR(lowest, 1.0 / 1.5, 1e-12);
-    CHECK_NEAR(highest, 2.0 / 1.5, 1e-12);
+    CHECK_NEAR(lowest, 1.3333 / 1.6667, 1e-12);
+    CHECK_NEAR(highest, 2.0 / 1.6667, 1e-12);
 
     bool sawSmall = false;
     bool sawLarge = false;
@@ -1948,8 +1948,8 @@ TEST(random_size_jitters_the_body_and_nothing_else) {
         // cactus that rolled a big body is exactly as easy to knock back as
         // one that rolled a small one.
         CHECK_NEAR(sim.world.get<Body>(e).mass, stats.mass, 1e-9);
-        sawSmall = sawSmall || jitter < 0.8;
-        sawLarge = sawLarge || jitter > 1.2;
+        sawSmall = sawSmall || jitter < 0.85;
+        sawLarge = sawLarge || jitter > 1.15;
     }
     CHECK(sawSmall);
     CHECK(sawLarge);

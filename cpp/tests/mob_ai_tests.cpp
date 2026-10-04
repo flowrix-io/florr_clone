@@ -1484,9 +1484,9 @@ TEST(a_hornets_missile_inherits_the_hornets_size) {
     const Entity shot = fireAndCatch(sim);
     CHECK(shot != NULL_ENTITY);
 
-    // A hornet is a size-1.3 mob, so its missiles are 1.3x what a size-1
-    // shooter of the same tier fires -- which is the whole of "a projectile
-    // inherits the size of the entity that spawned it". Derived from the
+    // A hornet is a size-0.83 mob (florr's radius 25), so its missiles are
+    // 0.83x what a size-1 shooter of the same tier fires -- which is the whole
+    // of "a projectile inherits the size of the entity that spawned it". Derived from the
     // shooter's BODY here for the same reason the server derives it there: it
     // is the one number that already carries both the authored size and the
     // rarity step.
@@ -1496,7 +1496,8 @@ TEST(a_hornets_missile_inherits_the_hornets_size) {
     const double expected =
         std::max(1.0, stats.size * kProjectileRadiusPerSize * ownerScale / kProjectileSizeDivisor);
     CHECK_NEAR(sim.world.get<Body>(shot).radius, expected, 1e-9);
-    CHECK(ownerScale > 1.25);   // the 1.3 is really reaching the shot
+    // A size-1 shooter's scale is kMobSizeScale[0]; the 0.83 is really reaching the shot.
+    CHECK(ownerScale < 0.9 * kMobSizeScale[0]);
 
     // And it is a body, not a token: a mass on the same area scale a mob's
     // uses, and the ammunition's own health as the pool that lets it

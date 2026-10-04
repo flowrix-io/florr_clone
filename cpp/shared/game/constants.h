@@ -107,7 +107,8 @@ inline constexpr double kViewportBuffer = 500.0;
 // Player
 // ---------------------------------------------------------------------------
 
-inline constexpr double kPlayerBaseRadius = 20.0;
+/// florr's flower radius, and the radius the flower art is drawn at.
+inline constexpr double kPlayerBaseRadius = 25.0;
 inline constexpr double kPlayerBaseHealth = 100.0;
 inline constexpr double kPlayerBaseDamage = 5.0;
 

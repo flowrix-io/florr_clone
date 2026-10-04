@@ -369,10 +369,15 @@ TEST(a_unique_from_the_console_restarts_its_biome_clock) {
     client.joinGame(1920, 1080, {}, "Boss");
     CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
 
+    // Bees only: every OTHER biome's clock is ready too, so a wild unique can
+    // roll elsewhere on the same step and is not what this test is about.
+    const std::uint16_t bee = content().mobIndex("bee");
     const auto liveOfRarity = [&](Rarity rarity) {
         int count = 0;
         Query<MobTag, MobType> mobs{h.server.world()};
-        mobs.each([&](Entity, MobTag&, MobType& type) { count += type.rarity == rarity ? 1 : 0; });
+        mobs.each([&](Entity, MobTag&, MobType& type) {
+            count += type.configIndex == bee && type.rarity == rarity ? 1 : 0;
+        });
         return count;
     };
 
