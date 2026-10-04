@@ -118,6 +118,51 @@ TEST(r_swaps_every_slot_of_the_top_row_with_the_one_below_it) {
     CHECK(slotEmpty(client, 19));
 }
 
+TEST(a_clump_swapped_onto_the_bar_reloads_instead_of_arriving_whole) {
+    // Sand is a clump: each grain runs its own reload, and the swap used to
+    // hand all four back on the very tick it landed in the top row.
+    Harness h("preset-row-swap-reload", [](const std::string& path) {
+        seedKeeper(path, [](PlayerRecord& record) {
+            record.loadout[0] = petal("rose", Rarity::Common);
+            record.loadout[10] = petal("sand", Rarity::Common);
+        });
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(login(h, client));
+    client.joinGame(1280, 720, {}, kName);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> bodies{world};
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount&) { body = e; });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const auto onRing = [&](const char* id) {
+        int n = 0;
+        for (const Entity spawned : world.get<Loadout>(body).spawned) {
+            const PetalInstance* instance = world.tryGet<PetalInstance>(spawned);
+            if (instance && instance->slot == 0 && instance->configIndex == content().petalIndex(id)) ++n;
+        }
+        return n;
+    };
+    CHECK(h.stepUntil({&client}, [&] { return onRing("rose") == 1; }));
+
+    client.swapLoadoutRows();
+    CHECK(h.stepUntil({&client}, [&] { return slotIs(client, 0, "sand", Rarity::Common); }));
+    CHECK_EQ(onRing("rose"), 0);
+    CHECK_EQ(onRing("sand"), 0);
+    // The bar is told, so the slot sweeps its reload rather than sitting full.
+    CHECK(h.stepUntil({&client}, [&] {
+        return client.view().self().slotReloadRemainingMillis[0] > 0.0;
+    }, 5));
+    CHECK_EQ(onRing("sand"), 0);
+
+    CHECK(h.stepUntil({&client}, [&] { return onRing("sand") == 4; }));
+}
+
 TEST(a_saved_loadout_loads_back_out_of_the_bag_and_the_bar_alike) {
     Harness h("preset-round-trip", [](const std::string& path) {
         seedKeeper(path, [](PlayerRecord& record) {

@@ -1555,5 +1555,17 @@
         "count": 1,
         "visual_scale": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><path d=\"m30.546 16-7.273 12.597H8.727L1.454 16 8.728 3.403h14.546Z\" fill=\"#f7cf2f\" stroke=\"#c8a826\" stroke-width=\"2.909\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
+    "triangle": {
+        "name": "Triangle",
+        "damage": 5,
+        "health": 10,
+        "size": 1,
+        "cooldown": 10000,
+        "price": 30,
+        "description": "Each copy of this petal grants additional damage to it",
+        "color": "#FFD700",
+        "count": 1,
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-5 -7.75 13.5 15.5\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 7 0 L -3.5 6.062 L -3.5 -6.062 Z\"\n        fill=\"#fff\"\n        stroke=\"#cfcfcf\"\n        stroke-width=\"3\"\n        stroke-linecap=\"round\"\n        stroke-linejoin=\"round\" />\n</svg>"
     }
 }

@@ -1249,7 +1249,7 @@ TEST(a_clumped_slot_gives_every_grain_its_own_health) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "sandy");
-    rig.tick();
+    rig.settleEquips();
     for (const Entity grain : rig.petals(0)) CHECK_NEAR(rig.healthOf(grain), 12.0, 1e-9);
 
     // `clumped` is the second, and by far the commoner, way the reference
@@ -1288,7 +1288,7 @@ TEST(independent_health_petals_break_one_at_a_time) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "shards");
-    rig.tick();
+    rig.settleEquips();
     CHECK_EQ(rig.petals(0).size(), std::size_t(3));
 
     // Damage on one shard stays on that shard.
@@ -1319,7 +1319,7 @@ TEST(a_combat_killed_independent_petal_still_pays_its_reload) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "shards");
-    rig.tick();
+    rig.settleEquips();
 
     // As the server does it: combat marks the kill, and the reaper destroys
     // the petal at the end of that same tick. The ring pass never sees the
@@ -1360,7 +1360,7 @@ TEST(a_clumped_grain_killed_and_reaped_pays_the_same_reload_as_a_single_petal) {
 
     Rig clump;
     clump.equip(0, "sandy");
-    clump.tick();
+    clump.settleEquips();
     CHECK_EQ(clump.petals(0).size(), std::size_t(4));
     for (const Entity grain : clump.petals(0)) clump.world.add<Dead>(grain);
     clump.reap();
@@ -1379,7 +1379,7 @@ TEST(an_independent_slot_reads_as_broken_only_when_all_of_it_is_down) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "shards");
-    rig.tick();
+    rig.settleEquips();
     for (const Entity shard : rig.petals(0)) rig.damage(shard, 6.0);
     rig.tick();
     CHECK_EQ(rig.petals(0).size(), std::size_t(0));
@@ -1438,13 +1438,17 @@ TEST(swapping_a_petal_rebuilds_the_slot_from_scratch) {
 
     rig.equip(0, "sandy");
     rig.tick();
+    CHECK(rig.petals(0).empty());
+    CHECK(rig.slot(0).broken);
+
+    rig.settleEquips();
     const std::vector<Entity> grains = rig.petals(0);
     CHECK_EQ(grains.size(), std::size_t(4));
     for (const Entity grain : grains) CHECK_NEAR(rig.healthOf(grain), 12.0, 1e-9);
     CHECK(!rig.slot(0).broken);
 }
 
-TEST(re_equipping_over_a_broken_slot_clears_its_cooldown) {
+TEST(re_equipping_over_a_broken_slot_serves_the_new_petals_reload) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "basic");
@@ -1453,18 +1457,63 @@ TEST(re_equipping_over_a_broken_slot_clears_its_cooldown) {
     rig.tick();
     CHECK(rig.slot(0).broken);
 
+    // Not the old petal's remaining cooldown, and not none: the shards' own
+    // reload, from the tick the slot saw the edit.
     rig.equip(0, "shards");
+    const double equippedAt = rig.now + net::kTickMillis;
     rig.tick();
-    CHECK(!rig.slot(0).broken);
-    CHECK_NEAR(rig.slot(0).reloadReadyAtMillis, 0.0, 1e-12);
+    CHECK(rig.slot(0).broken);
+    CHECK_NEAR(rig.slot(0).reloadReadyAtMillis, equippedAt + 500.0, 1e-9);
+    CHECK(rig.petals(0).empty());
+
+    rig.settleEquips();
     CHECK_EQ(rig.petals(0).size(), std::size_t(3));
+}
+
+TEST(swapping_two_slots_reloads_both_clump_and_single_alike) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "sandy");
+    rig.equip(1, "basic");
+    rig.settleEquips();
+    CHECK_EQ(rig.petals(0).size(), std::size_t(4));
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+
+    // As the server applies a bar swap: only the contents trade places. The
+    // ring's own bookkeeping (`broken`, the ready time) is left for the pass.
+    LoadoutSlot& a = rig.world.get<Loadout>(rig.player).slots[0];
+    LoadoutSlot& b = rig.world.get<Loadout>(rig.player).slots[1];
+    std::swap(a.configIndex, b.configIndex);
+    std::swap(a.rarity, b.rarity);
+    const double swappedAt = rig.now + net::kTickMillis;
+    rig.tick();
+
+    // Nothing comes straight back, the clump included: every grain owes the
+    // full reload, as the single petal does.
+    CHECK(rig.petals(0).empty());
+    CHECK(rig.petals(1).empty());
+    CHECK(rig.slot(0).broken);
+    CHECK(rig.slot(1).broken);
+    CHECK_NEAR(rig.slot(0).reloadReadyAtMillis, swappedAt + 1200.0, 1e-9);
+    CHECK_NEAR(rig.slot(1).reloadReadyAtMillis, swappedAt + 800.0, 1e-9);
+    for (const double ready : rig.world.get<PetalSlotState>(rig.player).slots[1].instanceReadyAtMillis) {
+        CHECK_NEAR(ready, swappedAt + 800.0, 1e-9);
+    }
+
+    // And the sand is back once that reload is served, not a tick sooner.
+    while (rig.now + net::kTickMillis < swappedAt + 800.0) {
+        rig.tick();
+        CHECK(rig.petals(1).empty());
+    }
+    CHECK(rig.tickUntil([&] { return rig.petals(1).size() == 4; }, 3));
+    CHECK(!rig.slot(1).broken);
 }
 
 TEST(unequipping_removes_the_petals_immediately) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "sandy");
-    rig.tick();
+    rig.settleEquips();
     CHECK_EQ(rig.petals().size(), std::size_t(4));
     rig.unequip(0);
     rig.tick();
@@ -3199,7 +3248,7 @@ TEST(a_clump_reports_the_share_of_its_grains_still_standing) {
     if (!contentLoaded()) return;
     Rig rig;
     rig.equip(0, "sandy");
-    rig.tick();
+    rig.settleEquips();
     CHECK_EQ(rig.petals(0).size(), std::size_t(4));
     CHECK_NEAR(rig.slotHealth(0), 1.0, 1e-9);
 

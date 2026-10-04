@@ -785,7 +785,6 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             slotState.poolMax = stats.health;
             slotState.poolHealth = stats.health;
             slotState.syncedHealth = stats.health;
-            slotState.instanceReadyAtMillis.assign(static_cast<std::size_t>(count), 0.0);
             // A petal serves its full reload BEFORE it appears, every time the
             // slot's contents change. The reference puts a newly equipped petal
             // on cooldown at the moment it is equipped, and rebuilds a saved
@@ -794,10 +793,14 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             // free reload this used to grant was also a way to dodge one, by
             // dragging a spare into the slot of a petal that had just broken.
             //
-            // Not a clump, though. The reference asks a per-instance cooldown
-            // array that it has just built EMPTY, so the slot-level flag it
-            // sets is never consulted for a petal whose instances are
-            // independent, and sand and dahlia really do arrive ready.
+            // A clump too, each grain on its own timer. The reference builds a
+            // clump's per-instance cooldowns EMPTY, so sand and light came back
+            // the instant they were swapped onto the bar; the user asked for
+            // swaps to reload (2026-10-04), so this deliberately departs from
+            // it. The slot-level flag stays down: for a clump it is derived
+            // from the grains further on.
+            slotState.instanceReadyAtMillis.assign(
+                static_cast<std::size_t>(count), slotState.independent ? nowMillis + reload : 0.0);
             slot.broken = !slotState.independent;
             slot.reloadReadyAtMillis = slot.broken ? nowMillis + reload : 0.0;
         }
@@ -910,7 +913,9 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             // been equipped a moment ago and still owe its reload.
             if (slotState.independent) {
                 const double ready = slotState.instanceReadyAtMillis[static_cast<std::size_t>(k)];
-                if (slotState.populated && nowMillis < ready) continue;
+                // Read before the slot has ever populated as well: that is
+                // exactly when an equip reload is owed.
+                if (nowMillis < ready) continue;
                 // Each grain is its own reload and its own payment. One that
                 // is due and cannot be paid for keeps its lapsed deadline, so
                 // it returns the moment the pool can cover it.
