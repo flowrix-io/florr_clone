@@ -2314,6 +2314,13 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
     row("  baked bitmaps",
         std::to_string(p->bakedEntries) + " / " + std::to_string(p->bakedBytes >> 20) + " MB",
         0x60A5FAu);
+    {
+        std::size_t chunks = 0;
+        std::size_t chunkBytes = 0;
+        ctx.renderer.terrainCacheStats(chunks, chunkBytes);
+        row("  map chunks",
+            std::to_string(chunks) + " / " + std::to_string(chunkBytes >> 20) + " MB", 0x60A5FAu);
+    }
     row("  text atlas",
         std::to_string(p->textRuns) + " runs, " + std::to_string(p->textBaked) + " baked",
         0x60A5FAu);

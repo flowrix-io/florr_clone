@@ -17,6 +17,7 @@
 #include "shared/game/map_elements.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -51,7 +52,153 @@ int blackLines(const std::vector<std::uint8_t>& pixels, bool columns) {
     return found;
 }
 
+/// The shipped overworld behind a WorldRenderer, drawn a frame at a time onto
+/// a 1280x720 canvas the way the app draws it.
+struct TerrainScene {
+    WorldMaps maps;
+    SpriteCache sprites;
+    WorldRenderer renderer;
+    WorldView view;
+
+    bool load() {
+        std::string error;
+        if (!loadContent(testsupport::dataDir(), error)) return false;
+        if (!maps.load(testsupport::dataDir(), nullptr, error)) return false;
+        sprites.build(content(), testsupport::dataDir());
+        renderer.setSprites(&sprites);
+        renderer.setWorldMaps(&maps);
+        view.setRealm(Realm::Overworld);
+        return true;
+    }
+
+    std::vector<std::uint8_t> frame(Vec2 centre, double zoom) {
+        Canvas canvas = Canvas::createVirtual(kPixelWidth, kPixelHeight);
+        canvas.setLogicalSize(kDesignWidth, kDesignHeight);
+        canvas.resetTransform();
+        const float scale = static_cast<float>(kPixelWidth) / kDesignWidth;
+        canvas.scale(scale, scale);
+        Camera camera;
+        camera.setViewport(kDesignWidth, kDesignHeight);
+        camera.userZoom = zoom;
+        camera.snapTo(centre);
+        renderer.draw(canvas, view, camera, centre, 0.0);
+        return canvas.getImageData(0, 0, kPixelWidth, kPixelHeight);
+    }
+};
+
+/// Pixels that differ between two frames by more than `tolerance` in any channel.
+int differingPixels(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b,
+                    int tolerance) {
+    if (a.size() != b.size()) return -1;
+    int differing = 0;
+    for (std::size_t i = 0; i + 3 < a.size(); i += 4) {
+        for (std::size_t c = 0; c < 3; ++c) {
+            if (std::abs(static_cast<int>(a[i + c]) - static_cast<int>(b[i + c])) > tolerance) {
+                ++differing;
+                break;
+            }
+        }
+    }
+    return differing;
+}
+
+/// Enough frames for the chunk cache to have baked everything on screen: it
+/// bakes a handful of chunks a frame and paints the rest straight meanwhile.
+constexpr int kFramesToBakeAll = 40;
+
 } // namespace
+
+TEST(terrain_chunks_look_the_same_before_and_after_their_bitmap_arrives) {
+    // The first frame at a new view bakes a few chunks and paints the rest
+    // straight, clipped to them; later frames blit every one. Both halves go
+    // through the same painter on the same pixel grid, so the first frame and
+    // the fortieth must be the same picture -- anything else is a pop as each
+    // bitmap lands, or a seam where a baked chunk meets a straight one. The
+    // view is a run of garden walls, whose edge tiles are nearly all turned
+    // or mirrored, at the default zoom and at the antennae's.
+    TerrainScene scene;
+    CHECK(scene.load());
+    scene.renderer.setTerrainCache(true);
+    const Vec2 walls{22272.3, 13440.7};
+    for (const double zoom : {1.0, 0.1}) {
+        const std::vector<std::uint8_t> first = scene.frame(walls, zoom);
+        std::size_t chunksAfterFirst = 0, bytes = 0;
+        scene.renderer.terrainCacheStats(chunksAfterFirst, bytes);
+        std::vector<std::uint8_t> last;
+        for (int i = 0; i < kFramesToBakeAll; ++i) last = scene.frame(walls, zoom);
+        std::size_t chunks = 0;
+        scene.renderer.terrainCacheStats(chunks, bytes);
+        // The first frame really did leave chunks to the straight paint, or
+        // this compares two frames of bitmaps and proves nothing.
+        CHECK(chunksAfterFirst > 0);
+        CHECK(chunks > chunksAfterFirst);
+        CHECK(bytes > 0);
+        // One level of slack: an anti-aliased edge composited into a clear
+        // bitmap and then onto the frame rounds differently in the last bit
+        // from the same edge composited straight onto it. A tile in the wrong
+        // place, or a chunk edge missing its neighbour's overlap, is off by
+        // whole colours.
+        CHECK(differingPixels(first, last, 1) == 0);
+    }
+}
+
+TEST(terrain_chunks_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
+    // The chunk cache's own version of the seam check below: chunks meet on
+    // whole device pixels, and their edges hold the neighbouring cells'
+    // overlap, so the grid of chunks must be as seamless as the grid of tiles.
+    TerrainScene scene;
+    CHECK(scene.load());
+    scene.renderer.setTerrainCache(true);
+    const Vec2 centre{16384.3, 16384.7};
+    for (const double zoom : {0.100, 0.106, 0.112, 0.130, 1.0, 1.37}) {
+        std::vector<std::uint8_t> pixels = scene.frame(centre, zoom);
+        CHECK(blackLines(pixels, true) == 0);
+        CHECK(blackLines(pixels, false) == 0);
+        for (int i = 0; i < kFramesToBakeAll; ++i) pixels = scene.frame(centre, zoom);
+        CHECK(blackLines(pixels, true) == 0);
+        CHECK(blackLines(pixels, false) == 0);
+    }
+}
+
+TEST(terrain_chunks_follow_the_camera_without_changing_the_picture) {
+    // Moving the camera moves where the chunks are blitted and nothing else:
+    // a view reached by walking onto it, with the cache full of chunks baked
+    // on the way, is the view a fresh cache paints there.
+    TerrainScene walked;
+    CHECK(walked.load());
+    walked.renderer.setTerrainCache(true);
+    const Vec2 from{21000.4, 12900.2};
+    const Vec2 to{22272.3, 13440.7};
+    for (int step = 0; step <= 30; ++step) {
+        const double t = step / 30.0;
+        walked.frame({from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t}, 1.0);
+    }
+    std::vector<std::uint8_t> arrived;
+    for (int i = 0; i < kFramesToBakeAll; ++i) arrived = walked.frame(to, 1.0);
+
+    TerrainScene fresh;
+    CHECK(fresh.load());
+    fresh.renderer.setTerrainCache(true);
+    std::vector<std::uint8_t> painted;
+    for (int i = 0; i < kFramesToBakeAll; ++i) painted = fresh.frame(to, 1.0);
+    CHECK(differingPixels(arrived, painted, 0) == 0);
+}
+
+TEST(terrain_chunks_are_given_back_in_a_realm_without_a_map) {
+    TerrainScene scene;
+    CHECK(scene.load());
+    scene.renderer.setTerrainCache(true);
+    scene.frame({16384.0, 16384.0}, 1.0);
+    std::size_t chunks = 0, bytes = 0;
+    scene.renderer.terrainCacheStats(chunks, bytes);
+    CHECK(chunks > 0);
+    // The maze draws itself and has nothing for the cache to hold.
+    scene.view.setRealm(Realm::Maze);
+    scene.frame({16384.0, 16384.0}, 1.0);
+    scene.renderer.terrainCacheStats(chunks, bytes);
+    CHECK(chunks == 0);
+    CHECK(bytes == 0);
+}
 
 TEST(map_tiles_leave_no_seam_when_antennae_zoom_the_camera_far_out) {
     // High-tier antennae take the camera to 0.1, where the 1.5-unit overlap

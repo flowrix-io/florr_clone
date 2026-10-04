@@ -100,8 +100,15 @@ namespace {
 
 /// The shared half: size the bitmap from the REAL transform, bake it once
 /// through `paint`, blit it.
+///
+/// `quarterTurns` also accepts a transform that turns the box by a multiple of
+/// 90 degrees and/or mirrors it, blitting the UNTURNED bake through it. Only
+/// for a caller that puts the box on whole device pixels itself: such a blit
+/// is then a texel-for-pixel copy in a different order, and nothing is
+/// resampled. Never together with `snapToDevice`, whose snap assumes an
+/// unturned box.
 bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double x, double y,
-                double w, double h, bool snapToDevice,
+                double w, double h, bool snapToDevice, bool quarterTurns,
                 const std::function<void(Canvas&, int, int)>& paint) {
     if (!(w > 0.0) || !(h > 0.0)) return false;
 
@@ -116,9 +123,17 @@ bool drawCached(Canvas& canvas, const void* owner, std::uint64_t variant, double
     if (!(scaleX > 0.0) || !(scaleY > 0.0)) return false;
     // A rotated, skewed or mirrored blit resamples the bake. Refused rather
     // than accepted with a quality loss: the whole point of baking at device
-    // resolution is that the picture does not change.
-    if (std::abs(m[1]) > 1e-4 * scaleX || std::abs(m[2]) > 1e-4 * scaleY) return false;
-    if (!(m[0] > 0.0) || !(m[3] > 0.0)) return false;
+    // resolution is that the picture does not change. A quarter turn or a
+    // mirror of a pixel-aligned box resamples nothing, and is let through
+    // for the caller that asked.
+    const bool upright = std::abs(m[1]) <= 1e-4 * scaleX && std::abs(m[2]) <= 1e-4 * scaleY;
+    const bool sideways = std::abs(m[0]) <= 1e-4 * scaleX && std::abs(m[3]) <= 1e-4 * scaleY;
+    if (quarterTurns && !snapToDevice) {
+        if (!upright && !sideways) return false;
+    } else {
+        if (!upright) return false;
+        if (!(m[0] > 0.0) || !(m[3] > 0.0)) return false;
+    }
 
     const int bakeW = static_cast<int>(std::lround(w * scaleX));
     const int bakeH = static_cast<int>(std::lround(h * scaleY));
@@ -213,7 +228,7 @@ bool drawCachedArt(Canvas& canvas, const SvgDocument& art, double x, double y, d
     if (art.animated()) return false;
     bool rendered = true;
     const bool drawn = drawCached(canvas, &art, 0, x, y, w, h, /*snapToDevice=*/false,
-                                  [&](Canvas& bitmap, int bw, int bh) {
+                                  /*quarterTurns=*/true, [&](Canvas& bitmap, int bw, int bh) {
                                       rendered = art.renderFitted(bitmap, 0.0f, 0.0f,
                                                                   static_cast<float>(bw),
                                                                   static_cast<float>(bh), 0.0f);
@@ -225,7 +240,7 @@ bool drawCachedPicture(Canvas& canvas, const void* owner, std::uint64_t variant,
                        double y, double w, double h,
                        const std::function<void(Canvas&)>& paint) {
     return drawCached(canvas, owner, variant, x, y, w, h, /*snapToDevice=*/true,
-                      [&](Canvas& bitmap, int bw, int bh) {
+                      /*quarterTurns=*/false, [&](Canvas& bitmap, int bw, int bh) {
         // The callback draws in the BOX's user space, so the device scale the
         // bake was sized at goes on first.
         bitmap.save();

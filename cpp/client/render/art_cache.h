@@ -33,6 +33,11 @@ namespace flix {
 /// Draws `art` fitted into the user-space box (x, y, w, h), through a cached
 /// rasterisation of it.
 ///
+/// The current transform may turn the box by quarter turns or mirror it --
+/// a map tile's flip bits -- and the one unturned bitmap is blitted through
+/// it. That is exact only when the box lands on whole device pixels, which is
+/// the caller's job: the terrain snaps every tile box before it gets here.
+///
 /// Returns false when this document cannot be served from the cache -- it
 /// animates, the box is degenerate, or the bitmap it would need is out of
 /// range -- in which case NOTHING has been drawn and the caller must render the

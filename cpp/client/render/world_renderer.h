@@ -285,6 +285,18 @@ public:
     };
     const SectionOps& sectionOps() const { return ops_; }
 
+    /// Whether the terrain goes through the chunk cache (drawTerrainChunks).
+    /// On in the web build and off natively, for the reason art_cache.h gives:
+    /// in a browser the tile paths are what cost and a blit is a texture
+    /// copy, and in the software rasterizer it is the other way round. Tests
+    /// switch it on natively to hold the cache to the direct path's picture.
+    void setTerrainCache(bool on) {
+        terrainCache_ = on;
+        if (!on) terrainChunks_ = TerrainChunks{};
+    }
+    /// Chunks the terrain cache holds, and the bytes their bitmaps occupy.
+    void terrainCacheStats(std::size_t& chunks, std::size_t& bytes) const;
+
 private:
     /// A world realm, painted from its map's tile LAYERS: the bottom layer
     /// across every visible cell, then the one above it, and so on, each
@@ -297,6 +309,18 @@ private:
     /// picture is the map file's. Outside the map, and in a cell every layer
     /// left empty, there is the black the frame was cleared to.
     void drawTerrain(Canvas&, const Camera&, Realm realm) const;
+    /// The visible cells [x0..x1] x [y0..y1] of `map`, through the chunk
+    /// cache: the browser build's static-map-cache.ts, done at device
+    /// resolution. The map is cut into square chunks of cells fixed to the
+    /// world, each painted once into a bitmap and blitted every frame after,
+    /// so a frame's terrain is a few dozen drawImage calls however many tiles
+    /// are on screen -- where painting them straight is every path of every
+    /// tile, every frame, and at the antennae's zoom tens of thousands of
+    /// calls. False, having drawn nothing, when the canvas transform is not
+    /// one the chunks can be blitted through texel for pixel.
+    bool drawTerrainChunks(Canvas&, const Camera&, const MapData& map,
+                           const std::vector<const SvgDocument*>& art, int x0, int y0, int x1,
+                           int y1) const;
     /// The annotations of a realm: its entry in the catalogue, or the single
     /// map for the overworld when only that was handed over. Null for the
     /// arena, the maze and any realm nothing was staged for.
@@ -700,6 +724,31 @@ private:
 #endif
     /// Advanced once per draw(). What mobEye's once-a-frame easing counts by.
     mutable std::uint64_t frame_ = 0;
+
+    /// The terrain chunk cache. Every chunk in it was baked for one map at one
+    /// scale and one chunk size; a frame that wants any other empties it.
+    struct TerrainChunk {
+        Canvas bitmap;
+        std::size_t bytes = 0;
+        /// The frame it was last blitted in, for eviction.
+        std::uint64_t usedFrame = 0;
+    };
+    struct TerrainChunks {
+        const MapData* map = nullptr;
+        /// Device pixels per world unit.
+        double scale = 0.0;
+        /// Cells along a chunk's side.
+        int cells = 0;
+        /// By (row << 32 | column) of the chunk.
+        std::unordered_map<std::uint64_t, TerrainChunk> chunks;
+        std::size_t bytes = 0;
+    };
+    mutable TerrainChunks terrainChunks_;
+#ifdef __EMSCRIPTEN__
+    bool terrainCache_ = true;
+#else
+    bool terrainCache_ = false;
+#endif
 };
 
 } // namespace flix
