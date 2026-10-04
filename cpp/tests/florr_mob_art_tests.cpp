@@ -381,3 +381,107 @@ TEST(a_hornet_wears_its_missile_until_it_fires_it) {
         CHECK(!fired);
     }
 }
+
+namespace {
+
+/// The mob gallery's numbers: a 60-unit plate less its inset, and the body
+/// it would draw before any fitting -- 1.15x the common radius, capped at 48.
+constexpr double kPlateBox = 52.0;
+double galleryBody(std::uint16_t type) {
+    return std::min(48.0, shipped().mobStats(type, Rarity::Common).radius * 2.0 * 1.15);
+}
+
+const SpriteCache& shippedSprites() {
+    static const SpriteCache sprites = [] {
+        SpriteCache cache;
+        cache.build(shipped(), FLIX_TEST_DATA_DIR);
+        return cache;
+    }();
+    return sprites;
+}
+
+/// Where a mob's gallery picture paints, in units from the plate's centre,
+/// over a few moments of its idle animation. Drawn at 3x, so a pixel is a
+/// third of a unit. False when it paints nothing at all.
+struct Reach { double left = 0, right = 0, top = 0, bottom = 0; };
+bool pictureReach(std::uint16_t type, Reach& out, bool fitted = true) {
+    constexpr int kScale = 3;
+    constexpr int kView = 160;   // units: room for the worst spill to show
+    constexpr int kN = kView * kScale;
+    Canvas canvas = Canvas::createVirtual(kN, kN);
+    canvas.scale(kScale, kScale);
+    const double radius = shipped().mobStats(type, Rarity::Common).radius;
+    for (const double t : {0.0, 0.4, 0.9, 1.7}) {
+        if (fitted) {
+            shippedSprites().drawMobPicture(canvas, type, kView * 0.5, kView * 0.5, kPlateBox,
+                                            galleryBody(type), t, radius);
+        } else {
+            shippedSprites().drawMob(canvas, type, kView * 0.5, kView * 0.5, galleryBody(type),
+                                     0.0, t, false, radius);
+        }
+    }
+    const std::vector<std::uint8_t> rgba = canvas.getImageData(0, 0, kN, kN);
+    int minX = kN, minY = kN, maxX = -1, maxY = -1;
+    for (int y = 0; y < kN; ++y) {
+        for (int x = 0; x < kN; ++x) {
+            if (rgba[(static_cast<std::size_t>(y) * kN + x) * 4 + 3] < 16) continue;
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+        }
+    }
+    if (maxX < 0) return false;
+    const double c = kView * 0.5;
+    out = {c - double(minX) / kScale, double(maxX + 1) / kScale - c, c - double(minY) / kScale,
+           double(maxY + 1) / kScale - c};
+    return true;
+}
+
+} // namespace
+
+TEST(every_mob_stays_inside_its_gallery_plate) {
+    // The gallery sizes a mob by its BODY, and a spider's legs, a bee's sting
+    // and a leech segment's tail all reach well past that: half the roster
+    // used to paint over the neighbouring plates. The whole picture is held
+    // in the box now, whatever the artwork is -- this sweeps every mob, so
+    // new art is held to it too.
+    for (std::size_t i = 0; i < shipped().mobCount(); ++i) {
+        const auto type = static_cast<std::uint16_t>(i);
+        Reach reach;
+        if (!pictureReach(type, reach)) continue;
+        const double worst = std::max({reach.left, reach.right, reach.top, reach.bottom});
+        // A unit of slack: the measurement and this check threshold the
+        // antialiased edge at slightly different resolutions.
+        if (worst > kPlateBox * 0.5 + 1.0) {
+            std::printf("    %s reaches %.1f (L%.1f R%.1f T%.1f B%.1f)\n",
+                        shipped().mob(type).id.c_str(), worst, reach.left, reach.right, reach.top,
+                        reach.bottom);
+        }
+        CHECK(worst <= kPlateBox * 0.5 + 1.0);
+    }
+}
+
+TEST(a_lopsided_gallery_picture_is_centred_on_what_it_paints) {
+    // A baby ant's mandibles stick out in front and nothing behind, so
+    // centred on its body it sat almost five units right of the plate's
+    // middle. It already fits, so it is moved, not shrunk.
+    const std::uint16_t ant = shipped().mobIndex("baby_ant");
+    Reach before, after;
+    CHECK(pictureReach(ant, before, false));
+    CHECK(pictureReach(ant, after));
+    CHECK(before.right - before.left > 5.0);
+    CHECK(std::abs(after.right - after.left) <= 1.0);
+    CHECK(std::abs((after.right + after.left) - (before.right + before.left)) <= 1.0);
+}
+
+TEST(a_gallery_picture_that_already_fits_keeps_its_size) {
+    // Fitting only ever shrinks: a mob drawn small because it IS small -- the
+    // grid's one size cue -- is not blown up to fill its plate.
+    const std::uint16_t bubble = shipped().mobIndex("bubble");
+    Reach before, after;
+    CHECK(pictureReach(bubble, before, false));
+    CHECK(pictureReach(bubble, after));
+    CHECK(std::abs((after.left + after.right) - (before.left + before.right)) <= 0.7);
+    CHECK(std::abs((after.top + after.bottom) - (before.top + before.bottom)) <= 0.7);
+}

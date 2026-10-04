@@ -72,6 +72,23 @@ public:
                  double worldRadius = 0.0, Vec2 gaze = {1.0, 0.0},
                  const MobMotion* motion = nullptr) const;
 
+    /// Draws mob `index` as a picture inside the square of side `box` centred
+    /// on (x, y) -- a bestiary tile's job. Unturned and standing still on
+    /// `timeSeconds`, its body `diameter` across, unless the WHOLE picture --
+    /// legs, wings, a sting -- would then spill out of the box, in which case
+    /// just small enough to fit. Centred on what it paints rather than on its
+    /// body, so an ant's mandibles or a leech's trailing segment do not push
+    /// it off one side.
+    ///
+    /// How far the picture reaches is measured, not authored: the art is
+    /// rasterised once per mob, over its idle animation, the first time it is
+    /// asked for, so new artwork never needs a number entered for it.
+    /// `worldRadius` is as for drawMob. The measurement is in multiples of
+    /// the drawn radius, which a painter's detail does not move, so it is
+    /// taken once whatever radius later calls pass.
+    void drawMobPicture(Canvas&, std::uint16_t index, double x, double y, double box,
+                        double diameter, double timeSeconds, double worldRadius = 0.0) const;
+
     /// Which painter draws mob `index`, or MobArt::None for a document. The
     /// world renderer asks so it can feed a painted eye the gaze it eases.
     MobArt mobArt(std::uint16_t index) const;
@@ -145,7 +162,20 @@ private:
         Sprite sprite;
     };
 
+    /// Where a mob's still picture paints, in multiples of its drawn radius
+    /// about the point drawMob centres it on (+X the way it faces). The
+    /// default is the body's own circle, which is also what art that paints
+    /// nothing keeps.
+    struct PictureBounds {
+        bool measured = false;
+        double minX = -1.0, minY = -1.0, maxX = 1.0, maxY = 1.0;
+    };
+    const PictureBounds& pictureBounds(std::uint16_t index, double worldRadius) const;
+
     std::vector<Sprite> mobs_;
+    /// Per mob, filled on first use by pictureBounds(). Mutable for the
+    /// reason tileArt_ is: it reports what the artwork already paints.
+    mutable std::vector<PictureBounds> mobPictureBounds_;
     std::vector<Sprite> petals_;
     /// Per petal, ascending by `from`. Empty for almost every petal.
     std::vector<std::vector<PetalRepaint>> petalRepaints_;

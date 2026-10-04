@@ -59,8 +59,8 @@ constexpr double kContentTop = kPad + kTitleHeight + kTitleGap;
 /// column -- so the height is literal too instead of two thirds of a viewport.
 ///
 /// The width is DERIVED, not the reference shot's literal 603: that card holds
-/// eight tiers and this game has nine (the reference has no unique), so a
-/// literal width would clip the last column against the scrollbar. It is the
+/// eight tiers and this game has ten (the reference has no unique or apex), so
+/// a literal width would clip the last columns against the scrollbar. It is the
 /// row, the padding either side, the scrollbar reserve, and the same ~4.5
 /// units of slack the reference leaves at each end of a row.
 constexpr double kGridSlack = 9.0;
@@ -83,12 +83,20 @@ constexpr double kTallyInset = 8.5;
 /// grid would read as a size chart.
 constexpr double kIconZoom = 1.15;
 constexpr double kIconCap = 48.0;
+/// That size is the BODY's, and a spider's legs or a bee's sting reach well
+/// past it, so the whole picture is then held inside the plate: drawn smaller
+/// where it would spill onto the next tile. The inset clears the rim's inner
+/// half and leaves a sliver of plate showing round the art.
+constexpr double kIconInset = kCellRim * 0.5 + 2.0;
 
-/// Apex mobs exist, but nothing in the world spawns one and no item is ever
-/// graded apex, so the tenth tier is left out of both the grid and the drop
-/// table's columns -- and universal, which no mob is and nothing drops,
-/// with it.
-constexpr int kTierColumns = kLadderRarityCount - 1;
+/// Every rung of the ladder is a column, apex included: a biome's apex clock
+/// puts one in the world now and then, and it is the rarest cell on the
+/// sheet. Universal is above the ladder, and no mob is ever that.
+///
+/// The drop table stops a tier short. An apex mob's graded drop is capped at
+/// unique (LootSystem::finishDropRarity), and no lesser mob grades past it,
+/// so an apex column there would always be empty.
+constexpr int kTierColumns = kLadderRarityCount;
 constexpr int kDropTiers = kLadderRarityCount - 1;
 
 constexpr double kGridWidth = kTierColumns * kCell + (kTierColumns - 1) * kGridGap;
@@ -407,15 +415,35 @@ std::vector<DropRow> computeMobDrops(std::uint16_t mobIndex, Rarity mobRarity,
         usedTiers[static_cast<std::size_t>(column)] = true;
     };
 
+    // An apex kill drops TEN of every row (LootSystem's `copies`): one base
+    // rarity per row, then each copy rolls its own upgrade/downgrade. So a
+    // graded square is the chance at least one of the ten lands on it -- at
+    // one copy, just the branch's own chance, as every other tier shows.
+    // Chaff needs nothing: its ten copies are all the same flat tier.
+    const int copies = mobRarity == Rarity::Apex ? 10 : 1;
+
     // One graded drop: the mutually exclusive upgrade/downgrade split around
-    // its base, every branch held up to the mob's floor.
+    // its base, every branch held up to the mob's floor. Branches the floor
+    // lifts onto one square are one outcome for a copy, so they are summed
+    // before the copies are.
     const auto outcomes = [&](Rarity base, double baseProb, const DropDef& drop) {
         const double up = std::min(100.0, upgradePercent(base) * ultraMultiplier);
         const double down = downgradePercent(base);
         const double same = std::max(0.0, 100.0 - up - down);
-        push(drop, tierBelow(base), baseProb * down, minTier);
-        push(drop, base, baseProb * same, minTier);
-        push(drop, tierAbove(base), baseProb * up, minTier);
+        std::array<double, kDropTiers> perCopy{};
+        const auto land = [&](Rarity rarity, double percent) {
+            const int column = dropTier(rarity);
+            if (column >= 0) perCopy[static_cast<std::size_t>(std::max(column, minTier))] += percent;
+        };
+        land(tierBelow(base), down);
+        land(base, same);
+        land(tierAbove(base), up);
+        for (int column = 0; column < kDropTiers; ++column) {
+            const double chance = std::min(1.0, perCopy[static_cast<std::size_t>(column)] / 100.0);
+            if (chance <= 0) continue;
+            push(drop, static_cast<Rarity>(column),
+                 baseProb * 100.0 * (1.0 - std::pow(1.0 - chance, copies)));
+        }
     };
 
     if (tier == rarityIndex(Rarity::Common)) {
@@ -701,15 +729,14 @@ bool GalleryPanel::render(MenuContext& ctx) {
 
         if (known) {
             // Common's radius, whatever tier this cell is -- see kIconZoom.
-            const double diameter =
-                std::min(kIconCap, content().mobStats(cell.mobIndex, Rarity::Common).radius * 2.0 *
-                                       kIconZoom);
+            const double radius = content().mobStats(cell.mobIndex, Rarity::Common).radius;
+            const double diameter = std::min(kIconCap, radius * 2.0 * kIconZoom);
             // Cut its detail from the mob's OWN common-tier radius, not from
             // the tile: a rock in the bestiary is the rock the garden has, at
             // picture size, rather than a boulder squeezed into 60 units.
-            ctx.sprites.drawMob(canvas, cell.mobIndex, rect.x + rect.w * 0.5,
-                                rect.y + rect.h * 0.5, diameter, 0.0, ctx.timeSeconds, false,
-                                content().mobStats(cell.mobIndex, Rarity::Common).radius);
+            ctx.sprites.drawMobPicture(canvas, cell.mobIndex, rect.x + rect.w * 0.5,
+                                       rect.y + rect.h * 0.5, rect.w - kIconInset * 2.0, diameter,
+                                       ctx.timeSeconds, radius);
 
             // Abbreviated, unlike the drop table's own counts: five figures of
             // ant kills laid across a 60-unit plate is a smear, and a bestiary

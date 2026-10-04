@@ -447,6 +447,23 @@ std::string repaintArtwork(const std::string& source, std::uint32_t fill, std::u
     return out;
 }
 
+/// The drawn radius a mob's picture is measured at, in pixels: a pixel is a
+/// twenty-fourth of a radius, under a unit on a bestiary tile.
+constexpr double kProbeRadius = 24.0;
+/// How many radii the measurement reaches either side of the centre. The
+/// widest picture in the roster -- a leech segment trailing the next one --
+/// runs under three; art reaching further is measured to the edge.
+constexpr double kProbeReach = 4.0;
+/// Clock moments the measurement is taken at, all painted over one another:
+/// enough to catch a wing at both ends of its beat (4.5 rad/s, ~1.4 s) and a
+/// claw at both ends of florr's 0.63 s swing. Irregular steps so neither
+/// period aliases onto them.
+constexpr double kProbeTimes[] = {0.0,  0.17, 0.41, 0.58, 0.83, 1.07,
+                                  1.29, 1.52, 1.81, 2.14, 2.47, 2.9};
+/// Alpha, of 255, a pixel needs to count as painted. An antialiased fringe
+/// fainter than this is not part of the silhouette anyone sees.
+constexpr std::uint8_t kProbeAlpha = 16;
+
 } // namespace
 
 std::shared_ptr<SvgDocument> SpriteCache::compileArt(const std::string& source,
@@ -465,6 +482,7 @@ bool SpriteCache::build(const ContentRegistry& content, const std::string& dataD
     dataDir_ = dataDir;
     tileArt_.clear();
     mobs_.assign(content.mobCount(), Sprite{});
+    mobPictureBounds_.assign(content.mobCount(), PictureBounds{});
     petals_.assign(content.petalCount(), Sprite{});
 
     const auto compile = [this](const std::string& source, std::uint32_t colorRgba,
@@ -618,6 +636,54 @@ void SpriteCache::drawMob(Canvas& canvas, std::uint16_t index, double x, double 
     if (index >= mobs_.size()) return;
     draw(canvas, mobs_[index], x, y, diameter, rotation, timeSeconds, mirrored, worldRadius,
          gaze, motion);
+}
+
+const SpriteCache::PictureBounds& SpriteCache::pictureBounds(std::uint16_t index,
+                                                             double worldRadius) const {
+    PictureBounds& bounds = mobPictureBounds_[index];
+    if (bounds.measured) return bounds;
+    bounds.measured = true;
+
+    // Drawn exactly as drawMobPicture will draw it -- no motion, unturned --
+    // so what is measured is the picture, not the creature in the world.
+    const int side = static_cast<int>(std::ceil(2.0 * kProbeReach * kProbeRadius));
+    const double centre = side * 0.5;
+    Canvas probe = Canvas::createVirtual(side, side);
+    for (const double t : kProbeTimes) {
+        draw(probe, mobs_[index], centre, centre, kProbeRadius * 2.0, 0.0, t, false, worldRadius);
+    }
+    const std::vector<std::uint8_t> rgba = probe.getImageData(0, 0, side, side);
+    if (rgba.size() != static_cast<std::size_t>(side) * side * 4) return bounds;
+
+    int minX = side, minY = side, maxX = -1, maxY = -1;
+    for (int y = 0; y < side; ++y) {
+        for (int x = 0; x < side; ++x) {
+            if (rgba[(static_cast<std::size_t>(y) * side + x) * 4 + 3] < kProbeAlpha) continue;
+            minX = std::min(minX, x);
+            maxX = std::max(maxX, x);
+            minY = std::min(minY, y);
+            maxY = std::max(maxY, y);
+        }
+    }
+    if (maxX < 0) return bounds;
+    bounds.minX = (minX - centre) / kProbeRadius;
+    bounds.maxX = (maxX + 1 - centre) / kProbeRadius;
+    bounds.minY = (minY - centre) / kProbeRadius;
+    bounds.maxY = (maxY + 1 - centre) / kProbeRadius;
+    return bounds;
+}
+
+void SpriteCache::drawMobPicture(Canvas& canvas, std::uint16_t index, double x, double y,
+                                 double box, double diameter, double timeSeconds,
+                                 double worldRadius) const {
+    if (index >= mobs_.size() || index >= mobPictureBounds_.size()) return;
+    const PictureBounds& bounds = pictureBounds(index, worldRadius);
+    double radius = diameter * 0.5;
+    const double reach = std::max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) * radius;
+    if (reach > box) radius *= box / reach;
+    draw(canvas, mobs_[index], x - (bounds.minX + bounds.maxX) * 0.5 * radius,
+         y - (bounds.minY + bounds.maxY) * 0.5 * radius, radius * 2.0, 0.0, timeSeconds, false,
+         worldRadius);
 }
 
 MobArt SpriteCache::mobArt(std::uint16_t index) const {
