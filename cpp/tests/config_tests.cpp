@@ -532,6 +532,20 @@ TEST(poo_cuts_mob_aggro_range_on_its_balanced_table_and_extrapolates_to_apex) {
     }
 }
 
+TEST(bulb_grows_mob_aggro_range_on_the_same_compounding_curve_poo_cuts_on) {
+    const ContentRegistry& r = shipped().registry;
+    const std::uint16_t bulb = r.petalIndex("bulb");
+    CHECK(bulb != kInvalidIndex);
+    if (bulb == kInvalidIndex) return;
+
+    // The authored 1.33 reaches the registry unclamped, and every tier
+    // applies it once more.
+    for (int t = 0; t < kLadderRarityCount; ++t) {
+        const double scale = r.petalStats(bulb, static_cast<Rarity>(t)).modifiers.aggroRange;
+        CHECK_NEAR(scale, std::pow(1.33, t + 1), 1e-9);
+    }
+}
+
 TEST(talisman_evasion_steps_three_percent_a_tier_and_the_fly_dodges_nine_in_ten) {
     const ContentRegistry& r = shipped().registry;
     const std::uint16_t talisman = r.petalIndex("talisman");

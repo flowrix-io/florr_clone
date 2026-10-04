@@ -770,9 +770,11 @@ private:
                          CommandBuffer& commands);
 
     /// `range` is measured from the mob's centre -- the point it meets the
-    /// world with -- and a flower's poo shrinks all of it.
+    /// world with -- and a flower's poo shrinks all of it. `raisedOnly` is a
+    /// neutral mob's scan: it sees only flowers whose aggro is raised (a bulb).
     Entity acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
-                         Entity self, Vec2 from, Realm realm, double range);
+                         Entity self, Vec2 from, Realm realm, double range,
+                         bool raisedOnly = false);
     /// The PET a wild mob settles for when no flower is to be had. Distinct
     /// from acquirePetPrey() below, which is the wild mob a pet goes after.
     ///
@@ -879,6 +881,13 @@ private:
     /// without it a mob would query its bare range and miss exactly the player
     /// whose petals were meant to draw attention.
     double maxAggroBonus_ = 0;
+    /// The widest aggro-range multiplier any live player carries, floored at
+    /// 1, for the same reason: a range scaled past 1 reaches beyond the bare
+    /// query a mob would otherwise make.
+    double maxAggroScale_ = 1.0;
+    /// Whether any live player's aggro is raised this tick -- the gate on a
+    /// neutral mob's scan, which can only ever find such a player.
+    bool anyAggroRaised_ = false;
 
     std::vector<Drive> drives_;
     std::uint32_t drivesHash_ = 0;

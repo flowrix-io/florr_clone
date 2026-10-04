@@ -270,6 +270,9 @@ inline double petalModifierScale(Rarity r) {
 ///   mythic -82.2%, ultra -86.7%, super -90%, unique -92.5%, apex -94.4%
 ///
 /// -- the table it was balanced to, and apex is the same curve one step on.
+/// A boost rides the same curve the other way: bulb's 1.33 is 1.33x at
+/// common, 2.35x at rare, 4.2x at legendary and 23x at apex, which on a big
+/// mob soon meets the retain radius a mob's notice is capped at.
 /// Neither of the other passive curves can produce this: petalModifierScale
 /// would take a -25% to -100% by unique -- mobs blind to the flower -- and the
 /// zoom curve grows away from 1 rather than towards 0.

@@ -47,6 +47,7 @@ const char* const kPetalsJson = R"JSON({
   "inflator": {"name":"Inflator","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"playerRadius":1.5},"color":"#FF00FF"},
   "stinky":   {"name":"Stinky","damage":0,"health":1,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":0.75},"color":"#8B4513"},
   "glowy":    {"name":"Glowy","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRadius":150},"color":"#FFFF00"},
+  "bright":   {"name":"Bright","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"aggroRange":1.33},"color":"#FFFF00"},
   "charm":    {"name":"Charm","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"evasion":0.1},"color":"#FFF824"},
   "briny":    {"name":"Briny","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"damageReflection":0.25},"color":"#FFFFFF"},
   "brinier":  {"name":"Brinier","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"playerModifiers":{"damageReflection":0.4},"color":"#FFFFFF"},
@@ -1574,6 +1575,35 @@ TEST(the_strongest_worn_aggro_range_cut_wins_and_copies_do_not_multiply) {
     rig.unequip(2);
     rig.tick();
     CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.0, 1e-12);
+}
+
+TEST(the_strongest_worn_aggro_range_boost_wins_and_multiplies_the_strongest_cut) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "bright");
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.33, 1e-12);
+
+    // Boosts are held to the cut's rule from the other side: a second common
+    // is still 1.33, and a better tier takes over rather than stacking.
+    rig.equip(1, "bright");
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 1.33, 1e-12);
+    rig.equip(2, "bright", Rarity::Rare);
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, std::pow(1.33, 3), 1e-12);
+
+    // A poo beside them neither loses to the boost nor hides it: one cut and
+    // one boost, multiplied.
+    rig.equip(3, "stinky");
+    rig.settleEquips();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, std::pow(1.33, 3) * 0.75, 1e-12);
+
+    rig.unequip(0);
+    rig.unequip(1);
+    rig.unequip(2);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().aggroRangeScale, 0.75, 1e-12);
 }
 
 TEST(aggro_modifiers_work_only_while_the_petal_is_on_the_ring) {

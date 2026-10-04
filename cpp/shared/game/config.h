@@ -328,9 +328,9 @@ struct PetalModifiers {
     double rotationSpeed = 1.0;  ///< ring spin; negative reverses it
     double playerRadius = 1.0;
     double damage = 1.0;
-    /// Shrinks how far outside its skin a mob notices the holder. Only ever
-    /// shrinks (0..1); `aggroRadius` below is the one that draws mobs in.
-    /// Compounds per tier -- see petalAggroRangeScale.
+    /// Multiplies how far a mob notices the holder from: below 1 it shrinks
+    /// (poo), above 1 it grows (bulb), and a neutral mob notices a holder it
+    /// grows. Compounds per tier -- see petalAggroRangeScale.
     double aggroRange = 1.0;
 
     // Additive, neutral at 0.

@@ -749,6 +749,55 @@ TEST(neutral_mob_retaliates_only_after_it_is_hurt) {
     CHECK_EQ(sim.totalScans, std::uint64_t(0));                 // still no broadphase query
 }
 
+TEST(a_glowing_flower_draws_a_neutral_mob_inside_its_raised_circle) {
+    CHECK(contentReady());
+    // 400 from a worker ant: past its own 300, inside the 450 a 150 bulb
+    // bonus raises it to. Unprovoked, it comes anyway.
+    Sim seen;
+    const Entity mob = seen.spawnMob("worker_ant", kOrigin);     // neutral, range 300
+    const Entity glowing = seen.spawnPlayer(kOrigin + Vec2{400, 0}, 150.0);
+    seen.tickIntent(5);
+    CHECK_EQ(seen.brainOf(mob).target, glowing);
+    CHECK(seen.velocityOf(mob).x > 0.0);
+
+    // Past the raised circle it is left alone, as a hostile mob would leave it.
+    Sim far;
+    const Entity distant = far.spawnMob("worker_ant", kOrigin);
+    far.spawnPlayer(kOrigin + Vec2{500, 0}, 150.0);
+    far.tickIntent(5);
+    CHECK_EQ(far.brainOf(distant).target, NULL_ENTITY);
+
+    // A raised RANGE glows as well as a raised radius does.
+    Sim scaled;
+    const Entity ranged = scaled.spawnMob("worker_ant", kOrigin);
+    const Entity bright = scaled.spawnPlayer(kOrigin + Vec2{350, 0}, 0.0, 1.25);
+    scaled.tickIntent(5);
+    CHECK_EQ(scaled.brainOf(ranged).target, bright);
+}
+
+TEST(a_neutral_mob_drawn_by_a_glow_passes_over_the_bare_flower_beside_it) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity mob = sim.spawnMob("worker_ant", kOrigin);
+    sim.spawnPlayer(kOrigin + Vec2{0, 100});                      // bare, much nearer
+    const Entity glowing = sim.spawnPlayer(kOrigin + Vec2{400, 0}, 150.0);
+    sim.tickIntent(5);
+    CHECK_EQ(sim.brainOf(mob).target, glowing);
+}
+
+TEST(a_neutral_mob_never_scans_while_nobody_glows) {
+    CHECK(contentReady());
+    // Poo is a changed aggro, not a raised one: a neutral mob ignores the
+    // flower wearing it, and with no glow anywhere it never pays the query.
+    Sim sim;
+    const Entity mob = sim.spawnMob("worker_ant", kOrigin);
+    sim.spawnPlayer(kOrigin + Vec2{100, 0}, 0.0, 0.75);
+    sim.spawnPlayer(kOrigin + Vec2{-100, 0});
+    sim.tick(25);
+    CHECK_EQ(sim.brainOf(mob).target, NULL_ENTITY);
+    CHECK_EQ(sim.totalScans, std::uint64_t(0));
+}
+
 TEST(neutral_mob_loses_interest_when_its_target_runs_far_enough) {
     CHECK(contentReady());
     Sim sim;

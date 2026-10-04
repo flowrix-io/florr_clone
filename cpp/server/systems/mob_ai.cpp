@@ -33,6 +33,13 @@ bool entityUsable(World& world, Entity e) {
     return health == nullptr || health->alive();
 }
 
+/// Whether a flower is wearing something that makes it MORE conspicuous -- a
+/// bulb's glow -- rather than less (poo) or neither. Only such a flower is
+/// noticed by a neutral mob; see steerAggressive.
+bool aggroRaised(const PlayerModifiers& mods) {
+    return mods.aggroRadiusBonus > 0.0 || mods.aggroRangeScale > 1.0;
+}
+
 /// Whether a mob is close enough to a player to be worth simulating fully.
 ///
 /// An EMPTY list is the permissive case, as it is in the reference: with
@@ -530,14 +537,15 @@ void MobAiSystem::dropProjectile(World& world, Entity self, double nowMillis,
 // ---------------------------------------------------------------------------
 
 Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const SpatialGrid& grid,
-                                  Entity self, Vec2 from, Realm realm, double range) {
+                                  Entity self, Vec2 from, Realm realm, double range,
+                                  bool raisedOnly) {
     ++stats_.targetScans;
 
     // Never acquire what targetHeld() drops on the very next tick. A range
     // that grows with body size passes the retention radius at the top of the
     // ladder -- a unique queen ant's is over 14,000 units against 9,600 -- and
     // past it the mob would lock on, let go and scan again every tick.
-    const double reach = std::min(range + maxAggroBonus_, kMobTargetRetainRadius);
+    const double reach = std::min(range * maxAggroScale_ + maxAggroBonus_, kMobTargetRetainRadius);
     grid.query(realm, from, reach, gridScratch_);
     candidates_.clear();
     for (const Entity candidate : gridScratch_) {
@@ -547,13 +555,14 @@ Entity MobAiSystem::acquireTarget(World& world, const Terrain& terrain, const Sp
         const Transform* transform = world.tryGet<Transform>(candidate);
         if (transform == nullptr) continue;
 
-        // Each flower is noticed inside its own circle: poo shrinks the range,
-        // and a raised aggro radius then adds on top. How far inside that
+        // Each flower is noticed inside its own circle: poo shrinks the range
+        // and a bulb grows it, and a raised aggro radius then adds on top. How far inside that
         // circle the flower stands is one number for both "is anyone in range"
         // and "who is the most conspicuous". All of it is measured from the
         // mob's centre, the point it meets the world with (kMobWallRadius),
         // so poo shrinks the whole circle -- the body under it included.
         const PlayerModifiers* mods = world.tryGet<PlayerModifiers>(candidate);
+        if (raisedOnly && (mods == nullptr || !aggroRaised(*mods))) continue;
         const double bonus = mods != nullptr ? mods->aggroRadiusBonus : 0.0;
         const double scale = mods != nullptr ? mods->aggroRangeScale : 1.0;
         const double gap = distance(from, transform->position);
@@ -1268,7 +1277,16 @@ bool MobAiSystem::steerAggressive(World& world, const Terrain& terrain, const Sp
                 : targetHeld(world, terrain, transform.position, transform.realm, ai.target);
         if (!held) ai.target = NULL_ENTITY;
     }
-    // A neutral mob never goes looking: it only ever has the target that hurt it.
+    // A neutral mob goes looking for one thing only: a flower whose glow it can
+    // see. A bulb draws it in inside the same circle a hostile mob notices that
+    // flower from, and a bare or stinking flower walks past it as ever -- its
+    // only other target is the one that hurt it. No pets: a summon carries no
+    // glow. Skipped outright while nobody glows, so a world without a bulb in
+    // it never pays a neutral mob's broadphase query.
+    if (ai.kind == AiKind::Neutral && ai.target == NULL_ENTITY && anyAggroRaised_) {
+        ai.target = acquireTarget(world, terrain, grid, self, transform.position, transform.realm,
+                                  range, /*raisedOnly=*/true);
+    }
     if (ai.kind == AiKind::Hostile) {
         // The player scan runs even while a pet is being chased: a flower
         // outranks a summon, so it takes the mob over the moment one comes
@@ -2231,8 +2249,12 @@ void MobAiSystem::run(World& world, const Terrain& terrain, const SpatialGrid& g
     ++tick_;
 
     maxAggroBonus_ = 0.0;
+    maxAggroScale_ = 1.0;
+    anyAggroRaised_ = false;
     playerModifiers_.each([&](Entity, PlayerTag&, PlayerModifiers& mods) {
         if (mods.aggroRadiusBonus > maxAggroBonus_) maxAggroBonus_ = mods.aggroRadiusBonus;
+        if (mods.aggroRangeScale > maxAggroScale_) maxAggroScale_ = mods.aggroRangeScale;
+        anyAggroRaised_ = anyAggroRaised_ || aggroRaised(mods);
     });
 
     // Watermarks belong to mobs, and mobs are reaped without telling this

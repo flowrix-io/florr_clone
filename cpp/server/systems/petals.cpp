@@ -1185,6 +1185,10 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     const PlayerInput* input = world.tryGet<PlayerInput>(player);
     const bool blocking =
         input != nullptr && input->current.defending() && !input->current.attacking();
+    // The strongest worn poo and the strongest worn bulb; see the aggro pair
+    // in the loop below.
+    double aggroCut = 1.0;
+    double aggroBoost = 1.0;
 
     if (const Loadout* loadout = world.tryGet<Loadout>(player)) {
         // Storage grants nothing: the browser breaks out of this same sum at
@@ -1232,8 +1236,11 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
                 // The strongest one, not the product: the tier curve already
                 // compounds 0.75 per step, so two common poos multiplied would
                 // be an uncommon one, and a bar of commons would reach apex.
-                aggregate.modifiers.aggroRangeScale =
-                    std::min(aggregate.modifiers.aggroRangeScale, mods.aggroRange);
+                // A bulb's 1.33 compounds the same way, so it is held to the
+                // same rule from the other side -- and a poo and a bulb worn
+                // together are one cut and one boost, multiplied.
+                aggroCut = std::min(aggroCut, mods.aggroRange);
+                aggroBoost = std::max(aggroBoost, mods.aggroRange);
             }
             aggregate.modifiers.petalAttractionRadius += mods.petalAttractionRadius;
             // A yucca pays only while the flower blocks. Gated on the stance
@@ -1296,6 +1303,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             }
         }
     }
+    aggregate.modifiers.aggroRangeScale = aggroCut * aggroBoost;
 
     // Talents multiply what the loadout already produces, so they are applied
     // to the finished aggregate: a tree bonus is one factor over the whole

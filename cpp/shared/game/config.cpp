@@ -587,9 +587,10 @@ PetalModifiers parseModifiers(Ctx& ctx, const Json& owner) {
     mods.rotationSpeed = ctx.range(node, "rotationSpeed", 1.0, -100.0, 100.0);
     mods.playerRadius  = ctx.range(node, "playerRadius", 1.0, -100.0, 100.0);
     mods.damage        = ctx.range(node, "damage", 1.0, -100.0, 100.0);
-    // Not signed like the others: a negative notice range means nothing, and
-    // above 1 it would outgrow the broadphase query mob AI sizes for it.
-    mods.aggroRange    = ctx.range(node, "aggroRange", 1.0, 0.0, 1.0);
+    // Not signed like the others: a negative notice range means nothing.
+    // Below 1 it hides the flower (poo), above 1 it draws mobs in (bulb); mob
+    // AI widens its broadphase query by the largest one worn.
+    mods.aggroRange    = ctx.range(node, "aggroRange", 1.0, 0.0, 10.0);
 
     mods.luck                  = ctx.range(node, "luck", 0.0, -100.0, 100.0);
     mods.magnetism             = ctx.range(node, "magnetism", 0.0, 0.0, kWorldSize);

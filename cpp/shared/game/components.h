@@ -532,8 +532,9 @@ struct PlayerModifiers {
     double luck = 1.0;          ///< TypeScript's neutral luck value
     double magnetism = 0.0;     ///< adds to pickup radius
     double aggroRadiusBonus = 0.0;
-    /// What a mob's aggro range -- the part outside its skin -- is multiplied
-    /// by against this flower. Worn poo; 1.0 is unnoticed-as-usual.
+    /// What a mob's aggro range is multiplied by against this flower: the
+    /// strongest worn poo times the strongest worn bulb; 1.0 is noticed as
+    /// usual.
     double aggroRangeScale = 1.0;
     double petalAttractionRadius = 30.0; ///< base loose-petal attraction radius
     double rangeScale = 1.0;    ///< petal reach
