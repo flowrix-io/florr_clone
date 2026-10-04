@@ -648,15 +648,31 @@ inline constexpr double kMobPetalRingHitScale = 0.5;
 // A summoned mob keeps its config's own behaviour -- a passive pet stays
 // passive, a sandstorm still drifts -- rather than being forced to fight. What
 // it gains is an owner: it follows, it teleports back when a wall breaks line
-// of sight, and passive/sandstorm pets that leave the owner's screen are
-// retired so their egg can hatch a fresh one.
+// of sight, and passive pets that leave the owner's screen are retired so
+// their egg can hatch a fresh one. A sandstorm is leashed instead: it is never
+// retired for distance, it comes back.
 
 /// Ring distance a pet is placed at when it teleports back to its owner.
 inline constexpr double kPetTeleportDistance = 80.0;
 
 /// A sandstorm pet shadows its owner's velocity slightly faster than the owner
-/// moves, which is precisely why it keeps running off-screen and recycling.
+/// moves, so it steadily pulls ahead until the leash below brings it back.
 inline constexpr double kSandstormPetSpeedFactor = 1.2;
+
+/// How far a sandstorm pet may get from its owner before it turns for home.
+/// Inside the viewport's half height, so a storm out in front never leaves
+/// its owner's screen.
+inline constexpr double kSandstormPetLeash = 400.0;
+
+/// How close a returning sandstorm pet comes before it goes back to shadowing
+/// its owner -- the reference's kReturning stops at the same 100.
+inline constexpr double kSandstormPetHomeDistance = 100.0;
+
+/// A returning sandstorm pet's speed, as a multiple of whichever is faster:
+/// its owner right now or a flower at full speed. The reference returns at
+/// 1.5x the player's acceleration; measured against the owner too, so a
+/// flower running faster than the base speed cannot outpace it.
+inline constexpr double kSandstormPetReturnSpeedFactor = 1.5;
 
 /// Extra chase range per rarity tier a summon is spawned at.
 inline constexpr double kPetAggroRangePerRarity = 200.0;

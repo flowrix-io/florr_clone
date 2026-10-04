@@ -57,8 +57,8 @@
 //
 // Pets get their own pass rather than being fed through the wild-mob one: a
 // summoned mob follows its owner, pops back to them when a wall breaks line of
-// sight, and is retired when it drifts off their screen. None of that is "wild
-// mob with a different target list".
+// sight, and -- if passive -- is retired when it drifts off their screen. None
+// of that is "wild mob with a different target list".
 
 #include <algorithm>
 #include <cstdint>
@@ -469,7 +469,7 @@ inline constexpr double kStingerAimTolerance = 0.3;
 
 /// A pet sees exactly what its owner's screen shows: its target scan is
 /// clipped to this rectangle around the owner rather than to its own aggro
-/// range, and a passive or sandstorm pet that leaves it is retired.
+/// range, and a passive pet that leaves it is retired.
 inline constexpr double kPetViewHalfWidth = kViewportWidth * 0.5;
 inline constexpr double kPetViewHalfHeight = kViewportHeight * 0.5;
 

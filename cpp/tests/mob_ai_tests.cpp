@@ -1387,6 +1387,60 @@ TEST(a_pet_is_not_steered_by_the_wild_mob_ai) {
     CHECK(distance(sim.positionOf(pet), kOrigin) < kEnemyWanderRange * 2.0);
 }
 
+TEST(a_sandstorm_pet_past_its_leash_comes_home_rather_than_vanishing) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    // Off the owner's screen entirely, which is where it used to be destroyed.
+    const Entity storm = sim.spawnMob("sandstorm", kOrigin + Vec2{kViewportWidth, 0});
+    sim.world.add<Pet>(storm, Pet{owner, 0});
+
+    sim.tick();
+    CHECK(sim.world.isAlive(storm));
+    CHECK(sim.brainOf(storm).petReturning);
+    CHECK(sim.velocityOf(storm).x < 0.0);
+
+    int ticks = 0;
+    while (sim.gap(storm, owner) >= kSandstormPetHomeDistance && ticks < 400) {
+        sim.tick();
+        ++ticks;
+    }
+    CHECK(sim.world.isAlive(storm));
+    CHECK(sim.gap(storm, owner) < kSandstormPetHomeDistance);
+    // Home it shadows the owner again, and a motionless owner has nothing to
+    // shadow -- so it settles rather than orbiting.
+    sim.tick();
+    CHECK(!sim.brainOf(storm).petReturning);
+    CHECK_NEAR(sim.velocityOf(storm).length(), 0.0, 1e-9);
+}
+
+TEST(a_sandstorm_pet_pulls_ahead_of_a_running_owner_but_stays_on_its_leash) {
+    CHECK(contentReady());
+    Sim sim;
+    const Entity owner = sim.spawnPlayer(kOrigin);
+    const Entity storm = sim.spawnMob("sandstorm", kOrigin + Vec2{50, 0});
+    sim.world.add<Pet>(storm, Pet{owner, 0});
+
+    // Thirty seconds flat out: long enough to have pulled away six times over
+    // under the old drift, and to have lapped the leash several times now.
+    const int ticks = static_cast<int>(30.0 / net::kTickSeconds);
+    double farthest = 0.0;
+    bool turned = false;
+    for (int i = 0; i < ticks; ++i) {
+        sim.world.get<Motion>(owner).velocity = Vec2{kPlayerMaxSpeed, 0};
+        sim.tick();
+        if (!sim.world.isAlive(storm)) break;
+        farthest = std::max(farthest, sim.gap(storm, owner));
+        turned = turned || sim.brainOf(storm).petReturning;
+    }
+    CHECK(sim.world.isAlive(storm));
+    CHECK(turned);
+    // One tick's travel is all it may overshoot the leash by before turning.
+    const double step = kPlayerMaxSpeed * kSandstormPetReturnSpeedFactor * net::kTickSeconds;
+    CHECK(farthest <= kSandstormPetLeash + step);
+    CHECK(farthest < kViewportHeight * 0.5);
+}
+
 TEST(a_dead_mob_stops_steering) {
     CHECK(contentReady());
     Sim sim;

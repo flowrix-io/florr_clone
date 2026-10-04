@@ -2820,16 +2820,17 @@ void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registr
             // A summon something killed is not one that wandered off: it
             // keeps its handle for maintainPets to prune, and its egg reloads
             // on the ordinary schedule rather than this one.
+            // A sandstorm is leashed to its owner by MobAiSystem::steerPet
+            // instead, and is never retired for distance.
             const bool retires = ai != nullptr && transform != nullptr &&
-                                 !world.has<Dead>(pet) &&
-                                 (ai->kind == AiKind::Passive || ai->kind == AiKind::Sandstorm);
+                                 !world.has<Dead>(pet) && ai->kind == AiKind::Passive;
             if (!retires) {
                 slotState.pets[kept++] = pet;
                 continue;
             }
             // The fixed viewport, not the one the client reported: the
             // reference clips every pet to the same rectangle, so a player on
-            // a wide window would otherwise keep a sandstorm twice as long.
+            // a wide window would otherwise keep a pet twice as long.
             const Vec2 offset = transform->position - owner;
             if (std::abs(offset.x) <= kViewportWidth * 0.5 &&
                 std::abs(offset.y) <= kViewportHeight * 0.5) {
@@ -3072,8 +3073,7 @@ void PetalSystem::summonPets(World& world, const ContentRegistry& registry, Enti
         // Whatever the mob is in the wild, at this tier. The reference is
         // explicit that taming overrides nothing: a hostile or neutral mob
         // fights for its owner, a passive one still will not, and a sandstorm
-        // still drifts -- and it is that drift, plus the retirement rule it
-        // feeds, that is the whole life cycle of a stick's summons.
+        // still drifts, on a leash to its owner.
         ai.kind = mob.ai;
         ai.anchor = spawnAt;
         ai.aggroRange = aggroRange;

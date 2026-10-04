@@ -2850,6 +2850,28 @@ TEST(a_pet_killed_in_the_field_is_resummoned) {
     CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
 }
 
+TEST(a_sandstorm_pet_is_never_retired_for_distance) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "summoner");
+    CHECK(rig.tickUntil([&] { return rig.petCount() == 2; }));
+
+    // The retire pass reads the pet's brain, not its config, so the fixture's
+    // critters can stand in for a stick's storms.
+    Query<Pet> pets{rig.world};
+    const Vec2 far = rig.position(rig.player) + Vec2{kViewportWidth * 4.0, 0.0};
+    for (const Entity pet : pets.collect()) {
+        rig.world.get<MobAi>(pet).kind = AiKind::Sandstorm;
+        rig.world.get<Transform>(pet).position = far;
+    }
+
+    rig.tick(100);
+    // Kept, and the egg was not charged a reload for them: the leash in the
+    // mob AI is what brings a storm back now.
+    CHECK_EQ(rig.petCount(), std::size_t(2));
+    CHECK(!rig.slot(0).broken);
+}
+
 TEST(unequipping_a_summoner_recalls_its_pets) {
     if (!contentLoaded()) return;
     Rig rig;

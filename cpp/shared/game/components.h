@@ -671,6 +671,12 @@ struct MobAi {
     /// nose-on and the two sides are a real choice, is what makes the second
     /// leg retrace the first.
     std::int8_t stingerSide = 0;
+    /// Set while a sandstorm pet is heading back to its owner, from the moment
+    /// it passes kSandstormPetLeash until it is inside kSandstormPetHomeDistance.
+    /// Stored for the gap between the two: a pet that only came back while it
+    /// was past the leash would hover on it, since shadowing the owner pushes
+    /// it straight back out.
+    bool petReturning = false;
 };
 
 /// Where a mob is walking to, when it walks to a POINT rather than steering on

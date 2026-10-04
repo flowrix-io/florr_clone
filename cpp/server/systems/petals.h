@@ -399,12 +399,10 @@ private:
                           double damagePerHit = 0.0, double damageIntervalMillis = 0.0);
     /// Retire the summons that have drifted off their owner's screen.
     ///
-    /// Only the two kinds that never find their own way home: a pet that
-    /// fights is steered back to the flower, while a passive one holds where
-    /// it stands and a sandstorm deliberately outruns its owner. The reference
-    /// lets those two go and charges the loss to the petal that hatched them,
-    /// which is the whole life cycle of a stick's sandstorms -- they pull
-    /// ahead, they vanish, the slot reloads and hatches a fresh pair.
+    /// Only the one kind that never finds its own way home: a pet that fights
+    /// is steered back to the flower, and a sandstorm is leashed to it, while
+    /// a passive one holds where it stands. That one is let go and the loss is
+    /// charged to the petal that hatched it.
     void retireDistantPets(World& world, const ContentRegistry& registry, Entity player,
                            double nowMillis);
     /// A loose petal is NOT retired for being far away: it stays where it was

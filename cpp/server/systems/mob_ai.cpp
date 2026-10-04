@@ -1649,7 +1649,8 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
                            const MobType& type, MobAi& ai, Entity owner, bool ownerAlive,
                            const Drive& drive, double nowMillis, double dt,
                            CommandBuffer& commands) {
-    const double speed = drive.speed * slowFactorOf(world, self, nowMillis);
+    const double slow = slowFactorOf(world, self, nowMillis);
+    const double speed = drive.speed * slow;
 
     // A tamed neutral has nothing left to be neutral ABOUT -- it fights for its
     // owner -- so neutral and hostile run the same pet AI. Passive stays
@@ -1672,10 +1673,9 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
         }
         const Vec2 ownerPosition = ownerTransform->position;
 
-        // Passive and sandstorm pets never pop back to the ring: off the
-        // owner's screen they are retired, and the petal that summoned them
-        // hatches a replacement.
-        if (drive.ai == AiKind::Sandstorm || drive.ai == AiKind::Passive) {
+        // A passive pet never pops back to the ring: off the owner's screen it
+        // is retired, and the petal that summoned it hatches a replacement.
+        if (drive.ai == AiKind::Passive) {
             const Vec2 offset = transform.position - ownerPosition;
             if (std::abs(offset.x) > kPetViewHalfWidth || std::abs(offset.y) > kPetViewHalfHeight) {
                 commands.destroy(self);
@@ -1684,12 +1684,32 @@ void MobAiSystem::steerPet(World& world, const Terrain& terrain, const SpatialGr
         }
 
         if (drive.ai == AiKind::Sandstorm) {
-            // Shadows the owner's heading slightly faster than the owner moves,
-            // which is precisely why it steadily pulls ahead until it leaves
-            // the screen and recycles.
             const Motion* ownerMotion = world.tryGet<Motion>(owner);
-            if (speed > 0.0 && ownerMotion != nullptr &&
-                ownerMotion->velocity.length() > kOwnerMovingSpeed) {
+            const double ownerSpeed = ownerMotion != nullptr ? ownerMotion->velocity.length() : 0.0;
+            const Vec2 toOwner = ownerPosition - transform.position;
+            const double gap = toOwner.length();
+            if (gap > kSandstormPetLeash) {
+                ai.petReturning = true;
+            } else if (gap < kSandstormPetHomeDistance) {
+                ai.petReturning = false;
+            }
+
+            if (ai.petReturning) {
+                // Leashed rather than retired: past the leash it heads
+                // straight home, and a wall in the way puts it back on the
+                // ring around its owner, as a fighting pet's does.
+                if (terrain.segmentBlocked(transform.position, ownerPosition, transform.realm)) {
+                    if (teleportPetToOwner(terrain, transform, ownerPosition)) {
+                        ai.petReturning = false;
+                    }
+                } else if (speed > 0.0 && gap > 0.0) {
+                    const double homing = std::max(ownerSpeed, kPlayerMaxSpeed) *
+                                          kSandstormPetReturnSpeedFactor * slow;
+                    desired = toOwner * (homing / gap);
+                }
+            } else if (speed > 0.0 && ownerSpeed > kOwnerMovingSpeed) {
+                // Shadows the owner's heading slightly faster than the owner
+                // moves, so it steadily pulls ahead until the leash turns it.
                 desired = ownerMotion->velocity * kSandstormPetSpeedFactor;
             }
         } else if (!terrain.segmentBlocked(transform.position, ownerPosition, transform.realm)) {
