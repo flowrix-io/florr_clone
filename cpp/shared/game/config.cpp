@@ -462,6 +462,10 @@ PeriodicSpawnSpec parsePeriodicSpawn(Ctx& ctx, const Json& owner,
     return spec;
 }
 
+/// A trigger gap this many of the nest's own radii wide reaches past the
+/// screen of anyone standing next to a big hole.
+constexpr double kMaxAmbushTriggerRadiusScale = 20.0;
+
 AmbushSpec parseAmbush(Ctx& ctx, const Json& owner,
                        const std::unordered_map<std::string, std::uint16_t>& mobIds) {
     AmbushSpec spec;
@@ -474,7 +478,8 @@ AmbushSpec parseAmbush(Ctx& ctx, const Json& owner,
     spec.mobId = ctx.text(node, "mobType");
     spec.mobIndex = ctx.link(mobIds, spec.mobId, "ambush mobType");
     spec.count = ctx.integer(node, "count", 0, 0, 1000);
-    spec.triggerDistance = ctx.range(node, "triggerDistance", 0.0, 0.0, kWorldSize);
+    spec.triggerRadiusScale = ctx.range(node, "triggerRadiusScale", 0.0, 0.0,
+                                        kMaxAmbushTriggerRadiusScale);
     spec.present = spec.mobIndex != kInvalidIndex && spec.count > 0;
     return spec;
 }

@@ -1258,10 +1258,12 @@ void SpawnSystem::runNests(World& world, const Terrain& terrain, const ContentRe
         const Vec2 mouth = transform->position;
         const Realm nestRealm = transform->realm;
         const Rarity nestRarity = type->rarity;
-        const double rim = body->radius + spec.triggerDistance;
+        const double rim = body->radius * (1.0 + spec.triggerRadiusScale);
 
         // Edge to edge, so a flower grown huge by its petals springs it from
-        // as far off as it LOOKS, and a big hole waits for a flower at its rim.
+        // as far off as it LOOKS; the gap itself is in the hole's own radii,
+        // so it grows with the hole -- size roll included -- and a super hole
+        // isn't sprung only by a flower already standing on its rim.
         Entity intruder = NULL_ENTITY;
         livingFlowers_->each([&](Entity flower, PlayerTag&, Transform& at, Body& flowerBody,
                                  Health& health) {

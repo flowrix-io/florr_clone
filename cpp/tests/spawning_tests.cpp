@@ -2364,7 +2364,8 @@ namespace {
 /// How far from a nest's centre a base-size flower stands when it is `margin`
 /// outside the ambush's trigger gap (negative: inside it).
 double ambushStandOff(World& world, Entity nest, const AmbushSpec& spec, double margin) {
-    return world.get<Body>(nest).radius + kPlayerBaseRadius + spec.triggerDistance + margin;
+    return world.get<Body>(nest).radius * (1.0 + spec.triggerRadiusScale) + kPlayerBaseRadius +
+           margin;
 }
 
 Entity makeFighter(World& world, Vec2 at) {
@@ -2415,6 +2416,33 @@ TEST(a_fire_ant_hole_waits_for_a_flower_then_sends_its_whole_brood) {
 
     // One burst and no more, however long the flower stands there.
     for (int i = 0; i < 30; ++i) sim.tick({kCentre});
+    CHECK_EQ(sim.mobCount(), 1 + spec.count);
+}
+
+TEST(a_bigger_fire_ant_hole_springs_from_further_off) {
+    // The gap is in the hole's own radii: a flower standing where a common
+    // hole would never notice it is already inside a mythic's reach.
+    const std::uint16_t type = shipped().mobIndex("fire_ant_hole");
+    const AmbushSpec& spec = shipped().mob(type).ambush;
+    CHECK(spec.triggerRadiusScale > 0.0);
+
+    Sim small;
+    const Entity common = small.spawner.spawnMob(small.world, small.terrain, shipped(), type,
+                                                 Rarity::Common, kCentre, Realm::Overworld, 0.0,
+                                                 small.rng);
+    CHECK(common != NULL_ENTITY);
+    const double commonGap = small.world.get<Body>(common).radius * spec.triggerRadiusScale;
+
+    Sim sim;
+    const Entity nest = sim.spawner.spawnMob(sim.world, sim.terrain, shipped(), type,
+                                             Rarity::Mythic, kCentre, Realm::Overworld, 0.0,
+                                             sim.rng);
+    CHECK(nest != NULL_ENTITY);
+    const Vec2 mouth = sim.world.get<Transform>(nest).position;
+    const double rim = sim.world.get<Body>(nest).radius + kPlayerBaseRadius;
+    makePlayer(sim.world, mouth + Vec2{rim + commonGap + 10.0, 0.0});
+    sim.tick({kCentre});
+    CHECK(sim.world.get<AmbushNest>(nest).released);
     CHECK_EQ(sim.mobCount(), 1 + spec.count);
 }
 

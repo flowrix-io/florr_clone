@@ -299,11 +299,13 @@ struct AmbushSpec {
     std::string mobId;
     std::uint16_t mobIndex = kInvalidIndex;
     int count = 0;
-    /// How close a flower has to come to spring it, EDGE to edge: the gap
-    /// between the flower's hitbox and the nest's body. Measured from the edge
-    /// so a legendary hole twice the size still waits for a flower at its rim
-    /// rather than going off the moment one is a body-width from its centre.
-    double triggerDistance = 0;
+    /// How close a flower has to come to spring it, EDGE to edge, in the
+    /// nest's own body radii: the gap between the flower's hitbox and the
+    /// nest's body is this many times the nest's radius. Measured from the
+    /// edge so a big hole doesn't go off the moment a flower is a body-width
+    /// from its centre; scaled by the radius so the gap grows with the hole,
+    /// and a super hole springs from as far off, for its size, as a common.
+    double triggerRadiusScale = 0;
 };
 
 /// A lingering damage field (uranium).

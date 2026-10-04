@@ -736,6 +736,7 @@ TEST(cross_references_resolve_to_indices) {
     CHECK(fireHole.ambush.present);
     CHECK_EQ(fireHole.ambush.mobIndex, r.mobIndex("soldier_fire_ant"));
     CHECK(fireHole.ambush.count > 0);
+    CHECK(fireHole.ambush.triggerRadiusScale > 0.0);
     CHECK(fireHole.intangible);
     CHECK(fireHole.noMobCollision);
     CHECK(!hole.intangible);

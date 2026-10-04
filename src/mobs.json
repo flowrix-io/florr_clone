@@ -261,7 +261,7 @@
         "ambush": {
             "mobType": "soldier_fire_ant",
             "count": 30,
-            "triggerDistance": 30
+            "triggerRadiusScale": 1.5
         }
     },
     "worker_fire_ant": {
