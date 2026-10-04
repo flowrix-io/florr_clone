@@ -61,6 +61,15 @@ struct NpcSpec {
     /// Whose side it stands on. The players' own NPCs cannot be hit at all; an
     /// NPC on any other side takes every hit and loses nothing from any of them.
     Team team = Team::Players;
+    /// The petals it wears, one loadout slot each, in a ring that orbits it
+    /// exactly as a flower's does -- spawned, placed, broken and reloaded by
+    /// the petal system, at `petalRarity`. Empty for an NPC that wears none,
+    /// which is every NPC but the titan. One that wears any FIGHTS like a
+    /// flower: its ring and its body hit whatever its side may hit.
+    std::vector<std::uint16_t> petals;
+    Rarity petalRarity = Rarity::Universal;
+
+    bool wearsPetals() const { return !petals.empty(); }
 };
 
 /// A volley. `present` is what distinguishes "fires nothing" from "fires a

@@ -5531,6 +5531,29 @@
                  "width":0,
                  "x":5672,
                  "y":1512
+                }, 
+                {
+                 "height":0,
+                 "id":29,
+                 "name":"titan",
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"npc",
+                         "type":"string",
+                         "value":"titan"
+                        }, 
+                        {
+                         "name":"rarity",
+                         "type":"string",
+                         "value":"universal"
+                        }],
+                 "rotation":0,
+                 "type":"npcs",
+                 "visible":true,
+                 "width":0,
+                 "x":5328,
+                 "y":6224
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -5539,7 +5562,7 @@
          "y":0
         }],
  "nextlayerid":9,
- "nextobjectid":29,
+ "nextobjectid":30,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.10.1",

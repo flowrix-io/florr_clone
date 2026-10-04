@@ -78,6 +78,10 @@ struct Session {
     /// explicitly not supposed to charge for being worn.
     double splitReadyAtMillis = 0;
 
+    /// When this session's next TitanHolder query will be answered, on the
+    /// server's tick clock. See kTitanHolderQueryMillis.
+    double nextTitanQueryMillis = 0;
+
     /// The spawn point this connection asked to start at, from JoinGame.
     ///
     /// One of WorldMaps::spawnChoices()' ids -- a player spawn rectangle on

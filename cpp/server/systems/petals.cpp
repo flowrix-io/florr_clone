@@ -495,6 +495,10 @@ void PetalSystem::run(World& world, const ContentRegistry& registry, double nowM
     // and is why the phase's CommandBuffer goes unused here.
     (void)commands;
     players_->collect(playerList_);
+    // A ring-wearing NPC goes through every step below as a flower does. Its
+    // Health never moves (an NPC's pool is fixed), so it is never "down".
+    ringNpcs_->collect(ringNpcList_);
+    playerList_.insert(playerList_.end(), ringNpcList_.begin(), ringNpcList_.end());
     // Once for the tick, before any petal is placed: every player's ring reads
     // the same set of mob positions, as the reference's does.
     rebuildAttractionGrid(world);
@@ -562,6 +566,7 @@ void PetalSystem::bindTo(World& world) {
     if (bound_ == &world && players_) return;
     bound_ = &world;
     players_ = std::make_unique<Query<PlayerTag, Transform, Loadout, PetalRing>>(world);
+    ringNpcs_ = std::make_unique<Query<NpcTag, Transform, Loadout, PetalRing>>(world);
     mobs_ = std::make_unique<Query<MobTag, Transform, Body>>(world);
     // Pets are excluded at the source rather than at each call site: no strike,
     // blast or contact trigger in the reference ever sees a summon, because the
@@ -1315,6 +1320,9 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
     // incremental version has to unwind exactly what it applied, and one missed
     // unwind is a stat the player keeps for the rest of the session.
     if (PlayerModifiers* out = world.tryGet<PlayerModifiers>(player)) *out = aggregate.modifiers;
+    // Everything below is a FLOWER's body -- its size, pool and bite by level
+    // -- and an NPC wearing a ring keeps its mob's, at its own tier.
+    if (!world.has<PlayerTag>(player)) return aggregate;
     const PlayerProgress* progress = world.tryGet<PlayerProgress>(player);
     const int level = progress ? progress->level : 1;
     double sizeScale = aggregate.modifiers.sizeScale;

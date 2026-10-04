@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 46;
+inline constexpr std::uint16_t kProtocolVersion = 47;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -154,6 +154,19 @@ enum class ClientMessage : std::uint8_t {
     GuildEdit,          ///< str displayName, str description -- both replace
                         ///< what the guild has. Leader only; the tag is the
                         ///< guild's key and cannot be edited. (Version 45.)
+    TitanForge,         ///< u16 itemType -- kTitanForgeCost APEX petals of it
+                        ///< forged into one universal at a titan NPC. Never a
+                        ///< roll. Found and reached exactly as OracleCraft's
+                        ///< oracle is: the server looks for the titan itself.
+                        ///< Every other account's universal of that petal is
+                        ///< taken and refunded at kTitanForgeRefund apex
+                        ///< apiece. (Version 47.)
+    TitanHolder,        ///< u16 itemType -- who holds that petal at universal,
+                        ///< for the titan to remember forging it for. Answered
+                        ///< only to a flower standing at the titan, and at most
+                        ///< once per kTitanHolderQueryMillis per session: a
+                        ///< faster one is dropped, and the client asks again.
+                        ///< (Version 47.)
 };
 
 enum class ServerMessage : std::uint8_t {
@@ -297,6 +310,13 @@ enum class ServerMessage : std::uint8_t {
     AdminDb,            ///< u8 AdminDbReply, then that reply's payload -- the
                         ///< database editor's answers (shared/net/admin_db.h).
                         ///< Sent to full admins only. (Version 44.)
+    TitanForgeResult,   ///< u8 ok, u16 itemType, str reason. `itemType` is the
+                        ///< petal that was forged, or offered on a refusal;
+                        ///< a success is always one universal of it. Its own
+                        ///< reply for OracleResult's reason. (Version 47.)
+    TitanHolder,        ///< u16 itemType, str username -- the answer to
+                        ///< ClientMessage::TitanHolder: the account holding that
+                        ///< petal at universal, or empty for nobody. (Version 47.)
 };
 
 // ---------------------------------------------------------------------------
@@ -334,6 +354,7 @@ enum class NotificationKind : std::uint8_t {
     UniqueCraft,
     ApexCraft,
     StarCode,
+    UniversalCraft,     ///< a universal forged at a titan (version 47)
 };
 
 /// Which shop action a ShopResult answers.

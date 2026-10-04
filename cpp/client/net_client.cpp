@@ -80,6 +80,8 @@ const char* clientMessageName(std::uint8_t id) {
         case net::ClientMessage::LoadLoadoutPreset:   return "loadLoadoutPreset";
         case net::ClientMessage::Trade:               return "trade";
         case net::ClientMessage::AdminDb:             return "adminDb";
+        case net::ClientMessage::TitanForge:          return "titanForge";
+        case net::ClientMessage::TitanHolder:         return "titanHolder";
     }
     return "unknown";
 }
@@ -117,6 +119,8 @@ const char* serverMessageName(std::uint8_t id) {
         case net::ServerMessage::ChatHistory:         return "chatHistory";
         case net::ServerMessage::TradeResult:         return "tradeResult";
         case net::ServerMessage::AdminDb:             return "adminDb";
+        case net::ServerMessage::TitanForgeResult:    return "titanForgeResult";
+        case net::ServerMessage::TitanHolder:         return "titanHolder";
     }
     return "unknown";
 }
@@ -301,6 +305,8 @@ void NetClient::forgetAccount() {
     oracleReadyAtMillis_ = 0;
     tradeOutcome_ = TradeOutcome{};
     traderReadyAtMillis_ = 0;
+    titanForgeOutcome_ = TitanForgeOutcome{};
+    titanHolders_.clear();
     shopOutcome_ = ShopOutcome{};
     passwordOutcome_ = PasswordOutcome{};
     adminDb_ = AdminDbState{};
@@ -440,6 +446,25 @@ void NetClient::requestTrade(std::uint16_t petalIndex, Rarity rarity) {
 
 double NetClient::traderCooldownRemainingMillis() const {
     return std::max(0.0, traderReadyAtMillis_ - nowMillis());
+}
+
+void NetClient::requestTitanForge(std::uint16_t petalIndex) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::TitanForge);
+    w.u16(petalIndex);
+    send(w);
+}
+
+void NetClient::requestTitanHolder(std::uint16_t petalIndex) {
+    ByteWriter w;
+    beginMessage(w, net::ClientMessage::TitanHolder);
+    w.u16(petalIndex);
+    send(w);
+}
+
+const std::string* NetClient::titanHolder(std::uint16_t petalIndex) const {
+    const auto found = titanHolders_.find(petalIndex);
+    return found == titanHolders_.end() ? nullptr : &found->second;
 }
 
 void NetClient::requestUpgradeSkill(SkillId skill, int tier) {
@@ -880,6 +905,8 @@ void NetClient::onMessage(net::Connection&, ByteReader& reader) {
         case net::ServerMessage::ChangePasswordResult: handleChangePasswordResult(reader); break;
         case net::ServerMessage::OracleResult:  handleOracleResult(reader); break;
         case net::ServerMessage::TradeResult:   handleTradeResult(reader); break;
+        case net::ServerMessage::TitanForgeResult: handleTitanForgeResult(reader); break;
+        case net::ServerMessage::TitanHolder:   handleTitanHolder(reader); break;
         case net::ServerMessage::SessionReplaced: handleSessionReplaced(reader); break;
         case net::ServerMessage::ChatHistory:   handleChatHistory(reader); break;
         case net::ServerMessage::AdminDb:       handleAdminDb(reader); break;
@@ -1081,6 +1108,23 @@ void NetClient::handleTradeResult(ByteReader& reader) {
     if (!reader.ok()) return;
     outcome.pending = true;
     tradeOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleTitanForgeResult(ByteReader& reader) {
+    TitanForgeOutcome outcome;
+    outcome.success = reader.boolean();
+    outcome.petalIndex = reader.u16();
+    outcome.reason = reader.str();
+    if (!reader.ok()) return;
+    outcome.pending = true;
+    titanForgeOutcome_ = std::move(outcome);
+}
+
+void NetClient::handleTitanHolder(ByteReader& reader) {
+    const std::uint16_t petalIndex = reader.u16();
+    std::string holder = reader.str();
+    if (!reader.ok()) return;
+    titanHolders_[petalIndex] = std::move(holder);
 }
 
 void NetClient::handleShopResult(ByteReader& reader) {

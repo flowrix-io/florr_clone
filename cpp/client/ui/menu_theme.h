@@ -47,6 +47,9 @@ inline constexpr PanelSkin kOracleSkin{0x6D859Cu, 0x586C7Eu, 0x586C7Eu};
 /// scroll thumb one step darker -- all three the reference shot's
 /// (After-trade_trade_menu.webp).
 inline constexpr PanelSkin kTraderSkin{0xFFE763u, 0xCFBB50u, 0xCCB94Fu};
+/// The titan's forge is the one card in charcoal: #333333 for the body, and
+/// #292929 for the border, the empty slots and the scroll thumb.
+inline constexpr PanelSkin kTitanSkin{0x333333u, 0x292929u, 0x292929u};
 inline constexpr PanelSkin kGallerySkin{0xE6D64Cu, 0xA89D36u, 0xA89D36u};
 /// The talent card is the one panel drawn against a reference screenshot
 /// rather than the browser build's CSS, so its body is that shot's dusty red

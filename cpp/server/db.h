@@ -344,6 +344,7 @@ public:
     Account* findUser(const std::string& username);
     const Account* findUser(const std::string& username) const;
     Account* findUserById(const std::string& userId);
+    const Account* findUserById(const std::string& userId) const;
 
     /// The stored spelling of `username`, or empty if there is no such
     /// account.
@@ -445,6 +446,10 @@ public:
     /// still reports the current state, which is what a reconnect needs.
     DailyStreakResult processDailyStreak(const std::string& userId);
     std::size_t playerCount() const { return players_.size(); }
+    /// Every userId with a progress record, in stored order. Read with
+    /// findProgress(); reach for progress() only for the rows actually being
+    /// changed, so a sweep does not throw away every row's cached text.
+    const std::vector<std::string>& playerIds() const { return players_.keys(); }
 
     void setClock(ClockFn fn) { clock_ = fn; }
     /// Unix milliseconds from the active clock.

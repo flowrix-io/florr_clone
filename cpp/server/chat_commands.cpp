@@ -274,10 +274,11 @@ constexpr const char* kSquadCommands =
     "/squad-find-public, /squad-join &lt;squadId&gt;, /squad-public, /squad-private, "
     "/squad-accept, /squad-decline, /squad-leave, /squad-info";
 
-/// The four type tags the browser stores against a notification.
+/// The four type tags the browser stores against a notification, and the
+/// universal forge's.
 bool validNotificationType(const std::string& type) {
     return type == "super_craft" || type == "unique_craft" || type == "apex_craft" ||
-           type == "star_code";
+           type == "star_code" || type == "universal_craft";
 }
 
 } // namespace
@@ -1636,7 +1637,9 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         int removed = 0;
         Query<NpcTag> npcs{world_};
         npcs.each([&](Entity entity, NpcTag&) {
-            commands_.destroy(entity);
+            // As a flower's body goes: a titan's ring and anything it summoned
+            // go with it, rather than orbiting nothing.
+            destroyBody(entity);
             ++removed;
         });
         out("Removed " + plural(removed, "NPC", "NPCs") +
@@ -2196,7 +2199,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         if (text.empty()) {
             out("Usage: notification <type> <message>");
             out("  Or: notify <type> <message> (shorthand)");
-            out("  Valid types: super_craft, unique_craft, apex_craft, star_code");
+            out("  Valid types: super_craft, unique_craft, apex_craft, star_code, universal_craft");
             out("  Examples:");
             out("    notification star_code Special event starting now!");
             out("    notify unique_craft New unique petal discovered!");
@@ -2204,7 +2207,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
         if (!validNotificationType(type)) {
             out("Invalid notification type. Valid types: super_craft, unique_craft, apex_craft, "
-                "star_code");
+                "star_code, universal_craft");
             return;
         }
         // The same writer a rare craft and a redeemed code go through, so a

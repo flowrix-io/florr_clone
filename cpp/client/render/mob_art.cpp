@@ -178,6 +178,7 @@ MobArt mobArtFor(const std::string& image) {
     if (name == "spider") return MobArt::Spider;
     if (name == "oracle") return MobArt::Oracle;
     if (name == "trader") return MobArt::Trader;
+    if (name == "titan") return MobArt::Titan;
     // florr's ports, under florr's own names.
     static const std::pair<const char*, MobArt> kFlorr[] = {
         {"scorpion", MobArt::Scorpion},
@@ -2551,6 +2552,116 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.beginPath();
             canvas.moveTo(-6.0f, 10.0f);
             canvas.quadraticCurveTo(0.0f, 10.0f, 6.0f, 10.0f);
+            canvas.stroke();
+
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Titan: {
+            constexpr double kArtRadius = 27.35;
+            constexpr int kTeeth = 20;
+            constexpr double kToothRoot = 25.53;
+            /// Half the angle a tooth's flat top spans. Its flanks run from
+            /// there straight down to the root, halfway to the next tooth.
+            constexpr double kToothTopHalf = 3.0 * kPi / 180.0;
+            constexpr double kDiscRadius = 21.9;
+            constexpr std::uint32_t kCog = 0x535353u;
+            constexpr std::uint32_t kDisc = 0x666666u;
+            constexpr std::uint32_t kInk = 0x111111u;
+            constexpr std::uint32_t kGlint = 0xEEEEEEu;
+            /// The brow over the left eye, outer end then inner (the right is
+            /// its mirror): the eye shows only below this line, the scowl.
+            constexpr Vec2 kBrowOuter{-10.14, -11.47};
+            constexpr Vec2 kBrowInner{-1.38, -5.83};
+            constexpr double kEyeX = 7.0;
+            constexpr double kEyeY = -5.0;
+            constexpr double kEyeRadius = 3.0;
+            constexpr double kEyeStretch = 2.0;
+
+            const double s = attr.radius / kArtRadius;
+            canvas.save();
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+
+            // Filled only, so the outline is left open: fill closes it.
+            ui::setFill(canvas, kCog);
+            canvas.beginPath();
+            const double pitch = kTau / kTeeth;
+            for (int i = 0; i < kTeeth; ++i) {
+                const double spoke = pitch * i;
+                const Vec2 top0 = Vec2::fromAngle(spoke - kToothTopHalf, kArtRadius);
+                const Vec2 top1 = Vec2::fromAngle(spoke + kToothTopHalf, kArtRadius);
+                const Vec2 root = Vec2::fromAngle(spoke + pitch * 0.5, kToothRoot);
+                if (i == 0) canvas.moveTo(static_cast<float>(top0.x), static_cast<float>(top0.y));
+                else canvas.lineTo(static_cast<float>(top0.x), static_cast<float>(top0.y));
+                canvas.lineTo(static_cast<float>(top1.x), static_cast<float>(top1.y));
+                canvas.lineTo(static_cast<float>(root.x), static_cast<float>(root.y));
+            }
+            canvas.fill();
+            ui::setFill(canvas, kDisc);
+            canvas.fillCircle(0.0f, 0.0f, static_cast<float>(kDiscRadius));
+
+            // The glints travel as a flower's pupils do.
+            Vec2 gaze = attr.gaze;
+            if (gaze.lengthSq() > 1.0) gaze = gaze * (1.0 / gaze.length());
+            const Vec2 glint{gaze.x * kFlowerEyeTravelX, gaze.y * kFlowerEyeTravelY};
+
+            for (const double side : {-1.0, 1.0}) {
+                const double ex = side * kEyeX;
+                // Everything below is clipped under the brow: the line run on
+                // past both ends, and down well below the eye.
+                const Vec2 outer{-side * kBrowOuter.x, kBrowOuter.y};
+                const Vec2 inner{-side * kBrowInner.x, kBrowInner.y};
+                const Vec2 run = (inner - outer) * 0.5;
+                const Vec2 from = outer - run;
+                const Vec2 to = inner + run;
+                const float below = static_cast<float>(kEyeY + 12.0);
+                canvas.save();
+                canvas.beginPath();
+                canvas.moveTo(static_cast<float>(from.x), static_cast<float>(from.y));
+                canvas.lineTo(static_cast<float>(to.x), static_cast<float>(to.y));
+                canvas.lineTo(static_cast<float>(to.x), below);
+                canvas.lineTo(static_cast<float>(from.x), below);
+                canvas.clip();
+
+                ui::setFill(canvas, kInk);
+                canvas.beginPath();
+                canvas.ellipse(static_cast<float>(ex), static_cast<float>(kEyeY),
+                               static_cast<float>(kEyeRadius),
+                               static_cast<float>(kEyeRadius * kEyeStretch), 0.0f, 0.0f,
+                               static_cast<float>(kTau));
+                canvas.fill();
+                // The glint, inside the socket.
+                canvas.save();
+                canvas.clip();
+                ui::setFill(canvas, kGlint);
+                canvas.fillCircle(static_cast<float>(ex + glint.x),
+                                  static_cast<float>(kEyeY + glint.y),
+                                  static_cast<float>(kEyeRadius));
+                canvas.restore();
+                // A hairline round the socket, in the stretched frame like the
+                // socket, and outside the socket's clip so both halves show.
+                // Closed, or the stroke's two butt ends leave a hairline gap
+                // where the circle starts.
+                canvas.save();
+                canvas.translate(static_cast<float>(ex), static_cast<float>(kEyeY));
+                canvas.scale(1.0f, static_cast<float>(kEyeStretch));
+                ui::setStroke(canvas, kInk);
+                canvas.setLineWidth(0.5f);
+                canvas.beginPath();
+                canvas.arc(0.0f, 0.0f, static_cast<float>(kEyeRadius), 0.0f,
+                           static_cast<float>(kTau));
+                canvas.closePath();
+                canvas.stroke();
+                canvas.restore();
+                canvas.restore();
+            }
+
+            roundStrokes(canvas, 1.5);
+            ui::setStroke(canvas, kInk);
+            canvas.beginPath();
+            canvas.moveTo(-6.0f, 10.0f);
+            canvas.quadraticCurveTo(0.0f, 5.0f, 6.0f, 10.0f);
             canvas.stroke();
 
             canvas.restore();

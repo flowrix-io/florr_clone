@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "client/chat_bubbles.h"
@@ -208,6 +209,16 @@ struct OracleOutcome {
     int crafted = 0;
     /// How many petals went in.
     std::uint32_t spent = 0;
+    std::string reason;
+};
+
+/// The outcome of the last forge at a titan. Its own record for
+/// OracleOutcome's reason.
+struct TitanForgeOutcome {
+    bool pending = false;      ///< a result arrived that the panel has not read
+    bool success = false;
+    /// The petal forged -- one universal of it -- or offered on a refusal.
+    std::uint16_t petalIndex = 0;
     std::string reason;
 };
 
@@ -457,6 +468,19 @@ public:
     /// How long until the account may trade again, counted down on this
     /// client's clock from the last profile; 0 when it may now.
     double traderCooldownRemainingMillis() const;
+    /// Forges kTitanForgeCost apex of this petal into one universal at the
+    /// titan the body is standing at.
+    void requestTitanForge(std::uint16_t petalIndex);
+    /// Asks the titan the body is standing at who holds this petal at
+    /// universal. The answer lands in titanHolder(); the server drops a query
+    /// that comes too soon after the last, so a caller asks again until one
+    /// does.
+    void requestTitanHolder(std::uint16_t petalIndex);
+    /// The last answer for this petal -- a username, or empty for nobody --
+    /// or null when none has come back since it was last forgotten.
+    const std::string* titanHolder(std::uint16_t petalIndex) const;
+    /// Forgets the answer for this petal, so the next look asks again.
+    void forgetTitanHolder(std::uint16_t petalIndex) { titanHolders_.erase(petalIndex); }
     void requestRespawn();
     void sendPing();
     /// Buys the NEXT tier of a branch. The server refuses anything else, so
@@ -685,6 +709,8 @@ public:
     OracleOutcome& oracleOutcome() { return oracleOutcome_; }
     /// The last trade result, read and cleared the same way.
     TradeOutcome& tradeOutcome() { return tradeOutcome_; }
+    /// The last titan forge result, read and cleared the same way.
+    TitanForgeOutcome& titanForgeOutcome() { return titanForgeOutcome_; }
 
     /// The last purchase or code redemption. The shop panel clears `pending`
     /// once it has raised the modal for it.
@@ -768,6 +794,8 @@ private:
     void handleCraftResult(ByteReader&);
     void handleOracleResult(ByteReader&);
     void handleTradeResult(ByteReader&);
+    void handleTitanForgeResult(ByteReader&);
+    void handleTitanHolder(ByteReader&);
     void handleShopResult(ByteReader&);
     void handleChangePasswordResult(ByteReader&);
     void handleLeaderboard(ByteReader&);
@@ -862,6 +890,9 @@ private:
     TradeOutcome tradeOutcome_;
     /// The same for the trader's wait.
     double traderReadyAtMillis_ = 0;
+    TitanForgeOutcome titanForgeOutcome_;
+    /// The titan's answers, by petal: who holds it at universal.
+    std::unordered_map<std::uint16_t, std::string> titanHolders_;
     ShopOutcome shopOutcome_;
     PasswordOutcome passwordOutcome_;
     AdminDbState adminDb_;

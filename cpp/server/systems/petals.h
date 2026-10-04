@@ -472,6 +472,12 @@ private:
 
     World* bound_ = nullptr;
     std::unique_ptr<Query<PlayerTag, Transform, Loadout, PetalRing>> players_;
+    /// NPCs that wear a ring (the titan, from its `npc.petals`). The ring pass
+    /// runs them exactly as it runs a flower: nothing in it needs the owner to
+    /// be a player, only to have a body, a loadout and a ring -- the player's
+    /// own components (talents, input, mana, modifiers) are all read as
+    /// optional, and an NPC simply has none.
+    std::unique_ptr<Query<NpcTag, Transform, Loadout, PetalRing>> ringNpcs_;
     /// Wild mobs only: a summon is never a target for its owner's strike, its
     /// explosion or a behaviour waiting on first contact.
     std::unique_ptr<Query<MobTag, Transform, Body>> mobs_;
@@ -481,6 +487,7 @@ private:
     std::unique_ptr<Query<NpcTag, Transform, Body, Faction>> npcs_;
 
     std::vector<Entity> playerList_;
+    std::vector<Entity> ringNpcList_;
     std::vector<Entity> actionList_;
     /// The batteries with a charge ready this tick, snapshotted before the
     /// first one fires: a discharge creates entities and can put its slot on

@@ -814,6 +814,12 @@ Account* Database::findUserById(const std::string& userId) {
     return users_.find(it->second);
 }
 
+const Account* Database::findUserById(const std::string& userId) const {
+    auto it = usersById_.find(userId);
+    if (it == usersById_.end()) return nullptr;
+    return users_.find(it->second);
+}
+
 std::string Database::canonicalUsername(const std::string& username) const {
     const Account* account = findUser(username);
     return account ? account->username : std::string();

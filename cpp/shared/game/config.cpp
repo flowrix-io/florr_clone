@@ -736,7 +736,8 @@ std::array<double, kLadderRarityCount> parseXp(Ctx& ctx, const Json& src) {
 /// is a friendly NPC that offers nothing -- and a value this build does not
 /// know is reported and read as its default, never as a reason to drop the
 /// NPC: a map that places one would otherwise stand nothing there in silence.
-NpcSpec parseNpcSpec(Ctx& ctx, const Json& owner) {
+NpcSpec parseNpcSpec(Ctx& ctx, const Json& owner,
+                     const std::unordered_map<std::string, std::uint16_t>& petalIds) {
     NpcSpec spec;
     if (!owner.contains("npc")) return spec;
     const Json& node = owner["npc"];
@@ -758,6 +759,29 @@ NpcSpec parseNpcSpec(Ctx& ctx, const Json& owner) {
         ctx.warn("npc team '" + team + "' is not players, hostile or neutral; it stands with the "
                  "players");
     }
+    // The ring: a list of petal ids, one loadout slot each, worn at one tier.
+    // A name that is not a petal is dropped with a line rather than leaving an
+    // empty seat in the ring, and the active row is all a ring has.
+    if (node.contains("petals")) {
+        const Json& petals = node["petals"];
+        if (!petals.isArray()) {
+            ctx.warn(std::string("npc petals is ") + typeName(petals) +
+                     ", not an array; it wears none");
+        } else {
+            for (std::size_t i = 0; i < petals.size(); ++i) {
+                const std::string id = petals[i].isString() ? petals[i].stringRef() : std::string();
+                const std::uint16_t index = ctx.link(petalIds, id, "npc petals entry");
+                if (index == kInvalidIndex) continue;
+                if (spec.petals.size() >= static_cast<std::size_t>(kLoadoutActiveSlots)) {
+                    ctx.warn("npc petals lists more than " + std::to_string(kLoadoutActiveSlots) +
+                             "; the rest are not worn");
+                    break;
+                }
+                spec.petals.push_back(index);
+            }
+        }
+    }
+    spec.petalRarity = ctx.rarity(node, "petalRarity", Rarity::Universal);
     return spec;
 }
 
@@ -806,7 +830,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
                        groups, groupIds);
     }
 
-    m.npc = parseNpcSpec(ctx, src);
+    m.npc = parseNpcSpec(ctx, src, petalIds);
     m.hideRotation = ctx.boolean(src, "hideRotation");
     m.noEggDrop = ctx.boolean(src, "noEggDrop");
     m.reversed = ctx.boolean(src, "reversed");

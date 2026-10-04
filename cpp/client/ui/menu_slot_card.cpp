@@ -102,9 +102,11 @@ double jitter() {
 
 } // namespace
 
-double slotCardWidth(bool withApex) {
-    const double columns = static_cast<double>(tierColumns(withApex));
-    return kGridLeft + columns * (kGridCell + kGridGap) - kGridGap + kGridRight;
+double slotCardWidth(bool withApex) { return slotCardColumnsWidth(tierColumns(withApex)); }
+
+double slotCardColumnsWidth(std::size_t columns) {
+    return kGridLeft + static_cast<double>(columns) * (kGridCell + kGridGap) - kGridGap +
+           kGridRight;
 }
 
 double slotCardHeight() { return kCardHeight; }
@@ -244,6 +246,97 @@ std::optional<SlotGrid::Pick> SlotGrid::render(
             tile.petalIndex = petalIndex;
             tile.rarity = rarity;
             tile.hovered = over;
+            tile.greyed = cell.greyed;
+            tile.badge = cell.badge;
+            tile.badgeCentred = cell.badgeCentred;
+            tile.timeSeconds = ctx.timeSeconds;
+            drawItemTile(canvas, ctx.sprites, rect, tile);
+        }
+    }
+    canvas.restore();
+
+    if (contentHeight > view.h && view.h > 0.0) {
+        const double thumbHeight = std::max(kThumbMinHeight, view.h * view.h / contentHeight);
+        const double travel = contentHeight - view.h;
+        const double thumbY =
+            view.y + clamp(scroll_.offset / travel, 0.0, 1.0) * (view.h - thumbHeight);
+        fillRound(canvas,
+                  {panel.right() - kThumbRight - kThumbWidth, thumbY, kThumbWidth, thumbHeight},
+                  kThumbWidth * 0.5, skin.accent);
+    }
+    return hovered;
+}
+
+std::optional<SlotTierGrid::Pick> SlotTierGrid::render(
+    MenuContext& ctx, const SlotCardLayout& layout, const PanelSkin& skin, Rarity tier,
+    std::size_t columns, double top,
+    const std::function<SlotCell(std::uint16_t petalIndex, std::uint32_t owned)>& look) {
+    Canvas& canvas = ctx.canvas;
+    const Profile& profile = ctx.net.profile();
+    const Rect panel = layout.panel;
+    const Vec2 mouse = ctx.mouse();
+    columns = std::max<std::size_t>(1, columns);
+
+    std::vector<std::uint16_t> types;
+    for (const Profile::Stack& stack : profile.inventory) {
+        if (stack.count == 0 || stack.rarity != tier) continue;
+        if (std::find(types.begin(), types.end(), stack.petalIndex) == types.end()) {
+            types.push_back(stack.petalIndex);
+        }
+    }
+    std::sort(types.begin(), types.end());
+    const std::size_t rows = (types.size() + columns - 1) / columns;
+
+    const double viewTop = panel.y + top;
+    const Rect view{panel.x + kCardBorder, viewTop, panel.w - kCardBorder * 2,
+                    std::max(0.0, panel.bottom() - kCardBorder - viewTop)};
+    // Where SlotGrid's columns would stand -- in from the left, and clear of
+    // the thumb on the right -- and each row centred on the middle of that.
+    const double areaWidth = static_cast<double>(columns) * (kGridCell + kGridGap) - kGridGap;
+    const double areaCentre = panel.x + kGridLeft + areaWidth * 0.5;
+    const double contentHeight = kGridPadding * 2 +
+                                 static_cast<double>(rows) * (kGridCell + kGridGap) -
+                                 (rows == 0 ? 0.0 : kGridGap);
+
+    scroll_.contentHeight = contentHeight;
+    scroll_.viewHeight = view.h;
+    if (panel.contains(mouse) && mouse.y >= viewTop) {
+        scroll_.offset -= static_cast<double>(ctx.wheel()) * kWheelStep;
+    }
+    scroll_.offset -= touchScroll(ctx.window, view, scroll_.maxOffset() > 0);
+    scroll_.offset = clamp(scroll_.offset, 0.0, scroll_.maxOffset());
+
+    canvas.save();
+    canvas.beginPath();
+    canvas.rect(static_cast<float>(view.x), static_cast<float>(view.y), static_cast<float>(view.w),
+                static_cast<float>(view.h));
+    canvas.clip();
+
+    std::optional<Pick> hovered;
+    for (std::size_t row = 0; row < rows; ++row) {
+        const double y = view.y - scroll_.offset + kGridPadding +
+                         static_cast<double>(row) * (kGridCell + kGridGap);
+        if (y + kGridCell < view.y || y > view.bottom()) continue;
+        const std::size_t first = row * columns;
+        const std::size_t count = std::min(columns, types.size() - first);
+        const double rowWidth = static_cast<double>(count) * (kGridCell + kGridGap) - kGridGap;
+        const double startX = areaCentre - rowWidth * 0.5;
+        for (std::size_t k = 0; k < count; ++k) {
+            const std::uint16_t petalIndex = types[first + k];
+            const Rect rect{startX + static_cast<double>(k) * (kGridCell + kGridGap), y, kGridCell,
+                            kGridCell};
+            const SlotCell cell = look(petalIndex, profile.stackCount(petalIndex, tier));
+            if (cell.count == 0) {
+                drawSlotPlate(canvas, ctx.sprites, rect, skin);
+                continue;
+            }
+            const bool under = rect.contains(mouse) && view.contains(mouse);
+            if (under) hovered = Pick{petalIndex, cell.greyed};
+
+            ItemTile tile;
+            tile.petalIndex = petalIndex;
+            tile.rarity = tier;
+            tile.hovered = under && !cell.greyed;
             tile.greyed = cell.greyed;
             tile.badge = cell.badge;
             tile.badgeCentred = cell.badgeCentred;

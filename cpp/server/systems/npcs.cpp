@@ -54,8 +54,10 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     if (mobIndex >= content.mobCount()) return NULL_ENTITY;
     const MobConfig& config = content.mob(mobIndex);
     // The mob's own size ladder and floor, exactly as a wild one of the same
-    // tier would have: an NPC and its enemy twin are the same creature.
-    rarity = clampLadderRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
+    // tier would have: an NPC and its enemy twin are the same creature. An
+    // NPC alone may stand at universal -- the tier is its plate, and its stats
+    // read apex (mobStats) -- because no NPC is ever rolled: one is placed.
+    rarity = clampRarity(std::max(rarityIndex(rarity), rarityIndex(config.minRarity)));
     const MobStats stats = content.mobStats(mobIndex, rarity);
     const double radius = stats.radius > 0.0 ? stats.radius : kMobBaseRadius;
 
@@ -75,9 +77,25 @@ Entity NpcSystem::spawnNpc(World& world, const Terrain& terrain, const ContentRe
     // its mob's own body: the same bite, at this tier, on the mob's cadence --
     // what touching a flower costs it and what a petal striking it pays. The
     // players' own NPCs touch nobody (and canHit refuses them anyway): a mob
-    // wandering through the oracle must not be bitten by it.
-    if (team != Team::Players) {
+    // wandering through the oracle must not be bitten by it -- unless the NPC
+    // wears a ring, which makes it a fighter on its side the way a flower is
+    // one on the players': its body bites what its petals hit.
+    const bool fighter = config.npc.wearsPetals();
+    if (team != Team::Players || fighter) {
         world.add<ContactDamage>(e, ContactDamage{stats.damage, kMobHitIntervalMillis});
+    }
+    // The ring itself is the petal system's: a loadout, one slot a petal, and
+    // the ring geometry it lays them out on. Everything after that -- the fly
+    // out, the orbit about this body's edge, the breaks and the reloads -- is
+    // what a flower's ring does, by the same code.
+    if (fighter) {
+        Loadout loadout;
+        for (std::size_t i = 0; i < config.npc.petals.size() && i < kLoadoutActiveSlots; ++i) {
+            loadout.slots[i].configIndex = config.npc.petals[i];
+            loadout.slots[i].rarity = config.npc.petalRarity;
+        }
+        world.add<Loadout>(e, std::move(loadout));
+        world.add<PetalRing>(e);
     }
     // The mob's own pool, armour and dodge at this tier, so that an NPC on the
     // other side is hit exactly as its mob would be -- the whole point of a

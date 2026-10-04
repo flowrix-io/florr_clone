@@ -417,20 +417,23 @@ private:
 // The slot card
 // ---------------------------------------------------------------------------
 //
-// The craft key opens one of three cards -- the forge's, or the oracle's or
-// the trader's while the flower stands at one -- and the three are ONE card,
-// laid out against the reference trade shot (After-trade_trade_menu.webp),
-// which the oracle's reference matches to the unit: a title and a close
-// button; a slot left of the centre line and the action button right of it;
-// one line of text; and a grid of everything the account owns, a row a petal
-// and a column a tier. What differs is the skin, the words, whether the grid
-// runs on to apex (only the trader's: nothing crafts out of apex), what a cell
-// says, and what stands where the slot is -- the forge turns its ring of five
-// about the slot's centre where the other two hold one petal.
+// The craft key opens one of four cards -- the forge's, or the oracle's, the
+// trader's or the titan's while the flower stands at one -- and the four are
+// ONE card, laid out against the reference trade shot
+// (After-trade_trade_menu.webp), which the oracle's reference matches to the
+// unit: a title and a close button; a slot left of the centre line and the
+// action button right of it; one line of text; and a grid of everything the
+// account owns, a row a petal and a column a tier. What differs is the skin,
+// the words, whether the grid runs on to apex (only the trader's: nothing
+// crafts out of apex), what a cell says, and what stands where the slot is --
+// the forge and the titan turn a ring of five about the slot's centre where
+// the other two hold one petal.
 //
 // These are the pieces they share (menu_slot_card.cpp). Each panel keeps its
 // own staging, its own animation and its own input: that is what makes them
-// three menus rather than one.
+// four menus rather than one. The titan's card is the same card cut down:
+// eight grid columns wide, and only as tall as one row of its grid, under
+// three lines of text instead of one.
 
 /// The slot's side, and the size the oracle and the trader draw what is in it.
 inline constexpr double kSlotCardSlot = 70.0;
@@ -460,11 +463,15 @@ struct SlotCardLayout {
 /// The card's width -- its grid's, one column a tier through unique, or on
 /// through apex when `withApex` -- and its height, the reference card's.
 double slotCardWidth(bool withApex);
+/// The width of a card whose grid is `columns` cells across.
+double slotCardColumnsWidth(std::size_t columns);
 double slotCardHeight();
 /// Where a slot card stands: on the list panels' left inset and bottom edge,
 /// reaching up its own height, and stopping short of the HUD in the top-left
 /// corner on a window too short for all of it.
 Rect slotCardBounds(bool withApex, int viewWidth, int viewHeight);
+/// The same for a card of any size: the titan's is shorter and narrower.
+Rect slotCardBounds(double width, double height, int viewWidth, int viewHeight);
 
 /// Draws the card, its title and its close button, and lays out the rest.
 SlotCardLayout drawSlotCard(Canvas&, Rect panel, const ui::PanelSkin&, const char* title,
@@ -517,6 +524,31 @@ public:
     std::optional<Pick> render(
         MenuContext&, const SlotCardLayout&, const ui::PanelSkin&, bool withApex,
         const std::function<SlotCell(std::uint16_t petalIndex, Rarity, std::uint32_t owned)>& look);
+
+private:
+    ui::Scroller scroll_;
+};
+
+/// The titan's grid: a cell for every petal type the account holds at ONE
+/// tier -- from the undeducted profile, as SlotGrid's rows are -- `columns`
+/// to a row, each row centred where SlotGrid's columns would stand, and
+/// scrolling a row at a time from `top` (measured from the card's top) to the
+/// card's bottom border.
+class SlotTierGrid {
+public:
+    /// The held cell under the cursor. A greyed one is reported too -- the
+    /// titan still names who holds it -- but it is never drawn hovered.
+    struct Pick {
+        std::uint16_t petalIndex = kNoPetal;
+        bool greyed = false;
+    };
+
+    void reset() { scroll_ = {}; }
+    /// Scrolls, draws, and returns the held cell under the cursor, if any.
+    std::optional<Pick> render(
+        MenuContext&, const SlotCardLayout&, const ui::PanelSkin&, Rarity tier,
+        std::size_t columns, double top,
+        const std::function<SlotCell(std::uint16_t petalIndex, std::uint32_t owned)>& look);
 
 private:
     ui::Scroller scroll_;
@@ -699,6 +731,53 @@ private:
     /// Why the trader said no, shown under the slot until it expires.
     std::string refusal_;
     double refusalUntil_ = 0;
+};
+
+/// The titan: what the craft card becomes while the flower stands at the
+/// titan NPC -- the universal forge.
+///
+/// The forge's ring of five, set the way florr's own forge sets it (a
+/// pentagon, point up, of full-size slots), a Forge button, three lines on
+/// what a universal costs its last holder, and one row of every petal the
+/// account holds at apex -- greyed until there are five to forge. Five apex in,
+/// one universal out, never a roll: the ring closes in on itself and the
+/// universal lands in its middle the way loot lands. See menu_titan.cpp.
+class TitanPanel {
+public:
+    bool render(MenuContext&);
+    void reset();
+    static Rect bounds(int viewWidth, int viewHeight);
+
+private:
+    /// Forging: the five have gone to the server and the ring is closing on
+    /// them until the answer comes back.
+    enum class Phase : std::uint8_t { Idle, Forging, Result };
+
+    SlotTierGrid grid_;
+    SlotFlourish flourish_;
+    /// The petal in the ring: five of it at apex, which is what one forge
+    /// takes, or kNoPetal for an empty ring.
+    std::uint16_t stagedPetal_ = kNoPetal;
+
+    Phase phase_ = Phase::Idle;
+    double phaseStarted_ = 0;
+    /// What went to the titan on the click. The ring is emptied at once --
+    /// the petals are the server's now -- so this is drawn while the forge is
+    /// out, and a refusal puts it back.
+    std::uint16_t offeredPetal_ = kNoPetal;
+    /// What came back: one universal of it.
+    std::uint16_t resultPetal_ = kNoPetal;
+    /// A result that arrived before the ring had finished closing.
+    bool resultPending_ = false;
+    /// Why the titan said no, shown in place of the card's lines until it
+    /// expires.
+    std::string refusal_;
+    double refusalUntil_ = 0;
+    /// The petal last picked out of the grid, staged or grey, which the
+    /// titan is asked about -- who holds it at universal -- and when it was
+    /// last asked, so a query the server dropped is asked again.
+    std::uint16_t askedPetal_ = kNoPetal;
+    double askedAt_ = -1.0;
 };
 
 /// The bestiary: every mob at every tier it can appear at, and what the
@@ -1320,6 +1399,7 @@ private:
     CraftingPanel crafting_;
     OraclePanel oracle_;
     TradePanel trader_;
+    TitanPanel titan_;
     TalentsPanel talents_;
     GalleryPanel gallery_;
     ShopPanel shop_;

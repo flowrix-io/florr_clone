@@ -101,6 +101,21 @@ void giveToInventory(PlayerRecord& record, std::uint16_t petalIndex, Rarity rari
     record.addItem(rarity, inventoryKey(petalIndex), count);
 }
 
+/// Whether the account holds `petalIndex` at universal anywhere: in the bag
+/// or worn in a loadout slot. One of each petal may exist at universal, and
+/// both are where it can be.
+bool holdsUniversal(const PlayerRecord& record, std::uint16_t petalIndex) {
+    if (petalIndex == kNoPetal) return false;
+    if (record.itemCount(Rarity::Universal, inventoryKey(petalIndex)) > 0) return true;
+    const std::string& id = content().petal(petalIndex).id;
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (slot.has_value() && slot->rarity == Rarity::Universal && slot->petalType == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Rng as a standard bit generator, which is all the <random> distributions
 /// ask of one.
 struct RngBits {
@@ -307,6 +322,7 @@ net::NotificationKind notificationKind(const std::string& type) {
     if (type == "unique_craft") return net::NotificationKind::UniqueCraft;
     if (type == "apex_craft") return net::NotificationKind::ApexCraft;
     if (type == "star_code") return net::NotificationKind::StarCode;
+    if (type == "universal_craft") return net::NotificationKind::UniversalCraft;
     return net::NotificationKind::Generic;
 }
 
@@ -1055,6 +1071,8 @@ void GameServer::onMessage(net::Connection& connection, ByteReader& reader) {
         case net::ClientMessage::Craft:         handleCraft(*session, connection, reader); break;
         case net::ClientMessage::OracleCraft:   handleOracleCraft(*session, connection, reader); break;
         case net::ClientMessage::Trade:         handleTrade(*session, connection, reader); break;
+        case net::ClientMessage::TitanForge:    handleTitanForge(*session, connection, reader); break;
+        case net::ClientMessage::TitanHolder:   handleTitanHolder(*session, connection, reader); break;
         case net::ClientMessage::Respawn:       handleRespawn(*session); break;
         case net::ClientMessage::Ping:          handlePing(connection, reader); break;
         case net::ClientMessage::UpgradeSkill:  handleUpgradeSkill(*session, connection, reader); break;
@@ -2262,24 +2280,205 @@ double GameServer::traderWaitMillis(const std::string& userId) {
     return 0.0;
 }
 
+void GameServer::handleTitanForge(Session& session, net::Connection& connection,
+                                  ByteReader& reader) {
+    const std::uint16_t petalIndex = reader.u16();
+    if (!reader.ok() || !session.authenticated()) return;
+
+    const auto reply = [&](bool ok, const std::string& reason) {
+        ByteWriter w;
+        w.u8(static_cast<std::uint8_t>(net::ServerMessage::TitanForgeResult));
+        w.boolean(ok);
+        w.u16(petalIndex);
+        w.str(reason);
+        connection.send(w);
+    };
+
+    // Where the body IS decides, exactly as at the oracle: the titan is found
+    // here, never named on the wire.
+    const bool standing = session.playing() && world_.isAlive(session.entity) &&
+                          !world_.has<Dead>(session.entity);
+    const Transform* body = standing ? world_.tryGet<Transform>(session.entity) : nullptr;
+    if (body == nullptr) {
+        reply(false, "You need to be standing at the titan.");
+        return;
+    }
+    if (npcs_->findService(world_, NpcService::Titan, body->position, body->realm,
+                           kNpcServiceReach + kNpcServiceSlack) == NULL_ENTITY) {
+        reply(false, "You are too far from the titan.");
+        return;
+    }
+    if (petalIndex >= content().petalCount()) {
+        reply(false, "The titan cannot forge that.");
+        return;
+    }
+
+    // One of each petal at universal, the forger's own included: forging the
+    // one you already hold would only burn five apex for a second copy.
+    PlayerRecord& record = liveRecord(session);
+    if (holdsUniversal(record, petalIndex)) {
+        reply(false, "You already have the Universal " + content().petal(petalIndex).name + ".");
+        return;
+    }
+
+    // Five apex in, one universal out, every time: there is no roll to lose,
+    // and so nothing to hand back.
+    if (!takeFromInventory(record, petalIndex, Rarity::Apex, kTitanForgeCost)) {
+        reply(false, "You need " + std::to_string(kTitanForgeCost) + " Apex " +
+                         content().petal(petalIndex).name + " to forge it.");
+        return;
+    }
+    giveToInventory(record, petalIndex, Rarity::Universal, 1);
+    database_.markDirty();
+    std::printf("[TITAN] %s forged a universal %s\n", session.username.c_str(),
+                content().petal(petalIndex).id.c_str());
+
+    // The forger's account is now the one place a universal of it may be,
+    // and the titan remembers it there.
+    takeUniversals(petalIndex, session.userId);
+    universalHolders_[petalIndex] = HolderMemo{session.username, clockMillis_};
+    announceRareCraft(session, petalIndex, Rarity::Universal);
+
+    reply(true, "");
+    sendProfile(session, connection);
+}
+
+void GameServer::handleTitanHolder(Session& session, net::Connection& connection,
+                                   ByteReader& reader) {
+    const std::uint16_t petalIndex = reader.u16();
+    if (!reader.ok() || !session.authenticated()) return;
+    if (petalIndex >= content().petalCount()) return;
+    // Each answer can be a sweep of every account, so one session gets one
+    // every kTitanHolderQueryMillis; the client asks again for one dropped.
+    if (clockMillis_ < session.nextTitanQueryMillis) return;
+    // Asked of the titan, so only where it can be asked: standing at it.
+    const bool standing = session.playing() && world_.isAlive(session.entity) &&
+                          !world_.has<Dead>(session.entity);
+    const Transform* body = standing ? world_.tryGet<Transform>(session.entity) : nullptr;
+    if (body == nullptr ||
+        npcs_->findService(world_, NpcService::Titan, body->position, body->realm,
+                           kNpcServiceReach + kNpcServiceSlack) == NULL_ENTITY) {
+        return;
+    }
+    session.nextTitanQueryMillis = clockMillis_ + kTitanHolderQueryMillis;
+
+    ByteWriter w;
+    w.u8(static_cast<std::uint8_t>(net::ServerMessage::TitanHolder));
+    w.u16(petalIndex);
+    w.str(universalHolderName(petalIndex));
+    connection.send(w);
+}
+
+std::string GameServer::universalHolderName(std::uint16_t petalIndex) {
+    const auto memo = universalHolders_.find(petalIndex);
+    if (memo != universalHolders_.end() &&
+        clockMillis_ - memo->second.atMillis < kTitanHolderMemoMillis) {
+        return memo->second.username;
+    }
+    // A forge leaves one holder; an operator's `give` can leave more, and then
+    // any of them is a flower the titan forged it for as far as it can tell.
+    std::string holder;
+    for (const std::string& userId : database_.playerIds()) {
+        const PlayerRecord* record = database_.findProgress(userId);
+        if (record == nullptr || !holdsUniversal(*record, petalIndex)) continue;
+        const Account* account = std::as_const(database_).findUserById(userId);
+        if (account == nullptr) continue;
+        holder = account->username;
+        break;
+    }
+    universalHolders_[petalIndex] = HolderMemo{holder, clockMillis_};
+    return holder;
+}
+
+int GameServer::takeUniversals(std::uint16_t petalIndex, const std::string& keeperId) {
+    if (petalIndex >= content().petalCount()) return 0;
+    const PetalConfig& petal = content().petal(petalIndex);
+    const std::string key = inventoryKey(petalIndex);
+
+    // Found with the read-only lookup and changed through progress() only
+    // where there is something to take, so the sweep costs no row its cached
+    // text (see Database::playerIds).
+    std::vector<std::string> holders;
+    for (const std::string& userId : database_.playerIds()) {
+        if (userId == keeperId) continue;
+        const PlayerRecord* record = database_.findProgress(userId);
+        if (record != nullptr && holdsUniversal(*record, petalIndex)) holders.push_back(userId);
+    }
+
+    std::int64_t taken = 0;
+    for (const std::string& userId : holders) {
+        PlayerRecord& record = database_.progress(userId);
+        const int bagged = record.itemCount(Rarity::Universal, key);
+        record.addItem(Rarity::Universal, key, -bagged);
+        // Wide: a stack runs to kMaxStackCount, and four apex for each of
+        // those does not fit an int.
+        std::int64_t lost = bagged;
+        // A worn one goes too: the slot empties, as if the player had taken it
+        // off and the forge had then taken it out of the bag.
+        for (std::optional<StoredItem>& slot : record.loadout) {
+            if (slot.has_value() && slot->rarity == Rarity::Universal &&
+                slot->petalType == petal.id) {
+                slot.reset();
+                ++lost;
+            }
+        }
+        if (lost <= 0) continue;
+        // A refund past a full stack is lost, as anything landing on a full
+        // stack is (PlayerRecord::addItem).
+        const int refund = static_cast<int>(
+            std::min<std::int64_t>(lost * kTitanForgeRefund, kMaxStackCount));
+        giveToInventory(record, petalIndex, Rarity::Apex, refund);
+        taken += lost;
+        const Account* holder = std::as_const(database_).findUserById(userId);
+        std::printf("[TITAN] took %lld universal %s from %s\n", static_cast<long long>(lost),
+                    petal.id.c_str(), holder != nullptr ? holder->username.c_str() : userId.c_str());
+
+        // The account may be playing right now: its ring loses the petal and
+        // its panels see the refund at once.
+        const std::string text = "Another player forged the Universal " + petal.name +
+                                 ". You received " + std::to_string(refund) + " Apex " +
+                                 petal.name + " back.";
+        for (auto& entry : sessions_) {
+            Session& other = entry.second;
+            if (!other.authenticated() || other.userId != userId) continue;
+            if (other.playing()) applyAccountToSession(other);
+            if (net::Connection* peer = listener_.find(entry.first)) {
+                sendProfile(other, *peer);
+                sendNotice(*peer, net::NoticeSeverity::Warning, text);
+            }
+        }
+    }
+    if (taken > 0) database_.markDirty();
+    return static_cast<int>(std::min<std::int64_t>(taken, kMaxStackCount));
+}
+
 void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIndex,
                                    Rarity made) {
     // The top three tiers only, and ONE line however many the batch produced:
-    // the reference announces the craft, not each petal it yielded.
-    if (made != Rarity::Super && made != Rarity::Unique && made != Rarity::Apex) return;
+    // the reference announces the craft, not each petal it yielded. A
+    // universal is never crafted -- it is forged at a titan, one at a time --
+    // and says so.
+    const bool forged = made == Rarity::Universal;
+    if (made != Rarity::Super && made != Rarity::Unique && made != Rarity::Apex && !forged) return;
     if (petalIndex >= content().petalCount()) return;
 
     // The reference's own table, which is not kRarityColors: unique announces
     // in plain white here rather than in the near-white the tier is drawn in.
+    // Universal, which the reference never had, announces in its own grey.
     const char* tierColor = made == Rarity::Super    ? "#2bffa4"
                             : made == Rarity::Unique ? "#ffffff"
+                            : forged                 ? "#555555"
                                                      : "#ff00ff";
+    const std::string verb = forged ? " has been forged by " : " has been crafted by ";
     const std::string tier = rarityLabel(made);
     // "An Apex" -- and "An Unique", because the reference tests the LABEL's
     // first letter against the five vowels and 'U' is one of them. Reproduced
-    // rather than corrected: the line is the browser's, word for word.
+    // rather than corrected: the line is the browser's, word for word. The
+    // universal line is not the browser's, and says "The Universal": there is
+    // only ever one of each petal at universal.
     const std::string article =
-        std::string("AEIOUaeiou").find(tier[0]) != std::string::npos ? "An" : "A";
+        forged ? "The"
+               : std::string("AEIOUaeiou").find(tier[0]) != std::string::npos ? "An" : "A";
     const std::string petal = content().petal(petalIndex).name;
     const std::string playerName =
         session.displayName.empty() ? session.username : session.displayName;
@@ -2287,15 +2486,16 @@ void GameServer::announceRareCraft(const Session& session, std::uint16_t petalIn
     // Two renderings of one sentence: chat gets the marked-up one, and the
     // feed stores the flat one, because the panel draws glyph outlines and has
     // no parser to hand a tag to.
-    const std::string plain = article + " " + tier + " " + petal + " has been crafted by @" +
+    const std::string plain = article + " " + tier + " " + petal + verb + "@" +
                               session.username + " [" + playerName + "]";
     broadcastChat(net::ChatChannel::System, "",
                   std::string("<b style=\"color: ") + tierColor + ";\">" + article + " " + tier +
-                      " " + petal + " has been crafted by <b style=\"color: #00ff00;\">@" +
+                      " " + petal + verb + "<b style=\"color: #00ff00;\">@" +
                       session.username + "</b> [<b style=\"color: yellow;\">" + playerName +
                       "</b>]</b>");
 
-    addNotification(made == Rarity::Apex     ? "apex_craft"
+    addNotification(forged                   ? "universal_craft"
+                    : made == Rarity::Apex   ? "apex_craft"
                     : made == Rarity::Unique ? "unique_craft"
                                              : "super_craft",
                     plain);

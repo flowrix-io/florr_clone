@@ -771,6 +771,7 @@ void MenuSystem::toggle(MenuId id) {
             crafting_.reset();
             oracle_.reset();
             trader_.reset();
+            titan_.reset();
             break;
         case MenuId::Talents:     talents_.reset(); break;
         case MenuId::Gallery:     gallery_.reset(); break;
@@ -966,12 +967,14 @@ Rect InventoryPanel::bounds(int w, int h) { return listPanel(preferredWidth(), w
 /// The craft key's cards are their reference's size rather than a share of the
 /// view: each stands on the list family's bottom edge and reaches up its own
 /// height, stopping short of the HUD at the top-left on a window too short for
-/// it. The forge, the oracle and the trader all anchor here.
+/// it. The forge, the oracle, the trader and the titan all anchor here.
 Rect slotCardBounds(bool withApex, int w, int h) {
-    const Rect list = listPanel(slotCardWidth(withApex), w, h);
-    const double height =
-        std::max(0.0, std::min(slotCardHeight(), list.bottom() - kSlotCardTopMin));
-    return {list.x, list.bottom() - height, list.w, height};
+    return slotCardBounds(slotCardWidth(withApex), slotCardHeight(), w, h);
+}
+Rect slotCardBounds(double width, double height, int w, int h) {
+    const Rect list = listPanel(width, w, h);
+    const double fitted = std::max(0.0, std::min(height, list.bottom() - kSlotCardTopMin));
+    return {list.x, list.bottom() - fitted, list.w, fitted};
 }
 /// The talent card is SQUARE, alone among the list panels: the tree is a fan
 /// spun about its own centre, and a tall card would only add height the fan
@@ -1044,6 +1047,7 @@ Rect MenuSystem::craftPanelBounds(int w, int h) const {
     switch (nearbyNpc_) {
         case NpcService::Oracle: return OraclePanel::bounds(w, h);
         case NpcService::Trader: return TradePanel::bounds(w, h);
+        case NpcService::Titan:  return TitanPanel::bounds(w, h);
         case NpcService::None:   break;
     }
     return CraftingPanel::bounds(w, h);
@@ -1195,8 +1199,9 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         }
 
         // At an oracle the craft key opens the oracle, so its button wears the
-        // oracle's slate -- and at a trader, the trader's yellow: the button
-        // says which panel it will open before the player presses it.
+        // oracle's slate -- at a trader, the trader's yellow, and at the titan,
+        // its forge's charcoal: the button says which panel it will open
+        // before the player presses it.
         std::uint32_t face = slot.fill;
         std::uint32_t rim = slot.border;
         if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Oracle) {
@@ -1205,6 +1210,9 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
         } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Trader) {
             face = kTraderSkin.fill;
             rim = kTraderSkin.border;
+        } else if (slot.menu == MenuId::Crafting && nearbyNpc_ == NpcService::Titan) {
+            face = kTitanSkin.fill;
+            rim = kTitanSkin.border;
         }
 
         // Two filled rects rather than a stroke: the face keeps the frame's own
@@ -2459,11 +2467,13 @@ void MenuSystem::renderOpenPanel(Canvas& canvas, Window& window, NetClient& net,
     switch (drawn_) {
         case MenuId::Inventory:   keepOpen = inventory_.render(ctx); break;
         case MenuId::Crafting:
-            // Standing at an oracle, the craft key opens the oracle, and at a
-            // trader the trader. It is the same menu -- one key, one card, one
-            // anchor -- showing what the ground under the flower offers.
+            // Standing at an oracle, the craft key opens the oracle, at a
+            // trader the trader, and at the titan its universal forge. It is
+            // the same menu -- one key, one card, one anchor -- showing what
+            // the ground under the flower offers.
             keepOpen = nearbyNpc_ == NpcService::Oracle   ? oracle_.render(ctx)
                        : nearbyNpc_ == NpcService::Trader ? trader_.render(ctx)
+                       : nearbyNpc_ == NpcService::Titan  ? titan_.render(ctx)
                                                           : crafting_.render(ctx);
             break;
         case MenuId::Talents:     keepOpen = talents_.render(ctx); break;

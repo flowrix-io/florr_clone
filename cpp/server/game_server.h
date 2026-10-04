@@ -232,6 +232,18 @@ private:
     /// One petal for one coin of its tier at a trader. Refused unless the
     /// session's body is alive and standing at one, as the oracle's craft is.
     void handleTrade(Session&, net::Connection&, ByteReader&);
+    /// kTitanForgeCost apex petals for one universal at a titan, standing at
+    /// one as the oracle's craft is; then takeUniversals for everyone else.
+    void handleTitanForge(Session&, net::Connection&, ByteReader&);
+    /// Who holds `petalIndex` at universal, for the titan to name.
+    void handleTitanHolder(Session&, net::Connection&, ByteReader&);
+    /// The username of an account holding `petalIndex` at universal, or empty:
+    /// the memo while it is fresh, else a sweep of every account.
+    std::string universalHolderName(std::uint16_t petalIndex);
+    /// Takes every universal `petalIndex` from every account but `keeperId`,
+    /// bag and loadout, refunding kTitanForgeRefund apex for each, and tells
+    /// the live ones. Returns how many universals were taken.
+    int takeUniversals(std::uint16_t petalIndex, const std::string& keeperId);
     void handleRespawn(Session&);
     void handlePing(net::Connection&, ByteReader&);
     void handleUpgradeSkill(Session&, net::Connection&, ByteReader&);
@@ -335,9 +347,10 @@ private:
     /// build has, and they all come through here so that the row shape, the id
     /// format and the history cap cannot drift apart between them.
     void addNotification(const std::string& type, const std::string& message);
-    /// The global line and the feed row a super/unique/apex craft produces.
-    /// Silent for every tier below, which is where the reference draws the
-    /// line too -- an ultra is crafted often enough to be noise.
+    /// The global line and the feed row a super/unique/apex craft produces,
+    /// and a universal forged at a titan. Silent for every tier below, which
+    /// is where the reference draws the line too -- an ultra is crafted often
+    /// enough to be noise.
     void announceRareCraft(const Session&, std::uint16_t petalIndex, Rarity made);
     /// How long `userId` has left to wait for the oracle, 0 when it may craft.
     /// A lapsed wait is forgotten on the way.
@@ -1146,6 +1159,13 @@ private:
     std::unordered_map<std::string, double> oracleReadyAt_;
     /// When each account may next trade, the same way: memory only, by userId.
     std::unordered_map<std::string, double> traderReadyAt_;
+    /// Who holds each petal at universal, as last found or forged, and when
+    /// (clockMillis_). See kTitanHolderMemoMillis.
+    struct HolderMemo {
+        std::string username;
+        double atMillis = 0;
+    };
+    std::unordered_map<std::uint16_t, HolderMemo> universalHolders_;
 
     /// Positions of every live flower, bots included, each with the realm it
     /// stands in, rebuilt each tick. The mob LOD counts a bot as an observer,

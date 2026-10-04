@@ -52,6 +52,10 @@ enum class NpcService : std::uint8_t {
     /// One petal for one coin (kTraderCoinPetal) of the same tier, once a day.
     /// Any petal whose petals.json entry does not say `"tradable": false`.
     Trader,
+    /// The universal forge: kTitanForgeCost apex petals of one kind for one
+    /// universal of it. A universal forged here lasts until another player
+    /// forges the same petal; see kTitanForgeRefund.
+    Titan,
 };
 
 /// The service a mobs.json `npc.service` string names, or None for text this
@@ -59,6 +63,7 @@ enum class NpcService : std::uint8_t {
 inline NpcService parseNpcService(const std::string& name) {
     if (name == "oracle") return NpcService::Oracle;
     if (name == "trader") return NpcService::Trader;
+    if (name == "titan") return NpcService::Titan;
     return NpcService::None;
 }
 
@@ -109,6 +114,32 @@ inline std::string traderCooldownText(double remainingMillis) {
     const long minutes = std::max(1L, static_cast<long>(std::ceil(remainingMillis / 60000.0)));
     return "You'll be able to trade again in " + std::to_string(minutes) +
            (minutes == 1 ? " minute" : " minutes");
+}
+
+/// What one forge at a titan takes: this many APEX petals of one kind, for
+/// one universal of that kind. Never a roll -- the five always become one.
+inline constexpr int kTitanForgeCost = 5;
+
+/// What a universal's holder gets back when another player forges the same
+/// petal: the apex petals it was forged from, less the one the forge keeps.
+///
+/// Per universal taken, and every universal of that petal another account
+/// holds is taken -- bag and loadout alike, however it came by them -- so
+/// after a forge its forger is the only account holding that petal at
+/// universal.
+inline constexpr int kTitanForgeRefund = kTitanForgeCost - 1;
+
+/// The least time between two answers to one session's TitanHolder query --
+/// each is a sweep of every account -- and how long the server trusts the
+/// holder it found for a petal before sweeping again. A forge sets its
+/// petal's answer outright, so only an operator's hand ages it at all.
+inline constexpr double kTitanHolderQueryMillis = 100.0;
+inline constexpr double kTitanHolderMemoMillis = 5000.0;
+
+/// What the titan says about a petal it has forged before, for whoever holds
+/// it now.
+inline std::string titanMemoryText(const std::string& holder) {
+    return "\"Ah, I remember forging that petal for a flower named " + holder + "...\"";
 }
 
 /// How far past exact overlap a flower's body and an NPC's still count as

@@ -2015,6 +2015,36 @@
         },
         "noEggDrop": true
     },
+    "titan": {
+        "name": "Titan",
+        "damage": 20,
+        "health": 1000,
+        "size": 0.58,
+        "speed": 0,
+        "cooldown": 2000,
+        "xp": {
+            "common": 3,
+            "uncommon": 10,
+            "rare": 40,
+            "epic": 350,
+            "legendary": 1800,
+            "mythic": 45000,
+            "ultra": 220000,
+            "super": 1800000,
+            "unique": 9000000
+        },
+        "description": "Five Apex petals go in. One Universal comes out",
+        "color": "#535353",
+        "image": "$titan",
+        "ai_type": "passive",
+        "range": 100,
+        "npc": {
+            "service": "titan",
+            "petals": ["basic", "rock", "wing", "bone", "pearl", "basic", "rock", "wing", "bone", "pearl"],
+            "petalRarity": "universal"
+        },
+        "noEggDrop": true
+    },
     "bumble_bee": {
         "name": "Bumble Bee",
         "damage": 20,

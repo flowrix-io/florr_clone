@@ -229,14 +229,40 @@ the one `paintFlowerEyes` every flower uses, moved by its facing at a
 flower's eye travel -- in a ring of basic petals outlined only on the
 outside.
 
-The craft key's three cards -- `CraftingPanel`, `OraclePanel`, `TradePanel` --
-are one SLOT CARD (`menus.h`, `ui/menu_slot_card.cpp`), laid out against the
-trade reference shot: the frame and its anchoring, the slot and the action
-button either side of the centre line, the line of text, the tier grid
-(`SlotGrid`, through unique, or through apex for the trader) and the oracle's
-and trader's landing (`SlotFlourish`). Each panel keeps its own staging,
-animation and input, and says per cell what its grid shows; the forge turns
-its ring of five about the slot's centre where the other two hold one.
+The titan is the third, in the jungle: within reach of it the craft key opens
+`TitanPanel`, and `ClientMessage::TitanForge` forges `kTitanForgeCost` (5) apex
+petals of one kind into one universal of it -- no roll, no wait. A universal
+forged there lasts until another player forges the same petal:
+`GameServer::takeUniversals` then takes every universal of that petal from
+every OTHER account, bag and loadout, online or not, refunding
+`kTitanForgeRefund` (4) apex apiece and telling a live holder at once. A forge
+of a petal the forger already holds at universal is refused: one of each, the
+forger included. Picking a petal on the card asks `ClientMessage::TitanHolder`
+who holds it, and the card quotes the titan remembering forging it for them;
+the server answers only a flower standing at the titan, at most every
+`kTitanHolderQueryMillis` per session, from a short memo a forge updates. The
+titan is the one NPC that FIGHTS: its mobs.json `npc.petals` is a loadout,
+worn at `npc.petalRarity` (universal), and `PetalSystem` runs that ring through
+the very passes a flower's goes through (`ringNpcs_` beside `players_`) --
+everything player-only in them is read as optional, and `recomputeModifiers`
+stops short of the flower's level-sized body for it. Its petals carry its
+players' Faction, so they hit mobs, never flowers, and credit nobody: a mob only
+the titan hit pays no XP and drops nothing. Its body bites mobs too. It stands
+at universal on its plate (an NPC alone may; its stats read apex) and is drawn
+by the `$titan` painter: a grey cog round a flower's face set to a scowl, its
+glints moved by its facing as a flower's pupils are.
+
+The craft key's four cards -- `CraftingPanel`, `OraclePanel`, `TradePanel`,
+`TitanPanel` -- are one SLOT CARD (`menus.h`, `ui/menu_slot_card.cpp`), laid
+out against the trade reference shot: the frame and its anchoring, the slot
+and the action button either side of the centre line, the line of text, the
+tier grid (`SlotGrid`, through unique, or through apex for the trader) and the
+oracle's and trader's landing (`SlotFlourish`). Each panel keeps its own
+staging, animation and input, and says per cell what its grid shows; the forge
+turns its ring of five about the slot's centre where the other two hold one.
+The titan's card is the same card cut down to eight columns and one row of
+`SlotTierGrid` (every apex stack, greyed under five), with florr's own forge
+ring -- five full-size slots on a pentagon -- and three lines of text.
 
 ## Networking
 

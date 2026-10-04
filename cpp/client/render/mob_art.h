@@ -37,7 +37,7 @@
 // ring of basic petals, and it is here for the oracle's reason: its eyes are a
 // flower's eyes, moved by where it is looking. They are drawn by the one
 // function every flower's eyes are (paintFlowerEyes), so they move exactly as
-// a player's do.
+// a player's do. The titan's glints are moved by `gaze` the same way.
 //
 // The leech is here for a third reason. Its body is not a row of beads, it is
 // one smooth tube, and the reference draws it by stroking a single polyline
@@ -78,7 +78,7 @@ enum class MobArt : std::uint8_t {
     AntHole, FireAntBurrow, Beetle, BeetleHel, Hornet, Wasp,
     Centipede, CentipedeBody, CentipedeEvil, CentipedeEvilBody, CentipedeDesert,
     CentipedeDesertBody, Bubble, BumbleBee, Shell, Starfish, Jellyfish, Dandelion, Fly,
-    Leafbug, LeafbugShiny, Mantis, Bush, Roach, Moth, Firefly, FireflyMagic, Dummy,
+    Leafbug, LeafbugShiny, Mantis, Bush, Roach, Moth, Firefly, FireflyMagic, Dummy, Titan,
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.

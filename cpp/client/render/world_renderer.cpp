@@ -361,6 +361,10 @@ constexpr double kPetalGlowPad = 16.0;
 /// always eight units tall.
 constexpr double kMobBarMinWidth = 60.0;
 constexpr double kMobBarHeight = 8.0;
+/// An NPC's plate stops growing at this width. The titan is a thousand units
+/// across, and florr hangs a plate of an ordinary mob's size under it rather
+/// than a bar the width of the screen.
+constexpr double kNpcBarMaxWidth = 200.0;
 
 /// What a summon's plate says it is, at the left of the tier row, and the
 /// least clear space kept between it and the tier at the right of that row.
@@ -2981,14 +2985,15 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
             canvas.restore();
         }
     } else if (sprites_ && (sprites_->mobArt(mob.typeIndex) == MobArt::Oracle ||
-                            sprites_->mobArt(mob.typeIndex) == MobArt::Trader)) {
+                            sprites_->mobArt(mob.typeIndex) == MobArt::Trader ||
+                            sprites_->mobArt(mob.typeIndex) == MobArt::Titan)) {
         // The body is drawn UPRIGHT and the facing goes to the eye instead: an
         // oracle turning round is a pupil sliding across its socket, the way a
         // flower's is, not a disc of tendrils spinning on the spot -- and the
-        // trader IS a flower, whose eyes are eased toward its facing at the
-        // same per-frame rate a player's are. So the gaze is the facing, eased
-        // per frame, in world space -- which with no rotation applied is the
-        // art's space too.
+        // trader and the titan wear a flower's face, whose eyes are eased
+        // toward its facing at the same per-frame rate a player's are. So the
+        // gaze is the facing, eased per frame, in world space -- which with no
+        // rotation applied is the art's space too.
         sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, 0.0, timeSeconds, false,
                           mob.radius * visualScale, mobGaze(mob), &motion);
     } else if (sprites_ && sprites_->mobDrawable(mob.typeIndex)) {
@@ -3027,7 +3032,9 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         minWidth = std::max(minWidth, ui::textWidth(canvas, kPetLabel, 10.0) + kPetLabelGap +
                                           ui::textWidth(canvas, rarityLabel(mob.rarity), 10.0));
     }
-    const double barWidth = std::max(enemySize, minWidth) * zoom;
+    double width = std::max(enemySize, minWidth);
+    if (mob.npc) width = std::min(width, std::max(kNpcBarMaxWidth, minWidth));
+    const double barWidth = width * zoom;
     const double barHeight = kMobBarHeight * zoom;
     const double barY = screen.y + (enemySize * 0.5 + 8.0) * zoom;
     const double barX = screen.x - barWidth * 0.5;

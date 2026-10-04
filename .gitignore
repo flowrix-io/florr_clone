@@ -19,6 +19,9 @@ server_*.pid
 .Trashes
 ehthumbs.db
 Thumbs.db
+.florr-session
+.florr-session-settings
+mob_draw_commands.json
 dist_ecs_test/
 dist_bench/
 

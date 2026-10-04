@@ -208,9 +208,9 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
     CHECK(config.noEggDrop);
     CHECK(!content().mobStats(oracle, Rarity::Common).ambient);
     // The target dummy is another NPC: on the hostiles' side, so a flower
-    // can hit it, and offering nothing but that. The trader is the third
-    // (its own test below). Nothing else in the shipped content is an NPC by
-    // accident.
+    // can hit it, and offering nothing but that. The trader is the third and
+    // the titan the fourth (their own tests below). Nothing else in the
+    // shipped content is an NPC by accident.
     const std::uint16_t dummy = content().mobIndex("target_dummy");
     CHECK(dummy != kInvalidIndex);
     if (dummy != kInvalidIndex) {
@@ -219,8 +219,9 @@ TEST(the_shipped_oracle_is_a_mob_that_offers_a_service) {
         CHECK(content().mob(dummy).npc.service == NpcService::None);
     }
     const std::uint16_t trader = content().mobIndex("trader");
+    const std::uint16_t titan = content().mobIndex("titan");
     for (std::uint16_t i = 0; i < content().mobCount(); ++i) {
-        if (i == oracle || i == dummy || i == trader) continue;
+        if (i == oracle || i == dummy || i == trader || i == titan) continue;
         CHECK(!content().mob(i).npc.present);
     }
 }
@@ -1923,4 +1924,572 @@ TEST(the_trader_is_drawn_upright_with_its_eyes_on_its_facing) {
     const EyeSplit east = eyeSplit(frame(0.0), unit, false);
     CHECK(west.before > west.after * 2);
     CHECK(east.after > east.before * 2);
+}
+
+// ---------------------------------------------------------------------------
+// The titan: the universal forge, wearing a ring of its own
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Where the fixture's titan stands: the middle of the field, well clear of
+/// the door and every wall -- it is a thousand units across, and its ring
+/// orbits forty past its edge.
+constexpr double kTitanX = kTileSize * 12.0;
+constexpr double kTitanY = kTileSize * 12.0;
+
+std::string titanWorld(const std::string& name) {
+    return npcWorld(name, fixtureNpc(kTitanX, kTitanY, "titan", "universal"));
+}
+
+/// Waits for the titan's answer and hands it back with `pending` cleared, as
+/// the panel reads it.
+bool awaitForge(Harness& h, const std::vector<NetClient*>& clients, NetClient& client,
+                TitanForgeOutcome& out) {
+    if (!h.stepUntil(clients, [&] { return client.titanForgeOutcome().pending; }, 200)) {
+        return false;
+    }
+    out = client.titanForgeOutcome();
+    client.titanForgeOutcome().pending = false;
+    return true;
+}
+
+/// Wears `petal` in loadout slot `slot` of `username`'s record.
+void seedWorn(const std::string& path, const std::string& username, std::size_t slot,
+              const char* petal, Rarity rarity) {
+    Database db;
+    std::string error;
+    db.load(path, error);
+    const Account* account = db.findUser(username);
+    if (account == nullptr) return;
+    PlayerRecord& record = db.progress(account->id);
+    if (record.loadout.size() < kLoadoutSlots) record.loadout.resize(kLoadoutSlots);
+    StoredItem item;
+    item.petalType = petal;
+    item.rarity = rarity;
+    record.loadout[slot] = item;
+    db.markDirty();
+    db.save();
+}
+
+/// The body `username` is playing, or NULL_ENTITY.
+Entity bodyOf(World& world, const std::string& username) {
+    Entity found = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> players{world};
+    players.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.username == username) found = e;
+    });
+    return found;
+}
+
+/// Stands `username`'s flower just off the titan's east edge -- inside its
+/// ring's band, where the petals sweep through it.
+void standAtTitan(Harness& h, const std::vector<NetClient*>& clients, const std::string& username) {
+    World& world = h.server.world();
+    const Entity titan = npcWearing(world, "titan");
+    const Entity body = bodyOf(world, username);
+    if (titan == NULL_ENTITY || body == NULL_ENTITY) return;
+    world.get<Transform>(body).position =
+        world.get<Transform>(titan).position + Vec2{world.get<Body>(titan).radius + 60.0, 0.0};
+    h.step(1, clients);
+}
+
+/// Every petal on the field whose owner is `owner`.
+std::vector<Entity> petalsOf(World& world, Entity owner) {
+    std::vector<Entity> out;
+    Query<PetalInstance> petals{world};
+    petals.each([&](Entity e, PetalInstance& petal) {
+        if (petal.owner == owner) out.push_back(e);
+    });
+    return out;
+}
+
+int liveMobsOf(World& world, const char* id) {
+    int count = 0;
+    Query<MobTag, MobType> mobs{world};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.configIndex == content().mobIndex(id) && !world.has<Dead>(e)) ++count;
+    });
+    return count;
+}
+
+bool chatSays(const NetClient& client, const std::string& needle) {
+    for (const ChatLine& line : client.chat()) {
+        if (line.text.find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+TEST(the_shipped_titan_stands_in_the_jungle_wearing_a_universal_ring) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t titan = content().mobIndex("titan");
+    CHECK(titan != kInvalidIndex);
+    if (titan == kInvalidIndex) return;
+    const MobConfig& config = content().mob(titan);
+    CHECK(config.npc.present);
+    CHECK(config.npc.service == NpcService::Titan);
+    CHECK(config.npc.team == Team::Players);
+    CHECK_EQ(config.image, std::string("$titan"));
+    CHECK(config.noEggDrop);
+    // It stands: a forge that wandered off would not be one.
+    CHECK(!config.beeFlight);
+    // A full bar of universals, every one a petal this build has.
+    CHECK(config.npc.wearsPetals());
+    CHECK_EQ(config.npc.petals.size(), static_cast<std::size_t>(kLoadoutActiveSlots));
+    for (const std::uint16_t petal : config.npc.petals) CHECK(petal < content().petalCount());
+    CHECK(config.npc.petalRarity == Rarity::Universal);
+
+    WorldMaps maps;
+    Terrain terrain;
+    std::string error;
+    CHECK(maps.load(dataDir(), &terrain, error));
+    Realm jungle = Realm::Overworld;
+    for (const MapData& map : maps.maps()) {
+        if (map.id() == "jungle") jungle = map.realm();
+    }
+    NpcSystem npcs;
+    std::vector<std::string> warnings;
+    npcs.loadSites(maps, content(), warnings);
+    CHECK(warnings.empty());
+    int titans = 0;
+    for (const NpcSystem::Site& site : npcs.sites()) {
+        if (site.mobIndex != titan) continue;
+        ++titans;
+        CHECK(site.realm == jungle);
+        // Universal on its plate, as florr's titan is the top tier on its.
+        CHECK(site.rarity == Rarity::Universal);
+        // On open ground, body AND ring: nothing pushes it off its point, and
+        // the ring never sweeps through a wall.
+        const double radius = content().mobStats(titan, site.rarity).radius;
+        const double ringReach = radius + kPetalOrbitRestRadius - kPlayerBaseRadius + 20.0;
+        const Vec2 placed = terrain.resolveCircle(site.position, ringReach, site.realm);
+        CHECK_NEAR(placed.x, site.position.x, 1e-6);
+        CHECK_NEAR(placed.y, site.position.y, 1e-6);
+        // Clear of every target dummy, whose hits would otherwise be the
+        // titan's on everybody's screen.
+        for (const NpcSystem::Site& other : npcs.sites()) {
+            if (other.mobIndex == titan || other.realm != site.realm) continue;
+            CHECK(distance(other.position, site.position) > ringReach + 200.0);
+        }
+    }
+    CHECK_EQ(titans, 1);
+}
+
+TEST(a_titan_forge_turns_five_apex_into_one_universal) {
+    const std::string dir = titanWorld("titan-forge");
+    Harness h("titan-forge", [](const std::string& path) {
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_rose", Rarity::Apex, 7);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "smith"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Apex) == 7u;
+    }));
+
+    standAtTitan(h, {&client}, "smith");
+    client.requestTitanForge(rose);
+    TitanForgeOutcome outcome;
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(outcome.success);
+    CHECK_EQ(outcome.petalIndex, rose);
+    // Exactly five out, exactly one universal in, no roll: the two left over
+    // are untouched.
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Apex) == 2u && p.stackCount(rose, Rarity::Universal) == 1u;
+    }));
+    // Announced, as a rare craft is -- said to be forged, and in the
+    // universal grey, as each tier announces in its own colour.
+    CHECK(h.stepUntil({&client}, [&] { return chatSays(client, "Universal Rose has been forged by"); },
+                      30));
+    // "The": there is only ever one of each petal at universal.
+    CHECK(chatSays(client, "<b style=\"color: #555555;\">The Universal Rose has been forged by"));
+    removeDataDir(dir);
+}
+
+TEST(the_titan_refuses_a_short_stack_and_a_flower_not_standing_at_it) {
+    const std::string dir = titanWorld("titan-refuse");
+    Harness h("titan-refuse", [](const std::string& path) {
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_rose", Rarity::Apex, 4);
+        seedStack(path, "smith", "petal_basic", Rarity::Apex, 5);
+        seedStack(path, "smith", "petal_basic", Rarity::Unique, 9);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t basic = content().petalIndex("basic");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "smith"));
+    h.step(3, {&client});
+    CHECK(awaitProfile(h, client, [&](const Profile& p) {
+        return p.stackCount(basic, Rarity::Apex) == 5u;
+    }));
+
+    // From the door, a field away: refused, and nothing taken.
+    TitanForgeOutcome outcome;
+    client.requestTitanForge(basic);
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(!outcome.success);
+    CHECK(outcome.reason.find("too far") != std::string::npos);
+
+    standAtTitan(h, {&client}, "smith");
+    // Four apex is not five, and nine unique is not apex at all.
+    client.requestTitanForge(rose);
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(!outcome.success);
+    CHECK(outcome.reason.find("5 Apex Rose") != std::string::npos);
+    // A petal id nobody has.
+    client.requestTitanForge(0xFFFE);
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(!outcome.success);
+    h.step(3, {&client});
+    const Profile& profile = client.profile();
+    CHECK_EQ(profile.stackCount(rose, Rarity::Apex), 4u);
+    CHECK_EQ(profile.stackCount(basic, Rarity::Apex), 5u);
+    CHECK_EQ(profile.stackCount(basic, Rarity::Unique), 9u);
+    CHECK_EQ(profile.stackCount(rose, Rarity::Universal), 0u);
+    CHECK_EQ(profile.stackCount(basic, Rarity::Universal), 0u);
+    removeDataDir(dir);
+}
+
+TEST(a_forged_universal_is_taken_from_every_other_account_and_refunded_four_apex_apiece) {
+    const std::string dir = titanWorld("titan-takeover");
+    Harness h("titan-takeover", [](const std::string& path) {
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_rose", Rarity::Apex, 5);
+        // Online: one in the bag and one worn.
+        seedAccount(path, "rival");
+        seedStack(path, "rival", "petal_rose", Rarity::Universal, 1);
+        seedWorn(path, "rival", 0, "rose", Rarity::Universal);
+        // Offline, holding three.
+        seedAccount(path, "absent");
+        seedStack(path, "absent", "petal_rose", Rarity::Universal, 3);
+        // A universal of another petal is nobody's business.
+        seedAccount(path, "bystander");
+        seedStack(path, "bystander", "petal_basic", Rarity::Universal, 1);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t basic = content().petalIndex("basic");
+    World& world = h.server.world();
+
+    NetClient smith;
+    NetClient rival;
+    CHECK(joinAs(h, smith, "smith"));
+    CHECK(joinAs(h, rival, "rival"));
+    const std::vector<NetClient*> both{&smith, &rival};
+    h.step(3, both);
+    const Entity rivalBody = bodyOf(world, "rival");
+    CHECK(rivalBody != NULL_ENTITY);
+    if (rivalBody == NULL_ENTITY) { removeDataDir(dir); return; }
+    CHECK_EQ(world.get<Loadout>(rivalBody).slots[0].configIndex, rose);
+
+    standAtTitan(h, both, "smith");
+    smith.requestTitanForge(rose);
+    TitanForgeOutcome outcome;
+    CHECK(awaitForge(h, both, smith, outcome));
+    CHECK(outcome.success);
+
+    // The rival's two -- bag and bar -- are gone, and eight apex are back.
+    CHECK(awaitProfile(h, rival, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Universal) == 0u &&
+               p.stackCount(rose, Rarity::Apex) == 2u * kTitanForgeRefund &&
+               !p.loadout.empty() && p.loadout[0].empty();
+    }));
+    // Off the live body too: the ring loses it at once.
+    CHECK(world.get<Loadout>(rivalBody).slots[0].empty());
+    CHECK(h.stepUntil(both, [&] { return chatSays(rival, "Another player forged the Universal Rose"); },
+                      30));
+    // And the forger holds the one that is left.
+    CHECK(awaitProfile(h, smith, [&](const Profile& p) {
+        return p.stackCount(rose, Rarity::Universal) == 1u && p.stackCount(rose, Rarity::Apex) == 0u;
+    }));
+
+    // The offline account's record has paid too, at four apex apiece.
+    const Database& db = h.server.database();
+    const Account* absent = db.findUser("absent");
+    const Account* bystander = db.findUser("bystander");
+    CHECK(absent != nullptr && bystander != nullptr);
+    if (absent != nullptr && bystander != nullptr) {
+        const PlayerRecord* gone = db.findProgress(absent->id);
+        const PlayerRecord* kept = db.findProgress(bystander->id);
+        CHECK(gone != nullptr && kept != nullptr);
+        if (gone != nullptr && kept != nullptr) {
+            CHECK_EQ(gone->itemCount(Rarity::Universal, "petal_rose"), 0);
+            CHECK_EQ(gone->itemCount(Rarity::Apex, "petal_rose"), 3 * kTitanForgeRefund);
+            CHECK_EQ(kept->itemCount(Rarity::Universal, "petal_basic"), 1);
+        }
+    }
+    (void)basic;
+    removeDataDir(dir);
+}
+
+TEST(the_titan_will_not_forge_a_universal_the_forger_already_holds) {
+    const std::string dir = titanWorld("titan-held");
+    Harness h("titan-held", [](const std::string& path) {
+        // One worn, and plenty of apex to forge another.
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_rose", Rarity::Apex, 12);
+        seedWorn(path, "smith", 0, "rose", Rarity::Universal);
+        seedStack(path, "smith", "petal_basic", Rarity::Apex, 5);
+        seedStack(path, "smith", "petal_basic", Rarity::Universal, 1);
+        // Somebody else's, which a refused forge must not touch.
+        seedAccount(path, "rival");
+        seedStack(path, "rival", "petal_rose", Rarity::Universal, 1);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t basic = content().petalIndex("basic");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "smith"));
+    h.step(3, {&client});
+    standAtTitan(h, {&client}, "smith");
+
+    // Worn or in the bag, it is the one universal of that petal: there is
+    // never a second, the forger's own included.
+    TitanForgeOutcome outcome;
+    client.requestTitanForge(rose);
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.reason, std::string("You already have the Universal Rose."));
+    client.requestTitanForge(basic);
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(!outcome.success);
+    CHECK_EQ(outcome.reason, std::string("You already have the Universal Basic."));
+
+    // Nothing was spent, nothing was made, and nobody lost theirs.
+    h.step(3, {&client});
+    const Profile& profile = client.profile();
+    CHECK_EQ(profile.stackCount(rose, Rarity::Apex), 12u);
+    CHECK_EQ(profile.stackCount(rose, Rarity::Universal), 0u);
+    CHECK(!profile.loadout.empty() && profile.loadout[0].petalIndex == rose &&
+          profile.loadout[0].rarity == Rarity::Universal);
+    CHECK_EQ(profile.stackCount(basic, Rarity::Apex), 5u);
+    CHECK_EQ(profile.stackCount(basic, Rarity::Universal), 1u);
+    const Database& db = h.server.database();
+    const Account* rival = db.findUser("rival");
+    CHECK(rival != nullptr);
+    if (rival != nullptr) {
+        const PlayerRecord* record = db.findProgress(rival->id);
+        CHECK(record != nullptr && record->itemCount(Rarity::Universal, "petal_rose") == 1);
+    }
+    removeDataDir(dir);
+}
+
+TEST(the_titan_names_whoever_holds_a_petal_at_universal) {
+    CHECK_EQ(titanMemoryText("bob"),
+             std::string("\"Ah, I remember forging that petal for a flower named bob...\""));
+
+    const std::string dir = titanWorld("titan-holder");
+    Harness h("titan-holder", [](const std::string& path) {
+        seedAccount(path, "smith");
+        seedStack(path, "smith", "petal_basic", Rarity::Universal, 1);
+        seedStack(path, "smith", "petal_wing", Rarity::Apex, 5);
+        seedAccount(path, "rival");
+        seedWorn(path, "rival", 0, "rose", Rarity::Universal);
+        seedAccount(path, "keeper");
+        seedStack(path, "keeper", "petal_wing", Rarity::Universal, 1);
+    }, dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    const std::uint16_t basic = content().petalIndex("basic");
+    const std::uint16_t rose = content().petalIndex("rose");
+    const std::uint16_t wing = content().petalIndex("wing");
+    const std::uint16_t stinger = content().petalIndex("stinger");
+
+    NetClient client;
+    CHECK(joinAs(h, client, "smith"));
+    h.step(3, {&client});
+    // Asked from the door, a field away, the titan says nothing at all.
+    client.requestTitanHolder(rose);
+    h.step(10, {&client});
+    CHECK(client.titanHolder(rose) == nullptr);
+
+    standAtTitan(h, {&client}, "smith");
+    const auto ask = [&](std::uint16_t petal) -> std::string {
+        client.forgetTitanHolder(petal);
+        // Past the per-session spacing, so the query is not the one dropped.
+        h.step(4, {&client});
+        client.requestTitanHolder(petal);
+        if (!h.stepUntil({&client}, [&] { return client.titanHolder(petal) != nullptr; }, 30)) {
+            return "<no answer>";
+        }
+        return *client.titanHolder(petal);
+    };
+    // Worn or bagged, somebody else's or your own, and nobody's at all.
+    CHECK_EQ(ask(rose), std::string("rival"));
+    CHECK_EQ(ask(basic), std::string("smith"));
+    CHECK_EQ(ask(stinger), std::string());
+    CHECK_EQ(ask(wing), std::string("keeper"));
+
+    // A forge moves the memory with the petal at once.
+    client.requestTitanForge(wing);
+    TitanForgeOutcome outcome;
+    CHECK(awaitForge(h, {&client}, client, outcome));
+    CHECK(outcome.success);
+    CHECK_EQ(ask(wing), std::string("smith"));
+
+    // Two at once: the second comes too soon and is dropped, and is answered
+    // when asked again once the spacing has passed.
+    client.forgetTitanHolder(rose);
+    client.forgetTitanHolder(basic);
+    h.step(4, {&client});
+    client.requestTitanHolder(rose);
+    client.requestTitanHolder(basic);
+    h.step(2, {&client});
+    CHECK(client.titanHolder(rose) != nullptr);
+    CHECK(client.titanHolder(basic) == nullptr);
+    CHECK_EQ(ask(basic), std::string("smith"));
+    removeDataDir(dir);
+}
+
+TEST(the_titans_ring_orbits_it_as_a_flowers_does_and_kills_mobs_but_spares_flowers) {
+    const std::string dir = titanWorld("titan-ring");
+    Harness h("titan-ring", [](const std::string& path) { seedAccount(path, "boss", true); },
+              dir, 0);
+    if (!h.ready) { CHECK(false); removeDataDir(dir); return; }
+    NetClient client;
+    CHECK(joinAs(h, client, "boss"));
+    World& world = h.server.world();
+    const Entity titan = npcWearing(world, "titan");
+    CHECK(titan != NULL_ENTITY);
+    if (titan == NULL_ENTITY) { removeDataDir(dir); return; }
+    const double radius = world.get<Body>(titan).radius;
+
+    // Ten petals out, every one the titan's, universal, on the players' side,
+    // and orbiting forty past its edge -- a flower's rest radius past its own.
+    CHECK(h.stepUntil({&client}, [&] { return petalsOf(world, titan).size() == 10u; }, 200));
+    // Wearing a ring makes it no flower: it keeps its mob's body, pool and
+    // bite at its own tier, where a flower's are set by its level.
+    const MobStats stats = content().mobStats(content().mobIndex("titan"), Rarity::Universal);
+    CHECK_NEAR(world.get<Body>(titan).radius, stats.radius, 1e-9);
+    CHECK_NEAR(world.get<Health>(titan).max, stats.health, 1e-6);
+    CHECK_NEAR(world.get<ContactDamage>(titan).amount, stats.damage, 1e-6);
+    CHECK(radius > 400.0);
+    h.step(static_cast<int>(kPetalSpawnGlideMillis / net::kTickMillis) + 30, {&client});
+    const std::vector<Entity> ring = petalsOf(world, titan);
+    CHECK_EQ(ring.size(), std::size_t(10));
+    const Vec2 centre = world.get<Transform>(titan).position;
+    const double orbit = radius + kPetalOrbitRestRadius - kPlayerBaseRadius;
+    for (const Entity petal : ring) {
+        CHECK(world.get<PetalInstance>(petal).rarity == Rarity::Universal);
+        CHECK(world.get<Faction>(petal).team == Team::Players);
+        CHECK_NEAR(distance(world.get<Transform>(petal).position, centre), orbit, 12.0);
+    }
+    // And it turns.
+    const Vec2 before = world.get<Transform>(ring[0]).position;
+    h.step(5, {&client});
+    CHECK(distance(world.get<Transform>(ring[0]).position, before) > 20.0);
+
+    // A flower standing in the ring's band is swept by it a whole turn and
+    // loses nothing; a mob in it dies. The rock is put down on screen, just
+    // outside the band and clear of the flower, and only then moved into it:
+    // put down in the band, it could die before anything saw it alive.
+    standAtTitan(h, {&client}, "boss");
+    const Entity body = bodyOf(world, "boss");
+    const double full = world.get<Health>(body).max;
+    const double bearing = 0.35;
+    const Vec2 outside = centre + Vec2::fromAngle(bearing, orbit + 140.0);
+    char command[96];
+    std::snprintf(command, sizeof command, "/admin spawn rock common %.0f %.0f", outside.x,
+                  outside.y);
+    client.sendChat(command);
+    CHECK(h.stepUntil({&client}, [&] { return liveMobsOf(world, "rock") > 0; }, 30));
+    {
+        Query<MobTag, MobType, Transform> mobs{world};
+        mobs.each([&](Entity, MobTag&, MobType& type, Transform& transform) {
+            if (type.configIndex == content().mobIndex("rock")) {
+                transform.position = centre + Vec2::fromAngle(bearing, orbit);
+            }
+        });
+    }
+    CHECK(h.stepUntil({&client}, [&] { return liveMobsOf(world, "rock") == 0; },
+                      kOneRingTurnTicks * 2));
+    h.step(kOneRingTurnTicks, {&client});
+    CHECK_NEAR(world.get<Health>(body).current, full, 1e-9);
+
+    // Clearing it takes its ring with it, rather than leaving ten petals
+    // orbiting nothing; the map's titan is back with a ring of its own.
+    client.sendChat("/admin clear_npcs");
+    CHECK(h.stepUntil({&client}, [&] {
+        const Entity now = npcWearing(world, "titan");
+        return now != NULL_ENTITY && now != titan;
+    }, 30));
+    CHECK(petalsOf(world, titan).empty());
+    removeDataDir(dir);
+}
+
+TEST(the_titan_painter_draws_its_cog_and_scowl_and_moves_its_glints) {
+    CHECK(ensureShippedContent());
+    const std::uint16_t titan = content().mobIndex("titan");
+    const SpriteCache& sprites = shippedSprites();
+    CHECK(sprites.mobArt(titan) == MobArt::Titan);
+    CHECK(sprites.mobDrawable(titan));
+
+    // The teeth's tips on the drawn radius: 90 pixels, so an art unit is
+    // 90/27.35 of a pixel.
+    const double diameter = 180.0;
+    const double unit = diameter * 0.5 / 27.35;
+    const auto frame = [&](Vec2 gaze) {
+        Canvas canvas = Canvas::createVirtual(kFrame, kFrame);
+        sprites.drawMob(canvas, titan, kFrame * 0.5, kFrame * 0.5, diameter, 0.0, 0.0, false, 0.0,
+                        gaze);
+        return canvas.getImageData(0, 0, kFrame, kFrame);
+    };
+    const auto rgbAt = [&](const std::vector<std::uint8_t>& pixels, double ax, double ay) {
+        const int x = static_cast<int>(kFrame * 0.5 + ax * unit);
+        const int y = static_cast<int>(kFrame * 0.5 + ay * unit);
+        const std::size_t i = static_cast<std::size_t>((y * kFrame + x) * 4);
+        if (pixels[i + 3] == 0) return 0x01000000u;   // nothing drawn there
+        return (static_cast<std::uint32_t>(pixels[i]) << 16) |
+               (static_cast<std::uint32_t>(pixels[i + 1]) << 8) | pixels[i + 2];
+    };
+    const std::vector<std::uint8_t> picture = frame({1.0, 0.0});
+    // A tooth's flat top is cog out to the tip; between two teeth, past the
+    // root, there is nothing.
+    CHECK_EQ(rgbAt(picture, 26.8, 0.0), 0x535353u);
+    const double valley = kPi / 20.0;
+    CHECK_EQ(rgbAt(picture, 26.5 * std::cos(valley), 26.5 * std::sin(valley)), 0x01000000u);
+    CHECK_EQ(rgbAt(picture, 0.0, 17.0), 0x666666u);
+    // No frame round the eye: beside it is face. Then the eye; and above the
+    // brow the scowl cuts the eye off, so the top of the socket is face.
+    CHECK_EQ(rgbAt(picture, -11.8, -4.0), 0x666666u);
+    CHECK_EQ(rgbAt(picture, -8.6, -2.0), 0x111111u);
+    CHECK_EQ(rgbAt(picture, -7.0, -10.4), 0x666666u);
+    CHECK_EQ(rgbAt(picture, 7.0, -10.4), 0x666666u);
+
+    // The glints travel as a flower's pupils do, and never leave their
+    // sockets: glint pixels split by which side of their own eye's middle
+    // they sit on.
+    const auto glints = [&](Vec2 gaze) {
+        const std::vector<std::uint8_t> pixels = frame(gaze);
+        PupilSides out;
+        for (int y = 0; y < kFrame; ++y) {
+            for (int x = 0; x < kFrame; ++x) {
+                const std::size_t i = static_cast<std::size_t>((y * kFrame + x) * 4);
+                if (pixels[i] != 0xEE || pixels[i + 1] != 0xEE || pixels[i + 2] != 0xEE) continue;
+                const double ax = (x + 0.5 - kFrame * 0.5) / unit;
+                const double ay = (y + 0.5 - kFrame * 0.5) / unit;
+                const double dx = ax - (ax < 0.0 ? -7.0 : 7.0);
+                const double dy = ay + 5.0;
+                if (dx < 0.0) ++out.left;
+                else ++out.right;
+                if (dx * dx / 9.0 + dy * dy / 36.0 > 1.0) ++out.outsideSocket;
+            }
+        }
+        return out;
+    };
+    const PupilSides east = glints({1.0, 0.0});
+    const PupilSides west = glints({-1.0, 0.0});
+    CHECK(east.right > east.left * 2);
+    CHECK(west.left > west.right * 2);
+    CHECK_EQ(east.outsideSocket, 0);
+    CHECK_EQ(west.outsideSocket, 0);
 }
