@@ -108,6 +108,7 @@ std::uint8_t computeEntityState(World& world, Entity e, double nowMillis) {
     }
     if (const MobAi* ai = world.tryGet<MobAi>(e)) {
         if (ai->target != NULL_ENTITY) state |= net::StateChasing;
+        if (nowMillis < ai->stingLoadedAtMillis) state |= net::StateUnloaded;
     }
     if (world.has<Dead>(e)) state |= net::StateDead;
 

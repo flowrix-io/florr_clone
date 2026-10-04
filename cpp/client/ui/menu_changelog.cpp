@@ -413,7 +413,19 @@ constexpr ChangelogEntry kChangelog[] = {
       "New petal: Wax",
       "New mob: Bumble Bee",
       "Bugfixes and optimizations"
-    }}
+    }},
+    {"October 3, 2026",
+      {
+      "Added Universal rarity petals",
+      "Added Titan NPC",
+      "Changed the size of every single mob in the game",
+      "Made Computer mobs smaller",
+      "Changed chat style",
+      "Added different chat channels",
+      "Fire ant hole now pops instead of acting like regular ant hole",
+      "Queen ants always spawn from ant hole now"
+      }
+    }
 };
 
 constexpr int kEntryCount = static_cast<int>(sizeof(kChangelog) / sizeof(kChangelog[0]));

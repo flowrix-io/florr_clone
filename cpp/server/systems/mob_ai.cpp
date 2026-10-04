@@ -821,18 +821,10 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // them. For a size-1 mob this is exactly kMobSizeScale[tier] and nothing
     // about its volley moves.
     const Body* shooterBody = world.tryGet<Body>(shooter);
-    const double ownerScale = shooterBody != nullptr && kMobBaseRadius > 0.0
-                                  ? std::max(0.05, shooterBody->radius / kMobBaseRadius)
-                                  : scaling;
+    const double ownerScale =
+        shooterBody != nullptr ? mobShotOwnerScale(shooterBody->radius) : scaling;
 
     VolleyShot shot;
-    // A stinger shooter has already turned its tail onto the target (see
-    // steerAggressive), so the muzzle is a body-radius out along the SHOT --
-    // which is the tail end of the sprite. Everything else fires from its
-    // centre, as the reference does.
-    shot.from = drive.stingerShooter && shooterBody != nullptr
-                    ? from + Vec2::fromAngle(aimAngle, shooterBody->radius)
-                    : from;
     if (const Transform* shooterAt = world.tryGet<Transform>(shooter)) shot.realm = shooterAt->realm;
     // The shot's calibre comes off the ammunition petal's `size` stat, then is
     // scaled by the SHOOTER's body on its own divisor -- reach and size grow at
@@ -843,10 +835,16 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     //
     // The stock calibre -- the same shot off a size-1 common shooter -- is kept
     // beside it because the weave is stated against it.
-    const double stockRadius =
-        std::max(1.0, ammo.size * kProjectileRadiusPerSize / kProjectileSizeDivisor);
-    shot.radius = std::max(
-        1.0, ammo.size * kProjectileRadiusPerSize * ownerScale / kProjectileSizeDivisor);
+    const double stockRadius = mobShotRadius(ammo.size, 1.0);
+    shot.radius = mobShotRadius(ammo.size, ownerScale);
+    // A stinger shooter has already turned its tail onto the target (see
+    // steerAggressive), so the shot leaves the tail end of the sprite, from
+    // where the client has been drawing it loaded. Everything else fires from
+    // its centre, as the reference does.
+    shot.from = drive.stingerShooter && shooterBody != nullptr
+                    ? from + Vec2::fromAngle(aimAngle, stingerMuzzleDistance(shooterBody->radius,
+                                                                             shot.radius))
+                    : from;
     // SPEED does NOT ride the calibre. `speed` in mobs.json is what a shot of
     // this mob flies at whatever size it came out, so an apex missile is a
     // common one drawn bigger rather than a faster weapon, and the file stays
@@ -909,6 +907,13 @@ void MobAiSystem::fireVolley(World& world, Entity shooter, const MobType& type, 
     // what is still owed after this one and a burstless mob never leaves zero.
     ai.burstRemaining = inBurst ? static_cast<std::uint8_t>(ai.burstRemaining - 1)
                                 : static_cast<std::uint8_t>(burst - 1);
+    // A stinger's sting IS the missile, so it has just left and the mob is
+    // bare until the next one is due. Its own clock, not lastProjectileMillis:
+    // the wind-up rewinds that one to telegraph an opening shot, and a sting
+    // read off it would vanish from a mob that has not fired at all.
+    if (drive.stingerShooter) {
+        ai.stingLoadedAtMillis = nowMillis + (ai.burstRemaining > 0 ? burstInterval : cooldown);
+    }
     ++stats_.volleys;
 
     const int count = std::max(1, spec.count);

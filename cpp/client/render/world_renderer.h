@@ -355,6 +355,9 @@ private:
         bool npc = false;
         /// Negative for a live mob; 0..1 while the death animation runs.
         double deathProgress = -1.0;
+        /// A stinger mob whose missile has just left (net::StateUnloaded): its
+        /// sting is growing back and is drawn part way out, or not at all.
+        bool unloaded = false;
     };
 
     /// `clockSeconds` is the frame clock; a chasing mob's artwork is advanced
@@ -415,6 +418,17 @@ private:
     /// advanced to `clockSeconds` -- once a frame however often it is asked,
     /// like mobEye(). What a florr-ported painter animates from.
     MobMotion mobMotion(const MobDraw& mob, double clockSeconds) const;
+    /// How far a stinger mob's loaded missile is out of its tail, 0 (just
+    /// fired, nothing to draw) to 1 (loaded). Read off the MobPace that
+    /// mobMotion() advanced this frame.
+    double stingLoad(const MobDraw& mob, const MobConfig& config) const;
+    /// A stinger mob's LOADED missile: the ammunition's own artwork at the
+    /// size the server will fire it, on the tail where the shot leaves from.
+    /// Drawn under the body, which is what makes it read as coming out of it.
+    /// `grown` is the death pop's scale, 1 for a live mob.
+    void drawLoadedSting(Canvas&, const MobConfig&, const MobDraw&, Vec2 screen,
+                         double rotation, double grown, double zoom,
+                         double clockSeconds) const;
     /// The petal types a garbage pile may be built from: the same rule the
     /// server's drop roll uses, so both clients pick the same artwork.
     const std::vector<std::uint16_t>& droppablePetals() const;
@@ -569,6 +583,10 @@ private:
         double lastSeconds = 0;
         Vec2 lastPosition;
         std::uint64_t advancedFrame = 0;
+        /// A stinger's reload as this client saw it: whether the server says
+        /// the missile is out, and how long since it went.
+        bool unloaded = false;
+        double unloadedMs = 0;
     };
     mutable std::unordered_map<std::uint32_t, MobPace> mobPaces_;
 

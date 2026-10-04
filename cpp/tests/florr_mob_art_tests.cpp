@@ -235,3 +235,149 @@ TEST(the_spider_and_the_crab_step_on_the_ground_they_cover) {
     later.clockMs = 1234.0;
     CHECK(paint(spider, later) == paint(spider, MobArtAttributes{}));
 }
+
+namespace {
+
+/// One frame of a common `id` facing `angle` with entity `state` bits, drawn
+/// through the world renderer at zoom 1 with the camera on it, plus any ring
+/// seeds in `seeds`, as RGBA. The mob sits at the canvas centre.
+constexpr int kRingSize = 200;
+std::vector<std::uint8_t> mobFrame(const char* id, double angle, std::uint8_t state,
+                                   const std::vector<RemoteEntity>& seeds) {
+    static const SpriteCache sprites = [] {
+        SpriteCache cache;
+        cache.build(shipped(), FLIX_TEST_DATA_DIR);
+        return cache;
+    }();
+    const std::uint16_t type = shipped().mobIndex(id);
+    WorldRenderer renderer;
+    renderer.setContent(&shipped());
+    renderer.setSprites(&sprites);
+    renderer.options.names = false;
+    renderer.options.healthBars = false;
+    WorldView view;
+    view.setRealm(Realm::Overworld);
+    const Vec2 at{1000.0, 1000.0};
+    RemoteEntity mob;
+    mob.netId = 7;
+    mob.kind = net::EntityKind::Mob;
+    mob.position = mob.targetPosition = at;
+    mob.needsSnap = false;
+    mob.typeIndex = type;
+    mob.angle = angle;
+    mob.state = state;
+    mob.radius = shipped().mobStats(type, Rarity::Common).radius;
+    view.seedForTest(mob);
+    for (RemoteEntity seed : seeds) {
+        seed.ownerNetId = mob.netId;
+        seed.position = seed.targetPosition = at + seed.ownerOffset;
+        seed.needsSnap = false;
+        view.seedForTest(seed);
+    }
+    Camera camera;
+    camera.setViewport(kRingSize, kRingSize);
+    camera.userZoom = 1.0;
+    camera.snapTo(at);
+    Canvas canvas = Canvas::createVirtual(kRingSize, kRingSize);
+    renderer.draw(canvas, view, camera, at, 1.0);
+    return canvas.getImageData(0, 0, kRingSize, kRingSize);
+}
+
+/// The brightest channel of the pixel `offset` world units from the middle.
+int brightnessAt(const std::vector<std::uint8_t>& rgba, Vec2 offset) {
+    const int x = static_cast<int>(std::lround(kRingSize * 0.5 + offset.x));
+    const int y = static_cast<int>(std::lround(kRingSize * 0.5 + offset.y));
+    const std::size_t i = (static_cast<std::size_t>(y) * kRingSize + static_cast<std::size_t>(x)) * 4;
+    return std::max({rgba[i], rgba[i + 1], rgba[i + 2]});
+}
+
+} // namespace
+
+TEST(a_dandelions_stalks_point_at_its_seats_whichever_way_it_faces) {
+    // Its seeds sit on FIXED world bearings (MobPetalRing::bearing ignores the
+    // facing), so the stalks in the head have to as well: turned with the
+    // mob, they pointed between the seeds. So the head is the same picture
+    // whichever way the mob faces -- here half a stalk round, which put every
+    // stalk exactly between two seats.
+    const std::uint16_t type = shipped().mobIndex("dandelion");
+    const MobConfig& config = shipped().mob(type);
+    CHECK(config.petalRing.present && config.petalRing.shootOnHit);
+    const int count = config.petalRing.count;
+    const double step = kTau / count;
+    const std::vector<std::uint8_t> frame = mobFrame("dandelion", step * 0.5, 0, {});
+    const int moved = differingPixels(frame, mobFrame("dandelion", 0.0, 0, {}));
+    if (moved != 0) std::printf("    turning the dandelion changed %d pixels\n", moved);
+    CHECK_EQ(moved, 0);
+
+    // And its stalks are ON the seat bearings. Scanned out from clear of the
+    // head ring's soft edge (28 of its 25-unit design) to past the longest
+    // stalk. Their lengths are random, and the shortest end inside that soft
+    // edge, so most rather than all of them are looked for. A stalk is
+    // #333333; the bare world is drawn black and the head white.
+    const double unit = shipped().mobStats(type, Rarity::Common).radius / 25.0;
+    const auto stalkAlong = [&](double bearing) {
+        for (double d = 28.0; d <= 36.0; d += 0.25) {
+            if (std::abs(brightnessAt(frame, Vec2::fromAngle(bearing, d * unit)) - 0x33) <= 6) {
+                return true;
+            }
+        }
+        return false;
+    };
+    int onSeats = 0;
+    int between = 0;
+    for (int i = 0; i < count; ++i) {
+        if (stalkAlong(i * step)) ++onSeats;
+        if (stalkAlong((i + 0.5) * step)) ++between;
+    }
+    if (onSeats * 2 < count || between != 0) {
+        std::printf("    stalks on seats %d/%d, between seats %d\n", onSeats, count, between);
+    }
+    CHECK(onSeats * 2 >= count);
+    CHECK_EQ(between, 0);
+}
+
+TEST(a_dandelions_seeds_go_down_under_its_head) {
+    // A seed grows out of the head, so the head is drawn over it. One parked
+    // on the middle of the head shows only if it is drawn on top: its dark
+    // stem then crosses the white disc.
+    const std::uint16_t type = shipped().mobIndex("dandelion");
+    const MobConfig& config = shipped().mob(type);
+    const double bodyRadius = shipped().mobStats(type, Rarity::Common).radius;
+    RemoteEntity seed;
+    seed.netId = 8;
+    seed.kind = net::EntityKind::Petal;
+    seed.typeIndex = config.petalRing.petalIndex;
+    seed.spawnFlags = net::SpawnRingPetal;
+    seed.radius = bodyRadius * config.petalRing.hitScale;
+    // Facing +X, so its stem runs back along -X, over the head.
+    seed.ownerOffset = Vec2{0.5, 0.0};
+    const std::vector<std::uint8_t> frame = mobFrame("dandelion", 0.0, 0, {seed});
+    const int stem = brightnessAt(frame, Vec2{-seed.radius * 1.5, 0.0});
+    if (stem < 200) std::printf("    the seed's stem shows over the head (%d)\n", stem);
+    CHECK(stem >= 200);
+}
+
+TEST(a_hornet_wears_its_missile_until_it_fires_it) {
+    // The sting IS the loaded missile: drawn on the tail, at the size and
+    // place the server will fire it from, and gone from the moment it leaves
+    // (net::StateUnloaded) until the next one has slid back out.
+    for (const char* id : {"hornet", "wasp"}) {
+        const std::uint16_t type = shipped().mobIndex(id);
+        const MobConfig& config = shipped().mob(type);
+        CHECK(config.stingerShooter && config.projectile.present);
+        const double body = shipped().mobStats(type, Rarity::Common).radius;
+        const double shot = mobShotRadius(
+            shipped().petalStats(config.projectile.ammoPetalIndex, Rarity::Common).size,
+            mobShotOwnerScale(body));
+        // Facing +X, so the tail and the muzzle are along -X.
+        const Vec2 muzzle{-stingerMuzzleDistance(body, shot), 0.0};
+        const auto stingAt = [&muzzle](const std::vector<std::uint8_t>& frame) {
+            return std::abs(brightnessAt(frame, muzzle) - 0x33) <= 8;
+        };
+        const bool loaded = stingAt(mobFrame(id, 0.0, 0, {}));
+        const bool fired = stingAt(mobFrame(id, 0.0, net::StateUnloaded, {}));
+        if (!loaded || fired) std::printf("    %s: loaded %d, just fired %d\n", id, loaded, fired);
+        CHECK(loaded);
+        CHECK(!fired);
+    }
+}

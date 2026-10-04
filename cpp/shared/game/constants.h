@@ -5,6 +5,7 @@
 // the client predicts movement with the same function the server authorises it
 // with, so straight-line movement reconciles to nothing at all.
 
+#include <algorithm>
 #include <string>
 
 #include "shared/core/types.h"
@@ -447,6 +448,38 @@ inline constexpr double kRaindropAuraDamageIntervalMillis = 500.0;
 inline constexpr double kProjectileRadiusPerSize = 10.0;
 
 inline constexpr double kMobBaseRadius = 20.0;
+
+/// The shooter's rarity also scales the shot's SIZE, on its own divisor --
+/// reach and size deliberately grow at different rates.
+inline constexpr double kProjectileSizeDivisor = 3.0;
+
+/// Volley cadence for a mob whose config states no cooldown.
+inline constexpr double kDefaultVolleyCooldownMillis = 2000.0;
+
+/// How much bigger than a stock body a shooter is, for sizing its shots: its
+/// body radius over kMobBaseRadius, so it carries both the rarity step and the
+/// mob's own authored `size`.
+inline double mobShotOwnerScale(double shooterRadius) {
+    return std::max(0.05, shooterRadius / kMobBaseRadius);
+}
+
+/// The radius of a shot a mob fires, from its ammunition petal's `size` stat
+/// (graded at the shooter's tier) and mobShotOwnerScale().
+///
+/// Shared because both sides need the SAME number: the server fires the shot
+/// at it, and the client draws a stinger mob's LOADED missile on its tail at
+/// it, so the sting the player watches leave is the missile that arrives.
+inline double mobShotRadius(double ammoSize, double ownerScale) {
+    return std::max(1.0, ammoSize * kProjectileRadiusPerSize * ownerScale / kProjectileSizeDivisor);
+}
+
+/// How far out of a stinger shooter's tail its shot leaves, centre to centre:
+/// the shot's body just clear of the shooter's. Shared for the same reason as
+/// mobShotRadius() -- the client draws the LOADED missile exactly here, so the
+/// shot appears where the sting was.
+inline double stingerMuzzleDistance(double shooterRadius, double shotRadius) {
+    return shooterRadius + shotRadius;
+}
 
 /// Contact damage cannot land more often than this on the same victim.
 inline constexpr double kMobHitIntervalMillis = 500.0;

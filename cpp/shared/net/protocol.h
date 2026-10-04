@@ -22,7 +22,7 @@ namespace flix::net {
 using ConnectionId = std::uint32_t;
 
 /// Bumped whenever any message layout in this file changes.
-inline constexpr std::uint16_t kProtocolVersion = 48;
+inline constexpr std::uint16_t kProtocolVersion = 49;
 
 /// "Not one of the rotating store's cards": a purchase at the full ladder
 /// price. Any other value is a slot index the server checks against the offers
@@ -634,6 +634,12 @@ enum EntityState : std::uint8_t {
     StateSlowed    = 1 << 2,
     StateInvulnerable = 1 << 3,
     StateDefending = 1 << 4,   ///< petals pulled in
+    /// A stinger mob whose missile has just left and is not loaded yet. Its
+    /// sting IS the missile, so the client draws none until this clears and
+    /// slides it back out of the tail meanwhile. Shares the bit with
+    /// StateDefending, which only a flower sets -- the byte is full, and the
+    /// two can never be on the same record. (Version 49.)
+    StateUnloaded  = 1 << 4,
     StateAttacking = 1 << 5,   ///< petals pushed out
     StateDead      = 1 << 6,   ///< playing its death animation
     /// A mob that has locked on. Costs no bytes -- it rides in the state byte

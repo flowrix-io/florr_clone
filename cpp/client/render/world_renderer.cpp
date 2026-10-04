@@ -2686,6 +2686,7 @@ MobMotion WorldRenderer::mobMotion(const MobDraw& mob, double clockSeconds) cons
         pace.lastSeconds = clockSeconds;
         pace.lastPosition = mob.position;
         pace.advancedFrame = frame_;
+        pace.unloaded = mob.unloaded;
     } else if (pace.advancedFrame != frame_) {
         // Once a frame, for the reason mobEye gives: a mob painted twice in
         // one frame must not walk twice as far.
@@ -2704,6 +2705,13 @@ MobMotion WorldRenderer::mobMotion(const MobDraw& mob, double clockSeconds) cons
             pace.aggro += ((mob.chasing ? 1.0 : 0.0) - pace.aggro) *
                           easeFraction(kMobAggroEaseRate, dtMs);
             pace.aggroMs += pace.aggro * dtMs;
+            pace.unloadedMs += dtMs;
+        }
+        // A corpse keeps the sting it died with: its MobDraw is rebuilt from
+        // a DyingMob, which knows nothing of the reload.
+        if (mob.deathProgress < 0.0) {
+            if (mob.unloaded && !pace.unloaded) pace.unloadedMs = 0.0;
+            pace.unloaded = mob.unloaded;
         }
         pace.lastSeconds = clockSeconds;
         pace.lastPosition = mob.position;
@@ -2717,6 +2725,44 @@ MobMotion WorldRenderer::mobMotion(const MobDraw& mob, double clockSeconds) cons
     motion.seed = mob.netId;
     motion.health = clamp(mob.healthFraction, 0.0, 1.0);
     return motion;
+}
+
+double WorldRenderer::stingLoad(const MobDraw& mob, const MobConfig& config) const {
+    const auto pace = mobPaces_.find(mob.netId);
+    if (pace == mobPaces_.end() || !pace->second.unloaded) return 1.0;
+    // The server says when the next missile is loaded, not how far along it
+    // is, so the cadence is timed here against the same cooldown it reloads
+    // on. Held short of 1 until the server agrees: a sting fully out on a mob
+    // that cannot fire yet would promise a shot that is not coming.
+    const double cooldown =
+        config.cooldownMillis > 0.0 ? config.cooldownMillis : kDefaultVolleyCooldownMillis;
+    const double t = clamp(pace->second.unloadedMs / cooldown, 0.0, 0.98);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+void WorldRenderer::drawLoadedSting(Canvas& canvas, const MobConfig& config, const MobDraw& mob,
+                                    Vec2 screen, double rotation, double grown, double zoom,
+                                    double clockSeconds) const {
+    const std::uint16_t ammo = config.projectile.ammoPetalIndex;
+    if (!sprites_ || !content_ || ammo == kInvalidIndex || !sprites_->petalDrawable(ammo)) return;
+    const double load = stingLoad(mob, config);
+    if (load <= 0.0) return;
+    // The radius fireVolley gives the shot, graded at this mob's tier, drawn
+    // the way a projectile is: twice that times the ammunition's
+    // visual_scale. So the sting that leaves is the missile that arrives.
+    const PetalConfig& petal = content_->petal(ammo);
+    const double radius = mobShotRadius(content_->petalStats(ammo, mob.rarity).size,
+                                        mobShotOwnerScale(mob.radius));
+    const double length = 2.0 * radius * petalArtScale(&petal);
+    // Loaded, it sits where fireVolley puts a stinger's shot.from. Reloading,
+    // it is drawn back in by up to its own length -- far enough to hide under
+    // the body it is coming out of.
+    const double out =
+        (stingerMuzzleDistance(mob.radius, radius) - length * (1.0 - load)) * grown;
+    const double tail = rotation + kPi;
+    const Vec2 at = screen + Vec2::fromAngle(tail, out * zoom);
+    sprites_->drawPetal(canvas, ammo, mob.rarity, at.x, at.y, length * grown * zoom, tail,
+                        clockSeconds);
 }
 
 const std::vector<std::uint16_t>& WorldRenderer::droppablePetals() const {
@@ -2807,8 +2853,14 @@ void WorldRenderer::drawPetalRingMob(Canvas& canvas, const MobConfig& config, co
         // The world radius is handed over beside the drawn one for the reason
         // drawMobBody gives -- a code-drawn mob cuts its detail from how big it
         // IS, not from how big it is being painted.
+        //
+        // A body whose ring is AMMUNITION is drawn unturned. Its seats sit on
+        // fixed world bearings (MobPetalRing::bearing ignores the facing), and
+        // the stalks in its drawing are where those seats grow from -- turned
+        // with the mob, a dandelion's stalks pointed between its seeds.
         const double visualScale = config.visualScale > 0 ? config.visualScale : 1.0;
-        sprites_->drawMob(canvas, mob.typeIndex, 0.0, 0.0, radius * 2.0, rotation, timeSeconds,
+        const double facing = config.petalRing.shootOnHit ? 0.0 : rotation;
+        sprites_->drawMob(canvas, mob.typeIndex, 0.0, 0.0, radius * 2.0, facing, timeSeconds,
                           mirrored, mob.radius * visualScale, {1.0, 0.0}, motion);
     }
     canvas.restore();
@@ -2946,6 +2998,15 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         drawPetalGlow(canvas, lightRadius, config->lightColorRgba >> 8,
                       lightRadius > 300.0 ? 6 : 16);
         canvas.restore();
+    }
+
+    // Before the body, so the sting comes out from under it. Off the HITBOX
+    // centre rather than the art's: it is the server's muzzle.
+    if (config && config->stingerShooter && config->projectile.present &&
+        !config->hideRotation) {
+        const double drawnAtRest = mob.radius * 2.0 * visualScale * zoom;
+        drawLoadedSting(canvas, *config, mob, screen, rotation,
+                        drawnAtRest > 0.0 ? diameter / drawnAtRest : 1.0, zoom, clockSeconds);
     }
 
     static const std::string kNoId;
@@ -3268,6 +3329,7 @@ void WorldRenderer::drawEntity(Canvas& canvas, const RemoteEntity& entity, const
             mob.healthFraction = entity.healthFraction;
             mob.chasing = (entity.state & net::StateChasing) != 0;
             mob.pet = (entity.spawnFlags & net::SpawnIsPet) != 0;
+            mob.unloaded = (entity.state & net::StateUnloaded) != 0;
             drawMobBody(canvas, camera, mob, timeSeconds);
 
             // A Killed event arrives after the snapshot has already erased the
@@ -3697,8 +3759,13 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
     // petal swinging past. In the petal layer an apex wax -- 600 across --
     // would be painted over whichever of its owner's petals the map order
     // happened to put first.
+    // A seed on a mob's ammunition ring grows OUT of the mob, so it goes down
+    // under it: in the mob layer, after the holes and before every body. In
+    // the petal layer a dandelion's seeds were painted over its own head.
     const auto layerOf = [](const RemoteEntity& entity) {
-        return entity.isLoosePetal() ? net::EntityKind::Npc : entity.kind;
+        if (entity.isLoosePetal()) return net::EntityKind::Npc;
+        if (entity.isRingPetal()) return net::EntityKind::Mob;
+        return entity.kind;
     };
     const auto drawLive = [&](const RemoteEntity& entity) {
         // Every entity draws at its own interpolated position, petals
@@ -3759,11 +3826,16 @@ void WorldRenderer::draw(Canvas& canvas, const EntityMap& entities, const Camera
             for (const DyingMob& dying : dying_) {
                 if (isHole(dying.typeIndex)) drawDying(dying);
             }
+            for (const auto& entry : entities) {
+                if (entry.second.isRingPetal()) drawLive(entry.second);
+            }
         }
         for (const auto& entry : entities) {
             const RemoteEntity& entity = entry.second;
             if (layerOf(entity) != kind) continue;
-            if (mobs && isHole(entity.typeIndex)) continue;
+            // A ring seed's typeIndex is a PETAL index, so it must be ruled
+            // out before isHole reads it as a mob's.
+            if (mobs && (entity.isRingPetal() || isHole(entity.typeIndex))) continue;
             drawLive(entity);
         }
         chargeOps(kind == net::EntityKind::Mob || kind == net::EntityKind::Npc ? ops_.mobs

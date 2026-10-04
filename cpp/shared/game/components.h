@@ -643,6 +643,11 @@ struct MobAi {
     /// which paces contact damage: a hornet shoots on its config cooldown the
     /// whole way in and touches on a different clock once it arrives.
     double lastProjectileMillis = 0;
+    /// When a stinger shooter's next missile is loaded -- in the past for one
+    /// that is loaded now. Set only when a volley actually leaves, and
+    /// replicated as net::StateUnloaded so the client can draw the sting
+    /// growing back out of the tail and none at all just after a shot.
+    double stingLoadedAtMillis = 0;
     /// Shots still owed on the burst in progress -- 0 for a mob at rest, and
     /// always 0 for the shooters that fire one volley per cooldown.
     ///

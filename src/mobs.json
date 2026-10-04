@@ -898,8 +898,8 @@
         "name": "Hornet",
         "health": 60,
         "damage": 50,
-        "size": 0.8333,
-        "visual_scale": 1.56,
+        "size": 1.2939,
+        "visual_scale": 1.0047,
         "speed": 0.4,
         "cooldown": 2000,
         "xp": {
@@ -1068,9 +1068,8 @@
         "name": "Wasp",
         "health": 60,
         "damage": 50,
-        "size": 2.0681,
-        "visual_scale": 0.6286,
-        "visualOffsetX": 0.2994,
+        "size": 1.2939,
+        "visual_scale": 1.0047,
         "speed": 0.4,
         "cooldown": 1000,
         "xp": {

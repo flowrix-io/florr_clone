@@ -935,12 +935,13 @@
         "damage": 10,
         "health": 5,
         "size": 1.5,
+        "visual_scale": 1.8085,
         "cooldown": 2000,
         "price": 10,
         "description": "A missile that deals damage to the target",
         "color": "#222222",
         "count": 1,
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#222222\" stroke=\"#222222\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
+        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-13.5 -8.5 27 17\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 11 0 L -11 -6 L -11 6 Z\" fill=\"#333333\" stroke=\"#292929\" stroke-width=\"5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n</svg>",
         "isAdminPetal": true
     },
     "wasp_missile": {
@@ -948,6 +949,7 @@
         "damage": 10,
         "health": 5,
         "size": 1.5,
+        "visual_scale": 1.8085,
         "cooldown": 1000,
         "price": 10,
         "description": "A wasp's stinger, thrown; it weaves on the way in",

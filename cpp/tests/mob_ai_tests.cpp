@@ -1,5 +1,6 @@
 #include "test.h"
 
+#include "server/replication.h"
 #include "server/systems/mob_ai.h"
 #include "server/systems/movement.h"
 
@@ -1484,9 +1485,9 @@ TEST(a_hornets_missile_inherits_the_hornets_size) {
     const Entity shot = fireAndCatch(sim);
     CHECK(shot != NULL_ENTITY);
 
-    // A hornet is a size-0.83 mob (florr's radius 25), so its missiles are
-    // 0.83x what a size-1 shooter of the same tier fires -- which is the whole
-    // of "a projectile inherits the size of the entity that spawned it". Derived from the
+    // A hornet is not a size-1 mob, so its missiles are not what a size-1
+    // shooter of the same tier fires -- which is the whole of "a projectile
+    // inherits the size of the entity that spawned it". Derived from the
     // shooter's BODY here for the same reason the server derives it there: it
     // is the one number that already carries both the authored size and the
     // rarity step.
@@ -1496,8 +1497,9 @@ TEST(a_hornets_missile_inherits_the_hornets_size) {
     const double expected =
         std::max(1.0, stats.size * kProjectileRadiusPerSize * ownerScale / kProjectileSizeDivisor);
     CHECK_NEAR(sim.world.get<Body>(shot).radius, expected, 1e-9);
-    // A size-1 shooter's scale is kMobSizeScale[0]; the 0.83 is really reaching the shot.
-    CHECK(ownerScale < 0.9 * kMobSizeScale[0]);
+    // A size-1 shooter's scale is kMobSizeScale[0]; the hornet's own size is
+    // really reaching the shot.
+    CHECK(std::fabs(ownerScale - kMobSizeScale[0]) > 0.1 * kMobSizeScale[0]);
 
     // And it is a body, not a token: a mass on the same area scale a mob's
     // uses, and the ammunition's own health as the pool that lets it
@@ -1542,14 +1544,15 @@ TEST(a_stinger_shooter_comes_round_before_it_fires) {
     // hornet is looking west.
     CHECK(std::cos(sim.angleOf(hornet)) < 0.0);
 
-    // And the missile still goes at the flower, from the stinger end -- a body
-    // radius out along the shot rather than out of the mob's middle.
+    // And the missile still goes at the flower, from the stinger end -- just
+    // clear of the body along the shot, where the client drew it loaded,
+    // rather than out of the mob's middle.
     const Vec2 launch = sim.world.get<Motion>(shot).velocity;
     CHECK(launch.x > 0.0);
     // Measured against the shooter AFTER it has rocked back, so the gap is the
     // muzzle offset plus however much of the recoil cap the volley spent.
     const Vec2 muzzle = sim.world.get<Transform>(shot).position - sim.positionOf(hornet);
-    const double radius = sim.world.get<Body>(hornet).radius;
+    const double radius = sim.world.get<Body>(hornet).radius + sim.world.get<Body>(shot).radius;
     CHECK(muzzle.length() >= radius - 1e-9);
     CHECK(muzzle.length() <= radius + kProjectileMaxRecoil + 1e-9);
     CHECK(muzzle.x > 0.0);
@@ -1754,6 +1757,45 @@ TEST(the_wind_up_does_not_cost_a_stinger_shooter_its_cadence) {
     // instead this would be a wind-up longer.
     const double cooldown = content().mob(content().mobIndex("hornet")).cooldownMillis;
     CHECK_NEAR(gap * net::kTickMillis, cooldown, net::kTickMillis + 1e-9);
+}
+
+TEST(a_stingers_sting_is_gone_from_the_shot_until_it_has_reloaded) {
+    CHECK(contentReady());
+    // The sting IS the missile: the client draws it on the tail while the mob
+    // is loaded and none at all from the shot until the next one is due, off
+    // net::StateUnloaded.
+    Sim sim;
+    const Entity hornet = sim.spawnMob("hornet", kOrigin);
+    sim.spawnPlayer(kOrigin + Vec2{250, 0});
+    const auto unloadedAt = [&](double nowMillis) {
+        return (computeEntityState(sim.world, hornet, nowMillis) & net::StateUnloaded) != 0;
+    };
+
+    // Loaded the whole way through the wind-up. That rewinds the volley clock
+    // to telegraph the opening shot, and a sting read off that clock went
+    // missing from a mob that had not fired anything.
+    bool everUnloaded = false;
+    for (int i = 0; i < 400 && shotCount(sim) == 0; ++i) {
+        everUnloaded = everUnloaded || unloadedAt(sim.now);
+        sim.tickIntent();
+    }
+    CHECK(shotCount(sim) == 1);
+    CHECK(!everUnloaded);
+
+    // Bare from the tick the missile left until its cooldown is up, and
+    // loaded again from then on.
+    const double firedAt = sim.now - net::kTickMillis;
+    const double cooldown = content().mob(content().mobIndex("hornet")).cooldownMillis;
+    CHECK(unloadedAt(firedAt));
+    CHECK(unloadedAt(firedAt + cooldown - 1.0));
+    CHECK(!unloadedAt(firedAt + cooldown));
+
+    // A mob that does not carry its ammunition on its tail never says so.
+    Sim other;
+    const Entity glitch = other.spawnMob("glitch", kOrigin);
+    other.spawnPlayer(kOrigin + Vec2{300, 0});
+    CHECK(fireAndCatch(other) != NULL_ENTITY);
+    CHECK((computeEntityState(other.world, glitch, other.now) & net::StateUnloaded) == 0);
 }
 
 TEST(a_mob_that_shoots_out_of_its_face_still_does) {

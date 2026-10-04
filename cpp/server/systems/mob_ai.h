@@ -324,9 +324,6 @@ inline constexpr double kSandstormTurnPerDecision = 0.5;
 
 // -- volleys -----------------------------------------------------------------
 
-/// Volley cadence for a mob whose config states no cooldown.
-inline constexpr double kDefaultVolleyCooldownMillis = 2000.0;
-
 /// Shot speed for a projectile block that omits one, units per second.
 inline constexpr double kDefaultProjectileSpeed = 200.0;
 
@@ -361,10 +358,6 @@ inline constexpr double kBurstStaleFactor = 2.0;
 /// units changed here; every authored number was rescaled to match, so no
 /// mob's actual reach moved.
 inline constexpr double kProjectileReachReferenceScale = kMobSizeScale[0];
-
-/// The shooter's rarity also scales the shot's SIZE, on its own divisor --
-/// reach and size deliberately grow at different rates.
-inline constexpr double kProjectileSizeDivisor = 3.0;
 
 /// How far outside its own skin a mob with a projectile tries to keep whatever
 /// it is shooting at, in world units.

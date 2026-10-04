@@ -1488,20 +1488,27 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // bands clipped to the body, a rim, and two flat feelers. gardn fills
             // the feelers in whatever fill was in force after the bands' clip
             // was undone -- the body's yellow -- and outlines them in black.
+            //
+            // The sting is drawn only in a picture. In the world it IS the
+            // loaded missile, which the world renderer draws on the tail from
+            // the shot's own size and reload (WorldRenderer::drawLoadedSting),
+            // so it can leave and grow back.
             constexpr std::uint32_t kBase = 0xFFD363u;
             canvas.save();
             const double s = attr.radius / 30.0;
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 5.0);
 
-            ui::setFill(canvas, 0x333333u);
-            ui::setStroke(canvas, 0x292929u);
-            canvas.beginPath();
-            canvas.moveTo(-25.0f, -6.0f);
-            canvas.lineTo(-47.0f, 0.0f);
-            canvas.lineTo(-25.0f, 6.0f);
-            canvas.fill();
-            canvas.stroke();
+            if (!attr.inWorld) {
+                ui::setFill(canvas, 0x333333u);
+                ui::setStroke(canvas, 0x292929u);
+                canvas.beginPath();
+                canvas.moveTo(-25.0f, -6.0f);
+                canvas.lineTo(-47.0f, 0.0f);
+                canvas.lineTo(-25.0f, 6.0f);
+                canvas.fill();
+                canvas.stroke();
+            }
 
             ui::setFill(canvas, kBase);
             canvas.beginPath();
@@ -1537,11 +1544,15 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
         }
 
         case MobArt::Wasp: {
-            // gardn has no wasp, so it is florr's: drawn for a radius of 30 and
-            // enlarged by 1.3 on top. A sting, two amber bands bowed back at the
-            // middle cut to the body, a rim, and a pair of flat, swept feelers
-            // that flick a fifth of a radian each way on the clock while it is
-            // worked up.
+            // gardn has no wasp, so it is florr's: drawn for a radius of 30. A
+            // sting, two amber bands bowed back at the middle cut to the body,
+            // a rim, and a pair of flat, swept feelers that flick a fifth of a
+            // radian each way on the clock while it is worked up.
+            //
+            // florr enlarges it by 1.3 on top, as it does the hornet. Here that
+            // lives in mobs.json's visual_scale for both, as the hornet's must
+            // (gardn's painter has no 1.3), so the same numbers draw the two
+            // the same size.
             static const Path2D body = [] {
                 Path2D oval;
                 oval.ellipse(0.0f, 0.0f, 30.0f, 20.0f, 0.0f, 0.0f, static_cast<float>(kTau));
@@ -1566,21 +1577,24 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             }();
 
             canvas.save();
-            const double s = attr.radius / 30.0 * 1.3;
+            const double s = attr.radius / 30.0;
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 5.0);
 
             // florr draws the sting only when the mob has no world entity --
-            // in the world the loaded missile is an entity of its own. Ours
-            // fires a fresh one, so the sting is always drawn here.
-            ui::setFill(canvas, 0x333333u);
-            ui::setStroke(canvas, 0x333333u);
-            canvas.save();
-            canvas.translate(-36.0f, 0.0f);
-            canvas.rotate(static_cast<float>(kPi));
-            canvas.fill(sting);
-            canvas.stroke(sting);
-            canvas.restore();
+            // in the world the loaded missile is drawn on the tail by the
+            // world renderer instead, so it can leave and grow back. See the
+            // hornet.
+            if (!attr.inWorld) {
+                ui::setFill(canvas, 0x333333u);
+                ui::setStroke(canvas, 0x333333u);
+                canvas.save();
+                canvas.translate(-36.0f, 0.0f);
+                canvas.rotate(static_cast<float>(kPi));
+                canvas.fill(sting);
+                canvas.stroke(sting);
+                canvas.restore();
+            }
 
             ui::setFill(canvas, 0xC8803Cu);
             canvas.fill(body);
@@ -1602,7 +1616,7 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
                 canvas.save();
                 canvas.scale(1.0f, side);
                 canvas.translate(25.0f, 5.0f);
-                canvas.rotate(static_cast<float>(flick));
+                // canvas.rotate(static_cast<float>(flick));
                 canvas.fill(feeler);
                 canvas.stroke(feeler);
                 canvas.restore();
