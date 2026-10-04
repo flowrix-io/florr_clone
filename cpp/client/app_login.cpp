@@ -426,18 +426,13 @@ void App::drawTitleStatus(Canvas& canvas, const std::string& status) {
     TextStyle title;
     title.size = 48.0;
     title.align = Align::Centre;
-    title.bold = true;
-    title.strokeWidth = 6.0;
     text(canvas, "flowrix beta", canvas.width() * 0.5, canvas.height() * 0.5 - 200.0, title);
 
-    // Half the title's point size and a heavier outline than it: the line
-    // under the heading is a status, not a second heading
-    // (src/title_screen/index.ts:1264-1265).
+    // Half the title's point size: the line under the heading is a status,
+    // not a second heading (src/title_screen/index.ts:1264-1265).
     TextStyle style;
     style.size = 24.0;
     style.align = Align::Centre;
-    style.bold = true;
-    style.strokeWidth = 4.0;
     text(canvas, status, canvas.width() * 0.5, canvas.height() * 0.5, style);
     if (statsVisible()) drawStatsCounters(canvas, true);
 }
@@ -467,8 +462,6 @@ void App::drawSessionReplaced(Canvas& canvas, double time) {
     TextStyle title;
     title.size = 48.0;
     title.align = Align::Centre;
-    title.bold = true;
-    title.strokeWidth = 6.0;
     text(canvas, "flowrix beta", centreX, layout.titleY, title);
 
     // The server's words when it sent any, which it always does; the fallback
@@ -476,8 +469,6 @@ void App::drawSessionReplaced(Canvas& canvas, double time) {
     TextStyle reason;
     reason.size = 24.0;
     reason.align = Align::Centre;
-    reason.bold = true;
-    reason.strokeWidth = 4.0;
     text(canvas,
          net_.lastError().empty() ? "You logged in from another tab or device."
                                   : net_.lastError(),
@@ -491,7 +482,6 @@ void App::drawSessionReplaced(Canvas& canvas, double time) {
     ButtonStyle play;
     play.fill = kAccent;
     play.textSize = 22.0;
-    play.textStrokeWidth = 22.0 * kTextStrokeRatio;
     button(canvas, layout.play, "Play on this tab", over,
            over && window_.mouseDown(MouseButton::Left), play);
 }
@@ -511,8 +501,6 @@ void App::drawLogin(Canvas& canvas, double time) {
     TextStyle title;
     title.size = 48;
     title.align = Align::Centre;
-    title.bold = true;
-    title.strokeWidth = 6;
     // Four hundred above centre, unclamped: on a short window the reference
     // lets it run off the top, and pinning it to the edge instead would put a
     // second heading beside the form's own.
@@ -521,8 +509,6 @@ void App::drawLogin(Canvas& canvas, double time) {
     TextStyle heading;
     heading.size = 28;
     heading.align = Align::Centre;
-    heading.bold = true;
-    heading.strokeWidth = 3;
     text(canvas, registering_ ? "Register" : "Login", centreX, layout.headingY, heading);
 
     const int serverField = registering_ ? 3 : 2;
@@ -595,7 +581,6 @@ void App::drawLogin(Canvas& canvas, double time) {
         error.size = 14;
         error.align = Align::Centre;
         error.fill = kDanger;
-        error.strokeWidth = 2;
         text(canvas, loginMessage_, centreX, layout.bottomY + 24, error);
     }
     if (statsVisible()) drawStatsCounters(canvas, true);

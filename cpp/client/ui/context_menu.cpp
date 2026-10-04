@@ -59,7 +59,7 @@ void ContextMenu::close() {
 Rect ContextMenu::bounds() const {
     double width = kMinWidth;
     for (const Item& item : items_) {
-        width = std::max(width, measure(item.label, kTextSize, true) + kPadX * 2);
+        width = std::max(width, measure(item.label, kTextSize) + kPadX * 2);
     }
     return {at_.x, at_.y, width,
             kPadY * 2 + static_cast<double>(items_.size()) * kRowHeight};
@@ -107,11 +107,9 @@ ContextAction ContextMenu::update(Canvas& canvas, Window& window) {
 
         TextStyle label;
         label.size = kTextSize;
-        label.bold = true;
         label.baseline = Baseline::Middle;
         label.fill = kPaper;
         label.stroke = kInk;
-        label.strokeWidth = 3.0;
         label.roundJoin = true;
         // Not recorded as selectable: this card is chrome, and a menu whose own
         // labels could be dragged out would be selecting itself.

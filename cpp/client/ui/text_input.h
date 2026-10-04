@@ -131,7 +131,6 @@ struct TextRun {
     std::string text;
     double originX = 0;
     double size = 14.0;
-    bool bold = false;
 };
 
 double xOfIndex(const TextRun&, std::size_t at);
@@ -187,8 +186,7 @@ bool caretVisible(const TextFieldState&, double timeSeconds);
 /// caret that never moved. Nor is there blank space past the end while text is
 /// hidden off the left. Remembered in `state.scrollX`, and settled -- the hit
 /// test and the paint can both ask in one frame and get the same answer.
-double followCaret(const TextFieldState&, const std::string& value, double size, bool bold,
-                   double span);
+double followCaret(const TextFieldState&, const std::string& value, double size, double span);
 
 /// Where this frame's text fields are.
 ///
@@ -239,7 +237,7 @@ bool trackTextMouse(Window&, TextFieldState&, Rect box, const TextRun&,
 /// starting with the first line's centre at `firstBaseline`.
 bool trackTextMouseMultiline(Window&, TextFieldState&, Rect box, const std::string& value,
                              double originX, double firstBaseline, double lineHeight,
-                             double size, bool bold, double timeSeconds);
+                             double size, double timeSeconds);
 
 /// Start of the UTF-8 sequence ending at `at`, and start of the one beginning
 /// there -- one character back and one character forward. Trimming a single

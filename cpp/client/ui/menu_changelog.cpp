@@ -534,9 +534,10 @@ void drawBullet(Canvas& canvas, double x, double y, double strokeWidth) {
              1.0, 1.0, /*fillFirst=*/true);
 }
 
-/// Paints one change line. `strokeWidth` is threaded by reference because a
-/// link underline leaves it at 1 for everything after it -- including the next
-/// entry's bullets -- which the reference does by leaking ctx.lineWidth.
+/// Paints one change line. `strokeWidth` is the BULLET outline, threaded by
+/// reference because a link underline leaves it at 1 for every bullet after
+/// it, which the reference does by leaking ctx.lineWidth. The line's own text
+/// takes the shared outline.
 void drawChange(Canvas& canvas, const std::string& change, double x, double y,
                 double& strokeWidth, std::vector<LinkHit>& links) {
     double penX = x;
@@ -547,9 +548,6 @@ void drawChange(Canvas& canvas, const std::string& change, double x, double y,
         TextStyle style;
         style.size = kChangeSize;
         style.fill = segment.url.empty() ? kPaper : kLinkFill;
-        // Clamped, not passed through: a negative strokeWidth means "derive one"
-        // to paintRun, where here it has always meant "no outline".
-        style.strokeWidth = std::max(0.0, strokeWidth);
         text(canvas, segment.text, penX, y, style);
 
         if (!segment.url.empty()) {
@@ -621,9 +619,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
 
     TextStyle heading;
     heading.size = 20.0;
-    heading.bold = true;
     heading.fill = kPaper;
-    heading.strokeWidth = 2.0;
     heading.baseline = Baseline::Top;
     text(canvas, "Changelog", panel.x + kPadding, panel.y + kPadding, heading);
 
@@ -660,9 +656,7 @@ bool ChangelogPanel::render(MenuContext& ctx) {
 
         TextStyle date;
         date.size = 20.0;
-        date.bold = true;
         date.fill = kPaper;
-        date.strokeWidth = 2.0;
         text(canvas, entry.date, view.x, contentY, date);
         contentY += kDatePitch;
 

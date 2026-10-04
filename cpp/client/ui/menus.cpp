@@ -397,10 +397,8 @@ void drawLoadoutSlot(Canvas& canvas, Rect r, std::uint32_t fill, bool highlighte
 void drawKeyLabel(Canvas& canvas, const std::string& label, double x, double y, Align align) {
     TextStyle style;
     style.size = 16.0;
-    style.bold = true;
     style.fill = kPaper;
     style.stroke = kInk;
-    style.strokeWidth = 3.0;
     style.align = align;
     style.baseline = Baseline::Middle;
     canvas.setGlobalAlpha(0.85f);
@@ -425,7 +423,6 @@ void drawPresetSlot(Canvas& canvas, const SpriteCache& sprites, Rect r, const st
     drawLoadoutSlot(canvas, r, kPresetSlotFill, highlighted);
     TextStyle style;
     style.size = std::round(r.h * 0.42);
-    style.bold = true;
     style.fill = kPresetNameFill;
     style.align = Align::Centre;
     style.baseline = Baseline::Middle;
@@ -1260,10 +1257,8 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
             if (bound != Key::Unknown) {
                 TextStyle cap;
                 cap.size = kIconKeyCapSize;
-                cap.bold = true;
                 cap.fill = kPaper;
                 cap.stroke = kInk;
-                cap.strokeWidth = 3.0;
                 cap.roundJoin = true;
                 cap.align = Align::Right;
                 cap.baseline = Baseline::Bottom;
@@ -1297,7 +1292,6 @@ void MenuSystem::drawIconStrip(Canvas& canvas, Window& window, double timeSecond
             // anybody reads anyway.
             TextStyle count;
             count.size = kBadgeTextSize;
-            count.bold = true;
             count.fill = kPaper;
             count.strokeWidth = 0;
             count.align = Align::Centre;
@@ -1776,10 +1770,8 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         if (drag_.active()) {
             TextStyle del;
             del.size = std::round(layout.trash.h / 4.0);
-            del.bold = true;
             del.fill = kPaper;
             del.stroke = kInk;
-            del.strokeWidth = 3.0;
             del.align = Align::Centre;
             del.baseline = Baseline::Middle;
             text(bar, "Delete", layout.trash.x + layout.trash.w * 0.5,
@@ -2106,15 +2098,11 @@ void DebugPanel::drawGraph(Canvas& canvas, Rect plot, const std::string& label,
 
     TextStyle caption;
     caption.size = 13.0;
-    caption.bold = true;
-    caption.strokeWidth = 2.0;
     caption.baseline = Baseline::Middle;
     text(canvas, label, plot.x, labelY, caption);
 
     TextStyle reading;
     reading.size = 12.0;
-    reading.bold = true;
-    reading.strokeWidth = 2.0;
     reading.align = Align::Right;
     reading.baseline = Baseline::Middle;
     // The last series' colour, so a two-line graph's headline number says
@@ -2202,8 +2190,6 @@ bool DebugPanel::render(MenuContext& ctx) {
 
     TextStyle heading;
     heading.size = 20.0;
-    heading.bold = true;
-    heading.strokeWidth = 3.0;
     text(canvas, "Debug", panel.x + kPad, panel.y + kPad + kHeader * 0.5, heading);
 
     const Rect closeRect = closeButtonRect(panel);
@@ -2294,8 +2280,6 @@ void DebugPanel::drawProfilingTab(MenuContext& ctx, Rect body) {
 
     TextStyle label;
     label.size = 12.0;
-    label.bold = true;
-    label.strokeWidth = 2.0;
 
     const ProfilingStats* p = ctx.profiling;
     if (p == nullptr || !p->available) {

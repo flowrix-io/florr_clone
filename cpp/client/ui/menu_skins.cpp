@@ -185,16 +185,14 @@ double editorFirstLine(Rect editor) {
 /// Panel text: white, outlined so it reads over the card and over the board,
 /// and vertically centred on the y it is given -- which is what lets a row's
 /// contents be laid out against the row's own middle.
-TextStyle label(double size, bool bold = false, Align align = Align::Left,
+TextStyle label(double size, Align align = Align::Left,
                 std::uint32_t fill = kPaper) {
     TextStyle style;
     style.size = size;
-    style.bold = bold;
     style.align = align;
     style.baseline = Baseline::Middle;
     style.fill = fill;
     style.stroke = kInk;
-    style.strokeWidth = size >= kSectionSize ? 3.0 : 2.0;
     style.roundJoin = true;
     return style;
 }
@@ -206,7 +204,6 @@ ButtonStyle buttonStyle(std::uint32_t fill, double textSize = kBodySize) {
     style.outlineWidth = 3.0;
     style.radius = 3.0;
     style.textSize = textSize;
-    style.textStrokeWidth = 3.0;
     style.shrinkToFit = true;
     return style;
 }
@@ -633,7 +630,7 @@ void Studio::stepper(Canvas& canvas, Rect r, const char* caption, Field field, d
     const Rect well{r.x + bw + 4.0, by, valW, bh};
     fillRound(canvas, well, 3.0, kWell);
     ui::text(canvas, numberText(value), well.x + well.w / 2, well.y + well.h / 2,
-             label(kBodySize, false, Align::Centre));
+             label(kBodySize, Align::Centre));
 
     Action up;
     up.k = Act::Step;
@@ -780,7 +777,7 @@ void Studio::drawPreview(Canvas& canvas) {
     canvas.restore();
 
     ui::text(canvas, textMode ? "Live preview" : "Drag the handles to shape it",
-             pr.x + pr.w / 2, pr.bottom() + 12.0, label(kCaptionSize, false, Align::Centre));
+             pr.x + pr.w / 2, pr.bottom() + 12.0, label(kCaptionSize, Align::Centre));
 }
 
 void Studio::drawShapeList(Canvas& canvas, Rect view) {
@@ -819,7 +816,7 @@ void Studio::drawShapeList(Canvas& canvas, Rect view) {
             {
                 TextCaptureScope off(false);
                 ui::text(canvas, std::to_string(i + 1) + ". " + shortType(s.t),
-                         swatch.right() + 8.0, row.y + kRowCard * 0.5, label(kBodySize, sel));
+                         swatch.right() + 8.0, row.y + kRowCard * 0.5, label(kBodySize));
             }
 
             const double bx = row.right() - 3.0 * 22.0 - 2.0 * 3.0 - 4.0;
@@ -852,7 +849,7 @@ void Studio::drawShapeList(Canvas& canvas, Rect view) {
 }
 
 void Studio::drawProps(Canvas& canvas, Rect r) {
-    ui::text(canvas, "Selected shape", r.x, r.y + 7.0, label(kSectionSize, true));
+    ui::text(canvas, "Selected shape", r.x, r.y + 7.0, label(kSectionSize));
     const Shape* s = selectedShape();
     if (!s) {
         ui::text(canvas, "Nothing selected \xe2\x80\x94 add a shape below.", r.x, r.y + 30.0,
@@ -968,7 +965,7 @@ void Studio::drawTextEditor(Canvas& canvas, Rect r, double timeSeconds) {
 
 void Studio::drawCommandHelp(Canvas& canvas, Rect r) {
     double hy = r.y + 8.0;
-    ui::text(canvas, "Canvas commands", r.x, hy, label(kSectionSize, true));
+    ui::text(canvas, "Canvas commands", r.x, hy, label(kSectionSize));
     hy += 20.0;
     static const char* const kHelp[] = {
         "One shape per line:",
@@ -995,12 +992,12 @@ void Studio::drawCommandHelp(Canvas& canvas, Rect r) {
     std::string rest = textError;
     while (!rest.empty() && hy <= r.bottom()) {
         std::size_t take = rest.size();
-        while (take > 1 && measure(rest.substr(0, take), kCaptionSize, true) > r.w) --take;
+        while (take > 1 && measure(rest.substr(0, take), kCaptionSize) > r.w) --take;
         if (take < rest.size()) {
             const std::size_t space = rest.rfind(' ', take);
             if (space != std::string::npos && space > 0) take = space;
         }
-        ui::text(canvas, rest.substr(0, take), r.x, hy, label(kCaptionSize, true, Align::Left,
+        ui::text(canvas, rest.substr(0, take), r.x, hy, label(kCaptionSize, Align::Left,
                                                               kErrorText));
         rest.erase(0, take);
         while (!rest.empty() && rest.front() == ' ') rest.erase(0, 1);
@@ -1088,9 +1085,9 @@ void Studio::drawBrowse(Canvas& canvas, const std::string& me) {
         canvas.restore();
 
         ui::text(canvas, clipChars(skin.name, 14), card.x + cardW * 0.5, board.bottom() + 14.0,
-                 label(kBodySize, true, Align::Centre));
+                 label(kBodySize, Align::Centre));
         ui::text(canvas, "by " + clipChars(skin.author, 14), card.x + cardW * 0.5,
-                 board.bottom() + 30.0, label(kCaptionSize, false, Align::Centre));
+                 board.bottom() + 30.0, label(kCaptionSize, Align::Centre));
 
         std::string author = skin.author;
         for (char& c : author) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -1133,7 +1130,7 @@ void Studio::drawConfirm(Canvas& canvas, Vec2 mouse) {
                    layout.panel.y + (layout.panel.h - 116.0) * 0.5, 320.0, 116.0};
     overlayCard(canvas, box, kSkinsSkin);
     ui::text(canvas, "Delete \"" + clipChars(confirmName, 22) + "\"?", box.x + box.w * 0.5,
-             box.y + 38.0, label(kSectionSize, true, Align::Centre));
+             box.y + 38.0, label(kSectionSize, Align::Centre));
 
     constexpr double kBtnW = 116.0, kBtnH = 30.0;
     const double by = box.bottom() - kBtnH - 18.0;
@@ -1181,7 +1178,7 @@ void Studio::draw(MenuContext& ctx) {
         } else {
             const double listTop = layout.preview.bottom() + 22.0;
             ui::text(canvas, "Add shape", layout.left.x, listTop + 7.0,
-                     label(kSectionSize, true));
+                     label(kSectionSize));
 
             // Two rows of three; six types do not fit legibly on one.
             static const ShapeType kTypes[] = {ShapeType::Circle,  ShapeType::Ellipse,
@@ -1576,7 +1573,7 @@ bool Studio::handleInput(MenuContext& ctx) {
         // Against the lines drawTextEditor paints.
         const Rect editor = layout.right;
         trackTextMouseMultiline(ctx.window, textField, editor, textBuffer, editorTextX(editor),
-                                editorFirstLine(editor), kEditorLineHeight, kInputTextSize, false,
+                                editorFirstLine(editor), kEditorLineHeight, kInputTextSize,
                                 ctx.timeSeconds);
         if (ctx.window.keyPressed(Key::Escape)) textMode = false;
     }

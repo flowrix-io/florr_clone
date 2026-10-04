@@ -211,13 +211,13 @@ void messageText(Canvas& canvas, const std::string& s, double x, double y,
     // leaves ambient here -- its last header button set `textBaseline` to
     // 'middle' and nothing set it back before the cards were drawn.
     const double baseline =
-        y + (ascent(style.size, style.bold) + descent(style.size, style.bold)) * 0.5;
+        y + (ascent(style.size) + descent(style.size)) * 0.5;
     double pen = x;
     forEachMessagePiece(
         s,
         [&](const std::string& run) {
             paintRun(canvas, run, pen, baseline, style);
-            pen += measure(run, style.size, style.bold);
+            pen += measure(run, style.size);
         },
         [&] {
             const double advance = style.size * kStarAdvance;
@@ -442,9 +442,7 @@ bool NotificationsPanel::render(MenuContext& ctx) {
 
     TextStyle heading;
     heading.size = 20.0;
-    heading.bold = true;
     heading.fill = kPaper;
-    heading.strokeWidth = 2.0;
     heading.baseline = Baseline::Top;
     text(canvas, "Notifications", panel.x + kPadding, panel.y + kPadding, heading);
 
@@ -499,7 +497,6 @@ bool NotificationsPanel::render(MenuContext& ctx) {
                 TextStyle body;
                 body.size = kMessageSize;
                 body.fill = kPaper;
-                body.strokeWidth = 0.5;
                 double lineY = card.y + kTextInset;
                 for (const std::string& line : lines) {
                     // A wrap that produced an empty line still costs its pitch.

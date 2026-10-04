@@ -70,7 +70,6 @@ constexpr double kCardHeight = 607.0;
 /// reads as a sticker stuck on the plate rather than as part of the artwork,
 /// and it deliberately overhangs the plate's right edge.
 constexpr double kTallySize = 12.0;
-constexpr double kTallyStroke = 3.0;
 constexpr double kTallyTilt = 19.0 * kPi / 180.0;
 /// Its CENTRE, in from the plate's top-right corner. Centred rather than
 /// right-aligned, which is what keeps "x9" and "x2.1k" sitting on the same
@@ -118,15 +117,12 @@ struct Cell {
 
 /// Every string on this panel is stroked with a ROUND join: the reference sets
 /// `ctx.lineJoin = 'round'` before the title and never puts it back, so the
-/// whole frame inherits it. All of them are bold, too -- the tooltip rows are
-/// the only regular-weight text the panel draws.
-TextStyle galleryStyle(double size, std::uint32_t fill, double strokeWidth) {
+/// whole frame inherits it.
+TextStyle galleryStyle(double size, std::uint32_t fill) {
     TextStyle style;
     style.size = size;
-    style.bold = true;
     style.fill = fill;
     style.stroke = kInk;
-    style.strokeWidth = strokeWidth;
     style.roundJoin = true;
     return style;
 }
@@ -526,7 +522,7 @@ void drawDropCard(Canvas& canvas, const SpriteCache& sprites, double cellX, doub
     const std::string label = cell.probability < 0.01
                                   ? std::string("<0.01%")
                                   : formatFixed(std::min(100.0, cell.probability), 2) + "%";
-    TextStyle probability = galleryStyle(10.0, kPaper, 2.0);
+    TextStyle probability = galleryStyle(10.0, kPaper);
     probability.align = Align::Centre;
     probability.baseline = Baseline::Top;
     text(canvas, label, cellX + kDropCellW * 0.5, rowY + kCardSize + 4.0, probability);
@@ -574,7 +570,7 @@ bool GalleryPanel::render(MenuContext& ctx) {
     // thick as settings' and changelog's either side of it.
     overlayCard(canvas, panel, kGallerySkin);
 
-    TextStyle title = galleryStyle(24.0, kPaper, 4.0);
+    TextStyle title = galleryStyle(24.0, kPaper);
     title.align = Align::Centre;
     text(canvas, "Mob Gallery", panel.x + panel.w * 0.5, panel.y + kPad + kTitleHeight * 0.5,
          title);
@@ -719,7 +715,7 @@ bool GalleryPanel::render(MenuContext& ctx) {
             // ant kills laid across a 60-unit plate is a smear, and a bestiary
             // tally is read for its order of magnitude.
             const std::string tally = "x" + abbreviateNumber(cell.kills);
-            TextStyle count = galleryStyle(kTallySize, kPaper, kTallyStroke);
+            TextStyle count = galleryStyle(kTallySize, kPaper);
             count.align = Align::Centre;
             count.baseline = Baseline::Middle;
             canvas.save();
@@ -819,13 +815,13 @@ bool GalleryPanel::render(MenuContext& ctx) {
 
         if (hasDrops) {
             double cy = box.y + kDropsGapY;
-            TextStyle heading = galleryStyle(12.0, 0xFFD700u, -1.0);
+            TextStyle heading = galleryStyle(12.0, 0xFFD700u);
             heading.baseline = Baseline::Top;
             text(canvas, "Drops:", box.x, cy, heading);
             cy += kDropsHeaderH;
 
             const double tableX = tx + (size.x - tableWidth) * 0.5;
-            TextStyle header = galleryStyle(10.0, kPaper, 2.0);
+            TextStyle header = galleryStyle(10.0, kPaper);
             header.align = Align::Centre;
             for (std::size_t i = 0; i < columns.size(); ++i) {
                 const Rarity rarity = clampRarity(columns[i]);

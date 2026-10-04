@@ -148,7 +148,7 @@ constexpr double kHighlightAlpha = 0.8;
 constexpr double kHighlightRadius = 3.0;            ///< .crafting-panel's own
 
 /// Blink's synthetic-oblique slant. The reference has the real Ubuntu Italic
-/// to hand; this client stages the regular and bold faces only, so an <em> run
+/// to hand; this client stages the bold face only, so an <em> run
 /// is sheared rather than substituted, and its glyphs are a shade wider.
 constexpr double kItalicShear = 0.2;
 
@@ -336,7 +336,6 @@ TextStyle cardText(double size, std::uint32_t fill, Align align = Align::Left) {
     style.size = size;
     style.fill = fill;
     style.strokeWidth = 0;
-    style.bold = true;      // the page's body rule is `font-weight: 700`
     style.align = align;
     style.baseline = Baseline::Alphabetic;
     return style;
@@ -448,7 +447,7 @@ Tutorial::Layout Tutorial::layout(int viewWidth, double nowSeconds) const {
     const bool showNext = step.gesture == TutorialGesture::None;
 
     const std::vector<Word> words = parseDescription(step.description);
-    const double space = measure(" ", kCopySize, true);
+    const double space = measure(" ", kCopySize);
 
     // Two passes over the same words: the first with no wrap width at all,
     // because the card is shrink-to-fit and its max-content width is what the
@@ -466,7 +465,7 @@ Tutorial::Layout Tutorial::layout(int viewWidth, double nowSeconds) const {
                 x = 0;
                 continue;
             }
-            const double width = measure(word.text, kCopySize, true);
+            const double width = measure(word.text, kCopySize);
             // A hair of slack, so a segment that measured exactly as wide as
             // the column it set does not then wrap out of it.
             if (!lines.back().pieces.empty() && x + space + width > limit + 0.001) {
@@ -493,18 +492,18 @@ Tutorial::Layout Tutorial::layout(int viewWidth, double nowSeconds) const {
         double best = 0;
         for (const Line& line : lines) {
             double width = 0;
-            for (const Piece& piece : line.pieces) width += measure(piece.text, kCopySize, true);
+            for (const Piece& piece : line.pieces) width += measure(piece.text, kCopySize);
             best = std::max(best, width);
         }
         return best;
     };
 
-    const double titleWidth = measure(step.title, kHeadSize, true);
-    const double skipWidth = measure("Skip Tutorial", kLabelSize, true) + kButtonPadX * 2.0;
-    const double armedWidth = measure("Are you sure?", kLabelSize, true) + kButtonPadX * 2.0;
-    const double nextWidth = measure("Next", kLabelSize, true) + kButtonPadX * 2.0;
+    const double titleWidth = measure(step.title, kHeadSize);
+    const double skipWidth = measure("Skip Tutorial", kLabelSize) + kButtonPadX * 2.0;
+    const double armedWidth = measure("Are you sure?", kLabelSize) + kButtonPadX * 2.0;
+    const double nextWidth = measure("Next", kLabelSize) + kButtonPadX * 2.0;
     const double counterWidth =
-        measure(std::to_string(step_ + 1) + " / " + std::to_string(kStepCount), kCounterSize, true);
+        measure(std::to_string(step_ + 1) + " / " + std::to_string(kStepCount), kCounterSize);
 
     double buttonsWidth = 0;
     if (showSkip) buttonsWidth += (skipArmed_ ? armedWidth : skipWidth) + kButtonMargin * 2.0;

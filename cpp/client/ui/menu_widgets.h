@@ -66,9 +66,6 @@ struct TooltipLine {
     double size = 12.0;
     std::uint32_t color = kPaper;
     double gapBefore = 0.0;
-    /// The browser tooltip is regular weight at every size, including its 20px
-    /// name row; `bold` is here for the panels that still ask for it.
-    bool bold = false;
     /// Stat rows are white at 0.56 -- gardn's 0xffffff90 -- rather than a
     /// pre-mixed grey, so they dim consistently over whatever they land on.
     double alpha = 1.0;
@@ -79,8 +76,8 @@ struct TooltipLine {
     std::string altText;
 
     TooltipLine(std::string body = {}, double size = 12.0, std::uint32_t color = kPaper,
-                double gapBefore = 0.0, bool bold = false)
-        : text(std::move(body)), size(size), color(color), gapBefore(gapBefore), bold(bold) {}
+                double gapBefore = 0.0)
+        : text(std::move(body)), size(size), color(color), gapBefore(gapBefore) {}
 };
 
 /// Box size for these lines, without drawing. `alt` must match the value the
@@ -136,7 +133,7 @@ std::string abbreviate(double value);
 std::string withSeparators(double value);
 
 /// Trims `text` to fit `width` at `size`, appending an ellipsis when it must.
-std::string ellipsize(const std::string& text, double size, bool bold, double width);
+std::string ellipsize(const std::string& text, double size, double width);
 
 // ---------------------------------------------------------------------------
 // Scrolling

@@ -1945,7 +1945,6 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         // The browser build never sets a baseline in the world pass, so the
         // pen sits on the alphabetic baseline.
         style.baseline = ui::Baseline::Alphabetic;
-        style.strokeWidth = 3.0 * zoom;
         ui::text(canvas, entity.name.empty() ? "Unnamed" : entity.name, left,
                  barY - 4.0 * zoom, style);
     }
@@ -2019,7 +2018,6 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
         level.size = 10.0 * zoom;
         level.align = ui::Align::Right;
         level.baseline = ui::Baseline::Alphabetic;
-        level.strokeWidth = 3.0 * zoom;
         // Tinted with the best rarity anywhere in that flower's loadout, which
         // is how a passing flower advertises what it is carrying.
         level.fill = rarityColor(entity.bestRarity);
@@ -2034,7 +2032,6 @@ void WorldRenderer::drawPlayerPlate(Canvas& canvas, const RemoteEntity& entity,
             tag.size = 8.0 * zoom;
             tag.align = ui::Align::Left;
             tag.baseline = ui::Baseline::Alphabetic;
-            tag.strokeWidth = 2.0 * zoom;
             tag.fill = 0x27DADEu;
             ui::text(canvas, "[" + entity.guildName + "]", left, barY + 20.0 * zoom, tag);
         }
@@ -2109,7 +2106,6 @@ void WorldRenderer::drawChatBubbles(Canvas& canvas, const EntityMap& entities,
         style.size = textSize;
         style.align = ui::Align::Centre;
         style.baseline = ui::Baseline::Middle;
-        style.strokeWidth = textSize * 0.16;
         ui::text(canvas, bubble.text, screen.x, centreY, style);
         canvas.restore();
     }
@@ -3056,7 +3052,6 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         // The browser build never sets a baseline in the world pass, so the pen
         // sits on the alphabetic baseline.
         style.baseline = ui::Baseline::Alphabetic;
-        style.strokeWidth = 3.0 * zoom;
         static const std::string kUnknownMob = "?";
         ui::text(canvas, config ? config->name : kUnknownMob, barX, barY - 4.0 * zoom, style);
     }
@@ -3106,7 +3101,6 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         tier.size = 10.0 * zoom;
         tier.align = ui::Align::Right;
         tier.baseline = ui::Baseline::Alphabetic;
-        tier.strokeWidth = 3.0 * zoom;
         tier.fill = rarityColor(mob.rarity);
         ui::text(canvas, rarityLabel(mob.rarity), barX + barWidth, barY + 20.0 * zoom, tier);
     }
@@ -3122,7 +3116,6 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         summon.size = 10.0 * zoom;
         summon.align = ui::Align::Left;
         summon.baseline = ui::Baseline::Alphabetic;
-        summon.strokeWidth = 3.0 * zoom;
         summon.fill = kPetLabelColor;
         ui::text(canvas, kPetLabel, barX, barY + 20.0 * zoom, summon);
     }
@@ -3141,7 +3134,6 @@ void WorldRenderer::drawMobLabel(Canvas& canvas, const Camera& camera, const Mob
         dps.size = 10.0 * zoom;
         dps.align = ui::Align::Right;
         dps.baseline = ui::Baseline::Alphabetic;
-        dps.strokeWidth = 2.0 * zoom;
         ui::text(canvas, "DPS: " + formatCompact(total / kDpsWindowSeconds), barX + barWidth,
                  barY + 34.0 * zoom, dps);
     }

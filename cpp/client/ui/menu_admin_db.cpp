@@ -197,10 +197,9 @@ std::string docIdentity(net::AdminDbScope scope, const std::string& key) {
     return scope == net::AdminDbScope::Account ? "a:" + lowered(key) : "t:" + key;
 }
 
-TextStyle label(double size, bool bold, std::uint32_t fill = kPaper, Align align = Align::Left) {
+TextStyle label(double size, std::uint32_t fill = kPaper, Align align = Align::Left) {
     TextStyle style;
     style.size = size;
-    style.bold = bold;
     style.fill = fill;
     style.strokeWidth = 0;
     style.align = align;
@@ -235,9 +234,9 @@ void dot(Canvas& canvas, double x, double y, double radius, std::uint32_t colour
 
 /// A small coloured word on a dark pill -- ADMIN, MUTED. Returns its width.
 double badge(Canvas& canvas, const std::string& word, double x, double cy, std::uint32_t ink) {
-    const double width = measure(word, 10.0, true) + 10.0;
+    const double width = measure(word, 10.0) + 10.0;
     fillRound(canvas, Rect{x, cy - 8.0, width, 16.0}, 4.0, kInk, 0.35);
-    text(canvas, word, x + width * 0.5, cy, label(10.0, true, ink, Align::Centre));
+    text(canvas, word, x + width * 0.5, cy, label(10.0, ink, Align::Centre));
     return width;
 }
 
@@ -540,14 +539,12 @@ bool AdminDbPanel::render(MenuContext& ctx) {
     overlayCard(canvas, panel, kAdminDbSkin);
     TextStyle heading;
     heading.size = 22.0;
-    heading.bold = true;
     heading.fill = kPaper;
-    heading.strokeWidth = 4.0;
     heading.baseline = Baseline::Top;
     heading.roundJoin = true;
     text(canvas, "Database", panel.x + 16.0, panel.y + 12.0, heading);
     text(canvas, "admin only - edits are saved at once", panel.x + 140.0, panel.y + 25.0,
-         label(12.0, false, kPaper));
+         label(12.0, kPaper));
 
     const Rect closeRect = closeButtonRect(panel);
     panelClose(canvas, closeRect, closeRect.contains(mouse));
@@ -579,7 +576,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 ? std::string("Searching...")
                 : withSeparators(db.accounts.size()) + " of " + withSeparators(db.listTotal) +
                       (db.listTotal == 1 ? " account" : " accounts");
-        text(canvas, counted, left.x + 2.0, listTop + 7.0, label(12.0, false, kPaper));
+        text(canvas, counted, left.x + 2.0, listTop + 7.0, label(12.0, kPaper));
         listTop += 18.0;
     }
     const Rect listView{left.x, listTop, left.w, std::max(0.0, left.bottom() - listTop)};
@@ -612,7 +609,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                     db.listTotal - static_cast<std::uint32_t>(db.accounts.size());
                 text(canvas,
                      db.listPending ? "Loading..." : "Load more (" + withSeparators(remaining) + ")",
-                     row.x + row.w * 0.5, cy, label(13.0, true, kPaper, Align::Centre));
+                     row.x + row.w * 0.5, cy, label(13.0, kPaper, Align::Centre));
                 addRegion(clipTo(row, listView), Act::LoadMore);
                 continue;
             }
@@ -627,24 +624,24 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                     (account.flags & net::AdminDbOnline) != 0 ? kOnlineDot : kOfflineDot);
                 double badgesW = 0;
                 const std::string level = "Lv " + std::to_string(account.level);
-                const double levelW = measure(level, 12.0, false);
+                const double levelW = measure(level, 12.0);
                 double bx = row.right() - 8.0 - levelW;
                 if ((account.flags & net::AdminDbMuted) != 0) {
-                    const double w = measure("MUTED", 10.0, true) + 10.0;
+                    const double w = measure("MUTED", 10.0) + 10.0;
                     bx -= w + 4.0;
                     badge(canvas, "MUTED", bx, cy, kMutedInk);
                     badgesW += w + 4.0;
                 }
                 if ((account.flags & net::AdminDbIsAdmin) != 0) {
-                    const double w = measure("ADMIN", 10.0, true) + 10.0;
+                    const double w = measure("ADMIN", 10.0) + 10.0;
                     bx -= w + 4.0;
                     badge(canvas, "ADMIN", bx, cy, kAdminInk);
                     badgesW += w + 4.0;
                 }
-                text(canvas, level, row.right() - 8.0, cy, label(12.0, false, kPaper, Align::Right));
+                text(canvas, level, row.right() - 8.0, cy, label(12.0, kPaper, Align::Right));
                 const double nameW = row.w - 30.0 - levelW - badgesW - 12.0;
-                text(canvas, ellipsize(account.username, 13.0, true, nameW), row.x + 22.0, cy,
-                     label(13.0, true));
+                text(canvas, ellipsize(account.username, 13.0, nameW), row.x + 22.0, cy,
+                     label(13.0));
                 addRegion(clipTo(row, listView), Act::PickAccount, i);
             } else {
                 const AdminDbTableRow& table = db.tables[static_cast<std::size_t>(i)];
@@ -652,10 +649,10 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                            db.key == table.name;
                 fillRound(canvas, row, 5.0, kPaper, selected ? 0.3 : hovered ? 0.16 : 0.07);
                 const std::string count = entriesText(table.entries, table.isArray);
-                text(canvas, count, row.right() - 8.0, cy, label(12.0, false, kPaper, Align::Right));
+                text(canvas, count, row.right() - 8.0, cy, label(12.0, kPaper, Align::Right));
                 text(canvas,
-                     ellipsize(table.name, 13.0, true, row.w - 24.0 - measure(count, 12.0, false)),
-                     row.x + 10.0, cy, label(13.0, true));
+                     ellipsize(table.name, 13.0, row.w - 24.0 - measure(count, 12.0)),
+                     row.x + 10.0, cy, label(13.0));
                 addRegion(clipTo(row, listView), Act::PickTable, i);
             }
         }
@@ -663,7 +660,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             const std::string empty = s.accountsTab ? (db.listPending ? "" : "No accounts match.")
                                                     : "The database has no other tables.";
             text(canvas, empty, listView.x + listView.w * 0.5, listView.y + 24.0,
-                 label(13.0, false, kPaper, Align::Centre));
+                 label(13.0, kPaper, Align::Centre));
         }
         canvas.restore();
         scrollbar(canvas, Rect{listView.x, listView.y + 4.0, listView.w - 2.0, listView.h - 13.0},
@@ -680,12 +677,11 @@ bool AdminDbPanel::render(MenuContext& ctx) {
 
     if (!db.documentOpen) {
         text(canvas, "Pick an account or a table on the left.", right.x + right.w * 0.5,
-             right.y + right.h * 0.5, label(15.0, false, kPaper, Align::Centre));
+             right.y + right.h * 0.5, label(15.0, kPaper, Align::Centre));
     } else {
         // The header: what is open, and what can be done to it as a whole.
         const double hy = right.y + kDocHeader * 0.5 + 2.0;
-        TextStyle name = label(18.0, true);
-        name.strokeWidth = 3.0;
+        TextStyle name = label(18.0);
         name.roundJoin = true;
         double hx = right.x + 12.0;
         if (accountDoc) {
@@ -694,14 +690,14 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             hx += 16.0;
         }
         const double actionsW = accountDoc ? 3 * 92.0 + 2 * 6.0 : 100.0;
-        const std::string title = ellipsize(db.key, 18.0, true, right.w - actionsW - 160.0);
+        const std::string title = ellipsize(db.key, 18.0, right.w - actionsW - 160.0);
         text(canvas, title, hx, hy, name);
-        hx += measure(title, 18.0, true) + 10.0;
+        hx += measure(title, 18.0) + 10.0;
         if (accountDoc) {
             if ((db.flags & net::AdminDbIsAdmin) != 0) hx += badge(canvas, "ADMIN", hx, hy, kAdminInk) + 4.0;
             if ((db.flags & net::AdminDbMuted) != 0) hx += badge(canvas, "MUTED", hx, hy, kMutedInk) + 4.0;
             text(canvas, (db.flags & net::AdminDbOnline) != 0 ? "online" : "offline", hx, hy,
-                 label(12.0, false, kPaper));
+                 label(12.0, kPaper));
 
             double bx = right.right() - 10.0;
             const auto action = [&](const std::string& caption, Act act, const ChipStyle& style) {
@@ -723,7 +719,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             }
             if (db.loaded) {
                 text(canvas, entriesText(db.root.size, db.root.type == Json::Type::Array), hx, hy,
-                     label(12.0, false, kPaper));
+                     label(12.0, kPaper));
             }
             const Rect add{right.right() - 10.0 - 100.0, hy - 13.0, 100.0, 26.0};
             chip(canvas, add, "+ Entry", add.contains(mouse), kGoChip);
@@ -736,7 +732,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             // document -- the hash is not shown, and the action does more than
             // store it.
             const double py = treeTop + 2.0;
-            text(canvas, "New password", right.x + 12.0, py + 14.0, label(13.0, true));
+            text(canvas, "New password", right.x + 12.0, py + 14.0, label(13.0));
             passwordRect = Rect{right.x + 112.0, py, 240.0, 28.0};
             inputField(canvas, passwordRect, s.password, "8 characters or more",
                        s.passwordField.focused, now, &s.passwordField);
@@ -756,7 +752,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
 
         if (!db.loaded) {
             text(canvas, "Loading...", treeView.x + treeView.w * 0.5, treeView.y + 30.0,
-                 label(14.0, false, kPaper, Align::Centre));
+                 label(14.0, kPaper, Align::Centre));
         } else {
             net::AdminDbPath path;
             if (s.adding && s.addParent.empty()) {
@@ -767,7 +763,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             flatten(db.root, path, 0, s, accountDoc, rows);
             if (rows.empty()) {
                 text(canvas, "Empty.", treeView.x + treeView.w * 0.5, treeView.y + 30.0,
-                     label(14.0, false, kPaper, Align::Centre));
+                     label(14.0, kPaper, Align::Centre));
             }
         }
 
@@ -790,7 +786,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             const bool hovered = clipTo(rowRect, treeView).contains(mouse);
 
             if (row.kind == TreeRow::Kind::Loading) {
-                text(canvas, "Loading...", x0 + 12.0, cy, label(12.0, false, kNullInk));
+                text(canvas, "Loading...", x0 + 12.0, cy, label(12.0, kNullInk));
                 continue;
             }
             if (row.kind == TreeRow::Kind::Add) {
@@ -831,10 +827,10 @@ bool AdminDbPanel::render(MenuContext& ctx) {
             const std::string keyText = row.parentIsArray ? "[" + row.key + "]" : row.key;
             const double keyX = x0 + 12.0;
             const double keyMax = std::max(40.0, (rowRight - keyX) * 0.45);
-            const std::string shownKey = ellipsize(keyText, 13.0, true, keyMax);
+            const std::string shownKey = ellipsize(keyText, 13.0, keyMax);
             text(canvas, shownKey, keyX, cy,
-                 label(13.0, true, row.parentIsArray ? kNullInk : kPaper));
-            const double valueX = keyX + measure(shownKey, 13.0, true) + 12.0;
+                 label(13.0, row.parentIsArray ? kNullInk : kPaper));
+            const double valueX = keyX + measure(shownKey, 13.0) + 12.0;
 
             // The row's buttons, right-aligned: an x on everything that may be
             // deleted, and a + on everything that can hold more. Collected
@@ -872,17 +868,17 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                     rowButton("+", Act::Add, kGoChip, 22.0);
                 }
                 const double valueMax = std::max(20.0, bx - 6.0 - valueX);
-                const std::string shown = ellipsize(valueText(node), 13.0, false, valueMax);
+                const std::string shown = ellipsize(valueText(node), 13.0, valueMax);
                 text(canvas, shown, valueX, cy,
-                     label(13.0, false, container ? kNullInk : valueInk(node)));
+                     label(13.0, container ? kNullInk : valueInk(node)));
                 const std::string when = timestampHint(row.key, node);
-                const double whenX = valueX + measure(shown, 13.0, false) + 10.0;
-                if (!when.empty() && whenX + measure(when, 12.0, false) < bx - 6.0) {
-                    text(canvas, when, whenX, cy, label(12.0, false, kNullInk));
+                const double whenX = valueX + measure(shown, 13.0) + 10.0;
+                if (!when.empty() && whenX + measure(when, 12.0) < bx - 6.0) {
+                    text(canvas, when, whenX, cy, label(12.0, kNullInk));
                 }
                 if (row.locked && hovered) {
                     text(canvas, "read only", rowRight - 6.0, cy,
-                         label(11.0, false, kNullInk, Align::Right));
+                         label(11.0, kNullInk, Align::Right));
                 }
                 rowRegion.act = container ? Act::Toggle : (row.locked ? Act::None : Act::Edit);
             }
@@ -899,11 +895,11 @@ bool AdminDbPanel::render(MenuContext& ctx) {
     {
         const double fy = footerTop + kFooterHeight * 0.5 - 3.0;
         const std::string hint = "Enter saves, Esc cancels";
-        const double hintW = measure(hint, 12.0, false);
-        text(canvas, hint, panel.right() - kPad, fy, label(12.0, false, kPaper, Align::Right));
+        const double hintW = measure(hint, 12.0);
+        text(canvas, hint, panel.right() - kPad, fy, label(12.0, kPaper, Align::Right));
         if (!s.status.empty()) {
-            text(canvas, ellipsize(s.status, 13.0, true, panel.w - kPad * 3 - hintW), panel.x + kPad,
-                 fy, label(13.0, true, s.statusOk ? kOkInk : kBadInk));
+            text(canvas, ellipsize(s.status, 13.0, panel.w - kPad * 3 - hintW), panel.x + kPad,
+                 fy, label(13.0, s.statusOk ? kOkInk : kBadInk));
         }
     }
 

@@ -148,14 +148,12 @@ constexpr double kDisplayBodyDamage = 25.0;
 
 /// Every text call in this panel round-joins its outline. That is not the
 /// shared default -- panelTitle() and chip() leave the ambient miter join in
-/// place -- and at a 4px stroke on 22px bold the difference is visible spikes
-/// off the corners of the glyphs, so the panel builds its own styles.
-TextStyle panelText(double size, std::uint32_t fill, double strokeWidth) {
+/// place -- and on bold glyphs the difference is visible spikes off their
+/// corners, so the panel builds its own styles.
+TextStyle panelText(double size, std::uint32_t fill) {
     TextStyle style;
     style.size = size;
-    style.bold = true;
     style.fill = fill;
-    style.strokeWidth = strokeWidth;
     style.roundJoin = true;
     return style;
 }
@@ -776,7 +774,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
         // would cost, and every one of them shouting a receipt turns the fan
         // into a field of red digits.
         if (!unlocked) {
-            TextStyle price = panelText(kCostTextSize, kCostRed, 4.0);
+            TextStyle price = panelText(kCostTextSize, kCostRed);
             price.align = Align::Centre;
             text(canvas, std::to_string(cost), node.screen.x + kNodeRadius * 0.7,
                  node.screen.y - kNodeRadius * 0.85, price);
@@ -785,7 +783,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
     drawAvatar(canvas, centre, kAvatarRadius, avatarEye(ctx.net.view()));
 
     // --- header ------------------------------------------------------------
-    TextStyle title = panelText(kMenuTitleSize, kPaper, 4.0);
+    TextStyle title = panelText(kMenuTitleSize, kPaper);
     title.align = Align::Centre;
     title.baseline = Baseline::Top;
     text(canvas, "Talents", panel.x + panel.w * 0.5, panel.y + kMenuPadding, title);
@@ -799,10 +797,10 @@ bool TalentsPanel::render(MenuContext& ctx) {
     // Both sit a pixel below the badge's middle, which is where the browser
     // puts them and what stops the digits reading as high in the plate.
     const double badgeMiddle = badge.y + 1.0;
-    TextStyle badgeText = panelText(kBadgeTextSize, kPaper, 5.0);
+    TextStyle badgeText = panelText(kBadgeTextSize, kPaper);
     badgeText.align = Align::Centre;
     text(canvas, std::to_string(points), badge.x, badgeMiddle, badgeText);
-    TextStyle badgeLabel = panelText(kBadgeLabelSize, kPaper, 4.0);
+    TextStyle badgeLabel = panelText(kBadgeLabelSize, kPaper);
     badgeLabel.align = Align::Left;
     text(canvas, "TP", badge.x + kBadgeRadius + 12.0, badgeMiddle, badgeLabel);
 
@@ -832,9 +830,9 @@ bool TalentsPanel::render(MenuContext& ctx) {
     // carry the stat's colour while the number stays white -- one white number
     // beside a coloured word is legible at 13 units where a whole coloured
     // sentence is not.
-    TextStyle statLabel = panelText(kStatTextSize, kStatGreen, 3.0);
+    TextStyle statLabel = panelText(kStatTextSize, kStatGreen);
     statLabel.baseline = Baseline::Alphabetic;
-    TextStyle statValue = panelText(kStatTextSize, kPaper, 3.0);
+    TextStyle statValue = panelText(kStatTextSize, kPaper);
     statValue.baseline = Baseline::Alphabetic;
 
     const double statX = centre.x + kAvatarRadius + 12.0;
@@ -842,7 +840,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
                               std::uint32_t color) {
         statLabel.fill = color;
         text(canvas, label, statX, y, statLabel);
-        text(canvas, value, statX + textWidth(canvas, label, kStatTextSize, true), y, statValue);
+        text(canvas, value, statX + textWidth(canvas, label, kStatTextSize), y, statValue);
     };
     statLine("Flower Health: ", abbreviateStat(health), centre.y - 4.0, kStatGreen);
     statLine("Body Damage: ", abbreviateStat(bodyDamage), centre.y + kStatLineGap - 4.0, kStatGrey);
@@ -860,7 +858,7 @@ bool TalentsPanel::render(MenuContext& ctx) {
                      static_cast<float>(resetRect.w - 4.0), static_cast<float>(resetRect.h - 4.0),
                      4.0f);
     canvas.fill();
-    TextStyle resetLabel = panelText(14.0, kPaper, 3.0);
+    TextStyle resetLabel = panelText(14.0, kPaper);
     resetLabel.align = Align::Centre;
     text(canvas, "Reset", resetRect.x + resetRect.w * 0.5, resetRect.y + resetRect.h * 0.5 + 1.0,
          resetLabel);

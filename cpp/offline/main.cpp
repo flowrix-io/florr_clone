@@ -222,8 +222,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Before the client's first frame, which is set in these faces.
-    registerFont("data/Ubuntu-Regular.ttf", "400");
+    // Before the client's first frame, which is set in this face.
     registerFont("data/Ubuntu-Bold.ttf", "700");
 
     clientConfig.host = "127.0.0.1";

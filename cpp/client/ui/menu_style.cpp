@@ -12,13 +12,11 @@ namespace {
 
 /// Body text on a panel: white, outlined hard enough to read over a saturated
 /// fill or a mob sprite, and never over-stroked at small sizes.
-TextStyle labelStyle(double size, bool bold, std::uint32_t fill, double stroke) {
+TextStyle labelStyle(double size, std::uint32_t fill) {
     TextStyle style;
     style.size = size;
-    style.bold = bold;
     style.fill = fill;
     style.stroke = kInk;
-    style.strokeWidth = stroke;
     return style;
 }
 
@@ -125,14 +123,14 @@ void panelTitle(Canvas& canvas, Rect panel, const std::string& title,
     // Round-joined: every panel sets ctx.lineJoin = 'round' before its title
     // and drawText inherits it. At a 4px stroke a miter grows spikes off the
     // sharp corners of 'v' and 'y'.
-    TextStyle heading = labelStyle(kMenuTitleSize, true, kPaper, 4.0);
+    TextStyle heading = labelStyle(kMenuTitleSize, kPaper);
     heading.align = Align::Centre;
     heading.baseline = Baseline::Top;
     heading.roundJoin = true;
     text(canvas, title, panel.x + panel.w * 0.5, panel.y + kMenuTitleTop, heading);
 
     if (subtitle.empty()) return;
-    TextStyle sub = labelStyle(kMenuSubtitleSize, true, kPaper, 3.0);
+    TextStyle sub = labelStyle(kMenuSubtitleSize, kPaper);
     sub.align = Align::Centre;
     sub.baseline = Baseline::Top;
     sub.roundJoin = true;
@@ -141,7 +139,7 @@ void panelTitle(Canvas& canvas, Rect panel, const std::string& title,
 }
 
 void panelHeading(Canvas& canvas, Rect panel, const std::string& title) {
-    TextStyle heading = labelStyle(20.0, true, kPaper, 2.0);
+    TextStyle heading = labelStyle(20.0, kPaper);
     heading.baseline = Baseline::Top;
     text(canvas, title, panel.x + kMenuPadding + 6.0, panel.y + kMenuPadding + 6.0, heading);
 }
@@ -187,7 +185,8 @@ void pillButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t 
     TextCaptureScope off(false);
     fillRound(canvas, r, 5.0, fill);
 
-    TextStyle caption = labelStyle(textSize, false, kPaper, 0.0);
+    TextStyle caption = labelStyle(textSize, kPaper);
+    caption.strokeWidth = 0;
     caption.align = Align::Centre;
     text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
 }
@@ -201,7 +200,7 @@ void framedButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_
     fillRound(canvas, Rect{r.x + 2.0, r.y + 2.0, r.w - 4.0, r.h - 4.0}, 3.0,
               hovered ? kPaper : kInk, hovered ? 0.22 : 0.25);
 
-    TextStyle caption = labelStyle(13.0, true, labelColor, 3.0);
+    TextStyle caption = labelStyle(13.0, labelColor);
     caption.align = Align::Centre;
     caption.roundJoin = true;
     // The label sits a pixel below the button's middle: at 13px bold the
@@ -217,7 +216,7 @@ void chip(Canvas& canvas, Rect r, const std::string& label, bool hovered, const 
     const std::uint32_t border = style.enabled ? style.border : 0x5A5A5Au;
     inlaid(canvas, r, fill, border, 2.0, style.radius, style.enabled ? 1.0 : 0.45);
 
-    TextStyle caption = labelStyle(style.textSize, true, kPaper, 3.0);
+    TextStyle caption = labelStyle(style.textSize, kPaper);
     caption.align = Align::Centre;
     text(canvas, label, r.x + r.w * 0.5, r.y + r.h * 0.5, caption);
 }
@@ -238,16 +237,16 @@ void outlinedText(Canvas& canvas, const std::string& s, double x, double y,
 
     double penX = x;
     if (style.align != Align::Left) {
-        const double width = measure(s, style.size, style.bold);
+        const double width = measure(s, style.size);
         penX -= style.align == Align::Centre ? width * 0.5 : width;
     }
     double penY = y;
     switch (style.baseline) {
-        case Baseline::Top: penY += ascent(style.size, style.bold); break;
-        case Baseline::Bottom: penY += descent(style.size, style.bold); break;
+        case Baseline::Top: penY += ascent(style.size); break;
+        case Baseline::Bottom: penY += descent(style.size); break;
         case Baseline::Alphabetic: break;
         default:
-            penY += (ascent(style.size, style.bold) + descent(style.size, style.bold)) * 0.5;
+            penY += (ascent(style.size) + descent(style.size)) * 0.5;
             break;
     }
 
@@ -261,10 +260,8 @@ void outlinedText(Canvas& canvas, const std::string& s, double x, double y,
 TextStyle panelLabel(double size, Align align, Baseline baseline) {
     TextStyle style;
     style.size = size;
-    style.bold = true;
     style.align = align;
     style.baseline = baseline;
-    style.strokeWidth = 3.0;
     style.roundJoin = true;
     return style;
 }

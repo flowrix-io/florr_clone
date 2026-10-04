@@ -235,8 +235,7 @@ TextEditResult editText(const TextEditFrame& frame, std::string& value, TextSele
 // ---------------------------------------------------------------------------
 
 double xOfIndex(const TextRun& run, std::size_t at) {
-    return run.originX + measure(run.text.substr(0, std::min(at, run.text.size())), run.size,
-                                 run.bold);
+    return run.originX + measure(run.text.substr(0, std::min(at, run.text.size())), run.size);
 }
 
 std::size_t indexAtX(const TextRun& run, double px) {
@@ -326,17 +325,17 @@ bool caretVisible(const TextFieldState& state, double timeSeconds) {
     return std::fmod(std::max(0.0, timeSeconds - state.caretSeconds), 1.0) < 0.5;
 }
 
-double followCaret(const TextFieldState& state, const std::string& value, double size, bool bold,
+double followCaret(const TextFieldState& state, const std::string& value, double size,
                    double span) {
     span = std::max(1.0, span);
     const double toCaret =
-        measure(value.substr(0, std::min(state.selection.caret, value.size())), size, bold);
+        measure(value.substr(0, std::min(state.selection.caret, value.size())), size);
     double scroll = state.scrollX;
     if (toCaret - scroll > span) scroll = toCaret - span;
     if (toCaret < scroll) scroll = toCaret;
     // A value that shrank -- an erase, a clear, a shorter one swapped in --
     // pulls the view back so its tail sits at the right edge again.
-    scroll = std::max(0.0, std::min(scroll, measure(value, size, bold) - span));
+    scroll = std::max(0.0, std::min(scroll, measure(value, size) - span));
     state.scrollX = scroll;
     return scroll;
 }
@@ -465,7 +464,7 @@ namespace {
 /// The byte offset a point lands on in a multiline value laid out at
 /// `lineHeight` with the first line's MIDDLE at `firstBaseline`.
 std::size_t indexAtPoint(const std::string& value, double originX, double firstBaseline,
-                         double lineHeight, double size, bool bold, Vec2 point) {
+                         double lineHeight, double size, Vec2 point) {
     const double rows = lineHeight > 0 ? (point.y - (firstBaseline - lineHeight * 0.5)) / lineHeight
                                        : 0.0;
     int row = static_cast<int>(std::floor(rows));
@@ -483,7 +482,6 @@ std::size_t indexAtPoint(const std::string& value, double originX, double firstB
     run.text = value.substr(start, stop - start);
     run.originX = originX;
     run.size = size;
-    run.bold = bold;
     return start + indexAtX(run, point.x);
 }
 
@@ -491,11 +489,11 @@ std::size_t indexAtPoint(const std::string& value, double originX, double firstB
 
 bool trackTextMouseMultiline(Window& window, TextFieldState& state, Rect box,
                              const std::string& value, double originX, double firstBaseline,
-                             double lineHeight, double size, bool bold, double timeSeconds) {
+                             double lineHeight, double size, double timeSeconds) {
     const Vec2 mouse{window.mouseX(), window.mouseY()};
     TextFieldRegions::instance().record(box);
     const auto resolve = [&] {
-        return indexAtPoint(value, originX, firstBaseline, lineHeight, size, bold, mouse);
+        return indexAtPoint(value, originX, firstBaseline, lineHeight, size, mouse);
     };
 
     if (state.dragging) {

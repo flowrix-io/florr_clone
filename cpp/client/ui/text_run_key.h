@@ -52,7 +52,7 @@ struct Key {
     // blit instead and leaves this 0.
     std::int16_t ambientAlphaQ = 0;
     std::uint8_t bucketX = 0, bucketY = 0;
-    bool bold = false, roundJoin = false, fillFirst = false;
+    bool roundJoin = false, fillFirst = false;
 
     bool operator==(const Key& other) const {
         return text == other.text && sizeQ == other.sizeQ && userSizeQ == other.userSizeQ &&
@@ -60,7 +60,7 @@ struct Key {
                angleQ == other.angleQ && fill == other.fill && stroke == other.stroke &&
                fillAlphaQ == other.fillAlphaQ && strokeAlphaQ == other.strokeAlphaQ &&
                ambientAlphaQ == other.ambientAlphaQ &&
-               bucketX == other.bucketX && bucketY == other.bucketY && bold == other.bold &&
+               bucketX == other.bucketX && bucketY == other.bucketY &&
                roundJoin == other.roundJoin && fillFirst == other.fillFirst;
     }
 };
@@ -81,7 +81,6 @@ struct KeyHash {
             (static_cast<std::uint64_t>(static_cast<std::uint16_t>(k.strokeAlphaQ)) << 16) |
             (static_cast<std::uint64_t>(static_cast<std::uint16_t>(k.ambientAlphaQ)) << 32));
         mix(static_cast<std::uint64_t>(k.bucketX) | (static_cast<std::uint64_t>(k.bucketY) << 8) |
-            (static_cast<std::uint64_t>(k.bold) << 16) |
             (static_cast<std::uint64_t>(k.roundJoin) << 17) |
             (static_cast<std::uint64_t>(k.fillFirst) << 18));
         return h;

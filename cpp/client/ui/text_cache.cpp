@@ -89,7 +89,7 @@ void paintRunDirect(Canvas& canvas, const std::string& s, double penX, double ba
                     const TextStyle& style, double strokeWidth, double strokeAlpha,
                     double fillAlpha, bool fillFirst) {
     Path2D glyphs;
-    appendGlyphs(glyphs, s, penX, baseline, style.size, style.bold);
+    appendGlyphs(glyphs, s, penX, baseline, style.size);
     if (glyphs.empty()) return;
 
     const auto strokePass = [&] {
@@ -133,7 +133,6 @@ bool paintRunCached(Canvas& canvas, const std::string& s, double penX, double ba
     key.strokeAlphaQ = quantiseAlpha(strokeAlpha);
     key.bucketX = static_cast<std::uint8_t>(bucketX);
     key.bucketY = static_cast<std::uint8_t>(bucketY);
-    key.bold = style.bold;
     key.roundJoin = style.roundJoin;
     key.fillFirst = fillFirst;
 
@@ -149,7 +148,7 @@ bool paintRunCached(Canvas& canvas, const std::string& s, double penX, double ba
         const double subY = static_cast<double>(bucketY) / kSubpixel;
 
         Path2D measured;
-        appendGlyphs(measured, s, 0.0, 0.0, bakedSize, style.bold);
+        appendGlyphs(measured, s, 0.0, 0.0, bakedSize);
         if (measured.empty()) return true;   // nothing to draw, and nothing to fall back to
         double minX = 0, minY = 0, maxX = 0, maxY = 0;
         if (!glyphBounds(measured, minX, minY, maxX, maxY)) return false;

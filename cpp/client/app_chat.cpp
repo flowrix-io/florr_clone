@@ -259,17 +259,17 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
                                    token.underline, token.blink});
         };
         double gap = (rows.back().empty() || token.joinsPrevious)
-                         ? 0.0 : measure(" ", token.size, true);
-        if (!rows.back().empty() && pen + gap + measure(word, token.size, true) > width) {
+                         ? 0.0 : measure(" ", token.size);
+        if (!rows.back().empty() && pen + gap + measure(word, token.size) > width) {
             rows.emplace_back();
             pen = 0;
             gap = 0;
         }
         // A word too long for a whole row is cut at the last character that
         // fits and the remainder starts the next row.
-        while (measure(word, token.size, true) > width) {
+        while (measure(word, token.size) > width) {
             std::string head = word;
-            while (!head.empty() && measure(head, token.size, true) > width) popCodepoint(head);
+            while (!head.empty() && measure(head, token.size) > width) popCodepoint(head);
             if (head.empty()) break;
             place(head, pen);
             word.erase(0, head.size());
@@ -279,23 +279,21 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
         }
         if (word.empty()) continue;
         place(word, pen + gap);
-        pen += gap + measure(word, token.size, true);
+        pen += gap + measure(word, token.size);
     }
     return rows;
 }
 
-/// The slant a synthetic italic gets. There is one face in this build -- bold
-/// is a real Ubuntu-Bold, italic is not shipped at all -- so <i> is drawn the
-/// way a browser draws a missing italic: by shearing the upright glyphs.
+/// The slant a synthetic italic gets. There is one face in this build --
+/// Ubuntu Bold; italic is not shipped at all -- so <i> is drawn the way a
+/// browser draws a missing italic: by shearing the upright glyphs.
 constexpr double kItalicShear = 0.21;   // ~12 degrees
 
 /// One run of chat text.
 ///
-/// The reference styles the whole box with a four-way one-pixel black
-/// text-shadow plus a soft 3px glow, which is not a thing a stroke can be; two
-/// black passes under the fill are what it comes out as. The fill is drawn on
-/// its own so a translucent span (the timestamp) does not also thin its
-/// outline, which is opaque in the reference.
+/// Outlined like every other label, at gardn's size * kTextStrokeRatio. The
+/// fill is drawn on its own so a translucent span (the timestamp) does not
+/// also thin its outline, which stays opaque.
 void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, double size,
              std::uint32_t fill, double alpha, bool italic = false, bool underline = false) {
     if (italic) {
@@ -309,17 +307,10 @@ void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, do
 
     TextStyle style;
     style.size = size;
-    style.bold = true;
     style.baseline = Baseline::Alphabetic;
     style.fill = kInk;
     style.stroke = kInk;
 
-    style.strokeWidth = 3.0;
-    canvas.setGlobalAlpha(0.8f);
-    text(canvas, s, x, baseline, style);
-    canvas.setGlobalAlpha(1.0f);
-
-    style.strokeWidth = 2.0;
     if (alpha >= 1.0) {
         style.fill = fill;
         text(canvas, s, x, baseline, style);
@@ -335,13 +326,14 @@ void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, do
     if (underline) {
         // A hairline a tenth of the point size below the baseline, outlined
         // like the glyphs so it stays readable over the world behind it.
-        const double width = measure(s, size, true);
+        const double width = measure(s, size);
         const double y = baseline + size * 0.1;
         canvas.beginPath();
         canvas.moveTo(static_cast<float>(x), static_cast<float>(y));
         canvas.lineTo(static_cast<float>(x + width), static_cast<float>(y));
-        canvas.setLineWidth(static_cast<float>(std::max(1.0, size * 0.07) + 2.0));
-        setStroke(canvas, kInk, 0.8);
+        canvas.setLineWidth(
+            static_cast<float>(std::max(1.0, size * 0.07) + size * kTextStrokeRatio));
+        setStroke(canvas, kInk);
         canvas.stroke();
         canvas.setLineWidth(static_cast<float>(std::max(1.0, size * 0.07)));
         setStroke(canvas, fill, alpha);
@@ -717,20 +709,20 @@ void App::drawChat(Canvas& canvas, double time) {
                                     static_cast<float>(column.w),
                                     static_cast<float>(kChatSuggestionRowHeight));
                 }
-                const double baseline = y + 4.0 + ascent(kChatSuggestionSize, true);
+                const double baseline = y + 4.0 + ascent(kChatSuggestionSize);
                 const double textX = column.x + 8.0;
                 chatRun(canvas, matches[i]->command, textX, baseline, kChatSuggestionSize,
                         0xAADDFFu, 1.0);
                 const double afterCommand =
-                    textX + measure(matches[i]->command, kChatSuggestionSize, true) + 6.0;
+                    textX + measure(matches[i]->command, kChatSuggestionSize) + 6.0;
                 // The description is ellipsised rather than wrapped: its span
                 // is `overflow: hidden; text-overflow: ellipsis; white-space:
                 // nowrap`.
                 std::string description = std::string("- ") + matches[i]->description;
                 const double room = column.right() - 8.0 - afterCommand;
-                if (measure(description, 12.0, true) > room) {
+                if (measure(description, 12.0) > room) {
                     while (!description.empty() &&
-                           measure(description + "...", 12.0, true) > room) {
+                           measure(description + "...", 12.0) > room) {
                         popCodepoint(description);
                     }
                     description += "...";
@@ -756,8 +748,8 @@ void App::drawChat(Canvas& canvas, double time) {
         // and is scrolled to the bottom only once it overflows, which is what a
         // bottom-anchored overflow:auto block does.
         const double halfLead =
-            (kChatLineHeight - (ascent(14.0, true) - descent(14.0, true))) * 0.5;
-        const double baselineOffset = halfLead + ascent(14.0, true);
+            (kChatLineHeight - (ascent(14.0) - descent(14.0))) * 0.5;
+        const double baselineOffset = halfLead + ascent(14.0);
 
         // How many lines landed since the last frame. A transcript resting at
         // the bottom simply shows them; one the reader has scrolled back

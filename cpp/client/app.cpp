@@ -1275,10 +1275,8 @@ bool App::statsVisible() const {
 void App::drawStatsCounters(Canvas& canvas, bool titleScreen) {
     TextStyle style;
     style.size = 11.0;
-    style.bold = true;
     style.align = Align::Right;
     style.baseline = Baseline::Bottom;
-    style.strokeWidth = 2.0;
 
     struct Line { std::string text; std::uint32_t fill; };
     std::vector<Line> lines;

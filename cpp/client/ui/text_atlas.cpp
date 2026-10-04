@@ -47,11 +47,11 @@ constexpr std::size_t kMaxMisses = 8192;
 constexpr std::size_t kMaxWaiting = 1024;
 
 /// The CSS font shorthand for a run. `Ubuntu` is the face the page loads and
-/// the same one `data/Ubuntu-*.ttf` supplies to `measure()`, so a layout
+/// the same one `data/Ubuntu-Bold.ttf` supplies to `measure()`, so a layout
 /// measured against the outlines still fits what the browser draws.
-std::string fontSpec(double size, bool bold) {
+std::string fontSpec(double size) {
     char buf[64];
-    std::snprintf(buf, sizeof buf, "%s%.3fpx Ubuntu, sans-serif", bold ? "bold " : "", size);
+    std::snprintf(buf, sizeof buf, "bold %.3fpx Ubuntu, sans-serif", size);
     return buf;
 }
 
@@ -178,7 +178,7 @@ bool allocate(Atlas& a, int w, int h, int& x, int& y) {
 enum class Baked { Done, Skip, Full };
 
 Baked bake(Atlas& a, const Key& key, const Waiting& run) {
-    const std::string font = fontSpec(run.deviceSize, run.style.bold);
+    const std::string font = fontSpec(run.deviceSize);
     if (!text_atlas_font_ready(font.c_str(), run.text.c_str())) return Baked::Skip;
 
     float box[4] = {0, 0, 0, 0};
@@ -242,7 +242,7 @@ Baked bake(Atlas& a, const Key& key, const Waiting& run) {
 /// The state is only recorded, so this costs the page nothing unless a later
 /// call reads it.
 void leaveLiveState(Canvas& canvas, const TextStyle& style, double fillAlpha) {
-    canvas.setFont(fontSpec(style.size, style.bold));
+    canvas.setFont(fontSpec(style.size));
     canvas.setTextAlign("left");
     canvas.setTextBaseline("alphabetic");
     setFill(canvas, style.fill, fillAlpha);
@@ -256,7 +256,7 @@ void paintRunLive(Canvas& canvas, const std::string& s, double penX, double base
     // The pen is already resolved, so the run is anchored the same way on both
     // builds: the browser is told to put the pen exactly where the outline
     // path would have started it, not to do the alignment itself.
-    canvas.setFont(fontSpec(style.size, style.bold));
+    canvas.setFont(fontSpec(style.size));
     canvas.setTextAlign("left");
     canvas.setTextBaseline("alphabetic");
 
@@ -307,7 +307,6 @@ bool paintRunFromAtlas(Canvas& canvas, const std::string& s, double penX, double
     key.ambientAlphaQ = textrun::quantiseAlpha(ambient);
     key.bucketX = static_cast<std::uint8_t>(at.bucketX);
     key.bucketY = static_cast<std::uint8_t>(at.bucketY);
-    key.bold = style.bold;
     key.roundJoin = style.roundJoin;
     key.fillFirst = fillFirst;
 

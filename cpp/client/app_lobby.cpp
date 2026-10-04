@@ -658,8 +658,6 @@ void App::drawLobby(Canvas& canvas, double time) {
     TextStyle title;
     title.size = 48.0;
     title.align = Align::Centre;
-    title.bold = true;
-    title.strokeWidth = 6.0;
     text(canvas, "flowrix beta", centreX, centreY - 200.0, title);
 
     const LobbyLayout layout = lobbyLayout(canvas.width(), canvas.height());
@@ -684,8 +682,6 @@ void App::drawLobby(Canvas& canvas, double time) {
     TextStyle label;
     label.size = 18.0;
     label.align = Align::Centre;
-    label.bold = true;
-    label.strokeWidth = 4.0;
     text(canvas, "Spawn At:", centreX, centreY - 50.0, label);
 
     // The picker: a row of biome tabs, and under it the doors of the open
@@ -729,8 +725,6 @@ void App::drawLobby(Canvas& canvas, double time) {
     hint.size = 14.0;
     hint.align = Align::Centre;
     hint.baseline = Baseline::Top;
-    hint.bold = true;
-    hint.strokeWidth = 3.0;
     const char* lines[] = {
         "Controls:",
         "Arrow keys to move",
@@ -792,7 +786,6 @@ void App::drawTitleXpBar(Canvas& canvas, const Rect& track) {
     const auto whole = [](double v) { return std::to_string(std::llround(v)); };
     TextStyle label;
     label.size = std::max(h * kTitleXpTextShare, kTitleXpMinTextSize);
-    label.bold = true;
     label.align = Align::Centre;
     label.baseline = Baseline::Middle;
     text(canvas,
@@ -888,9 +881,7 @@ void App::drawDailyStreak(Canvas& canvas, double time) {
     if (cycleDay > 0) {
         TextStyle number;
         number.size = 16.0;
-        number.bold = true;
         number.align = Align::Centre;
-        number.strokeWidth = 3.0;
         text(canvas, std::to_string(cycleDay), starX, starY + 1.0, number);
     }
 
@@ -899,10 +890,8 @@ void App::drawDailyStreak(Canvas& canvas, double time) {
 
     TextStyle status;
     status.size = 13.0;
-    status.bold = true;
     status.align = Align::Centre;
     status.baseline = Baseline::Top;
-    status.strokeWidth = 3.0;
     status.fill = claimed ? kPaper : kWarning;
     text(canvas,
          claimed ? ("Claimed · Day " + std::to_string(streak.streak)) : "Ready to claim!",
@@ -912,7 +901,6 @@ void App::drawDailyStreak(Canvas& canvas, double time) {
     countdown.size = 11.0;
     countdown.align = Align::Left;
     countdown.baseline = Baseline::Top;
-    countdown.strokeWidth = 2.5;
     text(canvas,
          claimed ? ("Next: " + formatDuration(streak.nextClaimAtMillis - now)) : "Next: now",
          card.x + 12.0, card.y + 100.0, countdown);

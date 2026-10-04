@@ -34,7 +34,6 @@ struct CapturedRun {
     double penX = 0;
     double baselineY = 0;
     double size = 14.0;
-    bool bold = false;
     /// Content-derived, so the same label keeps the same identity from one
     /// frame to the next even though the run list is rebuilt every frame.
     std::uint64_t key = 0;
@@ -77,7 +76,7 @@ public:
     /// the very top of the frame, before anything is updated or painted.
     void beginFrame();
 
-    void record(const std::string& text, double penX, double baselineY, double size, bool bold);
+    void record(const std::string& text, double penX, double baselineY, double size);
 
     void setFocusedField(const FocusedField&);
     const FocusedField& focusedField() const { return focused_; }

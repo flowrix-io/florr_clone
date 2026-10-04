@@ -13,13 +13,11 @@ namespace {
 
 /// Body text on a panel: white, outlined hard enough to read over a saturated
 /// fill or a mob sprite, and never over-stroked at small sizes.
-TextStyle labelStyle(double size, bool bold, std::uint32_t fill, double stroke) {
+TextStyle labelStyle(double size, std::uint32_t fill) {
     TextStyle style;
     style.size = size;
-    style.bold = bold;
     style.fill = fill;
     style.stroke = kInk;
-    style.strokeWidth = stroke;
     return style;
 }
 
@@ -135,7 +133,7 @@ struct TooltipLayout {
 /// Baseline::Top.
 void paintRow(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style,
               double fillAlpha) {
-    paintRun(canvas, s, x, y + ascent(style.size, style.bold), style, 1.0, fillAlpha);
+    paintRun(canvas, s, x, y + ascent(style.size), style, 1.0, fillAlpha);
 }
 
 /// Resolves alt variants, wraps long lines and stacks the result top-down.
@@ -154,7 +152,7 @@ TooltipLayout layoutRows(const std::vector<TooltipLine>& lines, bool alt) {
         // the limit still gets its own row and overflows -- breaking mid-word
         // would be worse to read than a slightly wide box.
         std::vector<std::string> pieces;
-        if (line.maxWidth > 0 && measure(body, line.size, line.bold) > line.maxWidth) {
+        if (line.maxWidth > 0 && measure(body, line.size) > line.maxWidth) {
             std::string current;
             std::size_t at = 0;
             while (at <= body.size()) {
@@ -163,7 +161,7 @@ TooltipLayout layoutRows(const std::vector<TooltipLine>& lines, bool alt) {
                                                              ? std::string::npos
                                                              : space - at);
                 const std::string candidate = current.empty() ? word : current + " " + word;
-                if (!current.empty() && measure(candidate, line.size, line.bold) > line.maxWidth) {
+                if (!current.empty() && measure(candidate, line.size) > line.maxWidth) {
                     pieces.push_back(current);
                     current = word;
                 } else {
@@ -177,7 +175,7 @@ TooltipLayout layoutRows(const std::vector<TooltipLine>& lines, bool alt) {
         if (pieces.empty()) pieces.push_back(body);
 
         for (std::string& piece : pieces) {
-            out.textWidth = std::max(out.textWidth, measure(piece, line.size, line.bold));
+            out.textWidth = std::max(out.textWidth, measure(piece, line.size));
             out.rows.push_back({&line, std::move(piece), y});
             y += rowHeight(line.size) + kTooltipLineGap;
         }
@@ -234,7 +232,7 @@ Rect paintTooltip(Canvas& canvas, double x, double y, const std::vector<TooltipL
         // flat 3px swallows the body rows and reads as a different typeface.
         // No align or baseline: paintRow only knows top-left, which is the
         // only anchor a tooltip row has ever been drawn at.
-        TextStyle style = labelStyle(row.line->size, row.line->bold, row.line->color, -1.0);
+        TextStyle style = labelStyle(row.line->size, row.line->color);
         style.roundJoin = true;
         paintRow(canvas, row.text, x + kTooltipPadX, y + kTooltipPadY + row.y, style,
                  row.line->alpha);
@@ -318,10 +316,10 @@ std::string withSeparators(double value) {
     return value < 0 ? "-" + out : out;
 }
 
-std::string ellipsize(const std::string& text, double size, bool bold, double width) {
-    if (measure(text, size, bold) <= width) return text;
+std::string ellipsize(const std::string& text, double size, double width) {
+    if (measure(text, size) <= width) return text;
     std::string out = text;
-    while (!out.empty() && measure(out + "...", size, bold) > width) out.pop_back();
+    while (!out.empty() && measure(out + "...", size) > width) out.pop_back();
     return out + "...";
 }
 

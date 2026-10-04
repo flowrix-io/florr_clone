@@ -29,7 +29,7 @@ TextSelect& fresh() {
 
 /// Records one line of a panel: a label on its own baseline.
 void line(TextSelect& layer, const std::string& text, double y) {
-    layer.record(text, 20.0, y, 14.0, false);
+    layer.record(text, 20.0, y, 14.0);
 }
 
 TextPoint pointAt(const TextSelect& layer, std::size_t index, std::size_t offset) {
@@ -108,19 +108,19 @@ TEST(runs_on_one_baseline_join_with_a_space) {
     // and every word. The spaces between them were the layout's, not the
     // runs', so copying has to put them back.
     TextSelect& layer = fresh();
-    layer.record("[12:03]", 10.0, 100.0, 12.0, false);
-    layer.record("Mira:", 60.0, 100.0, 14.0, false);
-    layer.record("hello", 110.0, 100.0, 14.0, false);
-    layer.record("there", 160.0, 100.0, 14.0, false);
+    layer.record("[12:03]", 10.0, 100.0, 12.0);
+    layer.record("Mira:", 60.0, 100.0, 14.0);
+    layer.record("hello", 110.0, 100.0, 14.0);
+    layer.record("there", 160.0, 100.0, 14.0);
     layer.selectAll();
     CHECK_EQ(layer.selectedText(), std::string("[12:03] Mira: hello there"));
 }
 
 TEST(a_change_of_baseline_is_a_new_line) {
     TextSelect& layer = fresh();
-    layer.record("hello", 10.0, 100.0, 14.0, false);
-    layer.record("there", 60.0, 100.0, 14.0, false);
-    layer.record("next", 10.0, 122.0, 14.0, false);
+    layer.record("hello", 10.0, 100.0, 14.0);
+    layer.record("there", 60.0, 100.0, 14.0);
+    layer.record("next", 10.0, 122.0, 14.0);
     layer.selectAll();
     CHECK_EQ(layer.selectedText(), std::string("hello there\nnext"));
 }

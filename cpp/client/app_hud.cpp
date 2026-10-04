@@ -317,8 +317,6 @@ void App::drawHud(Canvas& canvas, double time) {
     // the flower's name, not its hit points, and its level, not its XP.
     TextStyle label;
     label.size = kHudNameSize;
-    label.strokeWidth = 4.0;
-    label.bold = true;
     label.align = Align::Centre;
     label.baseline = Baseline::Middle;
 
@@ -348,7 +346,6 @@ void App::drawHud(Canvas& canvas, double time) {
            kXpBar, kHudXpPad);
     TextStyle levelLabel = label;
     levelLabel.size = kHudLevelSize;
-    levelLabel.strokeWidth = 3.0;
     text(canvas,
          altHeld ? "Lvl " + std::to_string(progress.level) + " - " +
                        formatNumber(progress.xpIntoLevel, true) + "/" +
@@ -427,8 +424,6 @@ void App::drawSquadHud(Canvas& canvas, double time) {
     // The name written across the bar, in the main HUD's own nameplate style.
     TextStyle label;
     label.size = kHudNameSize * kScale;
-    label.strokeWidth = 4.0 * kScale;
-    label.bold = true;
     label.align = Align::Centre;
     label.baseline = Baseline::Middle;
 
@@ -436,8 +431,6 @@ void App::drawSquadHud(Canvas& canvas, double time) {
     // a flower in the world uses -- it is the same tag, in the same brackets.
     TextStyle tag;
     tag.size = kHudNameSize * kScale;
-    tag.strokeWidth = 3.0 * kScale;
-    tag.bold = true;
     tag.fill = 0x27DADEu;
     tag.baseline = Baseline::Alphabetic;
 
@@ -581,8 +574,6 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
         // its outline reads against the fill.
         TextStyle name;
         name.size = kNameSize;
-        name.strokeWidth = 5.0;
-        name.bold = true;
         name.align = Align::Centre;
         name.baseline = Baseline::Alphabetic;
         text(canvas, content().mob(boss.typeIndex).name, centreX, barY + kNameDrop, name);
@@ -592,8 +583,6 @@ void App::drawBossBars(Canvas& canvas, bool altHeld) {
         // the figures, which is where the health numbers live now.
         TextStyle tier;
         tier.size = kTierSize;
-        tier.strokeWidth = 3.0;
-        tier.bold = true;
         tier.align = Align::Centre;
         tier.baseline = Baseline::Alphabetic;
         tier.fill = altHeld ? kPaper : rarityColor(boss.rarity);

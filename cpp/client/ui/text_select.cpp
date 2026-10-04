@@ -34,13 +34,11 @@ std::uint64_t hashOf(const std::string& text, double penX, double size) {
 /// Selected text is conventionally shown in the SELECTION's colours, and it has
 /// to be: these runs sit on eight different panel colours, and a translucent
 /// wash that reads on the settings grey disappears on the inventory blue.
-TextStyle selectedStyle(double size, bool bold) {
+TextStyle selectedStyle(double size) {
     TextStyle style;
     style.size = size;
-    style.bold = bold;
     style.fill = kPaper;
     style.stroke = kInk;
-    style.strokeWidth = 2.0;
     style.baseline = Baseline::Alphabetic;
     style.roundJoin = true;
     return style;
@@ -48,12 +46,12 @@ TextStyle selectedStyle(double size, bool bold) {
 
 } // namespace
 
-double CapturedRun::width() const { return measure(text, size, bold); }
+double CapturedRun::width() const { return measure(text, size); }
 
 Rect CapturedRun::band() const {
-    const double top = baselineY - ascent(size, bold);
+    const double top = baselineY - ascent(size);
     // descent() is negative, so this is below the baseline.
-    const double bottom = baselineY - descent(size, bold);
+    const double bottom = baselineY - descent(size);
     return {penX, top, width(), std::max(1.0, bottom - top)};
 }
 
@@ -77,8 +75,7 @@ void TextSelect::beginFrame() {
     focused_ = FocusedField{};
 }
 
-void TextSelect::record(const std::string& text, double penX, double baselineY, double size,
-                        bool bold) {
+void TextSelect::record(const std::string& text, double penX, double baselineY, double size) {
     if (text.empty()) return;
     // Nothing but blanks is not text a player can want; it would also make an
     // invisible run the pointer could catch on.
@@ -100,7 +97,6 @@ void TextSelect::record(const std::string& text, double penX, double baselineY, 
     run.penX = penX;
     run.baselineY = baselineY;
     run.size = size;
-    run.bold = bold;
     // Two rows carrying the same label at the same x are told apart by which
     // of them was painted first.
     const int occurrence = seen_[content]++;
@@ -147,7 +143,6 @@ TextPoint TextSelect::resolve(Vec2 point) const {
     run.text = best->text;
     run.originX = best->penX;
     run.size = best->size;
-    run.bold = best->bold;
     return {best->key, indexAtX(run, point.x)};
 }
 
@@ -289,8 +284,8 @@ void TextSelect::paint(Canvas& canvas) const {
         const std::size_t end = i == to ? std::min(tail.offset, run.text.size()) : run.text.size();
         if (end <= begin) continue;
 
-        const double x0 = run.penX + measure(run.text.substr(0, begin), run.size, run.bold);
-        const double x1 = run.penX + measure(run.text.substr(0, end), run.size, run.bold);
+        const double x0 = run.penX + measure(run.text.substr(0, begin), run.size);
+        const double x1 = run.penX + measure(run.text.substr(0, end), run.size);
         const Rect band = run.band();
         // A pixel of bleed either side, so a row of selected runs reads as one
         // block rather than as a dashed line of boxes.
@@ -298,7 +293,7 @@ void TextSelect::paint(Canvas& canvas) const {
         canvas.fillRect(static_cast<float>(x0 - 1.0), static_cast<float>(band.y),
                         static_cast<float>(x1 - x0 + 2.0), static_cast<float>(band.h));
         text(canvas, run.text.substr(begin, end - begin), x0, run.baselineY,
-             selectedStyle(run.size, run.bold));
+             selectedStyle(run.size));
     }
 }
 

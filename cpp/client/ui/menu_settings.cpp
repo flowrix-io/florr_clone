@@ -360,14 +360,12 @@ void submitPasswordChange(MenuContext& ctx, PanelState& st) {
 
 // --- primitives -------------------------------------------------------------
 
-TextStyle bodyStyle(double size, std::uint32_t fill, std::uint32_t stroke, double strokeWidth,
+TextStyle bodyStyle(double size, std::uint32_t fill, std::uint32_t stroke,
                     Align align = Align::Left) {
     TextStyle style;
     style.size = size;
-    style.bold = true;
     style.fill = fill;
     style.stroke = stroke;
-    style.strokeWidth = strokeWidth;
     style.align = align;
     return style;
 }
@@ -392,7 +390,6 @@ ButtonStyle gardnStyle(std::uint32_t fill, double textSize) {
     style.outlineWidth = 3.0;
     style.radius = 3.0;
     style.textSize = textSize;
-    style.textStrokeWidth = 3.0;
     return style;
 }
 
@@ -429,9 +426,9 @@ struct Painter {
     }
 
     void label(const std::string& caption, double y, double size, std::uint32_t fill,
-               std::uint32_t stroke, double strokeWidth, Align align = Align::Left) {
+               std::uint32_t stroke, Align align = Align::Left) {
         const double at = align == Align::Centre ? x + w * 0.5 : x;
-        text(canvas(), caption, at, y, bodyStyle(size, fill, stroke, strokeWidth, align));
+        text(canvas(), caption, at, y, bodyStyle(size, fill, stroke, align));
     }
 
     /// A gardn button, laid out and hit-tested. Returns true when clicked.
@@ -458,7 +455,7 @@ struct Painter {
                           static_cast<float>(kCheckSize - 6.0));
 
         text(canvas(), caption, x + kCheckSize + 8.0, cy + 2.0 + kCheckSize * 0.5,
-             bodyStyle(13.0, kPaper, kInk, 2.0));
+             bodyStyle(13.0, kPaper, kInk));
 
         if (click(row)) {
             *value = !*value;
@@ -494,7 +491,7 @@ struct Painter {
 
         char caption[96];
         std::snprintf(caption, sizeof caption, "%s%.*f%s", prefix, decimals, value * scale, suffix);
-        label(caption, cy + 8.0, 13.0, kPaper, captionStroke, 2.0);
+        label(caption, cy + 8.0, 13.0, kPaper, captionStroke);
         cy += 22.0;
 
         const double r = clamp((value - lo) / span, 0.0, 1.0);
@@ -672,7 +669,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
     overlayCard(canvas, panel, kSettingsSkin);
 
     text(canvas, "Settings", contentX, panel.y + kPad + kHeaderHeight * 0.5,
-         bodyStyle(20.0, kPaper, kInk, 3.0));
+         bodyStyle(20.0, kPaper, kInk));
 
     const bool inPanel = panel.contains(mouse);
     bool keepOpen = true;
@@ -734,7 +731,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
 
     switch (st.tab) {
         case Tab::Controls: {
-            p.label("Controls", p.cy + 10.0, 15.0, kPaper, kInk, 2.0);
+            p.label("Controls", p.cy + 10.0, 15.0, kPaper, kInk);
             p.cy += 28.0;
 
             const double labelW = contentW * 0.55;
@@ -743,9 +740,10 @@ bool SettingsPanel::render(MenuContext& ctx) {
                 const Rect box{contentX + labelW, p.cy, inputW, kKeyBoxHeight};
                 const bool editing = rebinding_ == i;
                 text(canvas, controlMeta(rowAction(i)).label, contentX,
-                     p.cy + kKeyBoxHeight * 0.5, bodyStyle(12.0, kPaper, kInk, 2.0));
+                     p.cy + kKeyBoxHeight * 0.5, bodyStyle(12.0, kPaper, kInk));
                 insetSurface(canvas, box, surfaceColour(editing, p.over(box)));
-                TextStyle keyText = bodyStyle(12.0, kInk, kInk, 0.0, Align::Centre);
+                TextStyle keyText = bodyStyle(12.0, kInk, kInk, Align::Centre);
+                keyText.strokeWidth = 0;
                 text(canvas, editing ? "..." : keyLabel(settings.controlKey(rowAction(i))),
                      box.x + box.w * 0.5, p.cy + kKeyBoxHeight * 0.5, keyText);
                 if (p.click(box)) rebinding_ = i;
@@ -754,11 +752,10 @@ bool SettingsPanel::render(MenuContext& ctx) {
             // The preset chords are fixed, like the number row they ride on:
             // K1 is named after the keys that load it, so the keys cannot move.
             p.cy += 4.0;
-            p.label("Hold K or L + 1-0: load a saved loadout", p.cy + 8.0, 12.0, kPaper, kInk,
-                    2.0);
+            p.label("Hold K or L + 1-0: load a saved loadout", p.cy + 8.0, 12.0, kPaper, kInk);
             p.cy += 20.0;
             p.label("Shift + K or L + 1-0: save your loadout there", p.cy + 8.0, 12.0, kPaper,
-                    kInk, 2.0);
+                    kInk);
             p.cy += 20.0;
 
             p.cy += 10.0;
@@ -834,7 +831,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
         }
 
         case Tab::Advanced: {
-            p.label("Server IP:", p.cy + 10.0, 13.0, kPaper, kInk, 2.0);
+            p.label("Server IP:", p.cy + 10.0, 13.0, kPaper, kInk);
             p.cy += 25.0;
 
             const Rect field{contentX, p.cy, contentW, kFieldHeight};
@@ -861,7 +858,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
             // send. (The login screen paints the icon strip and no panels at
             // all, so this is really the mid-game drop case.)
             if (ctx.net.haveSession()) {
-                p.label("Change Password", p.cy + 10.0, 15.0, kPaper, kInk, 2.0);
+                p.label("Change Password", p.cy + 10.0, 15.0, kPaper, kInk);
                 p.cy += 28.0;
 
                 // Named by a placeholder inside the box rather than a caption
@@ -902,7 +899,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
                     // refusal, and red is what this row means when it is one.
                     const std::uint32_t tone =
                         st.passwordPending ? kPaper : (st.passwordOk ? kAccent : kDanger);
-                    p.label(st.passwordMessage, p.cy + 8.0, 12.0, tone, kInk, 2.0);
+                    p.label(st.passwordMessage, p.cy + 8.0, 12.0, tone, kInk);
                     p.cy += 22.0;
                 }
 
@@ -960,7 +957,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
         case Tab::Credits: {
             // Not hit-testable: the browser draws the credits and nothing else.
             for (const CreditLine& line : kCredits) {
-                p.label(line.body, p.cy + line.offset, line.size, line.fill, kInk, 2.0,
+                p.label(line.body, p.cy + line.offset, line.size, line.fill, kInk,
                         line.centred ? Align::Centre : Align::Left);
                 p.cy += line.advance;
             }

@@ -33,7 +33,6 @@ struct TextStyle {
     /// Setting `strokeWidth` to 0 opts out, for text on a known flat panel.
     std::uint32_t stroke = kInk;
     double strokeWidth = -1;    ///< negative means size * kTextStrokeRatio
-    bool bold = false;
     Align align = Align::Left;
     Baseline baseline = Baseline::Middle;
     /// Join for the glyph outline. The browser's drawText deliberately leaves
@@ -49,7 +48,7 @@ void setStroke(Canvas&, std::uint32_t rgb, double alpha = 1.0);
 /// Stroke-then-fill text, which is the whole reason this exists: doing it in
 /// the other order eats the glyph with its own outline.
 void text(Canvas&, const std::string& s, double x, double y, const TextStyle& style = {});
-double textWidth(Canvas&, const std::string& s, double size, bool bold = false);
+double textWidth(Canvas&, const std::string& s, double size);
 
 /// Paints one text run whose pen is already resolved: `penX` is the run's left
 /// edge and `baseline` its alphabetic baseline. `text()` is this plus the
@@ -93,7 +92,6 @@ struct ButtonStyle {
     /// reads as a different control.
     double radius = 3.0;
     double textSize = kButtonTextSize;
-    double textStrokeWidth = 3.0;
     bool enabled = true;
     /// Off, because `drawGardnButton` never measures its label: a name too
     /// long for its box overflows both ends of it there, and a button that

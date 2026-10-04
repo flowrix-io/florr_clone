@@ -257,7 +257,6 @@ std::string trimmedText(const std::string& s) {
 TextStyle cardText(double size, Align align = Align::Left, Baseline baseline = Baseline::Middle) {
     TextStyle style;
     style.size = size;
-    style.bold = true;
     style.fill = kPaper;
     style.align = align;
     style.baseline = baseline;
@@ -291,7 +290,7 @@ void cardButton(Canvas& canvas, Rect r, const std::string& label, std::uint32_t 
 /// narrower than Leave.
 double buttonWidth(const std::string& label, double textSize = kCardButtonTextSize,
                    double minWidth = kButtonMinWidth) {
-    return std::max(minWidth, std::ceil(measure(label, textSize, true)) + 37.0);
+    return std::max(minWidth, std::ceil(measure(label, textSize)) + 37.0);
 }
 
 /// Greedy word wrap that keeps the description's own spacing: a run of spaces
@@ -312,7 +311,7 @@ std::vector<std::string> wrapAbout(const std::string& s, double width, double si
     std::vector<std::string> lines;
     std::string line;
     bool fresh = true;   ///< nothing placed on `line` yet
-    const auto fits = [&](const std::string& t) { return measure(t, size, true) <= width; };
+    const auto fits = [&](const std::string& t) { return measure(t, size) <= width; };
     for (std::string word : words) {
         if (fresh && word.empty()) continue;
         const std::string joined = fresh ? word : line + " " + word;

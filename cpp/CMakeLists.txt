@@ -193,9 +193,10 @@ if(EMSCRIPTEN)
 endif()
 
 # --- runtime data ------------------------------------------------------------
-# The browser build loads these exact faces from Google Fonts. Stage pinned
-# copies for the native client so its typography does not depend on whatever
-# sans-serif happens to be installed on the host OS.
+# The browser build loads this exact face from Google Fonts. Stage a pinned
+# copy for the native client so its typography does not depend on whatever
+# sans-serif happens to be installed on the host OS. Bold only, like gardn:
+# every label in the client is set in it.
 set(FLIX_DATA_DIR ${CMAKE_CURRENT_BINARY_DIR}/data)
 file(MAKE_DIRECTORY ${FLIX_DATA_DIR})
 set(FLIX_GOOGLE_FONTS_REV ade3d1533e06b2b1462ffcde8e08b129627ca360)
@@ -219,8 +220,6 @@ function(flix_stage_font filename sha256)
   endif()
 endfunction()
 
-flix_stage_font(Ubuntu-Regular.ttf
-               3128df86a31805618436d0ae5651ba4285d0c9de0a39057d025f64ee33bceb64)
 flix_stage_font(Ubuntu-Bold.ttf
                679b5c1e09cab3156bb8ef529735f9382bf31ca7ac737382ab959297f8d82ad4)
 
@@ -320,13 +319,13 @@ foreach(source IN LISTS FLIX_DATA_SOURCES)
 endforeach()
 
 # Everything the directory is allowed to contain, as bare names: the files
-# staged below, plus the two fonts, which are downloaded into it at configure
+# staged below, plus the font, which is downloaded into it at configure
 # time instead. Written out for the prune script -- through a file rather than
 # a command line because the list is a few hundred names long.
 #
 # Rewritten only when it changes, so that a re-configure that stages the same
 # set does not date the manifest forward and relink both wasms for nothing.
-set(FLIX_DATA_EXPECTED Ubuntu-Regular.ttf Ubuntu-Bold.ttf)
+set(FLIX_DATA_EXPECTED Ubuntu-Bold.ttf)
 foreach(source IN LISTS FLIX_DATA_SOURCES)
   get_filename_component(name "${source}" NAME)
   list(APPEND FLIX_DATA_EXPECTED ${name})
@@ -379,7 +378,7 @@ add_dependencies(flowrix_server flix_data)
 if(EMSCRIPTEN)
   # Content goes INSIDE the wasm, not beside it. --embed-file rather than
   # --preload-file, for three reasons: the client reads mobs.json, petals.json,
-  # the maps and their art and the fonts synchronously during start(),
+  # the maps and their art and the font synchronously during start(),
   # so there is nothing to gain from a separate fetch it would have to wait for
   # anyway; a single artifact cannot half-deploy, which a .wasm and a stale
   # .data next to it can; and the server build has no page to run a preload
@@ -504,7 +503,7 @@ if(EMSCRIPTEN)
   # script and the script in the page, and nothing is fetched -- which is the
   # whole requirement, because a page opened from disk (file://) may not fetch
   # a .wasm beside itself. The content is embedded as for the other two, and
-  # the fonts inside it are registered with the document at startup, so the
+  # the font inside it is registered with the document at startup, so the
   # page loads nothing from the network either. WASMFS, for the client's
   # storage-backed mount; the server's stack size, because this wasm carries
   # the server's JSON parser too. The linked output is offline.html; the .js

@@ -619,7 +619,7 @@ bool fontsLoaded() {
 
 constexpr double kScrollSize = 14.0;
 
-double widthOf(const std::string& text) { return flix::ui::measure(text, kScrollSize, false); }
+double widthOf(const std::string& text) { return flix::ui::measure(text, kScrollSize); }
 
 } // namespace
 
@@ -631,21 +631,21 @@ TEST(the_view_only_moves_when_the_caret_would_leave_it) {
 
     // At the end: the tail is in view, the caret on the right edge.
     state.selection.collapse(value.size());
-    const double atEnd = followCaret(state, value, kScrollSize, false, span);
+    const double atEnd = followCaret(state, value, kScrollSize, span);
     CHECK(std::fabs(atEnd - (widthOf(value) - span)) < 1e-6);
 
     // Back a few characters, still inside the view: nothing moves. The old
     // stateless scroll slid the text under a caret glued to the right edge.
     state.selection.collapse(value.size() - 4);
-    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), atEnd);
+    CHECK_EQ(followCaret(state, value, kScrollSize, span), atEnd);
 
     // Past the left edge: the view follows, just far enough.
     state.selection.collapse(4);
-    CHECK(std::fabs(followCaret(state, value, kScrollSize, false, span) - widthOf("the ")) < 1e-6);
+    CHECK(std::fabs(followCaret(state, value, kScrollSize, span) - widthOf("the ")) < 1e-6);
 
     // Home: back to the start.
     state.selection.collapse(0);
-    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), 0.0);
+    CHECK_EQ(followCaret(state, value, kScrollSize, span), 0.0);
 }
 
 TEST(the_view_settles_and_pulls_back_when_the_value_shrinks) {
@@ -654,10 +654,10 @@ TEST(the_view_settles_and_pulls_back_when_the_value_shrinks) {
     const double span = widthOf("the quick brown");
     TextFieldState state;
     state.selection.collapse(value.size());
-    const double first = followCaret(state, value, kScrollSize, false, span);
+    const double first = followCaret(state, value, kScrollSize, span);
     // The hit test and the paint both ask in one frame; the second answer must
     // be the first, or a click lands on a glyph other than the one under it.
-    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), first);
+    CHECK_EQ(followCaret(state, value, kScrollSize, span), first);
 
     // The value erased down under a view scrolled for the long one: the tail
     // comes back to the right edge rather than leaving blank space past it
@@ -665,12 +665,12 @@ TEST(the_view_settles_and_pulls_back_when_the_value_shrinks) {
     value = "the quick brown fox";
     state.selection.collapse(value.size());
     CHECK(first > widthOf(value) - span);
-    CHECK(std::fabs(followCaret(state, value, kScrollSize, false, span) -
+    CHECK(std::fabs(followCaret(state, value, kScrollSize, span) -
                     (widthOf(value) - span)) < 1e-6);
 
     // One that fits outright is not scrolled at all.
     value = "the";
-    CHECK_EQ(followCaret(state, value, kScrollSize, false, span), 0.0);
+    CHECK_EQ(followCaret(state, value, kScrollSize, span), 0.0);
 }
 
 TEST(utf8_steps_clamp_at_both_ends) {

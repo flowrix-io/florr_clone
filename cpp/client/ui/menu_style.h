@@ -152,7 +152,7 @@ void chip(Canvas&, Rect, const std::string& label, bool hovered, const ChipStyle
 void outlinedText(Canvas&, const std::string& s, double x, double y, const TextStyle& style,
                   double strokeAlpha);
 
-/// The bold, 3-unit-outlined label style those two panels set every line in.
+/// The bold, round-joined label style those two panels set every line in.
 TextStyle panelLabel(double size, Align align, Baseline baseline);
 
 } // namespace flix::ui

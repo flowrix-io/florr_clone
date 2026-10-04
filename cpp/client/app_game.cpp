@@ -417,7 +417,6 @@ void App::drawDeathCard(Canvas& canvas, double time) {
     // written down any more.
     TextStyle line;
     line.align = Align::Centre;
-    line.bold = true;
     line.size = kDeathDestroyedBySize;
     text(canvas, "You were destroyed by:", card.destroyedBy.x, card.destroyedBy.y, line);
 
@@ -436,7 +435,6 @@ void App::drawDeathCard(Canvas& canvas, double time) {
     continueStyle.outlineWidth = kDeathContinueRim;
     continueStyle.radius = kDeathContinueRadius;
     continueStyle.textSize = kDeathContinueTextSize;
-    continueStyle.textStrokeWidth = kDeathContinueTextSize * kTextStrokeRatio;
     button(canvas, card.continueBox, "Continue", overContinue, overContinue && pressing,
            continueStyle);
 
@@ -446,7 +444,6 @@ void App::drawDeathCard(Canvas& canvas, double time) {
     closeStyle.outlineWidth = kDeathCloseRim;
     closeStyle.radius = kDeathCloseRadius;
     closeStyle.textSize = kDeathCloseTextSize;
-    closeStyle.textStrokeWidth = kDeathCloseTextSize * kTextStrokeRatio;
     button(canvas, card.closeBox, "Close", overClose, overClose && pressing, closeStyle);
 }
 
@@ -532,7 +529,6 @@ void App::drawRunLoot(Canvas& canvas, double time) {
 
     TextStyle title;
     title.size = kRunLootTitleSize;
-    title.bold = true;
     title.align = Align::Centre;
     text(canvas, "Collected this run", left + width * 0.5, top + kRunLootTitleY, title);
 

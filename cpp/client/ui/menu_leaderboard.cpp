@@ -215,7 +215,6 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
 
         TextStyle header;
         header.size = 14.0;
-        header.bold = true;
         header.baseline = Baseline::Top;
         header.strokeWidth = 0.0;
         fadedText(canvas, "#", rankX, y + 8.0, header, 0.8);
@@ -239,28 +238,20 @@ bool LeaderboardPanel::render(MenuContext& ctx) {
             const int rank = static_cast<int>(i) + 1;
             const double middle = row.y + kRowHeight * 0.5;
 
-            // The rank carries a real outline and the other three a hairline:
-            // the browser build's row is one loud number and three quiet ones.
             TextStyle cell;
             cell.size = 16.0;
-            cell.bold = true;
             cell.fill = rankColor(rank);
-            cell.strokeWidth = 1.0;
             text(canvas, std::to_string(rank), rankX, middle, cell);
 
             cell.size = 14.0;
-            cell.bold = false;
-            cell.strokeWidth = 0.5;
             text(canvas, displayName(rows[i].name), nameX, middle, cell);
 
             // The level travels with the row; the panel does not re-derive it
             // from XP with a curve that could drift from the server's.
-            cell.bold = true;
             cell.fill = kPaper;
             text(canvas, std::to_string(rows[i].level), levelX, middle, cell);
 
             cell.align = Align::Right;
-            cell.bold = false;
             cell.size = 13.0;
             fadedText(canvas, formatXp(rows[i].totalXp), xpX, middle, cell, 0.8);
         }

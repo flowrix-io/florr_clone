@@ -496,11 +496,10 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
                                      : tile.nameOverride;
         if (!name.empty()) {
             TextStyle label;
-            label.bold = true;
             label.size = kNameSize;
             // Shrink to the face rather than clipping: a truncated petal name
             // reads as a different petal.
-            const double measured = measure(name, kNameSize, true);
+            const double measured = measure(name, kNameSize);
             if (measured > kFaceSide) {
                 label.size = std::max(6.0, kNameSize * kFaceSide / measured);
             }
@@ -525,9 +524,8 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     // the outline the petal's name wears for the same reason.
     if (filled && !tile.counter.empty()) {
         TextStyle label;
-        label.bold = true;
         label.size = kCounterSize;
-        double measured = measure(tile.counter, kCounterSize, true);
+        double measured = measure(tile.counter, kCounterSize);
         // A four-figure counter shrinks to the pill rather than widening it
         // past the plate: the pill is a fixture of the border, not a label
         // that grows out of the tile.
@@ -560,7 +558,6 @@ void drawItemTile(Canvas& canvas, const SpriteCache& sprites, Rect rect, const I
     // rather than as a label pinned to the tile.
     if (!tile.badge.empty()) {
         TextStyle badge;
-        badge.bold = true;
         badge.size = kBadgeSize;
         badge.fill = kPaper;
         badge.stroke = kInk;

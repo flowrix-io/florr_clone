@@ -35,12 +35,12 @@ double originX(double x, double width, Align align) {
 
 /// The baseline for a requested vertical anchor. Canvas names these after the
 /// em box; ascent is positive and descent is negative, as the font stores them.
-double baselineY(double y, double size, Baseline baseline, bool bold) {
+double baselineY(double y, double size, Baseline baseline) {
     switch (baseline) {
-        case Baseline::Top: return y + ascent(size, bold);
-        case Baseline::Bottom: return y + descent(size, bold);
+        case Baseline::Top: return y + ascent(size);
+        case Baseline::Bottom: return y + descent(size);
         case Baseline::Alphabetic: return y;
-        default: return y + (ascent(size, bold) + descent(size, bold)) * 0.5;
+        default: return y + (ascent(size) + descent(size)) * 0.5;
     }
 }
 
@@ -109,19 +109,19 @@ void paintRun(Canvas& canvas, const std::string& s, double penX, double baseline
 
 void text(Canvas& canvas, const std::string& s, double x, double y, const TextStyle& style) {
     if (s.empty() || !Fonts::ready()) return;
-    const double pen = originX(x, measure(s, style.size, style.bold), style.align);
-    const double base = baselineY(y, style.size, style.baseline, style.bold);
+    const double pen = originX(x, measure(s, style.size), style.align);
+    const double base = baselineY(y, style.size, style.baseline);
     // The one place a run can be recorded from: every label, heading and chat
     // token in the game is painted through here, so the selectable-text layer
     // needs no second copy of the alignment arithmetic to agree with.
     if (capturingText()) {
-        TextSelect::instance().record(s, pen, base, style.size, style.bold);
+        TextSelect::instance().record(s, pen, base, style.size);
     }
     paintRun(canvas, s, pen, base, style);
 }
 
-double textWidth(Canvas&, const std::string& s, double size, bool bold) {
-    return measure(s, size, bold);
+double textWidth(Canvas&, const std::string& s, double size) {
+    return measure(s, size);
 }
 
 void plate(Canvas& canvas, Rect r, std::uint32_t fill, double radius,
@@ -179,13 +179,11 @@ void button(Canvas& canvas, Rect r, const std::string& label, bool hovered, bool
     // row of 14px siblings, which is visible without a reference to hand.
     if (style.shrinkToFit) {
         const double available = r.w - style.outlineWidth * 2 - 6.0;
-        const double measured = measure(label, ts.size, true);
+        const double measured = measure(label, ts.size);
         if (measured > available && available > 0) {
             ts.size = std::max(8.0, ts.size * available / measured);
         }
     }
-    ts.bold = true;
-    ts.strokeWidth = style.textStrokeWidth;
     ts.align = Align::Centre;
     ts.baseline = Baseline::Middle;
     ts.fill = style.enabled ? kPaper : shade(kPaper, 0.65);
@@ -292,7 +290,7 @@ TextRun inputFieldRun(Rect r, const std::string& value, const TextFieldState& st
     run.text = value;
     run.size = layout.size;
     const double scroll =
-        state.focused ? followCaret(state, value, run.size, false, layout.span) : 0.0;
+        state.focused ? followCaret(state, value, run.size, layout.span) : 0.0;
     run.originX = layout.left - scroll;
     return run;
 }
@@ -343,7 +341,6 @@ void inputField(Canvas& canvas, Rect r, const std::string& value, const std::str
             strokedBox(canvas, r, 3.0, kField, 1.0, hsvScale(kField, 0.8), focused ? 5.0 : 4.0,
                        1.0);
             style.fill = kPaper;
-            style.strokeWidth = 2.0;
             // The browser's drawInput leaves `lineJoin = 'round'` ambient
             // across the drawText that follows.
             style.roundJoin = true;

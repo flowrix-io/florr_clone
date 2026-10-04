@@ -470,7 +470,6 @@ void App::drawMinimap(Canvas& canvas) {
     if (named != nullptr) {
         TextStyle caption;
         caption.size = 14.0;
-        caption.strokeWidth = 3.0;
         caption.align = Align::Centre;
         caption.baseline = Baseline::Alphabetic;
         const std::string captionText =
@@ -615,7 +614,6 @@ void App::drawMazeMinimap(Canvas& canvas, bool altHeld) {
 
     TextStyle caption;
     caption.size = 14.0;
-    caption.strokeWidth = 3.0;
     caption.align = Align::Centre;
     caption.baseline = Baseline::Alphabetic;
     text(canvas, std::string("Maze \xE2\x80\x94 ") + mazeBiomeLabel(maze.biome()),
@@ -687,10 +685,8 @@ void App::drawArenaLeaderboard(Canvas& canvas) {
 
     TextStyle header;
     header.size = 18.0;
-    header.bold = true;
     header.fill = 0xFFFFFFu;
     header.stroke = 0x222222u;
-    header.strokeWidth = 18.0 * 0.18;
     header.align = Align::Centre;
     header.baseline = Baseline::Middle;
     text(canvas, rows.size() == 1 ? std::string("1 Flower") : std::to_string(rows.size()) + " Flowers",
@@ -701,10 +697,8 @@ void App::drawArenaLeaderboard(Canvas& canvas) {
     const double rowFont = kRowH * 0.75;
     TextStyle rowStyle;
     rowStyle.size = rowFont;
-    rowStyle.bold = true;
     rowStyle.fill = 0xFFFFFFu;
     rowStyle.stroke = 0x222222u;
-    rowStyle.strokeWidth = rowFont * 0.18;
     rowStyle.align = Align::Centre;
     rowStyle.baseline = Baseline::Middle;
 

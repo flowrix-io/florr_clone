@@ -35,7 +35,6 @@ struct Shot {
 ui::TextStyle tallyStyle() {
     ui::TextStyle style;
     style.size = 12.0;
-    style.bold = true;
     style.fill = 0xFFFFFFu;
     style.stroke = 0x222222u;
     style.strokeWidth = 3.0;

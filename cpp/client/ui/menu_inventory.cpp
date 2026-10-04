@@ -451,8 +451,6 @@ bool InventoryPanel::render(MenuContext& ctx) {
     toggleBox(canvas, toggleBoxRect, stackLerp_);
     TextStyle toggleLabel;
     toggleLabel.size = kToggleLabelSize;
-    toggleLabel.bold = true;
-    toggleLabel.strokeWidth = 3.0;
     toggleLabel.roundJoin = true;
     text(canvas, "Stack", toggleBoxRect.right() + 5.0,
          toggleBoxRect.y + kToggleBoxSize * 0.5 + 1.0, toggleLabel);
@@ -514,11 +512,9 @@ bool InventoryPanel::render(MenuContext& ctx) {
 
         TextStyle label;
         label.size = kSectionLabelSize;
-        label.bold = true;
         label.align = Align::Centre;
         label.baseline = Baseline::Bottom;
         label.fill = rarityColor(section.rarity);
-        label.strokeWidth = 3.0;
         const std::string caption = rarityLabel(section.rarity);
 
         // The heading's outline is 60% black, not solid -- solid reads a whole
@@ -535,7 +531,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
         // are what makes a tier read as a section rather than a stray heading,
         // and running them to the GRID rather than to the panel is what keeps
         // the heading centred over the cells it introduces.
-        const double half = measure(caption, label.size, true) * 0.5;
+        const double half = measure(caption, label.size) * 0.5;
         const double ruleY = labelY - 6.0;
         setStroke(canvas, kInventorySkin.accent);
         canvas.setLineWidth(static_cast<float>(kRuleWidth));

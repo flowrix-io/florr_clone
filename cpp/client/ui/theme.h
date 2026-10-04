@@ -73,7 +73,9 @@ inline constexpr double kOutlineRatio = 0.06;
 inline constexpr double kMinOutline = 2.0;
 inline constexpr double kMaxOutline = 6.0;
 
-/// Text outline width per pixel of font size.
+/// Text outline width per pixel of font size: gardn's `TextArgs::stroke_scale`,
+/// which every label there is drawn with. A fixed pixel width is heavier than
+/// this on anything under 25px and reads as a black blob, not an outline.
 inline constexpr double kTextStrokeRatio = 0.12;
 
 inline constexpr double kPanelRadius = 8.0;
