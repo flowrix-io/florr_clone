@@ -184,6 +184,16 @@ EM_JS(void, web_set_cursor, (const char* element, const char* shape), {
   const node = document.getElementById(UTF8ToString(element));
   if (node) node.style.cursor = UTF8ToString(shape);
 });
+// Swaps the element for a shallow copy -- same id, class, style and inline
+// handlers, but no context and no listeners -- so the next getContext on it
+// can take new options. The old one keeps its context until it is collected.
+EM_JS(void, web_replace_canvas, (const char* element), {
+  const old = document.getElementById(UTF8ToString(element));
+  if (!old) return;
+  const fresh = old.cloneNode(false);
+  old.replaceWith(fresh);
+  if (Module.canvas === old) Module.canvas = fresh;
+});
 // CSS pixels, which are this backend's "points". Read every pump for the same
 // reason the native path re-reads the window size: a resize, a zoom and a
 // drag onto another display are three different events and only one of them
@@ -319,6 +329,12 @@ struct Window::Impl {
   // keeps in SDL performance counters.
   std::string elementId = "canvas";
   double startMillis = 0, lastFrameMillis = 0;
+  // Whether the element's 2D context was made desynchronized. Fixed for the
+  // element's life, so it trails `desynchronized` until replaceElement().
+  bool elementDesynchronized = false;
+  // Whether the element-targeted DOM callbacks are installed -- between
+  // open() and close(), and the reason replaceElement() moves them across.
+  bool canvasEventsBound = false;
 
   // Edge events, waiting for a frame to observe them.
   //
@@ -416,6 +432,9 @@ struct Window::Impl {
   int viewWidth = 0, viewHeight = 0;
   double devicePixelRatio = 1.0;
   double renderScale = 1.0;
+  // What setDesynchronized asked for. See elementDesynchronized for what the
+  // page actually has.
+  bool desynchronized = false;
   // Points per design unit, and canvas pixels per design unit. `fit` is what
   // the mouse is divided by; `uiScale` is the caller's base transform.
   double fit = 1.0;
@@ -670,16 +689,58 @@ struct Window::Impl {
         std::max(1, static_cast<int>(std::lround(cssWidth * devicePixelRatio * renderScale)));
     const int wantPixelH =
         std::max(1, static_cast<int>(std::lround(cssHeight * devicePixelRatio * renderScale)));
-    if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas) {
+    // A finger still down holds off the swap: its touchmove and touchend go
+    // to the element it landed on, and a detached one passes them to nobody.
+    const bool swapElement = canvas && elementDesynchronized != desynchronized &&
+                             touches.empty() && pendingTouches.empty();
+    if (swapElement) replaceElement();
+    if (wantPixelW != pixelWidth || wantPixelH != pixelHeight || !canvas || swapElement) {
       pixelWidth = wantPixelW;
       pixelHeight = wantPixelH;
       // Constructing a Canvas on the element resizes its backing store and
-      // takes a fresh 2D context, so this is the resize -- which is also why
-      // callers must not hold canvas() across pump().
-      canvas = std::make_unique<Canvas>(pixelWidth, pixelHeight, elementId);
+      // takes its 2D context -- a new one only on a fresh element, which is
+      // the one time `desynchronized` is read -- so this is the resize, and
+      // also why callers must not hold canvas() across pump().
+      if (!canvas || swapElement) elementDesynchronized = desynchronized;
+      canvas = std::make_unique<Canvas>(pixelWidth, pixelHeight, elementId, desynchronized);
     }
 
     recomputeScales();
+  }
+
+  // Puts a fresh copy of the element in the page, so the next Canvas built on
+  // it takes a context with the current options. The element-targeted
+  // callbacks come off the old one while it can still be found by id, and go
+  // on the copy; the window-targeted ones never moved.
+  void replaceElement() {
+    const bool rebind = canvasEventsBound;
+    if (rebind) bindCanvasEvents(false);
+    web_replace_canvas(elementId.c_str());
+    if (rebind) bindCanvasEvents(true);
+    // The copy carries the style attribute, cursor included, but nothing
+    // guarantees that is the shape this frame asks for.
+    cursorApplied = CursorShape::Count;
+  }
+
+  // The callbacks that listen on the element itself rather than the window.
+  // Removal finds its target by selector, which is why replaceElement() takes
+  // them off before the swap and not after.
+  void bindCanvasEvents(bool on) {
+    const char* target = "#canvas";
+    void* user = on ? this : nullptr;
+    emscripten_set_mousemove_callback(target, user, EM_FALSE, on ? Impl::onMouse : nullptr);
+    emscripten_set_mousedown_callback(target, user, EM_FALSE, on ? Impl::onMouse : nullptr);
+    emscripten_set_mouseenter_callback(target, user, EM_FALSE,
+                                       on ? Impl::onPointerBoundary : nullptr);
+    emscripten_set_mouseleave_callback(target, user, EM_FALSE,
+                                       on ? Impl::onPointerBoundary : nullptr);
+    emscripten_set_wheel_callback(target, user, EM_FALSE, on ? Impl::onWheel : nullptr);
+    emscripten_set_touchstart_callback(target, user, EM_FALSE, on ? Impl::onTouch : nullptr);
+    emscripten_set_touchmove_callback(target, user, EM_FALSE, on ? Impl::onTouch : nullptr);
+    // Not an input path: the only thing this listens for is the moment a
+    // browser will let the on-screen keyboard be raised. See Impl::onClick.
+    emscripten_set_click_callback(target, user, EM_FALSE, on ? Impl::onClick : nullptr);
+    canvasEventsBound = on;
   }
 
   // DOM event handlers. Static members rather than free functions because
@@ -1000,28 +1061,20 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
     return false;
   }
 
-  const char* canvasTarget = "#canvas";
-  emscripten_set_mousemove_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onMouse);
-  emscripten_set_mousedown_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onMouse);
-  emscripten_set_mouseenter_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onPointerBoundary);
-  emscripten_set_mouseleave_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onPointerBoundary);
+  // Move, down, wheel, touchstart and touchmove on the element: see
+  // Impl::bindCanvasEvents.
+  impl_->bindCanvasEvents(true);
   // Release is watched on the WINDOW, not the canvas: a drag that ends off the
   // element would otherwise never report its mouseup and the button would
   // stay held.
   emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onMouse);
-  emscripten_set_wheel_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onWheel);
-  // Down and move on the canvas; up and cancel on the window, for the same
-  // reason mouseup is: a finger that leaves the element still has to release
-  // whatever it was holding.
-  emscripten_set_touchstart_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onTouch);
-  emscripten_set_touchmove_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onTouch);
+  // Touch up and cancel on the window too, for the same reason mouseup is: a
+  // finger that leaves the element still has to release whatever it was
+  // holding.
   emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE,
                                    Impl::onTouch);
   emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE,
                                       Impl::onTouch);
-  // Not an input path: the only thing this listens for is the moment a
-  // browser will let the on-screen keyboard be raised. See Impl::onClick.
-  emscripten_set_click_callback(canvasTarget, impl_.get(), EM_FALSE, Impl::onClick);
   emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onKey);
   emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onKey);
   emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, impl_.get(), EM_FALSE, Impl::onBlur);
@@ -1096,19 +1149,11 @@ bool Window::open(int width, int height, const std::string& title, std::string& 
 void Window::close() {
 #ifdef __EMSCRIPTEN__
   if (open_) {
-    const char* canvasTarget = "#canvas";
-    emscripten_set_mousemove_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
-    emscripten_set_mousedown_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
-    emscripten_set_mouseenter_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
-    emscripten_set_mouseleave_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
+    impl_->bindCanvasEvents(false);
     emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
-    emscripten_set_wheel_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
-    emscripten_set_touchstart_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
-    emscripten_set_touchmove_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
     emscripten_set_touchend_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
     emscripten_set_touchcancel_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE,
                                         nullptr);
-    emscripten_set_click_callback(canvasTarget, nullptr, EM_FALSE, nullptr);
     emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
     emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
     emscripten_set_blur_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_FALSE, nullptr);
@@ -1284,6 +1329,17 @@ void Window::setRenderScale(double scale) {
   if (clamped == impl_->renderScale) return;
   impl_->renderScale = clamped;
   impl_->refreshGeometry();
+}
+
+bool Window::desynchronized() const { return impl_->desynchronized; }
+
+void Window::setDesynchronized(bool on) {
+  if (on == impl_->desynchronized) return;
+  impl_->desynchronized = on;
+#ifdef __EMSCRIPTEN__
+  // Now if it can be; otherwise each pump retries until no finger is down.
+  impl_->refreshGeometry();
+#endif
 }
 
 void Window::present() {

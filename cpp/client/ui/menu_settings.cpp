@@ -25,8 +25,10 @@
 //           stick and its two buttons up from, Hide Other Players' Petals
 //           and Pets -> settings.render.hideOtherPetals/hideOtherPets, Show
 //           Admins on Leaderboard -> settings.showAdminsOnLeaderboard, which
-//           the leaderboard panel sends with its request. These are read
-//           elsewhere and persisted with the rest of ClientSettings.
+//           the leaderboard panel sends with its request, Low Latency Canvas
+//           -> settings.desynchronizedCanvas, which App hands to
+//           Window::setDesynchronized (browser only; inert natively). These
+//           are read elsewhere and persisted with the rest of ClientSettings.
 //   local   every other switch and the mob-framerate slider. The rows are
 //           drawn because the reference draws them -- the row set is the
 //           panel's shape, not a claim about this client -- but a value
@@ -157,6 +159,7 @@ enum Toggle : int {
     kRequestMobile,
     kHideOtherPetals,
     kHideOtherPets,
+    kDesynchronizedCanvas,
     kToggleCount,
 };
 
@@ -280,6 +283,7 @@ bool* toggleValue(PanelState& st, ClientSettings& settings, int id) {
         case kHideOtherPetals: return &settings.render.hideOtherPetals;
         case kHideOtherPets: return &settings.render.hideOtherPets;
         case kShowAdminsOnLeaderboard: return &settings.showAdminsOnLeaderboard;
+        case kDesynchronizedCanvas: return &settings.desynchronizedCanvas;
         // Everything else lands in the panel's own copy, because ClientSettings
         // has no field for it: nothing outside this file could read one, and
         // nothing would write it to disk. A row moves up here the moment a
@@ -790,6 +794,7 @@ bool SettingsPanel::render(MenuContext& ctx) {
             p.checkbox(kMobDeathAnimation, "Mob Death Animation");
             p.checkbox(kAntialiasing, "Anti-aliasing");
             p.checkbox(kGpuAcceleration, "GPU Acceleration");
+            p.checkbox(kDesynchronizedCanvas, "Low Latency Canvas (may flicker)");
             p.checkbox(kDisableUltraParticles, "Disable Ultra+ Particles");
             p.checkbox(kShowConsoleLogs, "Show Console Logs");
 

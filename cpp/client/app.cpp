@@ -232,6 +232,7 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     // short enough to be one screenshot would otherwise photograph the
     // default resolution whatever the file says.
     window_.setRenderScale(menus_.settings().renderScale);
+    window_.setDesynchronized(menus_.settings().desynchronizedCanvas);
     if (!net_.connect(config.host, config.port)) {
         errorOut = net_.lastError();
         return false;
@@ -537,8 +538,11 @@ void App::frame(double dt) {
     // the settings panel, for the same reason the renderer's switches do
     // below: one place copies the settings out, and the panel never reaches
     // into anything. setRenderScale ignores a value it already has, so this
-    // costs nothing on the frames where nothing moved.
+    // costs nothing on the frames where nothing moved. setDesynchronized
+    // likewise, and it may rebuild the canvas too, so it also goes before the
+    // frame takes hold of it.
     window_.setRenderScale(menus_.settings().renderScale);
+    window_.setDesynchronized(menus_.settings().desynchronizedCanvas);
 
 #ifdef __EMSCRIPTEN__
     // Before anything is drawn: the text atlas may only be drawn into while

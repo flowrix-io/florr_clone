@@ -59,13 +59,27 @@ void Path2D::addPath(const Path2D& other) {
 #include <emscripten.h>
 
 // One registry makes each C++ Canvas an independent CanvasRenderingContext2D.
-EM_JS(int, c2d_create, (const char* element, int width, int height, int virtualCanvas), {
+//
+// Only the element on the page gets context options. An offscreen surface is
+// never shown, so there is nothing to desynchronise, and it has to keep its
+// alpha: every layer, bake and the text atlas is cleared to transparent and
+// composited, and an opaque one would blit as a black box. The element is
+// opaque because the frame covers it and the page behind it is black anyway.
+//
+// `desynchronized` is the low-latency path: the canvas skips the compositor
+// and is scanned out from a single buffer. Anything the browser flushes
+// mid-frame -- a canvas-to-canvas blit, a long op stream -- can then reach the
+// screen half drawn, which is a flicker, so it is opt-in (Window::
+// setDesynchronized). A context's options are fixed by the element's FIRST
+// getContext, which is why changing it means a fresh element, not a fresh
+// context.
+EM_JS(int, c2d_create, (const char* element, int width, int height, int virtualCanvas, int desynchronized), {
   Module.cppCanvasContexts ||= [];
-  let surface;
+  let surface, options;
   if (virtualCanvas) surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
-  else { const id = UTF8ToString(element); surface = document.getElementById(id) || Object.assign(document.createElement('canvas'), {id}); if (!surface.parentNode) document.body.appendChild(surface); }
+  else { const id = UTF8ToString(element); surface = document.getElementById(id) || Object.assign(document.createElement('canvas'), {id}); if (!surface.parentNode) document.body.appendChild(surface); options = {alpha: false, desynchronized: !!desynchronized}; }
   surface.width = width; surface.height = height;
-  Module.cppCanvasContexts.push({surface, ctx: surface.getContext('2d',{desynchronized:1})});
+  Module.cppCanvasContexts.push({surface, ctx: surface.getContext('2d', options)});
   return Module.cppCanvasContexts.length - 1;
 });
 EM_JS(void, c2d_destroy, (int id), { if (Module.cppCanvasContexts) Module.cppCanvasContexts[id] = null; });
@@ -73,7 +87,7 @@ EM_JS(void, c2d_present, (int id, const char* target), {
   const item = Module.cppCanvasContexts[id], name = UTF8ToString(target);
   let canvas = document.getElementById(name);
   if (!canvas) { canvas = document.createElement('canvas'); canvas.id = name; document.body.appendChild(canvas); }
-  canvas.width = item.surface.width; canvas.height = item.surface.height; canvas.getContext('2d',{desynchronized:1}).drawImage(item.surface, 0, 0);
+  canvas.width = item.surface.width; canvas.height = item.surface.height; canvas.getContext('2d').drawImage(item.surface, 0, 0);
 });
 // The drawing calls do not cross into the page one at a time. Each one used
 // to be its own c2d_op -- ten arguments widened to doubles and a UTF8ToString
@@ -157,7 +171,7 @@ EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,do
   if (scratch === undefined) {
     const pixels=new ImageData(new Uint8ClampedArray(HEAPU8.slice(data,data+iw*ih*4)),iw,ih);
     scratch = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(iw,ih) : document.createElement('canvas');
-    scratch.width=iw; scratch.height=ih; scratch.getContext('2d',{desynchronized:1}).putImageData(pixels,0,0);
+    scratch.width=iw; scratch.height=ih; scratch.getContext('2d').putImageData(pixels,0,0);
     if (key) {
       // Bounded, oldest-first: a Map iterates in insertion order, and a client
       // that draws thousands of distinct bitmaps must not grow the page's
@@ -1044,16 +1058,17 @@ const unsigned char kFont[95][5] = {
 } // namespace
 #endif
 
-Canvas::Canvas(int w,int h,std::string id) : width_(std::max(1,w)),height_(std::max(1,h)),elementId_(std::move(id)),logicalWidth_(width_),logicalHeight_(height_) {
+Canvas::Canvas(int w,int h,std::string id,bool desynchronized) : width_(std::max(1,w)),height_(std::max(1,h)),elementId_(std::move(id)),logicalWidth_(width_),logicalHeight_(height_) {
 #ifdef __EMSCRIPTEN__
-  contextId_=c2d_create(elementId_.c_str(),width_,height_,0);
+  contextId_=c2d_create(elementId_.c_str(),width_,height_,0,desynchronized?1:0);
 #else
+  (void)desynchronized;
   pixels_.assign(static_cast<size_t>(width_)*height_,Color{255,255,255});
 #endif
 }
 Canvas::Canvas(int w,int h,bool virtualCanvas) : width_(std::max(1,w)),height_(std::max(1,h)),virtual_(virtualCanvas),logicalWidth_(width_),logicalHeight_(height_) {
 #ifdef __EMSCRIPTEN__
-  contextId_=c2d_create("",width_,height_,1);
+  contextId_=c2d_create("",width_,height_,1,0);
 #else
   pixels_.assign(static_cast<size_t>(width_)*height_,Color{0,0,0,0});
 #endif

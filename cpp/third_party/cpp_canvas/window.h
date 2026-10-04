@@ -170,6 +170,17 @@ public:
     void setRenderScale(double scale);
     double renderScale() const;
 
+    // Browser only: draws into a `desynchronized` (low-latency) 2D context,
+    // which skips the compositor and can show a frame half drawn -- a
+    // flicker -- so it is off unless asked for. The option can only be given
+    // to an element's first context, so a change replaces the canvas element
+    // with a fresh copy and rebuilds the canvas() on it. That waits for no
+    // finger to be down: a touch stays bound to the element it started on,
+    // and its end would never be heard from a detached one. Recorded and
+    // otherwise ignored natively.
+    void setDesynchronized(bool on);
+    bool desynchronized() const;
+
     // The backing store's size, for a caller that has to reason in real
     // pixels. Layout never does.
     int pixelWidth() const;

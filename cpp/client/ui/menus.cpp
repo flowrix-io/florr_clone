@@ -655,6 +655,7 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "zoom") zoom = clamp(std::atof(value.c_str()), kMinZoom, kMaxZoom);
         else if (key == "interp") interpolation = clamp(std::atof(value.c_str()), 0.05, 0.5);
         else if (key == "renderScale") renderScale = clamp(std::atof(value.c_str()), 0.25, 1.0);
+        else if (key == "desynchronized") desynchronizedCanvas = number != 0;
         else if (key == "spawn") spawnChoice = (value == "-" ? std::string() : value);
         // `biome` is what this line was called before spawn points replaced the
         // biome picker. Still read, so an existing settings file keeps whatever
@@ -707,6 +708,7 @@ bool ClientSettings::save(const std::string& path) const {
          << "zoom " << zoom << '\n'
          << "interp " << interpolation << '\n'
          << "renderScale " << renderScale << '\n'
+         << "desynchronized " << (desynchronizedCanvas ? 1 : 0) << '\n'
          // A dash rather than an empty field: the reader splits on whitespace,
          // and an empty value would swallow the next key as its own.
          << "spawn " << (spawnChoice.empty() ? std::string("-") : spawnChoice) << '\n'

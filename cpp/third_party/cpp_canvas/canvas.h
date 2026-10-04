@@ -129,7 +129,11 @@ private:
 // HTMLCanvasElement fallback) and can be composited with drawCanvas().
 class Canvas {
 public:
-    Canvas(int width, int height, std::string elementId = "canvas");
+    // `desynchronized` asks the browser for a low-latency context on the
+    // element. It only counts the first time the element is given a context:
+    // a Canvas built on an element that already has one gets that one, with
+    // whatever it was made with. Ignored natively.
+    Canvas(int width, int height, std::string elementId = "canvas", bool desynchronized = false);
     static Canvas createVirtual(int width, int height);
     Canvas(const Canvas&) = delete; Canvas& operator=(const Canvas&) = delete;
     Canvas(Canvas&& other) noexcept; Canvas& operator=(Canvas&& other) noexcept;

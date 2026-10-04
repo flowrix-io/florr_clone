@@ -209,6 +209,11 @@ struct ClientSettings {
     /// place on a HiDPI display, where 1 means filling four times the pixels
     /// a non-Retina panel would ask for.
     double renderScale = 1.0;
+    /// Browser only: draws into a low-latency (`desynchronized`) canvas, which
+    /// can cut a frame of input lag but can also show a frame half drawn.
+    /// Off by default because of that flicker. Reaches
+    /// Window::setDesynchronized the way renderScale reaches setRenderScale.
+    bool desynchronizedCanvas = false;
     bool showChat = true;
     /// Which of the chat box's channel tabs its transcript shows, one bit per
     /// tab in strip order: Local, Global, Squad, Guild, Whisper. All on by
