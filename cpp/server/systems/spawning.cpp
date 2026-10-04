@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace flix {
 namespace {
@@ -182,6 +183,93 @@ bool nearAnyPlayer(const std::vector<SpawnSystem::Viewer>& viewers, Realm realm,
     return false;
 }
 
+/// What a mob takes up the moment it appears, for the lap test.
+///
+/// The NOMINAL radius is not what appears. The size roll comes after the test
+/// and makes some bodies twice the nominal size, so the test allows for the
+/// largest body the roll can give. A chain head also brings its whole body,
+/// laid out in a straight line behind it.
+struct SpawnFootprint {
+    double radius = kPreliminarySpawnRadius;   ///< the head, at its largest
+    double tail = 0.0;                         ///< how far the body reaches behind it
+    double tailRadius = 0.0;                   ///< one body segment, at its largest
+};
+
+SpawnFootprint spawnFootprint(const ContentRegistry& content, std::uint16_t mobIndex,
+                              Rarity rarity) {
+    SpawnFootprint footprint;
+    if (mobIndex >= content.mobCount()) return footprint;
+    const MobConfig& config = content.mob(mobIndex);
+    footprint.radius = content.mobStats(mobIndex, rarity).radius * config.maxRandomSize();
+    if (config.segmentCount > 0 && config.segmentBodyIndex < content.mobCount()) {
+        // spawnBodyChain's own layout: segments stepped off the NOMINAL body.
+        const double bodyRadius = content.mobStats(config.segmentBodyIndex, rarity).radius;
+        footprint.tail = config.segmentCount * bodyRadius * kSegmentSpacingPerRadius;
+        footprint.tailRadius = bodyRadius * content.mob(config.segmentBodyIndex).maxRandomSize();
+    }
+    return footprint;
+}
+
+double distanceToSegmentSq(Vec2 p, Vec2 a, Vec2 b) {
+    const Vec2 ab = b - a;
+    const double lengthSq = ab.lengthSq();
+    if (!(lengthSq > 0.0)) return distanceSq(p, a);
+    const Vec2 ap = p - a;
+    const double t = clamp((ap.x * ab.x + ap.y * ab.y) / lengthSq, 0.0, 1.0);
+    return distanceSq(p, a + ab * t);
+}
+
+/// The bearing from `at` TOWARDS the nearest flower, which lays a chain head's
+/// body directly away from it. Unset when nobody is in the realm.
+std::optional<double> facingNearestFlower(const std::vector<SpawnSystem::Viewer>& viewers,
+                                          Realm realm, Vec2 at) {
+    const SpawnSystem::Viewer* nearest = nullptr;
+    double nearestSq = 0.0;
+    for (const SpawnSystem::Viewer& viewer : viewers) {
+        if (viewer.realm != realm) continue;
+        const double distSq = distanceSq(viewer.position, at);
+        if (nearest != nullptr && distSq >= nearestSq) continue;
+        nearest = &viewer;
+        nearestSq = distSq;
+    }
+    if (nearest == nullptr || !(nearestSq > 0.0)) return std::nullopt;
+    return (nearest->position - at).angle();
+}
+
+/// No mob appears in anyone's lap: `gap` of clear ground between every
+/// flower's hitbox and every part of the animal, its largest head and, for a
+/// chain, the body trailing behind `facing`. With no facing to lay a body
+/// along, the body is allowed for in every direction.
+bool clearOfEveryLap(const std::vector<SpawnSystem::Viewer>& viewers, Realm realm, Vec2 at,
+                     const SpawnFootprint& footprint, std::optional<double> facing, double gap) {
+    if (nearAnyPlayer(viewers, realm, at, gap, footprint.radius)) return false;
+    if (!(footprint.tail > 0.0)) return true;
+    if (!facing) return !nearAnyPlayer(viewers, realm, at, gap, footprint.tail + footprint.tailRadius);
+    const Vec2 tailEnd = at + Vec2::fromAngle(*facing + kPi, footprint.tail);
+    for (const SpawnSystem::Viewer& viewer : viewers) {
+        if (viewer.realm != realm) continue;
+        const double reach = gap + footprint.tailRadius + viewer.radius;
+        if (distanceToSegmentSq(viewer.position, at, tailEnd) < reach * reach) return false;
+    }
+    return true;
+}
+
+/// The bearing a mob waking at `at` faces, for the lap test and for the spawn.
+/// Unset for anything but a chain head, whose bearing then comes from the
+/// spawn's own roll. A chain keeps a bearing of its own whenever its body
+/// clears every lap that way. Otherwise it is turned to face the nearest
+/// flower, so its body trails straight away from it. Then only the head has to
+/// keep that flower's distance, rather than the record staying asleep for as
+/// long as anyone stands within a body's length of it.
+std::optional<double> wakingFacing(const std::vector<SpawnSystem::Viewer>& viewers, Realm realm,
+                                   Vec2 at, const SpawnFootprint& footprint, double gap, Rng& rng) {
+    if (!(footprint.tail > 0.0)) return std::nullopt;
+    const double rolled = rng.angle();
+    if (clearOfEveryLap(viewers, realm, at, footprint, rolled, gap)) return rolled;
+    const std::optional<double> towards = facingNearestFlower(viewers, realm, at);
+    return towards ? towards : std::optional<double>(rolled);
+}
+
 /// True when a band's box overlaps any player's buffered viewport, grown by
 /// `margin`.
 ///
@@ -249,6 +337,8 @@ void SpawnSystem::bind(World& world) {
     casualties_.emplace(world);
     escorts_.emplace(world);
     escorts_->without<Dead>();
+    dependents_.emplace(world);
+    dependents_->without<Dead>();
     spawners_.emplace(world);
     spawners_->without<Dead>();
     waveNests_.emplace(world);
@@ -433,7 +523,8 @@ Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const Content
 
 Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                                std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                               double nowMillis, Rng& rng, int depth, std::uint16_t zone) {
+                               double nowMillis, Rng& rng, int depth, std::uint16_t zone,
+                               std::optional<double> facing) {
     if (mobIndex >= content.mobCount()) return NULL_ENTITY;
 
     const MobConfig& config = content.mob(mobIndex);
@@ -467,7 +558,9 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
 
     // Held rather than passed straight through: a centipede's body is laid out
     // along its head's facing, and the chain is built once the head is whole.
-    const double angle = rng.angle();
+    // Rolled even when the caller chose it, so the stream stays the same.
+    const double rolledAngle = rng.angle();
+    const double angle = facing ? *facing : rolledAngle;
 
     const Entity e = world.create();
     world.add<MobTag>(e);
@@ -527,9 +620,12 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<Replicated>(e, Replicated{net::EntityKind::Mob, 0, mobIndex, rarity, 0});
     if (netIds != nullptr) world.add<NetId>(e, NetId{netIds->next()});
 
-    // The census is the OVERWORLD's population. Another realm's mobs are
-    // counted by the spawner that fills it.
-    if (realm == Realm::Overworld) {
+    // The census is the population of the authored MAPS, every one of them --
+    // what takeCensus counts, and so what mobCap is held against. Counted
+    // here for every map, or a pass waking mobs on any map but the overworld
+    // would go straight past the cap before the next census noticed. The arena
+    // and the maze are counted by the spawner that fills them.
+    if (isWorldRealm(realm)) {
         ++census_.mobs;
         ++census_.spawnedTotal;
     }
@@ -706,10 +802,6 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
     expireEscorts(dt, commands);
     runNests(world, terrain, content, rng, nowMillis);
 
-    // The census is O(mobs x players) and nothing about a population of a few
-    // hundred changes meaningfully inside half a second. Waking rides with it:
-    // the two are the same question asked in the two directions, they need the
-    // same viewer list, and kLatentWakeMargin is what pays for the cadence.
     // EVERY tick, unlike everything else here, because a corpse does not wait:
     // combat marks a mob dead earlier in this very tick and the runtime reaps
     // it at the end of it, so a band that only looked twice a second would
@@ -717,19 +809,25 @@ void SpawnSystem::run(World& world, const Terrain& terrain, const ContentRegistr
     // top-up instead -- which is to say, to somewhere else entirely.
     bankCasualties(world, terrain, content, viewers_, rng, nowMillis);
 
+    // The census is O(mobs x players) and nothing about a population of a few
+    // hundred changes meaningfully inside half a second. Stocking and waking
+    // ride with it, in that order, so the whole thing is one pass. The census
+    // says what is alive, the top-up writes records for whatever is missing,
+    // and waking brings every record somebody can see to life, the new ones
+    // included. A band that comes up short is full and awake again within
+    // half a second, and the first tick of a cold server is a full map.
     if (nowMillis >= nextPopulationMillis_) {
         nextPopulationMillis_ = nowMillis + kPopulationIntervalMillis;
         cullExtraTopBosses(world, commands);
-        takeCensus(content, viewers_, nowMillis, commands);
+        takeCensus(world, content, viewers_, nowMillis, commands);
+        returnVanished(world, terrain, content, viewers_, rng, nowMillis);
+        // The one ambient spawn path, and it runs whether or not anybody is
+        // anywhere near: the map is full at all times, and that is the whole
+        // difference between this and a spawner that follows the players
+        // around.
+        stockSpawnZones(world, terrain, content, viewers_, rng, nowMillis);
         promoteLatent(world, terrain, content, viewers_, rng, nowMillis);
     }
-
-    // The one ambient spawn path, and it runs whether or not anybody is
-    // anywhere near: the map is full at all times, and that is the whole
-    // difference between this and a spawner that follows the players around.
-    // Its own clock, and it reads the last census rather than taking one of
-    // its own, so it is not tied to that cadence.
-    stockSpawnZones(world, terrain, content, viewers_, rng, nowMillis);
 
     // And that is all of it. There is no second pass behind the bands covering
     // the ground the author left unbanded -- a square no band covers grows
@@ -816,10 +914,22 @@ void SpawnSystem::expireEscorts(double dt, CommandBuffer& commands) {
     for (const Entity e : doomed_) commands.destroy(e);
 }
 
-void SpawnSystem::takeCensus(const ContentRegistry& content, const std::vector<Viewer>& viewers,
-                             double nowMillis, CommandBuffer& commands) {
+void SpawnSystem::takeCensus(World& world, const ContentRegistry& content,
+                             const std::vector<Viewer>& viewers, double nowMillis,
+                             CommandBuffer& commands) {
     census_.mobs = 0;
     doomed_.clear();
+
+    // Band mobs the last census counted that are gone now. A KILLED one was
+    // banked and taken off the list the tick it died, and one put to sleep was
+    // never put on it, so anything missing was removed some other way -- an
+    // operator's killall, the cull of a second unique -- and its band is owed
+    // the slot back where it stood (returnVanished).
+    vanished_.clear();
+    for (const CensusMob& tracked : censusMobs_) {
+        if (!world.isAlive(tracked.entity)) vanished_.push_back(tracked);
+    }
+    censusMobs_.clear();
 
     mobPlacements_.clear();
     // Recounted from the world rather than tracked through every death: a mob
@@ -849,25 +959,24 @@ void SpawnSystem::takeCensus(const ContentRegistry& content, const std::vector<V
             }
             return;
         }
-        bool nearAnyone = unattended;
-        for (const Viewer& viewer : viewers) {
-            // Same map first: a mob is only ever "seen" by somebody standing
-            // in its own coordinate space.
-            if (viewer.realm != transform.realm) continue;
-            // Each flower's OWN box, not one 1920x1080 rectangle for everybody:
-            // a mob at the edge of an ultrawide screen is being drawn, and
-            // starting its recycle clock is what makes it blink out in front of
-            // its owner (src/server/playerState.ts:1041).
-            const Vec2 offset = transform.position - viewer.position;
-            if (std::abs(offset.x) <= viewer.half.x && std::abs(offset.y) <= viewer.half.y) {
-                nearAnyone = true;
-                break;
-            }
-        }
+        // Each flower's OWN box, not one 1920x1080 rectangle for everybody: a
+        // mob at the edge of an ultrawide screen is being drawn, and starting
+        // its recycle clock is what makes it blink out in front of its owner
+        // (src/server/playerState.ts:1041). Grown past the WAKE box by
+        // kLatentSleepMargin, so nothing promoteLatent wakes is already
+        // outside it.
+        const bool nearAnyone =
+            unattended ||
+            seenBy(viewers, transform.realm, transform.position,
+                   kLatentWakeMargin + kLatentSleepMargin);
 
+        // A band mob goes back to being a record, which loses nothing, so it
+        // goes soon; anything else is destroyed for good, so it gets longer.
+        const bool sleeps = ambient.zone < zones_.size();
+        const double graceMillis = sleeps ? kLatentSleepDelayMillis : kMobDespawnDelayMillis;
         if (nearAnyone) {
             ambient.lastNearPlayerMillis = nowMillis;
-        } else if (nowMillis - ambient.lastNearPlayerMillis >= kMobDespawnDelayMillis &&
+        } else if (nowMillis - ambient.lastNearPlayerMillis >= graceMillis &&
                    !alwaysAwake(content, type)) {
             // Nobody has been near it for the grace period, so it stops being
             // an entity. Whether that is the END of it depends on whether a
@@ -877,11 +986,12 @@ void SpawnSystem::takeCensus(const ContentRegistry& content, const std::vector<V
             // to be found. A nest's escort, a centipede's segment, an arena
             // mob or something an operator conjured has no band, and is simply
             // destroyed as it always was.
-            if (ambient.zone < zones_.size()) {
+            if (sleeps) {
                 SpawnZone& zone = zones_[ambient.zone];
                 zone.latent.push_back(
                     LatentMob{transform.position, nowMillis, type.configIndex, type.rarity});
                 ++census_.demotedTotal;
+                sleepers_.push_back(e);
             }
             // Left out of the counts on purpose: it is on its way out, and
             // counting it would suppress the replacement spawn for one pass.
@@ -890,11 +1000,47 @@ void SpawnSystem::takeCensus(const ContentRegistry& content, const std::vector<V
         }
 
         ++census_.mobs;
-        if (ambient.zone < zones_.size()) ++zones_[ambient.zone].liveMobs;
+        if (ambient.zone < zones_.size()) {
+            ++zones_[ambient.zone].liveMobs;
+            censusMobs_.push_back(CensusMob{e, transform.position, ambient.zone});
+        }
         // The placement record the stocking pass spaces its next spawns
         // against.
         mobPlacements_.push_back(MobPlacement{transform.position, body.radius, transform.realm});
     });
+
+    // What a sleeping mob brought with it goes to sleep with it: a centipede's
+    // body and a nest's escorts hold no slot of their own, and the record
+    // wakes with a fresh set. Left to their own, longer clock they would
+    // outlive their head by up to half a minute -- counted against the cap,
+    // and a headless chain promotes its first bead to a head of its own.
+    if (!sleepers_.empty()) {
+        std::sort(sleepers_.begin(), sleepers_.end());
+        // Already going, on its own clock or as a sleeper, and so not counted.
+        std::sort(doomed_.begin(), doomed_.end());
+        const std::size_t goneAlready = doomed_.size();
+        const auto slept = [&](Entity parent) {
+            return std::binary_search(sleepers_.begin(), sleepers_.end(), parent);
+        };
+        const auto follow = [&](Entity e) {
+            doomed_.push_back(e);
+            --census_.mobs;   // it was counted on the walk above
+        };
+        dependents_->each([&](Entity e, MobTag&, AmbientMob&) {
+            if (std::binary_search(doomed_.begin(),
+                                   doomed_.begin() + static_cast<std::ptrdiff_t>(goneAlready), e)) {
+                return;
+            }
+            const BodySegment* link = world.tryGet<BodySegment>(e);
+            if (link != nullptr && link->chainHead != e && slept(link->chainHead)) {
+                follow(e);
+                return;
+            }
+            const HoleTether* tether = world.tryGet<HoleTether>(e);
+            if (tether != nullptr && slept(tether->hole)) follow(e);
+        });
+        sleepers_.clear();
+    }
 
     for (const Entity e : doomed_) commands.destroy(e);
     census_.despawnedTotal += static_cast<int>(doomed_.size());
@@ -919,6 +1065,15 @@ bool SpawnSystem::crowdedAt(Realm realm, Vec2 position, double halfSize, double 
         if (distanceSq(record.position, position) < reachSq) return true;
     }
     return false;
+}
+
+void SpawnSystem::noteLiveBandMob(World& world, Entity e, std::uint16_t zone) {
+    const Transform* transform = world.tryGet<Transform>(e);
+    if (transform == nullptr) return;
+    const Body* body = world.tryGet<Body>(e);
+    mobPlacements_.push_back(
+        MobPlacement{transform->position, body != nullptr ? body->radius : 0.0, transform->realm});
+    if (zone < zones_.size()) censusMobs_.push_back(CensusMob{e, transform->position, zone});
 }
 
 bool SpawnSystem::seenBy(const std::vector<Viewer>& viewers, Realm realm, Vec2 position,
@@ -1147,6 +1302,10 @@ void SpawnSystem::rebuildZones(const ContentRegistry& content) {
     zoneContentHash_ = content.contentHash();
     zones_.clear();
     regions_.clear();
+    // Band indices are about to mean other bands, so a slot owed to one of
+    // the old ones is owed to nobody.
+    censusMobs_.clear();
+    vanished_.clear();
     realmBiome_.fill(kInvalidIndex);
     if (worldMaps == nullptr) return;
 
@@ -1463,8 +1622,6 @@ void SpawnSystem::stockSpawnZones(World& world, const Terrain& terrain,
     // No band anywhere means no ambient mob anywhere. There is no second pass
     // behind this one that would cover the ground the author left unbanded.
     if (zones_.empty()) return;
-    if (nowMillis < nextZoneMillis_) return;
-    nextZoneMillis_ = nowMillis + kZoneIntervalMillis;
 
     for (std::size_t index = 0; index < zones_.size(); ++index) {
         SpawnZone& zone = zones_[index];
@@ -1474,11 +1631,11 @@ void SpawnSystem::stockSpawnZones(World& world, const Terrain& terrain,
         // feet, which is the change this whole file is built around.
         //
         // A full band costs one subtraction per pass, which is what makes it
-        // affordable to ask the question of every band on every map every
-        // second.
-        int owed = zone.targetMobs - static_cast<int>(zone.latent.size()) - zone.liveMobs;
-        if (owed <= 0) continue;
-        owed = std::min(owed, kZoneStockPerPass);
+        // affordable to ask the question of every band on every map twice a
+        // second. A short one is paid off in FULL, not a chunk a pass: a
+        // record is a few dozen bytes, and a band left to fill itself over
+        // half a minute is half a minute of a player watching mobs trickle in.
+        const int owed = zone.targetMobs - static_cast<int>(zone.latent.size()) - zone.liveMobs;
         for (int n = 0; n < owed; ++n) {
             if (!stockZone(world, terrain, content, zone, static_cast<std::uint16_t>(index),
                            viewers, rng, nowMillis)) {
@@ -1494,11 +1651,17 @@ void SpawnSystem::stockSpawnZones(World& world, const Terrain& terrain,
 bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentRegistry& content,
                             SpawnZone& zone, std::uint16_t zoneIndex,
                             const std::vector<Viewer>& viewers, Rng& rng, double nowMillis,
-                            Vec2 anchor, double scatter) {
+                            Slot slot, Vec2 lostAt) {
     // Everything about this happens in the band's OWN realm: the map it is
     // drawn on has its own size, its own walls and its own population, and the
     // same numbers on the overworld describe somewhere else entirely.
     const Vec2 extent = terrain.realmExtent(zone.realm);
+    // A singular band gets its one mob back ANYWHERE in its outline. The
+    // scatter exists to keep a big band evenly full, and a band of one has no
+    // evenness to keep; handing the slot back where it fell would put the next
+    // queen in the room the last one was killed in, every time, which turns a
+    // hunt across the map into a farm at one coordinate.
+    const double scatter = slot != Slot::TopUp && !zone.singular ? kRespawnScatter : 0.0;
     Vec2 at;
     bool placed = false;
     for (int attempt = 0; attempt < kZonePlacementAttempts; ++attempt) {
@@ -1506,7 +1669,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         // kRespawnScatter: the difference between the two is the difference
         // between a band that is evenly full and one that is full on paper.
         const Vec2 candidate = scatter > 0.0
-                                   ? samplePointNear(anchor, scatter, extent, rng)
+                                   ? samplePointNear(lostAt, scatter, extent, rng)
                                    : samplePointInRect(zone.bounds, extent, rng);
         // Rejection sampling over the bounding box keeps the distribution
         // uniform over the outline. A candidate in a corner the polygon does
@@ -1575,13 +1738,15 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
         // The ordinary case, and the whole reason the map can be full: a
         // position, a type and a tier. No entity, no components, no wire id.
         //
-        // WHEN it may wake is the one subtlety. A record placed where nobody
-        // was looking is ready at once, so an unvisited band is full the
-        // moment somebody walks into it. A record placed inside a live
-        // viewport is a REPLACEMENT for something that just died there, and it
-        // waits: without the wait, clearing the mobs around you would refill
-        // them in front of you within half a second.
-        const double delay = seenBy(viewers, zone.realm, at, 0.0)
+        // WHEN it may wake is the one subtlety. A REPLACEMENT for something
+        // just killed waits if it lands where somebody can see it: without the
+        // wait, clearing the mobs around you would refill them in front of you
+        // within half a second. Nothing else waits, wherever it lands. A
+        // top-up is a cold start and a returned slot is a refill, and the map
+        // does not wait to be full: the first player onto a server, or an
+        // operator after a killall, sees the band full on the next pass, on
+        // their own screen too.
+        const double delay = slot == Slot::Killed && seenBy(viewers, zone.realm, at, 0.0)
                                  ? rng.range(kInViewRespawnMinMillis, kInViewRespawnMaxMillis)
                                  : 0.0;
         zone.latent.push_back(LatentMob{at, nowMillis + delay, type, rarity});
@@ -1595,10 +1760,12 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // Now that the body is known, the lap test again with the real one: this
     // branch puts an ENTITY on the ground this instant, and a boss is the one
     // spawn whose radius is nothing like the nominal figure the point was
-    // chosen with. Refusing returns the slot to the band, which tries again
-    // somewhere else on its next pass.
-    if (nearAnyPlayer(viewers, zone.realm, at, kMinSpawnDistance,
-                      content.mobStats(type, rarity).radius)) {
+    // chosen with -- a super centipede brings ten of them. Refusing returns
+    // the slot to the band, which tries again somewhere else on its next pass.
+    const SpawnFootprint footprint = spawnFootprint(content, type, rarity);
+    const std::optional<double> facing =
+        wakingFacing(viewers, zone.realm, at, footprint, kMinSpawnDistance, rng);
+    if (!clearOfEveryLap(viewers, zone.realm, at, footprint, facing, kMinSpawnDistance)) {
         return false;
     }
 
@@ -1610,7 +1777,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     if (census_.mobs >= mobCap) return false;
 
     const Entity spawned = spawnMobAt(world, terrain, content, type, rarity, at, zone.realm,
-                                      nowMillis, rng, 0, zoneIndex);
+                                      nowMillis, rng, 0, zoneIndex, facing);
     if (spawned == NULL_ENTITY) return false;
     ++zone.liveMobs;
     // Charged only now that the boss is standing. Every refusal above hands
@@ -1621,12 +1788,7 @@ bool SpawnSystem::stockZone(World& world, const Terrain& terrain, const ContentR
     // Counted straight away, so the rest of this pass spaces itself against
     // what it has just placed rather than against the last census alone --
     // in the band's realm, or crowdedAt() would never see it.
-    if (const Transform* transform = world.tryGet<Transform>(spawned)) {
-        const Body* body = world.tryGet<Body>(spawned);
-        mobPlacements_.push_back(MobPlacement{transform->position,
-                                              body != nullptr ? body->radius : 0.0,
-                                              transform->realm});
-    }
+    noteLiveBandMob(world, spawned, zoneIndex);
     return true;
 }
 
@@ -1636,9 +1798,9 @@ void SpawnSystem::bankCasualties(World& world, const Terrain& terrain,
     if (zones_.empty()) return;
 
     casualtyList_.clear();
-    casualties_->each([&](Entity, MobTag&, Transform& transform, AmbientMob& ambient, Dead&) {
+    casualties_->each([&](Entity e, MobTag&, Transform& transform, AmbientMob& ambient, Dead&) {
         if (ambient.zone >= zones_.size()) return;
-        casualtyList_.push_back(Casualty{transform.position, ambient.zone});
+        casualtyList_.push_back(Casualty{e, transform.position, ambient.zone});
         // Claimed, once and for all. A corpse lies around for a while before
         // the reaper takes it, and a band that banked it on every pass in
         // between would breed a mob per pass out of one kill.
@@ -1653,15 +1815,39 @@ void SpawnSystem::bankCasualties(World& world, const Terrain& terrain,
     // which is exactly what the top-up pass exists to notice, so the mob comes
     // back somewhere else in the band rather than being lost.
     for (const Casualty& casualty : casualtyList_) {
-        SpawnZone& zone = zones_[casualty.zone];
-        // A singular band gets its one mob back ANYWHERE in its outline. The
-        // scatter exists to keep a big band evenly full, and a band of one has
-        // no evenness to keep; handing the slot back where it fell would put
-        // the next queen in the room the last one was killed in, every time,
-        // which turns a hunt across the map into a farm at one coordinate.
-        stockZone(world, terrain, content, zone, casualty.zone, viewers, rng, nowMillis,
-                  casualty.position, zone.singular ? 0.0 : kRespawnScatter);
+        // Off the census list as well: the reaper is about to take the corpse,
+        // and the next census must not read that as a mob that vanished and
+        // hand its band the same slot a second time.
+        const auto tracked =
+            std::find_if(censusMobs_.begin(), censusMobs_.end(),
+                         [&](const CensusMob& mob) { return mob.entity == casualty.entity; });
+        if (tracked != censusMobs_.end()) {
+            *tracked = censusMobs_.back();
+            censusMobs_.pop_back();
+        }
+        stockZone(world, terrain, content, zones_[casualty.zone], casualty.zone, viewers, rng,
+                  nowMillis, Slot::Killed, casualty.position);
     }
+}
+
+void SpawnSystem::returnVanished(World& world, const Terrain& terrain,
+                                 const ContentRegistry& content,
+                                 const std::vector<Viewer>& viewers, Rng& rng, double nowMillis) {
+    // Before the top-up, so the band is not short by the time it looks and the
+    // slots go back where they were lost rather than anywhere in the outline.
+    // A killall empties exactly the ground people were looking at; a uniform
+    // top-up would hand each screen its area's share of the refill and pile
+    // the rest onto ground that was never short.
+    //
+    // Ready at once, unlike a kill's replacement: nobody fought for this
+    // ground, so there is no cleared screen to keep clear. Whatever cannot be
+    // placed falls through to the top-up, as a casualty does.
+    for (const CensusMob& lost : vanished_) {
+        if (lost.zone >= zones_.size()) continue;
+        stockZone(world, terrain, content, zones_[lost.zone], lost.zone, viewers, rng, nowMillis,
+                  Slot::Vanished, lost.position);
+    }
+    vanished_.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -1676,6 +1862,13 @@ void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
     // the whole map is stocked and not one of it is simulated.
     if (viewers.empty()) return;
 
+    // Gathered first and woken nearest-first. There is no allowance per band:
+    // a player arriving through a door, or wearing antennae that show half the
+    // map, sees the whole of what is in front of them at once rather than
+    // watching it fill in over several seconds. mobCap is the only limit, and
+    // when it binds the order decides what stays asleep -- the far edge of the
+    // widest view, never the ground somebody is standing on.
+    wakeList_.clear();
     for (std::size_t index = 0; index < zones_.size(); ++index) {
         SpawnZone& zone = zones_[index];
         if (zone.latent.empty()) continue;
@@ -1684,12 +1877,10 @@ void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
         // walking, and on a map with two dozen bands almost none of them are.
         if (!zoneInView(zone.bounds, zone.realm, viewers, kLatentWakeMargin)) continue;
 
-        int budget = kZoneWakePerPass;
-        for (std::size_t i = 0; i < zone.latent.size() && budget > 0;) {
+        for (std::size_t i = 0; i < zone.latent.size(); ++i) {
             const LatentMob& record = zone.latent[i];
             if (nowMillis < record.readyMillis ||
                 !seenBy(viewers, zone.realm, record.position, kLatentWakeMargin)) {
-                ++i;
                 continue;
             }
             // Nobody's lap, at the moment the body actually appears.
@@ -1704,43 +1895,65 @@ void SpawnSystem::promoteLatent(World& world, const Terrain& terrain,
             //
             // LEFT LATENT rather than dropped or moved: the band's population
             // is correct where it stands, and the record wakes on a later pass
-            // the moment the player has taken a step away. Its own radius,
+            // the moment the player has taken a step away. Its own footprint,
             // because a mob whose body is a hundred units across has to keep
-            // its edge as far off as a small one does.
-            const double bodyRadius = record.mobIndex < content.mobCount()
-                                          ? content.mobStats(record.mobIndex, record.rarity).radius
-                                          : kPreliminarySpawnRadius;
-            if (nearAnyPlayer(viewers, zone.realm, record.position, kMinSpawnDistance,
-                              bodyRadius)) {
-                ++i;
+            // its edge as far off as a small one does -- the largest body its
+            // size roll can give it, and a centipede's whole body, laid out
+            // along the bearing it wakes facing (wakingFacing).
+            const SpawnFootprint footprint =
+                spawnFootprint(content, record.mobIndex, record.rarity);
+            const std::optional<double> facing = wakingFacing(
+                viewers, zone.realm, record.position, footprint, kMinSpawnDistance, rng);
+            if (!clearOfEveryLap(viewers, zone.realm, record.position, footprint, facing,
+                                 kMinSpawnDistance)) {
                 continue;
             }
-            if (census_.mobs >= mobCap) return;
-
-            const Entity spawned =
-                spawnMobAt(world, terrain, content, record.mobIndex, record.rarity,
-                           record.position, zone.realm, nowMillis, rng, 0,
-                           static_cast<std::uint16_t>(index));
-            // Gone from the records either way. A record whose type the
-            // content no longer defines cannot be woken and must not be
-            // retried every pass forever; dropping it lets the band stock a
-            // replacement it can actually place.
-            zone.latent[i] = zone.latent.back();
-            zone.latent.pop_back();
-            if (spawned == NULL_ENTITY) continue;
-            // census_.mobs is spawnMobAt's to raise -- it is the cap every
-            // spawn path shares, and counting it twice here would halve the
-            // ceiling for everything else in the same pass.
-            ++zone.liveMobs;
-            ++census_.promotedTotal;
-            --budget;
-            if (const Transform* transform = world.tryGet<Transform>(spawned)) {
-                const Body* body = world.tryGet<Body>(spawned);
-                mobPlacements_.push_back(MobPlacement{transform->position,
-                                                      body != nullptr ? body->radius : 0.0,
-                                                      transform->realm});
+            double nearestSq = std::numeric_limits<double>::infinity();
+            for (const Viewer& viewer : viewers) {
+                if (viewer.realm != zone.realm) continue;
+                nearestSq = std::min(nearestSq, distanceSq(viewer.position, record.position));
             }
+            wakeList_.push_back(WakeCandidate{static_cast<std::uint16_t>(index),
+                                              static_cast<std::uint32_t>(i), nearestSq, facing});
         }
+    }
+    if (wakeList_.empty()) return;
+    std::sort(wakeList_.begin(), wakeList_.end(),
+              [](const WakeCandidate& a, const WakeCandidate& b) {
+                  return a.distanceSq < b.distanceSq;
+              });
+
+    std::size_t attempted = 0;
+    for (; attempted < wakeList_.size() && census_.mobs < mobCap; ++attempted) {
+        const WakeCandidate& candidate = wakeList_[attempted];
+        SpawnZone& zone = zones_[candidate.zone];
+        const LatentMob& record = zone.latent[candidate.index];
+        const Entity spawned =
+            spawnMobAt(world, terrain, content, record.mobIndex, record.rarity, record.position,
+                       zone.realm, nowMillis, rng, 0, candidate.zone, candidate.facing);
+        if (spawned == NULL_ENTITY) continue;
+        // census_.mobs is spawnMobAt's to raise -- it is the cap every spawn
+        // path shares, and counting it twice here would halve the ceiling for
+        // everything else in the same pass.
+        ++zone.liveMobs;
+        ++census_.promotedTotal;
+        noteLiveBandMob(world, spawned, candidate.zone);
+    }
+
+    // Every record that was tried is gone from the records, woken or not: one
+    // whose type the content no longer defines cannot be woken and must not be
+    // retried every pass forever, and dropping it lets the band stock a
+    // replacement it can actually place. Removed highest index first within
+    // each band, so a swap with the back never moves a record still to go.
+    wakeList_.resize(attempted);
+    std::sort(wakeList_.begin(), wakeList_.end(),
+              [](const WakeCandidate& a, const WakeCandidate& b) {
+                  return a.zone != b.zone ? a.zone < b.zone : a.index > b.index;
+              });
+    for (const WakeCandidate& candidate : wakeList_) {
+        std::vector<LatentMob>& latent = zones_[candidate.zone].latent;
+        latent[candidate.index] = latent.back();
+        latent.pop_back();
     }
 }
 

@@ -199,8 +199,19 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // reported by the latest input packet, so a resize or a zoom widens what is
     // streamed on the very next tick rather than at the next join. The bound is
     // exclusive at exactly the edge, as the reference's `>=` test is.
-    const double reachX = viewport.x * viewportReach;
-    const double reachY = viewport.y * viewportReach;
+    //
+    // The drawn half, plus a margin. Up to the default screen the margin
+    // scales with the viewport, so the box is exactly viewportReach viewports.
+    // Past it, the margin stops growing. The margin exists so an entity is
+    // known before it comes on screen, and things move at the same speed in
+    // world units however far out the camera is. A ten-screen antennae view
+    // still has to stream every entity it draws (all of the drawn half), but
+    // not a margin ten screens wide: that would be the whole map.
+    const auto halfExtent = [&](double axis, double defaultAxis, double multiple) {
+        return axis * 0.5 + std::min(axis, defaultAxis) * (multiple - 0.5);
+    };
+    const double reachX = halfExtent(viewport.x, kViewportWidth, viewportReach);
+    const double reachY = halfExtent(viewport.y, kViewportHeight, viewportReach);
 
     const auto outsideView = [&](Vec2 at) {
         const double dx = at.x - centre.x;
@@ -208,9 +219,11 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         return (dx < 0 ? -dx : dx) >= reachX || (dy < 0 ? -dy : dy) >= reachY;
     };
     // The inner box, on the same axes: inside it an entity is drawn, or close
-    // enough to being drawn that it has to be current.
-    const double nearX = viewport.x * nearReach;
-    const double nearY = viewport.y * nearReach;
+    // enough to being drawn that it has to be current. Built the same way, so
+    // everything on a big screen is updated every snapshot and the margin
+    // around it stays the default screen's.
+    const double nearX = halfExtent(viewport.x, kViewportWidth, nearReach);
+    const double nearY = halfExtent(viewport.y, kViewportHeight, nearReach);
     const auto outsideNearBox = [&](Vec2 at) {
         const double dx = at.x - centre.x;
         const double dy = at.y - centre.y;

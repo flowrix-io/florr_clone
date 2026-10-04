@@ -45,10 +45,44 @@ double monotonicMillis() {
 
 namespace {
 
-/// Clamp on the viewport a client may claim. A client asking to see the whole
-/// map is asking for an advantage, and for the server to build it a snapshot
-/// of the entire world.
+/// Clamp on the viewport a client may claim, per axis, when nothing it wears
+/// pulls the camera out. A client asking to see the whole map is asking for an
+/// advantage, and for the server to build it a snapshot of the entire world.
 constexpr double kMaxViewportAxis = 2600.0;
+
+/// Headroom on a camera petal's ceiling for the client's own rounding: it
+/// reports its window divided by its zoom, rounded, and a design-unit window
+/// can come out a unit over 1920.
+constexpr double kViewportCeilingSlack = 1.01;
+
+/// The viewport a flower may claim: what its client reported, clamped to what
+/// that flower can honestly be drawing.
+///
+/// The ceiling is not flat, because the camera petals legitimately show more
+/// world. Unique antennae draws ten default screens' worth of width, and a flat
+/// 2600 clamp streamed and woke barely a quarter of it: mobs were culled in
+/// plain view, and the spawn bands stayed empty outside a box around the
+/// flower. So it is the default screen divided by the zoom the body's OWN worn
+/// loadout grants -- the rule the client draws by (petalCameraZoom) -- and
+/// never below the flat allowance every flower has always had. A client still
+/// cannot claim more than its loadout pays for.
+Vec2 claimableViewport(World& world, Entity body, const ContentRegistry& content, double width,
+                       double height) {
+    double zoom = 1.0;
+    if (const Loadout* loadout = world.tryGet<Loadout>(body)) {
+        for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+            const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+            if (slot.empty()) continue;
+            zoom = std::min(zoom, petalCameraZoom(content, slot.configIndex, slot.rarity));
+        }
+    }
+    // Antennae bottoms out at 0.1; this only stops a bad figure dividing by
+    // zero or by a negative.
+    zoom = std::max(zoom, 0.05);
+    const double ceilingX = std::max(kMaxViewportAxis, kViewportWidth / zoom * kViewportCeilingSlack);
+    const double ceilingY = std::max(kMaxViewportAxis, kViewportHeight / zoom * kViewportCeilingSlack);
+    return {clamp(width, 320.0, ceilingX), clamp(height, 240.0, ceilingY)};
+}
 
 /// How often account progress is written back from the live entity.
 constexpr double kPersistIntervalMillis = 30000.0;
@@ -1710,9 +1744,8 @@ void GameServer::handleJoin(Session& session, net::Connection& connection, ByteR
         return;
     }
 
-    PlayerLocation& location = world_.get<PlayerLocation>(entity);
-    location.viewport = {clamp(width, 320.0, kMaxViewportAxis),
-                         clamp(height, 240.0, kMaxViewportAxis)};
+    const Vec2 viewport = claimableViewport(world_, entity, content(), width, height);
+    world_.get<PlayerLocation>(entity).viewport = viewport;
 
     views_[session.connection].reset();
 
@@ -1763,9 +1796,12 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
     // join. Zero means "unchanged", which is what a client that never learned
     // to report it sends.
     if (input.viewportWidth > 0 && input.viewportHeight > 0) {
+        // Clamped against the loadout as it stands NOW, every frame, so taking
+        // the antennae off shrinks the claim on the next packet.
+        const Vec2 viewport = claimableViewport(world_, session.entity, content(),
+                                                input.viewportWidth, input.viewportHeight);
         if (PlayerLocation* location = world_.tryGet<PlayerLocation>(session.entity)) {
-            location->viewport = {clamp(static_cast<double>(input.viewportWidth), 320.0, kMaxViewportAxis),
-                                  clamp(static_cast<double>(input.viewportHeight), 240.0, kMaxViewportAxis)};
+            location->viewport = viewport;
         }
     }
 }

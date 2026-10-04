@@ -1792,6 +1792,15 @@ ContentRegistry& registry() {
 }
 } // namespace
 
+double petalCameraZoom(const ContentRegistry& registry, std::uint16_t petalIndex, Rarity rarity) {
+    if (petalIndex >= registry.petalCount()) return 1.0;
+    constexpr double kFloor = 0.3;
+    const double asked = registry.petalStats(petalIndex, rarity).cameraZoom;
+    // No positive-only guard: a tier that takes the figure through zero lands
+    // on the floor, not back on 1.
+    return registry.petal(petalIndex).id == "antennae" ? asked : std::max(kFloor, asked);
+}
+
 const ContentRegistry& content() { return registry(); }
 
 bool loadContent(const std::string& dataDir, std::string& errorOut) {

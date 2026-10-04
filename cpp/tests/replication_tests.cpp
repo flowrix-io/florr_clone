@@ -377,6 +377,35 @@ TEST(entities_leaving_view_are_removed) {
     CHECK_EQ(client.entities().at(netIdOf(f.world, mob)).typeIndex, std::uint16_t(7));
 }
 
+TEST(a_camera_petals_view_is_streamed_edge_to_edge_and_only_a_screen_past_it) {
+    // Unique antennae draws ten default screens of world. Everything on that
+    // screen has to be streamed, and current every snapshot, or mobs vanish
+    // and stutter in plain view. The margin PAST it stays the default
+    // screen's: things move at the same speed however far out the camera is,
+    // and a margin ten screens wide would be the whole map.
+    Fixture f;
+    const Vec2 drawn{kViewportWidth * 10.0, kViewportHeight * 10.0};
+    f.world.get<PlayerLocation>(f.viewer).viewport = drawn;
+    const Vec2 centre = f.world.get<Transform>(f.viewer).position;
+    const Entity corner = f.addMob(centre + drawn * 0.5 - Vec2{50.0, 50.0});
+    const Entity beyond = f.addMob(centre + Vec2{drawn.x * 0.5 + kViewportWidth * 1.5 + 100.0, 0.0});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    CHECK(client.entities().count(netIdOf(f.world, corner)) == 1);
+    CHECK(client.entities().count(netIdOf(f.world, beyond)) == 0);
+
+    // Current every snapshot, not one in farSnapshotStride: it is on screen.
+    // (The fixture's snapshot index never moves, so a far-band entity whose
+    // id is not a multiple of the stride would never be described again.)
+    CHECK(netIdOf(f.world, corner) % static_cast<std::uint32_t>(f.replicator.farSnapshotStride) != 0);
+    for (int i = 0; i < 4; ++i) {
+        const Vec2 moved = centre + drawn * 0.5 - Vec2{60.0 + 10.0 * i, 50.0};
+        f.world.get<Transform>(corner).position = moved;
+        f.tick(client, static_cast<std::uint32_t>(2 + i), 1040.0 + 40.0 * i);
+        CHECK_NEAR(client.entities().at(netIdOf(f.world, corner)).targetPosition.x, moved.x, 0.05);
+    }
+}
+
 TEST(destroyed_entities_are_removed) {
     Fixture f;
     const Entity mob = f.addMob({1100, 1000});

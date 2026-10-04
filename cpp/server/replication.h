@@ -245,6 +245,12 @@ public:
     /// because the reference streams a box four screens wide so an entity is
     /// known long before it is drawn. Anything tighter pops mobs in at the
     /// screen edge as soon as the player zooms out or enlarges the window.
+    ///
+    /// Exact up to the default screen. On a bigger one (a camera petal) the
+    /// margin past the drawn half stops growing at the default screen's, so
+    /// the box is everything drawn plus the same distance a default screen
+    /// gets. Without that cap, unique antennae's tenfold view would stream the
+    /// whole map.
     double viewportReach = 2.0;
 
     /// How far out an entity still gets an update EVERY snapshot, as a
@@ -265,7 +271,8 @@ public:
     /// 640 world units at 1440p, which the fastest thing in the game takes two
     /// seconds to cross and the far band is never more than a fifth of a
     /// second stale. Nothing reaches the drawn edge without having been at
-    /// full rate for a long while first.
+    /// full rate for a long while first. Its margin is capped the same way
+    /// viewportReach's is, and the drawn half is never capped.
     double nearReach = 0.75;
 
     /// One snapshot in this many carries the far band. Staggered by net id, so

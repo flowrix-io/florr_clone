@@ -2674,22 +2674,16 @@ bool MenuSystem::capturesMouse(Vec2 mouse) const {
 }
 
 double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry) {
-    // Ordinary zoom petals keep the browser's 0.3 floor. Antennae's explicit
-    // vision-range table reaches 10x output (0.1 camera zoom), so it may pass
-    // below that generic limit.
-    constexpr double kFloor = 0.3;
+    // Per petal, the shared rule: the server bounds the viewport this client
+    // may report by the very same figure, so the two cannot disagree about
+    // how much world is on screen.
     double zoom = 1.0;
     const std::size_t worn =
         std::min(profile.loadout.size(), static_cast<std::size_t>(kLoadoutActiveSlots));
     for (std::size_t i = 0; i < worn; ++i) {
         const Profile::Slot& slot = profile.loadout[i];
-        if (slot.empty() || slot.petalIndex >= registry.petalCount()) continue;
-        const PetalConfig& config = registry.petal(slot.petalIndex);
-        const double rawAsked = registry.petalStats(slot.petalIndex, slot.rarity).cameraZoom;
-        // No positive-only guard: a tier that takes the figure through zero
-        // lands on its floor, not back on 1.
-        const double asked = config.id == "antennae" ? rawAsked : std::max(kFloor, rawAsked);
-        if (asked < zoom) zoom = asked;
+        if (slot.empty()) continue;
+        zoom = std::min(zoom, petalCameraZoom(registry, slot.petalIndex, slot.rarity));
     }
     return zoom;
 }

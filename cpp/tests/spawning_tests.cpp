@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <set>
 #include <string>
@@ -786,8 +787,9 @@ TEST(ground_a_player_has_just_cleared_does_not_refill_in_front_of_them) {
     // The map is full everywhere and tops itself up the moment anything dies,
     // so something has to stop the replacements appearing on the screen of the
     // player who just cleared it. That is what a record's ready time is for:
-    // one placed where nobody was looking is awake at once, and one placed
-    // inside a live viewport waits out kInViewRespawnMin..Max first.
+    // a kill's replacement placed where nobody was looking is awake at once,
+    // and one placed inside a live viewport waits out
+    // kInViewRespawnMin..Max first.
     const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
     WorldMaps maps;
     makeBandedWorld(maps, {band}, "bee 100%");
@@ -801,11 +803,20 @@ TEST(ground_a_player_has_just_cleared_does_not_refill_in_front_of_them) {
     const int cleared = sim.mobsIn(screen);
     CHECK(cleared > 2);
 
-    // Kill everything the flower can see, the way a player would.
+    // Kill everything the flower can see, the way a player would: marked Dead
+    // for the spawner to bank, then reaped. Destroying them outright is what
+    // an operator's killall does, and that is refilled AT ONCE -- see
+    // an_operators_killall_refills_the_screen_it_cleared_within_a_second.
+    std::vector<Entity> doomed;
     Query<MobTag, Transform> mobs{sim.world};
     mobs.each([&](Entity e, MobTag&, Transform& transform) {
-        if (screen.contains(transform.position)) sim.world.destroy(e);
+        if (screen.contains(transform.position)) doomed.push_back(e);
     });
+    for (const Entity e : doomed) sim.world.add<Dead>(e, Dead{NULL_ENTITY});
+    sim.tick(players);
+    for (const Entity e : doomed) {
+        if (sim.world.isAlive(e)) sim.world.destroy(e);
+    }
     CHECK_EQ(sim.mobsIn(screen), 0);
 
     // Two seconds later the band has already replaced them in its books --
@@ -863,6 +874,243 @@ TEST(nothing_ever_wakes_in_a_flowers_lap) {
     CHECK(sim.mobsWithin(underfoot, kMinSpawnDistance) > 0);
 }
 
+namespace {
+
+/// Records inside the rectangle `half` around `centre`, leaving out the ones
+/// held asleep because they are in the flower's lap there.
+int asleepInView(Sim& sim, Vec2 centre, Vec2 half) {
+    int asleep = 0;
+    for (const SpawnSystem::LatentSite& site : sim.latent()) {
+        const Vec2 offset = site.position - centre;
+        if (std::abs(offset.x) > half.x || std::abs(offset.y) > half.y) continue;
+        // Generous for a bee: the lap is kMinSpawnDistance plus both bodies.
+        if (distance(site.position, centre) < kMinSpawnDistance + 200.0) continue;
+        ++asleep;
+    }
+    return asleep;
+}
+
+} // namespace
+
+TEST(a_cold_band_is_full_and_awake_on_its_first_pass) {
+    // The first player onto an empty server sees a FULL band on the first
+    // tick, rather than mobs trickling in over the next half minute. Nothing
+    // rations it: no allowance per pass on stocking, none on waking, and no
+    // wait on a fresh record because it landed on somebody's screen.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+
+    sim.tick(players);
+
+    CHECK(sim.populationIn(band) >= bandTarget(band) - 1);
+    const Rect screen{kCentre.x - kSpawnViewportHalfWidth, kCentre.y - kSpawnViewportHalfHeight,
+                      kSpawnViewportHalfWidth * 2.0, kSpawnViewportHalfHeight * 2.0};
+    CHECK(sim.mobsIn(screen) > 5);
+    CHECK_EQ(asleepInView(sim, kCentre, {kSpawnViewportHalfWidth, kSpawnViewportHalfHeight}), 0);
+}
+
+TEST(a_camera_petals_wide_view_is_awake_from_edge_to_edge) {
+    // Unique antennae draws ten default screens of world. The band has to be
+    // awake across ALL of it -- the flower's own reported viewport is the box,
+    // not a default one with the band empty outside a patch around the flower.
+    const Rect band{kCentre.x - 10000.0, kCentre.y - 6000.0, 20000.0, 12000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const Vec2 drawn{kViewportWidth * 10.0, kViewportHeight * 10.0};
+    const Entity flower = makePlayer(sim.world, kCentre);
+    sim.world.add<PlayerLocation>(flower, PlayerLocation{Region::Overworld, drawn});
+    const std::vector<Vec2> players{kCentre};
+
+    sim.tick(players);
+
+    const Rect screen{kCentre.x - drawn.x * 0.5, kCentre.y - drawn.y * 0.5, drawn.x, drawn.y};
+    CHECK(sim.mobsIn(screen) > bandTarget(band) / 2);
+    CHECK_EQ(asleepInView(sim, kCentre, drawn * 0.5), 0);
+}
+
+TEST(a_band_mob_nobody_is_near_goes_back_to_sleep_within_seconds) {
+    // Sleeping loses nothing -- the record wakes as the same mob in the same
+    // place -- so it happens a few seconds after the last flower leaves, not
+    // half a minute. Thirty seconds of every roaming flower's trail kept awake
+    // was what filled mobCap.
+    const Rect band{kCentre.x - 1500.0, kCentre.y - 1500.0, 3000.0, 3000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    for (int i = 0; i < 30; ++i) sim.tick({kCentre});
+    const int population = sim.populationIn(band);
+    CHECK(sim.mobsIn(band) > 0);
+
+    const std::vector<Vec2> elsewhere{Vec2{5000.0, 5000.0}};
+    const int ticks =
+        static_cast<int>((kLatentSleepDelayMillis + 2.0 * kPopulationIntervalMillis) / net::kTickMillis);
+    for (int i = 0; i < ticks; ++i) sim.tick(elsewhere);
+    CHECK_EQ(sim.mobsIn(band), 0);
+    CHECK_EQ(sim.populationIn(band), population);
+}
+
+TEST(a_flower_standing_still_puts_nothing_to_sleep) {
+    // The box that keeps a mob awake is BIGGER than the box that wakes it, so
+    // nothing is woken already outside it. The other way round, every mob
+    // woken in the strip between the two was put back to sleep at the end of
+    // its grace period and woken again on the next pass, for as long as
+    // anybody stood there. (This harness runs no AI: nothing walks away.)
+    const Rect band{kCentre.x - 4000.0, kCentre.y - 4000.0, 8000.0, 8000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 30; ++i) sim.tick(players);
+    const int awake = sim.mobCount();
+    const int promoted = sim.spawner.census().promotedTotal;
+    CHECK(awake > 10);
+
+    for (int i = 0; i < 4; ++i) sim.jump(kMobDespawnDelayMillis + 1000.0, players);
+    CHECK_EQ(sim.spawner.census().demotedTotal, 0);
+    CHECK_EQ(sim.spawner.census().promotedTotal, promoted);
+    CHECK_EQ(sim.mobCount(), awake);
+}
+
+TEST(a_centipedes_body_goes_to_sleep_with_its_head) {
+    // The head holds the band's slot; the body holds none, and on its own
+    // clock it would outlive the head by up to half a minute -- counted
+    // against the cap, and with its first bead promoted to a head of its own.
+    const Rect band{kCentre.x - 1500.0, kCentre.y - 1500.0, 3000.0, 3000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "centipede 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    for (int i = 0; i < 30; ++i) sim.tick({kCentre});
+    int segments = 0;
+    Query<MobTag, BodySegment> links{sim.world};
+    links.each([&](Entity, MobTag&, BodySegment& link) { segments += link.head ? 0 : 1; });
+    CHECK(segments > 0);
+
+    const std::vector<Vec2> elsewhere{Vec2{5000.0, 5000.0}};
+    sim.tick(elsewhere);
+    sim.jump(kLatentSleepDelayMillis + 1000.0, elsewhere);
+    sim.jump(kPopulationIntervalMillis, elsewhere);
+    CHECK_EQ(sim.mobCount(), 0);
+}
+
+TEST(when_the_cap_binds_the_nearest_records_wake_first) {
+    // mobCap is the one ceiling, and when it binds the ORDER decides what
+    // stays asleep: the far edge of the view, never the ground the flower is
+    // standing on -- not whichever band happens to be listed last.
+    const Rect band{kCentre.x - 6000.0, kCentre.y - 6000.0, 12000.0, 12000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    sim.spawner.mobCap = 12;
+    sim.tick({kCentre});
+
+    CHECK_EQ(sim.mobCount(), 12);
+    double farthestAwake = 0.0;
+    Query<MobTag, Transform> mobs{sim.world};
+    mobs.each([&](Entity, MobTag&, Transform& transform) {
+        farthestAwake = std::max(farthestAwake, distance(transform.position, kCentre));
+    });
+    const Vec2 wake{kSpawnViewportHalfWidth + kLatentWakeMargin,
+                    kSpawnViewportHalfHeight + kLatentWakeMargin};
+    double nearestAsleep = std::numeric_limits<double>::infinity();
+    for (const SpawnSystem::LatentSite& site : sim.latent()) {
+        const Vec2 offset = site.position - kCentre;
+        if (std::abs(offset.x) > wake.x || std::abs(offset.y) > wake.y) continue;
+        // Held for the flower's lap, which is a different rule.
+        if (distance(site.position, kCentre) < kMinSpawnDistance + 200.0) continue;
+        nearestAsleep = std::min(nearestAsleep, distance(site.position, kCentre));
+    }
+    CHECK(std::isfinite(nearestAsleep));
+    CHECK(farthestAwake <= nearestAsleep);
+}
+
+TEST(an_operators_killall_refills_the_screen_it_cleared_within_a_second) {
+    // A killall DESTROYS: no corpse, nothing for the band to bank. The band
+    // notices the slots by their absence and hands each one back where its mob
+    // was last counted, at once -- so the screen the operator cleared is full
+    // again within a second, rather than its share of a band-wide top-up
+    // going everywhere else.
+    const Rect band{kCentre.x - 3000.0, kCentre.y - 3000.0, 6000.0, 6000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "bee 100%");
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+    const std::vector<Vec2> players{kCentre};
+    for (int i = 0; i < 400; ++i) sim.tick(players);
+
+    const Rect screen{kCentre.x - kSpawnViewportHalfWidth, kCentre.y - kSpawnViewportHalfHeight,
+                      kSpawnViewportHalfWidth * 2.0, kSpawnViewportHalfHeight * 2.0};
+    const int awake = sim.mobCount();
+    const int onScreen = sim.mobsIn(screen);
+    CHECK(onScreen > 5);
+
+    Query<MobTag> mobs{sim.world};
+    for (const Entity e : mobs.collect()) sim.world.destroy(e);
+    CHECK_EQ(sim.mobCount(), 0);
+
+    for (int i = 0; i < net::kTicksPerSecond; ++i) sim.tick(players);
+
+    CHECK(sim.populationIn(band) >= bandTarget(band) - 1);
+    CHECK(sim.mobCount() >= awake * 3 / 4);
+    // A uniform top-up would put a sixth of the refill on this box.
+    CHECK(sim.mobsIn(screen) >= onScreen / 2);
+}
+
+TEST(no_part_of_a_waking_animal_lands_in_a_flowers_lap) {
+    // The lap test has to measure what actually appears. Not the nominal
+    // radius -- the size roll comes after the test -- and not the head alone:
+    // a centipede brings nine more bodies trailing behind it, and laid out at
+    // a random bearing they cross whatever flower is standing beside the head.
+    const Rect band{kCentre.x - 2000.0, kCentre.y - 2000.0, 4000.0, 4000.0};
+    WorldMaps maps;
+    makeBandedWorld(maps, {band}, "centipede 100%", 100.0);
+    Sim sim;
+    sim.spawner.worldMaps = &maps;
+
+    // Stocked cold from far off, so every record is ready the moment a
+    // flower arrives; then a crowd of flowers spread over the band.
+    const std::vector<Vec2> away{Vec2{kCentre.x + 40000.0, kCentre.y + 40000.0}};
+    sim.tick(away);
+    // A super is placed live wherever it rolled and never sleeps, so the
+    // flowers below can be standing on one that was there first. That is the
+    // flowers arriving, not a mob appearing; only what wakes afterwards counts.
+    Query<MobTag> before{sim.world};
+    const std::vector<Entity> alreadyThere = before.collect();
+    std::vector<Vec2> crowd;
+    for (int gx = -1; gx <= 1; ++gx) {
+        for (int gy = -1; gy <= 1; ++gy) {
+            const Vec2 at = kCentre + Vec2{gx * 1300.0, gy * 1300.0};
+            makePlayer(sim.world, at);
+            crowd.push_back(at);
+        }
+    }
+    for (int i = 0; i < 60; ++i) sim.tick(crowd);
+
+    int woke = 0;
+    int inALap = 0;
+    Query<MobTag, Transform, Body> mobs{sim.world};
+    mobs.each([&](Entity e, MobTag&, Transform& transform, Body& body) {
+        if (std::find(alreadyThere.begin(), alreadyThere.end(), e) != alreadyThere.end()) return;
+        ++woke;
+        for (const Vec2 flower : crowd) {
+            const double edgeGap =
+                distance(transform.position, flower) - body.radius - kPlayerBaseRadius;
+            if (edgeGap < kMinSpawnDistance - 1e-6) ++inALap;
+        }
+    });
+    CHECK(woke > 20);
+    CHECK_EQ(inALap, 0);
+}
+
 TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
     // The difference between a band that is evenly full and one that is full
     // on paper. These bands are millions of square units and a viewport is a
@@ -878,10 +1126,16 @@ TEST(a_killed_mob_is_replaced_where_it_died_rather_than_anywhere_in_its_band) {
 
     // One corner of it, a long way from the middle. The watched box is the
     // kill radius plus the scatter, so every honest replacement lands inside
-    // it -- and it is a fourteenth of the band, so a band-wide replacement
-    // almost never does.
+    // it -- and it is about a seventh of the band, so a band-wide replacement
+    // seldom does.
+    //
+    // The kill radius is wide because this harness runs no AI. Nothing walks
+    // back into a circle the flower keeps clearing; it only gets back the
+    // replacements that happen to land inside it. At 900 units the circle ran
+    // dry within two or three rounds, and the kill count swung from 2 to 24
+    // with the random seed.
     const Vec2 corner{band.x + 2000.0, band.y + 2000.0};
-    constexpr double kKillRadius = 900.0;
+    constexpr double kKillRadius = 1500.0;
     const double watchedHalf = kKillRadius + kRespawnScatter + 100.0;
     const Rect watched{corner.x - watchedHalf, corner.y - watchedHalf, watchedHalf * 2.0,
                        watchedHalf * 2.0};
@@ -1121,13 +1375,17 @@ struct SuperBand {
     std::array<int, kRarityCount> announced{};
 
     /// One pass, so the clocks exist and have been dealt. That pass also
-    /// stocks the band's first kZoneStockPerPass on the DEALT clocks, which
-    /// are still in the future; the test sets them before the rest.
+    /// stocks the WHOLE band on the dealt clocks, which are still in the
+    /// future, so it is cleared again: the test sets the clocks, and fill()
+    /// watches the band stock itself a second time on them.
     void deal() {
         sim.spawner.run(sim.world, sim.terrain, shipped(), Sim::overworld(players), sim.rng,
                         sim.now, 0.0, sim.commands);
         sim.commands.flush();
+        Query<MobTag> mobs{sim.world};
+        for (const Entity e : mobs.collect()) sim.world.destroy(e);
         drainAnnouncements();
+        std::fill(announced.begin(), announced.end(), 0);
     }
     void fill() {
         for (int i = 0; i < 300; ++i) {

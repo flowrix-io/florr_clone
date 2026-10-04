@@ -721,6 +721,68 @@ TEST(mobs_spawn_and_are_replicated_to_a_player) {
     }
 }
 
+TEST(a_camera_petal_lets_its_wearer_claim_the_world_it_draws) {
+    // The reported viewport is what replication streams and what wakes the
+    // spawn bands, so the server clamps it. A flat clamp cut unique antennae's
+    // tenfold view to a quarter of its width: mobs culled in plain view, bands
+    // empty outside a box round the flower. The ceiling is the default screen
+    // over the zoom the body's own loadout grants -- and no more than that.
+    Harness h("camerazoom");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestRegister("hazel", "password9");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    const Vec2 drawn{kViewportWidth * 10.0, kViewportHeight * 10.0};
+    client.joinGame(static_cast<int>(drawn.x), static_cast<int>(drawn.y));
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> bodies{world};
+    // The one body with a connection: the rest are bots.
+    bodies.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const auto claimed = [&] { return world.get<PlayerLocation>(body).viewport; };
+
+    // Nothing worn that zooms out: held to the flat allowance.
+    CHECK(claimed().x <= 2600.0);
+    CHECK(claimed().y <= 2600.0);
+
+    std::uint32_t sequence = 0;
+    const auto report = [&](Vec2 viewport) {
+        net::InputFrame input;
+        input.sequence = ++sequence;
+        input.viewportWidth = static_cast<std::uint16_t>(viewport.x);
+        input.viewportHeight = static_cast<std::uint16_t>(viewport.y);
+        client.sendInput(input);
+        h.step(2, {&client});
+    };
+
+    // Unique antennae on the bar: the whole of what it draws is claimable.
+    const std::uint16_t antennae = content().petalIndex("antennae");
+    CHECK(antennae != kInvalidIndex);
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{antennae, Rarity::Unique, 0.0, false};
+    report(drawn);
+    CHECK_NEAR(claimed().x, drawn.x, 1e-6);
+    CHECK_NEAR(claimed().y, drawn.y, 1e-6);
+
+    // But not more than it pays for, however much the client asks.
+    report({60000.0, 60000.0});
+    CHECK(claimed().x < drawn.x * 1.05);
+    CHECK(claimed().y < drawn.y * 1.05);
+
+    // Taken off, the next packet is held to the flat allowance again.
+    world.get<Loadout>(body).slots[0] = LoadoutSlot{};
+    report(drawn);
+    CHECK(claimed().x <= 2600.0);
+    CHECK(claimed().y <= 2600.0);
+}
+
 TEST(a_player_who_leaves_to_the_menu_keeps_their_account) {
     Harness h("leave");
     if (!h.ready) { CHECK(false); return; }

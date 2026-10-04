@@ -543,6 +543,12 @@ struct MobConfig {
         if (!(randomSizeMax > randomSizeMin) || !(size > 0.0)) return randomSizeMin;
         return rng.range(randomSizeMin, randomSizeMax) / size;
     }
+    /// The largest factor rollRandomSize() can return: what anything that has
+    /// to stay clear of a body it has not rolled yet must allow for.
+    double maxRandomSize() const {
+        if (!(randomSizeMax > randomSizeMin) || !(size > 0.0)) return randomSizeMin;
+        return randomSizeMax / size;
+    }
 
     /// Escorts placed the moment the nest spawns, and the waves it sends
     /// afterwards. Both are already resolved to mob indices.
@@ -1069,6 +1075,19 @@ private:
     /// The maps half of load(): see there.
     void foldMapsIntoHash(const std::string& dataDir);
 };
+
+/// The camera multiplier one worn petal asks for at `rarity`: below 1 pulls
+/// the camera out, 1 leaves it alone. Ordinary zoom petals keep the browser's
+/// 0.3 floor, so no tier can take the figure through zero and invert the
+/// camera; antennae's explicit vision-range table reaches 10x (0.1) and is
+/// exempt from it.
+///
+/// Shared because both sides have to agree about it. The client draws the
+/// world this far out, and the server lets the client claim a viewport this
+/// much bigger than the default one -- and streams, and wakes the spawn bands
+/// for, exactly that much world. If the server has a different idea from the
+/// client, it culls mobs the client is drawing.
+double petalCameraZoom(const ContentRegistry& registry, std::uint16_t petalIndex, Rarity rarity);
 
 // ---------------------------------------------------------------------------
 // Process-wide content
