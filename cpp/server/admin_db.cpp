@@ -3,8 +3,8 @@
 //
 // Who may use it is the DATABASE flag, `session.admin`, and nothing else. The
 // console's temporary grants are lent for one life (see grant_admin), and this
-// panel reaches further than the console does -- it resets passwords, deletes
-// accounts and rewrites any record -- so a loan does not extend to it. Every op
+// panel reaches further than the console does -- it resets passwords and
+// rewrites any record -- so a loan does not extend to it. Every op
 // re-checks it; nothing is trusted from the panel being open.
 //
 // Two kinds of document can be edited:
@@ -346,7 +346,6 @@ void GameServer::handleAdminDb(Session& session, net::Connection& connection, By
             return;
         case AdminDbOp::SetPassword:
         case AdminDbOp::SignOut:
-        case AdminDbOp::DeleteAccount:
             adminDbAccountAction(session, connection, op, reader);
             return;
     }
@@ -654,7 +653,6 @@ void GameServer::adminDbAccountAction(Session& session, net::Connection& connect
     }
     const std::string username = account->username;
     const std::string userId = account->id;
-    const bool admin = account->admin;
     const bool self = userId == session.userId;
     const auto refuse = [&](const std::string& why) {
         sendAdminDbResult(connection, false, scope, username, false, why);
@@ -698,49 +696,6 @@ void GameServer::adminDbAccountAction(Session& session, net::Connection& connect
         sendAdminDbResult(connection, true, scope, username, false,
                           "Signed out " + std::to_string(kicked) + " connection(s) and " +
                               std::to_string(revoked) + " saved login(s) of " + username + ".");
-        return;
-    }
-
-    if (op == AdminDbOp::DeleteAccount) {
-        if (self) {
-            refuse("You cannot delete your own account.");
-            return;
-        }
-        if (admin) {
-            refuse(username + " is an admin and cannot be deleted from the editor.");
-            return;
-        }
-        // Off the server before the record goes, or a live session would go
-        // on saving progress into a record that no longer exists.
-        adminDbSignOutConnections(userId, "This account was deleted by an admin.");
-
-        // Out of their guild, by the rules leaving it follows: the last member
-        // out disbands it and a departing leader hands it on.
-        const std::string guildName = guildNameForUser(username);
-        if (!guildName.empty()) {
-            Json& guilds = database_.rawTable("guilds");
-            Json& guild = guilds[guildName];
-            const int at = guildMemberIndex(guild, username);
-            if (at >= 0) {
-                Json& members = guild["memberUsernames"];
-                members.items().erase(members.items().begin() + at);
-            }
-            if (guild["memberUsernames"].size() == 0) {
-                guilds.erase(guildName);
-            } else {
-                if (lowerCase(guild["leaderUsername"].asString()) == lowerCase(username)) {
-                    guild["leaderUsername"] = guild["memberUsernames"][std::size_t{0}].asString();
-                }
-                broadcastGuildRoster(guild);
-            }
-        }
-
-        database_.eraseUser(username);
-        database_.maybeSave(monotonicMillis());
-        std::printf("[ADMIN-DB] %s deleted the account %s\n", session.username.c_str(),
-                    username.c_str());
-        sendAdminDbResult(connection, true, scope, username, true,
-                          "Deleted the account " + username + ".");
         return;
     }
 }

@@ -366,11 +366,10 @@ TEST(the_database_editor_never_changes_the_admin_flag) {
     }
 }
 
-TEST(the_database_editor_resets_a_password_and_deletes_an_account) {
+TEST(the_database_editor_resets_a_password) {
     Harness h("admindb-actions", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
         seedUser(path, "bob", "password7");
-        seedUser(path, "other", "password7", true);
     }, dataDir(), 0);
     if (!h.ready) { CHECK(false); return; }
 
@@ -387,22 +386,10 @@ TEST(the_database_editor_resets_a_password_and_deletes_an_account) {
     NetClient again;
     CHECK(loginAs(h, again, "bob", "brandnew9"));
 
-    // An admin is not deleted from here, and nor is yourself.
-    boss.adminDbDeleteAccount("other");
-    CHECK(!awaitResult(h, {&boss, &again}, boss));
-    boss.adminDbDeleteAccount("boss");
-    CHECK(!awaitResult(h, {&boss, &again}, boss));
-
-    CHECK(openAccount(h, {&boss, &again}, boss, "bob"));
-    boss.adminDbDeleteAccount("bob");
-    CHECK(awaitResult(h, {&boss, &again}, boss));
-    // The open document goes with it, and so does the account.
-    CHECK(!boss.adminDb().documentOpen);
+    // The account is still there: the editor has no way to delete one.
     boss.adminDbList("bob", 0);
     CHECK(h.stepUntil({&boss, &again}, [&] { return !boss.adminDb().listPending; }, 100));
-    CHECK_EQ(boss.adminDb().listTotal, 0u);
-    CHECK(h.stepUntil({&boss, &again},
-                      [&] { return again.status() != NetClient::Status::LoggedIn; }, 100));
+    CHECK_EQ(boss.adminDb().listTotal, 1u);
 }
 
 TEST(the_database_editor_edits_a_raw_table) {

@@ -729,13 +729,6 @@ void NetClient::adminDbSignOut(const std::string& username) {
     send(w);
 }
 
-void NetClient::adminDbDeleteAccount(const std::string& username) {
-    ByteWriter w;
-    beginAdminDb(w, net::AdminDbOp::DeleteAccount);
-    w.str(username);
-    send(w);
-}
-
 void NetClient::handleAdminDb(ByteReader& reader) {
     AdminDbState& db = adminDb_;
     switch (static_cast<net::AdminDbReply>(reader.u8())) {

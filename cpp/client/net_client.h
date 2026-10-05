@@ -550,7 +550,6 @@ public:
     void adminDbRemove(const net::AdminDbPath&);
     void adminDbSetPassword(const std::string& username, const std::string& password);
     void adminDbSignOut(const std::string& username);
-    void adminDbDeleteAccount(const std::string& username);
     AdminDbState& adminDb() { return adminDb_; }
     const AdminDbState& adminDb() const { return adminDb_; }
 

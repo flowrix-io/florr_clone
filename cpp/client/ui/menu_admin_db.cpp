@@ -88,7 +88,6 @@ enum class Act : std::uint8_t {
     SavePassword,
     CancelPassword,
     SignOut,
-    Delete,
 };
 
 struct Hit {
@@ -689,7 +688,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 (db.flags & net::AdminDbOnline) != 0 ? kOnlineDot : kOfflineDot);
             hx += 16.0;
         }
-        const double actionsW = accountDoc ? 3 * 92.0 + 2 * 6.0 : 100.0;
+        const double actionsW = accountDoc ? 2 * 92.0 + 6.0 : 100.0;
         const std::string title = ellipsize(db.key, 18.0, right.w - actionsW - 160.0);
         text(canvas, title, hx, hy, name);
         hx += measure(title, 18.0) + 10.0;
@@ -706,9 +705,7 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 addRegion(r, act);
                 bx -= 92.0 + 6.0;
             };
-            const bool deleteArmed = isArmed(s, "account-delete", now);
             const bool signOutArmed = isArmed(s, "account-signout", now);
-            action(deleteArmed ? "Sure?" : "Delete", Act::Delete, kDangerChip);
             action(signOutArmed ? "Sure?" : "Sign out", Act::SignOut,
                    signOutArmed ? kDangerChip : kChip);
             action("Password", Act::Password, kChip);
@@ -1076,9 +1073,6 @@ bool AdminDbPanel::render(MenuContext& ctx) {
                 break;
             case Act::SignOut:
                 if (confirmArmed(s, "account-signout", now)) net.adminDbSignOut(db.key);
-                break;
-            case Act::Delete:
-                if (confirmArmed(s, "account-delete", now)) net.adminDbDeleteAccount(db.key);
                 break;
         }
         break;

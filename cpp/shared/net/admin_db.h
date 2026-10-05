@@ -43,8 +43,8 @@ enum class AdminDbOp : std::uint8_t {
     SetPassword,
     /// str username -- revokes every session and signs out its connections.
     SignOut,
-    /// str username -- deletes the account and its progress for good.
-    DeleteAccount,
+    // 7 was DeleteAccount. Removed for security: the editor cannot delete an
+    // account. Do not reuse the code -- an old client may still send it.
 };
 
 /// What an AdminDb server message carries.
@@ -61,8 +61,8 @@ enum class AdminDbReply : std::uint8_t {
     /// `path`, which the client puts in place of whatever it held there.
     Node,
     /// u8 ok, u8 scope, str key, u8 gone, str message -- how an edit or an
-    /// action went. `gone` says the document no longer exists (a deleted
-    /// account), so a client showing it must let it go.
+    /// action went. `gone` says the document no longer exists, so a
+    /// client showing it must let it go.
     Result,
 };
 
