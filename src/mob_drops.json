@@ -956,6 +956,14 @@
         "probability": 0.47,
         "minQuantity": 1,
         "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "mimic",
+        "rarity": "common",
+        "probability": 0.002,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   },
