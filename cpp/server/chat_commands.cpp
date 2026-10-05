@@ -30,6 +30,7 @@
 #include <ctime>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "server/auto_update.h"
@@ -666,6 +667,28 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         return true;
     }
 
+    if (verb == "/boss-timers") {
+        // A wild unique or apex is a super its biome's clock upgraded, so
+        // "when is the next unique" is a question about these clocks.
+        // "ready" means the next super spawned there rolls for the upgrade;
+        // until then an admin's `spawn` refuses that tier there as well.
+        const auto& clocks = spawning_->bossClocks();
+        std::string lines;
+        for (const SpawnSystem::BiomeBossClock& clock : clocks) {
+            if (!clock.scattered) continue;
+            if (!lines.empty()) lines += "<br/>";
+            lines += escapedMarkup(biomeLabel(clock.biome)) + ": unique " +
+                     clockWaitLabel(clock.uniqueReadyMillis - clockMillis_) + ", apex " +
+                     clockWaitLabel(clock.apexReadyMillis - clockMillis_);
+        }
+        if (lines.empty()) {
+            out("No biome clocks yet (the spawner has not run).");
+            return true;
+        }
+        out("<span style=\"color: #ffb74d;\">Boss cooldowns:</span><br/>" + lines);
+        return true;
+    }
+
     if (verb == "/level-from-string" || verb == "/loadout-from-string") {
         if (argument.empty()) {
             out("Usage: " + verb + " &lt;name&gt;");
@@ -763,6 +786,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // in the browser rather than as a wall of tags.
         std::string help = "Available commands:\n";
         help += "/biome - Show the most populated biome <br/>";
+        help += "/boss-timers - Show each biome's unique/apex cooldown <br/>";
         help += "/level-from-string &lt;name&gt; - Show what level a bot named &lt;name&gt; would "
                 "roll <br/>";
         help += "/loadout-from-string &lt;name&gt; - Show the loadout a bot named &lt;name&gt; "
@@ -808,8 +832,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             help += "/cmd &lt;command&gt; - Execute server command (alternative)<br/>";
             help += "Available server commands: save, list-players, list-sockets, "
                     "set_max_enemies, set_bot_count &lt;0-" + std::to_string(kMaxBots) +
-                    "|default&gt;, bots (what the bot population is doing), boss_timers "
-                    "(each biome's unique/apex cooldown), squads (who the "
+                    "|default&gt;, bots (what the bot population is doing), squads (who the "
                     "loot rule pools), spawn &lt;mobType&gt; &lt;rarity&gt; "
                     "[x] [y] [amount] [stack|unstack], spawn_npc &lt;mobType&gt; [rarity] "
                     "[players|hostile|neutral] (any mob, as an NPC where you stand), "
@@ -825,7 +848,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                     "&lt;playerId/username&gt; (lend the admin console until they respawn), "
                     "revoke_admin &lt;playerId/username&gt;, list_admins, mute "
                     "&lt;playerId/username&gt; (bar an account from chat, persists across "
-                    "sessions), unmute &lt;playerId/username&gt;, notification &lt;type&gt; "
+                    "sessions), unmute &lt;playerId/username&gt;, unmute_all (lift every mute), "
+                    "notification &lt;type&gt; "
                     "&lt;message&gt;, clear_notifications, delete_guests, list_today_logins, "
                     "guild_list, guild_info &lt;guild name&gt;, guild_force_join &lt;guild "
                     "name&gt; &lt;username&gt;, restart [&lt;N&gt;(s|m|h)|cancel|status], "
@@ -1393,27 +1417,6 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         return;
     }
 
-    if (verb == "boss_timers") {
-        // A wild unique or apex is a super its biome's clock upgraded, so
-        // "why has nobody seen a unique" is a question about these clocks.
-        // "ready" means the next super spawned there rolls for the upgrade;
-        // until then `spawn` refuses that tier there as well.
-        const auto wait = [&](double readyMillis) {
-            return clockWaitLabel(readyMillis - clockMillis_);
-        };
-        const auto& clocks = spawning_->bossClocks();
-        if (clocks.empty()) {
-            out("No biome clocks yet (the spawner has not run).");
-            return;
-        }
-        for (const SpawnSystem::BiomeBossClock& clock : clocks) {
-            if (!clock.scattered) continue;
-            out(biomeLabel(clock.biome) + ": unique " + wait(clock.uniqueReadyMillis) +
-                ", apex " + wait(clock.apexReadyMillis));
-        }
-        return;
-    }
-
     if (verb == "killall" || verb == "kill_all" || verb == "clear_mobs") {
         int removed = 0;
         Query<MobTag> mobs{world_};
@@ -1563,7 +1566,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 const std::string biome = biomeOfRealm(spawnRealm);
                 out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
                     "'s " + rarityName(standing) + " clock is cooling down (ready in " +
-                    clockWaitLabel(cooling) + "; see boss_timers)");
+                    clockWaitLabel(cooling) + "; see /boss-timers)");
                 return;
             }
             bool placedAny = false;
@@ -1595,7 +1598,10 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // full cooldown. Charged once, after the whole batch: charging on
             // the first would have spawnMob refuse the rest of `amount`, and
             // the extras of a batch are the population pass's to cull anyway.
-            if (placedAny) spawning_->chargeBossClock(standing, spawnRealm, clockMillis_);
+            if (placedAny) {
+                spawning_->chargeBossClock(standing, spawnRealm, clockMillis_);
+                persistBossClocks();
+            }
         }
         out("Spawned " + (count > 1 ? std::to_string(count) + "x " : std::string()) + words[2] +
             " " + words[1] + where +
@@ -2123,6 +2129,36 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         }
         out(std::string(muting ? "Muted " : "Unmuted ") + account->username +
             (holder != nullptr ? "." : " (offline)."));
+        return;
+    }
+
+    if (verb == "unmute_all") {
+        // Every account, online or not: the flag lives on the account and a
+        // mute that survived because its owner was logged out is not lifted.
+        int lifted = 0;
+        for (const std::string& name : database_.usernames()) {
+            // Read through the const lookup first: the mutable one drops the
+            // row's cached text, and every account would be re-serialised.
+            const Account* seen = std::as_const(database_).findUser(name);
+            if (seen == nullptr || !seen->muted) continue;
+            Account* account = database_.findUser(name);
+            account->muted = false;
+            account->mutedAtMillis = 0;
+            account->mutedBy.clear();
+            ++lifted;
+            Session* holder = sessionForUser(account->username);
+            if (holder == nullptr) continue;
+            if (net::Connection* peer = listener_.find(holder->connection)) {
+                sendSystem(*peer, "<span style=\"color: #6eff6e;\">You have been unmuted and "
+                                  "can send chat messages again.</span>");
+            }
+        }
+        if (lifted == 0) {
+            out("Nobody is muted.");
+            return;
+        }
+        database_.markDirty();
+        out("Unmuted " + plural(lifted, "account", "accounts") + ".");
         return;
     }
 

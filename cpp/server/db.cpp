@@ -805,7 +805,13 @@ Account* Database::findUser(const std::string& username) {
 }
 
 const Account* Database::findUser(const std::string& username) const {
-    return const_cast<Database*>(this)->findUser(username);
+    // Through the const Table::find, which leaves the row's cached text alone:
+    // a read must not cost the next save a re-serialise of the row.
+    if (username.empty()) return nullptr;
+    if (const Account* exact = users_.find(username)) return exact;
+    auto it = usersByLowerName_.find(toLower(username));
+    if (it == usersByLowerName_.end()) return nullptr;
+    return users_.find(it->second);
 }
 
 Account* Database::findUserById(const std::string& userId) {

@@ -582,6 +582,14 @@ public:
     /// every other spawn.
     void seedBossClocks(std::uint64_t seed) { bossRng_.reseed(seed); }
 
+    /// Hands `biome` the ready times a previous run left in the database, in
+    /// THIS run's server clock. Such a clock is never scattered: it carries on
+    /// from where it stood, ready or cooling, rather than being dealt a fresh
+    /// wait. Held until the biome's slot is made if no zone has asked for it
+    /// yet, so a biome no staged map names never gains a slot from here.
+    void restoreBossClock(const std::string& biome, double uniqueReadyMillis,
+                          double apexReadyMillis);
+
 private:
     /// One `spawn` shape, its population, and the part of that population that
     /// is not currently a mob.
@@ -893,6 +901,8 @@ private:
     /// mob for, so each is reported once rather than on every attempt.
     std::set<std::string> unknownZoneMobs_;
     std::vector<BiomeBossClock> bossClocks_;
+    /// restoreBossClock's entries still waiting for their biome's slot.
+    std::vector<BiomeBossClock> restoredBossClocks_;
     Rng bossRng_{0xB0551E5C0CC1ull};
     /// Each realm's slot in bossClocks_, or kInvalidIndex. Rebuilt with the
     /// zones.

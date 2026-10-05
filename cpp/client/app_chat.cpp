@@ -195,6 +195,7 @@ struct ChatCommand {
 constexpr ChatCommand kChatCommands[] = {
     {"/help", "Show available commands", false},
     {"/biome", "Show the most populated biome", false},
+    {"/boss-timers", "Show each biome's unique/apex cooldown", false},
     {"/create-api-key", "Issue an API key tied to your account: /create-api-key [label]", false},
     {"/delete-api-key", "Revoke one of your API keys: /delete-api-key <key-or-prefix>", false},
     {"/admin save", "Save player progress", true},
@@ -226,6 +227,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin list_admins", "List active temporary admin grants", true},
     {"/admin mute", "Bar a player from chat until unmuted: /admin mute <player>", true},
     {"/admin unmute", "Let a muted player chat again: /admin unmute <player>", true},
+    {"/admin unmute_all", "Lift every mute on every account", true},
     {"/admin delete_guests", "Delete default guest accounts", true},
     {"/admin list_today_logins", "List accounts active in last 24h", true},
     {"/admin list_active", "List accounts active in last 24h (shorthand)", true},

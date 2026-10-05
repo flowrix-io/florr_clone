@@ -661,6 +661,14 @@ private:
     /// dozen places and a disconnect in several, and none of them should have
     /// to know a guild is watching.
     void serviceGuildPresence(double nowMillis);
+    /// The biome boss clocks live in the database's `bossClocks` table as
+    /// wall-clock ready times, so a restart neither resets a cooldown nor
+    /// re-deals one. restoreBossClocks hands the spawner what the table holds,
+    /// once, on the first tick (the first time this run's clock is known);
+    /// persistBossClocks writes back whatever moved since it last looked --
+    /// a scatter, an upgrade, a console spawn charging a clock.
+    void restoreBossClocks(double nowMillis);
+    void persistBossClocks();
     /// The no-guild answer, which is the browser's `guildUpdate null`.
     void sendNoGuild(net::Connection&);
     /// Sends `guild` to every one of its members who is connected.
@@ -1357,6 +1365,16 @@ private:
 
     std::uint32_t tick_ = 0;
     double nextPersistMillis_ = 0;
+
+    /// The boss clocks as persistBossClocks last wrote them, on clockMillis_,
+    /// so an unchanged clock costs a compare rather than a table write.
+    struct SavedBossClock {
+        std::string biome;
+        double uniqueReadyMillis = 0;
+        double apexReadyMillis = 0;
+    };
+    std::vector<SavedBossClock> savedBossClocks_;
+    bool bossClocksRestored_ = false;
     ByteWriter scratch_;
 
     /// One line broadcastChat sent, kept for sendChatHistory.

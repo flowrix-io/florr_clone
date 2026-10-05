@@ -410,6 +410,86 @@ TEST(a_unique_from_the_console_restarts_its_biome_clock) {
     CHECK(sawText(client, "apex clock is cooling down"));
 }
 
+TEST(boss_clocks_are_kept_in_the_database_and_survive_a_restart) {
+    // First run: the spawner deals the clocks out and they reach the
+    // database's `bossClocks` table as wall-clock ready times.
+    std::vector<std::string> biomes;
+    {
+        Harness h("cmd-boss-clock-save", [](const std::string& path) {
+            seedUser(path, "boss", "password7", true);
+        });
+        if (!h.ready) { CHECK(false); return; }
+        NetClient client;
+        CHECK(loginAs(h, client, "boss", "password7"));
+        client.joinGame(1920, 1080, {}, "Boss");
+        CHECK(h.stepUntil({&client},
+                          [&] { return client.status() == NetClient::Status::Playing; }, 200));
+        h.step(2, {&client});
+
+        const Json& table = h.server.database().storedTable("bossClocks");
+        CHECK(table.isObject());
+        biomes = table.keys();
+        CHECK(!biomes.empty());
+        const double now = static_cast<double>(h.server.database().nowMillis());
+        for (const std::string& biome : biomes) {
+            // Scattered over one cooldown from boot: still cooling, and never
+            // further off than a whole cooldown.
+            const double unique = table[biome]["uniqueReadyAt"].asDouble();
+            const double apex = table[biome]["apexReadyAt"].asDouble();
+            CHECK(unique > now - 1000.0 && unique <= now + kUniqueSpawnCooldownMillis + 1000.0);
+            CHECK(apex > now - 1000.0 && apex <= now + kApexSpawnCooldownMillis + 1000.0);
+        }
+
+        // Anyone may ask, not only an admin.
+        CHECK(say(h, client, "/boss-timers"));
+        CHECK(sawText(client, "Boss cooldowns:"));
+    }
+
+    // Second run, on a database whose unique clocks came ready while it was
+    // down and whose apex clocks have an hour to go: the unique is let in at
+    // once (a fresh boot would refuse it), the apex is not.
+    Harness h("cmd-boss-clock-load", [&](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        Database db;
+        std::string error;
+        db.load(path, error);
+        const double now = static_cast<double>(db.nowMillis());
+        for (const std::string& biome : biomes) {
+            Json entry = Json::object();
+            entry["uniqueReadyAt"] = now - 60000.0;
+            entry["apexReadyAt"] = now + 3600000.0;
+            db.rawTable("bossClocks")[biome] = std::move(entry);
+        }
+        db.markDirty();
+        db.save();
+    });
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    CHECK(say(h, client, "/boss-timers"));
+    CHECK(sawText(client, "unique ready, apex 59m") || sawText(client, "unique ready, apex 1h 0m"));
+
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
+    CHECK(say(h, client, "/admin spawn bee apex"));
+    CHECK(sawText(client, "apex clock is cooling down"));
+
+    // The console's charge reaches the table straight away: the unique clock
+    // there is a whole cooldown out again.
+    const Json& table = h.server.database().storedTable("bossClocks");
+    const double now = static_cast<double>(h.server.database().nowMillis());
+    bool charged = false;
+    for (const std::string& biome : table.keys()) {
+        if (table[biome]["uniqueReadyAt"].asDouble() > now + kUniqueSpawnCooldownMillis - 60000.0) {
+            charged = true;
+        }
+    }
+    CHECK(charged);
+}
+
 TEST(spawn_with_a_bad_mob_type_spawns_nothing) {
     Harness h("cmd-spawn-bad", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);
@@ -519,6 +599,35 @@ TEST(mute_stops_chat_but_not_commands) {
     loud.sendChat("and now");
     CHECK(h.stepUntil({&boss, &loud}, [&] { return boss.chat().size() > after; }, 120));
     CHECK(sawText(boss, "and now"));
+}
+
+TEST(unmute_all_lifts_every_mute_online_or_not) {
+    Harness h("cmd-unmute-all", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "loud", "password7");
+        seedUser(path, "away", "password7");
+        seedUser(path, "quiet", "password7");
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient boss;
+    NetClient loud;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(loginAs(h, loud, "loud", "password7"));
+
+    CHECK(say(h, boss, "/admin mute loud"));
+    CHECK(say(h, boss, "/admin mute away"));
+    CHECK(h.server.database().findUser("away")->muted);
+
+    CHECK(say(h, boss, "/admin unmute_all"));
+    CHECK(sawText(boss, "Unmuted 2 accounts."));
+    CHECK(h.stepUntil({&boss, &loud}, [&] { return sawText(loud, "You have been unmuted"); }, 60));
+    CHECK(!h.server.database().findUser("loud")->muted);
+    CHECK(!h.server.database().findUser("away")->muted);
+    CHECK(!h.server.database().findUser("quiet")->muted);
+
+    CHECK(say(h, boss, "/admin unmute_all"));
+    CHECK(sawText(boss, "Nobody is muted."));
 }
 
 TEST(a_full_admin_cannot_be_muted) {

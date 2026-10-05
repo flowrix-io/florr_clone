@@ -512,6 +512,53 @@ std::size_t GameServer::persistAll() {
     return saved;
 }
 
+void GameServer::restoreBossClocks(double nowMillis) {
+    bossClocksRestored_ = true;
+    const Json& table = database_.storedTable("bossClocks");
+    if (!table.isObject()) return;
+    // Stored on the wall clock, which is the only one two runs share; this
+    // run's clock is whatever tick() is handed. A ready time further out than
+    // a whole cooldown can only be a wall clock that has since been set back,
+    // and is pulled in to one cooldown rather than left to wait it out.
+    const double offset = nowMillis - static_cast<double>(database_.nowMillis());
+    for (const std::string& biome : table.keys()) {
+        const Json& entry = table[biome];
+        if (!entry["uniqueReadyAt"].isNumber() || !entry["apexReadyAt"].isNumber()) continue;
+        const double unique = std::min(entry["uniqueReadyAt"].asDouble() + offset,
+                                       nowMillis + kUniqueSpawnCooldownMillis);
+        const double apex = std::min(entry["apexReadyAt"].asDouble() + offset,
+                                     nowMillis + kApexSpawnCooldownMillis);
+        spawning_->restoreBossClock(biome, unique, apex);
+        savedBossClocks_.push_back(SavedBossClock{biome, unique, apex});
+    }
+}
+
+void GameServer::persistBossClocks() {
+    const double offset = static_cast<double>(database_.nowMillis()) - clockMillis_;
+    for (const SpawnSystem::BiomeBossClock& clock : spawning_->bossClocks()) {
+        if (!clock.scattered) continue;
+        SavedBossClock* saved = nullptr;
+        for (SavedBossClock& candidate : savedBossClocks_) {
+            if (candidate.biome == clock.biome) saved = &candidate;
+        }
+        if (saved != nullptr && saved->uniqueReadyMillis == clock.uniqueReadyMillis &&
+            saved->apexReadyMillis == clock.apexReadyMillis) {
+            continue;
+        }
+        if (saved == nullptr) {
+            savedBossClocks_.push_back(SavedBossClock{clock.biome});
+            saved = &savedBossClocks_.back();
+        }
+        saved->uniqueReadyMillis = clock.uniqueReadyMillis;
+        saved->apexReadyMillis = clock.apexReadyMillis;
+        Json entry = Json::object();
+        entry["uniqueReadyAt"] = std::round(clock.uniqueReadyMillis + offset);
+        entry["apexReadyAt"] = std::round(clock.apexReadyMillis + offset);
+        database_.rawTable("bossClocks")[clock.biome] = std::move(entry);
+        database_.markDirty();
+    }
+}
+
 bool GameServer::step() {
     if (!running_.load()) return false;
 
@@ -621,6 +668,7 @@ void GameServer::tick(double nowMillis) {
     ++tick_;
     clockMillis_ = nowMillis;
     tickPhaseCount_ = 0;
+    if (!bossClocksRestored_) restoreBossClocks(nowMillis);
     tickStartedMillis_ = monotonicMillis();
 
     for (auto& entry : sessions_) refillAllowances(entry.second, nowMillis);
@@ -691,6 +739,7 @@ void GameServer::tick(double nowMillis) {
     });
 
     runSystems(nowMillis, smoothedDeltaSeconds_);
+    persistBossClocks();
 
     // BEFORE the reaper. A splitter gives one connection two bodies, and a
     // half that died this tick has to stop being part of the session before

@@ -1435,8 +1435,36 @@ std::uint16_t SpawnSystem::bossClockFor(const std::string& biome) {
     }
     BiomeBossClock clock;
     clock.biome = biome;
+    for (auto it = restoredBossClocks_.begin(); it != restoredBossClocks_.end(); ++it) {
+        if (it->biome != biome) continue;
+        clock = std::move(*it);
+        restoredBossClocks_.erase(it);
+        break;
+    }
     bossClocks_.push_back(std::move(clock));
     return static_cast<std::uint16_t>(bossClocks_.size() - 1);
+}
+
+void SpawnSystem::restoreBossClock(const std::string& biome, double uniqueReadyMillis,
+                                   double apexReadyMillis) {
+    BiomeBossClock restored;
+    restored.biome = biome;
+    restored.uniqueReadyMillis = uniqueReadyMillis;
+    restored.apexReadyMillis = apexReadyMillis;
+    restored.scattered = true;
+    for (BiomeBossClock& clock : bossClocks_) {
+        if (clock.biome == biome) {
+            clock = std::move(restored);
+            return;
+        }
+    }
+    for (BiomeBossClock& pending : restoredBossClocks_) {
+        if (pending.biome == biome) {
+            pending = std::move(restored);
+            return;
+        }
+    }
+    restoredBossClocks_.push_back(std::move(restored));
 }
 
 void SpawnSystem::scatterBossClocks(double nowMillis) {
