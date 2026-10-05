@@ -183,6 +183,7 @@ struct Fixture {
     std::uint16_t boney = kInvalidIndex;
     std::uint16_t clawy = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
+    std::uint16_t moon = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -208,7 +209,8 @@ const Fixture& fixture() {
               "dandy":{"name":"Dandy","damage":8,"health":8,"size":1,"noHealDuration":10000},
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
-              "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35}
+              "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
+              "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6}
             })"));
         if (!wrote) {
             f.error = "cannot write the fixture content";
@@ -229,6 +231,7 @@ const Fixture& fixture() {
         f.boney = f.registry.petalIndex("boney");
         f.clawy = f.registry.petalIndex("clawy");
         f.fangy = f.registry.petalIndex("fangy");
+        f.moon = f.registry.petalIndex("moon");
         return f;
     }();
     return state;
@@ -3184,4 +3187,37 @@ TEST(a_mob_bites_a_loose_petal_on_its_own_interval_and_the_petal_swings_at_nothi
     arena.world.get<Transform>(wax).position = {52.0, 0};
     arena.step(2100.0);
     CHECK_NEAR(arena.health(wax), 986.0, 1e-9);
+}
+
+TEST(a_moon_hits_the_mobs_pressed_against_it_and_pays_only_their_bites) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    Arena arena;
+    const Entity owner = arena.player({-1000, 0});
+    // Flush against the mob, as the movement pass leaves the two.
+    const Entity mob = arena.mob({0, 0}, 100.0);
+    arena.world.add<ContactDamage>(mob, ContactDamage{7.0, 500.0});
+    const Entity moon = arena.actor({50.0, 0}, 30.0, 1000.0, Team::Players, kLoosePetalMass);
+    arena.world.add<PetalTag>(moon);
+    PetalInstance instance;
+    instance.owner = owner;
+    instance.configIndex = f.moon;
+    arena.world.add<PetalInstance>(moon, instance);
+    arena.world.add<LoosePetal>(moon);
+    arena.world.add<RingAnchor>(moon);
+
+    // Unlike wax it swings, at its own damage -- and the mob's one bite is all
+    // it pays: no recoil on top, which would have left it at 986.
+    arena.step(1000.0, f.registry);
+    CHECK_NEAR(arena.health(mob), 90.0, 1e-9);
+    CHECK_NEAR(arena.health(moon), 993.0, 1e-9);
+
+    // A flower pressed against it is shoved by the movement pass and never
+    // hit -- even a duellist its owner's ring would be allowed to hit.
+    const Entity rival = arena.player({90.0, 0});
+    arena.world.get<Faction>(rival).friendlyFireEnabled = true;
+    arena.world.get<Faction>(owner).friendlyFireEnabled = true;
+    arena.step(1100.0, f.registry);
+    CHECK_NEAR(arena.health(rival), 100.0, 1e-9);
 }

@@ -373,6 +373,11 @@ private:
         /// the pet/wild contact gap and the one-mob-per-tick body rule all key
         /// off these.
         bool isPetal = false;
+        /// A petal that is a body on the ground -- the moon -- rather than a
+        /// place on the ring. It hits mobs as a ring petal does, but leaves
+        /// flowers alone, meets mobs with the slack a loose victim gets, and
+        /// pays no recoil: mobs already bite it on their own contact clock.
+        bool isLoose = false;
         bool isMobBody = false;
         /// A seat on a mob's own ring (MobRingPetal). Neither a mob nor a
         /// petal: a piece of the animal's body that happens to be breakable,

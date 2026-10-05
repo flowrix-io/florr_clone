@@ -1736,13 +1736,14 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
     queries_->petals.each([&](Entity e, PetalInstance& petal, Transform& transform, Body& body) {
         const PetalConfig& config = content.petal(petal.configIndex);
         if (config.noPhysics) return;   // a pure modifier has no body to hit with
-        // A loose petal is something mobs run into, not something that swings
-        // at them. Left in, wax's default knockback would make it a "zero
-        // swing" against every mob pressed flush against it -- shoving it and
-        // paying the mob's bite as recoil on every tick of contact.
-        if (world.has<LoosePetal>(e)) return;
-
         const PetalStats stats = content.petalStats(petal.configIndex, petal.rarity);
+        // A loose petal swings at mobs only if it has DAMAGE to swing with --
+        // the moon does, wax does not. Knockback alone is not enough: wax's
+        // default 5 would make it a "zero swing" against every mob pressed
+        // flush against it, shoving each one on every tick of contact.
+        const bool loose = world.has<LoosePetal>(e);
+        if (loose && stats.damage <= 0.0) return;
+
         const bool inert = stats.damage <= 0.0 && stats.critDamage <= 0.0 &&
                            stats.poisonPerSecond <= 0.0 && stats.slowFactor >= 1.0 &&
                            stats.knockback <= 0.0 && stats.armorReduction <= 0.0 &&
@@ -1768,6 +1769,7 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         source.owner = petal.owner;
         source.rarity = petal.rarity;
         source.isPetal = true;
+        source.isLoose = loose;
         if (config.lightningDamage) source.hitKind = DamageKind::Lightning;
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
@@ -1823,16 +1825,20 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A MOB's ring seed is not a PetalInstance and is deliberately
             // not covered by this: it is a body, and bodies collide.
             //
-            // A LOOSE petal is the exception, because it swings at nothing
-            // (gatherPetals leaves it out) and so has no hit block of its own
-            // to bleed in: a mob's body bites it instead, at the mob's contact
-            // damage and on the mob's own contact interval. That is the only
-            // thing that ever wears a wax down.
+            // A LOOSE petal is the exception, because it has no hit block of
+            // its own to bleed in -- wax swings at nothing, and the moon's
+            // swings pay no recoil (see below): a mob's body bites it instead,
+            // at the mob's contact damage and on the mob's own contact
+            // interval. That is the only thing that ever wears one down.
             const bool looseVictim = world.has<LoosePetal>(victim);
             if (!source.isPetal && world.has<PetalInstance>(victim) &&
                 !(looseVictim && (source.isMobBody || source.isMobRing || source.isNpcBody))) {
                 continue;
             }
+
+            // The moon is a hazard to mobs, not a duelling weapon: a flower
+            // walking into one is shoved by the movement pass and nothing else.
+            if (source.isLoose && world.has<PlayerTag>(victim)) continue;
 
             if (source.isPetal && world.has<PlayerTag>(victim)) {
                 // Flower vs flower is a wholly separate collision in the
@@ -1863,7 +1869,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // against each other's skin rather than inside it.
             const bool flushPair = (source.isNpcBody && world.has<PlayerTag>(victim)) ||
                                    (source.isPlayerBody && world.has<NpcTag>(victim)) ||
-                                   (looseVictim && !source.isPetal);
+                                   (looseVictim && !source.isPetal) || source.isLoose;
 
             const Vec2 offset = transform->position - source.position;
             const double reach = source.radius + body->radius +
@@ -2029,7 +2035,11 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
             // A hostile NPC charges it too, at its mob's damage: a dummy that
             // let a ring hit for free would flatter every build tested on it.
             // (A players'-side NPC never gets here -- canHit refused it.)
-            if (landed && source.isPetal && source.hitIntervalMillis <= 0.0 &&
+            //
+            // Not a loose petal: the mobs it touches bite it already (the
+            // looseVictim rule above), and charging the same contact twice
+            // would halve the moon's life for nothing the player did.
+            if (landed && source.isPetal && !source.isLoose && source.hitIntervalMillis <= 0.0 &&
                 (world.has<MobTag>(victim) || world.has<NpcTag>(victim))) {
                 applyDamage(world, source.attacker, victim, contactDamageOf(world, victim),
                             nowMillis, DamageKind::Recoil);
