@@ -72,6 +72,7 @@ const char* const kPetalsJson = R"JSON({
   "yuccaish": {"name":"Yuccaish","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"passiveHeal":1,"passiveHealDefendOnly":true,"color":"#74B53F"},
   "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
   "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"},
+  "mimic":    {"name":"Mimic","damage":0,"health":0,"size":1,"cooldown":10000,"count":1,"color":"#FFA500"},
   "berries":  {"name":"Berries","damage":8,"health":10,"size":1,"cooldown":50,"count":4,"clumped":true,"defendOnly":true,"requiredMana":10,"lightningDamage":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#42E3F5"}
 })JSON";
 
@@ -4120,4 +4121,162 @@ TEST(a_moon_carried_to_another_realm_lays_its_ring_out_where_it_lands) {
     // Sprung toward a place on the moon's new ring, a step from the flower --
     // not hurled at a centre four thousand units back in the old realm.
     CHECK(distance(rig.position(basic), rig.position(rig.player)) < 200.0);
+}
+
+// ---------------------------------------------------------------------------
+// Mimic: the petal to its left, at its own tier, on the left petal's reload
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const PetalInstance& instanceOf(Rig& rig, Entity petal) {
+    return rig.world.get<PetalInstance>(petal);
+}
+
+} // namespace
+
+TEST(a_mimic_fields_the_petal_to_its_left_at_its_own_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic", Rarity::Common);
+    rig.equip(1, "mimic", Rarity::Rare);
+    rig.settleEquips();
+
+    const std::vector<Entity> copies = rig.petals(1);
+    CHECK_EQ(copies.size(), std::size_t(1));
+    if (copies.empty()) return;
+    const PetalInstance& copy = instanceOf(rig, copies[0]);
+    CHECK_EQ(copy.configIndex, petalId("basic"));
+    CHECK(copy.rarity == Rarity::Rare);
+    // Drawn as the petal it copies, at the mimic's tier.
+    CHECK_EQ(rig.world.get<Replicated>(copies[0]).typeIndex, petalId("basic"));
+    CHECK(rig.world.get<Replicated>(copies[0]).rarity == Rarity::Rare);
+    // A rare basic's body, not the mimic's own zero-health one.
+    const PetalStats rare = fixture().registry.petalStats(petalId("basic"), Rarity::Rare);
+    CHECK_NEAR(rig.healthOf(copies[0]), rare.health, 1e-9);
+    CHECK_NEAR(rig.world.get<ContactDamage>(copies[0]).amount, rare.damage, 1e-9);
+    // And the left slot is untouched by it.
+    CHECK_EQ(rig.petals(0).size(), std::size_t(1));
+    CHECK(instanceOf(rig, rig.petals(0)[0]).rarity == Rarity::Common);
+}
+
+TEST(a_mimic_reloads_on_the_left_petals_reload_not_its_own) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // Bubble is a petal whose reload shortens with tier, so it tells the left
+    // slot's reload apart from the mimic tier's -- and both from the mimic's
+    // own ten seconds.
+    rig.equip(0, "bubble", Rarity::Common);
+    rig.equip(1, "mimic", Rarity::Legendary);
+    const double equippedAt = rig.now + net::kTickMillis;
+    rig.tick();
+
+    const double leftReload =
+        fixture().registry.petalStats(petalId("bubble"), Rarity::Common).reloadMillis;
+    const double ownTierReload =
+        fixture().registry.petalStats(petalId("bubble"), Rarity::Legendary).reloadMillis;
+    CHECK(ownTierReload < leftReload);
+    CHECK(rig.slot(1).broken);
+    CHECK_NEAR(rig.slot(1).reloadReadyAtMillis, equippedAt + leftReload, 1e-9);
+
+    // Broken in the field, it pays the same one again.
+    rig.settleEquips();
+    const std::vector<Entity> copies = rig.petals(1);
+    CHECK_EQ(copies.size(), std::size_t(1));
+    if (copies.empty()) return;
+    rig.damage(copies[0], 1000.0);
+    const double brokeAt = rig.now + net::kTickMillis;
+    rig.tick();
+    CHECK(rig.slot(1).broken);
+    CHECK_NEAR(rig.slot(1).reloadReadyAtMillis, brokeAt + leftReload, 1e-9);
+}
+
+TEST(a_mimic_with_nothing_to_its_left_is_a_mimic) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "mimic");       // the row's first slot
+    rig.equip(3, "mimic");       // slot 2 is empty
+    const double equippedAt = rig.now + net::kTickMillis;
+    rig.tick();
+    const double ownReload =
+        fixture().registry.petalStats(petalId("mimic"), Rarity::Common).reloadMillis;
+    for (const int i : {0, 3}) {
+        CHECK_EQ(rig.world.get<PetalSlotState>(rig.player).slots[static_cast<std::size_t>(i)]
+                     .configIndex,
+                 petalId("mimic"));
+        CHECK_NEAR(rig.slot(i).reloadReadyAtMillis, equippedAt + ownReload, 1e-9);
+    }
+    rig.settleEquips(1000);
+    CHECK_EQ(rig.petals(0).size(), std::size_t(1));
+    if (!rig.petals(0).empty()) {
+        CHECK_EQ(instanceOf(rig, rig.petals(0)[0]).configIndex, petalId("mimic"));
+    }
+}
+
+TEST(a_mimic_follows_its_neighbour_when_the_neighbour_changes) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic");
+    rig.equip(1, "mimic", Rarity::Epic);
+    rig.settleEquips();
+    CHECK_EQ(rig.petals(1).size(), std::size_t(1));
+
+    // A clump to its left makes the mimic a clump, grain for grain, and it
+    // serves the clump's reload before any of them appear.
+    rig.equip(0, "sandy");
+    rig.tick();
+    CHECK(rig.petals(1).empty());
+    rig.settleEquips();
+    const std::vector<Entity> grains = rig.petals(1);
+    CHECK_EQ(grains.size(), std::size_t(4));
+    for (const Entity grain : grains) {
+        CHECK_EQ(instanceOf(rig, grain).configIndex, petalId("sandy"));
+        CHECK(instanceOf(rig, grain).rarity == Rarity::Epic);
+    }
+
+    // And emptying the slot to its left hands it back its own stats.
+    rig.unequip(0);
+    rig.tick();
+    CHECK(rig.petals(1).empty());
+    CHECK_EQ(rig.world.get<PetalSlotState>(rig.player).slots[1].configIndex, petalId("mimic"));
+}
+
+TEST(a_run_of_mimics_copies_the_first_real_petal_each_at_its_own_tier) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "basic", Rarity::Common);
+    rig.equip(1, "mimic", Rarity::Rare);
+    rig.equip(2, "mimic", Rarity::Epic);
+    rig.settleEquips();
+    for (const auto& [slot, tier] : {std::pair{1, Rarity::Rare}, std::pair{2, Rarity::Epic}}) {
+        const std::vector<Entity> copies = rig.petals(slot);
+        CHECK_EQ(copies.size(), std::size_t(1));
+        if (copies.empty()) continue;
+        CHECK_EQ(instanceOf(rig, copies[0]).configIndex, petalId("basic"));
+        CHECK(instanceOf(rig, copies[0]).rarity == tier);
+    }
+}
+
+TEST(a_mimic_grants_the_modifiers_of_the_petal_it_copies) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "lucky");
+    rig.tick();
+    const double one = rig.modifiers().luck;
+    rig.equip(1, "mimic");
+    rig.tick();
+    // Worn modifiers count from the moment of equipping, reload or not.
+    CHECK_NEAR(rig.modifiers().luck - 1.0, 2.0 * (one - 1.0), 1e-9);
+}
+
+TEST(a_mimic_never_reaches_back_into_the_row_above) {
+    if (!contentLoaded()) return;
+    Loadout loadout;
+    loadout.slots[kLoadoutActiveSlots - 1] = LoadoutSlot{petalId("basic"), Rarity::Common};
+    loadout.slots[kLoadoutActiveSlots] = LoadoutSlot{petalId("mimic"), Rarity::Rare};
+    const EquippedPetal resolved =
+        equippedPetal(fixture().registry, loadout, kLoadoutActiveSlots);
+    CHECK_EQ(resolved.configIndex, petalId("mimic"));
+    CHECK(resolved.rarity == Rarity::Rare);
+    CHECK(resolved.reloadRarity == Rarity::Rare);
 }

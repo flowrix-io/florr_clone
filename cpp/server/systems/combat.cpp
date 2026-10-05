@@ -1594,12 +1594,13 @@ void CombatSystem::gatherAuras(World& world, const ContentRegistry& content) {
         double bestDamage = 0;
         double bestRadius = 0;
         for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-            const LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+            // Resolved, so a mimic beside a raindrop is one at the mimic's tier.
+            const EquippedPetal slot = equippedPetal(content, loadout, i);
             if (slot.configIndex != raindrop) continue;
             // A broken raindrop's field switches off until the slot reloads,
             // and raindrop reloads slowly, so this is a visible outage rather
             // than a technicality.
-            if (slot.broken) continue;
+            if (loadout.slots[static_cast<std::size_t>(i)].broken) continue;
             bestDamage = std::max(bestDamage, content.petalStats(raindrop, slot.rarity).damage);
             bestRadius = std::max(bestRadius,
                                   kRaindropAuraBaseRadius +

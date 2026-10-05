@@ -484,17 +484,29 @@ bool playerIsDown(World& world, Entity player) {
     return health != nullptr && !health->alive();
 }
 
+/// A live petal's stats, with the reload a mimic's copy pays in place of its
+/// own tier's.
+PetalStats instanceStats(const ContentRegistry& registry, const PetalInstance& instance) {
+    return equippedPetalStats(
+        registry, EquippedPetal{instance.configIndex, instance.rarity,
+                                instance.mimicked ? instance.reloadRarity : instance.rarity});
+}
+
 } // namespace
 
 int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout) {
     int best = -1;
+    Rarity held = Rarity::Common;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        const LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+        // Resolved, so a mimic beside a moon is a moon at the mimic's tier and
+        // competes for the one place like any other.
+        const EquippedPetal slot = equippedPetal(registry, loadout, i);
         if (slot.empty() || !petalAnchorsRing(registry.petal(slot.configIndex))) continue;
         // Strictly higher, so the leftmost of equal tiers keeps it.
-        const Rarity held = best < 0 ? Rarity::Common
-                                     : loadout.slots[static_cast<std::size_t>(best)].rarity;
-        if (best < 0 || rarityIndex(slot.rarity) > rarityIndex(held)) best = i;
+        if (best < 0 || rarityIndex(slot.rarity) > rarityIndex(held)) {
+            best = i;
+            held = slot.rarity;
+        }
     }
     return best;
 }
@@ -778,8 +790,13 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             continue;
         }
 
-        const PetalConfig& config = registry.petal(slot.configIndex);
-        PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
+        // What the slot really fields: itself, or for a mimic the petal to its
+        // left at the mimic's tier and the left slot's reload. Everything below
+        // -- the pool, the count, the reload, the spawned instances -- is sized
+        // from this rather than from what the bar shows.
+        const EquippedPetal equipped = equippedPetal(registry, loadout, i);
+        const PetalConfig& config = registry.petal(equipped.configIndex);
+        PetalStats stats = equippedPetalStats(registry, equipped);
         // The Petal Health talent is folded in HERE, before the pool is sized,
         // rather than at each of the four places a pool figure is written. A
         // petal's health reaches the field through poolMax, poolHealth,
@@ -802,14 +819,15 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
                               : petalCopies(std::max(0, stats.count), skills);
         const double reload = reloadMillisFor(stats, reloadScale);
 
-        if (slotState.configIndex != slot.configIndex || slotState.rarity != slot.rarity ||
-            slotState.count != count) {
+        if (slotState.configIndex != equipped.configIndex || slotState.rarity != equipped.rarity ||
+            slotState.reloadRarity != equipped.reloadRarity || slotState.count != count) {
             destroySlotPetals(world, loadout, slotId);
             recallPets(world, slotState);
             live.clear();
             slotState = PetalSlotState::Slot{};
-            slotState.configIndex = slot.configIndex;
-            slotState.rarity = slot.rarity;
+            slotState.configIndex = equipped.configIndex;
+            slotState.rarity = equipped.rarity;
+            slotState.reloadRarity = equipped.reloadRarity;
             slotState.count = count;
             // `clumped` alone is enough: a four-grain clump of sand is four
             // petals that break and reload one at a time, not one health bar
@@ -960,7 +978,7 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
             const Entity petal = spawnPetal(world, player, loadout, slotId,
                                             static_cast<std::uint8_t>(k),
                                             static_cast<std::uint8_t>(count), config, stats,
-                                            slot.configIndex, slot.rarity, spawnHealth, nowMillis);
+                                            equipped, spawnHealth, nowMillis);
             if (petal == NULL_ENTITY) continue;
             // Paid once the grain exists, never before it.
             if (slotState.independent) spendMana(world, player, stats.requiredMana);
@@ -1038,8 +1056,10 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
 Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, std::uint8_t slot,
                                std::uint8_t subIndex, std::uint8_t subCount,
                                const PetalConfig& config, const PetalStats& stats,
-                               std::uint16_t configIndex, Rarity rarity, double health,
+                               const EquippedPetal& equipped, double health,
                                double nowMillis) {
+    const std::uint16_t configIndex = equipped.configIndex;
+    const Rarity rarity = equipped.rarity;
     const Transform* ownerTransform = world.tryGet<Transform>(player);
     if (!ownerTransform) return NULL_ENTITY;
     // The ring's centre, not the flower's live position: placement this same
@@ -1094,6 +1114,8 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.owner = player;
     instance.configIndex = configIndex;
     instance.rarity = rarity;
+    instance.mimicked = equipped.reloadRarity != equipped.rarity;
+    instance.reloadRarity = equipped.reloadRarity;
     instance.slot = slot;
     instance.subIndex = subIndex;
     instance.subCount = std::max<std::uint8_t>(1, subCount);
@@ -1184,7 +1206,7 @@ bool PetalSystem::spendSlot(World& world, const ContentRegistry& registry, Entit
         if (!anyOut) return false;
     }
 
-    const PetalStats stats = registry.petalStats(entry.configIndex, entry.rarity);
+    const PetalStats stats = equippedPetalStats(registry, equippedPetal(registry, *loadout, slot));
     const double reload = reloadMillisFor(stats, reloadScaleOf(world, player));
     destroySlotPetals(world, *loadout, slot);
     recallPets(world, slotState);
@@ -1241,17 +1263,19 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
         // PRIMARY_LOADOUT_SLOTS, so a stashed clover is not a worn one.
         for (int i = 0; i < kLoadoutActiveSlots; ++i) {
             const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
-            if (!slot.empty()) {
+            // A mimic grants what the petal it copies grants, at its own tier.
+            const EquippedPetal equipped = equippedPetal(registry, *loadout, i);
+            if (!equipped.empty()) {
                 // Equipment is worn for the whole loadout, including while a
                 // petal is reloading; this is the same rule as tickBroadcast.
-                equipFlags |= registry.petal(slot.configIndex).equipFlags;
+                equipFlags |= registry.petal(equipped.configIndex).equipFlags;
             }
             // TypeScript derives modifiers from equipped loadout entries, not
             // from their onCooldown flag. A broken body leaves a ring gap but
             // its equipment modifier and passive heal remain equipped -- all
             // but the aggro pair, which is gated below.
-            if (slot.empty()) continue;
-            const PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
+            if (equipped.empty()) continue;
+            const PetalStats stats = equippedPetalStats(registry, equipped);
             const PetalModifiers& mods = stats.modifiers;
 
             // ONE contribution per SLOT. A four-grain clump of sand is one
@@ -1292,7 +1316,7 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // A yucca pays only while the flower blocks. Gated on the stance
             // alone, not on the body: a broken one heals like a broken leaf
             // does, per the rule at the top of this loop.
-            if (!registry.petal(slot.configIndex).passiveHealDefendOnly || blocking) {
+            if (!registry.petal(equipped.configIndex).passiveHealDefendOnly || blocking) {
                 aggregate.modifiers.passiveHealPerSecond += stats.passiveHealPerSecond;
             }
             // Summed, not maximised: an orb and a magic flower are two
@@ -1622,7 +1646,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     int occupied = 0;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
         ordinal[static_cast<std::size_t>(i)] = occupied;
-        const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+        const EquippedPetal slot = equippedPetal(registry, *loadout, i);
         if (slot.empty()) continue;
         const PetalConfig& config = registry.petal(slot.configIndex);
         // A noPhysics petal -- the cutters, third eye, antennae, observer -- is
@@ -1921,7 +1945,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
         if (!instance || !transform || instance->slot >= kLoadoutSlots) continue;
 
         const PetalConfig& config = registry.petal(instance->configIndex);
-        const PetalStats stats = registry.petalStats(instance->configIndex, instance->rarity);
+        const PetalStats stats = instanceStats(registry, *instance);
 
         // Scripted behaviour comes first: a petal that parks until it touches
         // something is armed by contact rather than by a timer, and lightning
@@ -2744,10 +2768,11 @@ void PetalSystem::applyRaindropAura(World& world, const ContentRegistry& registr
     double bestDamage = 0;
     double bestRadius = 0;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
         // A reloading raindrop projects nothing, as an on-cooldown one does not
         // in the reference.
-        if (slot.empty() || slot.broken) continue;
+        if (loadout->slots[static_cast<std::size_t>(i)].broken) continue;
+        const EquippedPetal slot = equippedPetal(registry, *loadout, i);
+        if (slot.empty()) continue;
         if (registry.petal(slot.configIndex).id != "raindrop") continue;
         // Maximised INDEPENDENTLY: a wide common raindrop next to a narrow
         // mythic one projects the common's reach at the mythic's damage.
@@ -2784,7 +2809,7 @@ void PetalSystem::strikeWornLightning(World& world, const ContentRegistry& regis
     Rarity tier = Rarity::Common;
     bool worn = false;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+        const EquippedPetal slot = equippedPetal(registry, *loadout, i);
         if (slot.empty()) continue;
         if (registry.petal(slot.configIndex).id != "lightning_cutter") continue;
         worn = true;
@@ -3024,9 +3049,10 @@ void PetalSystem::reloadEggForPet(World& world, const ContentRegistry& registry,
         // a sandstorm each pay one cycle each, and a pet nothing equipped can
         // hatch -- a cracked flower's squad -- costs the ring nothing at all.
         if (slot.empty() || slot.broken) continue;
-        if (registry.petal(slot.configIndex).petMobIndex != mobIndex) continue;
+        const EquippedPetal equipped = equippedPetal(registry, loadout, i);
+        if (registry.petal(equipped.configIndex).petMobIndex != mobIndex) continue;
 
-        const PetalStats stats = registry.petalStats(slot.configIndex, slot.rarity);
+        const PetalStats stats = equippedPetalStats(registry, equipped);
         const double reload = reloadMillisFor(stats, reloadScale);
         PetalSlotState::Slot& slotState = state.slots[index];
         destroySlotPetals(world, loadout, static_cast<std::uint8_t>(i));

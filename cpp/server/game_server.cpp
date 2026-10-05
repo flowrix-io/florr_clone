@@ -71,7 +71,9 @@ Vec2 claimableViewport(World& world, Entity body, const ContentRegistry& content
     double zoom = 1.0;
     if (const Loadout* loadout = world.tryGet<Loadout>(body)) {
         for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-            const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+            // Resolved, as the client resolves it: a mimic beside a third eye
+            // pulls the camera out as one at the mimic's tier.
+            const EquippedPetal slot = equippedPetal(content, *loadout, i);
             if (slot.empty()) continue;
             zoom = std::min(zoom, petalCameraZoom(content, slot.configIndex, slot.rarity));
         }

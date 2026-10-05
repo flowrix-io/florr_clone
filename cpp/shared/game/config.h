@@ -969,6 +969,13 @@ inline bool petalIsLooseBody(const PetalConfig& config) {
 /// equals) and the others hold nothing (moonSlotOf).
 inline bool petalAnchorsRing(const PetalConfig& config) { return config.id == kMoonPetalId; }
 
+/// The petal that becomes whatever is equipped to its left, by id.
+inline constexpr const char* kMimicPetalId = "mimic";
+
+/// Whether this petal copies the slot to its left rather than being itself.
+/// By id for the reason petalIsClickToUse is.
+inline bool petalMimicsLeft(const PetalConfig& config) { return config.id == kMimicPetalId; }
+
 // ---------------------------------------------------------------------------
 // ContentRegistry
 // ---------------------------------------------------------------------------
@@ -1112,6 +1119,74 @@ private:
 /// for, exactly that much world. If the server has a different idea from the
 /// client, it culls mobs the client is drawing.
 double petalCameraZoom(const ContentRegistry& registry, std::uint16_t petalIndex, Rarity rarity);
+
+/// What one bar slot actually equips: the petal it puts on the field, the tier
+/// it is that petal at, and the tier whose reload it pays.
+///
+/// For every petal but the mimic this is the slot itself, all three straight
+/// off it. A mimic is the petal to its LEFT at the mimic's own tier, reloading
+/// on the left slot's reload -- so a legendary mimic beside a common rose is a
+/// legendary rose that comes back as often as the common one does. A mimic
+/// with nothing to its left (the row's first slot, or an empty neighbour) is
+/// just a mimic.
+struct EquippedPetal {
+    std::uint16_t configIndex = kNoPetal;
+    Rarity rarity = Rarity::Common;
+    Rarity reloadRarity = Rarity::Common;
+
+    bool empty() const { return configIndex == kNoPetal; }
+};
+
+/// Resolves slot `slot` of a bar. `slotAt(i)` returns slot i AS STORED -- its
+/// petal index (kNoPetal for empty) and rarity, `reloadRarity` ignored -- or an
+/// empty one for an index the bar does not have.
+///
+/// A template over the accessor because the server's Loadout and the client's
+/// Profile hold the bar in two different shapes, and the rule must be one rule
+/// on both: the server spawns and reloads by it, the client sweeps the slot's
+/// reload wedge by it.
+///
+/// A run of mimics copies through: each is the first non-mimic to its left, at
+/// its own tier, on that petal's reload. A run that reaches an empty slot or the
+/// row's edge copies its leftmost mimic, which is itself. Bounded by the row,
+/// so a mimic in the first column never reaches back into the row above it.
+template <class SlotAt>
+EquippedPetal resolveEquippedPetal(const ContentRegistry& registry, int slot, SlotAt&& slotAt) {
+    EquippedPetal self = slotAt(slot);
+    self.reloadRarity = self.rarity;
+    if (self.empty() || !petalMimicsLeft(registry.petal(self.configIndex))) return self;
+    const int rowStart = slot - slot % kLoadoutActiveSlots;
+    EquippedPetal source = self;
+    for (int i = slot - 1; i >= rowStart; --i) {
+        const EquippedPetal left = slotAt(i);
+        if (left.empty()) break;
+        source = left;
+        if (!petalMimicsLeft(registry.petal(left.configIndex))) break;
+    }
+    return EquippedPetal{source.configIndex, self.rarity, source.rarity};
+}
+
+/// Slot `slot` of a flower's `loadout` as it is actually equipped. Every gameplay
+/// read of the bar goes through this, so a mimic is the petal it copies to the
+/// ring, the modifiers, the auras and the camera alike.
+inline EquippedPetal equippedPetal(const ContentRegistry& registry, const Loadout& loadout,
+                                   int slot) {
+    return resolveEquippedPetal(registry, slot, [&](int i) {
+        if (i < 0 || i >= kLoadoutSlots) return EquippedPetal{};
+        const LoadoutSlot& at = loadout.slots[static_cast<std::size_t>(i)];
+        return EquippedPetal{at.configIndex, at.rarity, at.rarity};
+    });
+}
+
+/// The stats a resolved slot fields: the petal's at its tier, with the reload
+/// taken from the tier it pays (resolveEquippedPetal).
+inline PetalStats equippedPetalStats(const ContentRegistry& registry, const EquippedPetal& petal) {
+    PetalStats stats = registry.petalStats(petal.configIndex, petal.rarity);
+    if (petal.reloadRarity != petal.rarity) {
+        stats.reloadMillis = registry.petalStats(petal.configIndex, petal.reloadRarity).reloadMillis;
+    }
+    return stats;
+}
 
 // ---------------------------------------------------------------------------
 // Process-wide content

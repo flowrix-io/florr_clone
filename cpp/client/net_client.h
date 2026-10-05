@@ -47,6 +47,16 @@ struct Profile {
     };
     std::vector<Slot> loadout;
 
+    /// Bar slot `slot` as it is actually equipped -- a mimic resolved to the
+    /// petal it copies, by the server's own rule (resolveEquippedPetal).
+    EquippedPetal equipped(const ContentRegistry& registry, int slot) const {
+        return resolveEquippedPetal(registry, slot, [&](int i) {
+            if (i < 0 || static_cast<std::size_t>(i) >= loadout.size()) return EquippedPetal{};
+            const Slot& at = loadout[static_cast<std::size_t>(i)];
+            return at.empty() ? EquippedPetal{} : EquippedPetal{at.petalIndex, at.rarity, at.rarity};
+        });
+    }
+
     /// The cosmetic bit currently worn, or PlayerRenderNone.
     std::uint32_t renderFlags = 0;
 

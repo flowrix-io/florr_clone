@@ -69,6 +69,10 @@ struct PetalSlotState {
         /// you a fresh one instead of the previous occupant's health bar.
         std::uint16_t configIndex = kNoPetal;
         Rarity rarity = Rarity::Common;
+        /// And the tier whose reload it pays, which differs from `rarity` only
+        /// for a mimic (see equippedPetal). Swapping the petal a mimic copies
+        /// rebuilds the mimic's slot too.
+        Rarity reloadRarity = Rarity::Common;
         /// And how many instances it was built for. The petal and tier alone
         /// do not fix that: Duplicator adds copies, and buying or resetting it
         /// changes the count under a slot whose petal never moved. A rebuild is
@@ -361,7 +365,7 @@ private:
     /// break on its first tick.
     Entity spawnPetal(World& world, Entity player, Loadout& loadout, std::uint8_t slot,
                       std::uint8_t subIndex, std::uint8_t subCount, const PetalConfig& config,
-                      const PetalStats& stats, std::uint16_t configIndex, Rarity rarity,
+                      const PetalStats& stats, const EquippedPetal& equipped,
                       double health, double nowMillis);
     void destroySlotPetals(World& world, Loadout& loadout, std::uint8_t slot);
     void recallPets(World& world, PetalSlotState::Slot& state);

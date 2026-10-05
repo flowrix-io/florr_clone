@@ -1012,6 +1012,13 @@ struct PetalInstance {
     /// this, capped, and is let go when the contact ends. Zero on every other
     /// petal.
     double contactMillis = 0;
+
+    /// Set on a petal a MIMIC fielded: it is the petal to the mimic's left at
+    /// the mimic's tier, but it pays the reload of `reloadRarity` -- the left
+    /// slot's tier -- wherever a reload is read off the instance (its rate of
+    /// fire, a spent shot, a pet's hatch cycle). See resolveEquippedPetal.
+    bool mimicked = false;
+    Rarity reloadRarity = Rarity::Common;
 };
 
 /// A petal that is a body on the ground rather than a place on the ring --

@@ -315,13 +315,15 @@ namespace {
 /// Active slots only, for the reason every other worn bonus reads only those:
 /// a stashed orb is not a worn one. The BEST of several rather than the first,
 /// because two orbs are one conversion, at the better tier.
-int wornOrbTier(const World& world, Entity player, std::uint16_t orbIndex) {
+int wornOrbTier(const World& world, const ContentRegistry& content, Entity player,
+                std::uint16_t orbIndex) {
     if (orbIndex == kInvalidIndex) return kRarityCount;
     const Loadout* loadout = world.tryGet<Loadout>(player);
     if (loadout == nullptr) return kRarityCount;
     int best = kRarityCount;
     for (int i = 0; i < kLoadoutActiveSlots; ++i) {
-        const LoadoutSlot& slot = loadout->slots[static_cast<std::size_t>(i)];
+        // Resolved: a mimic beside an orb is an orb at the mimic's tier.
+        const EquippedPetal slot = equippedPetal(content, *loadout, i);
         if (slot.empty() || slot.configIndex != orbIndex) continue;
         const int tier = rarityIndex(slot.rarity);
         if (best == kRarityCount || tier > best) best = tier;
@@ -587,7 +589,7 @@ void LootSystem::awardDeaths(World& world, const ContentRegistry& content, Rng& 
         // one identity, and the eligible list can hold several flowers wearing
         // several different orbs. kRarityCount is "no orb worn", which is
         // almost every kill in the game.
-        const int orbTier = wornOrbTier(world, credit, magicOrb);
+        const int orbTier = wornOrbTier(world, content, credit, magicOrb);
 
         selected_.clear();
         rollTable(table, mobRarity, rng);

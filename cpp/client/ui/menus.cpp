@@ -1326,10 +1326,10 @@ double slotReloadProgress(const NetClient& net, int index) {
         static_cast<std::size_t>(index)];
     if (remaining <= 0.0) return 1.0;
     const Profile& profile = net.profile();
-    const auto at = static_cast<std::size_t>(index);
-    if (at >= profile.loadout.size() || profile.loadout[at].empty()) return 1.0;
-    const PetalStats stats = content().petalStats(profile.loadout[at].petalIndex,
-                                                  profile.loadout[at].rarity);
+    // Resolved: a mimic's reload is the petal to its left's, not its own.
+    const EquippedPetal equipped = profile.equipped(content(), index);
+    if (equipped.empty()) return 1.0;
+    const PetalStats stats = equippedPetalStats(content(), equipped);
     const double total = stats.reloadMillis > 0.0 ? stats.reloadMillis : kDefaultPetalReloadMillis;
     // A remaining that outruns the total is a slot whose petal has just been
     // swapped for a slower one: clamped, it sweeps from the start rather than
@@ -2681,9 +2681,10 @@ double loadoutCameraZoom(const Profile& profile, const ContentRegistry& registry
     const std::size_t worn =
         std::min(profile.loadout.size(), static_cast<std::size_t>(kLoadoutActiveSlots));
     for (std::size_t i = 0; i < worn; ++i) {
-        const Profile::Slot& slot = profile.loadout[i];
+        // Resolved, as the server resolves it when it bounds the viewport.
+        const EquippedPetal slot = profile.equipped(registry, static_cast<int>(i));
         if (slot.empty()) continue;
-        zoom = std::min(zoom, petalCameraZoom(registry, slot.petalIndex, slot.rarity));
+        zoom = std::min(zoom, petalCameraZoom(registry, slot.configIndex, slot.rarity));
     }
     return zoom;
 }
