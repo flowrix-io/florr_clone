@@ -108,6 +108,7 @@ add_library(flix_server STATIC
   server/game_server.cpp
   server/account_limits.cpp
   server/admin_db.cpp
+  server/admin_db_key.cpp
   server/bot_ai.cpp
   server/auto_update.cpp
   server/chat_commands.cpp

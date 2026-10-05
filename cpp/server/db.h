@@ -368,6 +368,12 @@ public:
     /// servers sharing a file have to agree on the hashes.
     std::string accountAddressHash(const std::string& addressKey);
 
+    /// The secret salt stored in the database file (`ipSalt`), generated and
+    /// persisted on first use. Never sent to a client: the editor does not list
+    /// it. Besides the address hashes above, it keys the database editor's key
+    /// (see server/admin_db_key.h).
+    std::string serverSecret();
+
     /// How many accounts `addressHash` created within the last `windowMillis`.
     int countAccountsCreatedBy(const std::string& addressHash, std::int64_t windowMillis) const;
 

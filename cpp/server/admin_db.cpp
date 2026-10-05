@@ -5,7 +5,10 @@
 // console's temporary grants are lent for one life (see grant_admin), and this
 // panel reaches further than the console does -- it resets passwords and
 // rewrites any record -- so a loan does not extend to it. Every op
-// re-checks it; nothing is trusted from the panel being open.
+// re-checks it; nothing is trusted from the panel being open. The flag is not
+// enough on its own, either: `/admin db` asks for a key that only the server's
+// machine can tell you (server/admin_db_key.h), and every op checks that THIS
+// connection, signed in as THIS account, typed it.
 //
 // Two kinds of document can be edited:
 //
@@ -295,7 +298,9 @@ bool GameServer::sendAdminDbTable(net::Connection& connection, const std::string
 void GameServer::handleAdminDb(Session& session, net::Connection& connection, ByteReader& reader) {
     // Not a word to anyone else, as `/admin` answers a stranger: an editor
     // that said "you are not allowed" would be confirming it exists.
+    // The key, too: typed this connection, by the account signed in now.
     if (!session.authenticated() || !session.admin) return;
+    if (session.adminDbUnlockedFor.empty() || session.adminDbUnlockedFor != session.userId) return;
 
     const auto op = static_cast<AdminDbOp>(reader.u8());
     switch (op) {

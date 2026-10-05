@@ -17,6 +17,7 @@
 #include <thread>
 #include <utility>
 
+#include "server/admin_db_key.h"
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
 #include "server/guilds.h"
@@ -382,6 +383,15 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // with an empty one would serve every returning player a blank account and,
     // worse, save that over the file they still had.
     if (!database_.load(config.databasePath, errorOut)) return false;
+
+    // Printed rather than stored anywhere a client can reach: reading the
+    // server's own log is what proves an admin also has the machine.
+    {
+        const std::string address = admin_db::privateAddress();
+        adminDbKey_ = admin_db::deriveKey(database_.serverSecret(), address);
+        std::printf("[admin] database editor key: %s (from %s)\n", adminDbKey_.c_str(),
+                    address.empty() ? "no network address" : address.c_str());
+    }
 
     rng_.reseed(config.worldSeed);
     // Derived from the same seed, so a world is still reproducible end to end,

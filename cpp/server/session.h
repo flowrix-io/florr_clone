@@ -42,6 +42,11 @@ struct Session {
     std::string username;
     std::string token;
     bool admin = false;
+    /// The account (userId) that typed the database editor's key on this
+    /// connection, or empty. The editor answers only while this is the account
+    /// signed in, so signing in as someone else on the same socket does not
+    /// inherit the unlock. See server/admin_db_key.h.
+    std::string adminDbUnlockedFor;
 
     /// The player's body, while Playing.
     ///

@@ -178,6 +178,9 @@ public:
     /// The account store, for reading. Tests assert against it and the console
     /// reports out of it; nothing outside this class writes to it.
     const Database& database() const { return database_; }
+    /// The key `/admin db` asks for, derived at start() from the machine's
+    /// private address and the database's secret (server/admin_db_key.h).
+    const std::string& adminDbKey() const { return adminDbKey_; }
     const Terrain& terrain() const { return *terrain_; }
     /// Every staged map's annotation layer, and which realm each one is.
     const WorldMaps& worldMaps() const { return worldMaps_; }
@@ -1154,6 +1157,7 @@ private:
         double grantedAtMillis = 0;
     };
     std::unordered_map<net::ConnectionId, TempAdminGrant> tempAdmins_;
+    std::string adminDbKey_;
 
     /// `/admin set_bot_count`'s override, or -1 for the default formula.
     /// Negative rather than optional because -1 is already what "no override"

@@ -4,9 +4,11 @@
 
 #include "test.h"
 
+#include <cctype>
 #include <string>
 
 #include "server/admin_db.h"
+#include "server/admin_db_key.h"
 #include "server/db.h"
 #include "server_harness.h"
 #include "shared/net/admin_db.h"
@@ -45,6 +47,12 @@ bool say(Harness& h, NetClient& client, const std::string& text) {
     const std::size_t before = client.chat().size();
     client.sendChat(text);
     return h.stepUntil({&client}, [&] { return client.chat().size() > before; }, 120);
+}
+
+/// Types `/admin db <key>`, as an admin reading the server log would.
+bool unlock(Harness& h, NetClient& admin) {
+    say(h, admin, "/admin db " + h.server.adminDbKey());
+    return h.stepUntil({&admin}, [&] { return admin.adminDb().openRequested; }, 60);
 }
 
 /// Waits for the next Result the editor gets, and reports whether it was ok.
@@ -189,10 +197,83 @@ TEST(the_database_editor_is_for_full_admins_only) {
     CHECK(sawText(nobody, "Only a full admin can open the database editor."));
     CHECK(!nobody.adminDb().openRequested);
 
-    // The full admin's command opens it, on the account it names.
-    CHECK(say(h, boss, "/admin db Nobody"));
+    // The full admin's command opens it, with the key, on the account it names.
+    CHECK(say(h, boss, "/admin db " + h.server.adminDbKey() + " Nobody"));
     CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
     CHECK_EQ(boss.adminDb().openUsername, std::string("Nobody"));
+}
+
+TEST(the_database_editor_key_is_derived_from_the_address_and_the_secret) {
+    CHECK(admin_db::isPrivateIPv4("10.0.0.5"));
+    CHECK(admin_db::isPrivateIPv4("172.16.4.1"));
+    CHECK(admin_db::isPrivateIPv4("172.31.255.255"));
+    CHECK(admin_db::isPrivateIPv4("192.168.1.20"));
+    CHECK(!admin_db::isPrivateIPv4("172.32.0.1"));
+    CHECK(!admin_db::isPrivateIPv4("8.8.8.8"));
+    CHECK(!admin_db::isPrivateIPv4("127.0.0.1"));
+    CHECK(!admin_db::isPrivateIPv4("10.0.0.5x"));
+    CHECK(!admin_db::isPrivateIPv4("10.0.0"));
+
+    const std::string key = admin_db::deriveKey("secret", "192.168.1.20");
+    CHECK_EQ(key.size(), std::size_t{16});
+    CHECK_EQ(key, admin_db::deriveKey("secret", "192.168.1.20"));
+    // Another machine, or another database's secret, is another key: the
+    // address alone is guessable, the secret is what makes it a key.
+    CHECK(key != admin_db::deriveKey("secret", "192.168.1.21"));
+    CHECK(key != admin_db::deriveKey("other", "192.168.1.20"));
+
+    std::string upper = key;
+    for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    CHECK(admin_db::keyMatches(key, key));
+    CHECK(admin_db::keyMatches(upper, key));
+    CHECK(!admin_db::keyMatches(key.substr(1), key));
+    CHECK(!admin_db::keyMatches("", key));
+    CHECK(!admin_db::keyMatches("", ""));
+}
+
+TEST(the_database_editor_needs_its_key) {
+    Harness h("admindb-key", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+        seedUser(path, "bob", "password7");
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+    CHECK_EQ(h.server.adminDbKey().size(), std::size_t{16});
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+
+    // A full admin without the key gets the usage line, and with a wrong one
+    // a refusal; neither opens the panel...
+    CHECK(say(h, boss, "/admin db"));
+    CHECK(sawText(boss, "The key is printed in the server log"));
+    CHECK(say(h, boss, "/admin db bob"));
+    CHECK(sawText(boss, "Wrong database editor key."));
+    CHECK(!boss.adminDb().openRequested);
+
+    // ...and a raw request from an admin who has not typed it is not answered.
+    boss.adminDbList("", 0);
+    boss.adminDbOpen(net::AdminDbScope::Account, "bob");
+    h.step(30, {&boss});
+    CHECK(boss.adminDb().accounts.empty());
+    CHECK(!boss.adminDb().loaded);
+
+    // The right key opens it, case-blind, and the echo does not repeat it.
+    std::string upper = h.server.adminDbKey();
+    for (char& ch : upper) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    CHECK(say(h, boss, "/admin db " + upper + " bob"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
+    CHECK_EQ(boss.adminDb().openUsername, std::string("bob"));
+    CHECK(sawText(boss, "executed: db **** bob"));
+    CHECK(!sawText(boss, h.server.adminDbKey()));
+    CHECK(!sawText(boss, upper));
+    CHECK(openAccount(h, {&boss}, boss, "bob"));
+
+    // The unlock belongs to the connection: a new one starts locked.
+    NetClient again;
+    CHECK(loginAs(h, again, "boss", "password7"));
+    again.adminDbList("", 0);
+    h.step(30, {&boss, &again});
+    CHECK(again.adminDb().accounts.empty());
 }
 
 TEST(the_database_editor_finds_and_shows_an_account) {
@@ -205,6 +286,7 @@ TEST(the_database_editor_finds_and_shows_an_account) {
 
     NetClient boss;
     CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
 
     boss.adminDbList("OB", 0);
     CHECK(h.stepUntil({&boss}, [&] { return !boss.adminDb().listPending; }, 100));
@@ -235,6 +317,7 @@ TEST(a_database_edit_reaches_a_player_in_the_world) {
     NetClient boss;
     NetClient bob;
     CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
     CHECK(loginAs(h, bob, "bob", "password7"));
     bob.joinGame(1920, 1080, {}, "Bob");
     CHECK(h.stepUntil({&boss, &bob}, [&] { return bob.status() == NetClient::Status::Playing; },
@@ -283,6 +366,7 @@ TEST(the_database_editor_guards_identity_and_says_what_was_stored) {
 
     NetClient boss;
     CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
     CHECK(openAccount(h, {&boss}, boss, "bob"));
 
     boss.adminDbSet({"account", "username"}, "\"robert\"");
@@ -332,6 +416,7 @@ TEST(the_database_editor_never_changes_the_admin_flag) {
 
     NetClient boss;
     CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
 
     // Not granted: in any spelling, as a set or as an add.
     CHECK(openAccount(h, {&boss}, boss, "bob"));
@@ -376,6 +461,7 @@ TEST(the_database_editor_resets_a_password) {
     NetClient boss;
     NetClient bob;
     CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
     CHECK(loginAs(h, bob, "bob", "password7"));
 
     // A reset signs whoever holds the account out, and the new one works.
@@ -400,6 +486,7 @@ TEST(the_database_editor_edits_a_raw_table) {
 
     NetClient boss;
     CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(unlock(h, boss));
     CHECK(say(h, boss, "/admin notification super_craft first"));
     CHECK(say(h, boss, "/admin notification super_craft second"));
 

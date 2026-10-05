@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "server/admin_db_key.h"
 #include "server/auto_update.h"
 #include "server/bot_identity.h"
 #include "server/guilds.h"
@@ -1133,7 +1134,16 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
     const std::string verb = lowerCase(words[0]);
     const std::string rest = argumentOf(trimmed(command));
 
-    out("[ADMIN] " + session.username + " executed: " + command);
+    // The database editor's key is blanked out of the echo: the line sits in
+    // the chat log for anyone looking over the admin's shoulder.
+    const bool databaseEditor = verb == "db" || verb == "database" || verb == "db_editor";
+    if (databaseEditor && words.size() >= 2) {
+        std::string echoed = words[0] + " ****";
+        for (std::size_t i = 2; i < words.size(); ++i) echoed += " " + words[i];
+        out("[ADMIN] " + session.username + " executed: " + echoed);
+    } else {
+        out("[ADMIN] " + session.username + " executed: " + command);
+    }
 
     // -- accounts and sessions ---------------------------------------------
 
@@ -2048,16 +2058,29 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         return;
     }
 
-    if (verb == "db" || verb == "database" || verb == "db_editor") {
+    if (databaseEditor) {
         // The database flag, as grant_admin checks it: the editor resets
-        // passwords and deletes accounts, which a console lent for one life
+        // passwords and rewrites any record, which a console lent for one life
         // must not reach.
         if (!session.admin) {
             out("Only a full admin can open the database editor.");
             return;
         }
-        sendAdminDbOpen(connection, words.size() >= 2 ? words[1] : std::string());
-        out(words.size() >= 2 ? "Opened the database editor on " + words[1] + "."
+        // And the key, which only the server's machine knows (it is printed in
+        // the server log at start-up): an admin account alone is not the
+        // database. See server/admin_db_key.h.
+        if (words.size() < 2) {
+            out("Usage: db <key> [username]. The key is printed in the server log at start-up.");
+            return;
+        }
+        if (!admin_db::keyMatches(words[1], adminDbKey_)) {
+            std::printf("[admin] wrong database editor key from %s\n", session.username.c_str());
+            out("Wrong database editor key.");
+            return;
+        }
+        session.adminDbUnlockedFor = session.userId;
+        sendAdminDbOpen(connection, words.size() >= 3 ? words[2] : std::string());
+        out(words.size() >= 3 ? "Opened the database editor on " + words[2] + "."
                               : std::string("Opened the database editor."));
         return;
     }

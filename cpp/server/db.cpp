@@ -897,8 +897,7 @@ std::string Database::newUserId() {
     return {};
 }
 
-std::string Database::accountAddressHash(const std::string& addressKey) {
-    if (addressKey.empty()) return {};
+std::string Database::serverSecret() {
     std::string salt = otherTop_["ipSalt"].asString();
     if (salt.empty()) {
         salt = crypto::secureRandom().hex(16);
@@ -909,6 +908,12 @@ std::string Database::accountAddressHash(const std::string& addressKey) {
         }
         markDirty();
     }
+    return salt;
+}
+
+std::string Database::accountAddressHash(const std::string& addressKey) {
+    if (addressKey.empty()) return {};
+    const std::string salt = serverSecret();
     // Same construction as the browser server's database.accountAddressHash,
     // so both builds reading one file agree on which accounts an address made.
     return crypto::sha256Hex(salt + "|" + addressKey).substr(0, 24);

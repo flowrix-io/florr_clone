@@ -269,7 +269,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/admin guild_info", "Show info for a guild by id", true},
     {"/admin restart", "Schedule server restart: restart [<N>(s|m|h)|cancel|status]", true},
     {"/admin backup_db", "Back up the database: backup_db [list]", true},
-    {"/admin db", "Open the database editor (full admins): /admin db [username]", true},
+    {"/admin db", "Open the database editor (full admins): /admin db <key> [username]", true},
     {"/admin update", "Back up DB, install latest build from GitHub, restart: update [now|<N>(s|m|h)|status|cancel]", true},
     {"/admin change-maze", "Change the maze: change-maze [next|garden|desert|ocean|<dayNumber>]", true},
     {"/level-from-string", "Show what level a player named <name> would roll", false},
