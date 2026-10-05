@@ -33,6 +33,8 @@ enum class SkillId : std::uint8_t {
     /// in order and supersedes the one below is exactly what a tier already is,
     /// and the refund, the wire and the "bought in order" rule come with it.
     Duplicator,
+    /// Widens the pickup reach, the way a magnet petal does.
+    Magnetism,
     Count,
 };
 
@@ -43,12 +45,12 @@ inline constexpr int kSkillCount = static_cast<int>(SkillId::Count);
 /// branch out from under an account.
 inline constexpr std::array<const char*, kSkillCount> kSkillKeys = {
     "damage", "petalHealth", "playerHealth", "healingMultiplier", "absorbing", "reload",
-    "secondChance", "petHealth", "duplicator",
+    "secondChance", "petHealth", "duplicator", "magnetism",
 };
 
 inline constexpr std::array<const char*, kSkillCount> kSkillLabels = {
     "Damage", "Petal Health", "Flower Health", "Healing", "Absorption", "Reload", "Second Chance",
-    "Pet Health", "Duplicator",
+    "Pet Health", "Duplicator", "Magnetism",
 };
 
 /// One line of what the branch actually does, shown in its tooltip.
@@ -62,6 +64,7 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
     "Survive a killing blow at 1 HP.",
     "Multiplies the health of every pet you summon.",
     "Adds copies to petals that already have two or more.",
+    "Widens the reach your flower picks up drops from.",
 };
 
 /// How many tiers each branch has. Three of them stop short of the full
@@ -69,7 +72,7 @@ inline constexpr std::array<const char*, kSkillCount> kSkillSummaries = {
 /// past the ladder: universal is a petal tier, not a talent one.
 inline constexpr std::array<int, kSkillCount> kSkillTiers = {
     kLadderRarityCount, kLadderRarityCount, kLadderRarityCount, 4, kLadderRarityCount,
-    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2,
+    rarityIndex(Rarity::Unique) + 1, 2, kLadderRarityCount, 2, 3,
 };
 
 /// What one tier costs in talent points. Steep at the top, so the last tiers
@@ -83,6 +86,10 @@ inline constexpr std::array<int, kLadderRarityCount> kTierCost = {
 /// strongest node on the tree the cheapest one.
 inline constexpr std::array<int, 2> kDuplicatorTierCost = {15, 20};
 
+/// Magnetism is priced on from where it forks: legendary Absorption's own
+/// price and the two ladder steps after it, not the ladder's opening 1-2-3.
+inline constexpr std::array<int, 3> kMagnetismTierCost = {5, 8, 12};
+
 /// What a tier costs, on the branch it belongs to. Every caller that prices a
 /// tier -- the purchase, the refund total, the panel -- asks this rather than
 /// indexing kTierCost, so a branch with its own prices cannot be charged at
@@ -91,6 +98,7 @@ inline int skillTierCost(SkillId id, int tier) {
     if (tier < 0) return 0;
     const std::size_t t = static_cast<std::size_t>(tier);
     if (id == SkillId::Duplicator) return t < kDuplicatorTierCost.size() ? kDuplicatorTierCost[t] : 0;
+    if (id == SkillId::Magnetism) return t < kMagnetismTierCost.size() ? kMagnetismTierCost[t] : 0;
     return t < kTierCost.size() ? kTierCost[t] : 0;
 }
 
@@ -103,6 +111,10 @@ inline constexpr Rarity kSecondChanceRequirement = Rarity::Rare;
 inline constexpr SkillId kDuplicatorParent = SkillId::Absorbing;
 inline constexpr Rarity kDuplicatorRequirement = Rarity::Mythic;
 
+/// Magnetism forks off Absorption one tier earlier, at legendary.
+inline constexpr SkillId kMagnetismParent = SkillId::Absorbing;
+inline constexpr Rarity kMagnetismRequirement = Rarity::Legendary;
+
 /// A branch that grows out of another branch's node rather than out of the
 /// flower, and stays locked until that parent reaches `requirement`.
 struct SkillFork {
@@ -111,9 +123,10 @@ struct SkillFork {
     Rarity requirement;
 };
 
-inline constexpr std::array<SkillFork, 2> kSkillForks = {{
+inline constexpr std::array<SkillFork, 3> kSkillForks = {{
     {SkillId::SecondChance, kSecondChanceParent, kSecondChanceRequirement},
     {SkillId::Duplicator, kDuplicatorParent, kDuplicatorRequirement},
+    {SkillId::Magnetism, kMagnetismParent, kMagnetismRequirement},
 }};
 
 /// The fork `id` hangs off, or nullptr for a branch that grows from the flower.
@@ -142,6 +155,12 @@ inline constexpr int kDuplicatorMinCopies = 2;
 /// The most petals one slot may field: the config loader's cap on `count`,
 /// which the petal system's per-slot bitmask is sized to.
 inline constexpr int kMaxPetalCopies = 64;
+
+/// Pickup reach each Magnetism tier adds, in world units; each tier replaces
+/// the one below. Steps of a common antennae's 50, topping out under a third
+/// of a common magnet's 500 -- a talent that matched the petal would make the
+/// petal pointless.
+inline constexpr std::array<double, 3> kMagnetismBonus = {50.0, 100.0, 150.0};
 
 /// What a Second Chance tier buys: the killing blow leaves the flower at 1 HP
 /// with this much invulnerability, then locks the talent out for the cooldown.
@@ -255,6 +274,17 @@ struct SkillSet {
         }
         const int boosted = copies + kDuplicatorExtraCopies[static_cast<std::size_t>(t)];
         return boosted < kMaxPetalCopies ? boosted : kMaxPetalCopies;
+    }
+
+    /// Pickup reach the Magnetism branch adds. Gated on legendary Absorption
+    /// the same way petalCopies is gated on mythic.
+    double magnetismBonus() const {
+        const int t = level(SkillId::Magnetism);
+        if (t < 0 || t >= static_cast<int>(kMagnetismBonus.size()) ||
+            !prerequisiteMet(SkillId::Magnetism)) {
+            return 0.0;
+        }
+        return kMagnetismBonus[static_cast<std::size_t>(t)];
     }
 };
 

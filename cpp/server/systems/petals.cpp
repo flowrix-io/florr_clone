@@ -1368,6 +1368,9 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
         const double petalHealing = aggregate.modifiers.passiveHealPerSecond - 1.0;
         aggregate.modifiers.passiveHealPerSecond =
             1.0 + petalHealing * tree->skills.effectScale(SkillId::Healing);
+        // Reach is added, not multiplied: a flower with no magnet petal has
+        // nothing for a factor to scale.
+        aggregate.modifiers.magnetism += tree->skills.magnetismBonus();
     }
 
     // Written wholesale. The component is never edited in place on equip: an

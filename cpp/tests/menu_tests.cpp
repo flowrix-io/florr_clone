@@ -287,6 +287,62 @@ TEST(duplicator_and_triplicator_are_bought_over_the_wire_after_mythic_absorption
     CHECK_EQ(client.profile().talentPoints(), before - 15 - 20);
 }
 
+TEST(magnetism_hangs_off_legendary_absorption_and_is_priced_on_its_own) {
+    SkillSet skills;
+    CHECK(!skills.prerequisiteMet(SkillId::Magnetism));
+    skills.set(SkillId::Absorbing, rarityIndex(Rarity::Epic));
+    CHECK(!skills.prerequisiteMet(SkillId::Magnetism));
+    skills.set(SkillId::Absorbing, rarityIndex(Rarity::Legendary));
+    CHECK(skills.prerequisiteMet(SkillId::Magnetism));
+    // Legendary opens Magnetism but not Duplicator, which waits for mythic.
+    CHECK(!skills.prerequisiteMet(SkillId::Duplicator));
+    CHECK_EQ(skillTierCount(SkillId::Magnetism), 3);
+
+    const int absorption = skills.spent();
+    CHECK_NEAR(skills.magnetismBonus(), 0.0, 1e-12);
+    skills.set(SkillId::Magnetism, 0);
+    CHECK_EQ(skills.spent() - absorption, 5);
+    CHECK_NEAR(skills.magnetismBonus(), 50.0, 1e-12);
+    skills.set(SkillId::Magnetism, 2);
+    CHECK_EQ(skills.spent() - absorption, 5 + 8 + 12);
+    // Each tier replaces the one below rather than stacking on it.
+    CHECK_NEAR(skills.magnetismBonus(), 150.0, 1e-12);
+    CHECK(skillFromKey("magnetism") == SkillId::Magnetism);
+}
+
+TEST(magnetism_is_bought_over_the_wire_after_legendary_absorption) {
+    Harness h("talent-magnetism", [](const std::string& path) {
+        seedAccount(path, "magneto", "password7", 0, 1e15);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestLogin("magneto", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    CHECK(awaitProfile(h, client, [](const Profile& p) { return p.level > 100; }));
+
+    client.requestUpgradeSkill(SkillId::Magnetism, 0);
+    h.step(20, {&client});
+    CHECK_EQ(client.profile().skills.level(SkillId::Magnetism), -1);
+
+    for (int tier = 0; tier <= rarityIndex(Rarity::Legendary); ++tier) {
+        client.requestUpgradeSkill(SkillId::Absorbing, tier);
+        CHECK(awaitProfile(h, client, [tier](const Profile& p) {
+            return p.skills.level(SkillId::Absorbing) == tier;
+        }));
+    }
+
+    const int before = client.profile().talentPoints();
+    for (int tier = 0; tier < 3; ++tier) {
+        client.requestUpgradeSkill(SkillId::Magnetism, tier);
+        CHECK(awaitProfile(h, client, [tier](const Profile& p) {
+            return p.skills.level(SkillId::Magnetism) == tier;
+        }));
+    }
+    CHECK_EQ(client.profile().talentPoints(), before - 5 - 8 - 12);
+}
+
 TEST(resetting_talents_hands_every_point_back) {
     Harness h("talent-reset");
     if (!h.ready) { CHECK(false); return; }

@@ -1575,6 +1575,27 @@ TEST(modifiers_are_summed_from_scratch_and_vanish_when_unequipped) {
     CHECK_NEAR(rig.modifiers().magnetism, kBaseMagnetism, 1e-12);
 }
 
+TEST(magnetism_talent_adds_reach_on_top_of_worn_magnetism) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.world.ensure<PlayerSkillTree>(rig.player);
+    rig.equip(0, "lucky");
+    // Looked up each time, not held: equipping moves the player's components.
+    const auto skills = [&]() -> SkillSet& { return rig.world.get<PlayerSkillTree>(rig.player).skills; };
+    skills().set(kMagnetismParent, rarityIndex(kMagnetismRequirement));
+    for (int tier = 0; tier < skillTierCount(SkillId::Magnetism); ++tier) {
+        skills().set(SkillId::Magnetism, tier);
+        rig.tick();
+        CHECK_NEAR(rig.modifiers().magnetism,
+                   50.0 + kMagnetismBonus[static_cast<std::size_t>(tier)], 1e-9);
+    }
+
+    // Held without legendary Absorption under it, the branch grants nothing.
+    skills().set(kMagnetismParent, rarityIndex(kMagnetismRequirement) - 1);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().magnetism, 50.0, 1e-9);
+}
+
 TEST(worn_evasion_grows_a_step_a_tier_and_copies_are_independent_rolls) {
     if (!contentLoaded()) return;
     Rig rig;

@@ -428,8 +428,9 @@ constexpr ChangelogEntry kChangelog[] = {
     },
     {"October 4, 2026",
       {
-      "Added Duplicator and Triplicator talents after Mythic Absorption",
-      "Reworked Moon: it sits on the ground, grows every rarity, and your petals orbit it"
+      "Added Duplicator and Triplicator talents",
+      "Make moon work like florr",
+      "Added Magnetism talent after Legendary Absorption"
       }
     }
 };

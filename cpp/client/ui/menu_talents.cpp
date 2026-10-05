@@ -3,10 +3,10 @@
 // Seven branches fan out from the flower, one per stat, each a chain of tiers
 // on the rarity ladder. A branch walks outward in equal steps and turns a
 // little more with each step past the third, which is what keeps ten nodes
-// evenly spaced instead of crossing their neighbours. Second Chance and
-// Duplicator are not branches of their own: each forks off its parent at the
-// tier it needs -- rare Flower Health, mythic Absorption -- and says so by
-// growing out of that node.
+// evenly spaced instead of crossing their neighbours. Second Chance,
+// Duplicator and Magnetism are not branches of their own: each forks off its
+// parent at the tier it needs -- rare Flower Health, mythic and legendary
+// Absorption -- and says so by growing out of that node.
 //
 // The fan is laid out in fixed pixels and is deliberately far larger than the
 // card -- most of it starts off the edge. Dragging spins the whole tree about
@@ -154,14 +154,22 @@ constexpr std::array<const char*, 2> kSecondChanceEffects = {
 /// on the tree is. Following the branch's own curve instead keeps both tiers
 /// inside 500 and every other node at least 87 away -- measured across the
 /// whole fan, which is the only way to tell where there is room.
+///
+/// Magnetism leaves legendary Absorption on the other side, to the branch's
+/// left, which faces away from the flower. A straight run out that way passes
+/// 700, so it turns hard and curls back on itself: three tiers at 538, 573 and
+/// 574 from the flower, every one at least 100 clear of any other node. That
+/// is past the 500 the other nodes keep, but still inside the ~600 a spin can
+/// bring onto the card.
 struct ForkShape {
     SkillId skill;
     double turn;
     double bend;
 };
-constexpr std::array<ForkShape, 2> kForkShapes = {{
+constexpr std::array<ForkShape, 3> kForkShapes = {{
     {SkillId::SecondChance, -kPi / 3.0, 0.0},
     {SkillId::Duplicator, kPi / 12.0, kPi / 6.0},
+    {SkillId::Magnetism, -kPi / 2.0, -kPi / 6.0},
 }};
 
 ForkShape forkShape(SkillId skill) {
@@ -267,6 +275,12 @@ std::string effectLine(SkillId skill, int tier) {
         return tier == 0 ? "+1 copy on petals with 2+ copies" : "+2 copies on petals with 2+ copies";
     }
     char buffer[48];
+    if (skill == SkillId::Magnetism) {
+        const auto at = static_cast<std::size_t>(tier);
+        if (at >= kMagnetismBonus.size()) return {};
+        std::snprintf(buffer, sizeof buffer, "+%.0f pickup range", kMagnetismBonus[at]);
+        return buffer;
+    }
     if (skill == SkillId::Absorbing) {
         std::snprintf(buffer, sizeof buffer, "%.0f%% absorb XP",
                       scaleAt(kAbsorbSkillScale, tier) * 100.0);
@@ -558,6 +572,39 @@ void drawIcon(Canvas& canvas, SkillId id, int tier, Vec2 at, double size) {
             }
             break;
         }
+        case SkillId::Magnetism: {      // a horseshoe magnet
+            // A thick U opening upward, its two poles cut off by a gap across
+            // each arm -- the cut is what makes a U a magnet. Filled shapes
+            // rather than one stroke, so the poles are solid blocks and not
+            // capped line ends.
+            const double weight = half * 0.50;
+            const double outer = half * 0.92;
+            const double inner = outer - weight;
+            const double bendY = at.y + half * 0.04;
+            const double cut = at.y - half * 0.42;
+            const double gap = half * 0.14;
+            const double top = at.y - half * 0.94;
+            const auto x = [&](double dx) { return static_cast<float>(at.x + dx); };
+            const auto y = [&](double py) { return static_cast<float>(py); };
+
+            canvas.beginPath();
+            canvas.moveTo(x(-outer), y(cut));
+            canvas.lineTo(x(-outer), y(bendY));
+            canvas.arc(x(0.0), y(bendY), static_cast<float>(outer), static_cast<float>(kPi), 0.0f, true);
+            canvas.lineTo(x(outer), y(cut));
+            canvas.lineTo(x(inner), y(cut));
+            canvas.lineTo(x(inner), y(bendY));
+            canvas.arc(x(0.0), y(bendY), static_cast<float>(inner), 0.0f, static_cast<float>(kPi), false);
+            canvas.lineTo(x(-inner), y(cut));
+            canvas.fill();
+            for (const double side : {-1.0, 1.0}) {
+                const double left = side < 0.0 ? -outer : inner;
+                canvas.beginPath();
+                canvas.rect(x(left), y(top), static_cast<float>(weight), static_cast<float>(cut - gap - top));
+                canvas.fill();
+            }
+            break;
+        }
         default: break;
     }
     canvas.restore();
@@ -673,7 +720,7 @@ void TalentsPanel::layout() {
     }
 
     // Each fork hangs off the node that unlocks it -- rare Flower Health,
-    // mythic Absorption -- so the prerequisite is legible as a shape and not
+    // mythic and legendary Absorption -- so the prerequisite is legible as a shape and not
     // only as tooltip text.
     for (const SkillFork& fork : kSkillForks) {
         const auto parent = static_cast<std::size_t>(fork.parent);
