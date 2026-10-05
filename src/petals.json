@@ -1569,3 +1569,17 @@
         "image": "<svg width=\"32\" height=\"32\" viewBox=\"-5 -7.75 13.5 15.5\" xmlns=\"http://www.w3.org/2000/svg\">\n  <path d=\"M 7 0 L -3.5 6.062 L -3.5 -6.062 Z\"\n        fill=\"#fff\"\n        stroke=\"#cfcfcf\"\n        stroke-width=\"3\"\n        stroke-linecap=\"round\"\n        stroke-linejoin=\"round\" />\n</svg>"
     }
 }
+ },
+    "petal_healer": {
+        "name": "Petal Healer",
+        "damage": 50,
+        "health": 1,
+        "lifesteal": 1.00,
+        "size": 1.5,
+        "cooldown": 3500,
+        "price": 100,
+        "visual_scale": 1.5,
+        "description": "Heals based on damage dealt by this petal",
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><g transform=\"translate(16, 16) scale(1.1034)\"><path d=\"M 13 0 L 4.95 4.95 A 7 7 0 0 1 -4.95 4.95 L -13 0 L -4.95 -4.95 A 7 7 0 0 1 4.95 -4.95 Z\"   fill=\"#9C1010\"   stroke=\"#7E0D0D\"   stroke-width=\"3\"   stroke-linecap=\"round\"   stroke-linejoin=\"round\" /></g></svg>",
+        "color": "#000000",
+        "count": 1
