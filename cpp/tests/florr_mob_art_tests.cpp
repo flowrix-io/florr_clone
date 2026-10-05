@@ -485,3 +485,37 @@ TEST(a_gallery_picture_that_already_fits_keeps_its_size) {
     CHECK(std::abs((after.left + after.right) - (before.left + before.right)) <= 0.7);
     CHECK(std::abs((after.top + after.bottom) - (before.top + before.bottom)) <= 0.7);
 }
+
+TEST(a_moon_is_one_picture_magnified_to_its_radius) {
+    // The moon petal grows 30 units a tier, and its craters grow with it: the
+    // same ten, scaled, never more of them at one size. So a 300-unit moon
+    // drawn a tenth of the size is the 30-unit one, pixel for pixel give or
+    // take the antialiasing.
+    CHECK(mobArtFor("$moon") == MobArt::Moon);
+    MobArtAttributes attr;
+    attr.baseColor = 0x878787u;
+    const auto moonAt = [&](double radius, float shrink) {
+        Canvas canvas = Canvas::createVirtual(kSide, kSide);
+        canvas.clear(Color{kBackground, kBackground, kBackground});
+        canvas.translate(kSide * 0.5f, kSide * 0.5f);
+        canvas.scale(shrink, shrink);
+        MobArtAttributes at = attr;
+        at.radius = radius;
+        paintMobArt(canvas, MobArt::Moon, at);
+        return canvas.getImageData(0, 0, kSide, kSide);
+    };
+    const std::vector<std::uint8_t> common = moonAt(30.0, 1.0f);
+    const std::vector<std::uint8_t> apex = moonAt(300.0, 0.1f);
+
+    // It paints, and paints craters: some pixels are neither the body's grey
+    // nor the background.
+    int body = 0, crater = 0;
+    for (std::size_t i = 0; i + 3 < common.size(); i += 4) {
+        if (common[i] == 0x87 && common[i + 1] == 0x87 && common[i + 2] == 0x87) ++body;
+        if (common[i] == 0x99 && common[i + 1] == 0x99 && common[i + 2] == 0x99) ++crater;
+    }
+    CHECK(body > 500);
+    CHECK(crater > 50);
+    // The disc is ~2900 pixels; the two may differ only along edges.
+    CHECK(differingPixels(common, apex) < 60);
+}

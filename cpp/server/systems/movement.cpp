@@ -26,6 +26,9 @@ constexpr double kMinEnvScale = 1e-4;
 /// homes nor updates its facing.
 constexpr double kMinProjectileSpeed = 1e-3;
 
+/// A coasting moon slower than this, in units a second, has stopped.
+constexpr double kMinCoastSpeed = 1e-3;
+
 /// Range left on a projectile below this is rounding noise, not reach, and the
 /// shot is spent. The last step of a flight is clamped to exactly the budget,
 /// but `velocity * fraction * dt` and the displacement it produces round
@@ -257,7 +260,7 @@ StepOutcome stepCollide(const Terrain& terrain, Realm realm, Vec2& position, Vec
 MovementSystem::Queries::Queries(World& world)
     : players(world), mobs(world), projectiles(world),
       mobTargets(world), npcTargets(world), mobBodies(world), playerPositions(world),
-      npcBodies(world), looseBodies(world) {
+      npcBodies(world), looseBodies(world), ringAnchors(world) {
     // A body marked Dead is still in the world so later systems can see it die,
     // but a corpse must not keep walking.
     players.without<Dead>();
@@ -270,6 +273,7 @@ MovementSystem::Queries::Queries(World& world)
     // A broken wax is gone from the moment it breaks: nothing walks into it
     // for the rest of the tick while it waits for the reaper.
     looseBodies.without<Dead>();
+    ringAnchors.without<Dead>();
     // playerPositions deliberately keeps corpses: a dead flower is about to
     // respawn where it stands, and letting the mobs around it coast for those
     // few ticks is the artefact the LOD gate exists to avoid.
@@ -289,6 +293,9 @@ void MovementSystem::run(World& world, const Terrain& terrain, double nowMillis,
 void MovementSystem::runPlayerPhase(World& world, const Terrain& terrain,
                                     double nowMillis, double dt) {
     bind(world);
+    // Before the flowers, so the moon a flower walks into is where its own
+    // momentum has already carried it this tick.
+    coastRingAnchors(world, terrain, dt);
     movePlayers(world, terrain, nowMillis, dt);
     // The pads act on the position the tick has already settled on, which is
     // what makes the suction able to beat a shove: the reference runs them at
@@ -348,6 +355,28 @@ void MovementSystem::storeLooseDiscs(World& world) const {
             transform->position = disc.position;
         }
     }
+}
+
+void MovementSystem::coastRingAnchors(World& world, const Terrain& terrain, double dt) {
+    queries_->ringAnchors.each([&](Entity, RingAnchor&, Transform& transform, Motion& motion,
+                                   Body& body) {
+        if (motion.velocity.lengthSq() <= 0.0) return;
+        MoveState state{transform.position, motion.velocity};
+        integrateVelocity(state, Vec2{0, 0}, dt);
+        const Vec2 velocity = sanitizeMovementVelocity(state.velocity);
+        // Stopped, rather than stepped through the walls forever at a speed
+        // too small to draw.
+        if (velocity.lengthSq() < kMinCoastSpeed * kMinCoastSpeed) {
+            motion.velocity = Vec2{0, 0};
+            return;
+        }
+        const StepOutcome out = stepCollide(terrain, transform.realm, transform.position, velocity,
+                                            body.radius, dt, true, true);
+        // Rebuilt from what it achieved, unlike a flower's: a moon thrown into
+        // a wall slides along it and loses what it had going into it, rather
+        // than pressing on with no one steering.
+        motion.velocity = velocityAfterStep(velocity, out, dt, 1.0);
+    });
 }
 
 void MovementSystem::movePlayers(World& world, const Terrain& terrain,

@@ -1023,6 +1023,16 @@ struct PetalInstance {
 /// from the moment it spawns until it is destroyed.
 struct LoosePetal {};
 
+/// The loose petal its flower's ring is laid out around -- the moon. See
+/// petalAnchorsRing() in config.h.
+///
+/// A tag rather than a registry lookup for LoosePetal's reason: the ring pass
+/// finds its centre among the flower's spawned petals without a config read,
+/// and so does the bubble that throws it. A ring anchor also carries a Motion,
+/// which no other petal has: a bubble pop is momentum, and the movement pass
+/// spends it the way it spends a flower's (MovementSystem::coastRingAnchors).
+struct RingAnchor {};
+
 struct Projectile {
     Entity owner = NULL_ENTITY;
     /// The player credited with any kill, which is not the owner when the
@@ -1255,6 +1265,7 @@ FLIX_COMPONENT(flix::MobPetalRing);
 FLIX_COMPONENT(flix::MobRingPetal);
 FLIX_COMPONENT(flix::PetalInstance);
 FLIX_COMPONENT(flix::LoosePetal);
+FLIX_COMPONENT(flix::RingAnchor);
 FLIX_COMPONENT(flix::Projectile);
 FLIX_COMPONENT(flix::Lifetime);
 FLIX_COMPONENT(flix::DropItem);

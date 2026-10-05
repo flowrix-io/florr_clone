@@ -62,6 +62,7 @@ const char* const kPetalsJson = R"JSON({
   "wing":     {"name":"Wing","damage":15,"health":10,"size":1,"cooldown":2500,"count":1,"color":"#FFFFFF"},
   "pearl":    {"name":"Pearl","damage":20,"health":50,"size":1.25,"cooldown":4000,"count":1,"color":"#FFFFFF"},
   "wax":      {"name":"Wax","damage":0,"health":1000,"size":1,"cooldown":30000,"count":1,"color":"#FFFF00"},
+  "moon":     {"name":"Moon","damage":1,"health":1000,"size":2.6,"cooldown":10000,"count":1,"color":"#878787"},
   "cotton":   {"name":"Cotton","damage":0,"health":2,"size":1,"cooldown":1500,"count":1,"defendOnly":true,"color":"#FFFFFF"},
   "bone":     {"name":"Bone","damage":14,"health":10,"size":1,"cooldown":1500,"count":1,"petalArmor":10,"color":"#FFFFFF"},
   "vessel":   {"name":"Vessel","damage":1,"health":5,"size":1,"cooldown":1000,"count":1,"baseMaxMana":100,"color":"#42E3F5"},
@@ -3842,4 +3843,260 @@ TEST(each_wax_lands_at_its_own_random_rotation_and_keeps_it) {
         CHECK_NEAR(rig.world.get<Transform>(slabs[i]).angle, angles[i], 1e-12);
         CHECK_NEAR(rig.world.get<PetalInstance>(slabs[i]).facingAngle, angles[i], 1e-12);
     }
+}
+
+// ---------------------------------------------------------------------------
+// The moon: a loose body the ring orbits
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Ticks enough to serve the moon's ten-second equip reload.
+constexpr int kMoonEquipTicks = 400;
+
+/// The flower's moon on the field, or NULL_ENTITY.
+Entity moonOf(Rig& rig) {
+    for (const Entity e : rig.petals()) {
+        if (rig.world.has<RingAnchor>(e)) return e;
+    }
+    return NULL_ENTITY;
+}
+
+} // namespace
+
+TEST(a_moon_is_a_loose_body_thirty_units_a_tier_like_wax) {
+    if (!contentLoaded()) return;
+    const std::uint16_t moon = petalId("moon");
+    for (int tier = 0; tier < kLadderRarityCount; ++tier) {
+        CHECK_NEAR(fixture().registry.petalStats(moon, static_cast<Rarity>(tier)).radius,
+                   30.0 * (tier + 1), 1e-12);
+    }
+    CHECK(petalIsLooseBody(fixture().registry.petal(moon)));
+    CHECK(petalAnchorsRing(fixture().registry.petal(moon)));
+    // Wax is loose and anchors nothing.
+    CHECK(!petalAnchorsRing(fixture().registry.petal(petalId("wax"))));
+
+    Rig rig;
+    rig.equip(0, "moon", Rarity::Legendary);
+    rig.settleEquips(kMoonEquipTicks);
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    CHECK(rig.world.has<LoosePetal>(body));
+    CHECK_NEAR(rig.world.get<Body>(body).radius, 150.0, 1e-12);
+    CHECK_NEAR(rig.world.get<Body>(body).mass, kLoosePetalMass, 1e-12);
+    // The one petal with momentum, for a bubble to throw.
+    CHECK(rig.world.has<Motion>(body));
+    CHECK(rig.world.get<Replicated>(body).spawnFlags & net::SpawnLoosePetal);
+    // Put down behind the flower, clear of it, as wax is.
+    const Vec2 flower = rig.position(rig.player);
+    CHECK_NEAR(rig.position(body).x,
+               flower.x - (kPlayerBaseRadius + 150.0 + kLoosePetalSpawnGap), 1e-9);
+    CHECK_NEAR(rig.position(body).y, flower.y, 1e-9);
+}
+
+TEST(the_ring_orbits_the_moon_as_it_would_a_flower_that_size) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "moon");
+    rig.equip(1, "basic");
+    rig.freezeRing();
+    rig.settleEquips(kMoonEquipTicks);
+    rig.settleRing();
+
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const Vec2 centre = rig.position(body);
+
+    // The rest radius off the MOON's edge: 60 for a 25-unit flower, so 65
+    // around a 30-unit moon.
+    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius + 30.0 - kPlayerBaseRadius, 1e-9);
+    const Entity basic = rig.petals(1).front();
+    const Entity anchor = rig.petals(Rig::kAnchorSlot).front();
+    CHECK_NEAR(distance(rig.position(basic), centre), rig.ring().radius, 1e-3);
+    CHECK_NEAR(distance(rig.position(anchor), centre), rig.ring().radius, 1e-3);
+    // The moon takes no place on its own ring: the basic and the anchor split
+    // it half and half, about the moon.
+    CHECK_NEAR(angularGap((rig.position(basic) - centre).angle(),
+                          (rig.position(anchor) - centre).angle()),
+               kPi, 1e-3);
+
+    // Attacking throws the ring out around the moon, which stays put.
+    rig.setFlags(net::InputAttack);
+    rig.tick(60);
+    CHECK_NEAR(rig.position(body).x, centre.x, 1e-12);
+    CHECK_NEAR(rig.position(body).y, centre.y, 1e-12);
+    CHECK(distance(rig.position(basic), centre) > 65.0 * 1.5);
+
+    // And the flower walking off leaves the moon, and the ring with it.
+    rig.setFlags(0);
+    rig.withMovement();
+    rig.setMove(0.0);
+    rig.tick(30);
+    CHECK(rig.position(rig.player).x > centre.x + 300.0);
+    CHECK_NEAR(distance(rig.position(basic), centre), rig.ring().radius, 2.0);
+}
+
+TEST(the_ring_flies_back_to_the_flower_when_its_moon_breaks) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    // Facing west, so the moon is put down east of the flower and the basic's
+    // place on its ring is further east again, well off the flower.
+    rig.world.get<Transform>(rig.player).angle = kPi;
+    rig.equip(0, "moon");
+    rig.equip(1, "basic");
+    rig.freezeRing();
+    rig.settleEquips(kMoonEquipTicks);
+    rig.settleRing();
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const Entity basic = rig.petals(1).front();
+    CHECK(distance(rig.position(basic), rig.position(rig.player)) > 100.0);
+
+    rig.damage(body, 1e12);
+    rig.tick();
+    CHECK(moonOf(rig) == NULL_ENTITY);
+    CHECK(rig.slot(0).broken);
+
+    // Flown home on the glide, not flung past it on the spring: no tick of the
+    // trip carries it further from the flower than it started.
+    double gap = distance(rig.position(basic), rig.position(rig.player));
+    for (int i = 0; i < 10; ++i) {
+        rig.tick();
+        const double now = distance(rig.position(basic), rig.position(rig.player));
+        CHECK(now <= gap + 1e-9);
+        gap = now;
+    }
+    rig.settleRing();
+    CHECK_NEAR(rig.ring().radius, kPetalOrbitRestRadius, 1e-9);
+    CHECK_NEAR(rig.radiusOf(basic), rig.ring().radius, 1e-3);
+}
+
+TEST(a_flower_has_one_moon_however_many_are_equipped) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "moon");
+    rig.equip(2, "moon", Rarity::Rare);
+    rig.equip(4, "moon", Rarity::Rare);
+    rig.settleEquips(kMoonEquipTicks);
+    rig.tick(10);
+
+    // The best tier comes out, and the leftmost of the two rares.
+    std::vector<Entity> moons;
+    for (const Entity e : rig.petals()) {
+        if (rig.world.has<LoosePetal>(e)) moons.push_back(e);
+    }
+    CHECK_EQ(moons.size(), std::size_t(1));
+    if (moons.size() != 1) return;
+    CHECK_EQ(int(rig.world.get<PetalInstance>(moons.front()).slot), 2);
+    CHECK_EQ(liveMoonSlot(fixture().registry, rig.world.get<Loadout>(rig.player)), 2);
+    // The others sit ready, holding nothing.
+    CHECK(!rig.slot(0).broken);
+    CHECK(!rig.slot(4).broken);
+
+    // Breaking the live moon does not let another one out.
+    rig.damage(moons.front(), 1e12);
+    rig.tick(20);
+    CHECK(moonOf(rig) == NULL_ENTITY);
+
+    // Taking it off hands the moon to the next best, after its own reload.
+    rig.unequip(2);
+    rig.tick();
+    CHECK_EQ(liveMoonSlot(fixture().registry, rig.world.get<Loadout>(rig.player)), 4);
+    CHECK(rig.tickUntil([&] { return moonOf(rig) != NULL_ENTITY; }, kMoonEquipTicks));
+    const Entity next = moonOf(rig);
+    if (next != NULL_ENTITY) {
+        CHECK_EQ(int(rig.world.get<PetalInstance>(next).slot), 4);
+    }
+}
+
+TEST(a_bubble_on_a_moons_ring_throws_the_moon_and_not_the_flower) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.withMovement();
+    rig.equip(0, "moon");
+    rig.equip(1, "bubble");
+    rig.freezeRing();
+    rig.settleEquips(kMoonEquipTicks);
+    rig.settleRing();
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const Entity bubble = rig.petals(1).front();
+    const Vec2 moonBefore = rig.position(body);
+    const Vec2 flowerBefore = rig.position(rig.player);
+    // Clear of ITSELF, as a flower is: away from the bubble's side of the ring.
+    const Vec2 away = (moonBefore - rig.position(bubble)).normalized();
+
+    rig.setFlags(net::InputDefend);
+    rig.tick();
+    CHECK(rig.velocity(body).length() > 0.0);
+    CHECK_NEAR(rig.velocity(rig.player).length(), 0.0, 1e-12);
+    rig.setFlags(0);
+    rig.tick(90);
+
+    // The flower's reach, carried by the moon instead; the flower never moved.
+    const Vec2 thrown = rig.position(body) - moonBefore;
+    CHECK_NEAR(thrown.length(), 60.0, 1.0);
+    CHECK_NEAR(thrown.normalized().x * away.x + thrown.normalized().y * away.y, 1.0, 1e-6);
+    CHECK_NEAR(rig.velocity(body).length(), 0.0, 0.01);
+    CHECK_NEAR(distance(rig.position(rig.player), flowerBefore), 0.0, 1e-9);
+}
+
+TEST(a_heal_on_a_moons_ring_dives_to_the_flower) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "moon");
+    rig.equip(1, "healer");
+    rig.settleEquips(kMoonEquipTicks);
+    rig.tick(40);   // past the healer's charge, still orbiting a full flower
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    // Missing health calls it home -- to the flower, not to the moon its ring
+    // is laid out around -- and it lands by touch, well inside the window an
+    // undelivered dive is paid out at.
+    rig.world.get<Health>(rig.player).current = 50.0;
+    const int window = static_cast<int>(kPetalHomingTimeoutMillis / net::kTickMillis);
+    const bool delivered = rig.tickUntil([&] { return rig.slot(1).broken; }, window * 2 / 3);
+    CHECK(delivered);
+    // The burst's 10, and a few ticks of regeneration.
+    CHECK(rig.world.get<Health>(rig.player).current >= 60.0);
+}
+
+TEST(a_moon_carried_to_another_realm_lays_its_ring_out_where_it_lands) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "moon");
+    rig.equip(1, "basic");
+    rig.settleEquips(kMoonEquipTicks);
+    const Entity body = moonOf(rig);
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    // A teleporter takes the flower to another realm; the moon is carried
+    // after it, the same body put down behind it, and the ring's centre is
+    // the moon's new place on that same tick -- not the coordinates it left
+    // in the old realm.
+    Transform& flower = rig.world.get<Transform>(rig.player);
+    flower.realm = Realm::Maze;
+    flower.position += Vec2{4000.0, 0.0};
+    // The server puts the rest of the kit on the flower as it moves it
+    // (GameServer::moveEntityToRealm); the moon it leaves to this system.
+    const Entity basic = rig.petals(1).front();
+    rig.world.get<Transform>(basic).realm = Realm::Maze;
+    rig.world.get<Transform>(basic).position = flower.position;
+    rig.tick();
+    CHECK(rig.world.isAlive(body));
+    CHECK(rig.world.get<Transform>(body).realm == Realm::Maze);
+    CHECK(distance(rig.position(body), rig.position(rig.player)) < 100.0);
+    const PetalSlotState& state = rig.world.get<PetalSlotState>(rig.player);
+    CHECK(state.ringAnchor == body);
+    CHECK_NEAR(distance(state.ringCentre, rig.position(body)), 0.0, 1e-9);
+    // Sprung toward a place on the moon's new ring, a step from the flower --
+    // not hurled at a centre four thousand units back in the old realm.
+    CHECK(distance(rig.position(basic), rig.position(rig.player)) < 200.0);
 }

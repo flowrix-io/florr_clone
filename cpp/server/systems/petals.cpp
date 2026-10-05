@@ -51,6 +51,13 @@ constexpr double kBubblePopDistancePerRarity = 0.6;
 /// to the same smoothness the client can still draw.
 constexpr double kMaxPopTickTravel = kMinSubstepLength * kMaxSubstepCount;
 
+/// How long the ring takes to fly across when what it is laid out around
+/// changes -- a moon coming out, or breaking and handing the ring back to the
+/// flower. The centre jumps by the whole distance between the two in one
+/// tick, and the spring across a gap that wide flings the ring past it; the
+/// glide carries it over without the overshoot, as the spawn fly-out does.
+constexpr double kRingAnchorSwitchGlideMillis = kPetalSpawnGlideMillis;
+
 /// An apex egg does not hatch an apex pet. The reference substitutes three
 /// unique ones, which is the top of the ladder a pet can actually reach. A
 /// universal egg hatches the same three, stronger (see summonPets).
@@ -479,6 +486,19 @@ bool playerIsDown(World& world, Entity player) {
 
 } // namespace
 
+int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout) {
+    int best = -1;
+    for (int i = 0; i < kLoadoutActiveSlots; ++i) {
+        const LoadoutSlot& slot = loadout.slots[static_cast<std::size_t>(i)];
+        if (slot.empty() || !petalAnchorsRing(registry.petal(slot.configIndex))) continue;
+        // Strictly higher, so the leftmost of equal tiers keeps it.
+        const Rarity held = best < 0 ? Rarity::Common
+                                     : loadout.slots[static_cast<std::size_t>(best)].rarity;
+        if (best < 0 || rarityIndex(slot.rarity) > rarityIndex(held)) best = i;
+    }
+    return best;
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
@@ -715,6 +735,10 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         bankedArmorStacks = armor->stacks;
     }
 
+    // The moon does not stack: one slot's comes out, and every other moon on
+    // the bar is built holding nothing.
+    const int moonSlot = liveMoonSlot(registry, loadout);
+
     // Bucket the live petals by slot, dropping the handles the world has
     // already reaped and the ones combat killed this tick. Both count as
     // instances lost, which the health fold below charges to the pool.
@@ -768,7 +792,14 @@ void PetalSystem::reconcileSlots(World& world, const ContentRegistry& registry, 
         // rare stinger under the epic talent would hold 24.3 rather than 24,
         // and survive the fourth 6-damage hit that ought to break it.
         stats.health = std::round(stats.health * petalHealthScale);
-        const int count = petalCopies(std::max(0, stats.count), skills);
+        // A moon that is not the live one is a slot of zero copies: it serves
+        // its equip reload like any other, then holds nothing. Counted rather
+        // than skipped, so that the count changing -- the live moon taken off,
+        // a better one put on -- rebuilds the slot through the one path that
+        // already knows how, full reload included.
+        const int count = petalAnchorsRing(config) && i != moonSlot
+                              ? 0
+                              : petalCopies(std::max(0, stats.count), skills);
         const double reload = reloadMillisFor(stats, reloadScale);
 
         if (slotState.configIndex != slot.configIndex || slotState.rarity != slot.rarity ||
@@ -1091,6 +1122,13 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     instance.soaksOwnerDamage = soaksOwnerDamage(config);
     world.add<PetalInstance>(petal, instance);
     if (loose) world.add<LoosePetal>(petal);
+    // The moon: the ring's centre while it is out, and the only petal with
+    // momentum -- a bubble popped on its ring throws it, and the movement pass
+    // spends that the way it spends a flower's.
+    if (petalAnchorsRing(config)) {
+        world.add<RingAnchor>(petal);
+        world.add<Motion>(petal);
+    }
 
     world.add<PetalEffect>(petal, PetalEffect{stats.poisonPerSecond, stats.poisonDurationMillis,
                                               stats.knockback, stats.slowFactor,
@@ -1450,7 +1488,11 @@ void PetalSystem::updateManaPool(World& world, Entity player, const Aggregate& a
 void PetalSystem::updateRing(World& world, Entity player, const Aggregate& aggregate, double dt) {
     PetalRing* ring = world.tryGet<PetalRing>(player);
     if (!ring) return;
-    const Body* body = world.tryGet<Body>(player);
+    // A ring laid out around a moon sits the distance off ITS edge that it
+    // would sit off a flower's, so it grows with the moon's tier the way it
+    // grows with a flower's size.
+    const Entity anchor = ringAnchorOf(world, player);
+    const Body* body = world.tryGet<Body>(anchor != NULL_ENTITY ? anchor : player);
     const PlayerInput* input = world.tryGet<PlayerInput>(player);
     const double playerRadius = body ? body->radius : kPlayerBaseRadius;
     // Matches TypeScript's `60 + (PLAYER_SIZE / 2) * (sizeMultiplier - 1)`.
@@ -1484,6 +1526,22 @@ void PetalSystem::updateRing(World& world, Entity player, const Aggregate& aggre
     ring->spin = wrapAngle(ring->spin + kPetalSpinRate * aggregate.spinScale * dt);
 }
 
+Entity PetalSystem::ringAnchorOf(World& world, Entity player) const {
+    const Loadout* loadout = world.tryGet<Loadout>(player);
+    const Transform* owner = world.tryGet<Transform>(player);
+    if (loadout == nullptr || owner == nullptr) return NULL_ENTITY;
+    for (const Entity petal : loadout->spawned) {
+        // A moon combat broke this tick is gone already, as it is to the
+        // movement pass; the ring goes back to the flower on the same tick.
+        if (!world.has<RingAnchor>(petal) || world.has<Dead>(petal)) continue;
+        const Transform* transform = world.tryGet<Transform>(petal);
+        if (transform == nullptr || transform->realm != owner->realm) continue;
+        if (!std::isfinite(transform->position.x) || !std::isfinite(transform->position.y)) continue;
+        return petal;
+    }
+    return NULL_ENTITY;
+}
+
 void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Entity player,
                               const Aggregate& aggregate, double nowMillis, double dt,
                               const Terrain* terrain) {
@@ -1497,19 +1555,34 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
     // ring trail a sprinting flower instead of being welded to it, and the
     // reference is emphatic that it is deliberate. Nothing here may be
     // "fixed" to the live centre.
+    //
+    // With a moon out, every word of that is about the MOON: the ring is laid
+    // out around where it stood at the end of the last tick. Worn petals stay
+    // on the flower's own lagged centre, which is what they rode before.
     PetalSlotState* ringState = world.tryGet<PetalSlotState>(player);
-    const Vec2 committed = ownerTransform->position;
-    const Vec2 centre =
-        ringState != nullptr && ringState->ringCentreValid ? ringState->ringCentre : committed;
+    const Entity anchor = ringAnchorOf(world, player);
+    const Vec2 committedFlower = ownerTransform->position;
+    const Vec2 committed =
+        anchor != NULL_ENTITY ? world.get<Transform>(anchor).position : committedFlower;
+    const bool hadCentre = ringState != nullptr && ringState->ringCentreValid;
+    // The ring changing hands -- a moon coming out, or breaking -- moves its
+    // centre the whole way at once: the ring is laid out around the new one
+    // straight away and flown over to it on a glide.
+    const bool anchorSwitched = hadCentre && ringState->ringAnchor != anchor;
+    const Vec2 centre = hadCentre && !anchorSwitched ? ringState->ringCentre : committed;
+    const Vec2 wornCentre = hadCentre ? ringState->wornCentre : committedFlower;
     if (ringState != nullptr) {
         ringState->ringCentre = committed;
+        ringState->wornCentre = committedFlower;
+        ringState->ringAnchor = anchor;
         ringState->ringCentreValid = true;
     }
 
     const double facing = ownerTransform->angle;
     const double ringRadius = ring->radius;
     const double spin = ring->spin;
-    const Body* ownerBody = world.tryGet<Body>(player);
+    // The body the ring is laid out around: the moon's, while one is out.
+    const Body* ownerBody = world.tryGet<Body>(anchor != NULL_ENTITY ? anchor : player);
     const double playerRadius = ownerBody ? ownerBody->radius : kPlayerBaseRadius;
     const double neutralRadius = kPetalOrbitRestRadius + playerRadius - kPlayerBaseRadius;
     const double rangeScale = std::max(0.0, aggregate.modifiers.rangeScale);
@@ -1574,6 +1647,13 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         // movement pass's to decide. No orbit, no spring, no attraction.
         if (petalIsLooseBody(config)) continue;
         const int subCount = std::max<int>(1, instance->subCount);
+        // Worn on the flower rather than carried on the ring, and so never
+        // laid out around a moon.
+        const bool worn = config.noPhysics || config.hasFixedDirection;
+        if (anchorSwitched && !worn) {
+            instance->glideUntilMillis =
+                std::max(instance->glideUntilMillis, nowMillis + kRingAnchorSwitchGlideMillis);
+        }
 
         // A clumped slot's grains all sit on its one ring place and fan out
         // around it below; every other instance owns the next place along.
@@ -1599,7 +1679,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
             reach += lungeReach(config, nowMillis - instance->spawnedAtMillis);
         }
 
-        Vec2 orbit = centre + Vec2::fromAngle(angle, reach);
+        Vec2 orbit = (worn ? wornCentre : centre) + Vec2::fromAngle(angle, reach);
         double facingAngle = angle;
         if (config.clumped && subCount > 1) {
             // Cluster spacing is a multiple of the petal's own radius, 1 unless
@@ -1654,7 +1734,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
         } else if (!(throwsFromOrbit(config) &&
                      flyThrownPetal(*instance, *transform, committed, angle, pearlLeash,
                                     extension > 1.0, nowMillis, dt))) {
-            stepPetalPhysics(world, registry, *instance, *transform, centre, orbit, angle,
+            stepPetalPhysics(world, registry, *instance, *transform, wornCentre, orbit, angle,
                              petalAttraction, aggregate.spinScale, nowMillis, dt);
         }
 
@@ -1678,7 +1758,7 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
 }
 
 void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry,
-                                   PetalInstance& instance, Transform& transform, Vec2 centre,
+                                   PetalInstance& instance, Transform& transform, Vec2 home,
                                    Vec2 orbit, double orbitAngle, double attractionRadius,
                                    double spinScale, double nowMillis, double dt) {
     // The force ramps in over the smoothing window rather than arriving at
@@ -1736,7 +1816,7 @@ void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry
         // ring has always had. What stops it costing the burst is the landing
         // window in runActions, which delivers the effect once the dive has
         // been going long enough whether or not it ever made contact.
-        target = centre;
+        target = home;
         instance.glideUntilMillis = nowMillis + kPetalReleaseGlideMillis;
     }
 
@@ -1824,6 +1904,13 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
     // covered -- the flower itself does not move until movement spends the
     // impulse next tick.
     Vec2 popDisplacement{0, 0};
+    // What a pop throws: the moon, while the ring is laid out around one.
+    // Looked up once -- nothing in this loop puts a moon out or takes one in --
+    // and every pop reads its bearing off it, as it would off the flower.
+    const Entity thrownBody = [&] {
+        const Entity anchor = ringAnchorOf(world, player);
+        return anchor != NULL_ENTITY ? anchor : player;
+    }();
 
     for (const Entity petal : actionList_) {
         PetalInstance* instance = world.tryGet<PetalInstance>(petal);
@@ -1978,7 +2065,10 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
         // Bubble pops as soon as the ring is pulled in and propels the flower,
         // then pays its rarity-scaled reload.
         if ((config.id == "bubble" || config.id == "magic_bubble") && defending) {
-            Transform* owner = world.tryGet<Transform>(player);
+            // The body the burst throws: the flower, or the moon its ring is
+            // laid out around -- the user's rule: a moon is boosted in the
+            // flower's place.
+            Transform* owner = world.tryGet<Transform>(thrownBody);
 
             // Where the burst throws the flower, and the one thing that is not
             // shared between the two petals.
@@ -2007,7 +2097,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                 push = owner->position + popDisplacement - transform->position;
             }
 
-            Motion* motion = world.tryGet<Motion>(player);
+            Motion* motion = world.tryGet<Motion>(thrownBody);
             if (owner != nullptr && motion != nullptr && push.lengthSq() > 0.0) {
                 const double reach =
                     kBubblePopDistance
@@ -2907,6 +2997,15 @@ void PetalSystem::carryLoosePetalsAcrossRealms(World& world, Entity player) {
         transform->realm = ownerTransform->realm;
         transform->position =
             loosePetalRestPoint(world, player, *ownerTransform, body != nullptr ? body->radius : 0.0);
+        // A moon still coasting on a pop arrives standing, as the flower does
+        // off a teleporter -- and the ring it anchors is laid out around where
+        // it landed from this tick on, not flown in from the realm it left.
+        if (Motion* motion = world.tryGet<Motion>(petal)) motion->velocity = Vec2{};
+        if (world.has<RingAnchor>(petal)) {
+            if (PetalSlotState* state = world.tryGet<PetalSlotState>(player)) {
+                state->ringCentreValid = false;
+            }
+        }
     }
 }
 

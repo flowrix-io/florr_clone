@@ -129,6 +129,8 @@ bool App::start(const AppConfig& config, std::string& errorOut) {
     coarsePointer_ = window_.coarsePointer();
 
     renderer_.setContent(&content());
+    // So a ring laid out around a moon is smoothed around the moon.
+    net_.view().setContent(&content());
     renderer_.setSprites(&sprites_);
     // The published skins, for the flowers wearing them. NetClient owns the
     // list and replaces it on every SkinCatalog/SkinPublished/SkinDeleted, so

@@ -224,8 +224,11 @@ private:
         Query<PlayerTag, Transform> playerPositions;
         /// The NPCs a flower cannot walk through.
         Query<NpcTag, Transform, Body> npcBodies;
-        /// The petals that are solid bodies on the ground -- wax.
+        /// The petals that are solid bodies on the ground -- wax, the moon.
         Query<LoosePetal, Transform, Body> looseBodies;
+        /// The loose petals that carry momentum -- the moon, which a bubble
+        /// throws.
+        Query<RingAnchor, Transform, Motion, Body> ringAnchors;
     };
 
     /// One NPC's body, flattened out of the ECS once per player pass: a handful
@@ -284,6 +287,12 @@ private:
     static constexpr std::uint32_t kNoSeparationEntry = 0xFFFFFFFFu;
 
     void bind(World& world);
+    /// Spends whatever a bubble threw a moon with: its velocity decays under
+    /// the friction a flower's does with no input asking for any, and the
+    /// body is stepped through the walls as a flower is. That shared decay is
+    /// what lets popImpulse aim a pop at the moon with the flower's numbers.
+    /// Run at the head of the player phase, where a flower spends ITS pop.
+    void coastRingAnchors(World& world, const Terrain& terrain, double dt);
     void movePlayers(World& world, const Terrain& terrain, double nowMillis, double dt);
     /// The teleporter pads: the suction well, the dwell and the jump.
     ///

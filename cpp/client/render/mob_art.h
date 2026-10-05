@@ -48,6 +48,11 @@
 // union of those bars be the tube. No document can express that, because the
 // length of the bar is a fact about the chain rather than about the picture.
 //
+// The moon is the one petal here: gardn draws it in code -- a seeded scatter
+// of craters clipped to the disc -- and so does this. Unlike the rock it IS
+// one picture photographed closer as it grows: a moon ten times as wide has
+// the same ten craters, ten times the size.
+//
 // Every painter draws about the ORIGIN, in WORLD units, with the body's radius
 // equal to the `radius` it is handed: a caller that wants it on screen scales
 // and translates first, exactly as it would around a fitted document. Nothing
@@ -79,6 +84,9 @@ enum class MobArt : std::uint8_t {
     Centipede, CentipedeBody, CentipedeEvil, CentipedeEvilBody, CentipedeDesert,
     CentipedeDesertBody, Bubble, BumbleBee, Shell, Starfish, Jellyfish, Dandelion, Fly,
     Leafbug, LeafbugShiny, Mantis, Bush, Roach, Moth, Firefly, FireflyMagic, Dummy, Titan,
+    /// The one PETAL drawn by code (petals.json `$moon`): gardn's seeded
+    /// crater scatter, clipped to the disc, magnified to the moon's radius.
+    Moon,
 };
 
 /// How fast a walk cycle runs, in radians of phase per second.

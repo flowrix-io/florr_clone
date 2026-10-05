@@ -22,6 +22,8 @@
 
 namespace flix {
 
+class ContentRegistry;
+
 /// One entity as the client knows it.
 struct RemoteEntity {
     std::uint32_t netId = 0;
@@ -112,8 +114,17 @@ struct RemoteEntity {
     /// position from it -- the obvious repair -- is worse still: that value
     /// stair-steps at the snapshot rate, so the correction is a sawtooth and
     /// every petal visibly shakes at the beat between snapshot and frame rate.
+    ///
+    /// While the owner has a moon out the ring is laid out around the MOON,
+    /// and the offset is smoothed in the moon's frame instead -- see
+    /// `frameNetId`.
     std::uint32_t ownerNetId = 0;
     Vec2 ownerOffset;
+    /// The entity `ownerOffset` is measured from: the owner, or the moon its
+    /// ring orbits. When it changes the offset is rebased onto the new frame
+    /// from where the petal is drawn, so the petal flies across rather than
+    /// jumping. Zero until the first frame has placed it.
+    std::uint32_t frameNetId = 0;
 
 
     /// Smoothed eye-pupil offset in the flower's radius=25 local space.
@@ -257,6 +268,12 @@ public:
     const std::unordered_map<std::uint32_t, RemoteEntity>& entities() const { return entities_; }
     const SelfState& self() const { return self_; }
 
+    /// The petal configs, for the one thing smoothing has to know about a
+    /// petal: whether its owner's ring orbits it (the moon), and whether it is
+    /// worn on the flower rather than carried on that ring. Left null -- a
+    /// test, a tool -- every ring is smoothed around its flower.
+    void setContent(const ContentRegistry* content) { content_ = content; }
+
     /// Which coordinate space this client's body is in (realm.h). Everything
     /// in `entities()` is in the same one -- the server streams a viewer its
     /// own realm and nothing else -- so this is also what decides whether the
@@ -307,6 +324,10 @@ private:
     double toRenderClock(double serverMillis, double localMillis);
 
     std::unordered_map<std::uint32_t, RemoteEntity> entities_;
+    const ContentRegistry* content_ = nullptr;
+    /// Owner net id -> the net id of the moon its ring orbits, rebuilt every
+    /// frame by interpolate(). A member so a frame does not allocate it.
+    std::unordered_map<std::uint32_t, std::uint32_t> ringAnchors_;
     std::vector<ViewEvent> events_;
     SelfState self_;
     Realm realm_ = Realm::Overworld;

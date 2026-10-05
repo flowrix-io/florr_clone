@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "shared/game/config.h"
+
 namespace flix {
 
 void WorldView::clear() {
@@ -469,38 +471,73 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
     }
 
     // --- petals, after the flowers they hang off --------------------------
+    //
+    // Two passes. The loose ones first: they are smoothed in the world, and a
+    // moon among them is what its owner's ring is anchored to in the second,
+    // so it has to be where it is drawn this frame before the ring reads it.
+    ringAnchors_.clear();
     for (auto& entry : entities_) {
         RemoteEntity& e = entry.second;
         if (e.kind != net::EntityKind::Petal) continue;
 
         const auto owner = entities_.find(e.ownerNetId);
-        if (owner == entities_.end() || e.isLoosePetal()) {
-            // No owner on screen: nothing to anchor to, so smooth the absolute
-            // position and let the ring fend for itself. Happens for the frame
-            // or two before an owner's spawn record arrives.
-            //
-            // A loose petal takes this branch always. It is on no ring: it
-            // stands where it was put while its flower walks off, and in the
-            // flower's frame that is an offset changing every snapshot, which
-            // eased there would drag the slab after the flower by the lag.
-            if (e.needsSnap) {
-                e.position = e.targetPosition;
-                e.needsSnap = false;
-            } else {
-                easeToward(e.position, e.targetPosition, t, false);
-            }
-            e.angle = e.targetAngle;
-            continue;
+        if (owner != entities_.end() && !e.isLoosePetal()) continue;   // second pass
+        if (e.isLoosePetal() && content_ != nullptr && !e.dead() &&
+            petalAnchorsRing(content_->petal(e.typeIndex))) {
+            ringAnchors_[e.ownerNetId] = e.netId;
         }
 
-        // Smooth where the petal sits IN THE FLOWER'S FRAME, then put it back
-        // on the flower's drawn position. See RemoteEntity::ownerOffset.
+        // No owner on screen: nothing to anchor to, so smooth the absolute
+        // position and let the ring fend for itself. Happens for the frame or
+        // two before an owner's spawn record arrives.
+        //
+        // A loose petal takes this branch always. It is on no ring: it stands
+        // where it was put while its flower walks off, and in the flower's
+        // frame that is an offset changing every snapshot, which eased there
+        // would drag the slab after the flower by the lag.
+        if (e.needsSnap) {
+            e.position = e.targetPosition;
+            e.needsSnap = false;
+        } else {
+            easeToward(e.position, e.targetPosition, t, false);
+        }
+        e.angle = e.targetAngle;
+    }
+
+    for (auto& entry : entities_) {
+        RemoteEntity& e = entry.second;
+        if (e.kind != net::EntityKind::Petal || e.isLoosePetal()) continue;
+        const auto owner = entities_.find(e.ownerNetId);
+        if (owner == entities_.end()) continue;   // first pass
+
+        // The frame the ring is laid out in: the owner's moon while one is
+        // out, the owner otherwise -- and the owner always for a petal worn
+        // on the flower, which the server keeps there whatever the ring does.
+        const RemoteEntity* frame = &owner->second;
+        const auto anchor = ringAnchors_.find(e.ownerNetId);
+        if (anchor != ringAnchors_.end()) {
+            const PetalConfig& config = content_->petal(e.typeIndex);
+            const auto moon = entities_.find(anchor->second);
+            if (!config.noPhysics && !config.hasFixedDirection && moon != entities_.end()) {
+                frame = &moon->second;
+            }
+        }
+        // The ring changed hands since last frame. Rebased from where the
+        // petal is DRAWN, so it carries on from there toward its place in the
+        // new frame instead of jumping by the distance between the two.
+        if (e.frameNetId != frame->netId) {
+            if (e.frameNetId != 0 && !e.needsSnap) e.ownerOffset = e.position - frame->position;
+            e.frameNetId = frame->netId;
+        }
+
+        // Smooth where the petal sits IN THE FRAME, then put it back on the
+        // frame's drawn position. See RemoteEntity::ownerOffset.
         //
         // The facing is eased at the same rate as the offset. A clump grain
         // drawn pointing at its clump's centre turns with the ring, and taken
         // straight off the wire it would hold still for a snapshot and then
         // jump, while the grain it is painted on glides.
-        const Vec2 targetOffset = e.targetPosition - owner->second.targetPosition;
+        const Vec2 targetOffset = e.targetPosition - frame->targetPosition;
         if (e.needsSnap) {
             e.ownerOffset = targetOffset;
             e.angle = e.targetAngle;
@@ -509,7 +546,7 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.ownerOffset += (targetOffset - e.ownerOffset) * t;
             e.angle = lerpAngle(e.angle, e.targetAngle, t);
         }
-        e.position = owner->second.position + e.ownerOffset;
+        e.position = frame->position + e.ownerOffset;
     }
 }
 

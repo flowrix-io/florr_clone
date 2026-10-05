@@ -326,10 +326,10 @@ inline constexpr double kPearlMaxDistance = 1000.0;
 /// reads as the petal teleporting.
 inline constexpr double kPearlRecallGlideMillis = 300.0;
 
-/// Wax: a LOOSE petal (see petalIsLooseBody in config.h). It is 30 units in
-/// radius at common and every tier adds another 30, so an apex one is 300 --
-/// the only petal whose body grows with its rarity.
-inline constexpr double kWaxRadiusPerTier = 30.0;
+/// Wax and the moon: the LOOSE petals (see petalIsLooseBody in config.h). Each
+/// is 30 units in radius at common and every tier adds another 30, so an apex
+/// one is 300 -- the only petals whose bodies grow with their rarity.
+inline constexpr double kLoosePetalRadiusPerTier = 30.0;
 
 /// How far behind the flower's heading a loose petal is put down, past the
 /// flower's edge and its own. Behind rather than ahead, so a flower on the

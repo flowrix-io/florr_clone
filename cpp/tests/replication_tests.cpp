@@ -7,7 +7,13 @@
 #include "server/systems/petals.h"
 #include "shared/game/components.h"
 
+#include <sys/stat.h>
+
+#include <cstdlib>
+#include <fstream>
 #include <string>
+
+#include "fixture_content.h"
 
 using namespace flix;
 
@@ -825,6 +831,151 @@ TEST(a_petal_ring_is_smoothed_in_its_flowers_frame_not_in_the_world) {
     CHECK(drawn.y < 60.0);
     CHECK(drawn.x < 60.0);
     CHECK(drawn.x > 0.0);
+}
+
+namespace {
+
+/// A registry holding a moon, a basic and a worn eye, for the smoothing tests
+/// below: WorldView asks the configs whether a ring orbits a petal.
+const ContentRegistry& moonContent() {
+    static const ContentRegistry registry = [] {
+        ContentRegistry r;
+        const char* env = std::getenv("TMPDIR");
+        std::string dir = (env != nullptr && *env != '\0') ? env : "/tmp";
+        if (dir.back() != '/') dir.push_back('/');
+        dir += "flix_moon_view";
+        mkdir(dir.c_str(), 0755);
+        const std::string mobs = dir + "/mobs.json";
+        const std::string petals = dir + "/petals.json";
+        std::ofstream(mobs, std::ios::trunc) << test::fixtureMobs(R"JSON({
+  "critter": {"name":"Critter","health":10,"damage":1,"size":1,"speed":0.2,"range":300,"cooldown":500,"color":"#FF0000","section":[0],"ai_type":"hostile"}
+})JSON");
+        std::ofstream(petals, std::ios::trunc) << test::fixturePetals(R"JSON({
+  "basic": {"name":"Basic","damage":10,"health":10,"size":1,"cooldown":1000,"count":1,"color":"#FFFFFF"},
+  "moon":  {"name":"Moon","damage":1,"health":1000,"size":2.6,"cooldown":10000,"count":1,"color":"#878787"},
+  "gazer": {"name":"Gazer","damage":0,"health":null,"size":1,"cooldown":1,"count":1,"range":0,"fixedDirection":0,"noPhysics":true,"color":"#000000"}
+})JSON");
+        std::string error;
+        if (!r.loadFiles(mobs, petals, error)) {
+            ::testing::reportFailure(__FILE__, __LINE__, "moon fixture failed: " + error);
+        }
+        return r;
+    }();
+    return registry;
+}
+
+/// A flower at `at`, its moon at `moonAt` and a petal on the moon's ring
+/// `ring` off it, already settled -- seeded into `view`.
+void seedMoonRing(WorldView& view, Vec2 at, Vec2 moonAt, Vec2 ring, const char* petalId = "basic") {
+    view.setContent(&moonContent());
+    RemoteEntity owner;
+    owner.netId = 1;
+    owner.kind = net::EntityKind::Player;
+    owner.position = owner.targetPosition = at;
+    owner.needsSnap = false;
+    view.seedForTest(owner);
+
+    RemoteEntity moon;
+    moon.netId = 3;
+    moon.kind = net::EntityKind::Petal;
+    moon.typeIndex = moonContent().petalIndex("moon");
+    moon.spawnFlags = net::SpawnLoosePetal;
+    moon.ownerNetId = 1;
+    moon.position = moon.targetPosition = moonAt;
+    moon.needsSnap = false;
+    view.seedForTest(moon);
+
+    RemoteEntity petal;
+    petal.netId = 2;
+    petal.kind = net::EntityKind::Petal;
+    petal.typeIndex = moonContent().petalIndex(petalId);
+    petal.ownerNetId = 1;
+    petal.position = petal.targetPosition = moonAt + ring;
+    petal.ownerOffset = ring;
+    petal.needsSnap = false;
+    view.seedForTest(petal);
+}
+
+} // namespace
+
+TEST(a_ring_laid_out_around_a_moon_is_smoothed_in_the_moons_frame) {
+    // The server lays the ring out around the moon, which stands still while
+    // the flower walks away. Smoothed in the FLOWER's frame -- an offset that
+    // changes every snapshot by the flower's own step -- the ring would be
+    // dragged after the flower by the ease and wobble off the moon.
+    WorldView view;
+    const Vec2 ring{65, 0};
+    seedMoonRing(view, {1000, 1000}, {900, 1000}, ring);
+
+    Vec2 walked{1000, 1000};
+    double worstDrift = 0;
+    for (int snapshot = 0; snapshot < 40; ++snapshot) {
+        walked += {5.0, 0};
+        view.setTargetForTest(1, walked);
+        for (int frame = 0; frame < 3; ++frame) {
+            view.interpolate(1000 + snapshot * 50.0 + frame * 16.7, 1.0 / 60.0);
+            const Vec2 drawn = view.entities().at(2).position - view.entities().at(3).position;
+            worstDrift = std::max(worstDrift, distance(drawn, ring));
+        }
+    }
+    CHECK_NEAR(worstDrift, 0.0, 1e-9);
+
+    // And the moon moving -- a bubble threw it -- carries the ring rigidly.
+    Vec2 thrown{900, 1000};
+    for (int snapshot = 0; snapshot < 20; ++snapshot) {
+        thrown += {0, 7.0};
+        view.setTargetForTest(3, thrown);
+        view.setTargetForTest(2, thrown + ring);
+        for (int frame = 0; frame < 3; ++frame) {
+            view.interpolate(4000 + snapshot * 50.0 + frame * 16.7, 1.0 / 60.0);
+            const Vec2 drawn = view.entities().at(2).position - view.entities().at(3).position;
+            worstDrift = std::max(worstDrift, distance(drawn, ring));
+        }
+    }
+    CHECK_NEAR(worstDrift, 0.0, 1e-9);
+}
+
+TEST(a_worn_petal_stays_in_its_flowers_frame_while_the_ring_orbits_a_moon) {
+    WorldView view;
+    seedMoonRing(view, {1000, 1000}, {900, 1000}, {0, 0}, "gazer");
+    // Worn on the flower: the server puts it there, and that is the frame.
+    view.setTargetForTest(2, {1000, 1000});
+    RemoteEntity& eye = const_cast<RemoteEntity&>(view.entities().at(2));
+    eye.position = {1000, 1000};
+    eye.ownerOffset = {0, 0};
+
+    Vec2 walked{1000, 1000};
+    for (int snapshot = 0; snapshot < 20; ++snapshot) {
+        walked += {5.0, 0};
+        view.setTargetForTest(1, walked);
+        view.setTargetForTest(2, walked);
+        view.interpolate(1000 + snapshot * 50.0, 1.0 / 60.0);
+        CHECK_NEAR(distance(view.entities().at(2).position, view.entities().at(1).position), 0.0,
+                   1e-9);
+    }
+}
+
+TEST(a_ring_changing_hands_flies_across_instead_of_jumping) {
+    // The moon breaks and the server hands the ring back to the flower. The
+    // petal's offset is rebased onto the new frame from where it is DRAWN, so
+    // the frame changing moves it nowhere; only the ease toward its new place
+    // does.
+    WorldView view;
+    seedMoonRing(view, {1000, 1000}, {700, 1000}, {65, 0});
+    view.interpolate(1000, 1.0 / 60.0);
+    const Vec2 before = view.entities().at(2).position;
+
+    // The moon gone from the snapshot, the petal's place now on the flower's
+    // ring, 300 units away.
+    RemoteEntity gone = view.entities().at(3);
+    gone.state = net::StateDead;
+    view.seedForTest(gone);
+    view.setTargetForTest(2, {1060, 1000});
+    view.interpolate(1016.7, 1.0 / 60.0);
+    const Vec2 after = view.entities().at(2).position;
+    // Under way toward it, and nowhere near all the way in one frame.
+    CHECK(after.x > before.x);
+    CHECK(after.x - before.x < 0.5 * (1060.0 - before.x));
 }
 
 TEST(a_petal_with_no_owner_on_screen_still_interpolates) {

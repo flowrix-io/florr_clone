@@ -932,6 +932,9 @@ inline bool petalIsClickToUse(const PetalConfig& config) {
 /// The petal that is put down on the ground instead of carried, by id.
 inline constexpr const char* kWaxPetalId = "wax";
 
+/// The petal the rest of the ring orbits instead of the flower, by id.
+inline constexpr const char* kMoonPetalId = "moon";
+
 /// Whether this petal is a LOOSE BODY rather than a place on the ring.
 ///
 /// A loose petal is spawned beside its flower and left there: it takes no
@@ -945,7 +948,25 @@ inline constexpr const char* kWaxPetalId = "wax";
 /// By id for the reason petalIsClickToUse is: the server, the wire and the
 /// client's renderer all have to agree about it, and petals.json is shared
 /// verbatim with the frozen browser build.
-inline bool petalIsLooseBody(const PetalConfig& config) { return config.id == kWaxPetalId; }
+///
+/// Wax and the moon are the two. Both grow 30 units a tier
+/// (kLoosePetalRadiusPerTier).
+inline bool petalIsLooseBody(const PetalConfig& config) {
+    return config.id == kWaxPetalId || config.id == kMoonPetalId;
+}
+
+/// Whether this petal is the body its flower's RING orbits -- the moon.
+///
+/// A loose body (above) that the rest of the ring is laid out around in place
+/// of the flower: every carried petal orbits it at the distance it would
+/// orbit a flower that size, and a bubble popped on that ring throws it
+/// rather than the flower. Worn petals (`noPhysics`) stay on the flower, and
+/// a petal flying home to deliver a heal flies to the flower.
+///
+/// It does not stack: one flower has one moon however many are on the bar.
+/// The highest tier among them is the one that comes out (the leftmost of
+/// equals) and the others hold nothing (moonSlotOf).
+inline bool petalAnchorsRing(const PetalConfig& config) { return config.id == kMoonPetalId; }
 
 // ---------------------------------------------------------------------------
 // ContentRegistry

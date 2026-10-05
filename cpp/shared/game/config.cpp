@@ -1683,9 +1683,10 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
         c.spongeDamageDurationMillis * (1.0 + rarityIndex(tier) * 0.5);
     s.attractionForce = c.attractionForce;
     s.radius = c.size * kPetalRadiusPerSize;
-    // Wax is the one petal whose body grows with its tier, and it grows by a
-    // flat 30 a step rather than off `size`: 30 at common, 300 at apex.
-    if (c.id == kWaxPetalId) s.radius = kWaxRadiusPerTier * (rarityIndex(tier) + 1);
+    // The loose petals -- wax, the moon -- are the ones whose bodies grow with
+    // their tier, by a flat 30 a step rather than off `size`: 30 at common,
+    // 300 at apex.
+    if (petalIsLooseBody(c)) s.radius = kLoosePetalRadiusPerTier * (rarityIndex(tier) + 1);
     s.size = c.size;
     s.visualScale = c.visualScale;
     s.damageIntervalMillis = c.damageIntervalMillis;

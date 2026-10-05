@@ -179,6 +179,7 @@ MobArt mobArtFor(const std::string& image) {
     if (name == "oracle") return MobArt::Oracle;
     if (name == "trader") return MobArt::Trader;
     if (name == "titan") return MobArt::Titan;
+    if (name == "moon") return MobArt::Moon;
     // florr's ports, under florr's own names.
     static const std::pair<const char*, MobArt> kFlorr[] = {
         {"scorpion", MobArt::Scorpion},
@@ -2678,6 +2679,68 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.quadraticCurveTo(0.0f, 5.0f, 6.0f, 10.0f);
             canvas.stroke();
 
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::Moon: {
+            // gardn's moon petal (Client/Assets/Petal.cc): a grey disc, its
+            // outline stroked UNDER the fill so only the outer half shows, and
+            // ten craters scattered over a square one crater-reach wider than
+            // it, seeded, stroked, filled nonzero and clipped to the disc.
+            //
+            // One picture at every size, magnified: gardn draws it at a radius
+            // of 50, and a moon of any other radius is that drawing scaled --
+            // craters, outlines and all -- so an apex moon's craters are six
+            // times a common one's (the user's call, 2026-10-04: the craters
+            // grow with the moon rather than multiplying at one size).
+            //
+            // The seed is rysteria_gardn's own (`id * 274633 + 284562`, its
+            // PetalID::kMoon being 40), so every moon is the reference's moon
+            // crater for crater, and the angle the server rolls for each one
+            // on the ground is what tells two apart.
+            //
+            // One departure: gardn moves to each crater's CENTRE before its
+            // arc, which strokes a radius from the centre to the rim on every
+            // crater. Moved to the rim instead, so a crater is just a crater.
+            constexpr double kGardnMoonRadius = 50.0;
+            constexpr int kCraters = 10;
+            constexpr std::uint32_t kRysteriaMoonSeed = 40u * 274633u + 284562u;
+            const double reach = kGardnMoonRadius + 10.0;
+            SeedGenerator gen(kRysteriaMoonSeed);
+
+            canvas.save();
+            const float scale = static_cast<float>(attr.radius / kGardnMoonRadius);
+            canvas.scale(scale, scale);
+            ui::setFill(canvas, attr.baseColor);
+            ui::setStroke(canvas, 0x6D6D6Du);
+            canvas.setLineWidth(5.0f);
+            canvas.beginPath();
+            canvas.arc(0.0f, 0.0f, static_cast<float>(kGardnMoonRadius), 0.0f,
+                       static_cast<float>(kTau));
+            canvas.stroke();
+            canvas.fill();
+            canvas.clip();
+
+            ui::setFill(canvas, 0x999999u);
+            ui::setStroke(canvas, 0x7C7C7Cu);
+            canvas.setLineWidth(3.0f);
+            canvas.beginPath();
+            for (int i = 0; i < kCraters; ++i) {
+                const double x = gen.binext() * reach;
+                const double y = gen.binext() * reach;
+                const double r = gen.binext() * 10.0 + 10.0;
+                // A crater wholly off the disc is clipped away to nothing: the
+                // draws are spent on the ones that show. Its three rolls are
+                // still taken, so the rest land where gardn puts them.
+                const double clear = kGardnMoonRadius + r + 1.5;
+                if (x * x + y * y >= clear * clear) continue;
+                canvas.moveTo(static_cast<float>(x + r), static_cast<float>(y));
+                canvas.arc(static_cast<float>(x), static_cast<float>(y), static_cast<float>(r),
+                           0.0f, static_cast<float>(kTau));
+            }
+            canvas.stroke();
+            canvas.fill();
             canvas.restore();
             break;
         }

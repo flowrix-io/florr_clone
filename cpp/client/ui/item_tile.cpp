@@ -170,7 +170,12 @@ constexpr GardnIcon kGardnIcon[] = {
     {"lotus",            26.5,   12,  0,     0.1,     1},
     {"magnet",           42.5,   12,  0,       0,     1},
     {"missile",            27,   10,  0,       1,     1},
-    {"moon",              126,   50,  0,       0,     1},   // shrinks 20/50
+    // The recorder that measured these does not clip, and gardn clips the
+    // moon's craters to its disc: 126 was the craters spilling past it. What
+    // shows is the disc and the outer half of its 5-unit outline, 105. The
+    // painter draws that outline OUTSIDE the radius it is handed, so its art
+    // covers 105% of the box.
+    {"moon",              105,   50,  0,       0,  1.05},   // shrinks 20/50
     {"observer",           35, 12.5,  0,       0,     1},
     {"peas",               17,    7,  8,       0,     1},
     {"pincer",             23,   10,  0,     0.7,     1},

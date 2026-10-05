@@ -119,12 +119,34 @@ struct PetalSlotState {
     /// pair, and says so at length: orbiting the live centre is what stops
     /// petals trailing a sprinting flower. This system runs after movement, so
     /// the previous centre has to be remembered rather than read.
+    ///
+    /// With a moon out (RingAnchor) it is the MOON's position instead: the
+    /// ring is laid out around the moon, and trails it by the same one tick.
     Vec2 ringCentre;
+    /// The flower's own position at the end of the previous tick, whatever
+    /// the ring is laid out around. Worn petals ride it, and a petal flying
+    /// home to deliver a heal or a shield flies to it. The same as ringCentre
+    /// while no moon is out.
+    Vec2 wornCentre;
+    /// What ringCentre was measured from: the moon it was laid out around, or
+    /// NULL_ENTITY for the flower. A change is a ring flying from one centre
+    /// to the other, which placePetals carries over on a glide rather than on
+    /// the spring.
+    Entity ringAnchor = NULL_ENTITY;
     /// False until a centre has been recorded, and cleared whenever the flower
     /// stops being where it was -- a corpse's ring is torn down and the
     /// respawn must not fly its petals in from where it died.
     bool ringCentreValid = false;
 };
+
+/// The slot whose moon comes out, or -1 for a bar with none on its active row.
+///
+/// The moon does not stack: however many are equipped, one flower has one.
+/// The highest tier wins and the leftmost of equals breaks the tie, so the
+/// answer depends on the bar alone -- not on which happened to reload first --
+/// and does not move while the bar does not. Every other moon slot holds
+/// nothing (reconcileSlots builds it with a count of zero).
+int liveMoonSlot(const ContentRegistry& registry, const Loadout& loadout);
 
 /// What a petal (or a projectile it fired) does to what it touches, resolved
 /// once at spawn.
@@ -269,6 +291,10 @@ private:
     /// would get wrong.
     void updateManaPool(World& world, Entity player, const Aggregate& aggregate, double dt);
     void updateRing(World& world, Entity player, const Aggregate& aggregate, double dt);
+    /// The flower's moon on the field -- the body its ring is laid out around
+    /// -- or NULL_ENTITY while it has none out (none equipped, or broken and
+    /// reloading), in which case the ring orbits the flower as it always has.
+    Entity ringAnchorOf(World& world, Entity player) const;
     /// Step every one of the player's petals: where its orbit point is, which
     /// mob (if any) has captured it, and the spring or glide that carries it
     /// there. `aggregate` is wanted for the ring's spin rate, which is the one
@@ -284,8 +310,11 @@ private:
     /// overshoot-free approach instead -- the fly-out when the petal appears
     /// and the release after the mob it was orbiting died -- because the spring
     /// crossing either of those gaps reads as the whole ring teleporting.
+    ///
+    /// `home` is where a homing petal dives: the flower, even while the ring
+    /// is laid out around a moon.
     void stepPetalPhysics(World& world, const ContentRegistry& registry, PetalInstance& instance,
-                          Transform& transform, Vec2 centre, Vec2 orbit, double orbitAngle,
+                          Transform& transform, Vec2 home, Vec2 orbit, double orbitAngle,
                           double attractionRadius, double spinScale, double nowMillis, double dt);
     void runActions(World& world, const ContentRegistry& registry, Entity player,
                     double nowMillis, double dt);

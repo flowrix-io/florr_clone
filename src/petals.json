@@ -1127,7 +1127,7 @@
         "description": "Where did this come from?",
         "color": "#878787",
         "count": 1,
-        "image": "<svg width=\"32\" height=\"32\" viewBox=\"-52.5 -52.5 105 105\" xmlns=\"http://www.w3.org/2000/svg\">\n  <defs>\n    <clipPath id=\"moon-crater-clip\">\n      <circle cx=\"0\" cy=\"0\" r=\"50\" />\n    </clipPath>\n  </defs>\n\n  <circle cx=\"0\" cy=\"0\" r=\"50\" fill=\"#878787\" stroke=\"#6d6d6d\" stroke-width=\"5\" />\n\n  <g clip-path=\"url(#moon-crater-clip)\" fill=\"#999999\" stroke=\"#7c7c7c\" stroke-width=\"3\">\n    <circle cx=\"-18\" cy=\"-24\" r=\"13\" />\n    <circle cx=\"16\" cy=\"-31\" r=\"8\" />\n    <circle cx=\"33\" cy=\"-5\" r=\"15\" />\n    <circle cx=\"4\" cy=\"2\" r=\"11\" />\n    <circle cx=\"-33\" cy=\"6\" r=\"9\" />\n    <circle cx=\"-9\" cy=\"30\" r=\"14\" />\n    <circle cx=\"24\" cy=\"29\" r=\"10\" />\n    <circle cx=\"-44\" cy=\"-40\" r=\"12\" />\n    <circle cx=\"47\" cy=\"41\" r=\"16\" />\n    <circle cx=\"-40\" cy=\"46\" r=\"11\" />\n  </g>\n</svg>",
+        "image": "$moon",
         "isAdminPetal": false
     },
     "lotus": {
