@@ -659,7 +659,7 @@ private:
         /// Flies that sway about its bearing while chasing, too.
         bool beeChaseWeave = false;
         /// Carries its velocity under gardn's friction and hops gardn's
-        /// stride. See MobConfig::gardnMotion.
+        /// stride. See MobStats::gardnMotion.
         bool gardnMotion = false;
         /// Has a projectile block, so the volley path is worth entering.
         bool shoots = false;

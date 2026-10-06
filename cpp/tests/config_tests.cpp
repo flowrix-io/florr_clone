@@ -343,7 +343,8 @@ TEST(mob_stats_scale_across_rarities) {
     CHECK_NEAR(common.health, 35.0, 1e-9);                 // config health, 1x
     CHECK_NEAR(common.damage, 50.0, 1e-9);
     CHECK_NEAR(common.radius, size * kMobSizeScale[0] * kMobBaseRadius, 1e-9);
-    CHECK_NEAR(common.mass, (size * kMobSizeScale[0]) * (size * kMobSizeScale[0]), 1e-9);
+    // gardn's mass, linear in the radius: 1 + radius / 25.
+    CHECK_NEAR(common.mass, 1.0 + common.radius / kMassReferenceRadius, 1e-9);
     CHECK_NEAR(common.aggroRange, 100.0, 1e-9);
     CHECK(common.spawnable());
 

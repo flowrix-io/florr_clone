@@ -4976,7 +4976,10 @@ void GameServer::moveEntityToRealm(Entity entity, Realm realm, Vec2 position) {
     // is no longer in. A flower that arrives still carrying the impulse that
     // pushed it onto the pad arrives sliding.
     if (Motion* motion = world_.tryGet<Motion>(entity)) motion->velocity = {0, 0};
-    if (Knockback* knockback = world_.tryGet<Knockback>(entity)) knockback->impulse = {0, 0};
+    if (Knockback* knockback = world_.tryGet<Knockback>(entity)) {
+        knockback->impulse = {0, 0};
+        knockback->carry = {0, 0};
+    }
     // A pad the flower is standing on at the far end must not grab it back on
     // the very next tick, and its charge-up belongs to the map it was on.
     if (TeleporterState* pads = world_.tryGet<TeleporterState>(entity)) {

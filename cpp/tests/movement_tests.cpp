@@ -299,42 +299,57 @@ TEST(the_aim_angle_is_the_aim_and_the_walk_heading_is_the_facing) {
 // Knockback
 // ---------------------------------------------------------------------------
 
-TEST(knockback_is_a_one_shot_positional_displacement) {
+TEST(a_flowers_knockback_is_spent_as_momentum_over_the_same_distance) {
     Fixture fx;
     const Entity player = fx.spawnPlayer({5000, 5000});
     const double startX = fx.positionOf(player).x;
     fx.world.get<Knockback>(player).impulse = {600, 0};
 
+    // Not in one tick: a jump that size, with the camera pinned to the flower,
+    // shakes the whole screen. The shove becomes velocity that the walking
+    // friction spends, so the first tick covers only part of it...
     fx.step(1);
-    CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 1e-9);
-    // The pending offset is consumed, with no momentum added to the flower.
-    CHECK_NEAR(fx.velocityOf(player).x, 0.0, 1e-9);
+    const double firstTick = fx.positionOf(player).x - startX;
+    CHECK(firstTick > 0.0);
+    CHECK(firstTick < 600.0 * 0.5);
+    CHECK(fx.velocityOf(player).x > 0.0);
     CHECK_NEAR(fx.world.get<Knockback>(player).impulse.x, 0.0, 1e-12);
 
-    fx.step(50);
-    CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 1e-9);
+    // ...and the flower comes to rest the full distance away.
+    fx.step(90);
+    CHECK_NEAR(fx.positionOf(player).x, startX + 600.0, 0.01);
+    CHECK_NEAR(fx.velocityOf(player).x, 0.0, 0.01);
 }
 
-TEST(a_mobs_knockback_moves_it_once_and_leaves_its_velocity_alone) {
+TEST(a_mobs_knockback_is_spent_as_a_recoil_and_leaves_its_velocity_alone) {
     Fixture fx;
     const Entity light = fx.spawnMob({5000, 5000}, 20.0, 1.0);
     const Entity heavy = fx.spawnMob({5000, 6000}, 20.0, 4.0);
 
     // Combat has already divided by mass when it writes the offset, so the
-    // movement pass applies what it is handed, whatever the body weighs.
+    // movement pass applies what it is handed, whatever the body weighs --
+    // over several ticks, the way gardn's friction spends a shove, rather than
+    // in one jump the client would replay as a teleport.
     fx.world.get<Knockback>(light).impulse = {40, 0};
     fx.world.get<Knockback>(heavy).impulse = {0, -10};
     fx.step(1);
 
-    CHECK_NEAR(fx.positionOf(light).x, 5040.0, 1e-9);
+    const double kept = std::pow(kKnockbackSpendDecay, net::kTickSeconds * kKnockbackSpendRate);
+    CHECK_NEAR(fx.positionOf(light).x, 5000.0 + 40.0 * (1.0 - kept), 1e-9);
     CHECK_NEAR(fx.positionOf(light).y, 5000.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(heavy).y, 5990.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(heavy).y, 6000.0 - 10.0 * (1.0 - kept), 1e-9);
+
+    fx.step(60);
+    CHECK_NEAR(fx.positionOf(light).x, 5040.0, kKnockbackSettleDistance);
+    CHECK_NEAR(fx.positionOf(heavy).y, 5990.0, kKnockbackSettleDistance);
     // Spent, and not turned into momentum: the AI owns a mob's velocity.
     CHECK_NEAR(fx.world.get<Knockback>(light).impulse.x, 0.0, 1e-12);
     CHECK_NEAR(fx.velocityOf(light).length(), 0.0, 1e-12);
 
+    // Settled: nothing left owed, so it stays where the recoil left it.
+    const double settled = fx.positionOf(light).x;
     fx.step(10);
-    CHECK_NEAR(fx.positionOf(light).x, 5040.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(light).x, settled, 1e-12);
 }
 
 TEST(a_stationary_mob_is_not_moved_by_knockback) {
@@ -679,17 +694,19 @@ TEST(mob_velocity_is_left_for_the_ai_phase_to_own) {
     fx.step(1);
     // The AI is the sole owner of a mob's velocity: the movement pass reads it
     // and integrates it, and writes it only to zero it against a wall. A
-    // knockback moves the body and contributes nothing to it.
+    // knockback moves the body -- over a few ticks -- and contributes nothing
+    // to it.
     CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
-    fx.step(1);
+    fx.step(60);
     CHECK_NEAR(fx.velocityOf(mob).x, 0.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(mob).x, 5080.0, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, 5080.0, kKnockbackSettleDistance);
 
     // What the AI DOES write is carried, undamped, exactly as handed over.
+    const double before = fx.positionOf(mob).x;
     fx.world.get<Motion>(mob).velocity = {600, 0};
     fx.step(1);
     CHECK_NEAR(fx.velocityOf(mob).x, 600.0, 1e-9);
-    CHECK_NEAR(fx.positionOf(mob).x, 5080.0 + 600.0 * net::kTickSeconds, 1e-9);
+    CHECK_NEAR(fx.positionOf(mob).x, before + 600.0 * net::kTickSeconds, 1e-9);
 }
 
 // ---------------------------------------------------------------------------

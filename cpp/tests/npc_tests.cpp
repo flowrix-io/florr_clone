@@ -769,6 +769,9 @@ TEST(a_hostile_npc_bites_the_flower_touching_it_and_breaks_the_petals_striking_i
     };
     const double dummyBite = pressAgainst(dummy);
     CHECK(dummyBite > 0.0);
+    // The bounce is velocity (gardn's), so the flower slides clear over the
+    // next few ticks rather than being put there in the one it was bitten in.
+    h.step(15, {&client});
     CHECK(distance(world.get<Transform>(player).position, world.get<Transform>(dummy).position) >
           world.get<Body>(dummy).radius + world.get<Body>(player).radius + 10.0);
 

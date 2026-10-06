@@ -691,6 +691,30 @@ TEST(mob_playback_extrapolates_at_most_one_sample_when_starved) {
     CHECK_NEAR(view.entities().at(4).position.x, 200.0, 1e-9);
 }
 
+TEST(a_mob_that_stops_is_drawn_where_it_stopped) {
+    // A mob that stops moving drops out of the snapshot: nothing about it
+    // changed. Its history must still advance, or playback runs off the end of
+    // it and extrapolates the last step -- the mob drawn a whole step past
+    // where it stopped, and held there until it moves again.
+    Fixture f;
+    const Entity mob = f.addMob({1100, 1000});
+    WorldView client;
+    f.tick(client, 1, 1000);
+    client.interpolate(1000, 1.0 / 60.0);   // the spawn snap
+
+    std::uint32_t tick = 2;
+    for (int step = 0; step < 3; ++step) {
+        f.world.get<Transform>(mob).position.x += 20.0;
+        f.tick(client, tick, 1000 + 50.0 * tick);
+        ++tick;
+    }
+    for (int silent = 0; silent < 3; ++silent, ++tick) f.tick(client, tick, 1000 + 50.0 * tick);
+
+    // Long after the last snapshot: the whole history has been played.
+    client.interpolate(1e9, 1.0 / 60.0);
+    CHECK_NEAR(client.entities().at(netIdOf(f.world, mob)).position.x, 1160.0, 1e-9);
+}
+
 TEST(a_mob_with_no_history_eases_rather_than_freezing) {
     // One sample cannot bracket anything. Freezing on it would stall every mob
     // for the whole playback delay after it comes into view.

@@ -106,12 +106,6 @@ Vec2 takeKnockback(World& world, Entity e) {
     return impulse;
 }
 
-void applyPendingKnockback(World& world, Entity e, Transform& transform) {
-    const Vec2 displacement = takeKnockback(world, e);
-    if (!std::isfinite(displacement.x) || !std::isfinite(displacement.y)) return;
-    transform.position += displacement;
-}
-
 /// Whether a knockback leaves this mob where it stands.
 ///
 /// gardn weighs a stationary mob at ten thousand times its mass, which at any
@@ -427,7 +421,22 @@ void MovementSystem::movePlayers(World& world, const Terrain& terrain,
         integrateVelocity(state, desiredVelocity(input.current.moveAngle,
                                                  input.current.moveStrength, maxSpeed), dt);
 
-        applyPendingKnockback(world, e, transform);
+        // A pending shove becomes momentum that the same friction spends, so
+        // the flower slides the distance out over the next few ticks instead
+        // of jumping it in one -- with the camera pinned to the flower, a jump
+        // jolts the whole screen however smoothly the client then eases it.
+        {
+            const Vec2 shove = takeKnockback(world, e);
+            const double reach = shove.length();
+            if (reach > 0.0) {
+                const double speed = shoveSpeed(reach, dt, /*decaysFirst=*/false);
+                if (speed > 0.0) {
+                    state.velocity += shove * (speed / reach);
+                } else {
+                    transform.position += shove;
+                }
+            }
+        }
         const Vec2 velocity = sanitizeMovementVelocity(state.velocity);
         // The containment guard is the flower's alone, as it is in the
         // reference: it lives in stepPlayerMovement, and mobs and projectiles
@@ -640,11 +649,32 @@ void MovementSystem::moveMobs(World& world, const Terrain& terrain,
         // would otherwise be put through it. The crossing guard is the same
         // one the flower's step takes after its shove. Speed 1 for the
         // displacement over one second, so a dt of zero still delivers it.
-        const Vec2 knockback = takeKnockback(world, e);
-        if ((knockback.x != 0.0 || knockback.y != 0.0) &&
-            !anchoredAgainstKnockback(world, registry, e)) {
-            stepCollide(terrain, transform.realm, transform.position, knockback, kMobWallRadius,
-                        1.0, true, true);
+        //
+        // Spent over several ticks rather than in this one; see
+        // kKnockbackSpendDecay. A wall that stops the shove takes the rest of
+        // it too, or a mob pinned against one would grind into it for the
+        // whole recoil.
+        if (Knockback* kb = world.tryGet<Knockback>(e)) {
+            const Vec2 fresh = takeKnockback(world, e);
+            if (anchoredAgainstKnockback(world, registry, e) ||
+                !std::isfinite(kb->carry.x) || !std::isfinite(kb->carry.y)) {
+                kb->carry = Vec2{0, 0};
+            } else {
+                kb->carry += fresh;
+                if (kb->carry.lengthSq() < kKnockbackSettleDistance * kKnockbackSettleDistance) {
+                    kb->carry = Vec2{0, 0};
+                } else {
+                    // A step of no time delivers the lot, as the old one-shot
+                    // did, rather than holding it owed forever.
+                    const double kept =
+                        dt > 0.0 ? std::pow(kKnockbackSpendDecay, dt * kKnockbackSpendRate) : 0.0;
+                    const Vec2 spend = kb->carry * (1.0 - kept);
+                    const StepOutcome out = stepCollide(terrain, transform.realm,
+                                                        transform.position, spend, kMobWallRadius,
+                                                        1.0, true, true);
+                    kb->carry = out.blocked ? Vec2{0, 0} : kb->carry * kept;
+                }
+            }
         }
 
         const Vec2 velocity = sanitizeMovementVelocity(motion.velocity);

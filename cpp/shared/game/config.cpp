@@ -1533,15 +1533,16 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
     const std::size_t t = static_cast<std::size_t>(tier);
 
     MobStats s;
-    // `size` already carries the rarity step, so mass -- which is area -- gets
-    // the rarity growth for free and a mythic shrugs off what launches a bee.
+    // `size` already carries the rarity step, so mass -- gardn's, off the
+    // radius -- gets the rarity growth for free and a mythic shrugs off more
+    // than a bee does, without becoming a wall.
     const double scaledSize = c.size * kMobSizeScale[t];
     s.health = c.health * kMobHealthScale[t];
     s.damage = c.damage * kMobDamageScale[t];
     s.armor = c.armor * kMobArmorScale[t];
     s.evasion = c.evasion;
     s.radius = scaledSize * kMobBaseRadius;
-    s.mass = scaledSize * scaledSize;
+    s.mass = bodyMassForRadius(s.radius) * (c.speed == 0.0 ? kAnchoredMassScale : 1.0);
     s.speed = c.speed * kMobSpeedUnitsPerSecond;
     // These PURSUE at the flower's 300 u/s so a fleeing player cannot outrun
     // them -- but only while pursuing. Every other branch (the idle drift, a
@@ -1582,6 +1583,8 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
         tier >= rarityIndex(Rarity::Epic)) {
         s.ai = AiKind::Neutral;
     }
+    s.gardnMotion = c.gardnMotion || (s.ai == AiKind::Neutral && c.speed != 0.0 &&
+                                      c.segmentCount == 0 && !c.chainBody);
     // min_rarity is enforced in exactly one place: below its tier the mob is
     // not ambient, and every spawner already filters on that.
     s.ambient = tier >= rarityIndex(c.minRarity) && !c.groups.empty() && !c.neverAmbient;

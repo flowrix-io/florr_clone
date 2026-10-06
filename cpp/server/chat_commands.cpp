@@ -373,7 +373,7 @@ void GameServer::teleportEntity(Entity entity, Vec2 position) {
     // flower dropped across the map still carrying the impulse that was
     // pushing it there arrives sliding.
     if (Motion* motion = world_.tryGet<Motion>(entity)) motion->velocity = {0, 0};
-    if (Knockback* knockback = world_.tryGet<Knockback>(entity)) knockback->impulse = {0, 0};
+    if (Knockback* knockback = world_.tryGet<Knockback>(entity)) *knockback = Knockback{};
     // No wire message: the client cuts its interpolation on any jump past
     // kTeleportSnapDistance (600 units) on its own, which every teleport worth
     // the name exceeds. One under that distance is close enough that easing to

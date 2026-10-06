@@ -820,7 +820,7 @@ struct MobStats {
     double armor = 0;
     double evasion = 0;         ///< dodge chance, 0..1; see Evasion in components.h
     double radius = 0;          ///< world units
-    double mass = 1;            ///< proportional to area
+    double mass = 1;            ///< gardn's 1 + radius / 25; see bodyMassForRadius
     double speed = 0;           ///< world units per second
     /// Speed used ONLY while pursuing a target. Ten mob types chase at exactly
     /// the flower's top speed so a fleeing player can never outrun them, but
@@ -842,6 +842,15 @@ struct MobStats {
     /// Some mob behaviours change by rarity (for example rare bees become
     /// neutral/retaliatory). This is derived alongside the numeric stats.
     AiKind ai = AiKind::Neutral;
+
+    /// Moves on gardn's inertial integrator at THIS tier: the config's
+    /// `gardn_ai`, or any neutral mob that walks. gardn runs every neutral it
+    /// has (tick_default_neutral) on that integrator, and a neutral published
+    /// raw goes from its drift to full chase speed in one tick and pivots on
+    /// the spot when it is provoked. Derived per tier because neutrality is:
+    /// a rare bee is neutral and a common one is not. Chains are left out --
+    /// the head tows the body and keeps its own walk.
+    bool gardnMotion = false;
 
     /// True when an ambient group roll may produce this mob AT THIS TIER.
     ///

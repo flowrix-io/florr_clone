@@ -17,6 +17,9 @@ void WorldView::clear() {
     selfSnapPending_ = true;
     clockAnchored_ = false;
     clockOffsetMillis_ = 0;
+    latenessPeakMillis_ = 0;
+    delayTargetMillis_ = kMobRenderDelayMillis;
+    interpolationDelayMillis = kMobRenderDelayMillis;
 }
 
 void WorldView::snapAll() {
@@ -39,6 +42,9 @@ double WorldView::toRenderClock(double serverMillis, double localMillis) {
         clockOffsetMillis_ = observed;
         clockAnchored_ = true;
     } else {
+        // Measured before the offset moves, so this packet is judged against
+        // the timeline as it stood when it should have arrived.
+        noteLateness(clockOffsetMillis_ - observed);
         // Slow, because this is correcting drift between two crystals, not
         // tracking the network. A fast gain would let one late packet drag the
         // whole playback timeline and undo the de-jitter it exists for.
@@ -46,6 +52,30 @@ double WorldView::toRenderClock(double serverMillis, double localMillis) {
     }
     return serverMillis - clockOffsetMillis_;
 }
+
+void WorldView::noteLateness(double latenessMillis) {
+    latenessPeakMillis_ = std::max(latenessMillis, latenessPeakMillis_ * kLatenessMemory);
+    delayTargetMillis_ = clamp(kSnapshotGapMillis + latenessPeakMillis_ + kPlaybackMarginMillis,
+                               kMobRenderDelayMillis, kMaxMobRenderDelayMillis);
+}
+
+namespace {
+
+/// The entities played back from a sample history rather than eased. An NPC
+/// plays back like the mob it is built from: a cruising oracle moves exactly
+/// as a bee does, and wants the same smoothing.
+bool isBuffered(net::EntityKind kind) {
+    return kind == net::EntityKind::Mob || kind == net::EntityKind::Npc;
+}
+
+void pushSample(RemoteEntity& e, double timeMillis) {
+    if (e.samples.size() >= static_cast<std::size_t>(kMobSampleCapacity)) {
+        e.samples.erase(e.samples.begin());
+    }
+    e.samples.push_back({timeMillis, e.targetPosition});
+}
+
+} // namespace
 
 bool WorldView::applySnapshot(ByteReader& reader) {
     const std::uint32_t tick = reader.u32();
@@ -257,11 +287,9 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         e.targetPosition = e.position = s.position;
         e.targetAngle = e.angle = s.angle;
         e.needsSnap = true;
-        // An NPC plays back like the mob it is built from: a cruising oracle
-        // moves exactly as a bee does, and wants the same smoothing.
-        if (s.kind == net::EntityKind::Mob || s.kind == net::EntityKind::Npc) {
+        if (isBuffered(s.kind)) {
             e.samples.reserve(kMobSampleCapacity);
-            e.samples.push_back({sampleMillis, s.position});
+            pushSample(e, sampleMillis);
         }
         e.radius = s.radius;
         e.healthFraction = s.healthFraction;
@@ -298,15 +326,7 @@ bool WorldView::applySnapshot(ByteReader& reader) {
         // client chase its own lagging output and wobble.
         if (u.mask & net::FieldPosition) e.targetPosition = u.position;
         if (u.mask & net::FieldAngle) e.targetAngle = u.angle;
-        if (e.kind == net::EntityKind::Mob || e.kind == net::EntityKind::Npc) {
-            // One sample per snapshot whether or not the position changed: a
-            // standing mob still has to advance its timeline, or playback
-            // replays the last move it made.
-            if (e.samples.size() >= static_cast<std::size_t>(kMobSampleCapacity)) {
-                e.samples.erase(e.samples.begin());
-            }
-            e.samples.push_back({sampleMillis, e.targetPosition});
-        }
+        if (isBuffered(e.kind)) pushSample(e, sampleMillis);
         if (u.mask & net::FieldHealth) e.healthFraction = u.healthFraction;
         if (u.mask & net::FieldState) e.state = u.state;
         if (u.mask & net::FieldSize) e.radius = u.radius;
@@ -323,6 +343,28 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     }
 
     for (const std::uint32_t netId : removals) entities_.erase(netId);
+
+    // One sample per snapshot for every buffered entity, the ones this
+    // snapshot did not mention included. The server leaves out anything that
+    // has not moved past its tolerance, so a standing mob is simply absent --
+    // and without a sample its timeline stops at the last move it made.
+    // Playback then runs off the end of the history: the mob is extrapolated a
+    // whole step past where it stopped and held there, and when it moves again
+    // the first new sample pairs with one seconds old, so most of that step is
+    // drawn in a single frame. Absent means "where you last had it", which is
+    // exactly what the server's diff believes the client holds.
+    //
+    // The far band (Replicator::farSnapshotStride) is absent three snapshots
+    // in four too, and is held the same way, so it is drawn stepping. That
+    // band starts a quarter screen past the drawn edge by construction, and a
+    // mob crossing into the near box is at full rate long before it is seen.
+    for (auto& entry : entities_) {
+        RemoteEntity& e = entry.second;
+        if (!isBuffered(e.kind)) continue;
+        if (e.samples.empty() || e.samples.back().timeMillis < sampleMillis) {
+            pushSample(e, sampleMillis);
+        }
+    }
 
     events_.insert(events_.end(), events.begin(), events.end());
     return true;
@@ -388,6 +430,15 @@ void easeToward(Vec2& position, Vec2 target, double t, bool cut) {
 
 void WorldView::interpolate(double nowMillis, double dtSeconds) {
     const double t = easeAmount(easeRatePerSecond, dtSeconds);
+
+    // Slewed rather than set: the delay is where on the timeline playback is
+    // reading, so a jump in it is a jump in every mob at once.
+    {
+        const double frameMillis = clamp(dtSeconds, 0.0, 0.1) * 1000.0;
+        const double gap = delayTargetMillis_ - interpolationDelayMillis;
+        const double reach = frameMillis * (gap > 0 ? kDelayGrowRate : kDelayShrinkRate);
+        interpolationDelayMillis += clamp(gap, -reach, reach);
+    }
     const double renderMillis = nowMillis - interpolationDelayMillis;
 
     // Reload runs on the frame clock between snapshots. Twenty corrections a
@@ -439,8 +490,7 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.position = e.targetPosition;
             e.angle = e.targetAngle;
             e.needsSnap = false;
-        } else if ((e.kind == net::EntityKind::Mob || e.kind == net::EntityKind::Npc) &&
-                   playBack(e.samples, renderMillis, e.position)) {
+        } else if (isBuffered(e.kind) && playBack(e.samples, renderMillis, e.position)) {
             // Position came from the sample history; facing is handled below.
         } else {
             easeToward(e.position, e.targetPosition, t, isFlower);

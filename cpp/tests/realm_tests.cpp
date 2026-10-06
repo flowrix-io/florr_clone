@@ -418,12 +418,12 @@ TEST(a_client_that_picks_pvp_fights_in_the_ring_with_the_arena_kit) {
         CHECK(world.get<Transform>(body).realm == Realm::Arena);
         // The ring holds the flower's own MOVEMENT absolutely: stepCollide
         // clamps every step into the disc. A mob walking into it is the one
-        // thing that can carry it past the line, because the contact shove is
-        // an immediate 25-unit displacement with no wall resolve behind it
-        // (combat.h, applyMobContactKnockback) -- deliberately, and the next
-        // movement step pulls it back. So the bound is the ring plus that one
-        // shove, and it is a bound on how far OUT a body can be carried rather
-        // than on whether the arena leaks.
+        // thing that can carry it past the line, because the contact bounce
+        // takes back the overlap as an immediate displacement with no wall
+        // resolve behind it (combat.cpp, bounceOffMob) -- deliberately, and
+        // the next movement step pulls it back. So the bound is the ring plus
+        // about one shove, and it is a bound on how far OUT a body can be
+        // carried rather than on whether the arena leaks.
         CHECK(distance(at, kArenaCentre) <= kArenaRadius + kMobContactKnockback + 1e-6);
     }
     CHECK(distance(world.get<Transform>(body).position, kArenaCentre) >

@@ -372,7 +372,7 @@ MobAiSystem::Drive MobAiSystem::driveFor(std::uint16_t configIndex, Rarity rarit
         drive.beeFlight = config.beeFlight;
         drive.cruise = beeCruiseDrive(stats.speed, stats.cruiseSpeed);
         drive.beeChaseWeave = config.beeChaseWeave;
-        drive.gardnMotion = config.gardnMotion;
+        drive.gardnMotion = stats.gardnMotion;
         drive.shoots = config.projectile.present &&
                        config.projectile.ammoPetalIndex != kInvalidIndex;
         // Stated in COMMON-TIER units: `distance` IS the reach a common shooter

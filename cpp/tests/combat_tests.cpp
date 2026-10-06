@@ -637,6 +637,14 @@ TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
     CHECK(!a.world.has<Knockback>(stacked));
 }
 
+/// Where a flower at (1000, 1000) ends up after one bounce off a standing
+/// 20-unit mob 20 units to its west, and the velocity it leaves with: the
+/// overlap taken back by the mob's share of the pair's Body masses -- both 1
+/// in the arena, so half -- and gardn's kick plus twice the floored closing
+/// speed.
+constexpr double kBouncedX = 1000.0 + 20.0 * 0.5;
+constexpr double kBounceSpeed = kGardnBounceKick + 2.0 * kGardnBounceMinClosing;
+
 TEST(a_contact_hit_pushes_the_victim_away_from_the_attacker) {
     Arena a;
     const Entity player = a.player({1000, 1000});
@@ -644,8 +652,25 @@ TEST(a_contact_hit_pushes_the_victim_away_from_the_attacker) {
     a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
 
     a.step(0.0);
-    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1025.0, 1e-9);
+    // gardn's bounce, not a 25-unit jump: the overlap now, and the rest as
+    // velocity the flower's friction spends over the next few ticks.
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, kBouncedX, 1e-9);
     CHECK_NEAR(a.world.get<Transform>(player).position.y, 1000.0, 1e-9);
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.x, kBounceSpeed, 1e-9);
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.y, 0.0, 1e-9);
+}
+
+TEST(a_flower_running_into_a_mob_is_bounced_back_off_it) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    a.world.get<Motion>(player).velocity = Vec2{-300.0, 0.0};   // running west, into it
+    const Entity mob = a.mob({980, 1000}, 100.0);
+    a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
+
+    a.step(0.0);
+    // The approach is cancelled and reversed: gardn adds twice the closing
+    // speed, so the flower leaves at the speed it arrived plus the kick.
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.x, 300.0 + kGardnBounceKick, 1e-9);
 }
 
 TEST(a_mob_contact_knocks_an_invulnerable_player_back) {
@@ -656,10 +681,11 @@ TEST(a_mob_contact_knocks_an_invulnerable_player_back) {
     a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
 
     a.step(0.0);
-    // playerState.ts performs this displacement before its invulnerability
-    // branch. Damage is refused; the 25-unit push is not.
+    // The bounce lands before the invulnerability branch. Damage is refused;
+    // the bounce is not.
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
-    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1025.0, 1e-9);
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, kBouncedX, 1e-9);
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.x, kBounceSpeed, 1e-9);
 }
 
 TEST(only_the_first_mob_contact_lands_per_player_per_tick) {
@@ -687,11 +713,11 @@ TEST(a_glitch_mobs_touch_marks_the_flower_even_while_invulnerable) {
     a.world.add<ContactDamage>(mob, ContactDamage{10.0, 500.0});
 
     a.step(0.0, f.registry);
-    // playerState.ts sets `glitched` beside the 25-unit bump and above its
+    // playerState.ts sets `glitched` beside the bump and above its
     // invulnerability branch: the damage is refused, the mark is not. It is
     // what the client's PlayerRenderGlitch bit is ORed from on the wire.
     CHECK_NEAR(a.health(player), 100.0, 1e-9);
-    CHECK_NEAR(a.world.get<Transform>(player).position.x, 1025.0, 1e-9);
+    CHECK_NEAR(a.world.get<Transform>(player).position.x, kBouncedX, 1e-9);
     CHECK(a.world.get<PlayerVisuals>(player).glitched);
 
     // And it stays: nothing in combat clears it once the mob has gone.
@@ -2636,12 +2662,13 @@ TEST(a_whole_animal_lands_one_contact_a_tick_however_many_seeds_it_wears) {
     const Entity player = a.player({1035, 1000});
     a.world.add<Health>(player, Health{10000.0, 10000.0, 0.0, 0.0});
 
-    const Vec2 start = a.world.get<Transform>(player).position;
     const double before = a.health(player);
     a.step(1000.0, f.registry);
     CHECK_NEAR(before - a.health(player), 12.0, 1e-9);
-    CHECK_NEAR(distance(a.world.get<Transform>(player).position, start), kMobContactKnockback,
-               1e-9);
+    // One bounce's worth of velocity, whichever body landed it -- nine would
+    // be nine times this.
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.length(),
+               kGardnBounceKick + 2.0 * kGardnBounceMinClosing, 1e-9);
 }
 
 struct RecoilFixture {
@@ -2660,7 +2687,7 @@ const RecoilFixture& recoilFixture() {
         const bool wrote =
             writeText(mobs, test::fixtureMobs(R"({
   "walker": {"name":"Walker","health":100,"damage":5,"size":1,"speed":0.5,"gardn_ai":true},
-  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5}
+  "plodder":{"name":"Plodder","health":100,"damage":5,"size":1,"speed":0.5,"ai_type":"hostile"}
 })")) &&
             writeText(petals, test::fixturePetals(
                           R"({"dandy":{"name":"Dandy","damage":8,"health":20,"size":1}})"));
@@ -2688,6 +2715,7 @@ TEST(a_gardn_mob_recoils_off_a_flower_it_touches) {
     const auto velocityAfterTouch = [&](std::uint16_t config) {
         Arena a;
         const Entity mob = a.mob({1000, 1000}, 100.0, 0.0, 30.0);
+        a.world.get<Body>(mob).mass = bodyMassForRadius(30.0);
         a.world.add<MobType>(mob, MobType{config, Rarity::Common, 1.0});
         a.world.add<ContactDamage>(mob, ContactDamage{5.0, kMobHitIntervalMillis});
         a.world.get<Motion>(mob).velocity = Vec2{300.0, 0.0};   // charging east
@@ -2702,6 +2730,28 @@ TEST(a_gardn_mob_recoils_off_a_flower_it_touches) {
     // Without the flag the mob's velocity is published raw by the AI every
     // tick, and combat leaves it alone.
     CHECK_NEAR(velocityAfterTouch(f.plodder).x, 300.0, 1e-9);
+}
+
+TEST(a_flower_bounces_off_a_gardn_mob_rather_than_walking_it_along) {
+    const RecoilFixture& f = recoilFixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+
+    // The flower's bounce is read off the velocities the pair MET with. When
+    // the mob's recoil went first, the mob was already backing away when the
+    // closing speed was measured, the flower was barely turned, and a flower
+    // leaning on a ladybug pushed it across the field at half its own speed.
+    Arena a;
+    const Entity mob = a.mob({1000, 1000}, 100.0, 0.0, 30.0);
+    a.world.get<Body>(mob).mass = bodyMassForRadius(30.0);
+    a.world.add<MobType>(mob, MobType{f.walker, Rarity::Common, 1.0});
+    a.world.add<ContactDamage>(mob, ContactDamage{5.0, kMobHitIntervalMillis});
+    const Entity player = a.player({1045, 1000});
+    a.world.get<Motion>(player).velocity = Vec2{-300.0, 0.0};   // running west, into it
+    a.step(1000.0, f.registry);
+    CHECK_NEAR(a.world.get<Motion>(player).velocity.x, 300.0 + kGardnBounceKick, 1e-9);
+    // And the mob still takes its own recoil, away from the flower.
+    CHECK_NEAR(a.world.get<Motion>(mob).velocity.x, -kGardnContactRecoil / 3.2, 1e-9);
 }
 
 TEST(a_spinning_ring_is_decoration_and_bites_nobody) {

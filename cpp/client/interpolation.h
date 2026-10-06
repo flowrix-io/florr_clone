@@ -21,8 +21,11 @@
 //    constant. That is the trade the browser build makes on purpose.
 //
 //  * MOBS ARE PLAYED BACK ON A DELAY, flowers are not. A mob carries a short
-//    sample history and is rendered `kMobRenderDelayMillis` behind the render
-//    clock, which absorbs jitter and packet loss. Flowers get no buffer,
+//    sample history and is rendered behind the render clock -- by the longest
+//    gap the snapshot cadence produces plus the worst lateness the connection
+//    has shown lately, see WorldView::noteLateness -- which absorbs jitter and
+//    packet loss. Every snapshot adds a sample to every buffered mob, the ones
+//    it did not mention included. Flowers get no buffer,
 //    because a buffered remote flower visibly lags the local one and the whole
 //    point of the shared ease is that every flower moves alike.
 //
@@ -36,6 +39,7 @@
 #include <cmath>
 
 #include "shared/core/types.h"
+#include "shared/net/protocol.h"
 
 namespace flix {
 
@@ -67,8 +71,39 @@ inline constexpr double kTeleportSnapDistance = 600.0;
 /// Below this the ease is invisible; settle exactly instead of asymptoting.
 inline constexpr double kSettleEpsilon = 0.01;
 
-/// How far behind the render clock buffered mobs are played back.
+/// The least a buffered mob is played back behind the render clock, and where
+/// the delay starts before any snapshot has said how the connection behaves.
 inline constexpr double kMobRenderDelayMillis = 80.0;
+
+/// The most it is ever played back behind. Past this a mob is drawn so far
+/// behind where it is being hit that the fight stops reading.
+inline constexpr double kMaxMobRenderDelayMillis = 200.0;
+
+/// The longest gap between two snapshots on a connection that is perfect.
+///
+/// Snapshots go out on the first TICK at or after each 20 Hz deadline, so the
+/// gaps alternate one tick and two -- 33 and 67 ms, never 50. The buffer has
+/// to cover the long one before it covers any network lateness at all, which
+/// is why a flat 80 ms left a mob 13 ms of slack and extrapolating on any
+/// connection that was not loopback.
+inline constexpr double kSnapshotGapMillis =
+    ((net::kTicksPerSecond + net::kSnapshotsPerSecond - 1) / net::kSnapshotsPerSecond) *
+    net::kTickMillis;
+
+/// Slack kept above the longest gap plus the worst recent lateness.
+inline constexpr double kPlaybackMarginMillis = 15.0;
+
+/// Per snapshot, how much of the worst recent lateness is remembered: about a
+/// three-second half-life at 20 Hz. A connection that hiccupped once keeps the
+/// deeper buffer for a while rather than starving on the next hiccup.
+inline constexpr double kLatenessMemory = 0.99;
+
+/// How fast the playback delay may move, in ms of delay per ms of frame time.
+/// Changing the delay IS changing playback speed -- raising it 0.15 runs every
+/// mob at 85% for as long as it rises -- so it grows briskly, because starving
+/// is the visible failure, and shrinks slowly, because nothing is wrong yet.
+inline constexpr double kDelayGrowRate = 0.15;
+inline constexpr double kDelayShrinkRate = 0.03;
 
 /// Samples kept per mob. At 20 Hz this is half a second of history -- more
 /// than the playback delay needs, enough to ride out a burst of late packets.

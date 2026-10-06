@@ -1009,18 +1009,60 @@ void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, doub
 
 namespace {
 
-/// A flower is shoved out of a contact by moving it 25 units immediately: the
-/// same fixed displacement whether a mob walked into it or another duellist's
-/// petal swung at it, neither mass-scaled nor turned into velocity. For mob
-/// contact it happens before the damage/invulnerability branch, so an
-/// invulnerable player still gets bumped. Petal knockback on a MOB deliberately
-/// does not use this path: that one is queued for the mob's next movement pass.
-void applyMobContactKnockback(World& world, Entity player, Vec2 offset) {
+/// What a body weighs for a contact split: its Body's mass, or a flower's 1
+/// for anything that has none.
+double massOf(World& world, Entity e) {
+    const Body* body = world.tryGet<Body>(e);
+    return body != nullptr && body->mass > 1e-6 ? body->mass : 1.0;
+}
+
+/// A flower bounces off a mob the way gardn's does (Collision.cc
+/// _cancel_movement): the approach is cancelled and reversed -- twice the
+/// closing speed, floored -- plus a constant kick, all added to the flower's
+/// velocity so friction spends it over the next few ticks. On top, the
+/// overlap itself is taken back in proportion to the mob's share of the
+/// pair's mass, which is gardn's _deal_push.
+///
+/// It used to move the flower 25 units in one tick. The camera is pinned to
+/// the flower, so that jump shook the whole screen on every touch, and it
+/// shoved a flower brushing a mob exactly as hard as one running into it.
+///
+/// `offset` runs from the mob to the flower. Lands before the
+/// damage/invulnerability branch, so an invulnerable player still bounces. A
+/// plain field write, safe inside the candidate loop.
+void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double overlap) {
     Transform* transform = world.tryGet<Transform>(player);
     if (transform == nullptr) return;
     const Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;
-    transform->position += direction * kMobContactKnockback;
+
+    const double mobMass = massOf(world, mob);
+    const double flowerMass = massOf(world, player);
+    const double mobShare = mobMass / (flowerMass + mobMass);
+    if (overlap > 0.0) transform->position += direction * (overlap * mobShare);
+
+    Motion* motion = world.tryGet<Motion>(player);
+    if (motion == nullptr) return;
+    const Motion* mobMotion = world.tryGet<Motion>(mob);
+    const Vec2 mobVelocity = mobMotion != nullptr ? mobMotion->velocity : Vec2{0, 0};
+    const Vec2 relative = mobVelocity - motion->velocity;
+    const double closing = clamp(direction.x * relative.x + direction.y * relative.y,
+                                 kGardnBounceMinClosing, kGardnBounceMaxClosing);
+    motion->velocity += direction * (kGardnBounceKick + 2.0 * closing);
+}
+
+/// A duellist's swing shoves the other flower kMobContactKnockback units,
+/// delivered as momentum for the reason bounceOffMob is: the distance is the
+/// same, it just arrives over a few ticks instead of in one.
+void shoveFlower(World& world, Entity player, Vec2 offset) {
+    const Vec2 direction = offset.normalized();
+    if (direction.lengthSq() < 1e-12) return;
+    const double speed = shoveSpeed(kMobContactKnockback, net::kTickSeconds, /*decaysFirst=*/true);
+    if (Motion* motion = world.tryGet<Motion>(player); motion != nullptr && speed > 0.0) {
+        motion->velocity += direction * speed;
+    } else if (Transform* transform = world.tryGet<Transform>(player)) {
+        transform->position += direction * kMobContactKnockback;
+    }
 }
 
 /// The other half of that bump, for a `gardn_ai` mob: gardn knocks the mob
@@ -1029,13 +1071,14 @@ void applyMobContactKnockback(World& world, Entity player, Vec2 offset) {
 /// mob carries (see gardnStep), so it decays out over the next few ticks. A
 /// plain field write, safe inside the candidate loop. `offset` runs from the
 /// mob to the flower, as it does for the flower's shove.
-void recoilOffFlower(World& world, Entity mob, Vec2 offset, double mobRadius) {
+void recoilOffFlower(World& world, Entity mob, Entity flower, Vec2 offset) {
     Motion* motion = world.tryGet<Motion>(mob);
     if (motion == nullptr) return;
     const Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;
-    const double mobMass = 1.0 + std::max(0.0, mobRadius) / kGardnMassRadius;
-    motion->velocity -= direction * (kGardnContactRecoil / (1.0 + mobMass));
+    const double flowerMass = massOf(world, flower);
+    const double flowerShare = flowerMass / (flowerMass + massOf(world, mob));
+    motion->velocity -= direction * (kGardnContactRecoil * flowerShare);
 }
 
 /// A glitch mob's touch -- body or shot -- leaves the flower glitched.
@@ -1701,7 +1744,7 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
             source.glitchInfecting = config.glitchInfecting;
             // Wild only: a pet's velocity is published raw by its own pass,
             // which would drop the recoil on the next tick anyway.
-            source.gardnRecoil = source.isMobBody && !source.isPet && config.gardnMotion;
+            source.gardnRecoil = source.isMobBody && !source.isPet && stats.gardnMotion;
             if (config.lightning.present && config.lightning.onContact) {
                 // Past the BODY. A flower touching this mob has its centre a
                 // whole body radius away, so a reach measured from the centre
@@ -1889,20 +1932,28 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                                           world.has<Health>(victim) &&
                                           canDamage(world, source.attacker, victim);
             if (mobTouchesPlayer) {
-                // Every mob touching the flower recoils, ahead of the one-bump
-                // rule below: that rule stops a pile stacking shoves on the
-                // FLOWER, and each mob in the pile still hit it.
-                if (source.gardnRecoil) recoilOffFlower(world, source.attacker, offset, source.radius);
                 // resolvePlayerMobContact() breaks after its first collision:
                 // one flower wedged in a pile takes one hit/bump per tick, not
                 // a full stack. Preserve that rule across C++'s source-first
                 // combat loop.
-                if (std::find(mobContactedPlayers_.begin(), mobContactedPlayers_.end(), victim) !=
-                    mobContactedPlayers_.end()) {
-                    continue;
+                const bool firstBump =
+                    std::find(mobContactedPlayers_.begin(), mobContactedPlayers_.end(), victim) ==
+                    mobContactedPlayers_.end();
+                // The flower's bounce BEFORE the mob's recoil: gardn sizes it
+                // off the velocities the two met with. Recoiling the mob first
+                // has it already moving away by the time the closing speed is
+                // read, so the flower is barely turned and walks the mob along
+                // -- a ladybug shoved across the map by a flower leaning on it.
+                if (firstBump) {
+                    mobContactedPlayers_.push_back(victim);
+                    bounceOffMob(world, victim, source.attacker, offset,
+                                 source.radius + body->radius - offset.length());
                 }
-                mobContactedPlayers_.push_back(victim);
-                applyMobContactKnockback(world, victim, offset);
+                // Every mob touching the flower recoils, the one-bump rule
+                // notwithstanding: that rule stops a pile stacking shoves on
+                // the FLOWER, and each mob in the pile still hit it.
+                if (source.gardnRecoil) recoilOffFlower(world, source.attacker, victim, offset);
+                if (!firstBump) continue;
                 if (source.glitchInfecting) markGlitched(world, victim);
 
                 // A firefly discharges on the tick its body reaches a flower.
@@ -2251,7 +2302,7 @@ void CombatSystem::resolvePetalPvp(World& world, const MeleeSource& source, Enti
     // above its knockback.
     if (!hit.refused && !hit.dodged && world.isAlive(owner)) {
         if (const Transform* attacker = world.tryGet<Transform>(owner)) {
-            applyMobContactKnockback(world, victim, victimPosition - attacker->position);
+            shoveFlower(world, victim, victimPosition - attacker->position);
         }
     }
     // The duel is where this petal earns its place: a flower that cannot heal
@@ -2615,12 +2666,17 @@ void CombatSystem::pushFromImpact(World& world, Entity victim, Vec2 offset, doub
     const Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;   // exactly co-located: no direction to push along
 
-    // Committed to the position rather than to Knockback. Knockback holds ONE
-    // pending shove and the next hit replaces it, so a petal landing on the
-    // same tick would erase the shot's momentum outright. This is the same
-    // shape as the shove a flower takes from mob contact -- an immediate
-    // displacement, no wall resolve, small enough that the next movement step
-    // puts it back on legal ground.
+    // Owed to Knockback::carry rather than to the pending impulse. The impulse
+    // holds ONE pending shove and the next hit replaces it, so a petal landing
+    // on the same tick would erase the shot's momentum outright; the carry
+    // accumulates, and the movement pass spends it as a recoil through the
+    // wall resolver. A plain field write, safe inside the impact loop. Only a
+    // mob without the component -- none is spawned that way -- falls back to
+    // an immediate displacement.
+    if (Knockback* kb = world.tryGet<Knockback>(victim)) {
+        kb->carry += direction * push;
+        return;
+    }
     transform->position += direction * push;
 }
 

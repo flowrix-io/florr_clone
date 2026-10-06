@@ -36,25 +36,32 @@ namespace flix {
 /// sustained beating stays lit without anything having to track that.
 inline constexpr double kHurtFlashMillis = 120.0;
 
-/// TypeScript's fixed player-vs-mob contact displacement, in world units.
-/// It is neither mass-scaled nor converted into velocity.
+/// How far one duellist's swing shoves the other flower, in world units,
+/// delivered as momentum (see shoveSpeed). Not mass-scaled.
 inline constexpr double kMobContactKnockback = 25.0;
 
-/// What a `gardn_ai` mob is knocked back by when its body touches a flower,
-/// units a second added to its carried velocity, before the mass split below.
+/// gardn's flower-off-mob bounce (Collision.cc _cancel_movement), in units a
+/// second added to the flower's velocity: a kick of PLAYER_ACCELERATION plus
+/// twice the closing speed, the closing speed floored at half an acceleration
+/// and capped at twenty-five. gardn's figures are per 20 Hz tick; the kick and
+/// the floor land on EVERY tick the pair overlaps, so they are restated for
+/// this server's 30 to push as hard per second. The reflection is a one-off
+/// -- once it lands the pair is parting -- and is not rescaled.
+inline constexpr double kGardnBounceKick = 5.0 * 20.0 * (20.0 / 30.0);
+inline constexpr double kGardnBounceMinClosing = 2.5 * 20.0 * (20.0 / 30.0);
+inline constexpr double kGardnBounceMaxClosing = 125.0 * 20.0;
+
+/// What a gardn-motion mob (MobStats::gardnMotion) is knocked back by when its
+/// body touches a flower, units a second added to its carried velocity,
+/// before the mass split below.
 ///
 /// gardn's _deal_knockback puts 20 units a tick into the mob's velocity and 10
 /// more into its collision push, which under its 1/3 friction carries the mob
 /// 60 units per unit of mass share. A kick of this size decays through
-/// gardnStep() over the same 60. The flower's own shove is still
-/// kMobContactKnockback; only the mob's recoil is gardn's.
+/// gardnStep() over the same 60. The mob takes the flower's share of the
+/// pair's mass (Body::mass against the flower's 1): a common ladybug 0.31 of
+/// it, a mythic one 0.13. The flower's half of the touch is the bounce above.
 inline constexpr double kGardnContactRecoil = 560.0;
-
-/// gardn's BASE_FLOWER_RADIUS, the yardstick it weighs a mob by: a flower's
-/// mass is 1 and a mob's 1 + radius / this, and the mob takes the flower's
-/// share of the pair's mass as its fraction of the recoil. A common ladybug
-/// takes 0.31 of it, a mythic one 0.13.
-inline constexpr double kGardnMassRadius = 25.0;
 
 /// How long a petal waits between swings at the SAME flower.
 ///

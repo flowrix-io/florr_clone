@@ -77,11 +77,18 @@ struct Body {
 /// One pending positional displacement from a knockback-producing hit.
 ///
 /// This intentionally is not momentum. A hit writes the x/y offset here and
-/// the next movement pass applies it directly, leaving ordinary velocity
-/// untouched. A later hit replaces the previous value rather than launching a
-/// mob with an accumulated volley.
+/// the next movement pass takes it, leaving ordinary velocity untouched. A
+/// later hit replaces the previous value rather than launching a mob with an
+/// accumulated volley.
+///
+/// A MOB does not take it in one step: the movement pass moves it into
+/// `carry` and spends that over the next few ticks on gardn's friction decay
+/// (see kKnockbackSpendDecay), so the same total shove arrives as a recoil
+/// rather than a one-tick jump the client can only replay as a teleport.
+/// `carry` accumulates -- it is distance already owed, not a pending hit.
 struct Knockback {
     Vec2 impulse;
+    Vec2 carry;
 };
 
 // ---------------------------------------------------------------------------

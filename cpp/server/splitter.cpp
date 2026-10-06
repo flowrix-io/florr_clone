@@ -96,7 +96,7 @@ void GameServer::parkBody(Entity body) {
         input->aimDirection = Vec2::fromAngle(previous.aimAngle);
     }
     if (Motion* motion = world_.tryGet<Motion>(body)) motion->velocity = {0, 0};
-    if (Knockback* knockback = world_.tryGet<Knockback>(body)) knockback->impulse = {0, 0};
+    if (Knockback* knockback = world_.tryGet<Knockback>(body)) *knockback = Knockback{};
 }
 
 void GameServer::armSplitterReload(const Session& session, double nowMillis) {

@@ -2202,7 +2202,8 @@ TEST(random_size_jitters_the_body_and_nothing_else) {
         CHECK(jitter <= highest);
         CHECK_NEAR(sim.world.get<Body>(e).radius, stats.radius * jitter, 1e-9);
         // Mass is NOT jittered. It is derived from the config size and the
-        // rarity step alone (`mass = size * size` in the stat table), so a
+        // rarity step alone (gardn's `1 + radius / 25` off the stat table's
+        // radius, not the jittered one), so a
         // cactus that rolled a big body is exactly as easy to knock back as
         // one that rolled a small one.
         CHECK_NEAR(sim.world.get<Body>(e).mass, stats.mass, 1e-9);

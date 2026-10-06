@@ -1882,6 +1882,13 @@ TEST(a_fire_ant_hole_springs_on_a_flower_and_falls_with_its_brood) {
 
     // Every ant down to its last sliver, so the flower's own body and ring
     // finish them -- the ordinary kill path -- and the hole goes with the last.
+    //
+    // Back onto the hole first. Ten soldiers ramming a flower bounce it the
+    // way gardn's do, and two seconds of it carries the flower hundreds of
+    // units off the hole -- out past where a tethered soldier will follow it
+    // before turning home, so the brood would never reach it.
+    world.get<Transform>(body).position = world.get<Transform>(hole).position;
+    world.get<Motion>(body).velocity = Vec2{0, 0};
     for (const Entity ant : brood()) world.get<Health>(ant).current = 0.01;
     CHECK(h.stepUntil({&client}, [&] { return !world.isAlive(hole); }, 600));
     CHECK(brood().empty());

@@ -45,7 +45,8 @@ struct RemoteEntity {
     double angle = 0;
 
     /// Mob-only position history, stamped on the shared server timeline (see
-    /// WorldView::clockOffsetMillis_). Flowers deliberately have none: they
+    /// WorldView::clockOffsetMillis_), one sample per snapshot whether or not
+    /// the snapshot mentioned it. Flowers deliberately have none: they
     /// all ease at one rate so the viewer's flower and everyone else's move
     /// alike, and a buffer on one side of that breaks it.
     struct Sample {
@@ -308,10 +309,23 @@ public:
     /// Interpolation slider; see easeRateFromAmount().
     double easeRatePerSecond = easeRateFromAmount(kDefaultInterpolationAmount);
 
-    /// How far behind the render clock buffered mobs are played back.
+    /// How far behind the render clock buffered mobs are played back THIS
+    /// frame. interpolate() slews it toward `playbackDelayTargetMillis()`, so
+    /// anything written here holds only until the stream disagrees with it.
     double interpolationDelayMillis = kMobRenderDelayMillis;
 
+    /// The delay the recent stream asks for; see noteLateness().
+    double playbackDelayTargetMillis() const { return delayTargetMillis_; }
+
 private:
+    /// Records how much later than usual a snapshot landed and re-derives the
+    /// playback delay from it: the longest gap the cadence produces, plus the
+    /// worst lateness lately, plus a margin.
+    ///
+    /// Lateness is measured against the clock offset's running average, so it
+    /// is jitter, not latency -- a steady 200 ms ping costs nothing here, a
+    /// connection that alternates 20 and 120 ms costs 100.
+    void noteLateness(double latenessMillis);
     /// Maps a server timestamp onto the local render clock.
     ///
     /// Mob samples MUST be stamped with the server's own tick time and not
@@ -340,6 +354,9 @@ private:
     bool selfSnapPending_ = true;
     double clockOffsetMillis_ = 0;
     bool clockAnchored_ = false;
+    /// The worst recent lateness, decaying by kLatenessMemory per snapshot.
+    double latenessPeakMillis_ = 0;
+    double delayTargetMillis_ = kMobRenderDelayMillis;
 };
 
 } // namespace flix

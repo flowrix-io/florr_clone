@@ -36,6 +36,21 @@ class MapData;
 /// Water stays a real player advantage at 0.8 without disarming the AI.
 inline constexpr double kMobWaterSpeedScale = 0.8;
 
+/// What is left of a mob's knockback after one twentieth of a second.
+///
+/// gardn delivers a shove as velocity (Collision.cc _deal_knockback) that its
+/// 1/3 friction spends over the following ticks, so a struck mob recoils and
+/// slows to a stop. Taken in one step instead, the whole shove lands between
+/// two snapshots and the client -- which replays a mob's samples exactly --
+/// draws it as a jump. The pass spends `1 - kKnockbackSpendDecay^(dt * 20)` of
+/// what is owed each tick: the same total distance, about a third of a second
+/// to deliver 95% of it.
+inline constexpr double kKnockbackSpendDecay = 2.0 / 3.0;
+inline constexpr double kKnockbackSpendRate = 20.0;
+
+/// Below this a mob's owed knockback is dropped rather than spent forever.
+inline constexpr double kKnockbackSettleDistance = 0.05;
+
 /// Rate a projectile could correct its heading at, radians per second.
 ///
 /// Nothing steers in flight: a seeking shot picks its bearing once, at launch,

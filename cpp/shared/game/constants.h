@@ -449,6 +449,23 @@ inline constexpr double kProjectileRadiusPerSize = 10.0;
 
 inline constexpr double kMobBaseRadius = 20.0;
 
+/// gardn's BASE_FLOWER_RADIUS, the yardstick it weighs every body by: a
+/// flower's mass is 1 and anything else's `1 + radius / this`
+/// (Server/Spawn.cc). Linear in the radius, not in the area -- an area scale
+/// put an ultra mob at 225 flowers and an apex at nearly two thousand, so
+/// knockback and shot pushes stopped moving anything past epic, where gardn's
+/// ultra still weighs 13.
+inline constexpr double kMassReferenceRadius = 25.0;
+
+/// What gardn multiplies a mob that never moves by (`stationary`): a nest, a
+/// rock, a cactus is in effect immovable whatever bumps into it.
+inline constexpr double kAnchoredMassScale = 10000.0;
+
+/// gardn's mass for a body of this radius. See kMassReferenceRadius.
+inline double bodyMassForRadius(double radius) {
+    return 1.0 + std::max(0.0, radius) / kMassReferenceRadius;
+}
+
 /// The shooter's rarity also scales the shot's SIZE, on its own divisor --
 /// reach and size deliberately grow at different rates.
 inline constexpr double kProjectileSizeDivisor = 3.0;
@@ -569,8 +586,10 @@ inline constexpr double kProjectileDefaultBodyDamage = 1.0;
 /// it. Chosen so a stock size-1 shot at 300 u/s lands within a few units of
 /// the flat 20 the reference stamps on a mob: the shove stays where it has
 /// always been for ordinary ammunition, and only grows when the shot itself
-/// does.
-inline constexpr double kProjectilePushPerMomentum = 0.27;
+/// does. 0.27 against the old area-scale shot mass of 1; a stock 20-unit shot
+/// weighs 1.8 on gardn's scale, so the figure is divided by that to keep the
+/// same push.
+inline constexpr double kProjectilePushPerMomentum = 0.27 / 1.8;
 
 /// Ceiling on that shove. A heavy shot from an apex is still a push, not a
 /// teleport, and this is what stops one landing on a common mob from firing it
@@ -594,14 +613,12 @@ inline constexpr double kProjectileMaxPush = 40.0;
 inline constexpr double kProjectileRecoilScale = 1.0;
 inline constexpr double kProjectileMaxRecoil = 4.0;
 
-/// A shot's mass, on the same area scale a mob's body uses (`scaledSize^2`,
-/// where scaledSize is the radius in kMobBaseRadius units). Sharing the scale
-/// is what lets one momentum figure push a mob and a shot alike, and it is
-/// what makes an inherited-size shot hit proportionally harder rather than
+/// A shot's mass, on the same scale a mob's body uses (bodyMassForRadius).
+/// Sharing the scale is what lets one momentum figure push a mob and a shot
+/// alike, and it is what makes an inherited-size shot hit harder rather than
 /// merely looking bigger.
 inline double projectileMass(double radius) {
-    const double scaled = radius / kMobBaseRadius;
-    return std::max(1e-3, scaled * scaled);
+    return bodyMassForRadius(radius);
 }
 
 /// Momentum shove, already divided by the victim's mass and capped.
@@ -725,6 +742,24 @@ inline void integrateVelocity(MoveState& state, Vec2 target, double dt) {
     // sooner, or a 144Hz client would out-accelerate a 60Hz one.
     const double decay = std::pow(1.0 - kMoveFriction, dt * kFrictionReferenceRate);
     state.velocity = state.velocity * decay + target * (1.0 - decay);
+}
+
+/// The speed that, added to a flower's velocity and left to integrateVelocity's
+/// friction, carries it `distance` in total before it dies out -- a shove
+/// delivered as momentum, the way gardn delivers every knockback, rather than
+/// as a one-tick jump that reaches the client as a teleport.
+///
+/// `decaysFirst` says whether the next step decays the impulse before moving
+/// on it: true when it is added after this tick's movement (combat), false
+/// when it is added between integrateVelocity and the step it feeds. Zero for
+/// a step of no time, which has no friction to invert; callers fall back to a
+/// displacement there.
+inline double shoveSpeed(double distance, double dt, bool decaysFirst) {
+    if (!(dt > 0.0) || !(distance > 0.0)) return 0.0;
+    const double decay = std::pow(1.0 - kMoveFriction, dt * kFrictionReferenceRate);
+    if (!(decay > 0.0) || !(decay < 1.0)) return 0.0;
+    const double travelPerUnitSpeed = dt * (decaysFirst ? decay : 1.0) / (1.0 - decay);
+    return distance / travelPerUnitSpeed;
 }
 
 /// Converts a cursor offset into the velocity the flower should approach.

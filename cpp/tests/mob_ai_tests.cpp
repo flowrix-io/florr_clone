@@ -2443,16 +2443,20 @@ struct ChaseSplit {
 };
 
 /// `provoke` hurts the mob first, for one that only chases what hit it.
+///
+/// `settle` ticks are run before anything is measured, for a mob on gardn's
+/// integrator: its velocity builds into the chase rather than starting at it.
 ChaseSplit chaseSplit(const char* id, double playerGap, Rarity rarity = Rarity::Common,
-                      bool provoke = false, int ticks = 80) {
+                      bool provoke = false, int ticks = 80, int settle = 0) {
     Sim sim;
     const Entity mob = sim.spawnMob(id, kOrigin, rarity);
     const Entity player = sim.spawnPlayer(kOrigin + Vec2{playerGap, 0});
     if (provoke) sim.hurt(mob, player);
     ChaseSplit out;
     int moving = 0;
-    for (int i = 0; i < ticks; ++i) {
+    for (int i = 0; i < ticks + settle; ++i) {
         sim.tickIntent();
+        if (i < settle) continue;
         const Vec2 velocity = sim.velocityOf(mob);
         if (velocity.lengthSq() < 1e-9) continue;
         ++moving;
@@ -2506,13 +2510,16 @@ TEST(a_fast_chaser_weaves_as_wide_as_a_slow_one) {
     // The weave is an angle, not a sideways speed. A flat sideways speed is a
     // swing that narrows as the pursuit gets faster: the bee chases at a
     // flower's full 300 u/s, and under a flat 100 u/s sway it flew all but
-    // straight. A rare bee is neutral, so it has to be hit before it chases.
-    const ChaseSplit bee = chaseSplit("bee", 200.0, Rarity::Rare, true);
+    // straight. A rare bee is neutral, so it has to be hit before it chases --
+    // and, neutral, it moves on gardn's integrator, which builds its velocity
+    // into the pursuit and lags the sway a little. So it is measured once it
+    // has settled, and to within what that lag costs.
+    const ChaseSplit bee = chaseSplit("bee", 200.0, Rarity::Rare, true, 120, 30);
     CHECK_NEAR(chaseSpeedOf("bee", Rarity::Rare), kPlayerMaxSpeed, 1e-9);
     CHECK(bee.widestSwing > 0.95 * kBeeChaseWeave);
     CHECK(bee.widestSwing <= kBeeChaseWeave + 1e-9);
-    CHECK_NEAR(bee.slowestClosing, chaseSpeedOf("bee", Rarity::Rare), 1e-6);
-    CHECK_NEAR(bee.fastestClosing, chaseSpeedOf("bee", Rarity::Rare), 1e-6);
+    CHECK_NEAR(bee.slowestClosing, chaseSpeedOf("bee", Rarity::Rare), 1.0);
+    CHECK_NEAR(bee.fastestClosing, chaseSpeedOf("bee", Rarity::Rare), 1.0);
 }
 
 TEST(a_bee_ai_idle_stinger_closes_on_a_flower_straight) {
