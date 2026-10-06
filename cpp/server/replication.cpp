@@ -151,12 +151,10 @@ PlayerVisualState computePlayerVisuals(World& world, Entity e, double nowMillis)
     }
     // Shell's shield, measured against the pool it is protecting: the bar the
     // client draws it on is the health bar, so max health is the only scale it
-    // can be quantised against. A lapsed shield reads zero rather than being
-    // left to linger -- ShieldState is only swept when that flower next runs
-    // its petal actions.
+    // can be quantised against.
     if (const ShieldState* shield = world.tryGet<ShieldState>(e)) {
         const Health* health = world.tryGet<Health>(e);
-        if (shield->active(nowMillis) && health != nullptr && health->max > 0) {
+        if (shield->active() && health != nullptr && health->max > 0) {
             out.shield = static_cast<std::uint8_t>(
                 std::lround(clamp(shield->amount / health->max, 0.0, 1.0) * 255.0));
         }

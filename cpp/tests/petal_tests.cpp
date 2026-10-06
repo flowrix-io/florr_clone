@@ -2212,9 +2212,48 @@ TEST(a_shell_homes_grants_one_temporary_shield_and_is_consumed) {
 
     const ShieldState& shield = rig.world.get<ShieldState>(rig.player);
     CHECK_NEAR(shield.amount, 22.0, 1e-9);
-    CHECK(shield.active(rig.now));
+    CHECK(shield.active());
     CHECK(rig.slot(0).broken);
     CHECK_EQ(rig.petals(0).size(), std::size_t(0));
+}
+
+TEST(a_shell_stacks_its_shield_like_a_rose_heals_up_to_max_health) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "shell");
+    rig.settleEquips();
+    rig.tick(40);
+    ShieldState* shield = &rig.world.get<ShieldState>(rig.player);
+    // Delivered a few ticks back, and shrinking since.
+    CHECK(shield->amount > 21.0 && shield->amount <= 22.0);
+
+    // Still up and below max health: the reloaded shell flies home again and
+    // ADDS its figure, as a rose adds to health.
+    double before = shield->amount;
+    double grownFrom = 0.0;
+    CHECK(rig.tickUntil([&] {
+        const double now = rig.world.get<ShieldState>(rig.player).amount;
+        if (now > before) {
+            grownFrom = before;
+            return true;
+        }
+        before = now;
+        return false;
+    }, 300));
+    shield = &rig.world.get<ShieldState>(rig.player);
+    CHECK(grownFrom > 0.0);
+    CHECK(shield->amount > grownFrom + 21.0 && shield->amount <= grownFrom + 22.0);
+
+    // ...but never past the flower's max health. Held just under it until the
+    // next shell lands.
+    const double max = rig.world.get<Health>(rig.player).max;
+    CHECK(rig.tickUntil([&] {
+        ShieldState& s = rig.world.get<ShieldState>(rig.player);
+        if (s.amount > max - 5.0) return true;
+        s.amount = max - 5.0;
+        return false;
+    }, 300));
+    CHECK_NEAR(rig.world.get<ShieldState>(rig.player).amount, max, 1e-9);
 }
 
 // ---------------------------------------------------------------------------

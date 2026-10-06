@@ -94,20 +94,42 @@ double slowFactorOf(World& world, Entity e) {
     return afflictions != nullptr ? afflictions->slowFactor : 1.0;
 }
 
-TEST(shell_shield_reduces_direct_hits_but_not_periodic_damage) {
+TEST(a_shield_is_extra_hp_that_runs_down_before_health) {
     Arena arena;
     const Entity player = arena.player({0, 0});
     const Entity mob = arena.mob({100, 0}, 100);
-    arena.world.add<ShieldState>(player, ShieldState{10.0, 2000.0});
+    arena.world.add<ShieldState>(player, ShieldState{20.0});
 
+    // Swallowed whole, and the pool pays for it.
     arena.combat.applyDamage(arena.world, player, mob, 15.0, 1000.0);
-    CHECK_NEAR(arena.health(player), 95.0, 1e-9);
+    CHECK_NEAR(arena.health(player), 100.0, 1e-9);
+    CHECK_NEAR(arena.world.get<ShieldState>(player).amount, 5.0, 1e-9);
 
-    arena.combat.applyDamage(arena.world, player, mob, 15.0, 1100.0, DamageKind::Periodic);
-    CHECK_NEAR(arena.health(player), 80.0, 1e-9);
+    // A drip drains it too; only the overflow reaches the bar.
+    arena.combat.applyDamage(arena.world, player, mob, 8.0, 1100.0, DamageKind::Poison);
+    CHECK_NEAR(arena.health(player), 97.0, 1e-9);
+    CHECK(!arena.world.get<ShieldState>(player).active());
 
-    arena.combat.applyDamage(arena.world, player, mob, 15.0, 3000.0);
-    CHECK_NEAR(arena.health(player), 65.0, 1e-9);
+    // Spent: the next hit lands in full.
+    arena.combat.applyDamage(arena.world, player, mob, 15.0, 1200.0);
+    CHECK_NEAR(arena.health(player), 82.0, 1e-9);
+}
+
+TEST(a_shield_shrinks_like_gardns_and_is_gone_below_half_a_point) {
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    arena.world.add<ShieldState>(player, ShieldState{50.0});
+
+    // One time constant of ticks leaves 1/e of it, whatever its size.
+    const int ticks = static_cast<int>(std::lround(kShieldDecaySeconds / net::kTickSeconds));
+    double now = 1000.0;
+    for (int i = 0; i < ticks; ++i) arena.step(now += net::kTickSeconds * 1000.0);
+    const double expected = 50.0 * std::exp(-ticks * net::kTickSeconds / kShieldDecaySeconds);
+    CHECK_NEAR(arena.world.get<ShieldState>(player).amount, expected, 1e-6);
+
+    arena.world.get<ShieldState>(player).amount = 0.51;
+    for (int i = 0; i < 30; ++i) arena.step(now += net::kTickSeconds * 1000.0);
+    CHECK_NEAR(arena.world.get<ShieldState>(player).amount, 0.0, 1e-12);
 }
 
 TEST(a_direct_player_hit_grants_the_typescript_fifty_millisecond_window) {
@@ -1857,8 +1879,8 @@ TEST(salt_deals_a_share_of_what_a_hit_took_back_to_the_mob_behind_it) {
 
     // What the flower LOST, not the swing: a shell that eats half the blow
     // halves the repayment too.
-    // Up for this one hit only, so it cannot eat the strike further down.
-    a.world.add<ShieldState>(player, ShieldState{10.0, 1150.0});
+    // Spent by this hit, so it cannot eat the strike further down.
+    a.world.add<ShieldState>(player, ShieldState{10.0});
     a.combat.applyDamage(a.world, player, mob, 20.0, 1100.0);
     CHECK_NEAR(a.health(player), 70.0, 1e-9);
     CHECK_NEAR(a.health(mob), 92.5, 1e-9);
@@ -2323,7 +2345,7 @@ TEST(root_armour_lands_ahead_of_a_shell_shield_and_a_sponge) {
     const Entity player = a.player({1000, 1000});
     const Entity mob = a.mob({1000, 1000}, 100.0);
     a.world.add<ArmorStackState>(player, ArmorStackState{1, 12.0, 0.0});
-    a.world.add<ShieldState>(player, ShieldState{5.0, 5000.0});
+    a.world.add<ShieldState>(player, ShieldState{5.0});
     PlayerModifiers modifiers;
     modifiers.spongeDamageDurationMillis = 1000.0;
     a.world.add<PlayerModifiers>(player, modifiers);
@@ -3128,52 +3150,56 @@ TEST(a_cotton_that_catches_the_whole_hit_spares_the_flower_but_opens_its_window)
     CHECK_NEAR(a.health(cotton), 10.0, 1e-9);
 }
 
-TEST(a_cotton_is_never_worn_down_by_a_drip_or_a_dodged_blow) {
+TEST(a_cotton_catches_drips_too_but_not_a_dodged_blow) {
     Arena a;
     const Entity player = a.player({1000, 1000});
     const Entity mob = a.mob({1100, 1000}, 100.0);
     const Entity cotton = wearCotton(a, player, 20.0);
 
-    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0, DamageKind::Poison);
-    a.combat.applyDamage(a.world, player, mob, 10.0, 1100.0, DamageKind::Periodic);
-    CHECK_NEAR(a.health(player), 80.0, 1e-9);
-    CHECK_NEAR(a.health(cotton), 20.0, 1e-9);
+    // Every kind lands on it first, poison included.
+    a.combat.applyDamage(a.world, player, mob, 6.0, 1000.0, DamageKind::Poison);
+    a.combat.applyDamage(a.world, player, mob, 6.0, 1100.0, DamageKind::Periodic);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.health(cotton), 8.0, 1e-9);
 
     PlayerModifiers modifiers;
     modifiers.evasion = 1.0;
     a.world.add<PlayerModifiers>(player, modifiers);
     CHECK(a.combat.applyDamage(a.world, player, mob, 10.0, 1200.0).dodged);
-    CHECK_NEAR(a.health(cotton), 20.0, 1e-9);
+    CHECK_NEAR(a.health(cotton), 8.0, 1e-9);
 }
 
-TEST(a_cotton_catches_what_the_shield_let_through_and_the_sponge_defers_the_rest) {
-    // After a shield: only the part of the blow that would have landed.
-    {
-        Arena a;
-        const Entity player = a.player({1000, 1000});
-        const Entity mob = a.mob({1100, 1000}, 100.0);
-        a.world.add<ShieldState>(player, ShieldState{6.0, 5000.0});
-        const Entity cotton = wearCotton(a, player, 20.0);
-        a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
-        CHECK_NEAR(a.health(cotton), 16.0, 1e-9);
-        CHECK_NEAR(a.health(player), 100.0, 1e-9);
-    }
-    // Ahead of a sponge: the sponge defers only the overflow.
-    {
-        Arena a;
-        const Entity player = a.player({1000, 1000});
-        const Entity mob = a.mob({1100, 1000}, 100.0);
-        PlayerModifiers modifiers;
-        modifiers.spongeDamageDurationMillis = 1000.0;
-        a.world.add<PlayerModifiers>(player, modifiers);
-        const Entity cotton = wearCotton(a, player, 3.0);
-        a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
-        CHECK_NEAR(a.health(cotton), 0.0, 1e-9);
-        CHECK_NEAR(a.health(player), 100.0, 1e-9);
-        const SpongeDamageState& sponge = a.world.get<SpongeDamageState>(player);
-        CHECK_EQ(sponge.effects.size(), std::size_t(1));
-        CHECK_NEAR(sponge.effects[0].remainingDamage, 7.0, 1e-9);
-    }
+TEST(a_cotton_catches_what_the_shield_let_through) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    a.world.add<ShieldState>(player, ShieldState{6.0});
+    const Entity cotton = wearCotton(a, player, 20.0);
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK_NEAR(a.health(cotton), 16.0, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+}
+
+TEST(a_cotton_sits_behind_the_sponge_and_catches_its_repayment) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    // Far enough that the ticks below are no contact of its own.
+    const Entity mob = a.mob({4000, 1000}, 100.0);
+    PlayerModifiers modifiers;
+    modifiers.spongeDamageDurationMillis = 1000.0;
+    a.world.add<PlayerModifiers>(player, modifiers);
+    const Entity cotton = wearCotton(a, player, 20.0);
+
+    // The sponge defers the whole blow; the cotton is not touched up front.
+    a.combat.applyDamage(a.world, player, mob, 10.0, 1000.0);
+    CHECK_NEAR(a.health(cotton), 20.0, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.world.get<SpongeDamageState>(player).effects[0].remainingDamage, 10.0, 1e-9);
+
+    // Each tick's repayment lands on the cotton instead of the flower.
+    a.step(1066.0);
+    CHECK_NEAR(a.health(cotton), 20.0 - 10.0 * net::kTickSeconds, 1e-9);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
 }
 
 TEST(two_cottons_each_take_what_they_can_before_the_flower_does) {

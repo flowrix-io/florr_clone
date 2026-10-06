@@ -312,15 +312,15 @@ struct SecondChance {
     double readyAtMillis = 0;
 };
 
-/// Shell's temporary flat reduction for direct hits. It is refreshed rather
-/// than stacked and does not deplete; poison/radiation bypass it.
+/// A temporary pool of extra HP over the flower's own (shell, shield petal).
+/// Every kind of damage drains it before the health bar. A shell ADDS to it,
+/// capped at the flower's max health, as a rose adds to health; the shield
+/// petal tops it up to its flat figure instead. No timer: it shrinks
+/// exponentially as gardn's does (CombatSystem::tickShieldDecay).
 struct ShieldState {
     double amount = 0;
-    double untilMillis = 0;
 
-    bool active(double nowMillis) const {
-        return amount > 0.0 && nowMillis < untilMillis;
-    }
+    bool active() const { return amount > 0.0; }
 };
 
 /// The magic petals' resource: what a flower has to spend, and how much of it

@@ -565,9 +565,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // armour also comes off the Recoil it pays for its own hits, which is the
     // one blow a petal on the ring routinely takes.
     //
-    // DIRECT ONLY, for the reason the shield below is direct-only: poison and a
-    // sponge repayment arrive as a per-tick drip -- thirty slivers a second --
-    // and a flat subtraction from each of them is not a tax, it is immunity.
+    // DIRECT ONLY: poison and a sponge repayment arrive as a per-tick drip --
+    // thirty slivers a second -- and a flat subtraction from each of them is not a tax, it is immunity.
     // Armour answers hits; poison is what gets through it.
     //
     // Below zero the subtraction ADDS, which is what a stripped mob is for.
@@ -599,20 +598,21 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         }
     }
 
-    // Shell's shield is a temporary flat reduction per DIRECT hit. It neither
-    // depletes nor applies to poison/radiation, matching getShieldAmount() in
-    // the TypeScript hit paths.
-    if (directPlayerHit) {
+    // A shield is extra HP laid over the flower's own: it takes the damage
+    // first and runs down as it does, and only what it could not hold reaches
+    // the bar. EVERY kind drains it, drips included -- a flat per-hit
+    // subtraction had to spare poison because it never ran out, but a pool
+    // that empties is a tax on a drip, not immunity to it. After the root
+    // stack, so a stack's blunting is never paid for out of the shield.
+    if (world.has<PlayerTag>(victim)) {
         if (ShieldState* shield = world.tryGet<ShieldState>(victim)) {
-            if (shield->active(nowMillis)) amount = std::max(0.0, amount - shield->amount);
-            else {
-                shield->amount = 0;
-                shield->untilMillis = 0;
-            }
+            const double absorbed = std::clamp(shield->amount, 0.0, amount);
+            shield->amount -= absorbed;
+            amount -= absorbed;
         }
     }
     if (amount <= 0.0) {
-        // TypeScript still grants the brief post-hit protection after a shield
+        // The flower still gets the brief post-hit protection after a shield
         // absorbs the full number; this was a legitimate hit, not a rejected
         // target. Callers therefore still arm their attacker cooldown.
         //
@@ -630,29 +630,6 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         return result;
     }
 
-    // Cotton takes what is left of the hit in the flower's place, up to what
-    // it has left, and only the overflow goes on. After armour and the shield,
-    // so a cotton is never spent on the part of a blow those two would have
-    // stopped anyway; ahead of the sponge, which would otherwise defer the
-    // whole hit and leave the cotton nothing to catch.
-    //
-    // Direct only, like everything else a flower wears against hits: a poison
-    // drip would wear a cotton down a sliver at a time and leave it broken for
-    // the blow it is there for.
-    if (directPlayerHit) {
-        amount = soakIntoCotton(world, victim, source, amount, nowMillis, kind);
-        if (amount <= 0.0) {
-            // Caught whole. The flower still earns the post-hit window a
-            // shield-absorbed hit does, or mob contact -- paced by that window
-            // and nothing else -- would strip the cotton on the very next tick.
-            // Re-fetched: a cotton breaking relocates rows.
-            Health& health = world.get<Health>(victim);
-            health.invulnerableUntilMillis = std::max(health.invulnerableUntilMillis,
-                                                      nowMillis + kPostHitInvulnerabilityMillis);
-            return result;
-        }
-    }
-
     if (directPlayerHit) {
         const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(victim);
         const double durationMillis = modifiers ? modifiers->spongeDamageDurationMillis : 0.0;
@@ -666,6 +643,29 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
             health.invulnerableUntilMillis =
                 std::max(health.invulnerableUntilMillis,
                          nowMillis + kPostHitInvulnerabilityMillis);
+            return result;
+        }
+    }
+
+    // Cotton is the LAST thing between the damage and the bar: it takes what
+    // is left in the flower's place, up to what it has left, and only the
+    // overflow lands. Every kind, drips included, so poison and a sponge's
+    // repayment wear it down as well. Behind the sponge on purpose -- a hit the
+    // sponge defers is caught here a tick's worth at a time as it is repaid,
+    // not up front.
+    if (world.has<PlayerTag>(victim)) {
+        amount = soakIntoCotton(world, victim, source, amount, nowMillis, kind);
+        if (amount <= 0.0) {
+            // Caught whole. A landed hit still earns the flower the post-hit
+            // window, or mob contact -- paced by that window and nothing else
+            // -- would strip the cotton on the very next tick. Re-fetched: a
+            // cotton breaking relocates rows.
+            if (directPlayerHit) {
+                Health& health = world.get<Health>(victim);
+                health.invulnerableUntilMillis =
+                    std::max(health.invulnerableUntilMillis,
+                             nowMillis + kPostHitInvulnerabilityMillis);
+            }
             return result;
         }
     }
@@ -1378,6 +1378,7 @@ void CombatSystem::beginTick(World& world, double nowMillis, double dt, EventQue
     // melee pass"). Do not move it behind contact.
     tickAfflictions(world, nowMillis, dt);
     tickSpongeDamage(world, nowMillis, dt);
+    tickShieldDecay(world, dt);
 }
 
 void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
@@ -1532,6 +1533,21 @@ void CombatSystem::tickSpongeDamage(World& world, double nowMillis, double dt) {
         const Entity source = world.isAlive(tick.source) ? tick.source : NULL_ENTITY;
         applyDamage(world, tick.victim, source, tick.amount, nowMillis, DamageKind::Periodic);
     }
+}
+
+void CombatSystem::tickShieldDecay(World& world, double dt) {
+    // gardn's (Process/Health.cc): relative to the shield itself, so it is the
+    // same ~15 s time constant on a 22-point shell as on a 500-point stack --
+    // a slice of max health would wipe any shield in a second on a grown
+    // flower. Continuous rather than gardn's per-tick factor so it does not
+    // depend on the tick rate, and snapped to zero below half a point.
+    const double keep = std::exp(-std::max(0.0, dt) / kShieldDecaySeconds);
+    Query<ShieldState> shields{world};
+    shields.each([&](Entity, ShieldState& shield) {
+        if (shield.amount <= 0.0) return;
+        shield.amount *= keep;
+        if (shield.amount < kShieldDropBelow) shield.amount = 0.0;
+    });
 }
 
 void CombatSystem::tickGroundEffects(World& world, const SpatialGrid& grid,

@@ -26,7 +26,6 @@ constexpr double kPollenRadiusPerSize = 6.0;
 /// in a twelfth of a second into a half-second swell.
 constexpr double kPetalExtensionRampPerSecond = 12.0;
 
-constexpr double kBurstShieldLifetimeMillis = 10000.0;
 constexpr double kWebThrowDistance = 620.0;
 constexpr double kWebLifetimeSeconds = 10.0;
 constexpr double kPollenLifetimeSeconds = 5.0;
@@ -135,10 +134,9 @@ constexpr double kExplosionKnockback = 20.0;
 /// one detonation per tick however many petals went off together.
 constexpr double kExplosionThrottleMillis = 20.0;
 
-/// The shield petal grants a flat amount for a flat window, at spawn, on break
-/// and on its own interval. Neither number is rarity-scaled.
+/// The shield petal grants a flat amount at spawn, on break and on its own
+/// interval. Not rarity-scaled.
 constexpr double kBehaviourShieldAmount = 50.0;
-constexpr double kBehaviourShieldMillis = 10000.0;
 constexpr double kBehaviourShieldIntervalMillis = 10000.0;
 constexpr double kBehaviourHealIntervalMillis = 2000.0;
 constexpr double kBehaviourExplodeIntervalMillis = 3000.0;
@@ -1896,13 +1894,7 @@ void PetalSystem::stepPetalPhysics(World& world, const ContentRegistry& registry
 
 void PetalSystem::runActions(World& world, const ContentRegistry& registry, Entity player,
                              double nowMillis, double dt) {
-    {
-        ShieldState& shield = world.ensure<ShieldState>(player);
-        if (!shield.active(nowMillis)) {
-            shield.amount = 0;
-            shield.untilMillis = 0;
-        }
-    }
+    world.ensure<ShieldState>(player);
     // Ahead of every pointer into the flower's columns, because a scripted
     // effect is allowed to write to the flower and the queues were filled while
     // the slot pass held those columns open.
@@ -2033,7 +2025,12 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
             const bool wantsHeal = stats.heal > 0.0 && ownerHealth && ownerHealth->alive() &&
                                    ownerHealth->current < ownerHealth->max &&
                                    !CombatSystem::healingBlocked(world, player, nowMillis);
-            const bool wantsShield = stats.shield > 0.0 && !shield.active(nowMillis);
+            // Absorbed as a rose is: a shell flies home whenever the shield is
+            // below the flower's max health, and ADDS its figure on delivery,
+            // capped at that max (gardn Process/Petal.cc).
+            const double shieldCap = ownerHealth ? ownerHealth->max : 0.0;
+            const bool wantsShield = stats.shield > 0.0 && ownerHealth && ownerHealth->alive() &&
+                                     shield.amount < shieldCap;
             // Mana is delivered on the same path for the same reason healing
             // is: an orb that flew home on a full pool would spend itself and
             // reload for nothing. A flower with no pool at all never wants it,
@@ -2078,8 +2075,7 @@ void PetalSystem::runActions(World& world, const ContentRegistry& registry, Enti
                         const double scale = tree ? tree->skills.effectScale(SkillId::Healing) : 1.0;
                         healPlayer(world, player, stats.heal * scale, nowMillis);
                     } else if (wantsShield) {
-                        shield.amount = stats.shield;
-                        shield.untilMillis = nowMillis + kBurstShieldLifetimeMillis;
+                        shield.amount = std::min(shield.amount + stats.shield, shieldCap);
                     } else if (wantsMana) {
                         restoreMana(world, player, stats.mana);
                     }
@@ -2521,11 +2517,11 @@ void PetalSystem::runBehaviour(World& world, Entity player, Entity petal,
 
         case PetalBehaviourKind::Shield: {
             if (trigger == PetalTrigger::Collision) return;
-            // Flat, and neither rarity- nor talent-scaled. Replaces rather than
-            // stacks, exactly as a second shell's burst does.
+            // Flat, and neither rarity- nor talent-scaled. Tops up rather than
+            // stacks, exactly as a second shell's burst does -- and never
+            // lowers a bigger shield that is still up.
             ShieldState& shield = world.ensure<ShieldState>(player);
-            shield.amount = kBehaviourShieldAmount;
-            shield.untilMillis = nowMillis + kBehaviourShieldMillis;
+            shield.amount = std::max(shield.amount, kBehaviourShieldAmount);
             return;
         }
 

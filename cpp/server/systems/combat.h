@@ -83,6 +83,10 @@ inline constexpr double kPvpPetalSelfDamage = 1.0;
 /// escaping a web means something.
 inline constexpr double kGroundEffectSlowLingerMillis = 250.0;
 inline constexpr double kPostHitInvulnerabilityMillis = 50.0;
+/// A shield's exponential time constant (gardn's 15 s): left alone it keeps
+/// about 37% of itself after this long. Below kShieldDropBelow it is gone.
+inline constexpr double kShieldDecaySeconds = 15.0;
+inline constexpr double kShieldDropBelow = 0.5;
 
 /// How long a bur's armour strip lasts after the last hit that refreshed it.
 ///
@@ -516,6 +520,8 @@ private:
 
     void tickAfflictions(World& world, double nowMillis, double dt);
     void tickSpongeDamage(World& world, double nowMillis, double dt);
+    /// Every shield shrinks by the same share of itself each second.
+    void tickShieldDecay(World& world, double dt);
     /// Takes the registry because a pollen puff reaches for the victim's
     /// CONFIG radius rather than the body it actually spawned with.
     void tickGroundEffects(World& world, const SpatialGrid& grid, const ContentRegistry& content,
@@ -606,8 +612,9 @@ private:
     /// applyDamage refuses before it would roll.
     bool rollDodge(World& world, Entity victim, double nowMillis);
 
-    /// Cotton: land `amount` of a hit aimed at `flower` on the flower's live
-    /// cottons first, each taking up to what it has left, and return the
+    /// Cotton: land `amount` of any damage aimed at `flower` -- the last step
+    /// before its health bar, behind the shield and the sponge -- on the
+    /// flower's live cottons first, each taking up to what it has left, and return the
     /// overflow that still reaches the flower. `amount` itself when the flower
     /// is wearing none.
     ///
