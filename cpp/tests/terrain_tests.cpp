@@ -627,6 +627,33 @@ TEST(spatial_grid_keeps_each_realm_in_its_own_layer) {
     CHECK(tiny.rows(Realm::Maze) <= 512);
 }
 
+TEST(spatial_grid_occupied_bounds_reset_and_expand) {
+    SpatialGrid grid;
+    std::vector<Entity> out;
+    const Entity a = makeEntity(1, 1), b = makeEntity(2, 1);
+    grid.insert(a, Realm::Overworld, Vec2{100, 100}, 20);
+    grid.insert(b, Realm::Overworld, Vec2{40000, 40000}, 900);
+    grid.queryRect(Realm::Overworld, Vec2{0, 0}, Vec2{kWorldSize, kWorldSize}, out);
+    CHECK_EQ(out.size(), std::size_t(2));
+    grid.query(Realm::Overworld, Vec2{39101, 40000}, 1, out);
+    CHECK_EQ(countOf(out, b), 1);
+    grid.query(Realm::Arena, Vec2{100, 100}, kWorldSize, out);
+    CHECK(out.empty());
+    grid.clear();
+    grid.insert(a, Realm::Overworld, Vec2{20000, 20000}, 10);
+    grid.query(Realm::Overworld, Vec2{40000, 40000}, 900, out);
+    CHECK(out.empty());
+    grid.query(Realm::Overworld, Vec2{20000, 20000}, 10, out);
+    CHECK_EQ(countOf(out, a), 1);
+    Terrain terrain;
+    grid.sizeToRealms(terrain);
+    grid.query(Realm::Overworld, Vec2{20000, 20000}, kWorldSize, out);
+    CHECK(out.empty());
+    grid.insert(b, Realm::Overworld, Vec2{100, 100}, 10);
+    grid.query(Realm::Overworld, Vec2{100, 100}, 10, out);
+    CHECK_EQ(countOf(out, b), 1);
+}
+
 TEST(spatial_grid_does_not_allocate_once_warm) {
     SpatialGrid grid;
     std::vector<Entity> out;

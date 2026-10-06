@@ -63,6 +63,7 @@ void SpatialGrid::sizeToRealms(const Terrain& terrain) {
     epoch_ = 1;
     for (Layer& layer : layers_) {
         std::fill(layer.bucketEpoch.begin(), layer.bucketEpoch.end(), 0);
+        layer.boundsEpoch = 0;
     }
     inserted_ = 0;
 }
@@ -84,6 +85,7 @@ void SpatialGrid::clear() {
         // session; cheap enough that it does not need to be.
         for (Layer& layer : layers_) {
             std::fill(layer.bucketEpoch.begin(), layer.bucketEpoch.end(), 0);
+            layer.boundsEpoch = 0;
         }
         epoch_ = 1;
     }
@@ -107,6 +109,16 @@ void SpatialGrid::insert(Entity e, Realm realm, Vec2 position, double radius) {
     const int x1 = cellX(realm, position.x + radius);
     const int y0 = cellY(realm, position.y - radius);
     const int y1 = cellY(realm, position.y + radius);
+    if (target.boundsEpoch != epoch_) {
+        target.boundsEpoch = epoch_;
+        target.minX = x0; target.maxX = x1;
+        target.minY = y0; target.maxY = y1;
+    } else {
+        target.minX = std::min(target.minX, x0);
+        target.maxX = std::max(target.maxX, x1);
+        target.minY = std::min(target.minY, y0);
+        target.maxY = std::max(target.maxY, y1);
+    }
     for (int cy = y0; cy <= y1; ++cy) {
         for (int cx = x0; cx <= x1; ++cx) {
             const std::size_t b = target.bucketAt(cx, cy);
@@ -144,10 +156,11 @@ void SpatialGrid::queryRect(Realm realm, Vec2 min, Vec2 max, std::vector<Entity>
     }
 
     const Layer& source = layer(realm);
-    const int x0 = cellX(realm, min.x);
-    const int x1 = cellX(realm, max.x);
-    const int y0 = cellY(realm, min.y);
-    const int y1 = cellY(realm, max.y);
+    if (source.boundsEpoch != epoch_) return;
+    const int x0 = std::max(cellX(realm, min.x), source.minX);
+    const int x1 = std::min(cellX(realm, max.x), source.maxX);
+    const int y0 = std::max(cellY(realm, min.y), source.minY);
+    const int y1 = std::min(cellY(realm, max.y), source.maxY);
     for (int cy = y0; cy <= y1; ++cy) {
         for (int cx = x0; cx <= x1; ++cx) {
             const std::size_t b = source.bucketAt(cx, cy);

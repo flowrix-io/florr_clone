@@ -44,18 +44,24 @@ struct Registrar {
 
 inline int runAll() {
     int failed = 0;
+    std::size_t executed = 0;
     // `FLIX_TEST_FILTER=<substring>` runs only the cases whose name contains
     // it. The suite is a few minutes end to end, and diagnosing one failure
     // by re-running all nine hundred is how a diagnosis turns into a guess.
     const char* only = std::getenv("FLIX_TEST_FILTER");
     for (auto& c : cases()) {
         if (only != nullptr && std::string(c.name).find(only) == std::string::npos) continue;
+        ++executed;
         currentCase() = c.name;
         const int before = failures();
         c.fn();
         if (failures() > before) ++failed;
     }
-    std::printf("\n%zu tests, %d failed, %d assertion failures\n", cases().size(), failed, failures());
+    if (executed == 0) {
+        std::fprintf(stderr, "No tests matched filter: %s\n", only ? only : "");
+        return 1;
+    }
+    std::printf("\n%zu tests, %d failed, %d assertion failures\n", executed, failed, failures());
     return failures() == 0 ? 0 : 1;
 }
 

@@ -117,6 +117,9 @@ private:
         /// next insert clears it. That is the whole trick behind an O(1)
         /// clear().
         std::vector<std::uint32_t> bucketEpoch;
+        // Occupied cell bounds in the current tick, reset lazily on insertion.
+        std::uint32_t boundsEpoch = 0;
+        int minX = 0, maxX = 0, minY = 0, maxY = 0;
 
         std::size_t bucketAt(int cx, int cy) const {
             return static_cast<std::size_t>(cy) * static_cast<std::size_t>(cols) +
