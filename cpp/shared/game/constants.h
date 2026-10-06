@@ -154,7 +154,7 @@ inline constexpr double kBounceDamping = 0.7;
 
 // -- progression -------------------------------------------------------------
 
-inline constexpr double kBaseXpRequirement = 100.0;
+inline constexpr double kBaseXpRequirement = 15.0;
 inline constexpr double kXpGrowth = 1.08;
 inline constexpr double kLevelOneHealth = 110.0;
 inline constexpr int kHealthAnchorLevel = 130;
