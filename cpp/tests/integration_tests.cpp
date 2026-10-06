@@ -38,6 +38,44 @@ std::size_t playersVisibleTo(const NetClient& client) {
 
 } // namespace
 
+TEST(malformed_and_replayed_inputs_cannot_replace_player_intent) {
+    Harness h("input-validation");
+    if (!h.ready) { CHECK(false); return; }
+    NetClient client;
+    CHECK(connectClient(h, client));
+    client.requestRegister("inputcheck", "password7");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::LoggedIn; }));
+    client.joinGame(1280, 720);
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }));
+    Entity player = NULL_ENTITY;
+    Query<PlayerTag, PlayerInput> players{h.server.world()};
+    players.each([&](Entity e, PlayerTag&, PlayerInput&) { player = e; });
+    CHECK(player != NULL_ENTITY);
+    if (player == NULL_ENTITY) return;
+    net::InputFrame input;
+    input.sequence = 1;
+    client.sendInput(input);
+    CHECK(h.stepUntil({&client}, [&] {
+        return h.server.world().get<PlayerInput>(player).current.sequence == 1;
+    }));
+    input.sequence = 2;
+    input.flags = 0x80;
+    client.sendInput(input);
+    h.step(5, {&client});
+    CHECK_EQ(h.server.world().get<PlayerInput>(player).current.sequence, 1u);
+    input.flags = net::InputDefend;
+    client.sendInput(input);
+    CHECK(h.stepUntil({&client}, [&] {
+        return h.server.world().get<PlayerInput>(player).current.sequence == 2;
+    }));
+    input.sequence = 1;
+    input.flags = net::InputAttack;
+    client.sendInput(input);
+    h.step(5, {&client});
+    CHECK(h.server.world().get<PlayerInput>(player).current.defending());
+    CHECK(!h.server.world().get<PlayerInput>(player).current.attacking());
+}
+
 TEST(a_client_connects_registers_and_joins) {
     Harness h("join");
     if (!h.ready) { CHECK(false); return; }

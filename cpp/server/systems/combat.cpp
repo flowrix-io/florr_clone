@@ -7,6 +7,7 @@
 
 #include "server/loot_eligibility.h"
 #include "shared/game/npc.h"
+#include "server/systems/movement.h"
 
 namespace flix {
 
@@ -1030,7 +1031,8 @@ double massOf(World& world, Entity e) {
 /// `offset` runs from the mob to the flower. Lands before the
 /// damage/invulnerability branch, so an invulnerable player still bounces. A
 /// plain field write, safe inside the candidate loop.
-void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double overlap) {
+void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double overlap,
+                 const Terrain* terrain) {
     Transform* transform = world.tryGet<Transform>(player);
     if (transform == nullptr) return;
     const Vec2 direction = offset.normalized();
@@ -1039,7 +1041,16 @@ void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double o
     const double mobMass = massOf(world, mob);
     const double flowerMass = massOf(world, player);
     const double mobShare = mobMass / (flowerMass + mobMass);
-    if (overlap > 0.0) transform->position += direction * (overlap * mobShare);
+    if (overlap > 0.0) {
+        const Vec2 shove = direction * (overlap * mobShare);
+        if (terrain) {
+            const Body* body = world.tryGet<Body>(player);
+            stepCollide(*terrain, transform->realm, transform->position, shove,
+                        body ? body->radius : kPlayerBaseRadius, 1.0, true, true);
+        } else {
+            transform->position += shove;
+        }
+    }
 
     Motion* motion = world.tryGet<Motion>(player);
     if (motion == nullptr) return;
@@ -1963,7 +1974,7 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
                 if (firstBump) {
                     mobContactedPlayers_.push_back(victim);
                     bounceOffMob(world, victim, source.attacker, offset,
-                                 source.radius + body->radius - offset.length());
+                                 source.radius + body->radius - offset.length(), terrain);
                 }
                 // Every mob touching the flower recoils, the one-bump rule
                 // notwithstanding: that rule stops a pile stacking shoves on

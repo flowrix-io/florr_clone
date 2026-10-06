@@ -864,6 +864,7 @@ void GameServer::runSystems(double nowMillis, double dt) {
     // the player pipeline, before moveEnemies(). Keep that temporal boundary:
     // a mob cannot escape a petal it was already touching by moving first.
     combat_->beginTick(world_, nowMillis, dt, events_);
+    combat_->terrain = terrain_.get();
     combat_->runContactPhase(world_, grid_, content(), nowMillis);
     markTickPhase("contact");
 
@@ -1839,7 +1840,8 @@ void GameServer::handleLeave(Session& session, net::Connection& connection) {
 
 void GameServer::handleInput(Session& session, ByteReader& reader) {
     const net::InputFrame input = net::InputFrame::read(reader);
-    if (!reader.ok() || !session.playing()) return;
+    if (!reader.ok() || !session.playing() || reader.remaining() != 0 ||
+        (input.flags & ~(net::InputAttack | net::InputDefend)) != 0) return;
     if (!spend(session.inputAllowance)) return;
 
     // A replayed or reordered input must not move the player twice. TCP gives

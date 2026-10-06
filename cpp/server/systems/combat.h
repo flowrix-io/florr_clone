@@ -185,6 +185,8 @@ public:
     /// squadded, which is the ordinary case; the loot system reads the same
     /// table so the two payouts cannot disagree about who earned the kill.
     const SquadEntityIndex* squads = nullptr;
+    /// Optional for isolated simulations; the live server supplies its terrain.
+    const Terrain* terrain = nullptr;
 
     /// One complete combat tick. Kept for focused simulations; GameServer uses
     /// the three phase methods below so flower/petal contact can happen before

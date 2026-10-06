@@ -199,6 +199,7 @@ constexpr ChatCommand kChatCommands[] = {
     {"/create-api-key", "Issue an API key tied to your account: /create-api-key [label]", false},
     {"/delete-api-key", "Revoke one of your API keys: /delete-api-key <key-or-prefix>", false},
     {"/admin save", "Save player progress", true},
+    {"/admin gui", "Open the admin control panel", true},
     {"/admin list-players", "List online players", true},
     {"/admin list-sockets", "List connected sockets", true},
     {"/admin set_max_enemies", "Set max enemy count", true},
@@ -858,6 +859,14 @@ void App::drawTitleChat(Canvas& canvas, double time) {
 }
 
 bool App::handleClientCommand(const std::string& message) {
+    if (message == "/admin gui") {
+        if (net_.isSkinAdmin() && screen_ == Screen::Playing) {
+            adminPanelOpen_ = !adminPanelOpen_;
+        } else {
+            net_.addSystemMessage("Admin GUI requires an admin account in-game.");
+        }
+        return true;
+    }
     if (message == "/guild-menu" || message == "/guild menu") {
         // The reference refuses this outside a running game because its panel
         // lives on the game object. This client's panel is a lobby menu too,

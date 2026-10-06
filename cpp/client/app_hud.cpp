@@ -372,6 +372,7 @@ void App::drawHud(Canvas& canvas, double time) {
     // -- see touchControlsVisible -- so there is no case where a card lands on
     // a stick that is still answering for presses under it.
     if (touchControlsVisible()) mobile_.draw(canvas);
+    drawAdminPanel(canvas);
 
     // The loadout is NOT drawn here. The menu system's strip is the same set of
     // slots and is a live drop target; a second, inert copy of it a few pixels
@@ -691,6 +692,58 @@ void App::drawLowHealthVignette(Canvas& canvas) {
     canvas.darkenDevice(vignetteMask_.data(), width, height, 0, 0);
     canvas.setGlobalAlpha(1.0f);
 #endif
+}
+
+namespace {
+struct AdminAction { const char* label; const char* command; bool draft; };
+constexpr AdminAction kAdminActions[] = {
+    {"God mode ON", "/admin god on", false},
+    {"God mode OFF", "/admin god off", false},
+    {"Online players", "/admin list-players", false},
+    {"Save progress", "/admin save", false},
+    {"Spawn mob...", "/admin spawn ", true},
+    {"Give item...", "/admin give ", true},
+};
+}
+
+void App::drawAdminPanel(Canvas& canvas) {
+    if (!net_.isSkinAdmin() || screen_ != Screen::Playing || menus_.anyOpen()) return;
+    const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+    const Rect toggle{16, 44, 100, 32};
+    ui::button(canvas, toggle, adminPanelOpen_ ? "Close admin" : "Admin",
+               toggle.contains(mouse), false);
+    if (!adminPanelOpen_) return;
+    ui::panel(canvas, Rect{16, 82, 224, 260});
+    for (std::size_t i = 0; i < std::size(kAdminActions); ++i) {
+        const Rect row{28, 94 + 39.0 * i, 200, 32};
+        ui::button(canvas, row, kAdminActions[i].label, row.contains(mouse), false);
+    }
+}
+
+void App::updateAdminPanel() {
+    if (!net_.isSkinAdmin() || menus_.anyOpen()) {
+        adminPanelOpen_ = false;
+        return;
+    }
+    if (!window_.mousePressed(MouseButton::Left)) return;
+    const Vec2 mouse{window_.mouseX(), window_.mouseY()};
+    if (Rect{16, 44, 100, 32}.contains(mouse)) {
+        adminPanelOpen_ = !adminPanelOpen_;
+        return;
+    }
+    if (!adminPanelOpen_) return;
+    for (std::size_t i = 0; i < std::size(kAdminActions); ++i) {
+        if (!Rect{28, 94 + 39.0 * i, 200, 32}.contains(mouse)) continue;
+        const auto& action = kAdminActions[i];
+        if (action.draft) {
+            chatDraft_ = action.command;
+            chatOpen_ = true;
+            adminPanelOpen_ = false;
+        } else {
+            net_.sendChat(action.command);
+        }
+        break;
+    }
 }
 
 } // namespace flix

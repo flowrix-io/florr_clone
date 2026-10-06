@@ -6,6 +6,7 @@
 #include "shared/game/components.h"
 #include "shared/game/config.h"
 #include "shared/game/spatial.h"
+#include "shared/game/terrain.h"
 
 #include <sys/stat.h>
 
@@ -666,6 +667,26 @@ TEST(knockback_preserves_the_typescript_magnitude_and_skips_static_entities) {
 /// speed.
 constexpr double kBouncedX = 1000.0 + 20.0 * 0.5;
 constexpr double kBounceSpeed = kGardnBounceKick + 2.0 * kGardnBounceMinClosing;
+
+TEST(a_bulky_mob_cannot_squish_a_god_mode_flower_into_a_wall) {
+    Arena a;
+    Terrain terrain;
+    for (int y = 0; y < terrain.tileRows(); ++y) terrain.setTile(10, y, Tile::Wall);
+    a.combat.terrain = &terrain;
+    const double wall = 10 * kTileSize;
+    const Entity player = a.player({wall - 21, 1000});
+    a.world.get<Health>(player).invulnerableUntilMillis = 1e9;
+    const Entity mob = a.mob({wall - 150, 1000}, 100, 0, 300);
+    a.world.get<Body>(mob).mass = 1000;
+    a.world.add<ContactDamage>(mob, ContactDamage{10, 500});
+    for (int tick = 0; tick < 30; ++tick) {
+        a.step(tick * net::kTickSeconds * 1000);
+        const Vec2 p = a.world.get<Transform>(player).position;
+        CHECK(p.x <= wall - 20 + 0.1);
+        CHECK(!terrain.blocked(p, Realm::Overworld));
+    }
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+}
 
 TEST(a_contact_hit_pushes_the_victim_away_from_the_attacker) {
     Arena a;

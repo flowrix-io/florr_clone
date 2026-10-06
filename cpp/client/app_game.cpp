@@ -190,7 +190,9 @@ void App::sendInputFrame(double dt) {
     // open panel nothing, and being frozen in place with the inventory up is
     // how a player gets eaten. They still stop for the one thing that really is
     // typing -- a focused field, which keyboardCaptured() answers for below.
-    const bool menuOpen = menus_.anyOpen();
+    const bool menuOpen = menus_.anyOpen() || adminPanelOpen_ ||
+        (net_.isSkinAdmin() && Rect{16, 44, 100, 32}.contains(
+            Vec2{window_.mouseX(), window_.mouseY()}));
 
     // Movement follows the cursor, which is the control scheme this game is
     // built around: the flower runs toward the pointer, at a speed set by how
@@ -308,6 +310,7 @@ void App::sendInputFrame(double dt) {
 }
 
 void App::updatePlaying(double dt) {
+    updateAdminPanel();
     // Chat swallows the keyboard while open, or typing would also drive the
     // flower and trip every hotkey.
     if (chatOpen_ && !menus_.wantsText()) {

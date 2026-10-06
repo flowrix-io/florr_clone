@@ -241,6 +241,9 @@ private:
     /// Steps and draws the petals drifting over that texture.
     void drawTitlePetals(Canvas&, double time);
     void drawHud(Canvas&, double time);
+    void drawAdminPanel(Canvas&);
+    void updateAdminPanel();
+    bool adminPanelOpen_ = false;
     /// The edges of the screen going dark as the flower runs out of health.
     /// Over the world and under the HUD, like the death wash.
     void drawLowHealthVignette(Canvas&);
