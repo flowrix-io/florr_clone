@@ -31,6 +31,7 @@
 #include "server/systems/spawning.h"
 #include "server/systems/mode_spawning.h"
 #include "server/systems/npcs.h"
+#include "shared/game/chat_images.h"
 #include "shared/game/config.h"
 #include "shared/game/shop.h"
 #include "shared/game/skin_format.h"
@@ -1962,17 +1963,35 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
         return;
     }
 
+    std::string said = text;
+    if (!screenChatImages(connection, said)) return;
+
     if (channel == net::ChatChannel::Local) {
-        sendLocalChat(session, text, speakerNetId);
+        sendLocalChat(session, said, speakerNetId);
     } else {
-        broadcastChat(net::ChatChannel::Global, session.username, text, speakerNetId);
+        broadcastChat(net::ChatChannel::Global, session.username, said, speakerNetId);
     }
 
     // Somebody saying "super" or "unique" rallies every bot onto the best boss
     // in the world, exactly as the reference's chat handler does. Only those
     // two words: an ultra is a high-tier mob to fight, never a raid to call.
     // No-ops when no qualifying boss exists.
-    if (mentionsRaidTier(text)) triggerBotRaid(clockMillis_);
+    if (mentionsRaidTier(said)) triggerBotRaid(clockMillis_);
+}
+
+bool GameServer::screenChatImages(net::Connection& speaker, std::string& text) {
+    // Everyone, admins included: the client refuses any other host whoever
+    // posted it, so letting one through here would only send a picture
+    // nobody can see.
+    ChatImageFilter filtered = filterChatImages(text);
+    if (filtered.removed == 0) return true;
+    sendSystem(speaker, "<span style=\"color: #ff8866;\">" +
+                            std::string(filtered.removed == 1 ? "Your image was" : "Your images were") +
+                            " removed: images must come from a known image host (" +
+                            chatImageHostSummary() + ").</span>");
+    text = std::move(filtered.text);
+    // A line that was only the pictures is not sent as an empty one.
+    return text.find_first_not_of(' ') != std::string::npos;
 }
 
 void GameServer::sendLocalChat(const Session& speaker, const std::string& text,

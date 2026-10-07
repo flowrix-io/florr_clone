@@ -160,19 +160,26 @@ inline constexpr std::array<double, kLadderRarityCount> kMobArmorScale = {
     1.0, 3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 729.0, 729.0, 729.0,
 };
 
-/// Mob body size per tier. Common through ultra are florr's multipliers over
-/// a common (1, 1.1, 1.3, 1.6, 3, 5, 10) on this ladder's 1.5 base; florr's
-/// tiers above ultra have no published figure, so super, unique and apex keep
-/// their earlier values.
-inline constexpr std::array<double, kLadderRarityCount> kMobSizeScale = {
-    1.5, 1.65, 1.95, 2.4, 4.5, 7.5, 15.0, 16.777216, 26.8435456, 42.949673,
-};
+/// Mob body size per tier: 1 + 0.5 * 1.7^tier, so a size-1 mob's radius is
+/// 20 + 10 * 1.7^tier. A smooth fit to the measured radii common through super
+/// (30, 40, 50, 60, 100, 160, 256, 420) -- within ~8% everywhere but epic,
+/// which the curve puts at 69 where the list's +10 steps turn into x1.6 ones.
+/// Unique and apex follow the curve on from super.
+inline constexpr std::array<double, kLadderRarityCount> kMobSizeScale = [] {
+    std::array<double, kLadderRarityCount> scale{};
+    double growth = 1.0;
+    for (int i = 0; i < kLadderRarityCount; ++i) {
+        scale[static_cast<std::size_t>(i)] = 1.0 + 0.5 * growth;
+        growth *= 1.7;
+    }
+    return scale;
+}();
 
 /// A pull-down on kMobSizeScale for a mob that must not grow like a wild one:
 /// 1x at common, `scaleAtUnique` at unique, linear in the rarity index, and
 /// apex continues the slope. The reference's buildSizeRamp (src/mobs.ts).
 ///
-/// Linear rather than geometric on purpose: kMobSizeScale only grows 1.1x from
+/// Linear rather than geometric on purpose: kMobSizeScale only grows ~1.23x from
 /// common to uncommon, so a geometric pull-down would make an uncommon smaller
 /// than a common. Linear keeps the effective size growing at every step.
 inline double mobSizeRamp(Rarity r, double scaleAtUnique) {

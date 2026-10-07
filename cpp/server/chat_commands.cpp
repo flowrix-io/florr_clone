@@ -408,6 +408,8 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("You are not in a guild.");
             return true;
         }
+        std::string said = argument;
+        if (!screenChatImages(connection, said)) return true;
         const Json& guild = database_.storedTable("guilds")[guildName];
         const Json& members = guild["memberUsernames"];
         for (std::size_t i = 0; i < members.size(); ++i) {
@@ -415,7 +417,7 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
                 // Signed with the speaker alone: the channel is what tags the
                 // line "[Guild]" in the transcript, and a member can only ever
                 // be in the one guild.
-                sendChatTo(*peer, net::ChatChannel::Guild, session.username, argument);
+                sendChatTo(*peer, net::ChatChannel::Guild, session.username, said);
             }
         }
         return true;
@@ -433,11 +435,13 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
             out("You are not in a squad.");
             return true;
         }
+        std::string said = argument;
+        if (!screenChatImages(connection, said)) return true;
         // Signed with the speaker alone, as a guild line is: the channel is
         // what tags it "[Squad]".
         for (const SquadMemberId& member : squad->members) {
             if (net::Connection* peer = squadConnection(member)) {
-                sendChatTo(*peer, net::ChatChannel::Squad, session.username, argument);
+                sendChatTo(*peer, net::ChatChannel::Squad, session.username, said);
             }
         }
         return true;
@@ -484,8 +488,10 @@ bool GameServer::handleChatCommand(Session& session, net::Connection& connection
         // Each side's copy names the OTHER party, so either one can answer by
         // whispering to whoever their latest line names. The name is the
         // account's own spelling, not what was typed.
-        sendChatTo(*peer, net::ChatChannel::Whisper, session.username, message);
-        sendChatTo(connection, net::ChatChannel::WhisperSent, target->username, message);
+        std::string said = message;
+        if (!screenChatImages(connection, said)) return true;
+        sendChatTo(*peer, net::ChatChannel::Whisper, session.username, said);
+        sendChatTo(connection, net::ChatChannel::WhisperSent, target->username, said);
         return true;
     }
 

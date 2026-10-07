@@ -696,7 +696,7 @@ inline constexpr double kPetAggroRangePerRarity = 200.0;
 
 /// What a unique pet's size is, as a fraction of a wild unique mob's -- the
 /// endpoint of its mobSizeRamp. A common pet is exactly a common mob; a unique
-/// one is two thirds of the wild animal, which at 26.8x base would otherwise
+/// one is two thirds of the wild animal, which at ~35.9x base would otherwise
 /// dwarf the flower that owns it. Larger than the reference's third
 /// (PET_SIZE_SCALE_AT_UNIQUE, src/mobs.ts) on purpose.
 inline constexpr double kPetSizeScaleAtUnique = 2.0 / 3.0;

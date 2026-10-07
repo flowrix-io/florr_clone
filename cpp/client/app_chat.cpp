@@ -31,6 +31,7 @@
 
 #include "client/ui/draw.h"
 #include "client/ui/markup.h"
+#include "client/ui/remote_image.h"
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/touch_scroll.h"
@@ -92,6 +93,17 @@ constexpr double kChatFieldHeight = 24.0;
 
 /// A sender's name on Local and on the server's own named lines.
 constexpr std::uint32_t kChatAuthorGrey = 0xBBBBBBu;
+
+/// A posted picture: no wider than the column, no taller than this, and never
+/// scaled up -- the reference's `max-width: 100%; max-height: 200px`.
+constexpr double kChatImageMaxHeight = 200.0;
+/// Above and below a picture, its `margin: 4px 0`.
+constexpr double kChatImageMargin = 4.0;
+/// The plate under <code> and <pre>: black, a little denser than the panel's
+/// own, so it still reads on the open panel.
+constexpr double kChatCodeAlpha = 0.45;
+constexpr double kChatCodePad = 2.0;
+constexpr double kChatCodeRadius = 3.0;
 
 /// The channel tabs, in strip order -- the order chatChannels' bits and
 /// App::chatSendTab_ count in. Local is first because it is where a line goes
@@ -321,6 +333,15 @@ struct ChatToken {
     /// starting a new one, as the "lo" of `<b>Hel</b>lo` does. Without it the
     /// layout would insert a space at every style change.
     bool joinsPrevious = false;
+    /// The <code>/<pre> element this run is in (see MarkupSpan::code), and
+    /// whether it is a <pre>.
+    int code = 0;
+    bool pre = false;
+    /// A loaded picture: its URL and natural size. A picture is a block --
+    /// a row of its own, as tall as it is drawn.
+    std::string image;
+    double imageWidth = 0;
+    double imageHeight = 0;
 };
 
 /// The same run once it knows which row it is on and where along it.
@@ -333,9 +354,29 @@ struct ChatPlacedRun {
     bool italic = false;
     bool underline = false;
     bool blink = false;
+    double width = 0;
+    int code = 0;
 };
 
-using ChatRow = std::vector<ChatPlacedRun>;
+/// One row of a laid-out message.
+struct ChatRow {
+    std::vector<ChatPlacedRun> runs;
+    /// From the previous row's baseline to this one's. Text rows are all
+    /// kChatLineHeight; a picture's row is as tall as the picture.
+    double height = kChatLineHeight;
+    /// A picture's row holds the picture and nothing else.
+    std::string image;
+    double imageWidth = 0;
+    double imageHeight = 0;
+    /// A row inside a <pre>, whose plate spans the whole column.
+    bool pre = false;
+};
+
+double messageHeight(const std::vector<ChatRow>& rows) {
+    double height = 0;
+    for (const ChatRow& row : rows) height += row.height;
+    return height;
+}
 
 /// Erases the last whole UTF-8 sequence, so a cut never leaves half a
 /// character behind.
@@ -355,24 +396,46 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
     std::vector<ChatRow> rows;
     rows.emplace_back();
     double pen = 0;
+    // Set while the last row was opened by a picture ending, and nothing has
+    // landed on it since: a message that ends on a picture must not keep it.
+    bool rowAfterPicture = false;
 
     for (const ChatToken& token : tokens) {
         // A <br> ends the row wherever it stands, including on an empty one --
         // "Public squads:<br/><br/>" is meant to leave a blank line.
         if (token.lineBreak) {
             rows.emplace_back();
+            rows.back().pre = token.pre;
             pen = 0;
+            rowAfterPicture = false;
+            continue;
+        }
+        if (!token.image.empty()) {
+            if (!rows.back().runs.empty() || !rows.back().image.empty()) rows.emplace_back();
+            const double scale = std::min({1.0, width / token.imageWidth,
+                                           kChatImageMaxHeight / token.imageHeight});
+            ChatRow& row = rows.back();
+            row.image = token.image;
+            row.imageWidth = token.imageWidth * scale;
+            row.imageHeight = token.imageHeight * scale;
+            row.height = row.imageHeight + kChatImageMargin * 2;
+            rows.emplace_back();
+            pen = 0;
+            rowAfterPicture = true;
             continue;
         }
         std::string word = token.text;
         if (word.empty()) continue;
+        rowAfterPicture = false;
         const auto place = [&](const std::string& run, double x) {
-            rows.back().push_back({run, x, token.size, token.fill, token.alpha, token.italic,
-                                   token.underline, token.blink});
+            rows.back().runs.push_back({run, x, token.size, token.fill, token.alpha,
+                                        token.italic, token.underline, token.blink,
+                                        measure(run, token.size), token.code});
+            if (token.pre) rows.back().pre = true;
         };
-        double gap = (rows.back().empty() || token.joinsPrevious)
+        double gap = (rows.back().runs.empty() || token.joinsPrevious)
                          ? 0.0 : measure(" ", token.size);
-        if (!rows.back().empty() && pen + gap + measure(word, token.size) > width) {
+        if (!rows.back().runs.empty() && pen + gap + measure(word, token.size) > width) {
             rows.emplace_back();
             pen = 0;
             gap = 0;
@@ -393,6 +456,7 @@ std::vector<ChatRow> layoutChatMessage(const std::vector<ChatToken>& tokens, dou
         place(word, pen + gap);
         pen += gap + measure(word, token.size);
     }
+    if (rowAfterPicture && rows.size() > 1) rows.pop_back();
     return rows;
 }
 
@@ -510,19 +574,75 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
     bool afterWhitespace = true;
     for (const ui::MarkupSpan& span : ui::parseMarkup(line.text)) {
         if (span.lineBreak) {
-            tokens.push_back({{}, kChatTextSize, kPaper, 1.0, false, false, false, true, false});
+            ChatToken token{{}, kChatTextSize, kPaper, 1.0, false, false, false, true, false};
+            token.code = span.code;
+            token.pre = span.preformatted;
+            tokens.push_back(std::move(token));
             afterWhitespace = true;
             continue;
         }
         const std::uint32_t fill = span.hasColor ? span.color : bodyFill;
+
+        if (!span.image.empty()) {
+            // Only a picture that has loaded is a block: its size is what the
+            // row is made of. Until then -- and for good on a build that
+            // cannot fetch one -- a word says what is there.
+            const RemoteImage picture = remoteImage(span.image);
+            ChatToken token;
+            token.size = kChatTextSize;
+            if (picture.state == RemoteImage::State::Ready) {
+                token.image = span.image;
+                token.imageWidth = picture.width;
+                token.imageHeight = picture.height;
+            } else {
+                token.text = picture.state == RemoteImage::State::Loading ? "[loading image]"
+                             : picture.state == RemoteImage::State::Failed
+                                 ? "[image failed to load]"
+                                 : "[image]";
+                token.fill = kChatAuthorGrey;
+                token.italic = true;
+            }
+            tokens.push_back(std::move(token));
+            afterWhitespace = true;
+            continue;
+        }
+
+        if (span.preformatted) {
+            // A <pre> keeps its spaces: each word carries the run of spaces
+            // after it, and nothing is inserted between them. A row can still
+            // break between two of them -- the column is narrower than a pre
+            // is allowed to be -- but no space is lost or added.
+            std::string text = span.text;
+            for (std::size_t tab = text.find('\t'); tab != std::string::npos;
+                 tab = text.find('\t', tab)) {
+                text.replace(tab, 1, "    ");
+            }
+            std::size_t at = 0;
+            while (at < text.size()) {
+                std::size_t end = text.find(' ', at);
+                if (end == std::string::npos) end = text.size();
+                end = text.find_first_not_of(' ', end);
+                if (end == std::string::npos) end = text.size();
+                ChatToken token{text.substr(at, end - at), kChatTextSize, fill, 1.0,
+                                span.italic, span.underline, span.blink, false, true};
+                token.code = span.code;
+                token.pre = true;
+                tokens.push_back(std::move(token));
+                at = end;
+            }
+            afterWhitespace = true;
+            continue;
+        }
         std::size_t at = 0;
         while (at < span.text.size()) {
             const std::size_t space = span.text.find_first_of(" \t\r\n", at);
             const std::string text = span.text.substr(
                 at, space == std::string::npos ? std::string::npos : space - at);
             if (!text.empty()) {
-                tokens.push_back({text, kChatTextSize, fill, 1.0, span.italic, span.underline,
-                                  span.blink, false, !afterWhitespace});
+                ChatToken token{text, kChatTextSize, fill, 1.0, span.italic, span.underline,
+                                span.blink, false, !afterWhitespace};
+                token.code = span.code;
+                tokens.push_back(std::move(token));
                 afterWhitespace = false;
             }
             if (space == std::string::npos) break;
@@ -1078,7 +1198,7 @@ void App::drawChat(Canvas& canvas, double time) {
                 ++walked;
                 if (!passes(*it)) continue;
                 newestFirst.push_back(layoutChatMessage(chatLineTokens(*it), column.w));
-                const double height = newestFirst.back().size() * kChatLineHeight;
+                const double height = messageHeight(newestFirst.back());
                 content += height;
                 if (landed) arrivedContent += height;
             }
@@ -1120,25 +1240,70 @@ void App::drawChat(Canvas& canvas, double time) {
             // The baseline of the message's LAST row; its others stack above.
             double baseline = newestBaseline + chatScroll_;
             for (const std::vector<ChatRow>& rows : newestFirst) {
-                const double firstRow = baseline - (rows.size() - 1) * kChatLineHeight;
-                if (baseline - above <= panel.bottom()) {
-                    for (std::size_t row = 0; row < rows.size(); ++row) {
-                        const double rowBaseline = firstRow + row * kChatLineHeight;
-                        if (rowBaseline + below < panel.y || rowBaseline - above > panel.bottom()) {
-                            continue;
-                        }
-                        for (const ChatPlacedRun& run : rows[row]) {
-                            // `blink 1s step-start infinite`, which is what
-                            // the reference's <blink> resolves to: shown for
-                            // the first half of every second and hidden for
-                            // the second.
-                            if (run.blink && std::fmod(time, 1.0) >= 0.5) continue;
-                            chatRun(canvas, run.text, column.x + run.x, rowBaseline, run.size,
-                                    run.fill, run.alpha, run.italic, run.underline);
+                const double firstRow = baseline - (messageHeight(rows) - rows.front().height);
+                double rowBaseline = firstRow;
+                for (std::size_t index = 0; index < rows.size(); ++index) {
+                    const ChatRow& row = rows[index];
+                    if (index > 0) rowBaseline += row.height;
+                    // A row's cell runs from just under its own glyphs up to
+                    // just under the previous row's.
+                    const double cellBottom = rowBaseline + below;
+                    const double cellTop = cellBottom - std::max(row.height, above + below);
+                    if (cellBottom < panel.y || cellTop > panel.bottom()) continue;
+
+                    if (!row.image.empty()) {
+                        drawRemoteImage(canvas, row.image, column.x,
+                                        cellBottom - kChatImageMargin - row.imageHeight,
+                                        row.imageWidth, row.imageHeight);
+                        continue;
+                    }
+
+                    // The plates first, under every run. A <pre>'s spans the
+                    // column and abuts the next row's, so a block reads as one
+                    // slab; a <code>'s hugs its runs.
+                    if (row.pre) {
+                        setFill(canvas, kInk, kChatCodeAlpha);
+                        canvas.fillRect(static_cast<float>(column.x - kChatCodePad),
+                                        static_cast<float>(cellBottom - row.height),
+                                        static_cast<float>(column.w + kChatCodePad * 2),
+                                        static_cast<float>(row.height));
+                    } else {
+                        for (std::size_t first = 0; first < row.runs.size();) {
+                            std::size_t last = first;
+                            const int code = row.runs[first].code;
+                            while (code != 0 && last + 1 < row.runs.size() &&
+                                   row.runs[last + 1].code == code) {
+                                ++last;
+                            }
+                            if (code != 0) {
+                                const double left = column.x + row.runs[first].x - kChatCodePad;
+                                const double right = column.x + row.runs[last].x +
+                                                     row.runs[last].width + kChatCodePad;
+                                canvas.beginPath();
+                                canvas.roundRect(
+                                    static_cast<float>(left),
+                                    static_cast<float>(rowBaseline - above - 1.0),
+                                    static_cast<float>(right - left),
+                                    static_cast<float>(above + below + 2.0),
+                                    static_cast<float>(kChatCodeRadius));
+                                setFill(canvas, kInk, kChatCodeAlpha);
+                                canvas.fill();
+                            }
+                            first = last + 1;
                         }
                     }
+
+                    for (const ChatPlacedRun& run : row.runs) {
+                        // `blink 1s step-start infinite`, which is what the
+                        // reference's <blink> resolves to: shown for the
+                        // first half of every second and hidden for the
+                        // second.
+                        if (run.blink && std::fmod(time, 1.0) >= 0.5) continue;
+                        chatRun(canvas, run.text, column.x + run.x, rowBaseline, run.size,
+                                run.fill, run.alpha, run.italic, run.underline);
+                    }
                 }
-                baseline = firstRow - kChatLineHeight;
+                baseline = firstRow - rows.front().height;
                 if (baseline + below < panel.y) break;
             }
             canvas.restore();

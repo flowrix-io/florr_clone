@@ -60,6 +60,21 @@ CanvasFrameStats canvasTakeFrameStats();
 /// them -- a readback, a canvas-to-canvas blit, a destroy -- flushes for
 /// itself; what is left is the end of the frame, which is Window::present().
 void canvasFlushOps();
+
+/// Images the PAGE fetches by URL -- a picture posted in chat.
+///
+/// Browser-only, and drawn without ever entering the wasm heap: decoding a
+/// remote PNG here would need a codec, and reading the pixels back out of an
+/// <img> needs the host to send CORS headers, which most image hosts do not.
+/// Handing the browser the element and asking it to draw it needs neither.
+///
+/// canvasRequestRemoteImage starts a fetch and returns its handle; every call
+/// is a new fetch, so the caller keeps the handle. The status is 0 while it
+/// loads, 1 once it can be drawn (with its natural size in `width`/`height`)
+/// and -1 when it failed or was released. Release lets the page drop it.
+int canvasRequestRemoteImage(const std::string& url);
+int canvasRemoteImageStatus(int handle, int& width, int& height);
+void canvasReleaseRemoteImage(int handle);
 #endif
 
 // Retained path object, equivalent to the browser's Path2D.
@@ -276,6 +291,12 @@ public:
     // zero and lets it filter, which is what its own mipmapping is for.
     void drawImage(const ImageLevel* levels, int levelCount, float dx, float dy, float dw,
                    float dh, float alpha = 1.0f, std::uint32_t cacheKey = 0);
+#ifdef __EMSCRIPTEN__
+    // A canvasRequestRemoteImage handle, into the user-space box (dx, dy, dw,
+    // dh) through the current transform, clip and globalAlpha. Draws nothing
+    // until the image has loaded, and nothing after it failed.
+    void drawRemoteImage(int handle, float dx, float dy, float dw, float dh);
+#endif
     std::vector<std::uint8_t> getImageData(int x, int y, int width, int height) const;
     void putImageData(const std::vector<std::uint8_t>& rgba, int sourceWidth, int sourceHeight, int dx, int dy);
     void fillCircle(float centerX, float centerY, float radius); void strokeCircle(float centerX, float centerY, float radius);

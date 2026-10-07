@@ -147,6 +147,11 @@ EM_JS(void, c2d_flush, (int id, const int* ops, int count, const char* text, con
         if(I[p+9]) (Module.cppCanvasPaths||(Module.cppCanvasPaths=new Map())).set(I[p+9],P);
         const r=F[p+2]?'evenodd':'nonzero';F[p+1]===0?x.fill(P,r):F[p+1]===1?x.stroke(P):x.clip(P,r);
         break;}
+      // An image the page fetched by URL (c2d_remote_request), by handle. One
+      // still loading -- or gone -- draws nothing rather than throwing. An
+      // animated one draws its current decoded frame, and being drawn is what
+      // keeps it animating (see cppRemoteAnimate).
+      case 54:{const R=Module.cppRemoteImages,e=R&&R.get(I[p+9]);if(e){e.drawnAt=performance.now();if(e.parked)e.resume();const im=e.frame||(e.state===1?e.img:null);if(im)x.drawImage(im,F[p+1],F[p+2],F[p+3],F[p+4]);}break;}
     }
   }
 });
@@ -183,6 +188,92 @@ EM_JS(void, c2d_image, (int id,int key,const std::uint8_t* data,int iw,int ih,do
   }
   const ctx=Module.cppCanvasContexts[id].ctx, was=ctx.globalAlpha;
   ctx.globalAlpha=was*alpha; ctx.drawImage(scratch,dx,dy,dw,dh); ctx.globalAlpha=was;
+});
+// Remote images live on the page as <img> elements, named by a handle.
+//
+// No crossOrigin: that would make every host without CORS headers fail to
+// load at all, and nothing here ever reads the pixels back -- the image is
+// only drawn. No referrer either, so posting a picture does not tell its host
+// which page every reader was on.
+EM_JS(int, c2d_remote_request, (const char* url), {
+  const R = Module.cppRemoteImages || (Module.cppRemoteImages = new Map());
+  Module.cppRemoteImageNext = (Module.cppRemoteImageNext || 0) + 1;
+  const id = Module.cppRemoteImageNext, img = new Image();
+  const e = {img, state: 0, frame: null, decoder: null, timer: 0, drawnAt: 0, parked: false, dead: false, resume: () => {}};
+  img.decoding = 'async';
+  img.referrerPolicy = 'no-referrer';
+  img.onload = () => { e.state = img.naturalWidth > 0 && img.naturalHeight > 0 ? 1 : -1; };
+  img.onerror = () => { e.state = -1; };
+  img.src = UTF8ToString(url);
+  R.set(id, e);
+
+  // Animated pictures -- a GIF, an animated WebP -- are decoded here, a frame
+  // at a time. Drawing an <img> onto a canvas copies the frame the browser
+  // last PAINTED it at, and an element that is never displayed is never
+  // painted: drawn that way a GIF is its first frame for ever.
+  //
+  // The decoder needs the bytes, which a cross-origin fetch only gets from a
+  // host that sends CORS headers. The image hosts chat allows all do; one that
+  // does not keeps the still <img> above, which is no worse than before.
+  //
+  // Only the frame on show is held, never the whole animation: a long GIF is
+  // hundreds of full-size frames. And only while somebody is looking: a
+  // picture not drawn for a second -- scrolled away, chat hidden -- parks,
+  // and its next draw starts it again.
+  Module.cppRemoteAnimate ||= async (e, src) => {
+    let decoder = null;
+    try {
+      const response = await fetch(src, {mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer'});
+      if (!response.ok || e.dead) return;
+      const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (!type.startsWith('image/') || !(await ImageDecoder.isTypeSupported(type))) return;
+      decoder = new ImageDecoder({data: response.body, type});
+      await decoder.completed;
+      const track = decoder.tracks.selectedTrack;
+      if (e.dead || !track || !track.animated || track.frameCount < 2) { decoder.close(); return; }
+      e.decoder = decoder;
+      let index = 0;
+      const step = async () => {
+        e.timer = 0;
+        if (e.dead) return;
+        if (performance.now() - e.drawnAt > 1000) { e.parked = true; return; }
+        const { image } = await decoder.decode({frameIndex: index});
+        if (e.dead) { image.close(); return; }
+        if (e.frame) e.frame.close();
+        e.frame = image;
+        index = (index + 1) % track.frameCount;
+        // Microseconds. A delay of 10 ms or less is played at 100, which is
+        // what every browser does with the zero-delay GIFs that are common.
+        const ms = (image.duration || 0) / 1000;
+        e.timer = setTimeout(() => step().catch(() => {}), ms > 10 ? ms : 100);
+      };
+      e.resume = () => { e.parked = false; step().catch(() => {}); };
+      e.drawnAt = performance.now();
+      await step();
+    } catch (err) {
+      // A frame that will not decode leaves whatever was last shown.
+      if (decoder && !e.decoder) { try { decoder.close(); } catch (_) {} }
+    }
+  };
+  if (typeof ImageDecoder !== 'undefined') Module.cppRemoteAnimate(e, img.src);
+  return id;
+});
+EM_JS(int, c2d_remote_status, (int id, int* size), {
+  const e = Module.cppRemoteImages && Module.cppRemoteImages.get(id);
+  if (!e) return -1;
+  if (e.state === 1) { HEAP32[size>>2] = e.img.naturalWidth; HEAP32[(size>>2)+1] = e.img.naturalHeight; }
+  return e.state;
+});
+EM_JS(void, c2d_remote_release, (int id), {
+  const e = Module.cppRemoteImages && Module.cppRemoteImages.get(id);
+  if (!e) return;
+  e.img.onload = e.img.onerror = null;
+  e.img.removeAttribute('src');
+  e.dead = true;
+  if (e.timer) clearTimeout(e.timer);
+  if (e.frame) e.frame.close();
+  if (e.decoder) { try { e.decoder.close(); } catch (_) {} }
+  Module.cppRemoteImages.delete(id);
 });
 namespace {
 // One record per call: opcode, eight arguments, string reference. A union
@@ -2082,6 +2173,29 @@ void Canvas::drawImage(const ImageLevel* levels,int levelCount,float dx,float dy
   drawImage(levels[level].rgba,levels[level].width,levels[level].height,dx,dy,dw,dh,alpha,cacheKey);
 #endif
 }
+#ifdef __EMSCRIPTEN__
+int canvasRequestRemoteImage(const std::string& url) {
+  return c2d_remote_request(url.c_str());
+}
+int canvasRemoteImageStatus(int handle, int& width, int& height) {
+  int size[2] = {0, 0};
+  const int state = c2d_remote_status(handle, size);
+  width = size[0];
+  height = size[1];
+  return state;
+}
+void canvasReleaseRemoteImage(int handle) {
+  // A draw of it may still be sitting in the buffer, and the page has to see
+  // that before the element goes.
+  canvasFlushOps();
+  c2d_remote_release(handle);
+}
+void Canvas::drawRemoteImage(int handle,float dx,float dy,float dw,float dh) {
+  if (handle <= 0 || dw <= 0 || dh <= 0) return;
+  sync(kImageBits);
+  pushRef(contextId_,54,handle,dx,dy,dw,dh,0,0,0,0);
+}
+#endif
 void Canvas::drawImage(const std::uint8_t* rgba,int iw,int ih,float dx,float dy,float dw,float dh,float alpha,std::uint32_t cacheKey) {
 #ifdef __EMSCRIPTEN__
   // Drawn directly rather than queued, so the state it reads has to be
@@ -2430,7 +2544,7 @@ const char* canvasOpName(int code) {
     case 46: return "clip";          case 47: return "fillText";
     case 48: return "strokeText";    case 50: return "fill(cached path)";
     case 51: return "drawImage";     case 52: return "drawImage(sub)";
-    case 53: return "fill(new path)";
+    case 53: return "fill(new path)"; case 54: return "drawImage(remote)";
     default: return nullptr;
   }
 }

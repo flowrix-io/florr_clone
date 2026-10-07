@@ -100,6 +100,7 @@ add_library(flix_shared STATIC
   shared/game/terrain.cpp
   shared/game/tiled_map.cpp
   shared/game/spatial.cpp
+  shared/game/chat_images.cpp
 )
 target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -152,6 +153,7 @@ add_library(flix_client STATIC
   client/ui/text_select.cpp
   client/ui/context_menu.cpp
   client/ui/markup.cpp
+  client/ui/remote_image.cpp
   client/ui/menu_style.cpp
   client/ui/menu_widgets.cpp
   client/ui/item_tile.cpp

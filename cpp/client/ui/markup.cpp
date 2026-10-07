@@ -1,5 +1,7 @@
 #include "client/ui/markup.h"
 
+#include "shared/game/chat_images.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -245,21 +247,20 @@ bool readTag(const std::string& s, std::size_t at, Tag& out) {
 enum class TagKind {
     Styling,    ///< push a style, pop it at the close
     Break,      ///< a hard line break, no content of its own
-    Rich,       ///< <a>/<img>: styling in a web build, dropped in a native one
+    Rich,       ///< <a>: styling in a web build, dropped in a native one
+    Image,      ///< <img>: a span of its own carrying the src
     Dropped,    ///< dropped with its content, in every build
 };
 
 TagKind classify(const std::string& name) {
     if (name == "b" || name == "strong" || name == "i" || name == "em" || name == "u" ||
-        name == "blink" || name == "span" || name == "font" || name == "color") {
+        name == "blink" || name == "span" || name == "font" || name == "color" ||
+        name == "code" || name == "pre") {
         return TagKind::Styling;
     }
     if (name == "br" || name == "wbr") return TagKind::Break;
     if (name == "a") return TagKind::Rich;
-    // <img> is dropped rather than rich even in a web build: the transcript is
-    // drawn with glyph outlines, not elements, so there is nowhere to put a
-    // picture. It is void, so dropping it costs no text.
-    if (name == "img") return TagKind::Dropped;
+    if (name == "img") return TagKind::Image;
     // script and iframe land here with everything else, and that is the point:
     // there is no branch anywhere in this file that runs a script or opens an
     // embed, so there is nothing for a chat line to reach.
@@ -267,6 +268,14 @@ TagKind classify(const std::string& name) {
 }
 
 bool voidTag(const std::string& name) { return name == "br" || name == "wbr" || name == "img"; }
+
+/// Whether `url` is one a page may fetch: http(s), and nothing a browser
+/// would run or read off the disk.
+bool fetchableUrl(const std::string& url) {
+    std::string scheme;
+    for (const char c : url.substr(0, 8)) scheme.push_back(lower(c));
+    return scheme.rfind("http://", 0) == 0 || scheme.rfind("https://", 0) == 0;
+}
 
 /// The style in force at one point in the walk.
 struct Frame {
@@ -314,11 +323,7 @@ void applyAttributes(const Tag& tag, MarkupSpan& style) {
             // Only a real scheme, and only in a build that has a page to open
             // it in. A `javascript:` href is exactly what this whole file
             // exists to refuse.
-            std::string scheme;
-            for (const char c : value.substr(0, 8)) scheme.push_back(lower(c));
-            if (scheme.rfind("http://", 0) == 0 || scheme.rfind("https://", 0) == 0) {
-                style.href = value;
-            }
+            if (fetchableUrl(value)) style.href = value;
         }
     }
 }
@@ -333,13 +338,60 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
     std::string suppressed;
     int suppressDepth = 0;
 
+    // <code>/<pre> elements opened so far, which is what numbers the next.
+    int codeElements = 0;
+    // A <pre> is a block: whatever follows it starts a row of its own. The
+    // break is held until something does follow, so a message that ENDS on a
+    // block does not grow an empty row under it.
+    bool breakOwed = false;
+
+    const auto current = [&]() {
+        MarkupSpan style = stack.empty() ? MarkupSpan{} : stack.back().style;
+        style.text.clear();
+        style.lineBreak = false;
+        return style;
+    };
+    const auto pushBreak = [&]() {
+        MarkupSpan span = current();
+        span.lineBreak = true;
+        spans.push_back(std::move(span));
+    };
+    const auto payOwedBreak = [&]() {
+        if (!breakOwed) return;
+        breakOwed = false;
+        pushBreak();
+    };
+    // Whether the next thing emitted would start a row of its own anyway.
+    const auto atRowStart = [&]() { return spans.empty() || spans.back().lineBreak; };
+
     std::string pending;
+    const auto emitText = [&](std::string text) {
+        if (text.empty()) return;
+        payOwedBreak();
+        MarkupSpan span = current();
+        span.text = std::move(text);
+        spans.push_back(std::move(span));
+    };
     const auto flush = [&]() {
         if (pending.empty()) return;
-        MarkupSpan span = stack.empty() ? MarkupSpan{} : stack.back().style;
-        span.text = pending;
-        span.lineBreak = false;
-        spans.push_back(std::move(span));
+        const bool pre = !stack.empty() && stack.back().style.preformatted;
+        if (!pre) {
+            emitText(pending);
+        } else {
+            // Inside a <pre> a newline is a line, not a space.
+            std::size_t at = 0;
+            while (true) {
+                const std::size_t newline = pending.find('\n', at);
+                std::string line = pending.substr(
+                    at, newline == std::string::npos ? std::string::npos : newline - at);
+                line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+                emitText(std::move(line));
+                if (newline == std::string::npos) break;
+                payOwedBreak();
+                pushBreak();
+                at = newline + 1;
+            }
+        }
         pending.clear();
     };
 
@@ -378,9 +430,32 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
 
             if (kind == TagKind::Break) {
                 flush();
-                MarkupSpan span = stack.empty() ? MarkupSpan{} : stack.back().style;
-                span.text.clear();
-                span.lineBreak = true;
+                payOwedBreak();
+                pushBreak();
+                continue;
+            }
+
+            if (kind == TagKind::Image) {
+                if (tag.closing) continue;
+                std::string src;
+                for (const auto& [name, value] : tag.attributes) {
+                    if (name == "src") src = value;
+                }
+                // Attribute values are markup too: "&amp;" in a query string
+                // is how a well-formed line spells '&'.
+                std::string decoded;
+                for (std::size_t i = 0; i < src.size();) {
+                    if (src[i] == '&') decodeEntity(src, i, decoded);
+                    else decoded.push_back(src[i++]);
+                }
+                // Only the image hosts the server lets through. It strips the
+                // rest before a line goes out; this is the backstop for one
+                // that arrives anyway.
+                if (!chatImageUrlAllowed(decoded)) continue;
+                flush();
+                payOwedBreak();
+                MarkupSpan span = current();
+                span.image = std::move(decoded);
                 spans.push_back(std::move(span));
                 continue;
             }
@@ -401,6 +476,7 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
                 for (std::size_t i = stack.size(); i-- > 0;) {
                     if (stack[i].tag == tag.name) {
                         stack.resize(i);
+                        if (tag.name == "pre") breakOwed = true;
                         break;
                     }
                 }
@@ -408,11 +484,20 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
             }
 
             flush();
+            if (tag.name == "pre" && !tag.selfClosing && !atRowStart()) breakOwed = true;
             Frame frame;
             frame.tag = tag.name;
-            frame.style = stack.empty() ? MarkupSpan{} : stack.back().style;
-            frame.style.text.clear();
-            frame.style.lineBreak = false;
+            frame.style = current();
+            if ((tag.name == "code" || tag.name == "pre") && frame.style.code == 0) {
+                frame.style.code = ++codeElements;
+            }
+            if (tag.name == "pre") {
+                frame.style.preformatted = true;
+                // A browser ignores the newline straight after <pre>, so the
+                // block can open on a line of its own in the source.
+                if (source.compare(at, 2, "\r\n") == 0) at += 2;
+                else if (at < source.size() && source[at] == '\n') ++at;
+            }
             if (tag.name == "b" || tag.name == "strong") frame.style.bold = true;
             if (tag.name == "i" || tag.name == "em") frame.style.italic = true;
             if (tag.name == "u") frame.style.underline = true;
@@ -448,6 +533,7 @@ std::string markupPlainText(const std::string& source) {
     std::string out;
     for (const MarkupSpan& span : parseMarkup(source)) {
         if (span.lineBreak) out.push_back('\n');
+        else if (!span.image.empty()) out += "[image]";
         else out += span.text;
     }
     return out;

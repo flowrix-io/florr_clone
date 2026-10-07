@@ -16,11 +16,18 @@
 //
 //  * b, strong, i, em, u, blink, span, font, color -- styling, everywhere.
 //    <br> is a hard break. These are the only tags the server emits.
+//  * <code> and <pre> are what a player types to quote something: both are
+//    drawn on a dark plate, and <pre> is a block of its own that keeps its
+//    spaces and line breaks rather than collapsing them.
 //  * <a> is page furniture: a link needs somewhere to navigate, which a native
 //    window does not have. It is honoured only in the emscripten build
 //    (kWebMarkup), and dropped -- with its content, as an unknown tag is --
-//    everywhere else. <img> is dropped in every build, because the transcript
-//    is glyph outlines rather than elements and has nowhere to put a picture.
+//    everywhere else.
+//  * <img src="https://..."> becomes a span of its own carrying the URL, in
+//    every build; what to show for it is the transcript's call, since only
+//    the browser build can fetch a picture (client/ui/remote_image.h). A src
+//    that is not https on a listed image host (shared/game/chat_images.h)
+//    drops the tag.
 //  * script and iframe are dropped with their content in EVERY build. The
 //    browser client used to offer a "click to run" button for one and a "click
 //    to show embed" button for the other; nothing here reinstates that, and
@@ -68,6 +75,16 @@ struct MarkupSpan {
     /// server this client talks to sends <a> at all -- so the click is left
     /// for whoever needs it rather than put in the way of attacking.
     std::string href;
+
+    /// Inside a <code> or <pre>: which one, numbered from 1 in the order they
+    /// open, so the runs of one element can share one plate. 0 outside both.
+    int code = 0;
+    /// Inside a <pre>: the text's spaces are the author's, and a '\n' in it
+    /// has already been turned into a `lineBreak` span.
+    bool preformatted = false;
+
+    /// An <img>: its http(s) src, on a span of its own with no text.
+    std::string image;
 };
 
 /// Splits `source` into styled runs. Never throws and never fails: markup it
@@ -75,7 +92,8 @@ struct MarkupSpan {
 std::vector<MarkupSpan> parseMarkup(const std::string& source);
 
 /// The same content with every tag resolved away and every entity decoded,
-/// for the surfaces that draw one flat string. <br> becomes '\n'.
+/// for the surfaces that draw one flat string. <br> becomes '\n', and an
+/// <img> the word "[image]".
 std::string markupPlainText(const std::string& source);
 
 } // namespace flix::ui

@@ -394,6 +394,45 @@ TEST(chat_reaches_the_other_player) {
     CHECK(found);
 }
 
+TEST(chat_images_from_unlisted_hosts_never_reach_the_other_player) {
+    Harness h("chat-images");
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient alice, bob;
+    CHECK(connectClient(h, alice));
+    CHECK(connectClient(h, bob));
+    alice.requestRegister("alice", "password1");
+    bob.requestRegister("bob", "password2");
+    CHECK(h.stepUntil({&alice, &bob}, [&] {
+        return alice.status() == NetClient::Status::LoggedIn &&
+               bob.status() == NetClient::Status::LoggedIn;
+    }));
+
+    const auto saw = [](const NetClient& client, const std::string& needle) {
+        for (const ChatLine& line : client.chat()) {
+            if (line.text.find(needle) != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    // Text and a listed picture survive; the unlisted one is cut, and only
+    // the sender hears why.
+    alice.sendChat("look <img src=\"https://evil.example/a.png\"> and "
+                   "<img src=\"https://media.tenor.com/b.gif\">");
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return saw(bob, "look"); }));
+    CHECK(saw(bob, "media.tenor.com/b.gif"));
+    CHECK(!saw(bob, "evil.example"));
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return saw(alice, "known image host"); }));
+    CHECK(!saw(bob, "known image host"));
+
+    // A line that was nothing but a blocked picture is not sent at all.
+    const std::size_t before = bob.chat().size();
+    alice.sendChat("<img src=\"https://evil.example/c.png\">");
+    alice.sendChat("after");
+    CHECK(h.stepUntil({&alice, &bob}, [&] { return saw(bob, "after"); }));
+    CHECK_EQ(bob.chat().size(), before + 1);
+}
+
 TEST(a_new_session_opens_on_the_conversation_already_in_progress) {
     // A client that has just loaded sits on the title screen with an empty
     // transcript unless the server hands it what was said before it arrived.

@@ -636,6 +636,10 @@ private:
     /// the players whose screens hold the speaker's flower. Billed to the chat
     /// allowance and barred by a mute, as anything said to another player is.
     void sayInPublic(Session&, net::Connection&, net::ChatChannel, const std::string& text);
+    /// Cuts every picture not served by a listed image host out of a line a
+    /// player is about to say to others, telling them what went and why.
+    /// False when nothing is left worth sending.
+    bool screenChatImages(net::Connection& speaker, std::string& text);
     /// A Local line, to every player in the speaker's realm whose viewport has
     /// the speaker's flower on it, the speaker included.
     void sendLocalChat(const Session& speaker, const std::string& text,

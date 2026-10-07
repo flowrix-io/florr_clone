@@ -128,7 +128,61 @@ TEST(markup_nested_script_close_does_not_end_early) {
 
 TEST(markup_unknown_tags_are_dropped_with_their_content) {
     CHECK_EQ(markupPlainText("keep<video>gone</video>keep"), std::string("keepkeep"));
-    CHECK_EQ(markupPlainText("<img src=\"https://x/y.png\">shown"), std::string("shown"));
+}
+
+TEST(markup_img_is_a_span_of_its_own) {
+    const std::vector<MarkupSpan> spans =
+        parseMarkup("look <img src=\"https://media.tenor.com/y.gif?a=1&amp;b=2\" width=\"9999\"> here");
+    int images = 0;
+    for (const MarkupSpan& span : spans) {
+        if (span.image.empty()) continue;
+        ++images;
+        CHECK(span.text.empty());
+        // The entity in the attribute is decoded: that is how '&' is spelled.
+        CHECK_EQ(span.image, std::string("https://media.tenor.com/y.gif?a=1&b=2"));
+    }
+    CHECK_EQ(images, 1);
+    CHECK_EQ(markupPlainText("<img src=\"https://i.imgur.com/y.png\">shown"), std::string("[image]shown"));
+    // A host off the list is not shown at all, not even as a placeholder.
+    CHECK_EQ(markupPlainText("<img src=\"https://x.example/y.png\">shown"), std::string("shown"));
+}
+
+TEST(markup_img_needs_an_http_src) {
+    for (const char* line : {"<img src=\"javascript:alert(1)\">", "<img src=\"data:image/png;base64,AA\">",
+                             "<img src=\"file:///etc/passwd\">", "<img>"}) {
+        for (const MarkupSpan& span : parseMarkup(line)) CHECK(span.image.empty());
+        CHECK_EQ(markupPlainText(line), std::string(""));
+    }
+}
+
+TEST(markup_code_is_numbered_styling) {
+    const std::vector<MarkupSpan> spans =
+        parseMarkup("run <code>make <b>all</b></code> then <code>ls</code>");
+    CHECK_EQ(flatten(spans), std::string("run make all then ls"));
+    CHECK_EQ(spanContaining(spans, "run").code, 0);
+    CHECK_EQ(spanContaining(spans, "make").code, 1);
+    // A tag nested inside keeps the element's number, so it shares the plate.
+    CHECK_EQ(spanContaining(spans, "all").code, 1);
+    CHECK(spanContaining(spans, "all").bold);
+    CHECK_EQ(spanContaining(spans, "ls").code, 2);
+    CHECK(!spanContaining(spans, "make").preformatted);
+}
+
+TEST(markup_pre_is_a_block_that_keeps_whitespace) {
+    const std::vector<MarkupSpan> spans =
+        parseMarkup("before<pre>\nint  x;\n  y();</pre>after");
+    // The newline straight after <pre> is not a line; the others are.
+    CHECK_EQ(flatten(spans), std::string("before\nint  x;\n  y();\nafter"));
+    CHECK(spanContaining(spans, "int").preformatted);
+    CHECK(spanContaining(spans, "y()").preformatted);
+    CHECK_EQ(spanContaining(spans, "  y();").text, std::string("  y();"));
+    CHECK(!spanContaining(spans, "after").preformatted);
+    CHECK_EQ(spanContaining(spans, "after").code, 0);
+}
+
+TEST(markup_pre_at_the_end_owes_no_break) {
+    CHECK_EQ(markupPlainText("<pre>x</pre>"), std::string("x"));
+    CHECK_EQ(markupPlainText("a <pre>x</pre>"), std::string("a \nx"));
 }
 
 TEST(markup_links_are_web_only) {

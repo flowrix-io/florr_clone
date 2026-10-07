@@ -407,12 +407,29 @@ TEST(a_client_that_picks_pvp_fights_in_the_ring_with_the_arena_kit) {
 
     // Running east from the spawn meets the ring inside two seconds. The body
     // is held on its inside face and never leaves the arena's space.
+    //
+    // The lane is cleared every step: the arena's crowd is placed at random
+    // and refills as it thins, and a mob that wanders in shoves the flower
+    // sideways or kills it short of the ring -- real combat, not a leak in
+    // the ring, and not what this measures.
+    const auto clearLane = [&] {
+        const Vec2 at = world.get<Transform>(body).position;
+        std::vector<Entity> doomed;
+        Query<MobTag, Transform> mobs{world};
+        mobs.each([&](Entity e, MobTag&, Transform& transform) {
+            if (transform.realm == Realm::Arena && distance(transform.position, at) < 2000.0) {
+                doomed.push_back(e);
+            }
+        });
+        for (const Entity e : doomed) world.destroy(e);
+    };
     net::InputFrame input;
     input.moveStrength = 1.0;
     input.moveAngle = 0.0;
     for (int i = 0; i < 150; ++i) {
         input.sequence = static_cast<std::uint32_t>(i + 1);
         client.sendInput(input);
+        clearLane();
         h.step(1, {&client});
         const Vec2 at = world.get<Transform>(body).position;
         CHECK(world.get<Transform>(body).realm == Realm::Arena);
