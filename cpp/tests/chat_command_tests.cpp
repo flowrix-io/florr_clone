@@ -364,6 +364,24 @@ TEST(the_console_cannot_spawn_a_unique_while_its_biome_clock_cools_down) {
     CHECK(liveOfRarity(Rarity::Super) > supers);
 }
 
+TEST(owner_admin_can_spawn_unique_and_apex_while_the_biome_clock_cools_down) {
+    Harness h("cmd-owner-spawn-cooling", [](const std::string& path) {
+        seedUser(path, "a19kisme", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "a19kisme", "password7"));
+    client.joinGame(1920, 1080, {}, "Owner");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    CHECK(say(h, client, "/admin spawn bee unique"));
+    CHECK(sawText(client, "Spawned unique bee"));
+    CHECK(say(h, client, "/admin spawn bee apex"));
+    CHECK(sawText(client, "Spawned apex bee"));
+    CHECK(!sawText(client, "clock is cooling down"));
+}
+
 TEST(a_unique_from_the_console_restarts_its_biome_clock) {
     // An admin's unique spends the biome's clock just as a wild one does: let
     // in while the clock is ready, and then the next one there waits a whole

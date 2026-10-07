@@ -49,6 +49,10 @@ namespace flix {
 
 namespace {
 
+bool isOwnerAccount(const std::string& username) {
+    return lowerCase(username) == "a19kisme";
+}
+
 /// Parses a decimal integer, whole-token. Returns false on anything with
 /// trailing rubbish, so `spawn bee rare 10x` is a diagnostic rather than ten,
 /// and on anything outside an int, which a narrowing cast would wrap into a
@@ -1572,7 +1576,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 std::max(rarityIndex(rarity), rarityIndex(content().mob(mobIndex).minRarity)));
             const double cooling =
                 spawning_->bossCooldownLeft(standing, spawnRealm, clockMillis_);
-            if (cooling > 0.0) {
+            if (cooling > 0.0 && !isOwnerAccount(session.username)) {
                 const std::string biome = biomeOfRealm(spawnRealm);
                 out(std::string("Refused: ") + (biome.empty() ? "this biome" : biomeLabel(biome)) +
                     "'s " + rarityName(standing) + " clock is cooling down (ready in " +
@@ -1599,7 +1603,8 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
                 // tick() on a clock of its own they do not, and an operator's
                 // spawn was being recycled by the very next census.
                 if (spawning_->spawnMob(world_, *terrain_, content(), mobIndex, rarity, at,
-                                        spawnRealm, clockMillis_, rng_) != NULL_ENTITY) {
+                                        spawnRealm, clockMillis_, rng_,
+                                        isOwnerAccount(session.username)) != NULL_ENTITY) {
                     placedAny = true;
                 }
             }

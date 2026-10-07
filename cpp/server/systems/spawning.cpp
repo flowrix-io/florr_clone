@@ -512,19 +512,20 @@ void SpawnSystem::spawnRingPetals(World& world, const ContentRegistry& content, 
 
 Entity SpawnSystem::spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                              std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                             double nowMillis, Rng& rng) {
+                             double nowMillis, Rng& rng, bool bypassBossCooldown) {
+    // Owner-issued admin spawns may explicitly ignore the biome's boss clock.
     // No band owns a mob somebody else asked for -- the arena, the maze, a
     // script, an operator's console -- so it is counted against no band's
     // target and is recycled the old way rather than going back to a record
     // there is no band to hold.
     return spawnMobAt(world, terrain, content, mobIndex, rarity, position, realm, nowMillis, rng, 0,
-                      kInvalidIndex);
+                      kInvalidIndex, std::nullopt, bypassBossCooldown);
 }
 
 Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                                std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                                double nowMillis, Rng& rng, int depth, std::uint16_t zone,
-                               std::optional<double> facing) {
+                               std::optional<double> facing, bool bypassBossCooldown) {
     if (mobIndex >= content.mobCount()) return NULL_ENTITY;
 
     const MobConfig& config = content.mob(mobIndex);
@@ -544,7 +545,9 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     // because that is the tier the mob would actually stand at; roots only,
     // as with the announcement, because a centipede's segments carry the
     // head's tier and the head was already let in.
-    if (depth == 0 && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) return NULL_ENTITY;
+    if (!bypassBossCooldown && depth == 0 && bossCooldownLeft(rarity, realm, nowMillis) > 0.0) {
+        return NULL_ENTITY;
+    }
 
     const MobStats stats = content.mobStats(mobIndex, rarity);
 

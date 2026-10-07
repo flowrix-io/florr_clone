@@ -701,9 +701,17 @@ constexpr AdminAction kAdminActions[] = {
     {"God mode OFF", "/admin god off", false},
     {"Online players", "/admin list-players", false},
     {"Save progress", "/admin save", false},
-    {"Spawn mob...", "/admin spawn ", true},
     {"Give item...", "/admin give ", true},
 };
+
+constexpr Rect adminMobPrev() { return {28, 282, 32, 32}; }
+constexpr Rect adminMobNext() { return {196, 282, 32, 32}; }
+constexpr Rect adminRarityPrev() { return {28, 320, 32, 32}; }
+constexpr Rect adminRarityNext() { return {196, 320, 32, 32}; }
+constexpr Rect adminAmountMinus() { return {28, 358, 32, 32}; }
+constexpr Rect adminAmountPlus() { return {196, 358, 32, 32}; }
+constexpr Rect adminStackButton() { return {28, 396, 96, 32}; }
+constexpr Rect adminSpawnButton() { return {132, 396, 96, 32}; }
 }
 
 void App::drawAdminPanel(Canvas& canvas) {
@@ -713,11 +721,32 @@ void App::drawAdminPanel(Canvas& canvas) {
     ui::button(canvas, toggle, adminPanelOpen_ ? "Close admin" : "Admin",
                toggle.contains(mouse), false);
     if (!adminPanelOpen_) return;
-    ui::panel(canvas, Rect{16, 82, 224, 260});
+    ui::panel(canvas, Rect{16, 82, 224, 358});
     for (std::size_t i = 0; i < std::size(kAdminActions); ++i) {
         const Rect row{28, 94 + 39.0 * i, 200, 32};
         ui::button(canvas, row, kAdminActions[i].label, row.contains(mouse), false);
     }
+
+    const int mobCount = static_cast<int>(content().mobCount());
+    adminMob_ = mobCount > 0 ? clamp(adminMob_, 0, mobCount - 1) : 0;
+    adminRarity_ = clamp(adminRarity_, 0, kRarityCount - 1);
+    TextStyle value;
+    value.size = 13;
+    value.align = Align::Centre;
+    value.strokeWidth = 0;
+    ui::button(canvas, adminMobPrev(), "<", adminMobPrev().contains(mouse), false);
+    ui::button(canvas, adminMobNext(), ">", adminMobNext().contains(mouse), false);
+    text(canvas, mobCount > 0 ? content().mob(static_cast<std::uint16_t>(adminMob_)).name : "No mobs",
+         128, 298, value);
+    ui::button(canvas, adminRarityPrev(), "<", adminRarityPrev().contains(mouse), false);
+    ui::button(canvas, adminRarityNext(), ">", adminRarityNext().contains(mouse), false);
+    text(canvas, kRarityLabels[static_cast<std::size_t>(adminRarity_)], 128, 336, value);
+    ui::button(canvas, adminAmountMinus(), "-", adminAmountMinus().contains(mouse), false);
+    ui::button(canvas, adminAmountPlus(), "+", adminAmountPlus().contains(mouse), false);
+    text(canvas, "Amount: " + std::to_string(adminAmount_), 128, 374, value);
+    ui::button(canvas, adminStackButton(), adminStack_ ? "Stacked" : "Spread",
+               adminStackButton().contains(mouse), false);
+    ui::button(canvas, adminSpawnButton(), "Spawn", adminSpawnButton().contains(mouse), false);
 }
 
 void App::updateAdminPanel() {
@@ -743,6 +772,21 @@ void App::updateAdminPanel() {
             net_.sendChat(action.command);
         }
         break;
+    }
+    const int mobCount = static_cast<int>(content().mobCount());
+    if (mobCount <= 0) return;
+    if (adminMobPrev().contains(mouse)) adminMob_ = (adminMob_ + mobCount - 1) % mobCount;
+    else if (adminMobNext().contains(mouse)) adminMob_ = (adminMob_ + 1) % mobCount;
+    else if (adminRarityPrev().contains(mouse)) adminRarity_ = (adminRarity_ + kRarityCount - 1) % kRarityCount;
+    else if (adminRarityNext().contains(mouse)) adminRarity_ = (adminRarity_ + 1) % kRarityCount;
+    else if (adminAmountMinus().contains(mouse)) adminAmount_ = std::max(1, adminAmount_ - (adminAmount_ > 20 ? 10 : 1));
+    else if (adminAmountPlus().contains(mouse)) adminAmount_ = std::min(500, adminAmount_ + (adminAmount_ >= 20 ? 10 : 1));
+    else if (adminStackButton().contains(mouse)) adminStack_ = !adminStack_;
+    else if (adminSpawnButton().contains(mouse)) {
+        const auto& mob = content().mob(static_cast<std::uint16_t>(adminMob_));
+        net_.sendChat("/admin spawn " + mob.id + " " +
+                      kRarityNames[static_cast<std::size_t>(adminRarity_)] + " " +
+                      std::to_string(adminAmount_) + (adminStack_ ? " stack" : " unstack"));
     }
 }
 
