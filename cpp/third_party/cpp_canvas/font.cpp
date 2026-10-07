@@ -425,6 +425,17 @@ void Font::appendText(Path2D& path, const std::string& utf8, float x, float y, f
   }
 }
 
+bool Font::covers(const std::string& utf8) const {
+  if (!valid_) return false;
+  std::size_t i = 0;
+  while (i < utf8.size()) {
+    const std::uint32_t codepoint = decodeUtf8(utf8, i);
+    // Controls never reach a glyph lookup that matters: nothing draws them.
+    if (codepoint >= 0x20 && glyphIndex(codepoint) == 0) return false;
+  }
+  return true;
+}
+
 float Font::measure(const std::string& utf8, float pixelSize) const {
   if (!valid_ || pixelSize <= 0) return 0;
   const float scale = pixelSize / static_cast<float>(unitsPerEm_);

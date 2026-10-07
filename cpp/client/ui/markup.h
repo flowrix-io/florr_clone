@@ -51,7 +51,10 @@ inline constexpr bool kWebMarkup = false;
 
 /// One run of chat text that shares a single style, or a hard line break.
 struct MarkupSpan {
-    /// The run's characters, entities already decoded. Empty when `lineBreak`.
+    /// The run's characters, character references already decoded (see
+    /// shared/game/html_entities.h) -- "&nbsp;" as U+00A0, which a drawer
+    /// turns back into a space once it has laid the row out. Empty when
+    /// `lineBreak`.
     std::string text;
     /// A <br>: end the row here rather than drawing anything.
     bool lineBreak = false;

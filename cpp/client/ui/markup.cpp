@@ -1,6 +1,7 @@
 #include "client/ui/markup.h"
 
 #include "shared/game/chat_images.h"
+#include "shared/game/html_entities.h"
 
 #include <algorithm>
 #include <cctype>
@@ -15,87 +16,6 @@ char lower(char c) { return static_cast<char>(std::tolower(static_cast<unsigned 
 bool nameChar(char c) {
     const unsigned char u = static_cast<unsigned char>(c);
     return std::isalnum(u) != 0 || c == '-' || c == '_' || c == ':';
-}
-
-// ---------------------------------------------------------------------------
-// Entities
-// ---------------------------------------------------------------------------
-
-/// Appends the UTF-8 encoding of `cp`. Chat is UTF-8 on the wire and the text
-/// layer measures UTF-8, so a numeric entity has to arrive as bytes, not as a
-/// code point somebody downstream has to widen.
-void appendUtf8(std::string& out, std::uint32_t cp) {
-    if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return;
-    if (cp < 0x80) {
-        out.push_back(static_cast<char>(cp));
-    } else if (cp < 0x800) {
-        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-    } else if (cp < 0x10000) {
-        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-    } else {
-        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-    }
-}
-
-/// Decodes the entity starting at `at` (which indexes the '&'), appending to
-/// `out` and advancing `at` past it. A run of characters that is not an entity
-/// is left as the literal '&' it is -- "Tom & Jerry" must survive.
-void decodeEntity(const std::string& s, std::size_t& at, std::string& out) {
-    const std::size_t semicolon = s.find(';', at + 1);
-    // Entity names are short; a ';' far away belongs to something else.
-    if (semicolon == std::string::npos || semicolon - at > 10) {
-        out.push_back(s[at++]);
-        return;
-    }
-    const std::string body = s.substr(at + 1, semicolon - at - 1);
-    if (body.empty()) {
-        out.push_back(s[at++]);
-        return;
-    }
-
-    if (body[0] == '#') {
-        const bool hex = body.size() > 1 && (body[1] == 'x' || body[1] == 'X');
-        const std::string digits = body.substr(hex ? 2 : 1);
-        if (digits.empty()) {
-            out.push_back(s[at++]);
-            return;
-        }
-        for (const char c : digits) {
-            const bool ok = hex ? std::isxdigit(static_cast<unsigned char>(c)) != 0
-                                : std::isdigit(static_cast<unsigned char>(c)) != 0;
-            if (!ok) {
-                out.push_back(s[at++]);
-                return;
-            }
-        }
-        appendUtf8(out, static_cast<std::uint32_t>(std::strtoul(digits.c_str(), nullptr, hex ? 16 : 10)));
-        at = semicolon + 1;
-        return;
-    }
-
-    std::string name;
-    for (const char c : body) name.push_back(lower(c));
-    // The named entities the server and the command help text actually use.
-    // Anything else stays literal rather than silently vanishing.
-    const char* replacement = nullptr;
-    if (name == "lt") replacement = "<";
-    else if (name == "gt") replacement = ">";
-    else if (name == "amp") replacement = "&";
-    else if (name == "quot") replacement = "\"";
-    else if (name == "apos") replacement = "'";
-    else if (name == "nbsp") replacement = " ";
-    if (replacement == nullptr) {
-        out.push_back(s[at++]);
-        return;
-    }
-    out += replacement;
-    at = semicolon + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +157,10 @@ bool readTag(const std::string& s, std::size_t at, Tag& out) {
                 }
             }
         }
-        out.attributes.emplace_back(std::move(name), std::move(value));
+        // A value is markup too -- "&amp;" in a query string is how a
+        // well-formed line spells '&' -- and is decoded here, once, under
+        // the attribute rule (html_entities.h).
+        out.attributes.emplace_back(std::move(name), decodeCharacterReferences(value, true));
     }
     if (i >= s.size()) return false;   // unterminated: not a tag
     out.end = i + 1;
@@ -437,16 +360,15 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
 
             if (kind == TagKind::Image) {
                 if (tag.closing) continue;
-                std::string src;
-                for (const auto& [name, value] : tag.attributes) {
-                    if (name == "src") src = value;
-                }
-                // Attribute values are markup too: "&amp;" in a query string
-                // is how a well-formed line spells '&'.
+                // The first src wins, as it does in a browser -- and in the
+                // server's own check, which must read the same one.
                 std::string decoded;
-                for (std::size_t i = 0; i < src.size();) {
-                    if (src[i] == '&') decodeEntity(src, i, decoded);
-                    else decoded.push_back(src[i++]);
+                bool found = false;
+                for (const auto& [name, value] : tag.attributes) {
+                    if (name == "src" && !found) {
+                        decoded = value;
+                        found = true;
+                    }
                 }
                 // Only the image hosts the server lets through. It strips the
                 // rest before a line goes out; this is the backstop for one
@@ -518,7 +440,7 @@ std::vector<MarkupSpan> parseMarkup(const std::string& source) {
         }
 
         if (c == '&') {
-            decodeEntity(source, at, pending);
+            decodeCharacterReference(source, at, pending);
             continue;
         }
 
@@ -535,6 +457,12 @@ std::string markupPlainText(const std::string& source) {
         if (span.lineBreak) out.push_back('\n');
         else if (!span.image.empty()) out += "[image]";
         else out += span.text;
+    }
+    // A flat string has no row to keep "&nbsp;" from breaking across, and its
+    // reader may not have the glyph: it goes back to being a space.
+    for (std::size_t at = out.find(kNoBreakSpace); at != std::string::npos;
+         at = out.find(kNoBreakSpace, at + 1)) {
+        out.replace(at, 2, " ");
     }
     return out;
 }

@@ -6,9 +6,37 @@
 #include <string>
 #include <unordered_map>
 
+#if defined(__EMSCRIPTEN__)
+#include <cstdio>
+#include <emscripten.h>
+#endif
+
 namespace flix::ui {
 
 namespace {
+
+#if defined(__EMSCRIPTEN__)
+// The advance the browser gives `text` in `font` -- fallback faces included,
+// which is the point. A scratch context of its own, so measuring never
+// touches the state of one being drawn on.
+EM_JS(double, text_browser_width, (const char* font, const char* text), {
+  let x = Module.textBrowserMeasure;
+  if (!x) {
+    const surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : document.createElement('canvas');
+    x = Module.textBrowserMeasure = surface.getContext('2d');
+  }
+  x.font = UTF8ToString(font);
+  return x.measureText(UTF8ToString(text)).width;
+});
+
+double browserTextWidth(const std::string& text, double size) {
+    // The same shorthand text_atlas.cpp draws with (its fontSpec), or the
+    // width would be of a different face from the one on screen.
+    char font[64];
+    std::snprintf(font, sizeof font, "bold %.3fpx Ubuntu, sans-serif", size);
+    return text_browser_width(font, text.c_str());
+}
+#endif
 
 /// What a measured run is remembered by.
 ///
@@ -97,7 +125,15 @@ double measure(const std::string& text, double size) {
     const auto found = cache.find(key);
     if (found != cache.end()) return found->second;
 
-    const double width = Fonts::face().measure(text, static_cast<float>(size));
+    double width = Fonts::face().measure(text, static_cast<float>(size));
+#if defined(__EMSCRIPTEN__)
+    // The browser draws a character Ubuntu lacks -- an arrow, a card suit, an
+    // emoji -- in whatever fallback face it has, at that face's width. Laid
+    // out at .notdef's width instead, a run of them overprints its
+    // neighbours, so a run that needs a fallback is measured by the browser
+    // that will draw it. Ordinary text never takes this path.
+    if (!Fonts::face().covers(text)) width = browserTextWidth(text, size);
+#endif
     if (cache.size() >= kMaxEntries) cache.clear();
     cache.emplace(std::move(key), width);
     return width;

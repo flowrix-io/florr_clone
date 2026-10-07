@@ -35,6 +35,7 @@
 #include "client/ui/text.h"
 #include "client/ui/text_input.h"
 #include "client/ui/touch_scroll.h"
+#include "shared/game/html_entities.h"
 
 namespace flix {
 
@@ -519,6 +520,17 @@ void chatRun(Canvas& canvas, const std::string& s, double x, double baseline, do
     if (italic) canvas.restore();
 }
 
+/// A word as it is drawn. "&nbsp;" arrives as U+00A0 so that the split on
+/// spaces does not break there; once the word is whole it is a space again,
+/// which is the glyph every face has.
+std::string withSpaces(std::string word) {
+    for (std::size_t at = word.find(kNoBreakSpace); at != std::string::npos;
+         at = word.find(kNoBreakSpace, at + 1)) {
+        word.replace(at, 2, " ");
+    }
+    return word;
+}
+
 /// One transcript line as runs: the channel's tag and the sender, then the
 /// body's own markup.
 ///
@@ -623,7 +635,7 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
                 if (end == std::string::npos) end = text.size();
                 end = text.find_first_not_of(' ', end);
                 if (end == std::string::npos) end = text.size();
-                ChatToken token{text.substr(at, end - at), kChatTextSize, fill, 1.0,
+                ChatToken token{withSpaces(text.substr(at, end - at)), kChatTextSize, fill, 1.0,
                                 span.italic, span.underline, span.blink, false, true};
                 token.code = span.code;
                 token.pre = true;
@@ -639,8 +651,8 @@ std::vector<ChatToken> chatLineTokens(const ChatLine& line) {
             const std::string text = span.text.substr(
                 at, space == std::string::npos ? std::string::npos : space - at);
             if (!text.empty()) {
-                ChatToken token{text, kChatTextSize, fill, 1.0, span.italic, span.underline,
-                                span.blink, false, !afterWhitespace};
+                ChatToken token{withSpaces(text), kChatTextSize, fill, 1.0, span.italic,
+                                span.underline, span.blink, false, !afterWhitespace};
                 token.code = span.code;
                 tokens.push_back(std::move(token));
                 afterWhitespace = false;

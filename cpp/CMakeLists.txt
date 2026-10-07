@@ -101,6 +101,7 @@ add_library(flix_shared STATIC
   shared/game/tiled_map.cpp
   shared/game/spatial.cpp
   shared/game/chat_images.cpp
+  shared/game/html_entities.cpp
 )
 target_include_directories(flix_shared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

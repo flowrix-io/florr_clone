@@ -1,5 +1,7 @@
 #include "shared/game/chat_images.h"
 
+#include "shared/game/html_entities.h"
+
 #include <cctype>
 #include <cstdlib>
 
@@ -46,51 +48,6 @@ bool nameChar(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_' || c == ':';
 }
 
-/// The entities a src can be spelled with: enough that "&amp;" in a query
-/// string reads as the '&' it is. Anything else stays literal, as it does in
-/// the client's parser.
-std::string decodeAttribute(const std::string& value) {
-    std::string out;
-    for (std::size_t i = 0; i < value.size();) {
-        if (value[i] != '&') {
-            out.push_back(value[i++]);
-            continue;
-        }
-        const std::size_t semicolon = value.find(';', i + 1);
-        if (semicolon == std::string::npos || semicolon - i > 10) {
-            out.push_back(value[i++]);
-            continue;
-        }
-        std::string name;
-        for (std::size_t k = i + 1; k < semicolon; ++k) name.push_back(lower(value[k]));
-        std::string replacement;
-        if (name == "amp") replacement = "&";
-        else if (name == "quot") replacement = "\"";
-        else if (name == "apos") replacement = "'";
-        else if (name == "lt") replacement = "<";
-        else if (name == "gt") replacement = ">";
-        else if (name.size() > 1 && name[0] == '#') {
-            const bool hex = name[1] == 'x';
-            const std::string digits = name.substr(hex ? 2 : 1);
-            char* end = nullptr;
-            const unsigned long cp = std::strtoul(digits.c_str(), &end, hex ? 16 : 10);
-            // Only ASCII matters to a URL check, and a code point past it is
-            // refused by chatImageUrlAllowed whatever it decodes to.
-            if (!digits.empty() && end != nullptr && *end == '\0') {
-                replacement = cp > 0 && cp < 0x80 ? std::string(1, static_cast<char>(cp))
-                                                  : std::string("\x7F");
-            }
-        }
-        if (replacement.empty()) {
-            out.push_back(value[i++]);
-            continue;
-        }
-        out += replacement;
-        i = semicolon + 1;
-    }
-    return out;
-}
-
 /// The src of the tag spanning [open, close), read the way the client's
 /// readTag reads attributes. Empty when there is none.
 std::string tagSource(const std::string& s, std::size_t open, std::size_t close) {
@@ -122,7 +79,7 @@ std::string tagSource(const std::string& s, std::size_t open, std::size_t close)
         // The first src wins, as it does in a browser.
         if (name == "src" && src.empty()) src = value;
     }
-    return decodeAttribute(src);
+    return decodeCharacterReferences(src, true);
 }
 
 } // namespace

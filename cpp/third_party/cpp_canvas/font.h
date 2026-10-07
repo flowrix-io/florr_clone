@@ -33,6 +33,11 @@ public:
 
     float measure(const std::string& utf8, float pixelSize) const;
 
+    // Whether every character of `utf8` has a glyph of its own in this face.
+    // One that does not is drawn as .notdef here -- and by a browser in some
+    // other font entirely, at a width this face knows nothing about.
+    bool covers(const std::string& utf8) const;
+
     // Vertical metrics scaled to pixelSize, for baseline placement.
     float ascent(float pixelSize) const;
     float descent(float pixelSize) const;   // negative, as in the font

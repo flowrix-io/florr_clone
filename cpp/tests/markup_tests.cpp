@@ -97,6 +97,12 @@ TEST(markup_entities_are_decoded) {
              std::string("Show what level <name> rolls"));
     CHECK_EQ(markupPlainText("Tom &amp; Jerry"), std::string("Tom & Jerry"));
     CHECK_EQ(markupPlainText("&#65;&#x42;"), std::string("AB"));
+    // The browser's rules, not just the five escapes: legacy names need no
+    // semicolon, and &nbsp; flattens back to a space.
+    CHECK_EQ(markupPlainText("&lt;b&gt bold &amp co &hearts;"), std::string("<b> bold & co \xE2\x99\xA5"));
+    CHECK_EQ(markupPlainText("a&nbsp;&nbsp;b"), std::string("a  b"));
+    // An escaped tag is text, never a tag.
+    CHECK_EQ(markupPlainText("&lt;script&gt;x&lt;/script&gt;"), std::string("<script>x</script>"));
     // Not an entity: a bare ampersand has to survive as itself.
     CHECK_EQ(markupPlainText("100% & rising"), std::string("100% & rising"));
 }
