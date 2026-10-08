@@ -977,6 +977,13 @@ struct Window::Impl {
     for (std::size_t i = 0; i < kKeyCount; ++i) {
       if (impl->down[i]) { impl->down[i] = false; impl->pendingReleased[i] = true; }
     }
+    // A press no frame has read yet is the shortcut that took the page away:
+    // Ctrl/Cmd+1..9 switching browser tabs, Ctrl/Cmd+T opening one. Its
+    // modifier is cleared just below, so left pending it would reach the game
+    // as a BARE key on the first frame back -- a "2" that swaps loadout slots,
+    // a "T" that empties one -- once for every tab switch.
+    impl->pendingPressed.fill(false);
+    impl->pendingTypedKeys.fill(false);
     impl->shift = impl->ctrl = impl->alt = false;
     // A contact whose lift happens somewhere the page cannot see is a stick
     // held forever. Dropped whole rather than replayed as an end: whoever owns

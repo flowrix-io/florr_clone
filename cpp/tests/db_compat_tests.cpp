@@ -452,3 +452,76 @@ TEST(a_save_rewrites_every_row_changed_since_the_last_one) {
 
     std::remove(path.c_str());
 }
+
+TEST(equipped_petals_stay_in_the_stored_inventory) {
+    // Live, equipping takes a petal out of the bag. Stored, it stays in it and
+    // the loadout only says which ones are worn, so a loadout lost from the
+    // file costs a re-equip rather than the petals.
+    PlayerRecord record;
+    record.addItem(Rarity::Common, "petal_basic", 3);
+    record.loadout.resize(kLoadoutSlots);
+    StoredItem stinger;
+    stinger.petalType = "stinger";
+    stinger.rarity = Rarity::Rare;
+    record.loadout[0] = stinger;
+    StoredItem basic;
+    basic.petalType = "basic";
+    record.loadout[2] = basic;
+
+    const Json stored = playerRecordJson(record);
+    CHECK(stored["loadoutInInventory"].asBool());
+    CHECK_EQ(stored["inventory"]["common"]["petal_basic"].asInt(), 4);
+    CHECK_EQ(stored["inventory"]["rare"]["petal_stinger"].asInt(), 1);
+
+    // And a load hands the worn ones back to the loadout: nothing doubles.
+    const PlayerRecord loaded = parsePlayerRecord(stored);
+    CHECK_EQ(loaded.itemCount(Rarity::Common, "petal_basic"), 3);
+    CHECK_EQ(loaded.itemCount(Rarity::Rare, "petal_stinger"), 0);
+    CHECK(loaded.loadout[0].has_value() && loaded.loadout[0]->petalType == "stinger");
+    CHECK(loaded.loadout[2].has_value() && loaded.loadout[2]->petalType == "basic");
+    CHECK_EQ(playerRecordJson(loaded).dump(0), stored.dump(0));
+    CHECK(!loaded.extra.contains("loadoutInInventory"));
+
+    // A loadout gone from the file leaves every petal in the bag.
+    Json lost = stored;
+    lost.erase("loadout");
+    const PlayerRecord bare = parsePlayerRecord(lost);
+    CHECK_EQ(bare.itemCount(Rarity::Common, "petal_basic"), 4);
+    CHECK_EQ(bare.itemCount(Rarity::Rare, "petal_stinger"), 1);
+}
+
+TEST(a_stored_loadout_cannot_wear_what_the_inventory_lacks) {
+    // Two slots naming the one rare stinger the bag holds: the first is
+    // seated, the second dropped rather than given a copy.
+    Json stored;
+    std::string error;
+    CHECK(Json::parse(R"({"loadoutInInventory": true,
+        "inventory": {"rare": {"petal_stinger": 1}},
+        "loadout": [{"type": "petal", "rarity": "rare", "petalType": "stinger"},
+                    {"type": "petal", "rarity": "rare", "petalType": "stinger"},
+                    {"type": "petal", "rarity": "mythic", "petalType": "rose"}]})",
+                      stored, error));
+    const PlayerRecord record = parsePlayerRecord(stored);
+    CHECK(record.loadout[0].has_value());
+    CHECK(!record.loadout[1].has_value());
+    CHECK(!record.loadout[2].has_value());
+    CHECK_EQ(record.itemCount(Rarity::Rare, "petal_stinger"), 0);
+}
+
+TEST(an_unmarked_record_keeps_its_worn_petals_out_of_the_bag) {
+    // The old shape: worn petals are not in the stored inventory, so the load
+    // must not take them out of it a second time. The next save migrates it.
+    Json stored;
+    std::string error;
+    CHECK(Json::parse(R"({"inventory": {"common": {"petal_basic": 5}},
+        "loadout": [{"type": "petal", "rarity": "common", "petalType": "basic"},
+                    {"type": "petal", "rarity": "rare", "petalType": "stinger"}]})",
+                      stored, error));
+    const PlayerRecord record = parsePlayerRecord(stored);
+    CHECK_EQ(record.itemCount(Rarity::Common, "petal_basic"), 5);
+    CHECK(record.loadout[0].has_value() && record.loadout[1].has_value());
+
+    const Json migrated = playerRecordJson(record);
+    CHECK_EQ(migrated["inventory"]["common"]["petal_basic"].asInt(), 6);
+    CHECK_EQ(migrated["inventory"]["rare"]["petal_stinger"].asInt(), 1);
+}

@@ -165,6 +165,22 @@ PlayerRecord playerFromJson(const Json& value) {
         return out;
     };
     if (value["loadout"].isArray()) record.loadout = readSlots(value["loadout"]);
+    // A record marked `loadoutInInventory` stores worn petals in the bag too
+    // (see playerToJson), so each slot claims its petal back out of it here.
+    // A slot the bag cannot cover is dropped, never conjured: whatever went
+    // wrong with the loadout, the inventory is what the account owns. An
+    // unmarked record is the old shape -- worn petals already out of the bag.
+    if (value["loadoutInInventory"].asBool(false)) {
+        for (std::optional<StoredItem>& slot : record.loadout) {
+            if (!slot) continue;
+            const std::string key = "petal_" + slot->petalType;
+            if (slot->petalType.empty() || record.itemCount(slot->rarity, key) < 1) {
+                slot.reset();
+                continue;
+            }
+            record.addItem(slot->rarity, key, -1);
+        }
+    }
     if (value["loadoutPresets"].isObject()) {
         const Json& presets = value["loadoutPresets"];
         for (const std::string& name : presets.keys()) {
@@ -173,8 +189,8 @@ PlayerRecord playerFromJson(const Json& value) {
     }
 
     collectExtras(value, {"totalXP", "stars", "dailyStreak", "lastStreakDate", "renderFlags",
-                          "equippedSkinId", "inventory", "mobKills", "loadout", "loadoutPresets",
-                          "skills", "tp", "mazeTotalXP", "mazeSkills", "mazeTp"},
+                          "equippedSkinId", "inventory", "mobKills", "loadout",
+                          "loadoutInInventory", "loadoutPresets", "skills", "tp", "mazeTotalXP", "mazeSkills", "mazeTp"},
                   record.extra);
     return record;
 }
@@ -182,7 +198,16 @@ PlayerRecord playerFromJson(const Json& value) {
 Json playerToJson(const PlayerRecord& record) {
     Json out = Json::object();
     out["totalXP"] = record.totalXp;
-    out["inventory"] = record.inventory;
+    // Live, an equipped petal is out of the bag. Stored, it is still in it,
+    // and the loadout only names which ones are worn: a loadout that is lost
+    // or garbled in the file then costs a re-equip, not the petals.
+    PlayerRecord stored;
+    stored.inventory = record.inventory;
+    for (const std::optional<StoredItem>& slot : record.loadout) {
+        if (slot && !slot->petalType.empty()) stored.addItem(slot->rarity, "petal_" + slot->petalType, 1);
+    }
+    out["inventory"] = std::move(stored.inventory);
+    out["loadoutInInventory"] = true;
     const auto writeSlots = [](const std::vector<std::optional<StoredItem>>& slots) {
         Json out = Json::array();
         for (const std::optional<StoredItem>& slot : slots) {
