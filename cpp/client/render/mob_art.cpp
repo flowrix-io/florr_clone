@@ -2588,7 +2588,9 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             // disc filled and then ringed 7 wide. Unlike an ant's, a termite's
             // mandibles are bent rather than curved -- two straight pieces --
             // and they twitch on the claw beat, the tips a unit inward at the
-            // end of each squeeze.
+            // end of each squeeze. The soldier's wings beat on that same
+            // value, each turning a tenth of a turn about the body's centre at
+            // the end of a squeeze.
             constexpr std::uint32_t kRim = 0xA1822Du;
             constexpr std::uint32_t kFill = 0xC7A138u;
             const bool baby = art == MobArt::TermiteBaby;
@@ -2606,20 +2608,23 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.scale(static_cast<float>(s), static_cast<float>(s));
             roundStrokes(canvas, 7.0);
 
+            const float pinch = static_cast<float>(clawBeat(attr));
             if (!baby) segment(-8.0f, 10.0f);
             if (art == MobArt::TermiteSoldier) {
                 ui::setFill(canvas, 0xEEEEEEu, 127.0 / 255.0);
                 for (const double side : {-1.0, 1.0}) {
+                    canvas.save();
+                    canvas.rotate(static_cast<float>(side * kPi / 10.0 * pinch));
                     canvas.beginPath();
                     canvas.ellipse(-7.0f, static_cast<float>(8.0 * side), 15.0f, 7.0f,
                                    static_cast<float>(-side * kPi / 10.0), 0.0f,
                                    static_cast<float>(kTau));
                     canvas.fill();
+                    canvas.restore();
                 }
             }
 
             const float head = baby ? 0.0f : 8.0f;
-            const float pinch = static_cast<float>(clawBeat(attr));
             ui::setStroke(canvas, 0x292929u);
             canvas.beginPath();
             for (const float side : {-1.0f, 1.0f}) {
