@@ -432,6 +432,17 @@ constexpr ChangelogEntry kChangelog[] = {
       "Make moon work like florr",
       "Added Magnetism talent after Legendary Absorption"
       }
+    },
+    {"October 7, 2026",
+      {
+      "Added termites",
+      "New petal: Rubber",
+      "New petal: Plank",
+      "New petal: Relic",
+      "New petal: Tomato",
+      "New petal: Compass",
+      "New petal: Carrot"
+      }
     }
 };
 
