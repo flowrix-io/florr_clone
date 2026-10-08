@@ -2033,3 +2033,63 @@ TEST(a_termite_mound_leads_into_its_own_dungeon_and_falls_when_it_is_cleared) {
     CHECK(distance(world.get<Transform>(body).position, moundAt) < rim + 400);
     CHECK(dwellers(inside).empty());
 }
+
+TEST(a_boss_no_player_killed_is_still_announced) {
+    // Nobody to credit -- a boss finished by poison with no flower behind it,
+    // the same as one a mob killed -- still gets its line in chat, just
+    // without the "by".
+    Harness h("cmd-boss-uncredited", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    CHECK(say(h, client, "/admin spawn bee super"));
+    CHECK(sawText(client, "Spawned super bee"));
+
+    const std::uint16_t bee = content().mobIndex("bee");
+    int poisoned = 0;
+    std::vector<Entity> supers;
+    Query<MobTag, MobType> mobs{h.server.world()};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.configIndex == bee && type.rarity == Rarity::Super) supers.push_back(e);
+    });
+    for (Entity e : supers) {
+        Afflictions* afflictions = h.server.world().tryGet<Afflictions>(e);
+        if (afflictions == nullptr) {
+            h.server.world().add<Afflictions>(e, Afflictions{});
+            afflictions = h.server.world().tryGet<Afflictions>(e);
+        }
+        afflictions->poisonStacks.push_back({NULL_ENTITY, 1e12, 1e18});
+        ++poisoned;
+    }
+    CHECK(poisoned > 0);
+
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super bee has been defeated!"); },
+                      120));
+    CHECK(!sawText(client, "Super bee has been defeated by"));
+}
+
+TEST(killall_announces_the_bosses_it_removes) {
+    // killall removes mobs without killing them, so the death path never sees
+    // them; it announces the bosses it clears itself, with nobody credited.
+    Harness h("cmd-killall-announce", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    CHECK(say(h, client, "/admin spawn bee super"));
+    CHECK(sawText(client, "Spawned super bee"));
+    CHECK(say(h, client, "/admin killall"));
+    CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super bee has been defeated!"); },
+                      120));
+}

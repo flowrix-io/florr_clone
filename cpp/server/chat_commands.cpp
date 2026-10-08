@@ -1438,6 +1438,12 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
         Query<MobTag> mobs{world_};
         mobs.without<Pet>();
         mobs.each([&](Entity entity, MobTag&) {
+            // Removed outright rather than killed, so there is no death for
+            // bankKills() to announce -- each boss gets its line here instead,
+            // with nobody to credit.
+            if (const MobType* type = world_.tryGet<MobType>(entity)) {
+                announceBossDefeat(*type, {});
+            }
             commands_.destroy(entity);
             ++removed;
         });

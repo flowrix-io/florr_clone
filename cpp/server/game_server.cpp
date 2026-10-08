@@ -2724,8 +2724,11 @@ void GameServer::bankKills() {
         // reference: a mob finished by another mob is nobody's kill and enters
         // nobody's gallery. A pet's kill belongs to the player who summoned it,
         // and combat has already resolved that attribution onto Dead::killer.
+        // Chat still hears about a boss that went down that way, just with
+        // nobody to credit.
         if (death.killer == NULL_ENTITY || !world_.isAlive(death.killer) ||
             !world_.has<PlayerTag>(death.killer)) {
+            announceBossDefeat(*type, {});
             continue;
         }
 
@@ -2820,29 +2823,33 @@ void GameServer::announceBossDefeat(const MobType& type,
     // own ledger and die one by one, and a line per bead would be ten more
     // deaths than the one spawn line chat was given.
     if (content().mob(type.configIndex).chainBody) return;
-    // Credited to the top damage dealer alone, whatever the kill was shared
-    // with: `ranked` is already sorted by damage, so that is its first row.
-    if (ranked.empty()) return;
-    const Session* session = sessionForEntity(ranked.front().player);
-    if (session == nullptr || !session->authenticated()) return;
-
     std::string name = content().mob(type.configIndex).id;
     for (char& c : name) {
         if (c == '_') c = ' ';
     }
     char colorAttribute[32];
     std::snprintf(colorAttribute, sizeof colorAttribute, "#%06x", rarityColor(type.rarity));
+    const std::string opening = std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
+                                rarityLabel(type.rarity) + " " + name + " has been defeated";
+
+    // Credited to the top damage dealer alone, whatever the kill was shared
+    // with: `ranked` is already sorted by damage, so that is its first row.
+    // No player to credit -- a mob's kill, or a top dealer who has left --
+    // still gets the line, without the "by".
+    const Session* session =
+        ranked.empty() ? nullptr : sessionForEntity(ranked.front().player);
+    if (session == nullptr || !session->authenticated()) {
+        broadcastChat(net::ChatChannel::System, "", opening + "!</b>");
+        return;
+    }
 
     // The flower's name, not the account's, in the brackets -- the account is
     // the @handle before them.
     const std::string playerName =
         session->displayName.empty() ? session->username : session->displayName;
     broadcastChat(net::ChatChannel::System, "",
-                  std::string("<b style=\"color: ") + colorAttribute + ";\">A " +
-                      rarityLabel(type.rarity) + " " + name +
-                      " has been defeated by <span style=\"color: #00ff00;\">@" +
-                      session->username + "</span> [<span style=\"color: yellow;\">" +
-                      playerName + "</span>]</b>");
+                  opening + " by <span style=\"color: #00ff00;\">@" + session->username +
+                      "</span> [<span style=\"color: yellow;\">" + playerName + "</span>]</b>");
 }
 
 void GameServer::handleUpgradeSkill(Session& session, net::Connection& connection,

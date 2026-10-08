@@ -766,7 +766,8 @@ private:
     void bankKills();
     /// Broadcasts the "has been defeated by" line a super, unique or apex kill
     /// earns, credited to the top damage dealer on the corpse. `ranked` is the
-    /// same damage-sorted ledger bankKills() paid the bounty out of.
+    /// same damage-sorted ledger bankKills() paid the bounty out of; with no
+    /// player to credit the line is just "has been defeated!".
     void announceBossDefeat(const MobType&, const std::vector<Bounty::Share>& ranked);
     /// The world half of a yggdrasil revival has already happened when this is
     /// called; the SESSION half is here -- a body whose death was announced
