@@ -2728,7 +2728,7 @@ void GameServer::bankKills() {
         // nobody to credit.
         if (death.killer == NULL_ENTITY || !world_.isAlive(death.killer) ||
             !world_.has<PlayerTag>(death.killer)) {
-            announceBossDefeat(*type, {});
+            announceBossDefeat(death.entity, *type, {});
             continue;
         }
 
@@ -2808,11 +2808,11 @@ void GameServer::bankKills() {
             }
         }
 
-        announceBossDefeat(*type, ranked);
+        announceBossDefeat(death.entity, *type, ranked);
     }
 }
 
-void GameServer::announceBossDefeat(const MobType& type,
+void GameServer::announceBossDefeat(Entity mob, const MobType& type,
                                     const std::vector<Bounty::Share>& ranked) {
     // The tiers announced on the way out are exactly the tiers announced on the
     // way in -- ONE constant, so raising kAnnouncedRarity cannot leave chat
@@ -2823,6 +2823,9 @@ void GameServer::announceBossDefeat(const MobType& type,
     // own ledger and die one by one, and a line per bead would be ten more
     // deaths than the one spawn line chat was given.
     if (content().mob(type.configIndex).chainBody) return;
+    // A flower's summon was never announced on the way in, and losing one is
+    // not a boss falling -- it simply hatches again.
+    if (world_.has<Pet>(mob)) return;
     std::string name = content().mob(type.configIndex).id;
     for (char& c : name) {
         if (c == '_') c = ' ';

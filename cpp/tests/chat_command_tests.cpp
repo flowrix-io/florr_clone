@@ -2217,3 +2217,55 @@ TEST(killall_announces_the_bosses_it_removes) {
     CHECK(h.stepUntil({&client}, [&] { return sawText(client, "Super bee has been defeated!"); },
                       120));
 }
+
+TEST(a_dead_summon_is_not_announced) {
+    // A flower's summon is not a boss: it was never announced on the way in,
+    // and losing one says nothing in chat either, killer or no killer.
+    Harness h("cmd-summon-unannounced", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0);
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "boss", "password7"));
+    client.joinGame(1920, 1080, {}, "Boss");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+
+    CHECK(say(h, client, "/admin spawn bee super"));
+    CHECK(sawText(client, "Spawned super bee"));
+
+    const std::uint16_t bee = content().mobIndex("bee");
+    std::vector<Entity> supers;
+    Query<MobTag, MobType> mobs{world};
+    mobs.each([&](Entity e, MobTag&, MobType& type) {
+        if (type.configIndex == bee && type.rarity == Rarity::Super) supers.push_back(e);
+    });
+    CHECK(!supers.empty());
+    for (Entity e : supers) {
+        world.add<Pet>(e, Pet{body, 0, Rarity::Super});
+        Afflictions* afflictions = world.tryGet<Afflictions>(e);
+        if (afflictions == nullptr) {
+            world.add<Afflictions>(e, Afflictions{});
+            afflictions = world.tryGet<Afflictions>(e);
+        }
+        afflictions->poisonStacks.push_back({NULL_ENTITY, 1e12, 1e18});
+    }
+
+    CHECK(h.stepUntil({&client}, [&] {
+        for (Entity e : supers) {
+            if (world.isAlive(e)) return false;
+        }
+        return true;
+    }, 120));
+    h.stepUntil({&client}, [] { return false; }, 10);
+    CHECK(!sawText(client, "Super bee has been defeated"));
+}

@@ -1442,7 +1442,7 @@ void GameServer::runAdminCommand(Session& session, net::Connection& connection,
             // bankKills() to announce -- each boss gets its line here instead,
             // with nobody to credit.
             if (const MobType* type = world_.tryGet<MobType>(entity)) {
-                announceBossDefeat(*type, {});
+                announceBossDefeat(entity, *type, {});
             }
             commands_.destroy(entity);
             ++removed;
