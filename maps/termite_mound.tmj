@@ -226,25 +226,7 @@
          "draworder":"topdown",
          "id":4,
          "name":"teleporters",
-         "objects":[
-                {
-                 "height":0,
-                 "id":4,
-                 "name":"",
-                 "point":true,
-                 "properties":[
-                        {
-                         "name":"targetMap",
-                         "type":"string",
-                         "value":"jungle"
-                        }],
-                 "rotation":0,
-                 "type":"",
-                 "visible":true,
-                 "width":0,
-                 "x":1280,
-                 "y":1280
-                }],
+         "objects":[],
          "opacity":1,
          "type":"objectgroup",
          "visible":true,

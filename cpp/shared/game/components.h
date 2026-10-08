@@ -799,17 +799,17 @@ struct DungeonEntrance {
     /// The brood's summed max health when it was put down: what a swing on
     /// one of them is measured against when it is forwarded to the ledger.
     double broodHealth = 0;
-    /// The COLONY mobs inside, alive or freshly dead, rebuilt by the
-    /// DungeonSystem each tick: who a hit on any one of them is shared with.
-    std::vector<Entity> colony;
 };
 
 /// A mob that lives inside a dungeon, and the nest whose dungeon it is.
 struct DungeonDweller {
     Entity entrance = NULL_ENTITY;
-    /// Shares hits with the rest of the colony (MobConfig::colony).
-    bool colony = false;
 };
+
+/// One of a COLONY (MobConfig::colony): a termite. A hit on one is shared
+/// with every colony mob connected to it by distance, wherever it stands (see
+/// CombatSystem::applyDamage).
+struct ColonyMember {};
 
 /// Never put to sleep or despawned for being out of everyone's sight. What
 /// keeps a dungeon's brood alive while its party is in another corner of it,
@@ -1305,6 +1305,7 @@ FLIX_COMPONENT(flix::Intangible);
 FLIX_COMPONENT(flix::AmbushNest);
 FLIX_COMPONENT(flix::DungeonEntrance);
 FLIX_COMPONENT(flix::DungeonDweller);
+FLIX_COMPONENT(flix::ColonyMember);
 FLIX_COMPONENT(flix::KeepAwake);
 FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::BodySegment);

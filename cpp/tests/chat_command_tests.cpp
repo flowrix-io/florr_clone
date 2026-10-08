@@ -1962,7 +1962,63 @@ TEST(a_termite_mound_leads_into_its_own_dungeon_and_falls_when_it_is_cleared) {
         return client.view().realm() == inside;
     }, 30));
     CHECK_EQ(dwellers(inside, overmindType).size(), std::size_t(1));
-    CHECK(dwellers(inside).size() >= 23);
+    // 30 termites, ten of each kind, spread over the room rather than rolled
+    // one by one:
+    // thirty independent rolls over this map leave some pair within a body
+    // width or two, an even spread keeps every one of them far apart.
+    CHECK_EQ(dwellers(inside, content().mobIndex("worker_termite")).size(), std::size_t(10));
+    CHECK_EQ(dwellers(inside, content().mobIndex("baby_termite")).size(), std::size_t(10));
+    CHECK_EQ(dwellers(inside, content().mobIndex("soldier_termite")).size(), std::size_t(10));
+    {
+        std::vector<Vec2> at;
+        for (const Entity mob : dwellers(inside)) {
+            if (world.get<MobType>(mob).configIndex != overmindType) {
+                at.push_back(world.get<Transform>(mob).position);
+            }
+        }
+        double closest = 1e18;
+        for (std::size_t i = 0; i < at.size(); ++i) {
+            for (std::size_t j = i + 1; j < at.size(); ++j) closest = std::min(closest, distance(at[i], at[j]));
+        }
+        CHECK(closest > 400);
+    }
+    // A hit on one termite is shared with those connected to it (the
+    // "psionic connection"), and a termite that only took a share is still
+    // numbered: its damage event reaches the flower watching it.
+    {
+        const Vec2 at = world.get<Transform>(body).position;
+        Entity struck = NULL_ENTITY;
+        Entity onlyShared = NULL_ENTITY;
+        for (const Entity mob : dwellers(inside, content().mobIndex("worker_termite"))) {
+            if (struck == NULL_ENTITY) {
+                struck = mob;
+                world.get<Transform>(mob).position = at + Vec2{30, 0};
+            } else if (onlyShared == NULL_ENTITY) {
+                // Connected to the struck one (within 100 of it; more above
+                // common) but on its far side, clear of the flower.
+                onlyShared = mob;
+                world.get<Transform>(mob).position = at + Vec2{30.0 + 90.0, 0};
+            }
+        }
+        CHECK(onlyShared != NULL_ENTITY);
+        if (onlyShared != NULL_ENTITY) {
+            const double before = world.get<Health>(onlyShared).current;
+            const std::uint32_t id = world.get<NetId>(onlyShared).value;
+            bool numbered = false;
+            CHECK(h.stepUntil({&client}, [&] {
+                for (const ViewEvent& event : client.view().events()) {
+                    if (event.kind == net::EventKind::Damage && event.netId == id) numbered = true;
+                }
+                return numbered;
+            }, 40));
+            CHECK(world.get<Health>(onlyShared).current < before);
+        }
+    }
+    // The overmind is the one queen that lays nothing: three seconds later
+    // the brood is still exactly what was put down.
+    h.step(90, {&client});
+    CHECK_EQ(dwellers(inside, content().mobIndex("soldier_termite")).size(), std::size_t(10));
+    CHECK_EQ(dwellers(inside).size(), std::size_t(31));
     // The mound outside is unhurt and still there.
     CHECK(world.isAlive(mound) && !world.has<Dead>(mound));
 
@@ -2032,6 +2088,74 @@ TEST(a_termite_mound_leads_into_its_own_dungeon_and_falls_when_it_is_cleared) {
     CHECK(h.stepUntil({&client}, [&] { return realmOf() == home; }, 300));
     CHECK(distance(world.get<Transform>(body).position, moundAt) < rim + 400);
     CHECK(dwellers(inside).empty());
+}
+
+TEST(termites_out_in_the_open_share_a_hit_with_the_ones_near_them) {
+    // The psionic connection is distance and nothing else: three workers
+    // spawned in the overworld, two of them 90 apart and the third 600 away,
+    // and only the pair shares what the flower's body does to one of them --
+    // as the flower's own hit, which is what provokes a neutral worker.
+    Harness h("cmd-termite-open", [](const std::string& path) {
+        seedUser(path, "warden", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "warden", "password7"));
+    client.joinGame(1920, 1080, {}, "Warden");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    CHECK(say(h, client, "/admin god on"));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const Vec2 at = world.get<Transform>(body).position;
+
+    const std::uint16_t worker = content().mobIndex("worker_termite");
+    for (int i = 0; i < 3; ++i) adminSpawnAt(client, "worker_termite", "common", at + Vec2{0, 900.0 + 50 * i});
+    std::vector<Entity> workers;
+    CHECK(h.stepUntil({&client}, [&] {
+        workers.clear();
+        Query<MobTag, MobType> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (type.configIndex == worker) workers.push_back(e);
+        });
+        return workers.size() == 3;
+    }, 120));
+    if (workers.size() != 3) return;
+    for (const Entity e : workers) {
+        CHECK(world.has<ColonyMember>(e));
+        // Deep enough that the flower's body never finishes one mid-test.
+        world.get<Health>(e).max = world.get<Health>(e).current = 1e6;
+    }
+
+    const Entity struck = workers[0];
+    const Entity partner = workers[1];
+    const Entity straggler = workers[2];
+    const double partnerBefore = world.get<Health>(partner).current;
+    const double stragglerBefore = world.get<Health>(straggler).current;
+    CHECK(h.stepUntil({&client}, [&] {
+        const Vec2 flower = world.get<Transform>(body).position;
+        world.get<Transform>(struck).position = flower + Vec2{30, 0};
+        world.get<Transform>(partner).position = flower + Vec2{120, 0};
+        world.get<Transform>(straggler).position = flower + Vec2{-600, 0};
+        return world.get<Health>(partner).current < partnerBefore;
+    }, 60));
+    CHECK_NEAR(world.get<Health>(straggler).current, stragglerBefore, 1e-9);
+    // The share is the flower's hit on the partner: on its ledger, and a
+    // neutral worker turns on whoever hurt it.
+    const Bounty& ledger = world.get<Bounty>(partner);
+    CHECK_EQ(ledger.contributors.size(), std::size_t(1));
+    if (!ledger.contributors.empty()) CHECK(ledger.contributors[0].player == body);
+    CHECK(h.stepUntil({&client}, [&] {
+        const MobAi* brain = world.tryGet<MobAi>(partner);
+        return brain != nullptr && brain->target == body;
+    }, 10));
 }
 
 TEST(a_boss_no_player_killed_is_still_announced) {

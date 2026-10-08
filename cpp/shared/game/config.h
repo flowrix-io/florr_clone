@@ -523,10 +523,12 @@ struct MobConfig {
     /// a string compare.
     bool sharedSegmentHealth = false;
 
-    /// One of a COLONY (`colony`): inside a dungeon, every colony mob shares
-    /// whatever any one of them is hit for, split evenly between the ones
-    /// still standing. Termites. Outside a dungeon there is no colony to
-    /// share with, and the flag does nothing.
+    /// One of a COLONY (`colony`): a hit on one colony mob is split evenly
+    /// over every colony mob connected to it -- within 100 units of it at
+    /// common, growing with rarity like a body does, and never through a
+    /// neighbour (combat.cpp, kColonyLinkRange). Each share is the attacker's
+    /// own hit on that mob: credited to them, and it provokes a neutral one. Termites, anywhere: in a mound's
+    /// dungeon or out in the jungle alike. Spawned mobs carry ColonyMember.
     bool colony = false;
 
     /// A TRAILING body of a shared chain, rather than the head that tows it:

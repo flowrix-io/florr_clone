@@ -12,6 +12,19 @@ namespace flix {
 
 namespace {
 
+/// How far a common colony mob reaches to link with another (the psionic
+/// connection), centre to centre. It grows with rarity exactly as a mob's
+/// body does (kMobSizeScale, relative to common), and NOT with the config's
+/// `size`: a baby termite connects as far as a soldier of its tier.
+constexpr double kColonyLinkRange = 100.0;
+
+double colonyReach(const World& world, Entity e) {
+    const MobType* type = world.tryGet<MobType>(e);
+    const Rarity rarity = type != nullptr ? type->rarity : Rarity::Common;
+    const std::size_t tier = static_cast<std::size_t>(ladderIndex(clampRarity(rarityIndex(rarity))));
+    return kColonyLinkRange * kMobSizeScale[tier] / kMobSizeScale[0];
+}
+
 /// The entity one step up the ownership chain, or NULL_ENTITY at the top.
 ///
 /// A projectile prefers creditTo over owner because a pet's shot is fired by
@@ -351,7 +364,7 @@ struct CombatSystem::Queries {
     explicit Queries(World& world)
         : progress(world), afflicted(world), auras(world), contact(world), strikers(world),
           petals(world), projectiles(world), filedShots(world), fields(world), cooldowns(world),
-          auraCooldowns(world) {
+          auraCooldowns(world), colony(world) {
         // A dead flower projects nothing, which is the same guard the
         // reference's pre-movement pass opens with.
         auras.without<Dead>();
@@ -367,6 +380,7 @@ struct CombatSystem::Queries {
         projectiles.without<Dead>();
         fields.without<Dead>();
         strikers.without<Dead>();
+        colony.without<Dead>();
     }
 
     Query<PlayerProgress> progress;
@@ -395,6 +409,8 @@ struct CombatSystem::Queries {
     Query<GroundEffect, Transform> fields;
     Query<HitCooldowns> cooldowns;
     Query<AuraCooldowns> auraCooldowns;
+    /// Every standing colony mob: who a hit on one of them may be shared with.
+    Query<ColonyMember, Transform> colony;
 };
 
 CombatSystem::CombatSystem() = default;
@@ -534,61 +550,68 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         return result;
     }
 
-    // A colony shares the hit. Whatever one termite in a dungeon is struck for
-    // is split evenly over every colony mob in there that this source could
-    // hit right now, the struck one included, and each share comes back
-    // through here as its own hit -- so armour, the ledgers, the numbers and
-    // the deaths all land on the termite that took the share, and a colony of
-    // twenty takes a twentieth each. Positive damage only: a heal is not
-    // shared, and a lone termite has nobody to share with.
-    if (amount > 0.0 && !sharingColonyHit_) {
-        const DungeonDweller* dweller = world.tryGet<DungeonDweller>(victim);
-        const DungeonEntrance* entrance =
-            dweller != nullptr && dweller->colony && world.isAlive(dweller->entrance)
-                ? world.tryGet<DungeonEntrance>(dweller->entrance)
-                : nullptr;
-        if (entrance != nullptr) {
-            colonyScratch_.clear();
-            for (const Entity member : entrance->colony) {
-                if (member == victim || !world.isAlive(member) || world.has<Dead>(member)) continue;
-                if (canHit(world, member, source, nowMillis)) colonyScratch_.push_back(member);
+    // A colony shares the hit. Whatever one termite is struck for is split
+    // evenly over every colony mob CONNECTED to it (see below) that this
+    // source could hit right now, the struck one included, and each share
+    // comes back through here as its own hit -- so armour, the ledgers, the
+    // numbers and the deaths all land on the termite that took the share, and
+    // a cluster of twenty takes a twentieth each. Anywhere, not only in a
+    // dungeon: the connection is distance and nothing else. Positive damage
+    // only: a heal is not shared, and a lone termite has nobody to share with.
+    if (amount > 0.0 && !sharingColonyHit_ && world.has<ColonyMember>(victim) &&
+        world.tryGet<Transform>(victim) != nullptr) {
+        // Only the termites CONNECTED to the struck one share: those
+        // standing within reach of it -- the larger of its reach and
+        // theirs (colonyReach). Directly, never through a neighbour: a
+        // termite next to a connected one but out of the struck one's
+        // reach takes nothing.
+        colonyScratch_.clear();
+        const Transform& struckAt = world.get<Transform>(victim);
+        const Realm realm = struckAt.realm;
+        const Vec2 centre = struckAt.position;
+        const double struckReach = colonyReach(world, victim);
+        bind(world);
+        queries_->colony.each([&](Entity member, ColonyMember&, Transform& transform) {
+            if (member == victim || transform.realm != realm) return;
+            const double reach = std::max(struckReach, colonyReach(world, member));
+            if (distanceSq(transform.position, centre) > reach * reach) return;
+            if (canHit(world, member, source, nowMillis)) colonyScratch_.push_back(member);
+        });
+        if (!colonyScratch_.empty()) {
+            // The hit is dodged and blunted ONCE, by the termite it struck,
+            // and only what gets through is shared. Blunting each share
+            // instead would let every termite's flat armour come off a
+            // twentieth of the hit -- a colony of twenty with one point
+            // each would shrug off anything under twenty.
+            if (isDirectHit(kind) && rollDodge(world, victim, nowMillis)) {
+                result.dodged = true;
+                return result;
             }
-            if (!colonyScratch_.empty()) {
-                // The hit is dodged and blunted ONCE, by the termite it struck,
-                // and only what gets through is shared. Blunting each share
-                // instead would let every termite's flat armour come off a
-                // twentieth of the hit -- a colony of twenty with one point
-                // each would shrug off anything under twenty.
-                if (isDirectHit(kind) && rollDodge(world, victim, nowMillis)) {
-                    result.dodged = true;
-                    return result;
-                }
-                if (armorBlunts(kind)) {
-                    const double armor = effectiveArmor(world, victim, nowMillis);
-                    if (armor != 0.0) amount = std::max(0.0, amount - armor);
-                }
-                if (amount <= 0.0) return result;
-                // Copied out: the shares re-enter this function, which reuses
-                // the scratch list.
-                std::vector<Entity> members = colonyScratch_;
-                members.push_back(victim);
-                const double share = amount / static_cast<double>(members.size());
-                sharingColonyHit_ = true;
-                DamageResult total;
-                total.refused = true;
-                for (const Entity member : members) {
-                    const DamageResult part =
-                        applyDamage(world, member, source, share, nowMillis, kind);
-                    total.applied += part.applied;
-                    if (!part.refused) total.refused = false;
-                    if (member == victim) {
-                        total.killed = part.killed;
-                        total.dodged = part.dodged;
-                    }
-                }
-                sharingColonyHit_ = false;
-                return total;
+            if (armorBlunts(kind)) {
+                const double armor = effectiveArmor(world, victim, nowMillis);
+                if (armor != 0.0) amount = std::max(0.0, amount - armor);
             }
+            if (amount <= 0.0) return result;
+            // Copied out: the shares re-enter this function, which reuses
+            // the scratch list.
+            std::vector<Entity> members = colonyScratch_;
+            members.push_back(victim);
+            const double share = amount / static_cast<double>(members.size());
+            sharingColonyHit_ = true;
+            DamageResult total;
+            total.refused = true;
+            for (const Entity member : members) {
+                const DamageResult part =
+                    applyDamage(world, member, source, share, nowMillis, kind);
+                total.applied += part.applied;
+                if (!part.refused) total.refused = false;
+                if (member == victim) {
+                    total.killed = part.killed;
+                    total.dodged = part.dodged;
+                }
+            }
+            sharingColonyHit_ = false;
+            return total;
         }
     }
 

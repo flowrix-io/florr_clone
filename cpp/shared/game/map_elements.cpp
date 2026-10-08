@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 
 #include "shared/core/json.h"
@@ -24,6 +25,11 @@ constexpr double kSpawnPadding = 50.0;
 /// large and mostly open; a zone that fails fifty times is one the map has
 /// since walled over.
 constexpr int kSpawnAttempts = 50;
+
+/// Candidates weighed for each point spreadAt() places (best-candidate
+/// sampling). More is more even and costs more open-point searches; it runs
+/// once per population, not per tick.
+constexpr int kSpreadCandidates = 24;
 
 /// A spot with more mobs than this inside kSpawnCrowdRadius is somewhere a
 /// level-1 flower is surrounded the instant its invulnerability ends, so the
@@ -767,6 +773,32 @@ bool MapData::spawnAt(const std::string& spawnId, Rng& rng, const Terrain& terra
     // centre itself is often solid, and a body started inside a block is one
     // the movement step cannot reliably push out.
     out = openGroundNear(terrain, realm_, rng, point->bounds);
+    return true;
+}
+
+bool MapData::spreadAt(const std::string& spawnId, int count, Rng& rng, const Terrain& terrain,
+                       std::vector<Vec2>& out) const {
+    const MapElement* point = playerSpawn(spawnId);
+    if (point == nullptr) return false;
+    std::vector<Vec2> chosen;
+    for (int i = 0; i < count; ++i) {
+        Vec2 best;
+        double bestGapSq = -1.0;
+        for (int c = 0; c < kSpreadCandidates; ++c) {
+            Vec2 candidate;
+            if (!findOpenPoint(*point, rng, terrain, candidate, nullptr)) break;
+            double gapSq = std::numeric_limits<double>::infinity();
+            for (const Vec2& placed : chosen) gapSq = std::min(gapSq, distanceSq(candidate, placed));
+            if (gapSq > bestGapSq) {
+                best = candidate;
+                bestGapSq = gapSq;
+            }
+        }
+        // Nothing in the shape was open: the same fallback spawnAt() takes.
+        if (bestGapSq < 0.0) best = openGroundNear(terrain, realm_, rng, point->bounds);
+        chosen.push_back(best);
+    }
+    out.insert(out.end(), chosen.begin(), chosen.end());
     return true;
 }
 

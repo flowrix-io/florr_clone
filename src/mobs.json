@@ -2198,14 +2198,7 @@
         "gardn_ai": true,
         "range": 750,
         "groups": [],
-        "min_rarity": "rare",
-        "periodic_spawn": {
-            "mobType": "soldier_termite",
-            "intervalMs": 2000,
-            "lifetimeMs": 10000,
-            "maxAlive": 5,
-            "spawnRarityOffset": -1
-        }
+        "min_rarity": "rare"
     },
     "termite_egg": {
         "name": "Termite Egg",
@@ -2272,22 +2265,22 @@
                 {
                     "mobType": "termite_overmind",
                     "count": 1,
-                    "door": "termite_mound_lair"
+                    "door": "overmind"
                 },
                 {
                     "mobType": "soldier_termite",
-                    "count": 8,
-                    "door": "termite_mound_nest"
+                    "count": 10,
+                    "door": "termites"
                 },
                 {
                     "mobType": "worker_termite",
-                    "count": 8,
-                    "door": "termite_mound_nest"
+                    "count": 10,
+                    "door": "termites"
                 },
                 {
                     "mobType": "baby_termite",
-                    "count": 6,
-                    "door": "termite_mound_nest"
+                    "count": 10,
+                    "door": "termites"
                 }
             ]
         }

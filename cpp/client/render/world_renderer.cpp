@@ -57,6 +57,9 @@ constexpr double kMobNumberSize = 30.0;
 constexpr double kNumberMaxSize = 40.0;
 constexpr double kNumberMaxSizeDamage = 1000.0;
 constexpr double kDamageTextThrottleSeconds = 0.1;
+/// The smallest mob damage total that is drawn: anything less rounds to "-0".
+/// Smaller totals keep accumulating until they reach it.
+constexpr double kMinShownDamage = 0.5;
 constexpr std::uint32_t kDamageTextColor = 0xFF6666u;
 
 /// A mob balloons to three times its size and fades out over this, which is
@@ -699,12 +702,19 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                 }
                 double total = event.amount;
                 const auto pending = damagePending_.find(key);
-                if (pending != damagePending_.end()) {
-                    total += pending->second;
-                    damagePending_.erase(pending);
+                if (pending != damagePending_.end()) total += pending->second;
+                // A total that would print as "-0" is held until it adds up to
+                // a point. A termite colony splits every hit across thirty
+                // bodies, so each one is struck for a fraction of a point at a
+                // time, and drawing each fraction at once would show nothing
+                // but zeros.
+                if (total < kMinShownDamage) {
+                    damagePending_[key] = total;
+                    break;
                 }
+                if (pending != damagePending_.end()) damagePending_.erase(pending);
                 damageTextAt_[key] = nowSeconds_;
-                if (total > 0) pushNumber(event.position, total, kMobNumberSize, channel);
+                pushNumber(event.position, total, kMobNumberSize, channel);
                 break;
             }
             case net::EventKind::Killed: {
@@ -717,7 +727,7 @@ void WorldRenderer::ingestEvents(WorldView& view) {
                     const std::uint64_t key = numberKey(event.netId, channel);
                     const auto pending = damagePending_.find(key);
                     if (pending != damagePending_.end()) {
-                        if (options.damageNumbers && pending->second > 0) {
+                        if (options.damageNumbers && pending->second >= kMinShownDamage) {
                             pushNumber(event.position, pending->second, kMobNumberSize, channel);
                         }
                         damagePending_.erase(pending);

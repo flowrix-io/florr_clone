@@ -383,6 +383,14 @@ public:
     bool spawnAt(const std::string& spawnId, Rng&, const Terrain&, Vec2& out,
                  const std::vector<MobDisc>* mobs = nullptr) const;
 
+    /// `count` points inside the spawn point `spawnId`, spread EVENLY over its
+    /// open ground rather than each rolled on its own: every point is the best
+    /// of several candidates, the one furthest from those already chosen, so a
+    /// population covers the whole shape instead of clumping where the dice
+    /// fell. False (and nothing appended) when there is no such spawn point.
+    bool spreadAt(const std::string& spawnId, int count, Rng&, const Terrain&,
+                  std::vector<Vec2>& out) const;
+
     /// Picks a point inside ONE element the caller has already chosen.
     ///
     /// The two spawn pickers above each own a policy, and the bot population

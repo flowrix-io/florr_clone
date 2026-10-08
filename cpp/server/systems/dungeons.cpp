@@ -120,26 +120,57 @@ bool DungeonSystem::populate(World& world, const Terrain& terrain, const Content
     instance.emptySinceMillis = -1;
     instance.dwellers = 0;
 
-    double broodHealth = 0.0;
-    std::vector<std::pair<Entity, bool>> placed;
+    // Every row that shares a door is spread over it as ONE population, so
+    // the brood covers the room evenly -- soldiers, workers and babies mixed
+    // through it -- instead of each termite rolling its own spot and the
+    // three kinds each clumping wherever their dice fell.
+    std::vector<std::pair<std::string, std::vector<Vec2>>> spots;
     for (const DungeonSpec::Entry& entry : spec.brood) {
-        const bool colony = content.mob(entry.mobIndex).colony;
+        if (entry.door.empty()) continue;
+        const auto known = std::find_if(spots.begin(), spots.end(),
+                                        [&](const auto& s) { return s.first == entry.door; });
+        if (known != spots.end()) continue;
+        int count = 0;
+        for (const DungeonSpec::Entry& other : spec.brood) {
+            if (other.door == entry.door) count += other.count;
+        }
+        std::vector<Vec2> points;
+        if (!map->spreadAt(entry.door, count, rng, terrain, points)) {
+            std::fprintf(stderr, "[dungeon] map \"%s\" has no spawn \"%s\"; its brood goes in the front door\n",
+                         instance.mapId.c_str(), entry.door.c_str());
+        }
+        for (std::size_t i = points.size(); i > 1; --i) {
+            std::swap(points[i - 1], points[rng.below(static_cast<std::uint32_t>(i))]);
+        }
+        spots.emplace_back(entry.door, std::move(points));
+    }
+
+    double broodHealth = 0.0;
+    std::vector<Entity> placed;
+    for (const DungeonSpec::Entry& entry : spec.brood) {
+        std::vector<Vec2>* doorSpots = nullptr;
+        for (auto& [door, points] : spots) {
+            if (door == entry.door) doorSpots = &points;
+        }
         for (int i = 0; i < entry.count; ++i) {
             Vec2 where;
-            if (entry.door.empty() || !map->spawnAt(entry.door, rng, terrain, where)) {
+            if (doorSpots != nullptr && !doorSpots->empty()) {
+                where = doorSpots->back();
+                doorSpots->pop_back();
+            } else {
                 where = map->defaultSpawn(rng, terrain);
             }
             const Entity mob = spawning.spawnMob(world, terrain, content, entry.mobIndex, rarity,
                                                  where, instance.realm, nowMillis, rng);
             if (mob == NULL_ENTITY) continue;
             if (const Health* health = world.tryGet<Health>(mob)) broodHealth += health->max;
-            placed.emplace_back(mob, colony);
+            placed.push_back(mob);
         }
     }
     // Tagged after every spawn: a spawn creates entities, and a component
     // added between two of them could be relocated under the next.
-    for (const auto& [mob, colony] : placed) {
-        world.add<DungeonDweller>(mob, DungeonDweller{entrance, colony});
+    for (const Entity mob : placed) {
+        world.add<DungeonDweller>(mob, DungeonDweller{entrance});
         world.add<KeepAwake>(mob);
     }
 
@@ -147,7 +178,6 @@ bool DungeonSystem::populate(World& world, const Terrain& terrain, const Content
     door.claimed = true;
     door.realm = instance.realm;
     door.broodHealth = broodHealth;
-    door.colony.clear();
     if (!world.has<KeepAwake>(entrance)) world.add<KeepAwake>(entrance);
     return true;
 }
@@ -185,7 +215,6 @@ void DungeonSystem::release(World& world, Instance& instance, CommandBuffer& com
         if (DungeonEntrance* door = world.tryGet<DungeonEntrance>(entrance)) {
             door->claimed = false;
             door->broodHealth = 0.0;
-            door->colony.clear();
         }
         if (Bounty* bounty = world.tryGet<Bounty>(entrance)) bounty->contributors.clear();
         if (world.has<KeepAwake>(entrance)) world.remove<KeepAwake>(entrance);
@@ -273,7 +302,6 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
         instance.players = 0;
     }
     std::vector<std::pair<Entity, Instance*>> adopted;
-    std::vector<std::vector<Entity>> colonies(instances_.size());
     Query<MobTag, Transform> mobs{world};
     mobs.each([&](Entity e, MobTag&, Transform& transform) {
         const int slot = byRealm_[realmIndex(transform.realm)];
@@ -281,21 +309,16 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
         Instance& instance = instances_[static_cast<std::size_t>(slot)];
         if (!instance.live || !standing(world, e)) return;
         ++instance.dwellers;
-        const DungeonDweller* dweller = world.tryGet<DungeonDweller>(e);
-        if (dweller == nullptr) {
-            // Born in here after the brood was put down -- an overmind's
-            // soldiers -- and every bit as much a part of the dungeon.
+        if (!world.has<DungeonDweller>(e)) {
+            // Born in here after the brood was put down -- by any mob whose
+            // config spawns others -- and every bit as much a part of the
+            // dungeon.
             adopted.emplace_back(e, &instance);
-        } else if (dweller->colony) {
-            colonies[static_cast<std::size_t>(slot)].push_back(e);
         }
     });
     for (const auto& [mob, instance] : adopted) {
-        const MobType* type = world.tryGet<MobType>(mob);
-        const bool colony = type != nullptr && content.mob(type->configIndex).colony;
-        world.add<DungeonDweller>(mob, DungeonDweller{instance->entrance, colony});
+        world.add<DungeonDweller>(mob, DungeonDweller{instance->entrance});
         if (!world.has<KeepAwake>(mob)) world.add<KeepAwake>(mob);
-        if (colony) colonies[static_cast<std::size_t>(byRealm_[realmIndex(instance->realm)])].push_back(mob);
     }
     for (const Flower& flower : flowers) {
         const int slot = byRealm_[realmIndex(flower.realm)];
@@ -322,9 +345,6 @@ void DungeonSystem::run(World& world, const Terrain& terrain, const ContentRegis
                 evict(world, instance, rng);
                 release(world, instance, commands);
                 continue;
-            }
-            if (DungeonEntrance* door = world.tryGet<DungeonEntrance>(nest)) {
-                door->colony = std::move(colonies[i]);
             }
             if (instance.dwellers == 0) {
                 // Cleared. The nest falls where it stands, to whoever did the

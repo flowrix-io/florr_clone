@@ -282,6 +282,40 @@ TEST(an_ordinary_hit_and_a_poison_tick_keep_their_own_colours) {
     CHECK(poison.r > poison.b * 0.5);
 }
 
+TEST(a_share_too_small_to_print_is_held_until_it_adds_up) {
+    // A termite colony splits every hit over thirty bodies, so each one is
+    // reported a tenth of a point at a time. Drawn as it came, that is a
+    // stream of "-0"; held, it surfaces as a real number once it is worth one.
+    const auto renderShares = [](int count) {
+        static const bool fontsReady = [] {
+            std::string error;
+            return ui::Fonts::init(std::string(FLIX_TEST_DATA_DIR), error);
+        }();
+        CHECK(fontsReady);
+        Canvas canvas = Canvas::createVirtual(kFrameSize, kFrameSize);
+        const Camera camera = frameCamera();
+        WorldView view;
+        view.setRealm(Realm::Overworld);
+        WorldRenderer renderer;
+        for (int i = 0; i < count; ++i) {
+            view.events().clear();
+            ViewEvent share;
+            share.kind = net::EventKind::Damage;
+            share.netId = 7;
+            share.amount = 0.1;
+            share.position = kStrikeAt;
+            view.events().push_back(share);
+            renderer.ingestEvents(view);
+            renderer.update(0.0);
+        }
+        renderer.draw(canvas, view, camera, kStrikeAt, 0.0);
+        return inkOf(canvas.getImageData(0, 0, kFrameSize, kFrameSize)).pixels;
+    };
+    CHECK_EQ(renderShares(1), std::size_t(0));
+    CHECK_EQ(renderShares(4), std::size_t(0));
+    CHECK(renderShares(5) > 50);
+}
+
 // ---------------------------------------------------------------------------
 // The server side of a strike
 // ---------------------------------------------------------------------------

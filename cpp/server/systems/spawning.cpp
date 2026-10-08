@@ -591,6 +591,7 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
     world.add<Afflictions>(e);
     world.add<MobType>(e, MobType{mobIndex, rarity, jitter});
     if (config.intangible) world.add<Intangible>(e);
+    if (config.colony) world.add<ColonyMember>(e);
 
     const bool chainHead = config.segmentCount > 0 && config.segmentBodyIndex != kInvalidIndex;
     if (chainHead) {

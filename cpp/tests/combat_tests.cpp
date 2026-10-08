@@ -3298,10 +3298,68 @@ TEST(a_moon_hits_the_mobs_pressed_against_it_and_pays_only_their_bites) {
     CHECK_NEAR(arena.health(rival), 100.0, 1e-9);
 }
 
+TEST(a_colony_shares_a_hit_only_with_the_termites_in_reach_of_the_struck_one) {
+    // Two common termites are connected within 100 units of each other, and a
+    // hit reaches only the ones connected to the struck termite ITSELF: A-B
+    // and B-C are 90 apart, so a hit on A is shared with B and not with C,
+    // which is 180 from A -- no chaining through B. D, 600 away, takes
+    // nothing either. Every share is the attacker's hit on that termite: it
+    // is on that termite's own ledger. The reach grows with RARITY as a body does
+    // (a rare one reaches 100 x kMobSizeScale[rare] / kMobSizeScale[common],
+    // about 163) and not with the body: a rare termite connects to a common
+    // one 150 away that could not have reached it, while a common termite
+    // three times the usual size reaches no further than any other.
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    const auto termite = [&](Vec2 at, Rarity rarity, double radius = 20.0) {
+        const Entity e = arena.mob(at, 100, 0.0, radius);
+        MobType type;
+        type.rarity = rarity;
+        arena.world.add<MobType>(e, type);
+        arena.world.add<ColonyMember>(e);
+        return e;
+    };
+    const Entity a = termite({0, 500}, Rarity::Common);
+    const Entity b = termite({90, 500}, Rarity::Common);
+    const Entity c = termite({180, 500}, Rarity::Common);
+    const Entity d = termite({780, 500}, Rarity::Common);
+    const Entity rare = termite({0, 1500}, Rarity::Rare);
+    const Entity common = termite({150, 1500}, Rarity::Common);
+    const Entity bulky = termite({0, 2500}, Rarity::Common, 60.0);
+    const Entity beside = termite({150, 2500}, Rarity::Common);
+
+    arena.combat.applyDamage(arena.world, a, player, 30.0, 1000.0);
+    CHECK_NEAR(arena.health(a), 85.0, 1e-9);
+    CHECK_NEAR(arena.health(b), 85.0, 1e-9);
+    CHECK_NEAR(arena.health(c), 100.0, 1e-9);
+    CHECK_NEAR(arena.health(d), 100.0, 1e-9);
+    CHECK_NEAR(arena.health(rare), 100.0, 1e-9);
+    const Bounty& shared = arena.world.get<Bounty>(b);
+    CHECK_EQ(shared.contributors.size(), std::size_t(1));
+    if (!shared.contributors.empty()) {
+        CHECK(shared.contributors[0].player == player);
+        CHECK_NEAR(shared.contributors[0].damage, 15.0, 1e-9);
+    }
+    CHECK(arena.world.get<Bounty>(c).contributors.empty());
+
+    arena.combat.applyDamage(arena.world, common, player, 20.0, 2000.0);
+    CHECK_NEAR(arena.health(common), 90.0, 1e-9);
+    CHECK_NEAR(arena.health(rare), 90.0, 1e-9);
+
+    arena.combat.applyDamage(arena.world, bulky, player, 20.0, 3000.0);
+    CHECK_NEAR(arena.health(bulky), 80.0, 1e-9);
+    CHECK_NEAR(arena.health(beside), 100.0, 1e-9);
+
+    // A straggler takes its hit alone.
+    arena.combat.applyDamage(arena.world, d, player, 30.0, 4000.0);
+    CHECK_NEAR(arena.health(d), 70.0, 1e-9);
+    CHECK_NEAR(arena.health(a), 85.0, 1e-9);
+}
+
 TEST(a_colony_shares_every_hit_evenly_and_a_lone_termite_does_not) {
     // A termite in a dungeon takes a third of a 30-point hit and so do the
-    // other two; the nest outside is credited for the whole swing. A termite
-    // with no dungeon behind it takes the hit alone.
+    // other two; the nest outside is credited for the whole swing. A mob
+    // that is not of the colony takes the hit alone.
     Arena arena;
     const Entity player = arena.player({0, 0});
     const Entity nest = arena.mob({5000, 0}, 750, 0);
@@ -3309,14 +3367,14 @@ TEST(a_colony_shares_every_hit_evenly_and_a_lone_termite_does_not) {
     std::vector<Entity> colony;
     for (int i = 0; i < 3; ++i) {
         const Entity termite = arena.mob({100.0 + 50.0 * i, 0}, 100);
-        arena.world.add<DungeonDweller>(termite, DungeonDweller{nest, true});
+        arena.world.add<DungeonDweller>(termite, DungeonDweller{nest});
+        arena.world.add<ColonyMember>(termite);
         colony.push_back(termite);
     }
     {
         DungeonEntrance& door = arena.world.get<DungeonEntrance>(nest);
         door.claimed = true;
         door.broodHealth = 300;
-        door.colony = colony;
     }
 
     const DamageResult hit = arena.combat.applyDamage(arena.world, colony[0], player, 30.0, 1000.0);
