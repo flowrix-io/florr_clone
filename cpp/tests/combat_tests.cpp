@@ -206,6 +206,8 @@ struct Fixture {
     std::uint16_t clawy = kInvalidIndex;
     std::uint16_t fangy = kInvalidIndex;
     std::uint16_t moon = kInvalidIndex;
+    std::uint16_t plank = kInvalidIndex;
+    std::uint16_t tomato = kInvalidIndex;
 };
 
 const Fixture& fixture() {
@@ -232,7 +234,9 @@ const Fixture& fixture() {
               "boney":{"name":"Boney","damage":14,"health":10,"size":1,"petalArmor":10},
               "clawy":{"name":"Clawy","damage":5,"health":10,"size":1,"clawCritDamage":100},
               "fangy":{"name":"Fangy","damage":15,"health":1,"size":1,"lifesteal":0.35},
-              "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6}
+              "moon":{"name":"Moon","damage":10,"health":1000,"size":2.6},
+              "plank":{"name":"Plank","damage":18,"health":15,"size":3},
+              "tomato":{"name":"Tomato","damage":5,"health":10,"size":1}
             })"));
         if (!wrote) {
             f.error = "cannot write the fixture content";
@@ -254,6 +258,8 @@ const Fixture& fixture() {
         f.clawy = f.registry.petalIndex("clawy");
         f.fangy = f.registry.petalIndex("fangy");
         f.moon = f.registry.petalIndex("moon");
+        f.plank = f.registry.petalIndex("plank");
+        f.tomato = f.registry.petalIndex("tomato");
         return f;
     }();
     return state;
@@ -3410,3 +3416,144 @@ TEST(a_colony_shares_every_hit_evenly_and_a_lone_termite_does_not) {
     CHECK_NEAR(arena.health(colony[1]), 60.0, 1e-9);
 }
 
+
+// ---------------------------------------------------------------------------
+// The termite petals
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A wild mob's shot, parked where a petal will reach it.
+Entity hostileShot(Arena& a, Entity mob, Vec2 at, double health) {
+    const Entity e = a.world.create();
+    a.world.add<ProjectileTag>(e);
+    a.world.add<Transform>(e, Transform{at, 0.0});
+    a.world.add<Motion>(e);
+    a.world.add<Body>(e, Body{6.0, 1.0});
+    a.world.add<Health>(e, Health{health, health, 0.0, 0.0});
+    a.world.add<Faction>(e, Faction{Team::Hostiles, false});
+    a.world.add<HitCooldowns>(e);
+    Projectile projectile;
+    projectile.owner = mob;
+    projectile.creditTo = mob;
+    projectile.remainingDistance = 1000.0;
+    projectile.lastPosition = at;
+    a.world.add<Projectile>(e, projectile);
+    return e;
+}
+
+/// What one tick of a petal touching a fresh 10000-HP shot takes off it.
+double shotLossFrom(std::uint16_t petal) {
+    const Fixture& f = fixture();
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({3000, 3000}, 100.0);
+    const Entity shot = hostileShot(a, mob, {1100, 1000}, 10000.0);
+    equipPetal(a, player, petal, Rarity::Common, {1100, 1000});
+    a.step(1000.0, f.registry);
+    return 10000.0 - a.health(shot);
+}
+
+} // namespace
+
+TEST(a_plank_hits_a_shot_twenty_times_as_hard_as_a_mob) {
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    // Against a mob it is an ordinary 18.
+    {
+        Arena a;
+        const Entity player = a.player({1000, 1000});
+        const Entity mob = a.mob({1100, 1000}, 1000.0);
+        equipPetal(a, player, f.plank, Rarity::Common, {1100, 1000});
+        a.step(1000.0, f.registry);
+        CHECK_NEAR(a.health(mob), 1000.0 - 18.0, 1e-9);
+    }
+    // Against a shot, 20x -- where a plain petal of the same damage is not.
+    CHECK(shotLossFrom(f.plank) >= 18.0 * kPlankShotDamageScale - 1e-9);
+    CHECK(shotLossFrom(f.plain) < 18.0 * kPlankShotDamageScale);
+}
+
+TEST(a_tomato_grows_a_base_hit_a_second_up_to_fourteen) {
+    CHECK_NEAR(tomatoGrowth(0.0), 1.0, 1e-12);
+    CHECK_NEAR(tomatoGrowth(999.0), 1.0, 1e-12);
+    CHECK_NEAR(tomatoGrowth(1000.0), 2.0, 1e-12);
+    CHECK_NEAR(tomatoGrowth(13000.0), 14.0, 1e-12);
+    CHECK_NEAR(tomatoGrowth(600000.0), 14.0, 1e-12);
+
+    const Fixture& f = fixture();
+    CHECK(f.ok);
+    if (!f.ok) return;
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 1000.0);
+    const Entity tomato = equipPetal(a, player, f.tomato, Rarity::Common, {1100, 1000});
+    a.world.get<PetalInstance>(tomato).spawnedAtMillis = 0.0;
+    // Out for five seconds: six base hits.
+    a.step(5000.0, f.registry);
+    CHECK_NEAR(a.health(mob), 1000.0 - 5.0 * 6.0, 1e-9);
+}
+
+TEST(a_relic_splits_a_hit_over_the_squads_other_wearers) {
+    Arena a;
+    const Entity hit = a.player({1000, 1000});
+    const Entity wearer = a.player({3000, 1000});
+    const Entity bystander = a.player({5000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    for (const Entity p : {hit, wearer, bystander}) a.world.add<PlayerModifiers>(p);
+    a.world.get<PlayerModifiers>(hit).sharesDamage = true;
+    a.world.get<PlayerModifiers>(wearer).sharesDamage = true;
+
+    // Not squadded: the relic has nobody to share with.
+    a.combat.applyDamage(a.world, hit, mob, 30.0, 1000.0);
+    CHECK_NEAR(a.health(hit), 70.0, 1e-9);
+
+    SquadEntityIndex squads;
+    squads.groups.push_back({SquadBody{hit, 1}, SquadBody{wearer, 2}, SquadBody{bystander, 3}});
+    for (const Entity p : {hit, wearer, bystander}) squads.group[p] = 0;
+    a.combat.squads = &squads;
+
+    // Squadded: the two wearers take half each, the one without a relic none.
+    const DamageResult shared = a.combat.applyDamage(a.world, hit, mob, 30.0, 2000.0);
+    CHECK(!shared.refused);
+    CHECK_NEAR(shared.applied, 30.0, 1e-9);
+    CHECK_NEAR(a.health(hit), 55.0, 1e-9);
+    CHECK_NEAR(a.health(wearer), 85.0, 1e-9);
+    CHECK_NEAR(a.health(bystander), 100.0, 1e-9);
+
+    // A wearer in another realm is out of it.
+    a.world.get<Transform>(wearer).realm = Realm::Arena;
+    a.combat.applyDamage(a.world, hit, mob, 10.0, 3000.0);
+    CHECK_NEAR(a.health(hit), 45.0, 1e-9);
+    CHECK_NEAR(a.health(wearer), 85.0, 1e-9);
+}
+
+TEST(rubber_soaks_the_lightning_aimed_at_its_flower_and_nothing_else) {
+    Arena a;
+    const Entity player = a.player({1000, 1000});
+    const Entity mob = a.mob({1100, 1000}, 100.0);
+    const Entity rubber = wearCotton(a, player, 30.0);
+    a.world.get<PetalInstance>(rubber).soaksOwnerDamage = false;
+    a.world.get<PetalInstance>(rubber).soaksOwnerLightning = true;
+
+    a.combat.applyDamage(a.world, player, mob, 12.0, 1000.0, DamageKind::Lightning);
+    CHECK_NEAR(a.health(player), 100.0, 1e-9);
+    CHECK_NEAR(a.health(rubber), 18.0, 1e-9);
+
+    // An ordinary hit goes straight past it.
+    a.combat.applyDamage(a.world, player, mob, 12.0, 2000.0);
+    CHECK_NEAR(a.health(player), 88.0, 1e-9);
+    CHECK_NEAR(a.health(rubber), 18.0, 1e-9);
+}
+
+TEST(rubber_scales_the_knockback_its_flower_takes) {
+    Arena a;
+    const Entity plain = a.player({1000, 1000});
+    const Entity rubbery = a.player({3000, 1000});
+    a.world.add<PlayerModifiers>(rubbery);
+    a.world.get<PlayerModifiers>(rubbery).knockbackTakenScale = 2.5;
+    a.combat.applyKnockback(a.world, plain, {1, 0}, 10.0);
+    a.combat.applyKnockback(a.world, rubbery, {1, 0}, 10.0);
+    CHECK_NEAR(a.world.get<Knockback>(rubbery).impulse.x,
+               2.5 * a.world.get<Knockback>(plain).impulse.x, 1e-9);
+}

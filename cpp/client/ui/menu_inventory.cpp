@@ -293,7 +293,31 @@ std::vector<TooltipLine> petalTooltipLines(std::uint16_t petalIndex, Rarity rari
     TooltipLine hit{damageLabel + abbreviate(damage), 12.0};
     hit.alpha = 0.56;
     hit.altText = damageLabel + exactNumber(damage);
+    // A tomato's hit grows while it is out, so the card gives the range it
+    // grows through, as florr's does.
+    if (petalGrowsOverTime(config)) {
+        const double grown = std::round(damage * kTomatoMaxGrowth);
+        hit.text = damageLabel + abbreviate(damage) + " ~ " + abbreviate(grown);
+        hit.altText = damageLabel + exactNumber(damage) + " ~ " + exactNumber(grown);
+    }
     lines.push_back(hit);
+
+    // Relic. The whole petal is this one number.
+    if (petalSharesFlowerDamage(config)) {
+        TooltipLine bonus{"Flower Health: +" +
+                              exactNumber((stats.modifiers.maxHealth - 1.0) * 100.0) + "%",
+                          12.0};
+        bonus.alpha = 0.56;
+        lines.push_back(bonus);
+    }
+
+    // Rubber. Its price is printed beside what it buys.
+    if (stats.flowerKnockback > 0.0) {
+        TooltipLine shove{"Flower Knockback: +" + exactNumber(stats.flowerKnockback * 100.0) + "%",
+                          12.0};
+        shove.alpha = 0.56;
+        lines.push_back(shove);
+    }
 
     // Bur alone. Its description says the petal debuffs armour and cannot say
     // by how much, and how much is the entire question a player has about it:

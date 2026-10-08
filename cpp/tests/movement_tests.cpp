@@ -1291,3 +1291,20 @@ TEST(an_npc_never_gives_way_to_a_loose_petal_and_two_slabs_split_evenly) {
     CHECK_NEAR(pair.positionOf(small).x, 4990.0, 1e-4);
     CHECK_NEAR(pair.positionOf(big).x, 5080.0, 1e-4);
 }
+
+TEST(a_bouncing_shot_comes_back_off_a_wall_instead_of_crossing_it) {
+    // A carrot's shot meets the wall a body would, and leaves it with the
+    // part of its velocity into the face turned round.
+    Fixture fx;
+    fx.wallColumn(10);
+    const double startX = kWallWest - 100.0;
+    const Entity shot = fx.spawnProjectile({startX, 5000}, {600, 0}, 2000.0);
+    fx.world.get<Projectile>(shot).bouncesOffWalls = true;
+
+    fx.step(15);
+    CHECK(!fx.world.has<Dead>(shot));
+    CHECK(fx.positionOf(shot).x < kWallWest);
+    CHECK(fx.velocityOf(shot).x < 0.0);
+    CHECK_NEAR(fx.velocityOf(shot).length(), 600.0, 1e-6);
+    CHECK_NEAR(fx.positionOf(shot).y, 5000.0, 1e-6);
+}

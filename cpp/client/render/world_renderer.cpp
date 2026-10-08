@@ -2449,6 +2449,10 @@ void WorldRenderer::drawPetalSprite(Canvas& canvas, const RemoteEntity& entity,
         // Gated on the count: a lone petal's facing is its ring bearing, and
         // turning that round would aim it at the flower.
         rotation = entity.angle + kPi;
+    } else if (config && petalIsCompass(*config)) {
+        // A compass does not spin with the ring: the server aims it, and its
+        // needle -- the artwork's red +X end -- is the whole point of it.
+        rotation = entity.angle;
     } else {
         const double speed = (config && config->speed > 0) ? config->speed : 1.0;
         rotation = std::fmod(timeSeconds * kPetalSpinRate * speed, kTau) + kPi * 0.5;

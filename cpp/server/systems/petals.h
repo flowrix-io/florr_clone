@@ -425,6 +425,13 @@ private:
     /// touchesMob asked of the attraction grid instead of the whole world, for
     /// a petal that asks every tick rather than until its first contact.
     bool touchesGridMob(World& world, Realm realm, Vec2 at, double radius);
+    /// Where a compass at `at` points: the nearest magnet its flower wears,
+    /// or else the highest-tier wild mob in its realm (the nearest of those),
+    /// with florr's needle wobble on top. `fallback`, its place on the ring,
+    /// when there is nothing to point at.
+    double compassBearing(World& world, const ContentRegistry& registry, PetalInstance& compass,
+                          Vec2 at, Entity player, Realm realm, double fallback,
+                          double nowMillis);
     /// Wild mobs in `realm` whose CENTRE is inside `radius`, which is the
     /// test both the strike and the explosion use.
     void collectMobsNear(World& world, Realm realm, Vec2 at, double radius,

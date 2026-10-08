@@ -572,6 +572,12 @@ struct PlayerModifiers {
     /// roots are one bank of stacks, at the better petal's strength.
     double armorPerStack = 0.0;
     double spongeDamageDurationMillis = 0.0;
+    /// What the knockback this flower TAKES is multiplied by: 1 plus every
+    /// worn rubber's figure. A mob's bounce and a duellist's shove both.
+    double knockbackTakenScale = 1.0;
+    /// A relic is worn: the damage this flower takes is split with the other
+    /// wearers in its squad.
+    bool sharesDamage = false;
 };
 
 /// Where the player is: the open world, or one of the detached regions.
@@ -1025,6 +1031,14 @@ struct PetalInstance {
     /// at spawn so the damage path -- which has no registry to ask -- can find
     /// the flower's cotton by walking its ring.
     bool soaksOwnerDamage = false;
+    /// The same, for LIGHTNING aimed at the flower and nothing else. Rubber's.
+    bool soaksOwnerLightning = false;
+
+    /// A compass's quarry: the mob its needle points at, and when it next
+    /// looks for a better one. NULL_ENTITY between finds, and on every other
+    /// petal.
+    Entity compassTarget = NULL_ENTITY;
+    double compassScanAtMillis = 0;
 
     /// Set once this petal has run a behaviour that waits for its first mob
     /// contact -- lightning's strike, a bomb's detonation, the flower petal
@@ -1114,6 +1128,9 @@ struct Projectile {
     /// stamps `sourceType`, so a shot still infects after its shooter is gone
     /// and never asks a recycled entity id what it was.
     bool glitchInfecting = false;
+    /// The shot is turned back by walls, mirror-fashion, where every other
+    /// shot flies over them. A carrot's. The map edge turns it too.
+    bool bouncesOffWalls = false;
 };
 
 struct Lifetime {

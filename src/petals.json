@@ -1579,5 +1579,97 @@
         "color": "#FFA500",
         "count": 1,
         "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" width=\"32\" height=\"32\"><path fill-opacity=\".2\" d=\"M15.663 6.463q-1.333 0-2.521.335t-2.639 1.079l-1.56-4.199q1.451-.924 3.42-1.424 1.967-.507 3.863-.507 2.375 0 3.916.635 1.542.625 2.431 1.596.888.96 1.242 2.112t.354 2.195-.318 1.914q-.308.87-.797 1.614-.481.743-1.116 1.414-.626.662-1.224 1.261-.444.444-.925.952-.481.498-.87 1.051-.39.554-.654 1.17t-.262 1.243v.453q0 .29.036.517h-4.897q-.072-.372-.1-.834-.018-.472-.018-.798 0-1.043.263-1.877t.689-1.56.98-1.351q.562-.635 1.151-1.233.862-.853 1.56-1.687.707-.844.707-1.913 0-.898-.689-1.524-.68-.634-2.022-.634m3.455 18.68q0 1.641-1.06 2.53-1.053.888-2.395.888-1.333 0-2.394-.888-1.061-.889-1.061-2.53 0-1.633 1.061-2.521 1.061-.889 2.394-.889 1.342 0 2.394.889 1.061.888 1.061 2.52\"/></svg>"
+    },
+    "plank": {
+        "name": "Plank",
+        "damage": 18,
+        "health": 15,
+        "size": 3,
+        "cooldown": 2500,
+        "price": 25,
+        "visual_scale": 0.742,
+        "description": "Does 20x damage vs projectiles and petals.",
+        "color": "#B86C32",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-22.25 -10.25 44.5 20.5\"><path d=\"M20-8l0 4-4 2 4 0 0 10-17 0 0-6-2 6-21 0 0-16 6 0 8 2 0-2z\" fill=\"none\" stroke=\"#955728\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M20-8l0 4-4 2 4 0 0 10-17 0 0-6-2 6-21 0 0-16 6 0 8 2 0-2z\" fill=\"#b86c32\"/><path d=\"M-13 1a1 1 0 000 2 1 1 0 000-4 1 1 0 00-1 6\" fill=\"none\" stroke=\"#955728\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
+    "relic": {
+        "name": "Relic",
+        "damage": 0,
+        "health": null,
+        "size": 1,
+        "speed": 0,
+        "range": 0,
+        "cooldown": 1,
+        "price": 60,
+        "fixedDirection": 0,
+        "visualOffsetY": -1e+100,
+        "visual_scale": 1.175,
+        "description": "A strange relic. Significantly increases maximum health.\nDamage taken is spread among other wearers.",
+        "color": "#C7A138",
+        "count": 0,
+        "noPhysics": true,
+        "playerModifiers": {
+            "maxHealth": 1.1
+        },
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.75 -11.75 23.5 23.5\"><path d=\"M0-10Q2-2 10 0Q2 2 0 10Q-2 2-10 0Q-2-2 0-10Z\" fill=\"#c7a138\" stroke=\"#a1822d\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
+    "carrot": {
+        "name": "Carrot",
+        "damage": 18,
+        "health": 18,
+        "size": 1.4,
+        "cooldown": 1000,
+        "price": 25,
+        "visual_scale": 2.146,
+        "description": "Sturdy and reliable. Can be shot and bounces off walls.",
+        "color": "#F09148",
+        "count": 1,
+        "projectile": {
+            "count": 1,
+            "distance": 500,
+            "speed": 300,
+            "spreadAngle": 0
+        },
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-30.05 -11.65 60.1 23.3\"><g transform=\"scale(0.078)translate(-50 15)rotate(-48)translate(-256 -256)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M228.063 16.72a9 9 0 00-2.47.5c-16.076 5.625-27.55 10.77-36.155 21.81-6.477 8.313-10.984 18.854-16.063 34.407-11.313-12.292-26.732-22.486-43.875-30.812-23.817-11.568-51.083-19.46-76.156-22.78a9 9 0 00-6.282 16.343c21.685 14.934 40.525 29.268 53.407 43.687 9.964 11.155 16.21 22.01 18.436 33.53-32.89-3.705-62.75 3.47-99.406 23.25a9 9 0 005.125 16.907c34.352-3.265 69.484-3.808 96.563.625 13.54 2.217 25.007 5.723 33.218 10.25 3.168 1.747 5.82 3.57 8 5.532 5.365-8.13 12.033-15.638 19.438-22.22 13.09-11.637 28.792-20.638 45.03-24.094-11.326-18.24-14.138-30.23-12.843-41.5 1.588-13.813 10.567-28.893 22.564-52.344a9 9 0 00-8.53-13.093z\" fill=\"#39b54a\" stroke=\"#2e933c\" stroke-width=\"35\"/><path d=\"M241.969 140.156c-.527-.003-1.062.016-1.595.03-14.925.428-32.515 8.518-46.594 21.033-16.088 14.3-26.977 33.817-26.78 50 .39 32.175 18.688 67.77 47.344 102.124 28.655 34.354 67.3 67.31 106.375 94.72 39.073 27.406 78.66 49.316 108.78 61.936 15.06 6.31 27.857 10.275 36.313 11.5 3.958.574 6.797.448 8.187.188.065-.798.153-1.837.063-3.22-.205-3.113-.814-7.504-1.844-12.75-2.06-10.49-5.772-24.554-10.97-40.812-10.397-32.516-26.75-73.9-47.688-114.937-13.56-26.58-29.085-53.016-46.093-76.814-32.28-39.672-35.592-43.134-38.939-46.438-35.283-30.88-58.4-43.184-81.937-46.25-1.505-.197-3.047-.304-4.625-.314z\" fill=\"#f09148\" stroke=\"#c2753a\" stroke-width=\"35\"/></g></svg>"
+    },
+    "tomato": {
+        "name": "Tomato",
+        "damage": 5,
+        "health": 10,
+        "size": 1,
+        "cooldown": 2500,
+        "price": 30,
+        "visual_scale": 1.975,
+        "description": "Gets stronger over time.",
+        "color": "#ED2D2D",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-19.75 -19.75 39.5 39.5\"><g transform=\"translate(-18 -18)\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22.494 5.344c-.687 0-1.352.066-1.991.177-.819-.104-2.74-.231-3.591-.231-8.473 0-15.886 3.177-15.886 14.298 0 9.036 7.049 16.361 16.976 16.361s17.974-7.325 17.974-16.361C35.975 8.339 26.59 5.344 22.494 5.344z\" fill=\"#ed2d2d\" stroke=\"#c02424\" stroke-width=\"3\"/><path d=\"M8.439.091c1.637 1.636 2.77 2.266 3.274 4.91.298 1.564 2.266 1.51 2.266 1.51s-3.903 1.763-5.54 3.4c0 0 4.91-1.637 6.547-1.637 0 0 3.273 1.637 3.273 3.273 0 0 0-3.273-1.636-3.273 0 0 4.909 0 4.909 3.273 0 0 0-4.91-1.637-4.91 0 0 4.911-1.636 6.548 0 0 0-1.686-1.72-4.911-1.636 0 0 1.638-1.637 4.911-1.637 0 0-5.288-1.511-6.925 1.763 0 0-1.385-1.385 1.385-4.155 0 0-4.28.755-4.28 4.029 0 0-1.552-.04-2.644-1.259C11.838 1.35 8.439.091 8.439.091z\" fill=\"#39b54a\" stroke=\"#2e933c\" stroke-width=\"2\"/></g></svg>"
+    },
+    "rubber": {
+        "name": "Rubber",
+        "damage": 1,
+        "health": 30,
+        "size": 1.2,
+        "cooldown": 2500,
+        "price": 25,
+        "visual_scale": 0.979,
+        "description": "Increases knockback received. Also absorbs lightning damage dealt to the flower.",
+        "color": "#EEEEEE",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-11.75 -11.75 23.5 23.5\"><path d=\"M-9-9q6-2 18 0 1 11 0 18-11 2-18 0-2-10 0-18\" fill=\"#eeeeee\" stroke=\"#c1c1c1\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>"
+    },
+    "compass": {
+        "name": "Compass",
+        "damage": 1,
+        "health": 40,
+        "size": 1.4,
+        "cooldown": 2500,
+        "price": 100,
+        "visual_scale": 1.018,
+        "description": "This crappy thing might be able to find something interesting...",
+        "color": "#3498DB",
+        "count": 1,
+        "image": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"-14.25 -14.25 28.5 28.5\"><circle r=\"14\" fill=\"#bdc3c7\"/><circle r=\"11\" fill=\"#3498db\"/><path d=\"M11 0 0-4 0 4Z\" fill=\"#e74c3c\"/><path d=\"M-11 0 0-4 0 4Z\" fill=\"#ecf0f1\"/><circle r=\"2.8\" fill=\"#bdc3c7\"/></svg>"
     }
 }

@@ -1287,17 +1287,117 @@
         "type": "petal",
         "itemType": "soil",
         "rarity": "uncommon",
-        "probability": 0.5,
+        "probability": 0.25,
         "minQuantity": 1,
         "maxQuantity": 1
       },
       {
         "type": "petal",
-        "itemType": "soldier_termite_egg",
+        "itemType": "rubber",
         "rarity": "common",
-        "probability": 0.4,
+        "probability": 0.2,
         "minQuantity": 1,
-        "maxQuantity": 10
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "relic",
+        "rarity": "uncommon",
+        "probability": 0.15,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "baby_termite": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "carrot",
+        "rarity": "common",
+        "probability": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "relic",
+        "rarity": "uncommon",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "worker_termite": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "plank",
+        "rarity": "common",
+        "probability": 0.15,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "relic",
+        "rarity": "uncommon",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "soldier_termite": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "bone",
+        "rarity": "common",
+        "probability": 0.25,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "relic",
+        "rarity": "uncommon",
+        "probability": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ]
+  },
+  "termite_overmind": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "tomato",
+        "rarity": "common",
+        "probability": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "compass",
+        "rarity": "common",
+        "probability": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "relic",
+        "rarity": "uncommon",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
       }
     ]
   }

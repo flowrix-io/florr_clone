@@ -1711,6 +1711,8 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
         };
         s.knockback = kJellyKnockback[static_cast<std::size_t>(rarityIndex(tier))];
     }
+    // Rubber: florr's Flower Knockback, +0.3 at common and +0.3 more a tier.
+    if (petalSoaksLightning(c)) s.flowerKnockback = 0.3 * (rarityIndex(tier) + 1);
     s.shield = c.burstShield * heal;
     // A slow's rarity is spent on landing it at all (stallPower), not on
     // making it deeper, so the factor and its duration are flat.
@@ -1764,6 +1766,10 @@ PetalStats ContentRegistry::petalStats(std::uint16_t index, Rarity r) const {
 
     s.modifiers = c.modifiers;
     s.modifiers.maxHealth = scaledMultiplier(c.modifiers.maxHealth, modifier);
+    // Relic: florr's Flower Health, +10% a tier on a flat step (+20% at
+    // uncommon, florr's lowest, to +70% at ultra) rather than the passive
+    // curve above.
+    if (petalSharesFlowerDamage(c)) s.modifiers.maxHealth = 1.0 + 0.1 * (rarityIndex(tier) + 1);
     s.modifiers.speed = scaledMultiplier(c.modifiers.speed, modifier);
     s.modifiers.range = scaledMultiplier(c.modifiers.range, modifier);
     s.modifiers.rotationSpeed = scaledMultiplier(c.modifiers.rotationSpeed, modifier);

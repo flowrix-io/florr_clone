@@ -19,6 +19,7 @@
 // reaches the simulation.
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -924,6 +925,9 @@ struct PetalStats {
     /// What one spawn of this petal costs, this tier. See PetalConfig.
     double requiredMana = 0;
     double knockback = 0;
+    /// What this petal adds to the knockback its FLOWER takes, as a fraction:
+    /// rubber's +0.3 a tier. Zero for every other petal.
+    double flowerKnockback = 0;
     double shield = 0;
     double slowFactor = 1.0;
     double slowDurationMillis = 0;
@@ -1012,6 +1016,46 @@ inline constexpr const char* kMimicPetalId = "mimic";
 /// Whether this petal copies the slot to its left rather than being itself.
 /// By id for the reason petalIsClickToUse is.
 inline bool petalMimicsLeft(const PetalConfig& config) { return config.id == kMimicPetalId; }
+
+// The termite petals. Each one's rule lives in code, asked by id for the
+// reason petalIsClickToUse is; the figures are florr's own, read out of its
+// client (the tooltip builder and the petal classes' vtables).
+
+/// What a plank's hit is multiplied by against a shot or another petal --
+/// "Does 20x damage vs projectiles and petals".
+inline constexpr double kPlankShotDamageScale = 20.0;
+
+inline bool petalShredsShots(const PetalConfig& config) { return config.id == "plank"; }
+
+/// A carrot is a missile whose shot bounces off walls instead of flying over
+/// them.
+inline bool petalShotBounces(const PetalConfig& config) { return config.id == "carrot"; }
+
+/// A tomato's hit grows the longer it has been out: florr's tooltip states it
+/// as a range, 5 ~ 70 at common (14x), and the class carries a one-second
+/// secondary period, which is the step it grows by here -- one more base hit
+/// a second, so it is full grown 13 s after it spawned.
+inline constexpr double kTomatoGrowthStepMillis = 1000.0;
+inline constexpr double kTomatoMaxGrowth = 14.0;
+
+inline bool petalGrowsOverTime(const PetalConfig& config) { return config.id == "tomato"; }
+
+/// What a tomato `ageMillis` old hits for, as a multiple of its base damage.
+inline double tomatoGrowth(double ageMillis) {
+    if (!(ageMillis > 0.0)) return 1.0;
+    const double steps = std::floor(ageMillis / kTomatoGrowthStepMillis);
+    return steps + 1.0 < kTomatoMaxGrowth ? steps + 1.0 : kTomatoMaxGrowth;
+}
+
+/// Rubber soaks the lightning aimed at its flower, as cotton soaks every hit.
+inline bool petalSoaksLightning(const PetalConfig& config) { return config.id == "rubber"; }
+
+/// A relic's wearer shares the damage it takes with the other wearers in its
+/// squad.
+inline bool petalSharesFlowerDamage(const PetalConfig& config) { return config.id == "relic"; }
+
+/// A compass's needle points at something interesting.
+inline bool petalIsCompass(const PetalConfig& config) { return config.id == "compass"; }
 
 // ---------------------------------------------------------------------------
 // ContentRegistry

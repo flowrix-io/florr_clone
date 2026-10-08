@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include "server/replication.h"
@@ -152,6 +153,13 @@ constexpr double kBehaviourHealScale = 3.0;
 
 /// How close a yggdrasil has to pass to a corpse to raise it.
 constexpr double kYggdrasilRevivalRange = 80.0;
+
+/// A compass's needle wobble, florr's: +-0.1 rad, at 0.01 rad of phase a
+/// millisecond.
+constexpr double kCompassWobble = 0.1;
+constexpr double kCompassWobbleRate = 0.01;
+/// How often a compass looks again for the best mob in its realm.
+constexpr double kCompassScanIntervalMillis = 500.0;
 
 enum class PetalBehaviourKind : std::uint8_t {
     None,
@@ -1140,6 +1148,7 @@ Entity PetalSystem::spawnPetal(World& world, Entity player, Loadout& loadout, st
     // already standing in should discharge.
     instance.charges = chargesFor(config);
     instance.soaksOwnerDamage = soaksOwnerDamage(config);
+    instance.soaksOwnerLightning = petalSoaksLightning(config);
     world.add<PetalInstance>(petal, instance);
     if (loose) world.add<LoosePetal>(petal);
     // The moon: the ring's centre while it is out, and the only petal with
@@ -1349,6 +1358,15 @@ PetalSystem::Aggregate PetalSystem::recomputeModifiers(World& world,
             // two blades are still one bonus, and the better one wins.
             aggregate.modifiers.bodyDamageBonus =
                 std::max(aggregate.modifiers.bodyDamageBonus, stats.bodyDamage);
+            // Rubber, summed: its knockback is the price of the lightning it
+            // soaks, and a second rubber soaks more, so it pays again. Worn
+            // rather than out, like the cutter above -- the flower is light
+            // because of what it is wearing, not because the petal is up.
+            aggregate.modifiers.knockbackTakenScale += stats.flowerKnockback;
+            // A relic is worn, never out: it has no body to break.
+            if (petalSharesFlowerDamage(registry.petal(equipped.configIndex))) {
+                aggregate.modifiers.sharesDamage = true;
+            }
             if (!slot.broken) {
                 aggregate.modifiers.spongeDamageDurationMillis =
                     std::max(aggregate.modifiers.spongeDamageDurationMillis,
@@ -1732,6 +1750,10 @@ void PetalSystem::placePetals(World& world, const ContentRegistry& registry, Ent
             facingAngle = wrapAngle(sub);
         }
         transform->angle = angle;
+        if (petalIsCompass(config)) {
+            facingAngle = compassBearing(world, registry, *instance, transform->position, player,
+                                         transform->realm, facingAngle, nowMillis);
+        }
         instance->facingAngle = facingAngle;
 
         // Three position modes, as the reference has them. A petal with no
@@ -2365,6 +2387,7 @@ bool PetalSystem::fireProjectiles(World& world, Entity player, Entity petal,
         projectile.waveFrequency = config.waveFrequency / calibreScale;
         // A shot that has not moved yet has flown a segment of zero length.
         projectile.lastPosition = from;
+        projectile.bouncesOffWalls = petalShotBounces(config);
         world.add<Projectile>(shot, projectile);
 
         // Distance is the authority on range; the lifetime is the same limit
@@ -2935,6 +2958,67 @@ bool PetalSystem::touchesGridMob(World& world, Realm realm, Vec2 at, double radi
         if (gap < reach * reach && gap > 0.0) return true;
     }
     return false;
+}
+
+double PetalSystem::compassBearing(World& world, const ContentRegistry& registry,
+                                   PetalInstance& compass, Vec2 at, Entity player, Realm realm,
+                                   double fallback, double nowMillis) {
+    // florr's needle is never still: it swings 0.1 rad either side, once
+    // every 2*pi/0.01 ms (the ultra branch of its render).
+    const double wobble =
+        kCompassWobble * std::sin((nowMillis - compass.spawnedAtMillis) * kCompassWobbleRate);
+
+    // "Affected by Magnets": a magnet on the same ring drags the needle round
+    // to itself, whatever the compass had found.
+    if (const Loadout* loadout = world.tryGet<Loadout>(player)) {
+        double nearest = std::numeric_limits<double>::infinity();
+        Vec2 pull{};
+        for (const Entity petal : loadout->spawned) {
+            const PetalInstance* other = world.tryGet<PetalInstance>(petal);
+            const Transform* where = world.tryGet<Transform>(petal);
+            if (other == nullptr || where == nullptr || world.has<Dead>(petal)) continue;
+            if (registry.petal(other->configIndex).id != "magnet") continue;
+            const double gap = distanceSq(where->position, at);
+            if (gap < nearest && gap > 1e-9) {
+                nearest = gap;
+                pull = where->position;
+            }
+        }
+        if (std::isfinite(nearest)) return wrapAngle((pull - at).angle() + wobble);
+    }
+
+    // The quarry is re-chosen on a clock rather than every tick: a sweep of
+    // every mob in the realm per compass per tick is the cost of a whole
+    // system, and the best mob in sight does not change thirty times a second.
+    const Entity held = compass.compassTarget;
+    const Transform* heldAt = held != NULL_ENTITY && world.isAlive(held) && !world.has<Dead>(held)
+                                  ? world.tryGet<Transform>(held)
+                                  : nullptr;
+    if (heldAt == nullptr || heldAt->realm != realm || nowMillis >= compass.compassScanAtMillis) {
+        compass.compassScanAtMillis = nowMillis + kCompassScanIntervalMillis;
+        Entity best = NULL_ENTITY;
+        int bestTier = -1;
+        double bestGap = 0.0;
+        mobs_->each([&](Entity mob, MobTag&, Transform& transform, Body&) {
+            if (transform.realm != realm || world.has<NpcTag>(mob)) return;
+            const MobType* type = world.tryGet<MobType>(mob);
+            const Faction* side = world.tryGet<Faction>(mob);
+            if (type == nullptr || (side != nullptr && side->team == Team::Players)) return;
+            const int tier = rarityIndex(type->rarity);
+            const double gap = distanceSq(transform.position, at);
+            if (tier > bestTier || (tier == bestTier && gap < bestGap)) {
+                best = mob;
+                bestTier = tier;
+                bestGap = gap;
+            }
+        });
+        compass.compassTarget = best;
+        heldAt = best != NULL_ENTITY ? world.tryGet<Transform>(best) : nullptr;
+    }
+    if (heldAt == nullptr) return fallback;
+    const Vec2 toward = heldAt->position - at;
+    if (toward.lengthSq() < 1e-9) return fallback;
+    return wrapAngle(toward.angle() + wobble);
 }
 
 void PetalSystem::retireDistantPets(World& world, const ContentRegistry& registry, Entity player,

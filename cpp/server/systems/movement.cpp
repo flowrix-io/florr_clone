@@ -793,12 +793,25 @@ void MovementSystem::moveProjectiles(World& world, const Terrain& terrain, doubl
         // still reaches what it was aimed at. The world's edge is the one
         // thing it cannot cross -- the step still clamps to it, and that clamp
         // is what `blocked` reports.
+        //
+        // A carrot is the exception: it meets walls, and the edge, like a body
+        // does, and comes off them mirror-fashion -- the part of its velocity
+        // into the surface is turned round, the part along it kept. The
+        // surface's normal is the way the resolver pushed it back out.
+        const bool bounces = projectile.bouncesOffWalls;
         const StepOutcome out = stepCollide(terrain, transform.realm, transform.position,
-                                            attempted, radius, dt, /*collideTerrain=*/false);
+                                            attempted, radius, dt, /*collideTerrain=*/bounces);
         projectile.remainingDistance -= out.displacement.length();
         if (!(projectile.remainingDistance > kSpentRangeEpsilon)) projectile.remainingDistance = 0.0;
 
-        if (out.blocked) {
+        if (out.blocked && bounces) {
+            const Vec2 pushedBack = out.displacement - attempted * dt;
+            if (pushedBack.lengthSq() > 1e-12) {
+                const Vec2 normal = pushedBack.normalized();
+                const double into = velocity.x * normal.x + velocity.y * normal.y;
+                if (into < 0.0) velocity -= normal * (2.0 * into);
+            }
+        } else if (out.blocked) {
             // The map edge eats shots.
             projectile.remainingDistance = 0.0;
             motion.velocity = {0, 0};

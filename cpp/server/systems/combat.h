@@ -414,6 +414,9 @@ private:
         /// markGlitched). Resolved from the config in the gather, where the
         /// registry is at hand.
         bool glitchInfecting = false;
+        /// What this body's hit is multiplied by against a shot or a petal.
+        /// A plank's 20; 1 for everything else.
+        double shotDamageScale = 1.0;
         /// A mob whose touch throws lightning -- both fireflies. Zero radius
         /// means it does not, which is every other body in the game. Resolved
         /// in the gather beside the glitch flag and for the same reason.
@@ -553,7 +556,7 @@ private:
     /// mob with nobody near it costs one broadphase query and no bolt.
     bool playerWithin(World& world, const SpatialGrid& grid, Entity mob, Vec2 at, Realm realm,
                       double range, double nowMillis);
-    void gatherPetals(World& world, const ContentRegistry& content);
+    void gatherPetals(World& world, const ContentRegistry& content, double nowMillis);
     void resolveMelee(World& world, const SpatialGrid& grid, double nowMillis);
     /// A petal swinging at another flower, which is a different collision from
     /// the petal-vs-mob one beside it: gated by the arena/corruption rule
@@ -622,7 +625,7 @@ private:
     /// before its health bar, behind the shield and the sponge -- on the
     /// flower's live cottons first, each taking up to what it has left, and return the
     /// overflow that still reaches the flower. `amount` itself when the flower
-    /// is wearing none.
+    /// is wearing none. Its rubbers catch LIGHTNING the same way.
     ///
     /// Behind applyDamage, and through it: each cotton takes its share as an
     /// ordinary hit, so it flashes, it breaks, and the slot reloads by the one
@@ -711,6 +714,11 @@ private:
     /// shared right now (the shares come back through applyDamage).
     std::vector<Entity> colonyScratch_;
     bool sharingColonyHit_ = false;
+    /// The relic's split, the same shape as the colony's: the other wearers
+    /// a hit is being shared with, and the guard that stops a share from
+    /// being shared again.
+    std::vector<Entity> relicScratch_;
+    bool sharingRelicHit_ = false;
     /// The cottons a hit is about to land on, gathered off the flower's ring
     /// before the first of them is struck.
     std::vector<Entity> cottonScratch_;

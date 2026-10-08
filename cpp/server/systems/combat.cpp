@@ -615,6 +615,57 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         }
     }
 
+    // A relic's wearer shares what it takes with the other wearers in its
+    // squad: the hit is split evenly over every one of them in the same realm
+    // that this source could hit right now, the struck flower included, and
+    // each share comes back through here as that flower's own hit -- its own
+    // dodge, armour, shield and cotton. Positive damage only, and never a
+    // share of a share. Nobody squadded, or no other wearer: the flower takes
+    // it all, as it would without the relic.
+    if (amount > 0.0 && !sharingRelicHit_ && squads != nullptr && world.has<PlayerTag>(victim)) {
+        const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(victim);
+        const Transform* struckAt = world.tryGet<Transform>(victim);
+        const std::vector<SquadBody>* squad = squads->membersOf(victim);
+        if (modifiers != nullptr && modifiers->sharesDamage && struckAt != nullptr &&
+            squad != nullptr) {
+            const Realm realm = struckAt->realm;
+            relicScratch_.clear();
+            for (const SquadBody& member : *squad) {
+                const Entity body = member.body;
+                if (body == victim || !world.isAlive(body) || world.has<Dead>(body)) continue;
+                if (!world.has<PlayerTag>(body)) continue;
+                const PlayerModifiers* theirs = world.tryGet<PlayerModifiers>(body);
+                const Transform* at = world.tryGet<Transform>(body);
+                if (theirs == nullptr || !theirs->sharesDamage || at == nullptr ||
+                    at->realm != realm) {
+                    continue;
+                }
+                if (canHit(world, body, source, nowMillis)) relicScratch_.push_back(body);
+            }
+            if (!relicScratch_.empty()) {
+                // Copied out: the shares re-enter this function.
+                std::vector<Entity> wearers = relicScratch_;
+                wearers.push_back(victim);
+                const double share = amount / static_cast<double>(wearers.size());
+                sharingRelicHit_ = true;
+                DamageResult total;
+                total.refused = true;
+                for (const Entity wearer : wearers) {
+                    const DamageResult part =
+                        applyDamage(world, wearer, source, share, nowMillis, kind);
+                    total.applied += part.applied;
+                    if (!part.refused) total.refused = false;
+                    if (wearer == victim) {
+                        total.killed = part.killed;
+                        total.dodged = part.dodged;
+                    }
+                }
+                sharingRelicHit_ = false;
+                return total;
+            }
+        }
+    }
+
     // TypeScript's mob health writer is `max(0, health - amount)`.  Glitch is
     // authored with negative damage, so its contact deliberately heals mobs;
     // PVP's separate player damage path rejects non-positive values.  Preserve
@@ -1094,6 +1145,19 @@ bool CombatSystem::trySecondChance(World& world, Entity victim, double nowMillis
 // Riders: knockback, poison, slow
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// What the knockback a body takes is multiplied by: a flower's worn rubbers,
+/// 1 for everything else.
+double knockbackTakenScale(const World& world, Entity e) {
+    const PlayerModifiers* modifiers = world.tryGet<PlayerModifiers>(e);
+    return modifiers != nullptr && modifiers->knockbackTakenScale > 0.0
+               ? modifiers->knockbackTakenScale
+               : 1.0;
+}
+
+} // namespace
+
 void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, double strength) {
     if (!std::isfinite(strength) || strength <= 0.0) return;
     if (!world.isAlive(victim)) return;
@@ -1106,6 +1170,7 @@ void CombatSystem::applyKnockback(World& world, Entity victim, Vec2 offset, doub
     const double mass = (body != nullptr && body->mass > 1e-6) ? body->mass : 1.0;
     Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;   // exactly co-located: no direction to push along
+    strength *= knockbackTakenScale(world, victim);
 
     // This mirrors playerState.ts exactly: `effectiveKnockback` is the petal
     // stat divided by mob mass, and setMobKnockback() REPLACES the old vector.
@@ -1155,7 +1220,8 @@ void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double o
     const Vec2 relative = mobVelocity - motion->velocity;
     const double closing = clamp(direction.x * relative.x + direction.y * relative.y,
                                  kGardnBounceMinClosing, kGardnBounceMaxClosing);
-    motion->velocity += direction * (kGardnBounceKick + 2.0 * closing);
+    motion->velocity +=
+        direction * ((kGardnBounceKick + 2.0 * closing) * knockbackTakenScale(world, player));
 }
 
 /// A duellist's swing shoves the other flower kMobContactKnockback units,
@@ -1164,7 +1230,8 @@ void bounceOffMob(World& world, Entity player, Entity mob, Vec2 offset, double o
 void shoveFlower(World& world, Entity player, Vec2 offset) {
     const Vec2 direction = offset.normalized();
     if (direction.lengthSq() < 1e-12) return;
-    const double speed = shoveSpeed(kMobContactKnockback, net::kTickSeconds, /*decaysFirst=*/true);
+    const double speed = shoveSpeed(kMobContactKnockback, net::kTickSeconds, /*decaysFirst=*/true) *
+                         knockbackTakenScale(world, player);
     if (Motion* motion = world.tryGet<Motion>(player); motion != nullptr && speed > 0.0) {
         motion->velocity += direction * speed;
     } else if (Transform* transform = world.tryGet<Transform>(player)) {
@@ -1417,7 +1484,12 @@ double CombatSystem::soakIntoCotton(World& world, Entity flower, Entity source, 
     std::array<bool, kLoadoutSlots> seen{};
     for (const Entity petal : loadout->spawned) {
         const PetalInstance* instance = world.tryGet<PetalInstance>(petal);
-        if (instance == nullptr || !instance->soaksOwnerDamage) continue;
+        if (instance == nullptr) continue;
+        // Rubber catches lightning and nothing else.
+        if (!instance->soaksOwnerDamage &&
+            !(instance->soaksOwnerLightning && kind == DamageKind::Lightning)) {
+            continue;
+        }
         if (instance->slot >= kLoadoutSlots || seen[instance->slot]) continue;
         // One this tick has already broken, or one spent by being used, has
         // nothing left to catch with.
@@ -1500,7 +1572,7 @@ void CombatSystem::runContactPhase(World& world, const SpatialGrid& grid,
     gatherAuras(world, content);
     resolveAuras(world, grid, nowMillis);
     gatherContact(world, content);
-    gatherPetals(world, content);
+    gatherPetals(world, content, nowMillis);
     fileShots(world);
     resolveMelee(world, grid, nowMillis);
 }
@@ -1899,7 +1971,7 @@ void CombatSystem::gatherContact(World& world, const ContentRegistry& content) {
     });
 }
 
-void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
+void CombatSystem::gatherPetals(World& world, const ContentRegistry& content, double nowMillis) {
     queries_->petals.each([&](Entity e, PetalInstance& petal, Transform& transform, Body& body) {
         const PetalConfig& config = content.petal(petal.configIndex);
         if (config.noPhysics) return;   // a pure modifier has no body to hit with
@@ -1938,6 +2010,12 @@ void CombatSystem::gatherPetals(World& world, const ContentRegistry& content) {
         source.isPetal = true;
         source.isLoose = loose;
         if (config.lightningDamage) source.hitKind = DamageKind::Lightning;
+        // A tomato hits harder the longer it has been out; a reload starts it
+        // over, since the reload is a new petal.
+        if (petalGrowsOverTime(config)) {
+            source.damage *= tomatoGrowth(nowMillis - petal.spawnedAtMillis);
+        }
+        if (petalShredsShots(config)) source.shotDamageScale = kPlankShotDamageScale;
         // The flower's damage bonus is a property of the flower, not of the
         // petal entity, so it is read here rather than baked in at spawn --
         // swapping a damage petal in must affect the ring on the same tick.
@@ -2136,7 +2214,14 @@ void CombatSystem::resolveMelee(World& world, const SpatialGrid& grid, double no
 
             // A claw's bonus is decided here, per victim, off the health the
             // victim has BEFORE this hit.
-            const double swing = swingDamage(world, source.damage, source.critDamage, victim);
+            double swing = swingDamage(world, source.damage, source.critDamage, victim);
+            // A plank's 20x, against the things that are not bodies: a shot,
+            // a petal, a seat on a mob's ring.
+            if (source.shotDamageScale != 1.0 &&
+                (world.has<ProjectileTag>(victim) || world.has<PetalInstance>(victim) ||
+                 world.has<MobRingPetal>(victim))) {
+                swing *= source.shotDamageScale;
+            }
             DamageResult hit =
                 applyDamage(world, victim, source.attacker, swing, nowMillis, source.hitKind);
             // A swing of NOTHING is still a swing. canHit() has already vouched

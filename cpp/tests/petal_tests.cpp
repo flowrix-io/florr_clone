@@ -73,7 +73,12 @@ const char* const kPetalsJson = R"JSON({
   "magicmissile":{"name":"Magic Missile","damage":6,"health":5,"size":1,"cooldown":1000,"count":1,"requiredMana":30,"projectile":{"count":1,"spreadAngle":0,"speed":800,"distance":1000},"color":"#42E3F5"},
   "magic_bubble":{"name":"Magic Bubble","damage":0,"health":1,"size":1,"cooldown":1000,"count":1,"requiredMana":40,"color":"#42E3F5"},
   "mimic":    {"name":"Mimic","damage":0,"health":0,"size":1,"cooldown":10000,"count":1,"color":"#FFA500"},
-  "berries":  {"name":"Berries","damage":8,"health":10,"size":1,"cooldown":50,"count":4,"clumped":true,"defendOnly":true,"requiredMana":10,"lightningDamage":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#42E3F5"}
+  "berries":  {"name":"Berries","damage":8,"health":10,"size":1,"cooldown":50,"count":4,"clumped":true,"defendOnly":true,"requiredMana":10,"lightningDamage":true,"projectile":{"count":1,"spreadAngle":1.5708,"speed":800,"distance":1000},"color":"#42E3F5"},
+  "compass":  {"name":"Compass","damage":1,"health":40,"size":1.4,"cooldown":2500,"count":1,"color":"#3498DB"},
+  "magnet":   {"name":"Magnet","damage":1,"health":5,"size":1,"cooldown":2000,"count":1,"color":"#000000"},
+  "relic":    {"name":"Relic","damage":0,"health":null,"size":1,"cooldown":1,"count":0,"range":0,"fixedDirection":0,"noPhysics":true,"playerModifiers":{"maxHealth":1.1},"color":"#C7A138"},
+  "rubber":   {"name":"Rubber","damage":1,"health":30,"size":1.2,"cooldown":2500,"count":1,"color":"#EEEEEE"},
+  "carrot":   {"name":"Carrot","damage":18,"health":18,"size":1.4,"cooldown":1000,"count":1,"projectile":{"count":1,"distance":500,"speed":300,"spreadAngle":0},"color":"#F09148"}
 })JSON";
 
 const char* const kMobsJson = R"JSON({
@@ -4318,4 +4323,110 @@ TEST(a_mimic_never_reaches_back_into_the_row_above) {
     CHECK_EQ(resolved.configIndex, petalId("mimic"));
     CHECK(resolved.rarity == Rarity::Rare);
     CHECK(resolved.reloadRarity == Rarity::Rare);
+}
+
+// ---------------------------------------------------------------------------
+// The termite petals
+// ---------------------------------------------------------------------------
+
+namespace {
+
+Entity wildMob(Rig& rig, Vec2 at, Rarity rarity) {
+    const Entity mob = rig.world.create();
+    rig.world.add<MobTag>(mob);
+    rig.world.add<MobType>(mob, MobType{fixture().registry.mobIndex("brute"), rarity, 1.0});
+    rig.world.add<Transform>(mob, Transform{at, 0.0});
+    rig.world.add<Body>(mob, Body{20.0, 1.0});
+    rig.world.add<Health>(mob, Health{500.0, 500.0, 0.0, 0.0});
+    rig.world.add<Faction>(mob, Faction{Team::Hostiles, false});
+    return mob;
+}
+
+/// How far `angle` is from the bearing `from` -> `to`.
+double offBearing(double angle, Vec2 from, Vec2 to) {
+    return std::abs(wrapAngle(angle - (to - from).angle()));
+}
+
+} // namespace
+
+TEST(a_compass_points_at_the_best_mob_in_its_realm_until_a_magnet_turns_it) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.freezeRing();
+    rig.equip(0, "compass");
+    rig.settleEquips();
+    // A common mob close by to the south, an epic one far to the east, and a
+    // mythic in another realm: the epic is the best the compass can reach.
+    wildMob(rig, {1000.0, 1300.0}, Rarity::Common);
+    const Entity epic = wildMob(rig, {4000.0, 1000.0}, Rarity::Epic);
+    const Entity elsewhere = wildMob(rig, {1000.0, -2000.0}, Rarity::Mythic);
+    rig.world.get<Transform>(elsewhere).realm = Realm::Arena;
+    rig.tick(3);
+
+    const auto compass = rig.petals(0);
+    CHECK_EQ(compass.size(), std::size_t(1));
+    if (compass.empty()) return;
+    const Vec2 at = rig.world.get<Transform>(compass[0]).position;
+    const double facing = rig.world.get<PetalInstance>(compass[0]).facingAngle;
+    // Within florr's 0.1 rad wobble, and the tick of travel since it aimed.
+    CHECK(offBearing(facing, at, rig.world.get<Transform>(epic).position) < 0.12);
+
+    // A magnet on the same ring drags the needle round to itself.
+    rig.equip(1, "magnet");
+    rig.settleEquips();
+    rig.tick();
+    const auto magnets = rig.petals(1);
+    CHECK_EQ(magnets.size(), std::size_t(1));
+    if (magnets.empty()) return;
+    const Vec2 needle = rig.world.get<Transform>(compass[0]).position;
+    CHECK(offBearing(rig.world.get<PetalInstance>(compass[0]).facingAngle, needle,
+                     rig.world.get<Transform>(magnets[0]).position) < 0.25);
+}
+
+TEST(a_relic_raises_max_health_by_a_tenth_a_tier_and_marks_the_flower_a_sharer) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.tick();
+    CHECK(!rig.modifiers().sharesDamage);
+    rig.equip(0, "relic", Rarity::Rare);
+    rig.tick();
+    CHECK_NEAR(rig.modifiers().maxHealthScale, 1.3, 1e-9);
+    CHECK(rig.modifiers().sharesDamage);
+    CHECK_NEAR(fixture().registry.petalStats(petalId("relic"), Rarity::Ultra).modifiers.maxHealth,
+               1.7, 1e-9);
+}
+
+TEST(rubber_adds_knockback_per_tier_and_soaks_lightning) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "rubber", Rarity::Epic);
+    rig.equip(1, "rubber", Rarity::Common);
+    rig.settleEquips();
+    // +1.2 at epic, +0.3 at common, summed.
+    CHECK_NEAR(rig.modifiers().knockbackTakenScale, 1.0 + 1.2 + 0.3, 1e-9);
+    const auto rubber = rig.petals(0);
+    CHECK_EQ(rubber.size(), std::size_t(1));
+    if (!rubber.empty()) {
+        CHECK(rig.world.get<PetalInstance>(rubber[0]).soaksOwnerLightning);
+        CHECK(!rig.world.get<PetalInstance>(rubber[0]).soaksOwnerDamage);
+    }
+}
+
+TEST(a_carrot_is_fired_as_a_shot_that_bounces) {
+    if (!contentLoaded()) return;
+    Rig rig;
+    rig.equip(0, "carrot");
+    rig.settleEquips();
+    rig.setFlags(net::InputAttack);
+    int shots = 0;
+    bool bounces = true;
+    CHECK(rig.tickUntil([&] {
+        Query<ProjectileTag, Projectile> query{rig.world};
+        query.each([&](Entity, ProjectileTag&, Projectile& projectile) {
+            ++shots;
+            bounces = bounces && projectile.bouncesOffWalls;
+        });
+        return shots > 0;
+    }, 200));
+    CHECK(bounces);
 }
