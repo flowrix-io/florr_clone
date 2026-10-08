@@ -2876,7 +2876,7 @@
                         {
                          "name":"mobs",
                          "type":"string",
-                         "value":"termite_ant_hell 60% bush 30% termite_mound 10%\\"
+                         "value":"termite_ant_hell 60% bush 30% termite_mound 10%"
                         }],
                  "rotation":0,
                  "type":"",

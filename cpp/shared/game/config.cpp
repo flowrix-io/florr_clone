@@ -484,6 +484,41 @@ AmbushSpec parseAmbush(Ctx& ctx, const Json& owner,
     return spec;
 }
 
+DungeonSpec parseDungeon(Ctx& ctx, const Json& owner,
+                         const std::unordered_map<std::string, std::uint16_t>& mobIds) {
+    DungeonSpec spec;
+    if (!owner.contains("dungeon")) return spec;
+    const Json& node = owner["dungeon"];
+    if (!node.isObject()) {
+        ctx.warn(std::string("dungeon is ") + typeName(node) + ", not an object; ignored");
+        return spec;
+    }
+    spec.mapId = ctx.text(node, "map");
+    if (spec.mapId.empty()) {
+        ctx.warn("dungeon names no map; ignored");
+        return spec;
+    }
+    const Json& brood = node["brood"];
+    if (!brood.isArray()) {
+        ctx.warn(std::string("dungeon brood is ") + typeName(brood) + ", not a list; ignored");
+        return spec;
+    }
+    for (const Json& row : brood.items()) {
+        if (!row.isObject()) {
+            ctx.warn(std::string("a dungeon brood row is ") + typeName(row) + ", not an object; ignored");
+            continue;
+        }
+        DungeonSpec::Entry entry;
+        entry.mobId = ctx.text(row, "mobType");
+        entry.mobIndex = ctx.link(mobIds, entry.mobId, "dungeon brood mobType");
+        entry.count = ctx.integer(row, "count", 1, 0, 200);
+        entry.door = ctx.text(row, "door");
+        if (entry.mobIndex != kInvalidIndex && entry.count > 0) spec.brood.push_back(entry);
+    }
+    spec.present = !spec.brood.empty();
+    return spec;
+}
+
 LightningSpec parseLightning(Ctx& ctx, const Json& owner) {
     LightningSpec spec;
     if (!owner.contains("lightning")) return spec;
@@ -843,6 +878,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.noMobCollision = ctx.boolean(src, "no_mob_collision");
     m.hole = ctx.boolean(src, "hole");
     m.intangible = ctx.boolean(src, "intangible");
+    m.colony = ctx.boolean(src, "colony");
     // Untouchable means by other mobs too, whether or not the entry says so
     // twice.
     if (m.intangible) m.noMobCollision = true;
@@ -933,6 +969,7 @@ MobConfig parseMob(Ctx& ctx, const std::string& id, const Json& src,
     m.petalRing = parsePetalRing(ctx, src, petalIds);
     m.periodicSpawn = parsePeriodicSpawn(ctx, src, mobIds);
     m.ambush = parseAmbush(ctx, src, mobIds);
+    m.dungeon = parseDungeon(ctx, src, mobIds);
     m.lightning = parseLightning(ctx, src);
     m.web = parseWeb(ctx, src);
     m.dropProjectile = parseDropProjectile(ctx, src, petalIds);
@@ -1553,7 +1590,8 @@ MobStats ContentRegistry::mobStats(std::uint16_t index, Rarity r) const {
         c.id == "bee" || c.id == "ladybug" || c.id == "shiny_ladybug" ||
         c.id == "dark_ladybug" || c.id == "soldier_ant" || c.id == "worker_ant" ||
         c.id == "baby_ant" || c.id == "soldier_fire_ant" ||
-        c.id == "worker_fire_ant" || c.id == "baby_fire_ant";
+        c.id == "worker_fire_ant" || c.id == "baby_fire_ant" || c.id == "baby_termite" ||
+        c.id == "worker_termite" || c.id == "soldier_termite";
     s.chaseSpeed = s.playerSpeedChaser ? kPlayerMaxSpeed : s.speed;
     s.cruiseSpeed = c.cruiseSpeed * kMobSpeedUnitsPerSecond;
     s.xp = c.xp[t];

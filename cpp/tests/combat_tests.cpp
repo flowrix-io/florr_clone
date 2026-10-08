@@ -3297,3 +3297,58 @@ TEST(a_moon_hits_the_mobs_pressed_against_it_and_pays_only_their_bites) {
     arena.step(1100.0, f.registry);
     CHECK_NEAR(arena.health(rival), 100.0, 1e-9);
 }
+
+TEST(a_colony_shares_every_hit_evenly_and_a_lone_termite_does_not) {
+    // A termite in a dungeon takes a third of a 30-point hit and so do the
+    // other two; the nest outside is credited for the whole swing. A termite
+    // with no dungeon behind it takes the hit alone.
+    Arena arena;
+    const Entity player = arena.player({0, 0});
+    const Entity nest = arena.mob({5000, 0}, 750, 0);
+    arena.world.add<DungeonEntrance>(nest);
+    std::vector<Entity> colony;
+    for (int i = 0; i < 3; ++i) {
+        const Entity termite = arena.mob({100.0 + 50.0 * i, 0}, 100);
+        arena.world.add<DungeonDweller>(termite, DungeonDweller{nest, true});
+        colony.push_back(termite);
+    }
+    {
+        DungeonEntrance& door = arena.world.get<DungeonEntrance>(nest);
+        door.claimed = true;
+        door.broodHealth = 300;
+        door.colony = colony;
+    }
+
+    const DamageResult hit = arena.combat.applyDamage(arena.world, colony[0], player, 30.0, 1000.0);
+    CHECK(!hit.refused);
+    CHECK_NEAR(hit.applied, 30.0, 1e-9);
+    for (const Entity termite : colony) CHECK_NEAR(arena.health(termite), 90.0, 1e-9);
+    // The nest's ledger holds the whole swing, scaled to its own health.
+    const Bounty& ledger = arena.world.get<Bounty>(nest);
+    CHECK_EQ(ledger.contributors.size(), std::size_t(1));
+    if (!ledger.contributors.empty()) CHECK_NEAR(ledger.contributors[0].damage, 30.0 * 750 / 300, 1e-9);
+
+    // Shares that kill: each member dies on its own share, and the ones
+    // already dead drop out of the split.
+    arena.world.get<Health>(colony[2]).current = 5.0;
+    arena.combat.applyDamage(arena.world, colony[0], player, 30.0, 2000.0);
+    CHECK(arena.world.has<Dead>(colony[2]));
+    CHECK_NEAR(arena.health(colony[0]), 80.0, 1e-9);
+    arena.combat.applyDamage(arena.world, colony[1], player, 20.0, 3000.0);
+    CHECK_NEAR(arena.health(colony[0]), 70.0, 1e-9);
+    CHECK_NEAR(arena.health(colony[1]), 70.0, 1e-9);
+
+    const Entity loner = arena.mob({-300, 0}, 100);
+    arena.combat.applyDamage(arena.world, loner, player, 30.0, 4000.0);
+    CHECK_NEAR(arena.health(loner), 70.0, 1e-9);
+
+    // Armour blunts the hit ONCE, before it is shared: two termites wearing 4
+    // each take (24 - 4) / 2 apiece, not (12 - 4) each. Per share, a colony
+    // big enough would shrug off every hit in the game.
+    arena.world.add<Armor>(colony[0], Armor{4.0});
+    arena.world.add<Armor>(colony[1], Armor{4.0});
+    arena.combat.applyDamage(arena.world, colony[0], player, 24.0, 5000.0);
+    CHECK_NEAR(arena.health(colony[0]), 60.0, 1e-9);
+    CHECK_NEAR(arena.health(colony[1]), 60.0, 1e-9);
+}
+

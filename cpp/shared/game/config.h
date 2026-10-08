@@ -289,6 +289,25 @@ struct PeriodicSpawnSpec {
     int rarityOffset = 0;
 };
 
+/// A nest a flower walks INTO (`dungeon`): touching it carries the flower into
+/// a private copy of the map `mapId` (a manifest entry with `copies`), filled
+/// with `brood` -- and the nest falls, paying out like any kill, on the tick
+/// the last thing in there dies. The termite mound.
+struct DungeonSpec {
+    bool present = false;
+    /// The map's file stem; every realm loaded from it is one instance.
+    std::string mapId;
+    struct Entry {
+        std::string mobId;
+        std::uint16_t mobIndex = kInvalidIndex;
+        int count = 0;
+        /// The map door (player spawn) the entry is put down in. Empty means
+        /// the map's own front door.
+        std::string door;
+    };
+    std::vector<Entry> brood;
+};
+
 /// A nest that keeps its whole brood underground until a flower comes right up
 /// to it, then sends every one of them out at once (`ambush`). The fire ant
 /// hole. Nothing is spawned with the nest and nothing follows the first burst:
@@ -504,6 +523,12 @@ struct MobConfig {
     /// a string compare.
     bool sharedSegmentHealth = false;
 
+    /// One of a COLONY (`colony`): inside a dungeon, every colony mob shares
+    /// whatever any one of them is hit for, split evenly between the ones
+    /// still standing. Termites. Outside a dungeon there is no colony to
+    /// share with, and the flag does nothing.
+    bool colony = false;
+
     /// A TRAILING body of a shared chain, rather than the head that tows it:
     /// it shares a pool but leads no chain of its own. The renderer asks this
     /// to decide who wears the animal's name plate -- one plate on the head,
@@ -561,6 +586,7 @@ struct MobConfig {
     PetalRingSpec petalRing;
     PeriodicSpawnSpec periodicSpawn;
     AmbushSpec ambush;
+    DungeonSpec dungeon;
     LightningSpec lightning;
     WebSpec web;
     DropProjectileSpec dropProjectile;

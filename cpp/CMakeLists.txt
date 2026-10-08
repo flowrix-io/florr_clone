@@ -128,6 +128,7 @@ add_library(flix_server STATIC
   server/systems/mode_spawning.cpp
   server/systems/loot.cpp
   server/systems/npcs.cpp
+  server/systems/dungeons.cpp
 )
 target_link_libraries(flix_server PUBLIC flix_shared)
 

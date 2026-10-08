@@ -1893,3 +1893,143 @@ TEST(a_fire_ant_hole_springs_on_a_flower_and_falls_with_its_brood) {
     CHECK(h.stepUntil({&client}, [&] { return !world.isAlive(hole); }, 600));
     CHECK(brood().empty());
 }
+
+TEST(a_termite_mound_leads_into_its_own_dungeon_and_falls_when_it_is_cleared) {
+    // The whole dungeon through the shipping loop: in by standing on the
+    // mound, out by the copy's pad (beside the mound, not wherever the pad's
+    // targetMap says), back in to the SAME copy, and the mound falling with
+    // loot the moment the last thing inside dies -- then everyone carried out.
+    Harness h("cmd-termite-dungeon", [](const std::string& path) {
+        seedUser(path, "digger", "password7", true);
+    });
+    if (!h.ready) { CHECK(false); return; }
+
+    NetClient client;
+    CHECK(loginAs(h, client, "digger", "password7"));
+    client.joinGame(1920, 1080, {}, "Digger");
+    CHECK(h.stepUntil({&client}, [&] { return client.status() == NetClient::Status::Playing; }, 200));
+    CHECK(say(h, client, "/admin god on"));
+
+    World& world = h.server.world();
+    Entity body = NULL_ENTITY;
+    Query<PlayerTag, PlayerAccount> people{world};
+    people.each([&](Entity e, PlayerTag&, PlayerAccount& account) {
+        if (account.connection != 0) body = e;
+    });
+    CHECK(body != NULL_ENTITY);
+    if (body == NULL_ENTITY) return;
+    const Realm home = world.get<Transform>(body).realm;
+
+    const std::uint16_t moundType = content().mobIndex("termite_mound");
+    const std::uint16_t overmindType = content().mobIndex("termite_overmind");
+    // Uncommon, not common: a common mob rolls each drop row on its own and
+    // may leave nothing, and the loot is part of what is under test.
+    adminSpawnAt(client, "termite_mound", "uncommon", world.get<Transform>(body).position + Vec2{600, 0});
+    Entity mound = NULL_ENTITY;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<MobTag, MobType> mobs{world};
+        mobs.each([&](Entity e, MobTag&, MobType& type) {
+            if (mound == NULL_ENTITY && type.configIndex == moundType) mound = e;
+        });
+        return mound != NULL_ENTITY;
+    }, 120));
+    if (mound == NULL_ENTITY) { CHECK(false); return; }
+    const Vec2 moundAt = world.get<Transform>(mound).position;
+
+    const auto realmOf = [&] { return world.get<Transform>(body).realm; };
+    const auto isCopy = [&](Realm realm) {
+        const MapData* map = h.server.worldMaps().forRealm(realm);
+        return map != nullptr && map->templateId() == "termite_mound";
+    };
+    const auto dwellers = [&](Realm realm, std::uint16_t onlyType = kInvalidIndex) {
+        std::vector<Entity> out;
+        Query<MobTag, MobType, Transform> mobs{world};
+        mobs.without<Dead>();
+        mobs.each([&](Entity e, MobTag&, MobType& type, Transform& transform) {
+            if (transform.realm != realm) return;
+            if (onlyType != kInvalidIndex && type.configIndex != onlyType) return;
+            out.push_back(e);
+        });
+        return out;
+    };
+
+    // In: stand on it.
+    world.get<Transform>(body).position = moundAt;
+    CHECK(h.stepUntil({&client}, [&] { return isCopy(realmOf()); }, 120));
+    const Realm inside = realmOf();
+    if (!isCopy(inside)) return;
+    CHECK(client.view().realm() == inside || h.stepUntil({&client}, [&] {
+        return client.view().realm() == inside;
+    }, 30));
+    CHECK_EQ(dwellers(inside, overmindType).size(), std::size_t(1));
+    CHECK(dwellers(inside).size() >= 23);
+    // The mound outside is unhurt and still there.
+    CHECK(world.isAlive(mound) && !world.has<Dead>(mound));
+
+    // Out by the pad, which puts the flower down beside the mound.
+    const MapData* map = h.server.worldMaps().forRealm(inside);
+    Vec2 pad;
+    for (const MapElement& element : map->elements()) {
+        if (element.kind == MapElementKind::Teleporter) pad = element.centre();
+    }
+    h.step(160, {&client});   // past the arrival's pad lockout
+    CHECK(h.stepUntil({&client}, [&] {
+        if (realmOf() == home) return true;
+        world.get<Transform>(body).position = pad;
+        return false;
+    }, 200));
+    const double rim = world.get<Body>(mound).radius;
+    CHECK(distance(world.get<Transform>(body).position, moundAt) > rim);
+    CHECK(distance(world.get<Transform>(body).position, moundAt) < rim + 400);
+
+    // Back in: the same copy, with the same brood.
+    h.step(160, {&client});
+    CHECK(h.stepUntil({&client}, [&] {
+        if (isCopy(realmOf())) return true;
+        world.get<Transform>(body).position = moundAt;
+        return false;
+    }, 200));
+    CHECK(realmOf() == inside);
+
+    // Everything the flower did in there was forwarded to the mound's ledger.
+    // A fight from slivers is worth slivers, though, and the loot floor is 1%
+    // of the mound -- so the ledger is handed a real fight's worth first.
+    const double handedCredit = world.get<Health>(mound).max;
+    world.get<Bounty>(mound).credit(body, handedCredit);
+    double ledgerCredit = 0.0;
+
+    // Clear it: every termite at a sliver and brought to the flower, so its
+    // own body finishes them the ordinary way. Armour off too: this flower
+    // carries no petals, and its bare body hits for less than a rare
+    // overmind wears.
+    CHECK(h.stepUntil({&client}, [&] {
+        const Vec2 at = world.get<Transform>(body).position;
+        for (const Entity mob : dwellers(inside)) {
+            if (Armor* armor = world.tryGet<Armor>(mob)) armor->amount = 0.0;
+            world.get<Health>(mob).current = std::min(world.get<Health>(mob).current, 0.01);
+            world.get<Transform>(mob).position = at + Vec2{30, 0};
+        }
+        if (world.isAlive(mound)) {
+            for (const Bounty::Share& share : world.get<Bounty>(mound).contributors) {
+                if (share.player == body) ledgerCredit = share.damage;
+            }
+        }
+        return !world.isAlive(mound) || world.has<Dead>(mound);
+    }, 900));
+    // The flower's swings in there reached the mound's ledger on top.
+    CHECK(ledgerCredit > handedCredit);
+
+    // The mound fell in the overworld and left loot where it stood; the party
+    // is carried out beside it.
+    bool dropped = false;
+    CHECK(h.stepUntil({&client}, [&] {
+        Query<DropItem, Transform> drops{world};
+        drops.each([&](Entity, DropItem&, Transform& transform) {
+            if (transform.realm == home && distance(transform.position, moundAt) < 300) dropped = true;
+        });
+        return dropped;
+    }, 30));
+    CHECK(h.stepUntil({&client}, [&] { return realmOf() == home; }, 300));
+    CHECK(distance(world.get<Transform>(body).position, moundAt) < rim + 400);
+    CHECK(dwellers(inside).empty());
+}

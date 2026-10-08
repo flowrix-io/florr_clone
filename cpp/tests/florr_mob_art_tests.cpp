@@ -37,6 +37,8 @@ const char* const kFlorrMarkers[] = {
     "centipede_desert", "centipede_desert_body", "bubble", "bumble_bee", "shell",
     "starfish", "jellyfish", "dandelion", "fly", "leafbug", "leafbug_shiny", "mantis",
     "bush", "roach", "moth", "firefly", "firefly_magic", "dummy",
+    "termite_baby", "termite_worker", "termite_soldier", "termite_overmind", "termite_mound",
+    "termite_egg",
 };
 
 constexpr int kSide = 96;

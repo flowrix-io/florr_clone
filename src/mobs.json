@@ -2078,5 +2078,218 @@
             "garden": 0.27
         },
         "noEggDrop": true
+    },
+    "baby_termite": {
+        "name": "Baby Termite",
+        "damage": 10,
+        "health": 50,
+        "size": 0.4667,
+        "visual_scale": 1.1611,
+        "visualOffsetX": -0.0598,
+        "speed": 0.48,
+        "cooldown": 2000,
+        "xp": {
+            "common": 2,
+            "uncommon": 12,
+            "rare": 120,
+            "epic": 1080,
+            "legendary": 5600,
+            "mythic": 128000,
+            "ultra": 600000,
+            "super": 4800000,
+            "unique": 27200000
+        },
+        "description": "Weak and defenseless, but big dreams.\nThese creatures appear to be connected somehow.",
+        "color": "#c7a138",
+        "image": "$termite_baby",
+        "ai_type": "passive",
+        "gardn_ai": true,
+        "groups": [
+            "termite_ant_hell"
+        ],
+        "range": 300,
+        "colony": true
+    },
+    "worker_termite": {
+        "name": "Worker Termite",
+        "damage": 10,
+        "health": 125,
+        "size": 0.6667,
+        "visual_scale": 0.9716,
+        "visualOffsetX": -0.1378,
+        "speed": 0.48,
+        "cooldown": 2000,
+        "xp": {
+            "common": 2,
+            "uncommon": 8,
+            "rare": 80,
+            "epic": 600,
+            "legendary": 4000,
+            "mythic": 84000,
+            "ultra": 440000,
+            "super": 3600000,
+            "unique": 16000000
+        },
+        "description": "It's a bit temperamental, probably from working all the time.\nThese creatures appear to be connected somehow.",
+        "color": "#c7a138",
+        "image": "$termite_worker",
+        "ai_type": "neutral",
+        "gardn_ai": true,
+        "groups": [
+            "termite_ant_hell"
+        ],
+        "range": 300,
+        "colony": true
+    },
+    "soldier_termite": {
+        "name": "Soldier Termite",
+        "damage": 10,
+        "health": 200,
+        "size": 0.6667,
+        "visual_scale": 0.9705,
+        "visualOffsetX": -0.1378,
+        "speed": 0.48,
+        "cooldown": 2000,
+        "xp": {
+            "common": 2,
+            "uncommon": 6,
+            "rare": 60,
+            "epic": 540,
+            "legendary": 2800,
+            "mythic": 64000,
+            "ultra": 300000,
+            "super": 2400000,
+            "unique": 13600000
+        },
+        "description": "It's got wings and it's ready to use them.\nThese creatures appear to be connected somehow.",
+        "color": "#c7a138",
+        "image": "$termite_soldier",
+        "ai_type": "hostile",
+        "gardn_ai": true,
+        "groups": [
+            "termite_ant_hell"
+        ],
+        "range": 300,
+        "colony": true
+    },
+    "termite_overmind": {
+        "name": "Termite Overmind",
+        "damage": 10,
+        "health": 500,
+        "size": 1.3333,
+        "visual_scale": 1.12,
+        "speed": 0.44,
+        "cooldown": 2000,
+        "xp": {
+            "common": 30,
+            "uncommon": 120,
+            "rare": 720,
+            "epic": 4800,
+            "legendary": 27000,
+            "mythic": 540000,
+            "ultra": 2700000,
+            "super": 21000000,
+            "unique": 108000000
+        },
+        "description": "The one who oversees all.",
+        "color": "#c7a138",
+        "image": "$termite_overmind",
+        "ai_type": "hostile",
+        "gardn_ai": true,
+        "range": 750,
+        "groups": [],
+        "min_rarity": "rare",
+        "periodic_spawn": {
+            "mobType": "soldier_termite",
+            "intervalMs": 2000,
+            "lifetimeMs": 10000,
+            "maxAlive": 5,
+            "spawnRarityOffset": -1
+        }
+    },
+    "termite_egg": {
+        "name": "Termite Egg",
+        "damage": 3,
+        "health": 150,
+        "size": 0.8333,
+        "visual_scale": 1.1076,
+        "speed": 0,
+        "cooldown": 2000,
+        "xp": {
+            "common": 2,
+            "uncommon": 4,
+            "rare": 45,
+            "epic": 405,
+            "legendary": 2100,
+            "mythic": 48000,
+            "ultra": 225000,
+            "super": 1800000,
+            "unique": 10200000
+        },
+        "description": "Not yet a termite but perhaps soon.",
+        "color": "#fff0b8",
+        "image": "$termite_egg",
+        "ai_type": "passive",
+        "groups": {
+            "ant_hell": 0.3
+        },
+        "range": 0,
+        "hideRotation": true,
+        "noEggDrop": true
+    },
+    "termite_mound": {
+        "name": "Termite Mound",
+        "damage": 15,
+        "health": 750,
+        "size": 1.3333,
+        "speed": 0,
+        "cooldown": 2000,
+        "xp": {
+            "common": 50,
+            "uncommon": 200,
+            "rare": 1200,
+            "epic": 8000,
+            "legendary": 45000,
+            "mythic": 900000,
+            "ultra": 4500000,
+            "super": 35000000,
+            "unique": 180000000
+        },
+        "description": "Termites go in, and come out. Can't explain that.",
+        "color": "#a39d43",
+        "image": "$termite_mound",
+        "ai_type": "passive",
+        "groups": [],
+        "range": 0,
+        "hideRotation": true,
+        "noEggDrop": true,
+        "no_mob_collision": true,
+        "hole": true,
+        "intangible": true,
+        "dungeon": {
+            "map": "termite_mound",
+            "brood": [
+                {
+                    "mobType": "termite_overmind",
+                    "count": 1,
+                    "door": "termite_mound_lair"
+                },
+                {
+                    "mobType": "soldier_termite",
+                    "count": 8,
+                    "door": "termite_mound_nest"
+                },
+                {
+                    "mobType": "worker_termite",
+                    "count": 8,
+                    "door": "termite_mound_nest"
+                },
+                {
+                    "mobType": "baby_termite",
+                    "count": 6,
+                    "door": "termite_mound_nest"
+                }
+            ]
+        }
     }
 }

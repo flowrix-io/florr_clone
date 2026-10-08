@@ -195,7 +195,15 @@ TEST(the_shipped_catalogue_loads_and_resolves_its_defaults) {
     for (const MapData& world : maps.maps()) {
         // None of these is written in any shipped .tmj: they are the fallbacks.
         CHECK(!world.id().empty());
-        CHECK_EQ(world.biome(), world.id());
+        // Except a map loaded as instance copies (`copies` in the manifest):
+        // a dungeon belongs to the biome its entrance stands in, and says so,
+        // or a squad would be split up at its door.
+        if (maps.copiesOf(world.templateId()).size() > 1) {
+            CHECK(!world.biome().empty());
+            CHECK(world.biome() != world.id());
+        } else {
+            CHECK_EQ(world.biome(), world.id());
+        }
         CHECK_EQ(world.defaultMobGroup(), world.biome());
 
         // The load line reports what the map resolved to: how many bands and
@@ -346,8 +354,13 @@ TEST(every_shipped_door_is_named_by_its_label_and_is_offered) {
             ++doorCount;
             CHECK(!spawn->spawnId.empty());
             CHECK(!spawn->label.empty());
-            CHECK(ids.insert(spawn->spawnId).second);   // unique across the catalogue
-            const SpawnChoice* door = maps.door(spawn->spawnId);
+            // Unique across the catalogue -- except between the copies of an
+            // instanced map, which are one place loaded several times: those
+            // doors are told apart by their map-qualified ids.
+            const bool copy = maps.copiesOf(world->templateId()).size() > 1;
+            const std::string id = copy ? world->id() + ":" + spawn->spawnId : spawn->spawnId;
+            CHECK(ids.insert(id).second);
+            const SpawnChoice* door = maps.door(id);
             CHECK(door != nullptr);
             if (door == nullptr) continue;
             CHECK_EQ(door->label, spawn->label);

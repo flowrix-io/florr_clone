@@ -785,6 +785,37 @@ struct AmbushNest {
     double broodHealth = 0;
 };
 
+/// A nest a flower walks into (MobConfig::dungeon): the termite mound.
+///
+/// Like an ambush nest it cannot be hurt -- it is Intangible -- and its brood
+/// stands in for its health: every swing on something inside its dungeon is
+/// credited to the nest's ledger too, scaled so clearing the whole brood is
+/// worth the nest's full health. The DungeonSystem owns the rest: which
+/// instance realm the nest has claimed, who is inside, and the nest's fall.
+struct DungeonEntrance {
+    /// The instance realm this nest has claimed, while `claimed`.
+    Realm realm = Realm::Overworld;
+    bool claimed = false;
+    /// The brood's summed max health when it was put down: what a swing on
+    /// one of them is measured against when it is forwarded to the ledger.
+    double broodHealth = 0;
+    /// The COLONY mobs inside, alive or freshly dead, rebuilt by the
+    /// DungeonSystem each tick: who a hit on any one of them is shared with.
+    std::vector<Entity> colony;
+};
+
+/// A mob that lives inside a dungeon, and the nest whose dungeon it is.
+struct DungeonDweller {
+    Entity entrance = NULL_ENTITY;
+    /// Shares hits with the rest of the colony (MobConfig::colony).
+    bool colony = false;
+};
+
+/// Never put to sleep or despawned for being out of everyone's sight. What
+/// keeps a dungeon's brood alive while its party is in another corner of it,
+/// and a nest standing in the overworld while its dungeon is occupied.
+struct KeepAwake {};
+
 /// A mob summoned by a player, which fights for them and does not drop loot.
 struct Pet {
     Entity owner = NULL_ENTITY;
@@ -1272,6 +1303,9 @@ FLIX_COMPONENT(flix::Wobble);
 FLIX_COMPONENT(flix::HoleTether);
 FLIX_COMPONENT(flix::Intangible);
 FLIX_COMPONENT(flix::AmbushNest);
+FLIX_COMPONENT(flix::DungeonEntrance);
+FLIX_COMPONENT(flix::DungeonDweller);
+FLIX_COMPONENT(flix::KeepAwake);
 FLIX_COMPONENT(flix::Pet);
 FLIX_COMPONENT(flix::BodySegment);
 FLIX_COMPONENT(flix::Spawner);

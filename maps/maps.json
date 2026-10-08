@@ -8,7 +8,10 @@
     "both ends. Reorder it and everyone standing in a map moves to another one.",
     "",
     "A map's id is its file stem, and that is what a teleporter's `targetMap`",
-    "names. See maps/README.md."
+    "names. See maps/README.md.",
+    "",
+    "`copies` loads one file into that many realms, side by side: private",
+    "instances of one place, such as the dungeon inside each termite mound."
   ],
   "maps": [
     { "file": "garden.tmj" },
@@ -18,6 +21,7 @@
     { "file": "jungle.tmj" },
     { "file": "hel.tmj" },
     { "file": "ant_hell.tmj" },
-    { "file": "sewers.tmj" }
+    { "file": "sewers.tmj" },
+    { "file": "termite_mound.tmj", "copies": 8 }
   ]
 }

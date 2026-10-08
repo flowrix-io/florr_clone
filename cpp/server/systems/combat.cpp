@@ -250,6 +250,23 @@ void creditSwing(World& world, Entity victim, Entity source, double amount) {
     //
     // A nest that fell earlier this tick still takes the credit, as any corpse
     // does: its drops are not rolled until the loot pass.
+    // A swing inside a dungeon is a swing on the nest outside it, by the same
+    // rule: the nest cannot be hit, and its ledger is what decides who it pays
+    // when its dungeon is cleared.
+    if (const DungeonDweller* dweller = world.tryGet<DungeonDweller>(victim)) {
+        const Entity nest = dweller->entrance;
+        if (!world.isAlive(nest)) return;
+        const DungeonEntrance* entrance = world.tryGet<DungeonEntrance>(nest);
+        const Health* nestHealth = world.tryGet<Health>(nest);
+        Bounty* nestBounty = world.tryGet<Bounty>(nest);
+        if (entrance == nullptr || nestHealth == nullptr || nestBounty == nullptr ||
+            !(entrance->broodHealth > 0.0)) {
+            return;
+        }
+        nestBounty->credit(credited, amount * nestHealth->max / entrance->broodHealth);
+        return;
+    }
+
     const HoleTether* tether = world.tryGet<HoleTether>(victim);
     if (tether == nullptr) return;
     const Entity nest = tether->hole;
@@ -517,6 +534,64 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
         return result;
     }
 
+    // A colony shares the hit. Whatever one termite in a dungeon is struck for
+    // is split evenly over every colony mob in there that this source could
+    // hit right now, the struck one included, and each share comes back
+    // through here as its own hit -- so armour, the ledgers, the numbers and
+    // the deaths all land on the termite that took the share, and a colony of
+    // twenty takes a twentieth each. Positive damage only: a heal is not
+    // shared, and a lone termite has nobody to share with.
+    if (amount > 0.0 && !sharingColonyHit_) {
+        const DungeonDweller* dweller = world.tryGet<DungeonDweller>(victim);
+        const DungeonEntrance* entrance =
+            dweller != nullptr && dweller->colony && world.isAlive(dweller->entrance)
+                ? world.tryGet<DungeonEntrance>(dweller->entrance)
+                : nullptr;
+        if (entrance != nullptr) {
+            colonyScratch_.clear();
+            for (const Entity member : entrance->colony) {
+                if (member == victim || !world.isAlive(member) || world.has<Dead>(member)) continue;
+                if (canHit(world, member, source, nowMillis)) colonyScratch_.push_back(member);
+            }
+            if (!colonyScratch_.empty()) {
+                // The hit is dodged and blunted ONCE, by the termite it struck,
+                // and only what gets through is shared. Blunting each share
+                // instead would let every termite's flat armour come off a
+                // twentieth of the hit -- a colony of twenty with one point
+                // each would shrug off anything under twenty.
+                if (isDirectHit(kind) && rollDodge(world, victim, nowMillis)) {
+                    result.dodged = true;
+                    return result;
+                }
+                if (armorBlunts(kind)) {
+                    const double armor = effectiveArmor(world, victim, nowMillis);
+                    if (armor != 0.0) amount = std::max(0.0, amount - armor);
+                }
+                if (amount <= 0.0) return result;
+                // Copied out: the shares re-enter this function, which reuses
+                // the scratch list.
+                std::vector<Entity> members = colonyScratch_;
+                members.push_back(victim);
+                const double share = amount / static_cast<double>(members.size());
+                sharingColonyHit_ = true;
+                DamageResult total;
+                total.refused = true;
+                for (const Entity member : members) {
+                    const DamageResult part =
+                        applyDamage(world, member, source, share, nowMillis, kind);
+                    total.applied += part.applied;
+                    if (!part.refused) total.refused = false;
+                    if (member == victim) {
+                        total.killed = part.killed;
+                        total.dodged = part.dodged;
+                    }
+                }
+                sharingColonyHit_ = false;
+                return total;
+            }
+        }
+    }
+
     // TypeScript's mob health writer is `max(0, health - amount)`.  Glitch is
     // authored with negative damage, so its contact deliberately heals mobs;
     // PVP's separate player damage path rejects non-positive values.  Preserve
@@ -555,7 +630,7 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // armour, the shield and root's stacks, because a hit that never landed
     // has nothing for any of them to blunt -- root would otherwise spend a
     // stack on a blow that went wide. Direct only: a drip is not an attack.
-    if (isDirectHit(kind) && rollDodge(world, victim, nowMillis)) {
+    if (isDirectHit(kind) && !sharingColonyHit_ && rollDodge(world, victim, nowMillis)) {
         result.dodged = true;
         return result;
     }
@@ -570,7 +645,8 @@ DamageResult CombatSystem::applyDamage(World& world, Entity victim, Entity sourc
     // Armour answers hits; poison is what gets through it.
     //
     // Below zero the subtraction ADDS, which is what a stripped mob is for.
-    if (armorBlunts(kind)) {
+    // A colony's share was blunted whole, before it was split (above).
+    if (armorBlunts(kind) && !sharingColonyHit_) {
         const double armor = effectiveArmor(world, victim, nowMillis);
         if (armor != 0.0) amount = std::max(0.0, amount - armor);
     }
@@ -864,6 +940,14 @@ void CombatSystem::mirrorSharedChain(World& world, Entity owner, bool fatal, Ent
         world.add<Dead>(segment, Dead{killer});
         deaths_.push_back({segment, killer, false});
     }
+}
+
+void CombatSystem::fell(World& world, Entity victim, Entity killer) {
+    if (!world.isAlive(victim) || world.has<Dead>(victim)) return;
+    if (Health* health = world.tryGet<Health>(victim)) health->current = 0.0;
+    world.add<Dead>(victim, Dead{killer});
+    deaths_.push_back({victim, killer, world.has<PlayerTag>(victim)});
+    if (!world.has<PlayerTag>(victim)) awardBounty(world, victim);
 }
 
 void CombatSystem::collapseClearedNest(World& world, Entity fallen, Entity killer) {

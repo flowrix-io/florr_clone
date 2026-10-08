@@ -85,10 +85,12 @@ struct Harness {
     /// stand exactly where a joining player is put down -- which is right for
     /// a live server and fatal to any test that says "these are the only
     /// flowers in sight" or "this mob lived long enough to act". Those pass 0;
-    /// bot_tests.cpp leaves it alone.
+    /// bot_tests.cpp leaves it alone. `configure`, if given, sees the config
+    /// last, for a field none of the above covers.
     explicit Harness(const char* dbName,
                      const std::function<void(const std::string&)>& seed = {},
-                     const std::string& contentDir = dataDir(), int bots = -1) {
+                     const std::string& contentDir = dataDir(), int bots = -1,
+                     const std::function<void(ServerConfig&)>& configure = {}) {
         dbPath = tempPath(dbName);
         std::remove(dbPath.c_str());
         if (seed) seed(dbPath);
@@ -98,6 +100,7 @@ struct Harness {
         config.databasePath = dbPath;
         config.worldSeed = 12345;
         config.botCount = bots;
+        if (configure) configure(config);
 
         std::string error;
         for (std::uint16_t candidate = 47100; candidate < 47160; ++candidate) {

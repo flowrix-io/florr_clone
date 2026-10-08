@@ -30,6 +30,7 @@
 #include "server/systems/petals.h"
 #include "server/systems/spawning.h"
 #include "server/systems/mode_spawning.h"
+#include "server/systems/dungeons.h"
 #include "server/systems/npcs.h"
 #include "shared/game/chat_images.h"
 #include "shared/game/config.h"
@@ -387,7 +388,10 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
 
     // Printed rather than stored anywhere a client can reach: reading the
     // server's own log is what proves an admin also has the machine.
-    {
+    if (!config.fixedAdminDbKey.empty()) {
+        adminDbKey_ = config.fixedAdminDbKey;
+        std::printf("[admin] database editor key: %s (fixed)\n", adminDbKey_.c_str());
+    } else {
         const std::string address = admin_db::privateAddress();
         adminDbKey_ = admin_db::deriveKey(database_.serverSecret(), address);
         std::printf("[admin] database editor key: %s (from %s)\n", adminDbKey_.c_str(),
@@ -421,6 +425,7 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     spawning_ = std::make_unique<SpawnSystem>();
     spawning_->seedBossClocks(config.worldSeed ^ 0xB055C10C5ull);
     modes_ = std::make_unique<ModeSpawner>();
+    dungeons_ = std::make_unique<DungeonSystem>();
     loot_ = std::make_unique<LootSystem>();
     if (!loot_->loadTables(content(), config.dataDir + "/mob_drops.json", errorOut)) return false;
     // The NPCs the maps ask for, resolved against the content once. A site
@@ -462,8 +467,21 @@ bool GameServer::start(const ServerConfig& config, std::string& errorOut) {
     // the wire and a cleared view on the client. Only the connection layer can
     // do that, so the movement pass reports the jump and this carries it out.
     movement_->onTeleport = [this](Entity entity, Realm realm, Vec2 position) {
+        // A dungeon copy's own pad leads back out beside the nest it was
+        // entered through, wherever the pad's targetMap points: eight copies
+        // of one map share one pad, and each belongs to a different nest.
+        if (const Transform* at = world_.tryGet<Transform>(entity)) {
+            const Body* body = world_.tryGet<Body>(entity);
+            dungeons_->exitFor(at->realm, rng_, body != nullptr ? body->radius : 25.0, realm,
+                               position);
+        }
         moveEntityToRealm(entity, realm, position);
     };
+    dungeons_->worldMaps = &worldMaps_;
+    dungeons_->moveToRealm = [this](Entity entity, Realm realm, Vec2 position) {
+        moveEntityToRealm(entity, realm, position);
+    };
+    dungeons_->admits = [this](Entity entity) { return botForEntity(entity) == nullptr; };
     // Bots exist to populate the OVERWORLD, and their controller is written
     // against it: its flow field, its ray casts and its broadphase queries
     // all read that one map. A bot carried through a pad would steer around
@@ -892,6 +910,10 @@ void GameServer::runSystems(double nowMillis, double dt) {
     spawning_->run(world_, *terrain_, content(), activePlayers_, rng_, nowMillis,
                    net::kTickSeconds, commands_);
     markTickPhase("spawning");
+    // After combat, so a dungeon cleared this tick drops its nest this tick,
+    // and before loot, so the nest's drops are rolled in the same pass.
+    dungeons_->run(world_, *terrain_, content(), *spawning_, *combat_, rng_, nowMillis,
+                   commands_);
     // The arena and the maze are filled whole rather than by viewport, and only
     // while someone is in them.
     modes_->run(world_, *terrain_, content(), *spawning_, grid_, humanPlayers_, rng_, nowMillis);

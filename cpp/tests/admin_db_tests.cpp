@@ -231,6 +231,21 @@ TEST(the_database_editor_key_is_derived_from_the_address_and_the_secret) {
     CHECK(!admin_db::keyMatches("", ""));
 }
 
+TEST(a_fixed_database_editor_key_is_used_as_is) {
+    // The offline page's: the same in every browser, whatever the database's
+    // secret or the machine's address.
+    Harness h("admindb-fixed-key", [](const std::string& path) {
+        seedUser(path, "boss", "password7", true);
+    }, dataDir(), 0, [](ServerConfig& config) { config.fixedAdminDbKey = "0ff1ce0ff1ce0ff1"; });
+    if (!h.ready) { CHECK(false); return; }
+    CHECK_EQ(h.server.adminDbKey(), std::string("0ff1ce0ff1ce0ff1"));
+
+    NetClient boss;
+    CHECK(loginAs(h, boss, "boss", "password7"));
+    CHECK(say(h, boss, "/admin db 0ff1ce0ff1ce0ff1"));
+    CHECK(h.stepUntil({&boss}, [&] { return boss.adminDb().openRequested; }, 60));
+}
+
 TEST(the_database_editor_needs_its_key) {
     Harness h("admindb-key", [](const std::string& path) {
         seedUser(path, "boss", "password7", true);

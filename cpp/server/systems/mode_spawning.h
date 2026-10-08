@@ -89,8 +89,8 @@ inline constexpr double kMazeTierDownChance = 0.20;
 /// spawners would flood the corridors, and the utility mobs make no sense
 /// there. Centipede bodies are excluded by structure -- a body only ever
 /// follows a head.
-inline constexpr std::array<const char*, 5> kMazeExcludedMobs = {{
-    "ant_hole", "fire_ant_hole", "target_dummy", "item_spawner", "garbage",
+inline constexpr std::array<const char*, 6> kMazeExcludedMobs = {{
+    "ant_hole", "fire_ant_hole", "termite_mound", "target_dummy", "item_spawner", "garbage",
 }};
 
 /// Both passes run on the population cadence: the arena's crowd and the

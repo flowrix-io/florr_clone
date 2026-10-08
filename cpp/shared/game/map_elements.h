@@ -299,6 +299,14 @@ public:
     const std::string& id() const { return id_; }
     void setId(std::string id) { id_ = std::move(id); }
 
+    /// The file stem this map was loaded from. The same as id() for every map
+    /// but an INSTANCE copy: a manifest entry with `"copies": N` loads one
+    /// file into N realms, each a private copy of the same place (a dungeon
+    /// one party at a time is inside), and those are told apart by id --
+    /// `termite_mound`, `termite_mound#2`, ... -- while all sharing this.
+    const std::string& templateId() const { return templateId_.empty() ? id_ : templateId_; }
+    void setTemplateId(std::string id) { templateId_ = std::move(id); }
+
     /// The `.tmj` this was read from, as it was passed to loadTiled(). Empty
     /// for a map a harness built in memory.
     ///
@@ -440,6 +448,7 @@ private:
     std::vector<const MapElement*> playerSpawns_;
     Realm realm_ = Realm::Overworld;
     std::string id_;
+    std::string templateId_;
     std::string sourcePath_;
     std::string displayName_;
     std::string biome_;
@@ -523,6 +532,11 @@ public:
 
     /// The realm a map id names, or Realm::Overworld with `found` false.
     Realm realmOfId(const std::string& mapId, bool& found) const;
+
+    /// Every realm loaded from the file stem `templateId`, in realm order:
+    /// one for an ordinary map, N for a manifest entry with `"copies": N`.
+    /// Empty when no such map was staged.
+    std::vector<Realm> copiesOf(const std::string& templateId) const;
 
     /// The maps, in load order. `maps()[i]` is realm `worldRealm(i)`.
     const std::vector<MapData>& maps() const { return maps_; }

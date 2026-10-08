@@ -224,6 +224,12 @@ MobArt mobArtFor(const std::string& image) {
         {"firefly", MobArt::Firefly},
         {"firefly_magic", MobArt::FireflyMagic},
         {"dummy", MobArt::Dummy},
+        {"termite_baby", MobArt::TermiteBaby},
+        {"termite_worker", MobArt::TermiteWorker},
+        {"termite_soldier", MobArt::TermiteSoldier},
+        {"termite_overmind", MobArt::TermiteOvermind},
+        {"termite_mound", MobArt::TermiteMound},
+        {"termite_egg", MobArt::TermiteEgg},
     };
     for (const auto& [marker, art] : kFlorr) {
         if (name == marker) return art;
@@ -2570,6 +2576,115 @@ void paintMobArt(Canvas& canvas, MobArt art, const MobArtAttributes& attr) {
             canvas.stroke();
 
             canvas.restore();
+            break;
+        }
+
+        case MobArt::TermiteBaby:
+        case MobArt::TermiteWorker:
+        case MobArt::TermiteSoldier: {
+            // florr's ants in termite gold, drawn for a radius of 17.5 (the
+            // baby) or 20: a head with two mandibles, a worker adds an
+            // abdomen behind it, a soldier wings over that. Every part is a
+            // disc filled and then ringed 7 wide. Unlike an ant's, a termite's
+            // mandibles are bent rather than curved -- two straight pieces --
+            // and they twitch on the claw beat, the tips a unit inward at the
+            // end of each squeeze.
+            constexpr std::uint32_t kRim = 0xA1822Du;
+            constexpr std::uint32_t kFill = 0xC7A138u;
+            const bool baby = art == MobArt::TermiteBaby;
+            const auto segment = [&canvas](float x, float r) {
+                ui::setFill(canvas, kFill);
+                ui::setStroke(canvas, kRim);
+                canvas.beginPath();
+                canvas.arc(x, 0.0f, r, 0.0f, static_cast<float>(kTau));
+                canvas.fill();
+                canvas.stroke();
+            };
+
+            canvas.save();
+            const double s = attr.radius / (baby ? 17.5 : 20.0);
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+            roundStrokes(canvas, 7.0);
+
+            if (!baby) segment(-8.0f, 10.0f);
+            if (art == MobArt::TermiteSoldier) {
+                ui::setFill(canvas, 0xEEEEEEu, 127.0 / 255.0);
+                for (const double side : {-1.0, 1.0}) {
+                    canvas.beginPath();
+                    canvas.ellipse(-7.0f, static_cast<float>(8.0 * side), 15.0f, 7.0f,
+                                   static_cast<float>(-side * kPi / 10.0), 0.0f,
+                                   static_cast<float>(kTau));
+                    canvas.fill();
+                }
+            }
+
+            const float head = baby ? 0.0f : 8.0f;
+            const float pinch = static_cast<float>(clawBeat(attr));
+            ui::setStroke(canvas, 0x292929u);
+            canvas.beginPath();
+            for (const float side : {-1.0f, 1.0f}) {
+                canvas.moveTo(head, 7.0f * side);
+                canvas.lineTo(head + 15.0f, (10.0f - pinch) * side);
+                canvas.lineTo(head + 22.0f, (5.0f - pinch) * side);
+            }
+            canvas.stroke();
+
+            segment(head, 14.0f);
+
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::TermiteOvermind: {
+            // Drawn for a radius of 14: one round head ringed 3 wide, and two
+            // small curved mandibles under it, set 4 forward, twitching half
+            // a unit on the claw beat.
+            const float pinch = static_cast<float>(clawBeat(attr)) * 0.5f;
+            canvas.save();
+            const double s = attr.radius / 14.0;
+            canvas.scale(static_cast<float>(s), static_cast<float>(s));
+            roundStrokes(canvas, 3.0);
+
+            ui::setStroke(canvas, 0x292929u);
+            canvas.beginPath();
+            for (const float side : {-1.0f, 1.0f}) {
+                canvas.moveTo(4.0f, 3.5f * side);
+                canvas.quadraticCurveTo(9.5f, (5.0f - pinch) * side, 15.0f,
+                                        (2.5f - pinch) * side);
+            }
+            canvas.stroke();
+
+            ui::setFill(canvas, 0xC7A138u);
+            ui::setStroke(canvas, 0xA1822Du);
+            canvas.beginPath();
+            canvas.arc(0.0f, 0.0f, 12.5f, 0.0f, static_cast<float>(kTau));
+            canvas.fill();
+            canvas.stroke();
+
+            canvas.restore();
+            break;
+        }
+
+        case MobArt::TermiteMound:
+        case MobArt::TermiteEgg: {
+            // Discs and nothing else, florr's colours. The mound is the ant
+            // hole's three rings -- the full radius, two thirds and one third
+            // of it, each a darker clay; the egg a shell with a pale yolk four
+            // fifths its size.
+            const auto disc = [&canvas](std::uint32_t color, double r) {
+                ui::setFill(canvas, color);
+                canvas.beginPath();
+                canvas.arc(0.0f, 0.0f, static_cast<float>(r), 0.0f, static_cast<float>(kTau));
+                canvas.fill();
+            };
+            if (art == MobArt::TermiteMound) {
+                disc(0xA39D43u, attr.radius);
+                disc(0x858033u, attr.radius * 2 / 3);
+                disc(0x605D28u, attr.radius / 3);
+            } else {
+                disc(0xCFC295u, attr.radius);
+                disc(0xFFF0B8u, attr.radius * 0.8);
+            }
             break;
         }
 

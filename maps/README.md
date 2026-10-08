@@ -28,6 +28,14 @@ what a teleporter aims at and what qualifies a spawn point's id. At most
 a map nobody listed is not a realm, and a listed map that is missing fails the
 build rather than the server.
 
+An entry may carry **`copies`**: `{ "file": "termite_mound.tmj", "copies": 8 }`
+loads that one file into eight consecutive realms, each a private instance of
+the same place. That is how every termite mound gets a dungeon of its own: a
+mound claims a free copy when the first flower walks in and gives it back when
+the dungeon is cleared or left empty (`cpp/server/systems/dungeons.h`). The
+first copy keeps the plain id (`termite_mound`); the rest are `termite_mound#2`
+and up. Every copy counts against the 62-map limit.
+
 The manifest and every map's bytes are covered by the content hash, so a client
 running a different map than the server it dials is refused at the handshake
 rather than discovered by walking into a wall nobody else can see.

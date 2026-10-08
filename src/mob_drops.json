@@ -1279,5 +1279,26 @@
         "maxQuantity": 1
       }
     ]
+  },
+  "termite_mound": {
+    "guaranteed": true,
+    "drops": [
+      {
+        "type": "petal",
+        "itemType": "soil",
+        "rarity": "uncommon",
+        "probability": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "type": "petal",
+        "itemType": "soldier_termite_egg",
+        "rarity": "common",
+        "probability": 0.4,
+        "minQuantity": 1,
+        "maxQuantity": 10
+      }
+    ]
   }
 }

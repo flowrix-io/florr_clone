@@ -670,6 +670,9 @@ Entity SpawnSystem::spawnMobAt(World& world, const Terrain& terrain, const Conte
         }
         // Armed, with nothing out: the brood waits for a flower (runNests).
         if (config.ambush.present) world.add<AmbushNest>(e);
+        // Unclaimed: the dungeon is built the first time a flower walks in
+        // (DungeonSystem).
+        if (config.dungeon.present) world.add<DungeonEntrance>(e);
     }
 
     // Last, because each of these is a create() that can relocate the rows the
@@ -966,7 +969,7 @@ void SpawnSystem::takeCensus(World& world, const ContentRegistry& content,
         // kLatentSleepMargin, so nothing promoteLatent wakes is already
         // outside it.
         const bool nearAnyone =
-            unattended ||
+            unattended || world.has<KeepAwake>(e) ||
             seenBy(viewers, transform.realm, transform.position,
                    kLatentWakeMargin + kLatentSleepMargin);
 

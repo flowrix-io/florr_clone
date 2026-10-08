@@ -799,6 +799,8 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
     // a server that sorted the same files differently would disagree about
     // which realm is which map, and a player would arrive in the wrong world.
     std::vector<std::string> files;
+    // How many realms each file is loaded into: 1, or the entry's `copies`.
+    std::vector<int> copies;
     Json manifest;
     std::string manifestError;
     std::ifstream probe(dataDir + "/maps.json", std::ios::binary);
@@ -811,6 +813,20 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
         }
         for (const Json& entry : manifest["maps"].items()) {
             files.push_back(entry.isObject() ? entry["file"].asString() : entry.asString());
+            // An instanced map -- a dungeon a party enters privately -- is one
+            // file loaded into several realms. The copies sit together in the
+            // manifest's order, so a client and a server that read the same
+            // manifest still agree on which realm is which.
+            int count = 1;
+            if (entry.isObject() && entry.contains("copies")) {
+                count = entry["copies"].asInt(0);
+                if (count < 1) {
+                    errorOut = dataDir + "/maps.json: " + files.back() +
+                               " asks for fewer than one copy";
+                    return false;
+                }
+            }
+            copies.push_back(count);
         }
         if (files.empty()) {
             errorOut = dataDir + "/maps.json names no maps";
@@ -825,22 +841,36 @@ bool WorldMaps::load(const std::string& dataDir, Terrain* terrain, std::string& 
         return false;
     }
 
-    if (static_cast<int>(files.size()) > kMaxWorldMaps) {
-        errorOut = "the manifest names " + std::to_string(files.size()) + " maps; at most " +
-                   std::to_string(kMaxWorldMaps) + " can be loaded at once";
+    // One realm per COPY, not per entry.
+    std::vector<std::string> slots;
+    std::vector<int> copyOf;
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        for (int k = 0; k < copies[i]; ++k) {
+            slots.push_back(files[i]);
+            copyOf.push_back(k);
+        }
+    }
+    if (static_cast<int>(slots.size()) > kMaxWorldMaps) {
+        errorOut = "the manifest names " + std::to_string(slots.size()) +
+                   " maps, copies included; at most " + std::to_string(kMaxWorldMaps) +
+                   " can be loaded at once";
         return false;
     }
 
-    maps_.resize(files.size());
-    for (std::size_t i = 0; i < files.size(); ++i) {
+    maps_.resize(slots.size());
+    for (std::size_t i = 0; i < slots.size(); ++i) {
         const Realm realm = worldRealm(static_cast<int>(i));
         // A manifest entry is a file name beside the manifest; the no-manifest
         // path already handed over a full path.
-        const std::string path = files[i].find('/') == std::string::npos
-                                     ? dataDir + "/" + files[i]
-                                     : files[i];
+        const std::string path = slots[i].find('/') == std::string::npos
+                                     ? dataDir + "/" + slots[i]
+                                     : slots[i];
         if (terrain != nullptr && !terrain->loadTiledMap(path, errorOut, realm)) return false;
-        maps_[i].setId(stemOf(files[i]));
+        const std::string stem = stemOf(slots[i]);
+        // The first copy keeps the plain stem, so a teleporter or an admin
+        // naming the map still finds one; the rest are numbered from 2.
+        maps_[i].setId(copyOf[i] == 0 ? stem : stem + "#" + std::to_string(copyOf[i] + 1));
+        maps_[i].setTemplateId(stem);
         std::string annotationError;
         if (!maps_[i].loadTiled(path, annotationError, realm)) {
             // The annotation layer is optional: a map without one still has
@@ -875,6 +905,14 @@ Realm WorldMaps::realmOfId(const std::string& mapId, bool& found) const {
     }
     found = false;
     return Realm::Overworld;
+}
+
+std::vector<Realm> WorldMaps::copiesOf(const std::string& templateId) const {
+    std::vector<Realm> out;
+    for (std::size_t i = 0; i < maps_.size(); ++i) {
+        if (maps_[i].templateId() == templateId) out.push_back(worldRealm(static_cast<int>(i)));
+    }
+    return out;
 }
 
 void WorldMaps::index() {

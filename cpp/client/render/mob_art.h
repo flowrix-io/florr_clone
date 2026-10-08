@@ -84,6 +84,7 @@ enum class MobArt : std::uint8_t {
     Centipede, CentipedeBody, CentipedeEvil, CentipedeEvilBody, CentipedeDesert,
     CentipedeDesertBody, Bubble, BumbleBee, Shell, Starfish, Jellyfish, Dandelion, Fly,
     Leafbug, LeafbugShiny, Mantis, Bush, Roach, Moth, Firefly, FireflyMagic, Dummy, Titan,
+    TermiteBaby, TermiteWorker, TermiteSoldier, TermiteOvermind, TermiteMound, TermiteEgg,
     /// The one PETAL drawn by code (petals.json `$moon`): gardn's seeded
     /// crater scatter, clipped to the disc, magnified to the moon's radius.
     Moon,

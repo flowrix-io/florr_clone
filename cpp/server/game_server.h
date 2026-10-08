@@ -41,6 +41,7 @@ class SpawnSystem;
 class ModeSpawner;
 class LootSystem;
 class NpcSystem;
+class DungeonSystem;
 
 /// One loadout slot as the body in a given realm wears it: the account's
 /// petal, or the maze's shifted-and-benched version of it. See wornSlot().
@@ -97,6 +98,12 @@ struct ServerConfig {
     /// set_bot_count` is the same knob at run time; this is the one a harness
     /// can set before the first tick.
     int botCount = -1;
+    /// The `/admin db` key to use as is, instead of deriving one from the
+    /// machine's address and the database's secret. Empty means derive. Only
+    /// the offline page sets it: its server is a browser tab with no address
+    /// to ask for and a fresh secret in every browser, so a derived key would
+    /// differ per install -- and that machine is the player's own anyway.
+    std::string fixedAdminDbKey;
 };
 
 class GameServer : public net::TransportHandler {
@@ -1182,6 +1189,8 @@ private:
     std::unique_ptr<SpawnSystem> spawning_;
     /// The arena's crowd and the maze's corridors, populated whole.
     std::unique_ptr<ModeSpawner> modes_;
+    /// The nests a flower walks into, and the private copies they lead to.
+    std::unique_ptr<DungeonSystem> dungeons_;
     std::unique_ptr<LootSystem> loot_;
     /// The friendly NPCs the maps place, and who each one is looking at.
     std::unique_ptr<NpcSystem> npcs_;

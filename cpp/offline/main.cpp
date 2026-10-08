@@ -78,6 +78,14 @@ constexpr const char* kStateDirectory = "/state";
 /// in storage. The compare is one small read when nothing changed.
 constexpr double kMirrorIntervalMillis = 1000.0;
 
+/// The `/admin db` key, the same in every copy of this page. The online
+/// server derives its key from its machine (server/admin_db_key.h) to prove an
+/// admin also has the box; here the box is the player's own browser, and a
+/// key derived from a per-browser secret would just be a different string to
+/// dig out of the console on every install. Lowercase: keyMatches lowers what
+/// is typed, not the key.
+constexpr const char* kAdminDbKey = "0ff1ce0ff1ce0ff1";
+
 flix::GameServer* g_server = nullptr;
 flix::App* g_app = nullptr;
 std::string g_databasePath;
@@ -214,6 +222,7 @@ int main(int argc, char** argv) {
     serverConfig.port = kPort;
     serverConfig.dataDir = "data";
     serverConfig.databasePath = g_databasePath;
+    serverConfig.fixedAdminDbKey = kAdminDbKey;
     g_server = new flix::GameServer();
     std::string error;
     if (!g_server->start(serverConfig, error)) {

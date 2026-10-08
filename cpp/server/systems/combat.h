@@ -350,6 +350,12 @@ public:
     };
     const std::vector<DeathRecord>& deaths() const { return deaths_; }
 
+    /// Kills a mob nothing struck -- a dungeon's nest, on the tick its last
+    /// dweller dies -- exactly as a killing blow would: marked Dead for
+    /// `killer`, recorded in deaths() and paid off its ledger (XP now, drops
+    /// in the loot pass). No-op on anything already dead.
+    void fell(World& world, Entity victim, Entity killer);
+
 private:
     /// A touching body about to be tested against everything near it. Mob
     /// bodies, flower bodies and petals all reduce to this, so there is one
@@ -701,6 +707,10 @@ private:
     /// The segments behind a shared chain's pool owner, gathered before any of
     /// them is touched. A member so a hit on a leech allocates nothing.
     std::vector<Entity> chainScratch_;
+    /// The colony a hit is about to be shared over, and whether one is being
+    /// shared right now (the shares come back through applyDamage).
+    std::vector<Entity> colonyScratch_;
+    bool sharingColonyHit_ = false;
     /// The cottons a hit is about to land on, gathered off the flower's ring
     /// before the first of them is struck.
     std::vector<Entity> cottonScratch_;
