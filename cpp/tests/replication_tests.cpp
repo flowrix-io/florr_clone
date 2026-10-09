@@ -412,6 +412,36 @@ TEST(a_camera_petals_view_is_streamed_edge_to_edge_and_only_a_screen_past_it) {
     }
 }
 
+TEST(a_big_mob_half_on_screen_is_current_every_snapshot) {
+    // The near box is a quarter screen past the drawn edge, 270 units top and
+    // bottom -- less than an ultra's radius. Tested on the centre, an ultra
+    // standing half on screen was in the far band and stepped at a quarter
+    // rate right at the edge of the view. A small mob at the same distance
+    // is wholly off screen and stays in the far band.
+    Fixture f;
+    const Vec2 centre = f.world.get<Transform>(f.viewer).position;
+    const double dy = kViewportHeight * 0.5 + 360.0;   // centre past the near box
+    const Entity big = f.addMob(centre + Vec2{0.0, dy}, Rarity::Ultra, 320.0);
+    const Entity small = f.addMob(centre + Vec2{100.0, dy}, Rarity::Common, 30.0);
+    WorldView client;
+    f.tick(client, 1, 1000);
+
+    // The fixture's snapshot index never moves, so a far-band entity whose id
+    // is not a multiple of the stride is never described again.
+    const auto stride = static_cast<std::uint32_t>(f.replicator.farSnapshotStride);
+    CHECK(netIdOf(f.world, big) % stride != 0);
+    CHECK(netIdOf(f.world, small) % stride != 0);
+    for (int i = 1; i <= 3; ++i) {
+        f.world.get<Transform>(big).position.x = centre.x + 10.0 * i;
+        f.world.get<Transform>(small).position.x = centre.x + 100.0 + 10.0 * i;
+        f.tick(client, static_cast<std::uint32_t>(1 + i), 1000.0 + 50.0 * i);
+        CHECK_NEAR(client.entities().at(netIdOf(f.world, big)).targetPosition.x,
+                   centre.x + 10.0 * i, 0.05);
+        CHECK_NEAR(client.entities().at(netIdOf(f.world, small)).targetPosition.x,
+                   centre.x + 100.0, 0.05);
+    }
+}
+
 TEST(destroyed_entities_are_removed) {
     Fixture f;
     const Entity mob = f.addMob({1100, 1000});

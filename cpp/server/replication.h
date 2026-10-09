@@ -271,8 +271,10 @@ public:
     /// 640 world units at 1440p, which the fastest thing in the game takes two
     /// seconds to cross and the far band is never more than a fifth of a
     /// second stale. Nothing reaches the drawn edge without having been at
-    /// full rate for a long while first. Its margin is capped the same way
-    /// viewportReach's is, and the drawn half is never capped.
+    /// full rate for a long while first. That holds because the box is tested
+    /// against the edge of an entity's body, not its centre: a big mob is
+    /// wider than the margin. Its margin is capped the same way viewportReach's
+    /// is, and the drawn half is never capped.
     double nearReach = 0.75;
 
     /// One snapshot in this many carries the far band. Staggered by net id, so

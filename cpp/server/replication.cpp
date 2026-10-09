@@ -222,10 +222,18 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
     // around it stays the default screen's.
     const double nearX = halfExtent(viewport.x, kViewportWidth, nearReach);
     const double nearY = halfExtent(viewport.y, kViewportHeight, nearReach);
-    const auto outsideNearBox = [&](Vec2 at) {
+    // Measured to the nearest edge of the BODY, not its centre. The margin is
+    // a quarter screen, 270 units top and bottom, and an ultra is a radius of
+    // 300 and more: tested on its centre, one can stand half on screen while
+    // it is still in the far band, and step there at a quarter rate. The
+    // extra quarter covers art drawn past the hitbox (visual_scale reaches
+    // ~1.16) and the bar under the body.
+    constexpr double kDrawnReachPerRadius = 1.25;
+    const auto outsideNearBox = [&](Vec2 at, double radius) {
+        const double reach = radius * kDrawnReachPerRadius;
         const double dx = at.x - centre.x;
         const double dy = at.y - centre.y;
-        return (dx < 0 ? -dx : dx) >= nearX || (dy < 0 ? -dy : dy) >= nearY;
+        return (dx < 0 ? -dx : dx) - reach >= nearX || (dy < 0 ? -dy : dy) - reach >= nearY;
     };
     // At most three entries, scanned linearly: a set for a squad would cost
     // more to build each tick than it could ever save looking through.
@@ -521,9 +529,10 @@ void Replicator::build(World& world, Entity viewer, ClientView& view,
         //
         // The viewer is exempt for the obvious reason, and a squadmate because
         // it is streamed from any distance precisely so the HUD can point at
-        // it (see Frame::alwaysVisible).
+        // it (see Frame::alwaysVisible). The radius is the one the client
+        // holds, which is the size it draws the body at.
         if (candidate.entity != viewer && !exempt(candidate.entity) &&
-            outsideNearBox(transform.position) &&
+            outsideNearBox(transform.position, tracked.radius) &&
             (frame.snapshotIndex + candidate.netId) % static_cast<std::uint32_t>(farStride) != 0) {
             continue;
         }

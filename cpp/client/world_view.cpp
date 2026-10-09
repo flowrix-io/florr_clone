@@ -356,8 +356,9 @@ bool WorldView::applySnapshot(ByteReader& reader) {
     //
     // The far band (Replicator::farSnapshotStride) is absent three snapshots
     // in four too, and is held the same way, so it is drawn stepping. That
-    // band starts a quarter screen past the drawn edge by construction, and a
-    // mob crossing into the near box is at full rate long before it is seen.
+    // band starts a quarter screen past the drawn edge, measured from the
+    // body's edge, so a mob crossing into the near box is at full rate long
+    // before any of it is seen.
     for (auto& entry : entities_) {
         RemoteEntity& e = entry.second;
         if (!isBuffered(e.kind)) continue;
