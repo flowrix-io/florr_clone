@@ -797,6 +797,10 @@ void MenuSystem::close() {
 }
 
 bool MenuSystem::handleKeys(Window& window) {
+    if (adminDashboardOpen) {
+        if (window.keyPressed(Key::Escape)) adminDashboardOpen = false;
+        return true;
+    }
     // A settings row waiting for a key must swallow every key: binding the
     // inventory to G should not also open the bestiary on the way past.
     if (settings_panel_.capturingKey()) return true;
