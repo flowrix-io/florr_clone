@@ -83,6 +83,12 @@ constexpr double kMobEyeStepEpsilonSq = 1e-4;
 /// took longer -- the tab was hidden, the window was dragged -- is time the
 /// player did not watch, and a quarter second is already a visible stutter.
 constexpr double kMaxMotionStepMs = 250.0;
+
+/// How fast an upright mob's heading follows its motion: a fifth of each
+/// frame's step per 60 fps frame. Smoothed because a played-back position's
+/// single-frame step is as likely to be playback jitter as travel.
+const double kMobHeadingEaseSeconds = easeTimeConstant(0.2);
+
 /// Faster than any mob runs, in world units per millisecond: a drawn position
 /// that moved further than this in a frame was snapped, not walked -- a
 /// correction, a realm hop -- and the legs should not race to cover it.
@@ -2872,17 +2878,16 @@ Vec2 WorldRenderer::mobEye(const MobDraw& mob) const {
         // that stops has not turned to face east, and one that walked off
         // screen and back has not either.
         if (!first) {
-            state.step += ((mob.position - state.lastPosition) - state.step) * 0.2;
+            easeToward(state.step, mob.position - state.lastPosition, kMobHeadingEaseSeconds);
             if (state.step.lengthSq() > kMobEyeStepEpsilonSq) state.heading = state.step.angle();
         }
         look = state.heading;
     }
     state.lastPosition = mob.position;
 
-    // A fixed fraction per FRAME, exactly as the browser build eases it -- the
-    // eye of a flower-shaped mob is the only thing showing where it is headed,
-    // and easing it per second instead changes how it tracks at any other
-    // refresh rate.
+    // The flower eye's own time constant: the eye of a flower-shaped mob is
+    // the only thing showing where it is headed, and it tracks exactly as a
+    // player's pupils do.
     const Vec2 target{std::cos(look) * 2.0, std::sin(look) * 4.4};
     if (first) {
         // First sight starts ON target: a mob popping in should not roll its
@@ -2890,8 +2895,7 @@ Vec2 WorldRenderer::mobEye(const MobDraw& mob) const {
         state.offset = target;
         return target;
     }
-    state.offset.x += (target.x - state.offset.x) * 0.15;
-    state.offset.y += (target.y - state.offset.y) * 0.15;
+    easeToward(state.offset, target, kEyeEaseSeconds);
     return state.offset;
 }
 
@@ -2905,10 +2909,10 @@ Vec2 WorldRenderer::mobGaze(const MobDraw& mob) const {
         state.gazeLive = true;
         return target;
     }
-    // Per FRAME, at the flower eye's own fraction, and straight across rather
-    // than round the rim -- which is what a flower's pupils do when it turns,
-    // and what makes a turn read as the eye moving rather than the body.
-    state.gaze += (target - state.gaze) * 0.15;
+    // At the flower eye's own time constant, and straight across rather than
+    // round the rim -- which is what a flower's pupils do when it turns, and
+    // what makes a turn read as the eye moving rather than the body.
+    easeToward(state.gaze, target, kEyeEaseSeconds);
     return state.gaze;
 }
 
@@ -2936,11 +2940,13 @@ MobMotion WorldRenderer::mobMotion(const MobDraw& mob, double clockSeconds) cons
             // the eased speed.
             double target = (mob.position - pace.lastPosition).length() / dtMs;
             if (target > kMaxWalkUnitsPerMs) target = pace.speed;
-            pace.speed += (target - pace.speed) * easeFraction(kMobSpeedEaseRate, dtMs);
+            // Eased over the motion's own step rather than the frame period:
+            // it is one term of an integration on this mob's clock, which can
+            // span frames the mob was not drawn on.
+            easeToward(pace.speed, target, kMobSpeedEaseSeconds, dtMs / 1000.0);
             pace.distance += pace.speed * dtMs;
             pace.clockMs += dtMs;
-            pace.aggro += ((mob.chasing ? 1.0 : 0.0) - pace.aggro) *
-                          easeFraction(kMobAggroEaseRate, dtMs);
+            easeToward(pace.aggro, mob.chasing ? 1.0 : 0.0, kMobAggroEaseSeconds, dtMs / 1000.0);
             pace.aggroMs += pace.aggro * dtMs;
             pace.unloadedMs += dtMs;
         }
@@ -3285,8 +3291,8 @@ void WorldRenderer::drawMobBody(Canvas& canvas, const Camera& camera, const MobD
         // oracle turning round is a pupil sliding across its socket, the way a
         // flower's is, not a disc of tendrils spinning on the spot -- and the
         // trader and the titan wear a flower's face, whose eyes are eased
-        // toward its facing at the same per-frame rate a player's are. So the
-        // gaze is the facing, eased per frame, in world space -- which with no
+        // toward its facing with the same time constant a player's are. So the
+        // gaze is the facing, eased, in world space -- which with no
         // rotation applied is the art's space too.
         sprites_->drawMob(canvas, mob.typeIndex, art.x, art.y, diameter, 0.0, timeSeconds, false,
                           mob.radius * visualScale, mobGaze(mob), &motion);

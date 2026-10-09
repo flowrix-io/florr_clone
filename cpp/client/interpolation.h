@@ -5,8 +5,8 @@
 // which is itself gardn's. The two rules that matter, and why:
 //
 //  * FLOWERS ARE NEVER PREDICTED. Every flower -- the viewer's included --
-//    eases toward the authoritative position at one fixed, frame-rate
-//    independent rate. The client runs no movement simulation of its own, so
+//    eases toward the authoritative position with one fixed time constant
+//    (client/ease.h). The client runs no movement simulation of its own, so
 //    there is nothing to reconcile and nothing to snap back.
 //
 //    This client used to predict locally and reconcile on every snapshot, and
@@ -38,6 +38,7 @@
 #include <chrono>
 #include <cmath>
 
+#include "client/ease.h"
 #include "shared/core/types.h"
 #include "shared/net/protocol.h"
 
@@ -61,7 +62,8 @@ inline double renderClockMillis() {
 
 /// The fraction of the remaining gap an ease closes per frame at 60 fps. The
 /// browser build's default (`localStorage.interpolationAmount`), and the
-/// settings panel's slider is the same number.
+/// settings panel's slider is the same number. Only ever turned into a time
+/// constant, by easeTimeConstant() (client/ease.h).
 inline constexpr double kDefaultInterpolationAmount = 0.15;
 
 /// Beyond this gap an ease is a glide across the map rather than a smoothing.
@@ -108,23 +110,5 @@ inline constexpr double kDelayShrinkRate = 0.03;
 /// Samples kept per mob. At 20 Hz this is half a second of history -- more
 /// than the playback delay needs, enough to ride out a burst of late packets.
 inline constexpr int kMobSampleCapacity = 10;
-
-/// `amount` (the per-frame fraction at 60 fps) as a rate per second. Same
-/// shape as gardn's `Ui::lerp_amount = 1 - (1 - k)^(dt*60)`.
-inline double easeRateFromAmount(double amount) {
-    const double k = clamp(amount, 0.001, 0.999);
-    return -std::log(1.0 - k) * 60.0;
-}
-
-/// The fraction of the gap to close this frame. Frame-rate independent, so a
-/// 30 fps client and a 144 fps one reach the target on the same wall clock.
-///
-/// `dt` is clamped because a stalled frame -- a resize, a breakpoint, a window
-/// the compositor stopped scheduling -- otherwise resolves to a full-strength
-/// snap on the frame it resumes.
-inline double easeAmount(double ratePerSecond, double dtSeconds) {
-    const double dt = clamp(dtSeconds, 0.0, 0.1);
-    return 1.0 - std::exp(-ratePerSecond * dt);
-}
 
 } // namespace flix

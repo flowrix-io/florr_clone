@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "client/ease.h"
 #include "client/ui/item_tile.h"
 #include "client/ui/menu_theme.h"
 #include "client/ui/menus.h"
@@ -30,6 +31,10 @@ namespace {
 /// thumb, so the five columns sit a touch left of the panel's own centre and
 /// the thumb rides in the strip they leave. Centring the block on the panel
 /// instead puts the last column under the thumb.
+/// The stack toggle's knob: a quarter of the way per 60 fps frame, the
+/// browser's rate.
+const double kStackToggleEaseSeconds = easeTimeConstant(0.25);
+
 constexpr double kGridPadding = 26.0;
 constexpr double kGridGutter = 42.0;
 /// The air above the first heading and below the last row. Its own constant
@@ -469,7 +474,7 @@ bool InventoryPanel::render(MenuContext& ctx) {
     // the panel and a hard flip reads as a redraw glitch. The rate matches the
     // browser's per-frame quarter-of-the-gap at 60fps.
     const double target = stacked_ ? 1.0 : 0.0;
-    stackLerp_ += (target - stackLerp_) * std::min(1.0, ctx.dt * 15.0);
+    easeToward(stackLerp_, target, kStackToggleEaseSeconds);
     if (std::fabs(stackLerp_ - target) < 0.01) stackLerp_ = target;
 
     toggleBox(canvas, toggleBoxRect, stackLerp_);

@@ -65,6 +65,7 @@
 #include <string>
 
 #include "canvas.h"
+#include "client/ease.h"
 #include "shared/core/types.h"
 
 namespace flix {
@@ -183,18 +184,13 @@ struct MobArtAttributes {
     bool inWorld = false;
 };
 
-/// The rates florr eases a mob's ground speed and its locked-on blend at, per
-/// millisecond -- MobArtAttributes::speed and ::aggro, kept by the world
-/// renderer.
-inline constexpr double kMobSpeedEaseRate = 0.030649537425959442;
-inline constexpr double kMobAggroEaseRate = 0.021400496636323946;
-
-/// florr's ease toward a target over a frame of `dtMs`: the fraction of the
-/// remaining distance covered, `1 - e^(-rate * dt)`. florr writes it as
-/// `x -= (target - x) * expm1(-rate * dt)`.
-inline double easeFraction(double ratePerMs, double dtMs) {
-    return -std::expm1(-ratePerMs * dtMs);
-}
+/// The time constants florr eases a mob's ground speed and its locked-on
+/// blend with -- MobArtAttributes::speed and ::aggro, kept by the world
+/// renderer. florr states them as rates per millisecond.
+inline constexpr double kMobSpeedEaseSeconds =
+    easeTimeConstantFromRatePerMs(0.030649537425959442);
+inline constexpr double kMobAggroEaseSeconds =
+    easeTimeConstantFromRatePerMs(0.021400496636323946);
 
 /// The per-mob numbers above that only a creature walking through the world
 /// has, gathered once a frame by the world renderer. A call site with no

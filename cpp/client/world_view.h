@@ -230,7 +230,9 @@ public:
     /// display from a 20 Hz snapshot stream.
     ///
     /// `nowMillis` is the client render clock, which is also the clock mob
-    /// playback runs behind. `dtSeconds` is the frame delta the eases use.
+    /// playback runs behind. `dtSeconds` is the step the eases take -- the
+    /// App passes easeStepSeconds(), the smoothed frame period, not the raw
+    /// measured delta; see client/ease.h.
     void interpolate(double nowMillis, double dtSeconds);
 
     /// Cuts every entity onto its authoritative position on the next
@@ -304,10 +306,10 @@ public:
     };
     LocalFlagOverride localFlags;
 
-    /// The ease rate every flower, petal, drop and projectile closes its gap
-    /// at, and the rate mob facing turns at. Driven by the settings panel's
-    /// Interpolation slider; see easeRateFromAmount().
-    double easeRatePerSecond = easeRateFromAmount(kDefaultInterpolationAmount);
+    /// The time constant every flower, petal, drop and projectile closes its
+    /// gap with, and mob facing turns with. Driven by the settings panel's
+    /// Interpolation slider; see easeTimeConstant().
+    double easeTimeConstantSeconds = easeTimeConstant(kDefaultInterpolationAmount);
 
     /// How far behind the render clock buffered mobs are played back THIS
     /// frame. interpolate() slews it toward `playbackDelayTargetMillis()`, so

@@ -174,7 +174,7 @@ private:
 
     void updateConnecting();
     void updateLogin(double dt);
-    void updateLobby(double dt);
+    void updateLobby();
     void updatePlaying(double dt);
     void updateDead(double dt);
     void updateSessionReplaced();

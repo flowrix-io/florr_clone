@@ -1825,8 +1825,8 @@ TEST(a_stinger_shooter_holds_the_pose_before_it_shoots) {
     // -- or speed the swing up without revisiting it -- and the missile starts
     // leaving a mob the player can see is pointing somewhere else again, which
     // is a bug no assertion about the hold matching itself would catch.
-    const double clientEase = easeRateFromAmount(kDefaultInterpolationAmount);
-    CHECK(kStingerAimHoldMillis >= 2000.0 / clientEase);
+    const double clientEaseSeconds = easeTimeConstant(kDefaultInterpolationAmount);
+    CHECK(kStingerAimHoldMillis >= 2000.0 * clientEaseSeconds);
 }
 
 TEST(a_stinger_shooter_retraces_its_swing_around_a_moving_flower) {

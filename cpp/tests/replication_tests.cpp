@@ -611,32 +611,61 @@ RemoteEntity easedFlower(Vec2 drawn, Vec2 target) {
 TEST(the_ease_rate_is_frame_rate_independent) {
     // Two frames of half the step must land where one whole one does, or the
     // flower's speed would depend on the frame rate.
-    const double rate = easeRateFromAmount(kDefaultInterpolationAmount);
-    const double whole = easeAmount(rate, 1.0 / 30.0);
-    const double half = easeAmount(rate, 1.0 / 60.0);
+    const double tau = easeTimeConstant(kDefaultInterpolationAmount);
+    const double whole = easeFraction(tau, 1.0 / 30.0);
+    const double half = easeFraction(tau, 1.0 / 60.0);
     CHECK_NEAR(1.0 - (1.0 - half) * (1.0 - half), whole, 1e-12);
 
     // And the amount is the browser build's definition: the fraction of the
     // gap closed in one 60 fps frame.
-    CHECK_NEAR(easeAmount(easeRateFromAmount(0.3), 1.0 / 60.0), 0.3, 1e-12);
+    CHECK_NEAR(easeFraction(easeTimeConstant(0.3), 1.0 / 60.0), 0.3, 1e-12);
 }
 
 TEST(a_stalled_frame_does_not_become_a_snap) {
     // A resize or a breakpoint hands back a dt of seconds. Easing the whole
     // gap on the frame the window resumes is a teleport on screen.
-    const double rate = easeRateFromAmount(kDefaultInterpolationAmount);
-    CHECK(easeAmount(rate, 30.0) < 0.999);
-    CHECK_NEAR(easeAmount(rate, 30.0), easeAmount(rate, 0.1), 1e-12);
+    const double tau = easeTimeConstant(kDefaultInterpolationAmount);
+    CHECK(easeFraction(tau, 30.0) < 0.999);
+    CHECK_NEAR(easeFraction(tau, 30.0), easeFraction(tau, kMaxEaseStepSeconds), 1e-12);
+}
+
+TEST(the_ease_step_ignores_frame_timing_noise) {
+    // A 60 Hz display measured a few ms either side of each vblank. The step
+    // every ease takes has to come out even, or a constant-rate ease takes
+    // uneven steps across evenly spaced presents.
+    FramePeriod period;
+    const double jitter[] = {0.0187, 0.0146, 0.0171, 0.0159, 0.0192, 0.0141};
+    for (int i = 0; i < 600; ++i) period.advance(jitter[i % 6]);
+    double low = 1.0, high = 0.0;
+    for (int i = 0; i < 60; ++i) {
+        const double step = period.advance(jitter[i % 6]);
+        low = std::min(low, step);
+        high = std::max(high, step);
+    }
+    CHECK_NEAR(low, 1.0 / 60.0, 0.0005);
+    CHECK(high - low < 0.0005);
+}
+
+TEST(the_ease_step_follows_a_new_refresh_rate_but_not_a_hitch) {
+    FramePeriod period;
+    for (int i = 0; i < 200; ++i) period.advance(1.0 / 60.0);
+
+    // One dropped frame is not a new refresh rate.
+    CHECK(period.advance(0.25) < 1.0 / 60.0 * 1.06);
+
+    // A window dragged onto a 144 Hz monitor is, within a second.
+    for (int i = 0; i < 144; ++i) period.advance(1.0 / 144.0);
+    CHECK_NEAR(period.seconds(), 1.0 / 144.0, 0.0002);
 }
 
 TEST(a_flower_eases_toward_the_server_and_never_past_it) {
     WorldView view;
     view.seedForTest(easedFlower({0, 0}, {100, 0}));
-    const double rate = view.easeRatePerSecond;
+    const double tau = view.easeTimeConstantSeconds;
 
     view.interpolate(1000, 1.0 / 60.0);
     const double afterOne = view.entities().at(1).position.x;
-    CHECK_NEAR(afterOne, 100.0 * easeAmount(rate, 1.0 / 60.0), 1e-9);
+    CHECK_NEAR(afterOne, 100.0 * easeFraction(tau, 1.0 / 60.0), 1e-9);
 
     // Asymptotic, so it approaches without ever overshooting -- an overshoot
     // is what makes a corrected position visibly spring.

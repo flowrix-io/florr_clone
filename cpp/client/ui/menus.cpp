@@ -1,5 +1,6 @@
 #include "client/ui/menus.h"
 #include "client/ui/text_select.h"
+#include "client/ease.h"
 
 #include "shared/core/process_stats.h"
 
@@ -1364,18 +1365,14 @@ std::string slotCounterLabel(const NetClient& net, int index) {
 
 namespace {
 
-/// gardn's per-frame easing, frame-rate corrected the way gardn corrects it:
-/// `Ui::lerp_amount = 1 - pow(1 - 0.2, dt * 60)`, and the loadout's tiles take
-/// three quarters of that. 0.15 a frame at 60fps, and the same curve in
-/// wall-clock terms at any other rate.
-double loadoutEase(double dt) {
-    if (!(dt > 0)) return 1.0;
-    return clamp(1.0 - std::pow(0.8, dt * 60.0), 0.0, 1.0) * 0.75;
-}
+/// gardn's loadout tiles: three quarters of `Ui::lerp_amount = 1 - pow(1 -
+/// 0.2, dt * 60)`, so 0.15 of the way per 60 fps frame, as a fixed time
+/// constant.
+const double kLoadoutTileEaseSeconds = easeTimeConstant(0.15);
 
-void easeTo(double& value, double target, double amount) {
-    value += (target - value) * amount;
-}
+/// The loadout bar rising into place and sinking away: a fifth of the way
+/// per 60 fps frame, the browser's ratio.
+const double kLoadoutSlideEaseSeconds = easeTimeConstant(0.2);
 
 bool sameSlot(const Profile::Slot& a, const Profile::Slot& b) {
     return a.petalIndex == b.petalIndex && a.rarity == b.rarity;
@@ -1392,7 +1389,7 @@ bool sameLoadout(const std::vector<Profile::Slot>& a, const std::vector<Profile:
 }  // namespace
 
 void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
-                                const SpriteCache& sprites, double timeSeconds, double dt) {
+                                const SpriteCache& sprites, double timeSeconds) {
     const Profile& profile = net.profile();
     // Whether K or L is down this frame; see presetBankShown_.
     const int presetBank = inGame_ ? presetBankShown_ : -1;
@@ -1408,13 +1405,11 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
         expectedLoadout_.empty() ? profile.loadout : expectedLoadout_;
     const int owned = static_cast<int>(shown.size());
 
-    // Rises into place over its first frames and sinks back the same way. A
-    // plain per-frame lerp with no time term, as in the browser: the ratio is
-    // the feel, and a dt-corrected version overshoots at the frame rates this
-    // has to survive. The target is whether there is a loadout to show at all,
+    // Rises into place over its first frames and sinks back the same way, at
+    // the browser's per-frame ratio stated as a time constant. The target is whether there is a loadout to show at all,
     // which is the browser's own show()/hide() rule.
     const double target = owned > 0 ? 1.0 : 0.0;
-    loadoutSlide_ += (target - loadoutSlide_) * 0.2;
+    easeToward(loadoutSlide_, target, kLoadoutSlideEaseSeconds);
     if (std::fabs(loadoutSlide_ - target) < 0.005) loadoutSlide_ = target;
     if (loadoutSlide_ <= 0.005) {
         // Nothing painted means nothing to hit: a bar that has sunk off-screen
@@ -1586,7 +1581,6 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
     // here, so hovering where you picked a petal up keeps it on the cursor
     // rather than snapping it back under your hand.
     const int dropTarget = (hovered >= 0 && hovered <= kLoadoutTrashSlot) ? hovered : -1;
-    const double ease = loadoutEase(dt);
     const double wobble = std::sin(timeSeconds * 1000.0 / 150.0) * 0.1;
 
     // A swap trades two slots' contents, so each tile takes over the box the
@@ -1678,10 +1672,10 @@ void MenuSystem::drawLoadoutBar(Canvas& canvas, Window& window, NetClient& net,
             targetH = home.h + kLoadoutTileArmed * scale;
             rock = true;
         }
-        easeTo(tile.cx, targetX, ease);
-        easeTo(tile.cy, targetY, ease);
-        easeTo(tile.w, targetW, ease);
-        easeTo(tile.h, targetH, ease);
+        easeToward(tile.cx, targetX, kLoadoutTileEaseSeconds);
+        easeToward(tile.cy, targetY, kLoadoutTileEaseSeconds);
+        easeToward(tile.w, targetW, kLoadoutTileEaseSeconds);
+        easeToward(tile.h, targetH, kLoadoutTileEaseSeconds);
         if (held) {
             onTop = i;
         } else {
@@ -1964,7 +1958,7 @@ void MenuSystem::updateLoadoutInput(Window& window, NetClient& net, double timeS
 }
 
 void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& sprites,
-                             double timeSeconds, double dt) {
+                             double timeSeconds) {
     // A petal dragged off the BAR is not drawn here: its own tile lifts off
     // the bar and rides the cursor, which is gardn's drag and the reason a
     // drop reads as putting something down rather than as a click that
@@ -2000,11 +1994,10 @@ void MenuSystem::drawDragged(Canvas& canvas, Window& window, const SpriteCache& 
         dragTile_ = {window.mouseX(), window.mouseY(), targetW, targetH, drag_.petalIndex,
                      drag_.rarity, true};
     }
-    const double ease = loadoutEase(dt);
-    easeTo(dragTile_.cx, targetX, ease);
-    easeTo(dragTile_.cy, targetY, ease);
-    easeTo(dragTile_.w, targetW, ease);
-    easeTo(dragTile_.h, targetH, ease);
+    easeToward(dragTile_.cx, targetX, kLoadoutTileEaseSeconds);
+    easeToward(dragTile_.cy, targetY, kLoadoutTileEaseSeconds);
+    easeToward(dragTile_.w, targetW, kLoadoutTileEaseSeconds);
+    easeToward(dragTile_.h, targetH, kLoadoutTileEaseSeconds);
 
     ItemTile tile;
     tile.petalIndex = drag_.petalIndex;
@@ -2595,7 +2588,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     };
     const auto bar = [&] {
         const int before = canvasOpsMark();
-        drawLoadoutBar(canvas, window, net, sprites, timeSeconds, dt);
+        drawLoadoutBar(canvas, window, net, sprites, timeSeconds);
         opsBar_ += canvasOpsMark() - before;
     };
     if (inGame_) {
@@ -2615,7 +2608,7 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // drop into the card must reach the card before the bar decides it landed
     // on nothing.
     updateLoadoutInput(window, net, timeSeconds);
-    drawDragged(canvas, window, sprites, timeSeconds, dt);
+    drawDragged(canvas, window, sprites, timeSeconds);
 }
 
 void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeconds) {

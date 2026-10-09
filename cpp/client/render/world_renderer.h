@@ -434,7 +434,7 @@ private:
     Vec2 mobEye(const MobDraw& mob) const;
     /// The same idea for a PAINTED eye that looks in any direction -- the
     /// oracle's: a unit-ish vector in world space, eased toward the mob's
-    /// facing at the flower eye's own per-frame rate, so the pupil swings
+    /// facing with the flower eye's own time constant, so the pupil swings
     /// across the socket the way a flower's does rather than snapping. Kept
     /// on the MobEye beside the flower-face offset, which it never shares.
     Vec2 mobGaze(const MobDraw& mob) const;

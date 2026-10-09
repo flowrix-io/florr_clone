@@ -28,6 +28,7 @@
 #include <utility>
 
 #include "client/app_internal.h"
+#include "client/ease.h"
 #include "client/interpolation.h"
 #include "client/ui/draw.h"
 #include "client/ui/item_tile.h"
@@ -60,6 +61,11 @@ namespace {
 /// parity bug to restore.
 constexpr std::uint32_t kDeathWashColor = 0x464646u;
 constexpr double kDeathWashAlpha = 0.54;
+
+/// The death card's slide and the low-health vignette's depth: a fifth and a
+/// tenth of the way per 60 fps frame, as fixed time constants.
+const double kDeathCardEaseSeconds = easeTimeConstant(0.2);
+const double kLowHealthVignetteEaseSeconds = easeTimeConstant(0.1);
 
 /// JavaScript's `toFixed(2)`, for the stats overlay's frame time.
 std::string twoDecimals(double value) {
@@ -450,6 +456,10 @@ void App::markPhaseOps(OpPhase phase) {
 }
 
 void App::frame(double dt) {
+    // Every ease this frame steps by the smoothed frame period, not by `dt`:
+    // see client/ease.h. Advanced first so nothing eases on last frame's.
+    const double easeStep = framePeriod().advance(dt);
+
     pollNetwork();
 
     // Before anything is updated OR painted: the auth form registers its
@@ -602,11 +612,11 @@ void App::frame(double dt) {
     // camera pins to it, so easing after them would steer and frame the world
     // from a position one frame stale.
     if (screen_ == Screen::Playing || screen_ == Screen::Dead) {
-        net_.view().easeRatePerSecond = easeRateFromAmount(menus_.settings().interpolation);
+        net_.view().easeTimeConstantSeconds = easeTimeConstant(menus_.settings().interpolation);
         // renderClockMillis(), not the window's clock: snapshot arrivals are
         // stamped against this one, and mob playback has to be measured on
         // the same timeline it is stamped on.
-        net_.view().interpolate(renderClockMillis(), dt);
+        net_.view().interpolate(renderClockMillis(), easeStep);
         // A teleporter that led to another map: the body is in a different
         // coordinate space now, and easing the flower or the camera from
         // where it WAS would sweep the view across a world it is not in.
@@ -620,8 +630,9 @@ void App::frame(double dt) {
 
     // The death card eases in from above and back out again, the way the
     // reference's container animation does: a fifth of the remaining distance
-    // per 60Hz frame. Advanced here rather than in updateDead, because the
-    // frames it slides back OUT on are frames the player is alive for.
+    // per 60Hz frame, stated as a fixed time constant. Advanced here rather
+    // than in updateDead, because the frames it slides back OUT on are frames
+    // the player is alive for.
     {
         const bool inWorld = screen_ == Screen::Playing || screen_ == Screen::Dead;
         const double target = (screen_ == Screen::Dead && deathCardVisible_) ? 1.0 : 0.0;
@@ -630,20 +641,20 @@ void App::frame(double dt) {
         // wants the card where it comes to rest rather than wherever the
         // requested frame happens to catch it.
         if (!inWorld || config_.screenshotAfterFrames > 0) deathCardSlide_ = target;
-        else deathCardSlide_ += (target - deathCardSlide_) * (1.0 - std::pow(0.8, dt * 60.0));
+        else easeToward(deathCardSlide_, target, kDeathCardEaseSeconds);
 
         // The low-health vignette eases more slowly -- a tenth of the way per
         // 60Hz frame -- so a bite deepens it and a heal lifts it rather than
         // either one switching it. Snapped on the same terms as the card.
         const double dark = lowHealthTarget();
         if (!inWorld || config_.screenshotAfterFrames > 0) lowHealthVignette_ = dark;
-        else lowHealthVignette_ += (dark - lowHealthVignette_) * (1.0 - std::pow(0.9, dt * 60.0));
+        else easeToward(lowHealthVignette_, dark, kLowHealthVignetteEaseSeconds);
     }
 
     switch (screen_) {
         case Screen::Connecting:   updateConnecting(); break;
         case Screen::Login:        updateLogin(dt); break;
-        case Screen::Lobby:        updateLobby(dt); break;
+        case Screen::Lobby:        updateLobby(); break;
         case Screen::Playing:      updatePlaying(dt); break;
         case Screen::Dead:         updateDead(dt); break;
         case Screen::Disconnected: break;

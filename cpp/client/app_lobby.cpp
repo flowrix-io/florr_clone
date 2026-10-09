@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "client/app_internal.h"
+#include "client/ease.h"
 #include "client/render/art_cache.h"
 #include "client/ui/draw.h"
 #include "client/ui/text_input.h"
@@ -86,7 +87,7 @@ constexpr std::uint32_t kTitleXpFill = 0xE4ED61u;
 constexpr double kTitleXpFillThickness = 0.8;
 constexpr double kTitleXpTextShare = 0.4;
 constexpr double kTitleXpFadeBelow = 0.05;
-constexpr double kTitleXpEasePerFrame = 0.05;
+const double kTitleXpEaseSeconds = easeTimeConstant(0.05);
 
 /// How long the loading screen waits for the server to answer Ready before it
 /// gives up and puts the lobby back. A join is answered within a tick; this
@@ -185,7 +186,7 @@ std::string titleCaseId(const std::string& id) {
 
 } // namespace
 
-void App::updateLobby(double dt) {
+void App::updateLobby() {
     // The XP gauge eases toward the profile rather than jumping to it: in from
     // empty the first time the screen shows, and on from where it stood when
     // a game comes back with more. Nothing moves until the profile is here --
@@ -197,8 +198,7 @@ void App::updateLobby(double dt) {
             titleXpLevel_ = progress.level;
             titleXpShown_ = 0.0;
         }
-        const double ease = 1.0 - std::pow(1.0 - kTitleXpEasePerFrame, dt * 60.0);
-        titleXpShown_ += (levelFraction(progress) - titleXpShown_) * ease;
+        easeToward(titleXpShown_, levelFraction(progress), kTitleXpEaseSeconds);
     }
 
     // The join has been answered: into the world.

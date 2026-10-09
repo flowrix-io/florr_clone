@@ -417,7 +417,7 @@ bool playBack(const std::vector<RemoteEntity::Sample>& samples, double renderMil
 /// respawn or the maze's rotation moving everyone to the new entrance, and
 /// must not be glided across, and a gap under the settle epsilon lands exactly
 /// instead of asymptoting.
-void easeToward(Vec2& position, Vec2 target, double t, bool cut) {
+void easePosition(Vec2& position, Vec2 target, double t, bool cut) {
     const Vec2 gap = target - position;
     if (cut && (gap.lengthSq() > kTeleportSnapDistance * kTeleportSnapDistance ||
                 (std::fabs(gap.x) < kSettleEpsilon && std::fabs(gap.y) < kSettleEpsilon))) {
@@ -430,7 +430,8 @@ void easeToward(Vec2& position, Vec2 target, double t, bool cut) {
 } // namespace
 
 void WorldView::interpolate(double nowMillis, double dtSeconds) {
-    const double t = easeAmount(easeRatePerSecond, dtSeconds);
+    const double t = easeFraction(easeTimeConstantSeconds, dtSeconds);
+    const double eyeT = easeFraction(kEyeEaseSeconds, dtSeconds);
 
     // Slewed rather than set: the delay is where on the timeline playback is
     // reading, so a jump in it is a jump in every mob at once.
@@ -494,7 +495,7 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
         } else if (isBuffered(e.kind) && playBack(e.samples, renderMillis, e.position)) {
             // Position came from the sample history; facing is handled below.
         } else {
-            easeToward(e.position, e.targetPosition, t, isFlower);
+            easePosition(e.position, e.targetPosition, t, isFlower);
         }
 
         // Facing. A flower's comes straight off the wire because it drives the
@@ -510,8 +511,8 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.angle = e.targetAngle;
         }
 
-        e.eyeX += (std::cos(e.angle) * 2.0 - e.eyeX) * 0.15;
-        e.eyeY += (std::sin(e.angle) * 4.4 - e.eyeY) * 0.15;
+        e.eyeX += (std::cos(e.angle) * 2.0 - e.eyeX) * eyeT;
+        e.eyeY += (std::sin(e.angle) * 4.4 - e.eyeY) * eyeT;
     }
 
     // The viewer's flower reads the same position the camera and its ring use,
@@ -550,7 +551,7 @@ void WorldView::interpolate(double nowMillis, double dtSeconds) {
             e.position = e.targetPosition;
             e.needsSnap = false;
         } else {
-            easeToward(e.position, e.targetPosition, t, false);
+            easePosition(e.position, e.targetPosition, t, false);
         }
         e.angle = e.targetAngle;
     }
