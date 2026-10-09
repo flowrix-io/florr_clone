@@ -1101,7 +1101,21 @@ void GameServer::replicate(double nowMillis) {
         frame.alwaysVisible = squadBodies.empty() ? nullptr : &squadBodies;
 
         scratch_.clear();
-        replicator_.build(world_, session.entity, views_[session.connection], frame, scratch_);
+        Entity viewpoint = session.entity;
+        const Entity previousControl = session.controlledFlower;
+        if (effectiveAdmin(session) && world_.isAlive(session.controlledFlower)) {
+            const auto* target = world_.tryGet<Transform>(session.controlledFlower);
+            const auto* health = world_.tryGet<Health>(session.controlledFlower);
+            const auto* ownHealth = world_.tryGet<Health>(session.entity);
+            if (target && target->realm == session.realm && health && health->current > 0 && ownHealth && ownHealth->current > 0)
+                viewpoint = session.controlledFlower;
+            else session.controlledFlower = NULL_ENTITY;
+        } else session.controlledFlower = NULL_ENTITY;
+        if (previousControl != session.controlledFlower) {
+            if (auto* input = world_.tryGet<PlayerInput>(previousControl)) input->current = {};
+            views_[session.connection] = {};
+        }
+        replicator_.build(world_, viewpoint, views_[session.connection], frame, scratch_);
         if (!scratch_.empty()) connection->send(scratch_);
     }
 }
@@ -1320,6 +1334,7 @@ void GameServer::handleRegister(Session& session, net::Connection& connection, B
 
     session.userId = result.account->id;
     session.username = result.account->username;
+    session.admin = result.account->admin || session.owner();
     session.token = database_.createSession(session.userId, session.username);
 
     grantStarterKit(database_.progress(session.userId));
@@ -1370,7 +1385,7 @@ void GameServer::handleLogin(Session& session, net::Connection& connection, Byte
     replaceOtherSessions(session, account->id);
     session.userId = account->id;
     session.username = account->username;
-    session.admin = account->admin;
+    session.admin = account->admin || session.owner();
     session.token = database_.createSession(account->id, account->username);
     session.stage = SessionStage::Authenticated;
     sendAuthResult(connection, net::AuthStatus::Ok, session.token, account->username, "");
@@ -1400,7 +1415,7 @@ void GameServer::handleResume(Session& session, net::Connection& connection, Byt
     session.username = username;
     session.token = token;
     session.stage = SessionStage::Authenticated;
-    if (const Account* account = database_.findUser(username)) session.admin = account->admin;
+    if (const Account* account = database_.findUser(username)) session.admin = account->admin || session.owner();
     sendAuthResult(connection, net::AuthStatus::Ok, token, username, "");
     sendDailyStreak(session, connection);
     sendProfile(session, connection);
@@ -1870,7 +1885,20 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
     if (input.sequence <= session.lastInputSequence) return;
     session.lastInputSequence = input.sequence;
 
-    if (PlayerInput* state = world_.tryGet<PlayerInput>(session.entity)) {
+    for (const auto& entry : sessions_) {
+        const auto& controller = entry.second;
+        if (controller.playing() && effectiveAdmin(controller) &&
+            controller.controlledFlower == session.entity) return;
+    }
+    Entity inputEntity = session.entity;
+    if (session.controlledFlower != NULL_ENTITY) {
+        if (!effectiveAdmin(session) || !world_.isAlive(session.controlledFlower) ||
+            !world_.tryGet<Transform>(session.controlledFlower) ||
+            world_.get<Transform>(session.controlledFlower).realm != session.realm) {
+            session.controlledFlower = NULL_ENTITY;
+        } else inputEntity = session.controlledFlower;
+    }
+    if (PlayerInput* state = world_.tryGet<PlayerInput>(inputEntity)) {
         state->current = input;
         state->aimDirection = Vec2::fromAngle(input.aimAngle);
     }
@@ -1882,9 +1910,9 @@ void GameServer::handleInput(Session& session, ByteReader& reader) {
     if (input.viewportWidth > 0 && input.viewportHeight > 0) {
         // Clamped against the loadout as it stands NOW, every frame, so taking
         // the antennae off shrinks the claim on the next packet.
-        const Vec2 viewport = claimableViewport(world_, session.entity, content(),
+        const Vec2 viewport = claimableViewport(world_, inputEntity, content(),
                                                 input.viewportWidth, input.viewportHeight);
-        if (PlayerLocation* location = world_.tryGet<PlayerLocation>(session.entity)) {
+        if (PlayerLocation* location = world_.tryGet<PlayerLocation>(inputEntity)) {
             location->viewport = viewport;
         }
     }
@@ -1940,7 +1968,7 @@ void GameServer::handleChat(Session& session, net::Connection& connection, ByteR
     // sender alone -- billed to the chat bucket, four commands emptied it and
     // the console became one command every two seconds.
     if (!text.empty() && text[0] == '/') {
-        if (!spend(session.commandAllowance)) {
+        if (!session.owner() && !spend(session.commandAllowance)) {
             sendNotice(connection, net::NoticeSeverity::Warning,
                        "You are sending commands too quickly.");
             return;
@@ -1971,7 +1999,7 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
         return;
     }
 
-    if (!spend(session.chatAllowance)) {
+    if (!session.owner() && !spend(session.chatAllowance)) {
         sendNotice(connection, net::NoticeSeverity::Warning, "You are sending messages too quickly.");
         return;
     }
@@ -1979,7 +2007,7 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     // Everything from here reaches other players, which is exactly what a
     // mute blocks.
     const Account* account = database_.findUser(session.username);
-    if (account != nullptr && account->muted) {
+    if (!session.owner() && account != nullptr && account->muted) {
         sendSystem(connection, "<span style=\"color: #ff8866;\">You are muted and cannot "
                                "send chat messages.</span>");
         return;
@@ -1991,7 +2019,7 @@ void GameServer::sayInPublic(Session& session, net::Connection& connection,
     if (channel == net::ChatChannel::Local) {
         sendLocalChat(session, said, speakerNetId);
     } else {
-        broadcastChat(net::ChatChannel::Global, session.username, said, speakerNetId);
+        broadcastChat(net::ChatChannel::Global, session.owner() ? "[ADMIN] a19kisme" : session.username, said, speakerNetId);
     }
 
     // Somebody saying "super" or "unique" rallies every bot onto the best boss
@@ -2028,7 +2056,7 @@ void GameServer::sendLocalChat(const Session& speaker, const std::string& text,
     ByteWriter w;
     w.u8(static_cast<std::uint8_t>(net::ServerMessage::Chat));
     w.u8(static_cast<std::uint8_t>(net::ChatChannel::Local));
-    w.str(speaker.username);
+    w.str(speaker.owner() ? "[ADMIN] a19kisme" : speaker.username);
     w.str(text);
     w.u32(speakerNetId);
     for (const auto& [id, listener] : sessions_) {
@@ -4965,6 +4993,14 @@ void GameServer::persistPlayer(const Session& session) {
 }
 
 void GameServer::despawnPlayer(Session& session, bool persist) {
+    if (auto* input = world_.tryGet<PlayerInput>(session.controlledFlower))
+        input->current = net::InputFrame{};
+    session.controlledFlower = NULL_ENTITY;
+    for (auto& entry : sessions_)
+        if (entry.second.controlledFlower == session.entity) {
+            entry.second.controlledFlower = NULL_ENTITY;
+            views_[entry.first] = {};
+        }
     if (session.entity == NULL_ENTITY) return;
     // The other half first, and with no reload armed: the body it would have
     // been armed on is about to be destroyed as well, and the split is ending

@@ -495,7 +495,7 @@ public:
     /// each caller.
     Entity spawnMob(World& world, const Terrain& terrain, const ContentRegistry& content,
                     std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
-                    double nowMillis, Rng& rng);
+                    double nowMillis, Rng& rng, bool bypassBossCooldown = false);
 
     /// The weighted type roll over ONE mob group: each member's weight, over
     /// the members that exist at this tier.
@@ -831,7 +831,7 @@ private:
     Entity spawnMobAt(World& world, const Terrain& terrain, const ContentRegistry& content,
                       std::uint16_t mobIndex, Rarity rarity, Vec2 position, Realm realm,
                       double nowMillis, Rng& rng, int depth, std::uint16_t zone,
-                      std::optional<double> facing = std::nullopt);
+                      std::optional<double> facing = std::nullopt, bool bypassBossCooldown = false);
 
     /// Lays a centipede's body out behind its head, each segment linked to the
     /// one in front. Driven from spawnMobAt so that every path to a head --

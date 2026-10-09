@@ -1,4 +1,5 @@
 #include "client/ui/menus.h"
+#include "client/ui/admin_dashboard.h"
 #include "client/ui/text_select.h"
 #include "client/ease.h"
 
@@ -647,7 +648,7 @@ bool ClientSettings::load(const std::string& path) {
         else if (key == "hideOtherPetals") render.hideOtherPetals = number != 0;
         else if (key == "hideOtherPets") render.hideOtherPets = number != 0;
         else if (key == "chat") showChat = number != 0;
-        else if (key == "chatChannels") chatChannels = static_cast<std::uint8_t>(number & 0x1F);
+        else if (key == "chatChannels") chatChannels = static_cast<std::uint8_t>(number & 0x3F);
         else if (key == "menuBar") showMenuBar = number != 0;
         else if (key == "stats") showStats = number != 0;
         else if (key == "debugButton") showDebugButton = number != 0;
@@ -796,6 +797,10 @@ void MenuSystem::close() {
 }
 
 bool MenuSystem::handleKeys(Window& window) {
+    if (adminDashboardOpen) {
+        if (window.keyPressed(Key::Escape)) adminDashboardOpen = false;
+        return true;
+    }
     // A settings row waiting for a key must swallow every key: binding the
     // inventory to G should not also open the bestiary on the way past.
     if (settings_panel_.capturingKey()) return true;
@@ -2510,6 +2515,11 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
                         const OverlayFn& overStripUnderBar) {
     wantsText_ = false;
     panelRect_ = Rect{};
+    if (adminDashboardOpen && net.haveSession() && net.isSkinAdmin()) {
+        renderAdminDashboard(canvas, window, net, timeSeconds, adminDashboardOpen,
+                             adminDashboardBounds, adminDashboardButton, wantsText_);
+        return;
+    }
 
     // A guild invitation raises the guild panel over whatever was open. It is
     // the one thing in this build that opens a menu without a click, so the
@@ -2609,6 +2619,8 @@ void MenuSystem::render(Canvas& canvas, Window& window, NetClient& net, const Sp
     // on nothing.
     updateLoadoutInput(window, net, timeSeconds);
     drawDragged(canvas, window, sprites, timeSeconds);
+    renderAdminDashboard(canvas, window, net, timeSeconds, adminDashboardOpen,
+                         adminDashboardBounds, adminDashboardButton, wantsText_);
 }
 
 void MenuSystem::renderStripOnly(Canvas& canvas, Window& window, double timeSeconds) {
@@ -2649,6 +2661,7 @@ double MenuSystem::stripBottom() const {
 }
 
 bool MenuSystem::capturesMouse(Vec2 mouse) const {
+    if (adminDashboardBounds.contains(mouse) || adminDashboardButton.contains(mouse)) return true;
     if (panelRect_.w > 0 && panelRect_.contains(mouse)) return true;
     // The bar takes the click for one thing only: lifting a petal out of a
     // filled slot. An empty slot, the trash, the gaps between the rows and the

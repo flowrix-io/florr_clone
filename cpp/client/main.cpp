@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
                 return 2;
             }
         }
+        else if (arg == "--admin-gui") config.autoAdminDashboard = true;
         else if (arg == "--lobby") config.autoJoin = false;
         else if (arg == "--spawn") config.autoSpawn = next("--spawn");
         else if (arg == "--login") config.forceLogin = true;

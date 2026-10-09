@@ -109,7 +109,7 @@ constexpr double kChatCodeRadius = 3.0;
 /// The channel tabs, in strip order -- the order chatChannels' bits and
 /// App::chatSendTab_ count in. Local is first because it is where a line goes
 /// unless the player picks otherwise.
-enum ChatTab : int { kTabLocal, kTabGlobal, kTabSquad, kTabGuild, kTabWhisper, kChatTabCount };
+enum ChatTab : int { kTabLocal, kTabGlobal, kTabSquad, kTabGuild, kTabWhisper, kTabAdmin, kChatTabCount };
 
 struct ChatTabStyle {
     const char* label;
@@ -121,6 +121,7 @@ constexpr ChatTabStyle kChatTabStyles[kChatTabCount] = {
     {"Squad", 0xFF94C9u},
     {"Guild", 0x1FDBDEu},
     {"Whisper", 0x6666FFu},
+    {"Admin", 0xFFD166u},
 };
 
 /// The tab a channel's lines are filed under, or -1 for the server's own,
@@ -128,6 +129,7 @@ constexpr ChatTabStyle kChatTabStyles[kChatTabCount] = {
 int chatTabOf(net::ChatChannel channel) {
     switch (channel) {
         case net::ChatChannel::Local:       return kTabLocal;
+        case net::ChatChannel::Admin:       return kTabAdmin;
         case net::ChatChannel::Global:      return kTabGlobal;
         case net::ChatChannel::Squad:       return kTabSquad;
         case net::ChatChannel::Guild:       return kTabGuild;
@@ -153,6 +155,7 @@ ui::InputPrefix chatPrefix(int tab, const std::string& whisperPartner) {
 std::string chatChannelCommand(int tab, const std::string& whisperPartner) {
     switch (tab) {
         case kTabLocal: return "/l ";
+        case kTabAdmin: return "/admin announce ";
         case kTabSquad: return "/s ";
         case kTabGuild: return "/g ";
         case kTabWhisper: return "/w " + whisperPartner + " ";
@@ -164,7 +167,7 @@ std::string chatChannelCommand(int tab, const std::string& whisperPartner) {
 /// Only bare: "/squad invite bob" is the squad's own command and still goes to
 /// the server, as "/local hi" goes there to be said once on Local.
 constexpr const char* kChatSwitchCommands[kChatTabCount] = {
-    "/local", "/global", "/squad", "/guild", "/whisper",
+    "/local", "/global", "/squad", "/guild", "/whisper", "/announcements",
 };
 
 /// The tab a line switches to, or -1 when it is not one of those words alone.
@@ -990,6 +993,11 @@ void App::drawTitleChat(Canvas& canvas, double time) {
 }
 
 bool App::handleClientCommand(const std::string& message) {
+    if (message == "/admin gui" && net_.isSkinAdmin()) {
+        menus_.adminDashboardOpen = !menus_.adminDashboardOpen;
+        net_.sendChat("/admin dashboard");
+        return true;
+    }
     if (message == "/guild-menu" || message == "/guild menu") {
         // The reference refuses this outside a running game because its panel
         // lives on the game object. This client's panel is a lobby menu too,
@@ -1326,7 +1334,7 @@ void App::drawChat(Canvas& canvas, double time) {
 }
 
 void App::drawChatTabs(Canvas& canvas, double bottom) {
-    static_assert(kChatTabCount == 5, "App::chatTabs_ holds one rect per tab");
+    static_assert(kChatTabCount == 6, "App::chatTabs_ holds one rect per tab");
     // The labels are controls, not page text: a press on one picks a channel
     // and must not start a selection.
     ui::TextCaptureScope off(false);
